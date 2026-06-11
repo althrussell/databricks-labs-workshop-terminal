@@ -145,6 +145,14 @@ export default function App() {
       </header>
 
       <BannerBar initial={config?.broadcast ?? null} />
+      {config && !config.credential.configured && (
+        <div className="banner banner-warning">
+          <span>
+            Workshop credential not configured — Control Tower must inject WORKSHOP_PAT at
+            deploy time. Plain terminals work; coding agents can't authenticate yet.
+          </span>
+        </div>
+      )}
       {error && (
         <div className="banner banner-warning">
           <span>{error}</span>

@@ -19,20 +19,25 @@ Authorization is **workspace-group based** — there are no email allowlists.
 
 Group membership is cached for 5 minutes.
 
-## Prerequisite: user authorization on the App resource
+## Prerequisite: Control Tower vends the attendee credential
 
-The app uses Databricks Apps **user authorization** to mint per-attendee PATs.
-Scopes are a property of the App resource, **not** `app.yaml` — the creator
-must pass them at create time:
+Databricks Apps OBO scopes deliberately exclude the Token API (verified
+June 2026: no token-related value exists in the `user_api_scopes` registry),
+so the app cannot mint attendee PATs itself. Instead, **Control Tower vends a
+workspace credential at provision time** and injects it as the `WORKSHOP_PAT`
+env var — either via `env_overrides` / in-place `app.yaml` edit (its existing
+mechanism), or as an app secret resource with `valueFrom`.
 
-```python
-from databricks.sdk.service.apps import App
-w.apps.create_and_wait(App(name=name, user_api_scopes=["all-apis"]))
-```
-
-This is the one-line Control Tower change required for zero-touch CLI auth.
-If it's missing the app still serves bash terminals and shows a clear banner;
-agent CLI launches return 503.
+- The credential should be permitted to call `/api/2.0/token/create` (token
+  `CAN_USE`): the app then chains 15-minute rotating tokens off it and never
+  exposes the vended PAT beyond bootstrap. Without that permission the app
+  serves the vended PAT to CLIs directly — still functional, less hardened.
+- The vended credential is never revoked by the app, so restarts re-bootstrap
+  from env cleanly. Control Tower should revoke it at teardown.
+- If `WORKSHOP_PAT` is missing the app still serves bash terminals and shows
+  a clear banner; agent CLI launches return 503.
+- The same credential is the app's SCIM fallback for resolving attendee group
+  membership (operator gating), so it needs SCIM read access.
 
 ## Endpoints
 
@@ -111,6 +116,7 @@ python scripts/push_content.py presence
 
 | Var | Default | Purpose |
 |---|---|---|
+| `WORKSHOP_PAT` | *(unset)* | Vended workspace credential for attendee CLIs (required for agents) |
 | `ADMIN_GROUP` | `platform_admins` | Group that grants operator/admin access |
 | `ACCESS_GROUP` | *(unset)* | Optional group restricting attendee access |
 | `WORKSHOP_PHASE` | `intro` | Phase on (re)start |

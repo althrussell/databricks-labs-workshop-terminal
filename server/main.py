@@ -24,8 +24,8 @@ from .admin import router as admin_router
 from .auth import Principal, get_current_user, is_admin
 from .bootstrap import install
 from .content import content_service
+from .credentials import CredentialError, credential_manager, ensure_user_credentials
 from .events import event_hub
-from .pat import PatError, ensure_user_pat
 from .sessions import SessionLimitError, session_manager
 from .users import user_manager
 from .ws import router as ws_router
@@ -44,8 +44,9 @@ async def lifespan(app: FastAPI):
     os.makedirs(config.users_root(), exist_ok=True)
     if not config.local_dev():
         install.run_in_background()
+        credential_manager.start()
     else:
-        logger.info("LOCAL_DEV=1 — skipping CLI installers")
+        logger.info("LOCAL_DEV=1 — skipping CLI installers and credential rotation")
     logger.info("workshop terminal up (phase=%s)", content_service.phase)
     yield
 
@@ -69,6 +70,7 @@ def get_config(principal: Principal = Depends(get_current_user)):
         "limits": {
             "max_sessions_per_user": config.max_sessions_per_user(),
         },
+        "credential": credential_manager.status(),
     }
 
 
@@ -78,10 +80,8 @@ def setup_status(_: Principal = Depends(get_current_user)):
 
 
 @app.get("/api/agents")
-def list_agents(principal: Principal = Depends(get_current_user)):
+def list_agents(_: Principal = Depends(get_current_user)):
     ready = install.status()["ready"]
-    user = user_manager.peek(principal.name)
-    pat_ok = bool(user and user.pat_manager and user.pat_manager.healthy)
     catalog = []
     for agent in agents.load_catalog():
         requires = agent.get("requires", [])
@@ -89,12 +89,9 @@ def list_agents(principal: Principal = Depends(get_current_user)):
         catalog.append({
             **{k: agent[k] for k in ("id", "label", "description", "icon", "order")},
             "ready": installed,
-            # bash never needs credentials; agent CLIs need a healthy PAT,
-            # which is minted on first launch — so they're launchable as soon
-            # as installed, and the launch itself bootstraps credentials.
             "needs_credentials": bool(requires),
         })
-    return {"agents": catalog, "pat_healthy": pat_ok}
+    return {"agents": catalog, "credential": credential_manager.status()}
 
 
 class CreateSessionBody(BaseModel):
@@ -123,18 +120,15 @@ def create_session(body: CreateSessionBody, principal: Principal = Depends(get_c
     if not user.first_seen:
         user.first_seen = time.time()
 
-    # Agent CLIs need credentials; mint/refresh this user's PAT before launch.
-    if requires:
-        try:
-            ensure_user_pat(user, principal.access_token)
-        except PatError as e:
+    # Write/refresh this user's CLI configs from the vended credential. Agent
+    # CLIs hard-require it; bash degrades gracefully (shell works, databricks
+    # CLI just isn't authenticated until the credential is configured).
+    try:
+        ensure_user_credentials(user)
+    except CredentialError as e:
+        if requires:
             raise HTTPException(status_code=503, detail=str(e))
-    elif principal.access_token:
-        # Opportunistically keep bash sessions authenticated too (databricks CLI).
-        try:
-            ensure_user_pat(user, principal.access_token)
-        except PatError as e:
-            logger.warning("PAT bootstrap for bash session failed for %s: %s", principal.name, e)
+        logger.warning("bash session for %s without credentials: %s", principal.name, e)
 
     try:
         session = session_manager.create(

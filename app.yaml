@@ -13,6 +13,14 @@ env:
   - name: HOME
     value: /app/python/source_code/data/apphome
 
+  # --- Attendee CLI credential (vended by Control Tower) ---
+  # A workspace token injected at deploy time (env_overrides, or replace with
+  # a valueFrom secret resource). The app chains short-lived rotating tokens
+  # off it when the credential can use the Token API; otherwise it serves the
+  # vended token directly. Attendees never handle tokens.
+  - name: WORKSHOP_PAT
+    value: ""
+
   # --- Security (workspace groups, no allowlists) ---
   - name: ADMIN_GROUP
     value: platform_admins

@@ -13,10 +13,9 @@ Built to be deployed (and torn down) as workshop infrastructure by
 
 - **Launch buttons** for Claude Code, Codex, and a plain terminal — the agent
   catalog is config-driven (`content/agents.json`), extensible per event.
-- **Zero-touch auth**: the app uses Databricks Apps user authorization to
-  mint a short-lived per-user PAT on first launch and rotates it every 10
-  minutes in the background. CLIs run with the attendee's full workspace
-  permissions; nothing to paste.
+- **Zero-touch auth**: Control Tower vends a workspace credential at deploy
+  time (`WORKSHOP_PAT`); the app chains short-lived rotating tokens off it
+  and feeds them to every CLI config. Attendees never see a token screen.
 - **Fully isolated sessions**: per-user HOME directories, sessions strictly
   bound to their owner, secrets stripped from terminal env. Up to 10
   attendees per instance.
@@ -50,23 +49,20 @@ Built to be deployed (and torn down) as workshop infrastructure by
   `apps.delete`.
 - **Security**: workspace-group based. Identity from the Apps proxy headers;
   operator access requires `ADMIN_GROUP` (default `platform_admins`)
-  membership resolved via SCIM with the caller's own token. Optional
-  `ACCESS_GROUP` restricts attendees.
+  membership resolved via SCIM — using the caller's bearer token for service
+  principals, or the vended credential to look attendees up by email.
+  Optional `ACCESS_GROUP` restricts attendees.
 
 ## Deploying
 
-### Prerequisite (one-time, per deployer)
+### Prerequisite: vended credential
 
-User authorization scopes are a property of the **App resource**, not
-`app.yaml`:
-
-```python
-w.apps.create_and_wait(App(name=name, user_api_scopes=["all-apis"]))
-```
-
-Control Tower's app-create call needs that one line; without it the app
-still works for plain terminals and shows a clear banner, but agent CLIs
-can't mint attendee credentials.
+The deployer (Control Tower) must inject a workspace credential as the
+`WORKSHOP_PAT` env var (or secret). Databricks Apps OBO scopes exclude the
+Token API, so the app can't mint credentials itself — see
+[docs/admin-api.md](docs/admin-api.md) for the vending contract. Without it
+the app serves plain terminals and shows a clear banner, but agent CLIs
+can't authenticate.
 
 ### Via Control Tower
 
@@ -105,7 +101,7 @@ app.yaml                  Databricks Apps entrypoint (single worker!)
 server/                   FastAPI backend
   auth.py                 identity + group authz (SCIM /Me, cached)
   users.py                per-user HOME/env isolation
-  pat.py                  per-user PAT mint (OBO) + 10-min rotation
+  credentials.py          vended-credential bootstrap + 10-min rotation
   cli_config.py           claude/codex/databricks CLI config writers
   sessions.py             PTY lifecycle, ownership, scrollback, reaper
   ws.py                   terminal + events websockets

@@ -4,6 +4,13 @@ export interface ShellLink {
   icon: string;
 }
 
+export interface CredentialStatus {
+  configured: boolean;
+  rotating: boolean;
+  healthy: boolean;
+  last_error: string | null;
+}
+
 export interface AppConfig {
   user: { email: string; is_admin: boolean };
   branding: {
@@ -17,6 +24,7 @@ export interface AppConfig {
   phase: string;
   broadcast: Broadcast | null;
   limits: { max_sessions_per_user: number };
+  credential: CredentialStatus;
 }
 
 export interface AgentInfo {
@@ -58,8 +66,7 @@ export interface PresenceUser {
   online: boolean;
   last_seen: number;
   first_seen: number;
-  pat_healthy: boolean;
-  pat_error: string | null;
+  cli_ready: boolean;
   sessions: SessionInfo[];
 }
 
@@ -92,7 +99,8 @@ export const api = {
   config: () => request<AppConfig>("/api/config"),
   setupStatus: () =>
     request<{ ready: Record<string, boolean>; installing: boolean }>("/api/setup-status"),
-  agents: () => request<{ agents: AgentInfo[]; pat_healthy: boolean }>("/api/agents"),
+  agents: () =>
+    request<{ agents: AgentInfo[]; credential: CredentialStatus }>("/api/agents"),
   sessions: () => request<{ sessions: SessionInfo[] }>("/api/sessions"),
   createSession: (agentId: string) =>
     request<{ session: SessionInfo }>("/api/sessions", {
@@ -104,7 +112,9 @@ export const api = {
   adminState: () =>
     request<{ phase: string; phases: string[]; nugget_count: number }>("/api/admin/state"),
   adminPresence: () =>
-    request<{ users: PresenceUser[]; session_count: number }>("/api/admin/presence"),
+    request<{ users: PresenceUser[]; session_count: number; credential: CredentialStatus }>(
+      "/api/admin/presence"
+    ),
   adminPhase: (phase: string) =>
     request("/api/admin/phase", { method: "POST", body: JSON.stringify({ phase }) }),
   adminBroadcast: (message: string, level: string, ttl_s: number) =>

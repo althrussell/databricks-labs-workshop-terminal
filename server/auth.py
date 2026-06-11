@@ -8,10 +8,10 @@ never email allowlists:
   app's own permission grants admit)
 - operator/admin access: ADMIN_GROUP (default ``platform_admins``)
 
-Group resolution prefers the caller's own credential — the forwarded OBO
-access token for browser users, or the bearer token for service principals
-calling the admin API — via SCIM ``/Me?attributes=groups``, so the app needs
-no SCIM read grants of its own in the common path. Results are cached 5 min.
+Group resolution uses the caller's own credential when present (bearer-token
+service principals via SCIM ``/Me``); for browser users it looks the user up
+by email via SCIM with the Control-Tower-vended workspace credential
+(WORKSHOP_PAT). Results are cached 5 min.
 """
 
 from __future__ import annotations
@@ -68,6 +68,34 @@ def _scim_me_groups(token: str) -> set[str] | None:
         return None
 
 
+def _scim_lookup_groups_by_email(email: str) -> set[str] | None:
+    """Resolve a user's groups by email using the app's vended credential."""
+    from .credentials import vended_pat
+
+    host = config.databricks_host()
+    token = vended_pat()
+    if not host or not token:
+        return None
+    try:
+        resp = requests.get(
+            f"{host}/api/2.0/preview/scim/v2/Users",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"filter": f'userName eq "{email}"', "attributes": "groups,userName"},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            logger.warning("SCIM Users lookup failed (%s): %s", resp.status_code, resp.text[:200])
+            return None
+        resources = resp.json().get("Resources", []) or []
+        if not resources:
+            return set()
+        groups = resources[0].get("groups", []) or []
+        return {g.get("display", "") for g in groups if g.get("display")}
+    except requests.RequestException as e:
+        logger.warning("SCIM Users lookup request failed: %s", e)
+        return None
+
+
 def get_groups(principal: Principal) -> set[str]:
     """Group display-names for the principal, cached 5 minutes."""
     if config.local_dev():
@@ -80,7 +108,11 @@ def get_groups(principal: Principal) -> set[str]:
         if cached and now - cached[0] < _CACHE_TTL:
             return cached[1]
 
+    # Caller's own token first (SPs, or browsers when user authorization is
+    # enabled); otherwise look the user up with the vended app credential.
     groups = _scim_me_groups(principal.access_token or "")
+    if groups is None and "@" in principal.name:
+        groups = _scim_lookup_groups_by_email(principal.name)
     if groups is None:
         # Unknown — don't poison the cache; deny-by-default falls out at the
         # membership checks below.

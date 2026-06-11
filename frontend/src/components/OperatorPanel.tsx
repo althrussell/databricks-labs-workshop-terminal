@@ -108,7 +108,7 @@ export default function OperatorPanel() {
               <th></th>
               <th>Attendee</th>
               <th>Terminals</th>
-              <th>Credentials</th>
+              <th>CLI configured</th>
               <th>Last activity</th>
             </tr>
           </thead>
@@ -122,9 +122,7 @@ export default function OperatorPanel() {
                 <td>
                   {user.sessions.map((s) => s.label).join(", ") || "—"}
                 </td>
-                <td>
-                  {user.pat_healthy ? "✓" : user.pat_error ? `✗ ${user.pat_error}` : "—"}
-                </td>
+                <td>{user.cli_ready ? "✓" : "—"}</td>
                 <td>{user.last_seen ? timeAgo(user.last_seen) : "—"}</td>
               </tr>
             ))}

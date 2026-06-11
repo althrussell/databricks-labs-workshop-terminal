@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Deploy this repo to a dev workspace for smoke testing.
 
-Mirrors Control Tower's deploy mechanics (workspace import + apps.deploy)
-and sets user_api_scopes=["all-apis"] so per-user PAT minting works.
+Mirrors Control Tower's deploy mechanics: workspace import + apps.deploy,
+with a vended credential injected as WORKSHOP_PAT in the uploaded app.yaml
+(here: a 12h PAT minted as the deploying user; Control Tower vends its own).
 
   export DATABRICKS_CONFIG_PROFILE=my-dev-workspace   # or DATABRICKS_HOST/TOKEN
-  python scripts/deploy_dev.py [--name workshop-terminal-dev]
+  python scripts/deploy_dev.py [--name workshop-terminal-dev] [--no-pat]
 
 Requires: databricks-sdk (pip install databricks-sdk).
 """
@@ -25,6 +26,8 @@ REPO_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", default="workshop-terminal-dev")
+    parser.add_argument("--no-pat", action="store_true",
+                        help="skip minting/injecting the WORKSHOP_PAT dev credential")
     args = parser.parse_args()
 
     from databricks.sdk import WorkspaceClient
@@ -34,8 +37,15 @@ def main() -> int:
     w = WorkspaceClient()
     me = w.current_user.me().user_name
     target = f"/Workspace/Users/{me}/apps/{args.name}"
-    print(f"Importing source to {target}")
 
+    workshop_pat = ""
+    if not args.no_pat:
+        print("Minting 12h dev credential (WORKSHOP_PAT)")
+        workshop_pat = w.tokens.create(
+            comment=f"{args.name} vended credential", lifetime_seconds=43200
+        ).token_value
+
+    print(f"Importing source to {target}")
     for root, dirs, files in os.walk(REPO_ROOT):
         rel_root = os.path.relpath(root, REPO_ROOT)
         dirs[:] = [
@@ -47,14 +57,22 @@ def main() -> int:
             if any(fnmatch.fnmatch(rel, p) for p in EXCLUDE):
                 continue
             path = os.path.join(root, name)
+            with open(path, "rb") as f:
+                content = f.read()
+            if rel == "app.yaml" and workshop_pat:
+                # Same mechanism Control Tower uses: vend the credential by
+                # editing the deployed app.yaml in place (never the git copy).
+                content = content.replace(
+                    b"- name: WORKSHOP_PAT\n    value: \"\"",
+                    f"- name: WORKSHOP_PAT\n    value: \"{workshop_pat}\"".encode(),
+                )
             ws_path = f"{target}/{rel}".replace("\\", "/")
             w.workspace.mkdirs(os.path.dirname(ws_path))
-            with open(path, "rb") as f:
-                w.workspace.upload(ws_path, io.BytesIO(f.read()), format=ImportFormat.AUTO, overwrite=True)
+            w.workspace.upload(ws_path, io.BytesIO(content), format=ImportFormat.AUTO, overwrite=True)
 
-    print(f"Creating app {args.name} (user_api_scopes=['all-apis'])")
+    print(f"Creating app {args.name}")
     try:
-        w.apps.create_and_wait(App(name=args.name, user_api_scopes=["all-apis"]))
+        w.apps.create_and_wait(App(name=args.name))
     except Exception as e:
         if "already exists" not in str(e).lower():
             raise

@@ -29,7 +29,6 @@ class User:
         self.slug = email_slug(email)
         self.home = os.path.join(config.users_root(), self.slug)
         self.lock = threading.Lock()
-        self.pat_manager = None  # attached by server.pat on first connect
         self.cli_ready: set[str] = set()  # agent ids with configs written
         self.last_seen: float = 0.0
         self.first_seen: float = 0.0

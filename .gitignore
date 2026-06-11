@@ -6,3 +6,4 @@ node_modules/
 .pytest_cache/
 .DS_Store
 /data/
+# Never commit a real credential into app.yaml — deploys inject WORKSHOP_PAT.
