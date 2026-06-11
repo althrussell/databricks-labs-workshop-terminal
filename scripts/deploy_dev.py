@@ -31,7 +31,7 @@ def main() -> int:
     args = parser.parse_args()
 
     from databricks.sdk import WorkspaceClient
-    from databricks.sdk.service.apps import App
+    from databricks.sdk.service.apps import App, AppDeployment
     from databricks.sdk.service.workspace import ImportFormat
 
     w = WorkspaceClient()
@@ -78,7 +78,10 @@ def main() -> int:
             raise
         print("App exists — redeploying")
 
-    deployment = w.apps.deploy_and_wait(app_name=args.name, source_code_path=target)
+    deployment = w.apps.deploy_and_wait(
+        app_name=args.name,
+        app_deployment=AppDeployment(source_code_path=target),
+    )
     app = w.apps.get(args.name)
     print(f"Deployed: {deployment.status.state if deployment.status else 'unknown'}")
     print(f"URL: {app.url}")
