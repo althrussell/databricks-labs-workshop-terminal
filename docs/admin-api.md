@@ -75,9 +75,16 @@ at `CONTENT_PACK_PATH`) is reloaded on restart.
 ```
 
 Trigger vocabulary: `always`, `claude_active`, `codex_active`, `bash_active`,
-`idle_10m`, `elapsed_gt_<minutes>`. Empty `triggers` = always shown; empty
-`phases` = all phases. Nuggets are coarse-signal only — the app never
-inspects terminal content.
+`idle_10m`, `elapsed_gt_<minutes>`, and `topic:<name>`. Empty `triggers` =
+always shown; empty `phases` = all phases.
+
+**Topic detection:** the optional pack-level `topics` map
+(`{"lakebase": ["lakebase", "postgres", ...]}`) drives contextual insights —
+when a keyword appears in an attendee's terminal output, nuggets with the
+matching `topic:<name>` trigger surface immediately with a "spotted in your
+session" treatment and rank first for 15 minutes. Only topic *names* are
+recorded per user; terminal content is never stored or transmitted. Disable
+with `TOPIC_DETECTION=false`.
 
 ### `POST /api/admin/phase`
 ```json
@@ -118,6 +125,10 @@ python scripts/push_content.py presence
 |---|---|---|
 | `WORKSHOP_PAT` | *(unset)* | Vended workspace credential for attendee CLIs (required for agents) |
 | `ADMIN_GROUP` | `platform_admins` | Group that grants operator/admin access |
+| `LAB_COACH` | `true` | Append lab-coach instructions to attendee agent memory |
+| `TOPIC_DETECTION` | `true` | Terminal keyword spotting for contextual insights |
+| `AI_DEV_KIT_REPO` | github databricks-solutions/ai-dev-kit | Skills source fetched latest at every boot |
+| `DEEPWIKI_MCP_URL` / `EXA_MCP_URL` | public endpoints | MCP servers for attendee agents (empty string disables) |
 | `ACCESS_GROUP` | *(unset)* | Optional group restricting attendee access |
 | `WORKSHOP_PHASE` | `intro` | Phase on (re)start |
 | `CONTENT_PACK_PATH` | *(unset)* | Alternate pack file inside the deployed source |

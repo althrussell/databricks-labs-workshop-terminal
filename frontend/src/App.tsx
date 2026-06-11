@@ -8,6 +8,7 @@ import {
   X,
 } from "lucide-react";
 import { api, AgentInfo, AppConfig, SessionInfo } from "./api";
+import databricksLogo from "./assets/databricks-logo.svg";
 import BannerBar from "./components/BannerBar";
 import LaunchBar from "./components/LaunchBar";
 import NuggetsPane from "./components/NuggetsPane";
@@ -111,10 +112,13 @@ export default function App() {
     <div className="app">
       <header className="header">
         <div className="header-brand">
-          {branding?.brand_logo_url ? (
-            <img src={branding.brand_logo_url} alt={branding.brand_name} className="brand-logo" />
-          ) : (
-            <DatabricksMark />
+          <img
+            src={branding?.brand_logo_url || databricksLogo}
+            alt={branding?.brand_name ?? "Databricks"}
+            className="brand-logo"
+          />
+          {branding?.cobranded && (
+            <img src={databricksLogo} alt="Databricks" className="brand-logo brand-logo-secondary" />
           )}
           <div className="brand-text">
             <span className="brand-name">{branding?.brand_name ?? "Databricks"}</span>
@@ -226,10 +230,3 @@ export default function App() {
   );
 }
 
-function DatabricksMark() {
-  return (
-    <svg className="brand-logo" viewBox="0 0 24 24" fill="var(--brand-primary)" aria-hidden>
-      <path d="M12 2 2 7.5l10 5.5 8.6-4.73v2.2L12 15.6 2.7 10.5 2 10.9v2.9L12 19l8.6-4.7v2.2L12 21.2 2.7 16.1 2 16.5 12 22l10-5.5v-9L12 2Z" />
-    </svg>
-  );
-}

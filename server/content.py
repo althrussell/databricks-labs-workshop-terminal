@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import random
+import re
 import threading
 import time
 
@@ -27,6 +28,8 @@ _DEFAULT_PACK = os.path.normpath(
 
 KNOWN_TRIGGERS = {"always", "claude_active", "codex_active", "bash_active", "idle_10m"}
 _ELAPSED_PREFIX = "elapsed_gt_"
+_TOPIC_PREFIX = "topic:"
+TOPIC_TTL_SECONDS = 900  # a spotted topic stays "live" for 15 minutes
 
 
 class NuggetLink(BaseModel):
@@ -61,6 +64,9 @@ class ContentPack(BaseModel):
     version: int = 1
     phases: list[str] = Field(default_factory=lambda: ["intro", "setup", "build", "wrap"])
     shell: ShellConfig = Field(default_factory=ShellConfig)
+    # topic -> keywords spotted in terminal output. Nuggets reference topics
+    # with a "topic:<name>" trigger and rank first while the topic is live.
+    topics: dict[str, list[str]] = Field(default_factory=dict)
     nuggets: list[Nugget] = Field(default_factory=list)
 
 
@@ -77,7 +83,24 @@ class ContentService:
         self._phase = config.workshop_phase_default()
         self._broadcast: Broadcast | None = None
         self._broadcast_at = 0.0
+        self._topic_regex = self._compile_topics(self._pack)
         self.started_at = time.time()
+
+    @staticmethod
+    def _compile_topics(pack: ContentPack):
+        patterns = {}
+        for topic, keywords in pack.topics.items():
+            words = [re.escape(k) for k in keywords if k.strip()]
+            if words:
+                patterns[topic] = re.compile(r"(?i)\b(?:" + "|".join(words) + r")\b")
+        return patterns
+
+    def scan_topics(self, text: str) -> set[str]:
+        """Topics whose keywords appear in a terminal output chunk. Only the
+        topic names leave this function — the text is never stored."""
+        with self._lock:
+            patterns = self._topic_regex
+        return {topic for topic, regex in patterns.items() if regex.search(text)}
 
     def _load_initial_pack(self) -> ContentPack:
         path = config.content_pack_path() or _DEFAULT_PACK
@@ -108,18 +131,31 @@ class ContentService:
                 return self._broadcast
             return None
 
-    def nuggets_for(self, active_triggers: set[str], limit: int = 8) -> list[dict]:
-        """Nuggets for the current phase whose triggers are satisfied —
-        pinned first, then a stable weighted shuffle of the rest."""
+    def nuggets_for(self, active_triggers: set[str], live_topics: set[str] | None = None,
+                    limit: int = 8) -> list[dict]:
+        """Nuggets for the current phase whose triggers are satisfied.
+
+        Order: pinned, then nuggets matching a topic spotted in the user's
+        terminal (the contextual 'we saw you mention Lakebase' cards), then a
+        stable weighted shuffle of the rest."""
         with self._lock:
             pack, phase = self._pack, self._phase
 
         elapsed_min = (time.time() - self.started_at) / 60
+        live_topics = live_topics or set()
+
+        def matched_topic(n: Nugget) -> str | None:
+            for t in n.triggers:
+                if t.startswith(_TOPIC_PREFIX) and t[len(_TOPIC_PREFIX):] in live_topics:
+                    return t[len(_TOPIC_PREFIX):]
+            return None
 
         def eligible(n: Nugget) -> bool:
             if n.phases and phase not in n.phases:
                 return False
             if not n.triggers:
+                return True
+            if matched_topic(n):
                 return True
             for t in n.triggers:
                 if t == "always" or t in active_triggers:
@@ -134,21 +170,30 @@ class ContentService:
 
         candidates = [n for n in pack.nuggets if eligible(n)]
         pinned = [n for n in candidates if n.pinned]
-        rest = [n for n in candidates if not n.pinned]
+        topical = [n for n in candidates if not n.pinned and matched_topic(n)]
+        rest = [n for n in candidates if not n.pinned and not matched_topic(n)]
         # Weighted shuffle, reseeded every 5 minutes so the rotation feels
         # alive but doesn't reshuffle on every poll.
         rng = random.Random(int(time.time() // 300))
         rest = sorted(rest, key=lambda n: rng.random() / max(n.weight, 1))
-        return [n.model_dump() for n in (pinned + rest)[:limit]]
+
+        results = []
+        for n in (pinned + topical + rest)[:limit]:
+            item = n.model_dump()
+            item["matched_topic"] = matched_topic(n)
+            results.append(item)
+        return results
 
     # -- write (admin) --
 
     def set_pack(self, pack: ContentPack) -> None:
         with self._lock:
             self._pack = pack
+            self._topic_regex = self._compile_topics(pack)
             if self._phase not in pack.phases and pack.phases:
                 self._phase = pack.phases[0]
-        logger.info("content pack replaced (%d nuggets)", len(pack.nuggets))
+        logger.info("content pack replaced (%d nuggets, %d topics)",
+                    len(pack.nuggets), len(pack.topics))
 
     def set_phase(self, phase: str) -> None:
         with self._lock:

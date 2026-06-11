@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ChevronRight, ExternalLink, Lightbulb, Pin } from "lucide-react";
+import { ChevronRight, ExternalLink, Lightbulb, Pin, Sparkle } from "lucide-react";
 import { marked } from "marked";
 import { api, Nugget } from "../api";
 import { onAppEvent } from "../events";
@@ -62,7 +62,17 @@ export default function NuggetsPane({ collapsed, onToggle }: Props) {
           <div className="nugget-empty">Insights will appear here as the workshop progresses.</div>
         )}
         {nuggets.map((nugget) => (
-          <article key={nugget.id} className={`nugget ${nugget.pinned ? "nugget-pinned" : ""}`}>
+          <article
+            key={nugget.id}
+            className={`nugget ${nugget.pinned ? "nugget-pinned" : ""} ${
+              nugget.matched_topic ? "nugget-matched" : ""
+            }`}
+          >
+            {nugget.matched_topic && (
+              <div className="nugget-matched-label">
+                <Sparkle size={10} /> spotted in your session
+              </div>
+            )}
             <h3>
               {nugget.pinned && <Pin size={12} />}
               {nugget.title}

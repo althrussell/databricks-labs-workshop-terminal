@@ -8,6 +8,18 @@
     ],
     "features": { "nuggets_pane": true, "operator_panel": true }
   },
+  "topics": {
+    "lakebase": ["lakebase", "postgres", "postgresql", "oltp"],
+    "unity-catalog": ["unity catalog", "uc catalog", "catalog.schema", "grants", "lineage"],
+    "genie": ["genie", "ai/bi", "aibi", "natural language query"],
+    "pipelines": ["lakeflow", "declarative pipeline", "delta live", "dlt", "streaming table", "materialized view", "auto loader"],
+    "vector-search": ["vector search", "embeddings", "similarity search", "rag"],
+    "mlflow": ["mlflow", "experiment tracking", "model registry", "tracing"],
+    "serving": ["model serving", "serving endpoint", "foundation model"],
+    "apps": ["databricks apps", "appkit", "streamlit", "gradio"],
+    "dashboards": ["dashboard", "lakeview", "visualization"],
+    "jobs": ["databricks jobs", "workflow", "cron", "scheduled job"]
+  },
   "nuggets": [
     {
       "id": "welcome",
@@ -88,6 +100,96 @@
       "phases": ["build"],
       "triggers": ["idle_10m"],
       "weight": 9
+    },
+    {
+      "id": "topic-lakebase",
+      "title": "You're using Lakebase 🐘",
+      "markdown": "Lakebase is **fully-managed Postgres built into Databricks** — your app gets a real OLTP database with zero infrastructure, branching for dev/test, and synced tables that flow straight into your lakehouse. No separate database vendor, one governance model.",
+      "link": { "url": "https://www.databricks.com/product/lakebase", "label": "Why Lakebase" },
+      "tags": ["lakebase"],
+      "triggers": ["topic:lakebase"],
+      "weight": 10
+    },
+    {
+      "id": "topic-unity-catalog",
+      "title": "Unity Catalog is doing the governance for you",
+      "markdown": "Every table, model, and volume you just touched is governed in one place: permissions, lineage, audit, discovery. That's the difference between a demo and something your security team will approve.",
+      "link": { "url": "https://www.databricks.com/product/unity-catalog", "label": "Unity Catalog" },
+      "tags": ["unity-catalog"],
+      "triggers": ["topic:unity-catalog"],
+      "weight": 10
+    },
+    {
+      "id": "topic-genie",
+      "title": "Genie: your tables, in plain English",
+      "markdown": "The data you're building can be handed to business users today — AI/BI Genie lets them ask questions in natural language with answers grounded in your governed tables. Zero dashboards to build first.",
+      "link": { "url": "https://www.databricks.com/product/ai-bi", "label": "See AI/BI Genie" },
+      "tags": ["genie"],
+      "triggers": ["topic:genie"],
+      "weight": 10
+    },
+    {
+      "id": "topic-pipelines",
+      "title": "Declarative pipelines: you declare, Databricks operates",
+      "markdown": "Lakeflow Spark Declarative Pipelines handle orchestration, retries, incremental processing, and data quality enforcement from a few annotations. The pipeline you're building would be hundreds of lines of hand-rolled orchestration anywhere else.",
+      "link": { "url": "https://www.databricks.com/product/data-engineering", "label": "Lakeflow" },
+      "tags": ["pipelines"],
+      "triggers": ["topic:pipelines"],
+      "weight": 10
+    },
+    {
+      "id": "topic-vector-search",
+      "title": "Vector Search without the vector database",
+      "markdown": "Databricks Vector Search syncs embeddings straight from your Delta tables — no separate vector DB to run, govern, or pay for. Your RAG index inherits Unity Catalog permissions automatically.",
+      "link": { "url": "https://www.databricks.com/product/machine-learning/vector-search", "label": "Vector Search" },
+      "tags": ["vector-search"],
+      "triggers": ["topic:vector-search"],
+      "weight": 10
+    },
+    {
+      "id": "topic-mlflow",
+      "title": "MLflow 3: observability for AI you can act on",
+      "markdown": "Every agent call you're tracing lands in MLflow — token costs, latencies, full traces, evaluation scores. It's the difference between 'the demo worked' and 'we know exactly how it behaves in production'.",
+      "link": { "url": "https://www.databricks.com/product/managed-mlflow", "label": "Managed MLflow" },
+      "tags": ["mlflow"],
+      "triggers": ["topic:mlflow"],
+      "weight": 10
+    },
+    {
+      "id": "topic-serving",
+      "title": "One endpoint, every frontier model",
+      "markdown": "Model Serving gives you Claude, GPT, Llama and your own models behind one governed, rate-limited, pay-per-token endpoint — the same one powering the agent in your terminal right now.",
+      "link": { "url": "https://www.databricks.com/product/model-serving", "label": "Model Serving" },
+      "tags": ["serving"],
+      "triggers": ["topic:serving"],
+      "weight": 10
+    },
+    {
+      "id": "topic-apps",
+      "title": "Ship that app on Databricks Apps",
+      "markdown": "What you're building can be deployed as a Databricks App: serverless hosting, workspace SSO, governance built in. No Kubernetes, no separate auth, straight from code to a URL your team can open.",
+      "link": { "url": "https://www.databricks.com/product/databricks-apps", "label": "Databricks Apps" },
+      "tags": ["apps"],
+      "triggers": ["topic:apps"],
+      "weight": 10
+    },
+    {
+      "id": "topic-dashboards",
+      "title": "AI/BI Dashboards on live lakehouse data",
+      "markdown": "Dashboards here query your governed tables directly — no extracts, no stale copies. Build one with your agent: *\"create a dashboard showing the table we just built\"*.",
+      "link": { "url": "https://www.databricks.com/product/ai-bi", "label": "AI/BI Dashboards" },
+      "tags": ["dashboards"],
+      "triggers": ["topic:dashboards"],
+      "weight": 8
+    },
+    {
+      "id": "topic-jobs",
+      "title": "Lakeflow Jobs: scheduling included",
+      "markdown": "Anything you've built can run on a schedule with retries, alerts, and serverless compute — ask your agent to *\"schedule this as a daily job\"* and it's production-ready automation.",
+      "link": { "url": "https://docs.databricks.com/jobs", "label": "Jobs docs" },
+      "tags": ["jobs"],
+      "triggers": ["topic:jobs"],
+      "weight": 8
     },
     {
       "id": "wrap-keep-going",

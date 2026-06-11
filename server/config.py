@@ -76,6 +76,17 @@ def content_pack_path() -> str:
     return _env("CONTENT_PACK_PATH")
 
 
+def lab_coach_enabled() -> bool:
+    return _env("LAB_COACH", "true").lower() not in ("false", "0", "no", "off")
+
+
+def topic_detection_enabled() -> bool:
+    """Coarse keyword spotting on terminal output to drive contextual
+    insights. Only topic flags are recorded — terminal content is never
+    stored or transmitted."""
+    return _env("TOPIC_DETECTION", "true").lower() not in ("false", "0", "no", "off")
+
+
 def branding() -> dict:
     return {
         "brand_name": _env("BRAND_NAME") or "Databricks",

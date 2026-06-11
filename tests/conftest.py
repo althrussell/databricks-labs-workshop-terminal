@@ -29,6 +29,17 @@ def client(_test_env):
         session_manager.terminate(session)
 
 
+@pytest.fixture(autouse=True)
+def _restore_content_state():
+    """Content service is a module singleton — restore pack/phase per test."""
+    from server.content import content_service
+
+    pack, phase = content_service.pack, content_service.phase
+    yield
+    content_service.set_pack(pack)
+    content_service.set_phase(phase)
+
+
 @pytest.fixture()
 def as_admin(monkeypatch):
     """Make group resolution report ADMIN_GROUP membership for everyone."""

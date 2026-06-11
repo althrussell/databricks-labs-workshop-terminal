@@ -395,6 +395,29 @@ body {
   border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--border));
 }
 
+.nugget-matched {
+  border-color: color-mix(in srgb, var(--brand-primary) 60%, var(--border));
+  background: color-mix(in srgb, var(--brand-primary) 6%, var(--bg-panel));
+}
+
+.nugget-matched-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--brand-primary);
+  margin-bottom: 6px;
+}
+
+.brand-logo-secondary {
+  height: 20px;
+  opacity: 0.75;
+  margin-left: 4px;
+}
+
 .nugget h3 {
   display: flex;
   align-items: center;

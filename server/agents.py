@@ -46,12 +46,15 @@ def get_agent(agent_id: str) -> dict | None:
     return next((a for a in load_catalog() if a.get("id") == agent_id), None)
 
 
-def launch_command(agent: dict) -> list[str]:
+def launch_command(agent: dict, greeting: str | None = None) -> list[str]:
     """PTY command for an agent: run the CLI inside a login-ish bash so the
-    attendee lands back in a shell when the agent exits."""
+    attendee lands back in a shell when the agent exits. A greeting (the
+    'agent speaks first' lab pattern) is passed as the CLI's opening prompt."""
     cmd = agent.get("command", "bash")
     if cmd == "bash":
         return ["/bin/bash"]
+    if greeting:
+        cmd = f"{cmd} {shlex.quote(greeting)}"
     return ["/bin/bash", "-c", f"{cmd}; exec /bin/bash"]
 
 

@@ -21,10 +21,18 @@ Built to be deployed (and torn down) as workshop infrastructure by
   attendees per instance.
 - **Resilient terminals**: PTYs survive page refreshes and wifi blips —
   reconnect and your scrollback replays.
-- **Insight nuggets**: a collapsible pane of docs, best practices, and blog
-  pointers that follows the workshop phase and reacts to coarse activity
-  signals (which agent is running, idle time). No terminal content is ever
-  inspected.
+- **Insight nuggets**: a collapsible pane of docs, best practices, and
+  marketing-grade product cards that follows the workshop phase, reacts to
+  activity signals, and **watches the terminal for topics** — mention
+  Lakebase and a "spotted in your session" Lakebase card appears with the
+  value prop and docs link. Only topic flags are recorded, never terminal
+  content (`TOPIC_DETECTION=false` to disable).
+- **A coached first run**: launching Claude greets the attendee
+  ("agent speaks first"), a lab-coach persona adapts to technical vs business
+  attendees, the latest [ai-dev-kit](https://github.com/databricks-solutions/ai-dev-kit)
+  skills are fetched at every boot, TDD subagents are pre-installed, and every
+  git commit auto-syncs to the attendee's Workspace home so their work
+  survives teardown.
 
 ## What operators get
 

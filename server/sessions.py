@@ -85,6 +85,9 @@ class SessionManager:
         self._lock = threading.Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._reaper_started = False
+        # Optional observer fed each output chunk (topic spotting). Must be
+        # fast and must never raise into the reader thread.
+        self.output_observer = None
 
     def attach_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
@@ -197,6 +200,11 @@ class SessionManager:
                     with session.lock:
                         session.scrollback.append(decoded)
                         session.last_activity = time.time()
+                    if self.output_observer is not None:
+                        try:
+                            self.output_observer(session, decoded)
+                        except Exception:  # noqa: BLE001 — never break the reader
+                            pass
                     self._fanout(session, {"t": "output", "data": decoded})
                 else:
                     try:

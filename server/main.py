@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import agents, config
+from . import agents, config, user_content
 from .admin import router as admin_router
 from .auth import Principal, get_current_user, is_admin
 from .bootstrap import install
@@ -36,10 +36,26 @@ logger = logging.getLogger("workshop-terminal")
 _STATIC_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "static"))
 
 
+def _observe_output(session, chunk: str) -> None:
+    """Spot content-pack topics in terminal output to drive contextual
+    insights. Only topic names are recorded — never the text itself."""
+    if not config.topic_detection_enabled():
+        return
+    topics = content_service.scan_topics(chunk)
+    if not topics:
+        return
+    user = user_manager.peek(session.owner_email)
+    if user:
+        now = time.time()
+        for topic in topics:
+            user.topics[topic] = now
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
     session_manager.attach_loop(loop)
+    session_manager.output_observer = _observe_output
     event_hub.attach_loop(loop)
     os.makedirs(config.users_root(), exist_ok=True)
     if not config.local_dev():
@@ -130,12 +146,22 @@ def create_session(body: CreateSessionBody, principal: Principal = Depends(get_c
             raise HTTPException(status_code=503, detail=str(e))
         logger.warning("bash session for %s without credentials: %s", principal.name, e)
 
+    # Instructions, subagents, skills links, git identity, workspace-sync hook.
+    user_content.provision(user)
+
+    # 'Agent speaks first': the user's first session of a greeting-enabled
+    # agent launches with the lab opening prompt so attendees are greeted
+    # without needing to know what to type.
+    greeting = agent.get("greeting") if agent["id"] not in user.greeted_agents else None
+
     try:
         session = session_manager.create(
-            user, agent["id"], agents.launch_command(agent), agent["label"],
+            user, agent["id"], agents.launch_command(agent, greeting), agent["label"],
         )
     except SessionLimitError as e:
         raise HTTPException(status_code=429, detail=str(e))
+    if greeting:
+        user.greeted_agents.add(agent["id"])
     return {"session": session.to_dict()}
 
 
@@ -150,17 +176,22 @@ def close_session(session_id: str, principal: Principal = Depends(get_current_us
 
 @app.get("/api/nuggets")
 def get_nuggets(principal: Principal = Depends(get_current_user)):
+    from .content import TOPIC_TTL_SECONDS
+
     now = time.time()
     triggers: set[str] = set()
     sessions = session_manager.list_for(principal.name)
     for session in sessions:
         triggers.add(f"{session.agent_id}_active")
     user = user_manager.peek(principal.name)
-    if user and user.last_seen and now - user.last_seen > 600:
-        triggers.add("idle_10m")
+    live_topics: set[str] = set()
+    if user:
+        if user.last_seen and now - user.last_seen > 600:
+            triggers.add("idle_10m")
+        live_topics = {t for t, at in user.topics.items() if now - at < TOPIC_TTL_SECONDS}
     return {
         "phase": content_service.phase,
-        "nuggets": content_service.nuggets_for(triggers),
+        "nuggets": content_service.nuggets_for(triggers, live_topics),
     }
 
 
