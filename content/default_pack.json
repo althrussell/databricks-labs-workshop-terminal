@@ -22,7 +22,45 @@
     "features": {
       "nuggets_pane": true,
       "operator_panel": true
-    }
+    },
+    "workspace_links": [
+      {
+        "label": "Genie",
+        "path": "/genie",
+        "icon": "sparkles",
+        "description": "Ask your data questions in plain English"
+      },
+      {
+        "label": "SQL Editor",
+        "path": "/sql/editor",
+        "icon": "database",
+        "description": "Query your tables directly"
+      },
+      {
+        "label": "Catalog",
+        "path": "/explore/data",
+        "icon": "folder-tree",
+        "description": "Browse everything you've built, governed"
+      },
+      {
+        "label": "Dashboards",
+        "path": "/dashboards",
+        "icon": "bar-chart-3",
+        "description": "AI/BI dashboards on live data"
+      },
+      {
+        "label": "Jobs & Pipelines",
+        "path": "/jobs",
+        "icon": "workflow",
+        "description": "Schedules, runs, and pipelines"
+      },
+      {
+        "label": "Workspace",
+        "path": "/browse",
+        "icon": "home",
+        "description": "Your files and synced projects"
+      }
+    ]
   },
   "topics": {
     "lakebase": [
@@ -219,7 +257,8 @@
         "topic:lakebase"
       ],
       "weight": 10,
-      "cta": "Add Postgres to your build →"
+      "cta": "Add Postgres to your build →",
+      "prompt": "Add a Lakebase Postgres database to my app and store its state there."
     },
     {
       "id": "topic-unity-catalog",
@@ -253,7 +292,8 @@
         "topic:genie"
       ],
       "weight": 10,
-      "cta": "Hand it to the business →"
+      "cta": "Hand it to the business →",
+      "prompt": "Set up a Genie space over the tables we built so business users can query them in plain English."
     },
     {
       "id": "topic-pipelines",
@@ -270,7 +310,8 @@
         "topic:pipelines"
       ],
       "weight": 10,
-      "cta": "Make it production-grade →"
+      "cta": "Make it production-grade →",
+      "prompt": "Add data quality expectations to my pipeline and show me what fails."
     },
     {
       "id": "topic-vector-search",
@@ -287,7 +328,8 @@
         "topic:vector-search"
       ],
       "weight": 10,
-      "cta": "Power your RAG →"
+      "cta": "Power your RAG →",
+      "prompt": "Create a Vector Search index over my data and wire up a simple RAG query."
     },
     {
       "id": "topic-mlflow",
@@ -304,7 +346,8 @@
         "topic:mlflow"
       ],
       "weight": 10,
-      "cta": "Trace your agent →"
+      "cta": "Trace your agent →",
+      "prompt": "Enable MLflow tracing for what we're building and show me a trace."
     },
     {
       "id": "topic-serving",
@@ -338,7 +381,8 @@
         "topic:apps"
       ],
       "weight": 10,
-      "cta": "Ship it as an app →"
+      "cta": "Ship it as an app →",
+      "prompt": "Deploy what we've built as a Databricks App."
     },
     {
       "id": "topic-dashboards",
@@ -355,7 +399,8 @@
         "topic:dashboards"
       ],
       "weight": 8,
-      "cta": "Visualize it →"
+      "cta": "Visualize it →",
+      "prompt": "Create an AI/BI dashboard for the table we just built."
     },
     {
       "id": "topic-jobs",
@@ -372,7 +417,8 @@
         "topic:jobs"
       ],
       "weight": 8,
-      "cta": "Schedule it →"
+      "cta": "Schedule it →",
+      "prompt": "Schedule what we built as a daily job with email notifications."
     },
     {
       "id": "wrap-keep-going",
@@ -458,5 +504,45 @@
       "weight": 10,
       "pinned": true
     }
-  ]
+  ],
+  "prompts": {
+    "all": [
+      {
+        "label": "What can you do here?",
+        "prompt": "What can you help me build on Databricks today? Give me three concrete options."
+      }
+    ],
+    "intro": [
+      {
+        "label": "Explore the workshop data",
+        "prompt": "Explore what data is available in this workspace and show me something interesting about it."
+      }
+    ],
+    "setup": [
+      {
+        "label": "Check my setup",
+        "prompt": "Run databricks current-user me and confirm my environment is ready to build."
+      }
+    ],
+    "build": [
+      {
+        "label": "Build my first pipeline",
+        "prompt": "Create a declarative pipeline with a bronze/silver/gold flow over the workshop dataset, with data quality checks."
+      },
+      {
+        "label": "Make a dashboard",
+        "prompt": "Create an AI/BI dashboard for the tables we have built so far."
+      },
+      {
+        "label": "Ship it as an app",
+        "prompt": "Turn what we have built into a small Databricks App with a clean UI."
+      }
+    ],
+    "wrap": [
+      {
+        "label": "Sum up what I built",
+        "prompt": "Summarize everything we built today, commit any uncommitted work, and tell me how to keep going in my own workspace."
+      }
+    ]
+  }
 }

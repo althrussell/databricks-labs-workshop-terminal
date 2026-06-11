@@ -83,3 +83,58 @@ def test_wrap_phase_has_certificate_card(client):
     cards = content_service.nuggets_for(set(), set())
     cert = [n for n in cards if n["id"] == "wrap-certificate"]
     assert cert and cert[0]["pinned"] and cert[0]["link"]["url"] == "#certificate"
+
+
+def test_type_into_session_owner_gated(client, monkeypatch):
+    from .conftest import BOB
+
+    monkeypatch.setenv("WORKSHOP_PAT", "dapi-test-token")
+    resp = client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE)
+    sid = resp.json()["session"]["id"]
+
+    # Bob can't type into Alice's session.
+    resp = client.post(f"/api/sessions/{sid}/type", json={"text": "evil"},
+                       headers=BOB)
+    assert resp.status_code == 404
+
+    # Alice can; newlines are stripped so nothing auto-submits.
+    resp = client.post(f"/api/sessions/{sid}/type",
+                       json={"text": "echo hello\nrm -rf /"}, headers=ALICE)
+    assert resp.status_code == 200
+
+    resp = client.post(f"/api/sessions/{sid}/type", json={"text": "  \n "},
+                       headers=ALICE)
+    assert resp.status_code == 422
+
+
+def test_nuggets_include_phase_prompts(client, as_admin):
+    client.post("/api/admin/phase", json={"phase": "build"},
+                headers={"X-Forwarded-Email": "op@example.com"})
+    data = client.get("/api/nuggets", headers=ALICE).json()
+    labels = [p["label"] for p in data["prompts"]]
+    assert "Build my first pipeline" in labels
+    assert "What can you do here?" in labels  # "all" prompts always included
+
+
+def test_admin_stats_harvest(client, as_admin, monkeypatch):
+    monkeypatch.setenv("WORKSHOP_PAT", "dapi-test-token")
+    client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE)
+    data = client.get("/api/admin/stats",
+                      headers={"X-Forwarded-Email": "op@example.com"}).json()
+    assert "instance" in data and "phase" in data["instance"]
+    emails = [u["email"] for u in data["users"]]
+    assert "alice@example.com" in emails
+    user = next(u for u in data["users"] if u["email"] == "alice@example.com")
+    assert {"minutes_building", "agent_sessions", "topics", "code"} <= set(user)
+
+
+def test_admin_stats_requires_admin(client, as_non_admin):
+    resp = client.get("/api/admin/stats", headers=ALICE)
+    assert resp.status_code == 403
+
+
+def test_workspace_links_in_config(client):
+    cfg = client.get("/api/config", headers=ALICE).json()
+    assert cfg["workspace_url"].startswith("https://")
+    labels = [l["label"] for l in cfg["shell"]["workspace_links"]]
+    assert "Genie" in labels and "SQL Editor" in labels

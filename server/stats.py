@@ -28,6 +28,11 @@ _CODE_EXTENSIONS = {
     ".yaml", ".yml", ".json", ".md", ".html", ".css", ".toml", ".ipynb",
 }
 
+# Code stats walk git repos — cache per user so periodic harvesting (Control
+# Tower polls /api/admin/stats) stays cheap.
+_CODE_CACHE_TTL = 300
+_code_cache: dict[str, tuple[float, dict]] = {}
+
 
 def _git(repo: str, *args: str) -> str | None:
     try:
@@ -40,7 +45,17 @@ def _git(repo: str, *args: str) -> str | None:
         return None
 
 
-def _code_stats(user: User) -> dict:
+def _code_stats(user: User, *, fresh: bool = True) -> dict:
+    if not fresh:
+        cached = _code_cache.get(user.email)
+        if cached and time.time() - cached[0] < _CODE_CACHE_TTL:
+            return cached[1]
+    result = _code_stats_uncached(user)
+    _code_cache[user.email] = (time.time(), result)
+    return result
+
+
+def _code_stats_uncached(user: User) -> dict:
     projects = os.path.join(user.home, "projects")
     repos = commits = files = lines = 0
     if not os.path.isdir(projects):
@@ -99,17 +114,32 @@ def _workspace_resources() -> dict:
     }
 
 
-def gather(user: User) -> dict:
+def gather_user(user: User, *, fresh: bool = True) -> dict:
+    """Per-user stats (no workspace census — that's instance-level)."""
     now = time.time()
     minutes = int((now - user.first_seen) / 60) if user.first_seen else 0
     agent_sessions = sum(
         n for agent, n in user.sessions_launched.items() if agent != "bash"
     )
     return {
+        "email": user.email,
         "minutes_building": minutes,
         "agent_sessions": agent_sessions,
         "terminal_sessions": sum(user.sessions_launched.values()),
         "topics": sorted(user.topics.keys()),
-        "code": _code_stats(user),
+        "code": _code_stats(user, fresh=fresh),
+    }
+
+
+def gather(user: User) -> dict:
+    """Certificate view: this user's stats + the workspace census."""
+    return {**gather_user(user), "resources": _workspace_resources()}
+
+
+def gather_all(users: list[User]) -> dict:
+    """Harvest view for Control Tower: every user (cached code stats) plus
+    one instance-level workspace census."""
+    return {
+        "users": [gather_user(u, fresh=False) for u in users],
         "resources": _workspace_resources(),
     }

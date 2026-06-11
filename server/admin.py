@@ -64,6 +64,22 @@ def broadcast(body: Broadcast):
     return {"status": "ok"}
 
 
+@router.get("/stats")
+def harvest_stats():
+    """Harvest endpoint for Control Tower: per-attendee build stats (cached
+    code stats) + one instance-level workspace census + instance meta.
+    Persisted into CT's Lakebase for durable event-impact reporting."""
+    from . import stats
+
+    payload = stats.gather_all(user_manager.all())
+    payload["instance"] = {
+        "phase": content_service.phase,
+        "started_at": content_service.started_at,
+        "session_count": session_manager.count_all(),
+    }
+    return payload
+
+
 @router.get("/presence")
 def presence():
     now = time.time()

@@ -4,6 +4,18 @@ export interface ShellLink {
   icon: string;
 }
 
+export interface WorkspaceLink {
+  label: string;
+  path: string;
+  icon: string;
+  description: string;
+}
+
+export interface IdeaPrompt {
+  label: string;
+  prompt: string;
+}
+
 export interface CredentialStatus {
   configured: boolean;
   rotating: boolean;
@@ -20,7 +32,12 @@ export interface AppConfig {
     event_name: string;
     cobranded: boolean;
   };
-  shell: { links: ShellLink[]; features: Record<string, boolean> };
+  workspace_url: string;
+  shell: {
+    links: ShellLink[];
+    workspace_links: WorkspaceLink[];
+    features: Record<string, boolean>;
+  };
   phase: string;
   broadcast: Broadcast | null;
   limits: { max_sessions_per_user: number };
@@ -54,6 +71,7 @@ export interface Nugget {
   tags: string[];
   pinned: boolean;
   cta: string | null;
+  prompt: string | null;
   matched_topic: string | null;
   nudge: boolean;
 }
@@ -115,7 +133,13 @@ export const api = {
       body: JSON.stringify({ agent_id: agentId }),
     }),
   closeSession: (id: string) => request(`/api/sessions/${id}`, { method: "DELETE" }),
-  nuggets: () => request<{ phase: string; nuggets: Nugget[] }>("/api/nuggets"),
+  typeIntoSession: (id: string, text: string) =>
+    request(`/api/sessions/${id}/type`, {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
+  nuggets: () =>
+    request<{ phase: string; nuggets: Nugget[]; prompts: IdeaPrompt[] }>("/api/nuggets"),
   adminState: () =>
     request<{ phase: string; phases: string[]; nugget_count: number }>("/api/admin/state"),
   adminPresence: () =>

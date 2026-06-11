@@ -8,6 +8,7 @@ interface Props {
   collapsed: boolean;
   onToggle: () => void;
   onCertificate: () => void;
+  onTryPrompt: (prompt: string) => void;
 }
 
 const CARD_HEIGHT = 200; // estimated card footprint incl. gap — drives fit count
@@ -16,7 +17,7 @@ const ROTATE_MS = 25000;
 // The pane never scrolls: it shows only as many cards as fit, with the most
 // relevant (contextually matched, then pinned) first, and rotates the
 // remaining slots through the ranked list.
-export default function NuggetsPane({ collapsed, onToggle, onCertificate }: Props) {
+export default function NuggetsPane({ collapsed, onToggle, onCertificate, onTryPrompt }: Props) {
   const [nuggets, setNuggets] = useState<Nugget[]>([]);
   const [phase, setPhase] = useState("");
   const [offset, setOffset] = useState(0);
@@ -127,16 +128,27 @@ export default function NuggetsPane({ collapsed, onToggle, onCertificate }: Prop
               className="nugget-body"
               dangerouslySetInnerHTML={{ __html: marked.parse(nugget.markdown) as string }}
             />
-            {nugget.link &&
-              (nugget.link.url === "#certificate" ? (
-                <button className="nugget-link nugget-link-action" onClick={onCertificate}>
-                  {nugget.link.label} <ExternalLink size={12} />
+            <div className="nugget-actions">
+              {nugget.prompt && (
+                <button
+                  className="nugget-link nugget-link-action"
+                  title={nugget.prompt}
+                  onClick={() => onTryPrompt(nugget.prompt!)}
+                >
+                  Type it into my terminal →
                 </button>
-              ) : (
-                <a className="nugget-link" href={nugget.link.url} target="_blank" rel="noreferrer">
-                  {nugget.link.label} <ExternalLink size={12} />
-                </a>
-              ))}
+              )}
+              {nugget.link &&
+                (nugget.link.url === "#certificate" ? (
+                  <button className="nugget-link nugget-link-action" onClick={onCertificate}>
+                    {nugget.link.label} <ExternalLink size={12} />
+                  </button>
+                ) : (
+                  <a className="nugget-link" href={nugget.link.url} target="_blank" rel="noreferrer">
+                    {nugget.link.label} <ExternalLink size={12} />
+                  </a>
+                ))}
+            </div>
           </article>
         ))}
       </div>

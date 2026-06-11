@@ -4,6 +4,7 @@ import {
   BookOpen,
   Download,
   GraduationCap,
+  House,
   Link as LinkIcon,
   ShieldCheck,
   X,
@@ -35,8 +36,8 @@ export default function App() {
   const [certBusy, setCertBusy] = useState(false);
   const [error, setError] = useState("");
   const [nuggetsCollapsed, setNuggetsCollapsed] = useState(false);
-  const [view, setView] = useState<"terminals" | "operator">(
-    location.pathname.startsWith("/operator") ? "operator" : "terminals"
+  const [view, setView] = useState<"home" | "terminals" | "operator">(
+    location.pathname.startsWith("/operator") ? "operator" : "home"
   );
 
   const refreshAgents = useCallback(() => {
@@ -74,18 +75,47 @@ export default function App() {
     if (allReady) refreshAgents();
   }, [allReady, refreshAgents]);
 
-  async function launch(agentId: string) {
+  async function launch(agentId: string): Promise<SessionInfo | null> {
     setLaunching(agentId);
     setError("");
     try {
       const { session } = await api.createSession(agentId);
       setSessions((prev) => [...prev, session]);
       setActiveId(session.id);
+      setView("terminals");
       if (agentId !== "bash") setHintSessionId(session.id);
+      return session;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      return null;
     } finally {
       setLaunching(null);
+    }
+  }
+
+  // Ideation chips / insight-card prompts: type the text into the attendee's
+  // agent session UNSENT — they press Enter. Opens a Claude session if none.
+  async function ideaToSession(prompt: string) {
+    let target =
+      sessions.find((s) => s.agent_id === "claude" && !s.exited) ??
+      sessions.find((s) => !s.exited);
+    let fresh = false;
+    if (!target) {
+      target = (await launch("claude")) ?? undefined;
+      fresh = true;
+      if (!target) return;
+    } else {
+      setActiveId(target.id);
+      setView("terminals");
+    }
+    try {
+      if (fresh) {
+        // Give the CLI a moment to boot before the text lands at its prompt.
+        await new Promise((r) => setTimeout(r, 4000));
+      }
+      await api.typeIntoSession(target.id, prompt);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -173,6 +203,14 @@ export default function App() {
               </a>
             );
           })}
+          <button
+            className={`operator-toggle ${view === "home" ? "operator-toggle-active" : ""}`}
+            onClick={() => setView("home")}
+            title="Back to Home — your sessions keep running"
+          >
+            <House size={14} />
+            Home
+          </button>
           <button className="operator-toggle" onClick={openCertificate} title="Download your certificate">
             <Award size={14} />
             Certificate
@@ -213,7 +251,7 @@ export default function App() {
       ) : (
         <div className="main">
           <div className="work-area">
-            {sessions.length > 0 && (
+            {sessions.length > 0 && view === "terminals" && (
             <div className="toolbar">
               <LaunchBar agents={agents} launching={launching} onLaunch={launch} />
               <div className="tabs">
@@ -250,19 +288,23 @@ export default function App() {
               </div>
             )}
             <div className="terminal-stage">
-              {sessions.length === 0 && (
+              {(view === "home" || sessions.length === 0) && (
                 <Hero
                   agents={agents}
                   eventName={branding?.event_name ?? ""}
+                  workspaceUrl={config?.workspace_url ?? ""}
+                  workspaceLinks={config?.shell.workspace_links ?? []}
+                  hasSessions={sessions.length > 0}
                   launching={launching}
                   onLaunch={launch}
+                  onIdea={ideaToSession}
                 />
               )}
               {sessions.map((session) => (
                 <TerminalView
                   key={session.id}
                   sessionId={session.id}
-                  active={session.id === activeId}
+                  active={view === "terminals" && session.id === activeId}
                   onExit={removeSession}
                 />
               ))}
@@ -274,6 +316,7 @@ export default function App() {
               collapsed={nuggetsCollapsed}
               onToggle={() => setNuggetsCollapsed((c) => !c)}
               onCertificate={openCertificate}
+              onTryPrompt={ideaToSession}
             />
           )}
         </div>

@@ -80,6 +80,7 @@ def get_config(principal: Principal = Depends(get_current_user)):
     return {
         "user": {"email": principal.name, "is_admin": is_admin(principal)},
         "branding": config.branding(),
+        "workspace_url": config.databricks_host(),
         "shell": pack.shell.model_dump(),
         "phase": content_service.phase,
         "broadcast": (b.model_dump() if (b := content_service.active_broadcast()) else None),
@@ -159,6 +160,29 @@ def create_session(body: CreateSessionBody, principal: Principal = Depends(get_c
     return {"session": session.to_dict()}
 
 
+class TypeBody(BaseModel):
+    text: str
+
+
+@app.post("/api/sessions/{session_id}/type")
+def type_into_session(session_id: str, body: TypeBody,
+                      principal: Principal = Depends(get_current_user)):
+    """Type text into the attendee's own PTY, UNSENT — the visible, user-
+    initiated channel for ideation chips and insight-card prompts. The
+    attendee presses Enter; we never submit on their behalf."""
+    session = session_manager.get(session_id, principal.name)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    text = body.text.replace("\n", " ").replace("\r", " ")[:500]
+    if not text.strip():
+        raise HTTPException(status_code=422, detail="Nothing to type")
+    try:
+        session.write_input(text)
+    except OSError:
+        raise HTTPException(status_code=409, detail="Session is not accepting input")
+    return {"status": "ok"}
+
+
 @app.delete("/api/sessions/{session_id}")
 def close_session(session_id: str, principal: Principal = Depends(get_current_user)):
     session = session_manager.get(session_id, principal.name)
@@ -193,6 +217,7 @@ def get_nuggets(principal: Principal = Depends(get_current_user)):
     return {
         "phase": content_service.phase,
         "nuggets": content_service.nuggets_for(triggers, live_topics, idle_minutes),
+        "prompts": content_service.prompts_for_phase(),
     }
 
 

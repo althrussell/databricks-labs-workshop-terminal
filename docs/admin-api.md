@@ -78,6 +78,14 @@ Trigger vocabulary: `always`, `claude_active`, `codex_active`, `bash_active`,
 `idle_10m`, `elapsed_gt_<minutes>`, and `topic:<name>`. Empty `triggers` =
 always shown; empty `phases` = all phases.
 
+**Ideation prompts:** the optional pack-level `prompts` map
+(`{"all": [...], "build": [{"label": "...", "prompt": "..."}]}`) renders
+clickable chips on Home and feeds the per-phase ideas; clicking types the
+prompt into the attendee's agent session **unsent**. Nuggets may also carry a
+`prompt` field — the card gains a "type it into my terminal" action. The
+shell config gains `workspace_links` (`{label, path, icon, description}`)
+rendered as deep-link tiles into the attendee's workspace.
+
 **Topic detection:** the optional pack-level `topics` map
 (`{"lakebase": ["lakebase", "postgres", ...]}`) drives contextual insights —
 when a keyword appears in an attendee's terminal output, nuggets with the
@@ -103,6 +111,15 @@ Levels: `info`, `success`, `warning`.
 ### `GET /api/admin/presence`
 Per-attendee status: online (active in the last 60 s), first/last seen,
 PAT health, open sessions (agent, created, last activity).
+
+### `GET /api/admin/stats`
+Harvest endpoint for Control Tower's event-impact capture: per-attendee
+build stats (`email`, `minutes_building`, `agent_sessions`,
+`terminal_sessions`, `topics`, `code` {projects, commits, files, lines}),
+one instance-level workspace resource census, and `instance`
+{phase, started_at, session_count}. Code stats are cached ~5 minutes, so
+periodic polling is cheap. Control Tower persists snapshots into its
+Lakebase for reporting that survives workspace teardown.
 
 ## CLI usage
 

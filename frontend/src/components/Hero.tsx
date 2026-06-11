@@ -1,11 +1,31 @@
 import { useEffect, useState } from "react";
-import { Bot, Check, Loader2, Sparkles, SquareTerminal } from "lucide-react";
-import { api, AgentInfo } from "../api";
+import {
+  BarChart3,
+  Bot,
+  Check,
+  Database,
+  FolderTree,
+  Home,
+  Lightbulb,
+  Link as LinkIcon,
+  Loader2,
+  Sparkles,
+  SquareTerminal,
+  Wand2,
+  Workflow,
+} from "lucide-react";
+import { api, AgentInfo, IdeaPrompt, Nugget, WorkspaceLink } from "../api";
 
 const ICONS: Record<string, typeof Bot> = {
   sparkles: Sparkles,
   bot: Bot,
   terminal: SquareTerminal,
+  database: Database,
+  "folder-tree": FolderTree,
+  "bar-chart-3": BarChart3,
+  workflow: Workflow,
+  home: Home,
+  link: LinkIcon,
 };
 
 const STEP_LABELS: Record<string, string> = {
@@ -19,14 +39,29 @@ const STEP_LABELS: Record<string, string> = {
 interface Props {
   agents: AgentInfo[];
   eventName: string;
+  workspaceUrl: string;
+  workspaceLinks: WorkspaceLink[];
+  hasSessions: boolean;
   launching: string | null;
   onLaunch: (agentId: string) => void;
+  onIdea: (prompt: string) => void;
 }
 
-// The first thing an attendee sees: an invitation, not an empty void.
-export default function Hero({ agents, eventName, launching, onLaunch }: Props) {
+// Home: the place attendees launch from, get ideas from, and come back to.
+export default function Hero({
+  agents,
+  eventName,
+  workspaceUrl,
+  workspaceLinks,
+  hasSessions,
+  launching,
+  onLaunch,
+  onIdea,
+}: Props) {
   const [steps, setSteps] = useState<Record<string, { status: string }> | null>(null);
   const [installing, setInstalling] = useState(false);
+  const [ideas, setIdeas] = useState<IdeaPrompt[]>([]);
+  const [tips, setTips] = useState<Nugget[]>([]);
 
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | null = null;
@@ -44,6 +79,20 @@ export default function Hero({ agents, eventName, launching, onLaunch }: Props) 
     return () => {
       if (timer) clearInterval(timer);
     };
+  }, []);
+
+  useEffect(() => {
+    const refresh = () =>
+      api
+        .nuggets()
+        .then((data) => {
+          setIdeas(data.prompts);
+          setTips(data.nuggets.filter((n) => !n.nudge).slice(0, 2));
+        })
+        .catch(() => undefined);
+    refresh();
+    const timer = setInterval(refresh, 60000);
+    return () => clearInterval(timer);
   }, []);
 
   return (
@@ -113,9 +162,67 @@ export default function Hero({ agents, eventName, launching, onLaunch }: Props) 
           </div>
         )}
 
-        <div className="hero-hint">
-          💡 Insights about what you're building appear on the right as you work.
-        </div>
+        {ideas.length > 0 && (
+          <div className="hero-section">
+            <div className="hero-section-title">
+              <Wand2 size={13} /> Need an idea? One click types it into your agent
+            </div>
+            <div className="hero-chips">
+              {ideas.map((idea) => (
+                <button
+                  key={idea.label}
+                  className="hero-chip"
+                  title={idea.prompt}
+                  onClick={() => onIdea(idea.prompt)}
+                >
+                  {idea.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {workspaceUrl && workspaceLinks.length > 0 && (
+          <div className="hero-section">
+            <div className="hero-section-title">
+              <LinkIcon size={13} /> Dive into your workspace
+            </div>
+            <div className="hero-tiles">
+              {workspaceLinks.map((link) => {
+                const Icon = ICONS[link.icon] ?? LinkIcon;
+                return (
+                  <a
+                    key={link.label}
+                    className="hero-tile"
+                    href={`${workspaceUrl}${link.path}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={link.description}
+                  >
+                    <Icon size={15} />
+                    <span>{link.label}</span>
+                  </a>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {tips.length > 0 && (
+          <div className="hero-tips">
+            {tips.map((tip) => (
+              <span key={tip.id} className="hero-tip">
+                <Lightbulb size={12} /> <strong>{tip.title}</strong>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {!hasSessions && (
+          <div className="hero-hint">
+            💡 Insights about what you're building appear on the right as you work.
+          </div>
+        )}
       </div>
     </div>
   );

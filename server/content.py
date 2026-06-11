@@ -47,6 +47,7 @@ class Nugget(BaseModel):
     phases: list[str] = Field(default_factory=list)  # empty = all phases
     triggers: list[str] = Field(default_factory=list)  # empty = always
     cta: str | None = None  # badge shown when the card is contextually matched
+    prompt: str | None = None  # typed (unsent) into the active session on CTA click
     weight: int = 1
     pinned: bool = False
 
@@ -57,8 +58,27 @@ class ShellLink(BaseModel):
     icon: str = "link"
 
 
+class WorkspaceLink(BaseModel):
+    """Deep link into the attendee's own workspace (path joined to the
+    workspace URL at render time)."""
+
+    label: str
+    path: str
+    icon: str = "link"
+    description: str = ""
+
+
+class IdeaPrompt(BaseModel):
+    """An ideation chip: clicking types `prompt` into an agent session,
+    unsent — the attendee presses Enter."""
+
+    label: str
+    prompt: str
+
+
 class ShellConfig(BaseModel):
     links: list[ShellLink] = Field(default_factory=list)
+    workspace_links: list[WorkspaceLink] = Field(default_factory=list)
     features: dict[str, bool] = Field(default_factory=dict)
 
 
@@ -69,6 +89,8 @@ class ContentPack(BaseModel):
     # topic -> keywords spotted in terminal output. Nuggets reference topics
     # with a "topic:<name>" trigger and rank first while the topic is live.
     topics: dict[str, list[str]] = Field(default_factory=dict)
+    # phase -> ideation chips ("all" applies to every phase).
+    prompts: dict[str, list[IdeaPrompt]] = Field(default_factory=dict)
     nuggets: list[Nugget] = Field(default_factory=list)
 
 
@@ -126,6 +148,12 @@ class ContentService:
     def phase(self) -> str:
         with self._lock:
             return self._phase
+
+    def prompts_for_phase(self) -> list[dict]:
+        with self._lock:
+            pack, phase = self._pack, self._phase
+        chips = list(pack.prompts.get("all", [])) + list(pack.prompts.get(phase, []))
+        return [c.model_dump() for c in chips]
 
     def active_broadcast(self) -> Broadcast | None:
         with self._lock:
