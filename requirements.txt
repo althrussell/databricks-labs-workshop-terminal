@@ -3,4 +3,4 @@ uvicorn[standard]>=0.30,<1
 requests>=2.32,<3
 pydantic>=2.7,<3
 reportlab>=4.2,<5
-svglib>=1.5,<2
+pillow>=10,<12

@@ -3,7 +3,9 @@
 Design follows the Databricks v2 editorial system (html-slides skill): oat
 ground, navy ink, a single lava accent, DM Sans / DM Mono typography, the real
 lockup in the header, and the diamond symbol as a faint background watermark.
-All assets are vendored under assets/brand/ — no network at render time.
+The brand marks are pre-rasterized transparent PNGs vendored under
+assets/brand/ (the SVG route needed svglib→lxml, which the Apps platform's
+package install rejected). No network at render time.
 """
 
 from __future__ import annotations
@@ -13,9 +15,9 @@ import logging
 import os
 from datetime import date
 
-from reportlab.graphics import renderPDF
-from reportlab.lib.colors import Color, HexColor
+from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
@@ -64,43 +66,23 @@ def _ensure_fonts() -> dict[str, str]:
     }
 
 
-def _svg_drawing(filename: str):
+def _brand_image(filename: str) -> ImageReader | None:
     try:
-        from svglib.svglib import svg2rlg
-
-        return svg2rlg(os.path.join(_BRAND, filename))
+        return ImageReader(os.path.join(_BRAND, filename))
     except Exception as e:  # noqa: BLE001
-        logger.warning("svg asset %s unavailable: %s", filename, e)
+        logger.warning("brand image %s unavailable: %s", filename, e)
         return None
 
 
-def _recolor(node, color: Color) -> None:
-    """Recursively repaint a reportlab drawing (for the faint watermark).
-
-    Sets fill unconditionally: svglib leaves ``fillColor`` as None on paths
-    that inherit their paint from a parent group, so a None-guard would skip
-    exactly the shapes that need repainting."""
-    for child in getattr(node, "contents", []) or []:
-        if hasattr(child, "fillColor"):
-            child.fillColor = color
-        if hasattr(child, "fillOpacity"):
-            child.fillOpacity = color.alpha
-        if hasattr(child, "strokeColor"):
-            child.strokeColor = None
-        _recolor(child, color)
-
-
-def _draw_svg(c: canvas.Canvas, drawing, x: float, y: float, height: float) -> float:
-    """Draw an svglib drawing scaled to `height`; returns rendered width."""
-    if drawing is None or not drawing.height:
+def _draw_image(c: canvas.Canvas, image: ImageReader | None,
+                x: float, y: float, height: float) -> float:
+    """Draw a transparent PNG scaled to `height`; returns rendered width."""
+    if image is None:
         return 0.0
-    scale = height / drawing.height
-    c.saveState()
-    c.translate(x, y)
-    c.scale(scale, scale)
-    renderPDF.draw(drawing, c, 0, 0)
-    c.restoreState()
-    return drawing.width * scale
+    iw, ih = image.getSize()
+    width = height * iw / ih
+    c.drawImage(image, x, y, width=width, height=height, mask="auto")
+    return width
 
 
 def _stat_value(value: int | str) -> str:
@@ -121,19 +103,16 @@ def build_pdf(name: str, stats: dict) -> bytes:
     c.setFillColor(OAT)
     c.rect(0, 0, width, height, fill=1, stroke=0)
 
-    # Watermark: the diamond symbol, huge and faint, bleeding off bottom-right.
-    symbol = _svg_drawing("databricks-symbol-navy.svg")
-    if symbol is not None:
-        _recolor(symbol, Color(0.106, 0.192, 0.224, alpha=0.05))  # navy @ 5%
-        _draw_svg(c, symbol, width - 330, -130, 460)
+    # Watermark: the diamond symbol, huge and faint (pre-tinted PNG, 5% navy),
+    # bleeding off bottom-right.
+    _draw_image(c, _brand_image("watermark-symbol.png"), width - 330, -130, 460)
 
     # Lava hairline top — the single accent rule (v2 eyebrow grammar).
     c.setFillColor(LAVA)
     c.rect(0, height - 6, width, 6, fill=1, stroke=0)
 
     # Header: real lockup + date
-    lockup = _svg_drawing("lockup-primary-navy.svg")
-    _draw_svg(c, lockup, 64, height - 92, 30)
+    _draw_image(c, _brand_image("lockup-navy.png"), 64, height - 92, 30)
     c.setFillColor(NAVY_500)
     c.setFont(f["mono"], 10)
     c.drawRightString(width - 64, height - 82, date.today().strftime("%B %d, %Y").upper())
