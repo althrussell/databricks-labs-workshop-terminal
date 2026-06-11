@@ -149,19 +149,12 @@ def create_session(body: CreateSessionBody, principal: Principal = Depends(get_c
     # Instructions, subagents, skills links, git identity, workspace-sync hook.
     user_content.provision(user)
 
-    # 'Agent speaks first': the user's first session of a greeting-enabled
-    # agent launches with the lab opening prompt so attendees are greeted
-    # without needing to know what to type.
-    greeting = agent.get("greeting") if agent["id"] not in user.greeted_agents else None
-
     try:
         session = session_manager.create(
-            user, agent["id"], agents.launch_command(agent, greeting), agent["label"],
+            user, agent["id"], agents.launch_command(agent), agent["label"],
         )
     except SessionLimitError as e:
         raise HTTPException(status_code=429, detail=str(e))
-    if greeting:
-        user.greeted_agents.add(agent["id"])
     return {"session": session.to_dict()}
 
 

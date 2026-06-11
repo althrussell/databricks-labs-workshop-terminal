@@ -80,6 +80,13 @@ def lab_coach_enabled() -> bool:
     return _env("LAB_COACH", "true").lower() not in ("false", "0", "no", "off")
 
 
+def auto_mode_enabled() -> bool:
+    """Lab 'auto mode': agents run without permission prompts. Attendees work
+    in isolated per-user HOMEs inside a disposable workshop container, so the
+    zero-prompt flow is the right default (CoDA lab-profile behaviour)."""
+    return _env("WORKSHOP_AUTO_MODE", "true").lower() not in ("false", "0", "no", "off")
+
+
 def topic_detection_enabled() -> bool:
     """Coarse keyword spotting on terminal output to drive contextual
     insights. Only topic flags are recorded — terminal content is never

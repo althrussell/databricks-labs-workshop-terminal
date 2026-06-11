@@ -27,6 +27,7 @@ export default function App() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [launching, setLaunching] = useState<string | null>(null);
+  const [hintSessionId, setHintSessionId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [nuggetsCollapsed, setNuggetsCollapsed] = useState(false);
   const [view, setView] = useState<"terminals" | "operator">(
@@ -75,6 +76,7 @@ export default function App() {
       const { session } = await api.createSession(agentId);
       setSessions((prev) => [...prev, session]);
       setActiveId(session.id);
+      if (agentId !== "bash") setHintSessionId(session.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -195,6 +197,16 @@ export default function App() {
               </div>
             </div>
 
+            {hintSessionId && hintSessionId === activeId && (
+              <div className="coach-hint">
+                <span>
+                  👋 Your coach is ready — just say <strong>hi</strong> to begin.
+                </span>
+                <button className="icon-btn" onClick={() => setHintSessionId(null)}>
+                  <X size={12} />
+                </button>
+              </div>
+            )}
             <div className="terminal-stage">
               {sessions.length === 0 && (
                 <div className="empty-state">

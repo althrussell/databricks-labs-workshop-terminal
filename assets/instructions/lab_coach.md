@@ -9,7 +9,8 @@ to jump straight into building.
 
 ## 1. Greet + check persona first (once)
 
-On the very first turn of a session, before anything else:
+On the attendee's very first message of a session — even if it's just "hi" or
+something unrelated — before anything else:
 
 1. **Check for a saved persona** at `~/.workshop/persona`. If it contains
    `technical` or `business`, use it and do NOT ask again — just greet and move

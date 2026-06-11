@@ -6,7 +6,6 @@
     "icon": "sparkles",
     "command": "claude",
     "requires": ["claude"],
-    "greeting": "Start the lab: greet me, ask whether I'm technical or business (skip the question if you already have my saved persona), then guide me to build and deploy my first Databricks project.",
     "order": 1
   },
   {

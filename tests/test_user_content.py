@@ -63,16 +63,38 @@ def test_claude_json_mcp(client, monkeypatch):
     assert "deepwiki" in data["mcpServers"] and "exa" in data["mcpServers"]
 
 
-def test_greeting_only_on_first_agent_session(client, monkeypatch):
+def test_launch_never_injects_prompts(client, monkeypatch):
+    # Coaching context belongs in memory files, never in a fabricated user
+    # message — the launch command must be the bare CLI.
     from server import agents
 
     agent = agents.get_agent("claude")
-    assert agent.get("greeting")
-    cmd = agents.launch_command(agent, agent["greeting"])
-    assert "claude 'Start the lab" in cmd[-1]
-    # No greeting -> plain launch
-    plain = agents.launch_command(agent, None)
-    assert plain[-1] == "claude; exec /bin/bash"
+    assert "greeting" not in agent
+    assert agents.launch_command(agent)[-1] == "claude; exec /bin/bash"
+
+
+def test_auto_mode_defaults(client, monkeypatch):
+    from server import cli_config
+    from server.users import user_manager
+
+    home = _provisioned_home(client, monkeypatch)
+    settings = json.load(open(os.path.join(home, ".claude", "settings.json")))
+    assert settings["permissions"]["defaultMode"] == "bypassPermissions"
+    assert settings["skipDangerousModePermissionPrompt"] is True
+
+    codex_toml = open(os.path.join(home, ".codex", "config.toml")).read()
+    assert 'approval_policy = "never"' in codex_toml
+    assert 'sandbox_mode = "danger-full-access"' in codex_toml
+
+    # Opt out restores safe prompts.
+    monkeypatch.setenv("WORKSHOP_AUTO_MODE", "false")
+    user = user_manager.get("alice@example.com")
+    cli_config.configure_claude(user, "tok")
+    cli_config.configure_codex(user, "tok")
+    settings = json.load(open(os.path.join(home, ".claude", "settings.json")))
+    assert settings.get("permissions", {}).get("defaultMode") != "bypassPermissions"
+    codex_toml = open(os.path.join(home, ".codex", "config.toml")).read()
+    assert "approval_policy" not in codex_toml
 
 
 def test_topic_detection_flags_user(client, monkeypatch):

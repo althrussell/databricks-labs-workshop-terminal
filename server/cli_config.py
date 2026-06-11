@@ -135,10 +135,15 @@ def configure_claude(user: User, token: str) -> None:
         # The CLI install is shared across attendees — never self-update.
         "DISABLE_AUTOUPDATER": "1",
     })
-    # Workshop terminals run in the attendee's isolated container HOME — skip
-    # permission prompts so labs flow without interruptions.
-    settings.setdefault("permissions", {})["defaultMode"] = "bypassPermissions"
-    settings["skipDangerousModePermissionPrompt"] = True
+    # Workshop "auto mode": zero permission prompts inside the attendee's
+    # isolated container HOME. WORKSHOP_AUTO_MODE=false restores safe prompts.
+    if config.auto_mode_enabled():
+        settings.setdefault("permissions", {})["defaultMode"] = "bypassPermissions"
+        # One-time "are you sure?" prompt is honored from user-scope settings.
+        settings["skipDangerousModePermissionPrompt"] = True
+    else:
+        settings.get("permissions", {}).pop("defaultMode", None)
+        settings.pop("skipDangerousModePermissionPrompt", None)
     _write_json(settings_path, settings)
 
     claude_json_path = os.path.join(user.home, ".claude.json")
@@ -158,11 +163,21 @@ def configure_codex(user: User, token: str) -> None:
     )
     model = os.environ.get("CODEX_MODEL", "").strip() or "databricks-gpt-5-5"
 
+    auto_mode = ""
+    if config.auto_mode_enabled():
+        # Workshop "auto mode": codex runs without approval prompts inside the
+        # attendee's isolated container HOME.
+        auto_mode = (
+            'approval_policy = "never"\n'
+            'sandbox_mode = "danger-full-access"\n'
+        )
+
     config_toml = (
         "# Databricks Model Serving configuration (generated — do not edit)\n"
         f'model = "{model}"\n'
         'model_provider = "databricks"\n'
         'web_search = "disabled"\n'
+        f"{auto_mode}"
         "\n"
         "[model_providers.databricks]\n"
         'name = "Databricks Model Serving"\n'
