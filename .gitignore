@@ -1,0 +1,8 @@
+# static/ is COMMITTED on purpose — Control Tower deploys with no build step.
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+.pytest_cache/
+.DS_Store
+/data/

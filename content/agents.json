@@ -1,0 +1,29 @@
+[
+  {
+    "id": "claude",
+    "label": "Claude Code",
+    "description": "Anthropic's agentic coding CLI, wired to Databricks model serving.",
+    "icon": "sparkles",
+    "command": "claude",
+    "requires": ["claude"],
+    "order": 1
+  },
+  {
+    "id": "codex",
+    "label": "Codex",
+    "description": "OpenAI's coding agent, wired to Databricks model serving.",
+    "icon": "bot",
+    "command": "codex",
+    "requires": ["codex"],
+    "order": 2
+  },
+  {
+    "id": "bash",
+    "label": "Terminal",
+    "description": "Plain bash shell with the Databricks CLI pre-authenticated.",
+    "icon": "terminal",
+    "command": "bash",
+    "requires": [],
+    "order": 99
+  }
+]

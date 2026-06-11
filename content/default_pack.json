@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "phases": ["intro", "setup", "build", "wrap"],
+  "shell": {
+    "links": [
+      { "label": "Databricks Docs", "url": "https://docs.databricks.com", "icon": "book-open" },
+      { "label": "Customer Academy", "url": "https://customer-academy.databricks.com", "icon": "graduation-cap" }
+    ],
+    "features": { "nuggets_pane": true, "operator_panel": true }
+  },
+  "nuggets": [
+    {
+      "id": "welcome",
+      "title": "Welcome to the workshop",
+      "markdown": "You're about to build on Databricks with an AI coding agent at your side. Click **Claude Code** or **Codex** above to launch a terminal — your credentials are wired up automatically, nothing to paste.",
+      "phases": ["intro"],
+      "triggers": [],
+      "weight": 10,
+      "pinned": true
+    },
+    {
+      "id": "what-is-a-coding-agent",
+      "title": "What makes an agent different from chat?",
+      "markdown": "A coding agent doesn't just suggest code — it runs commands, reads files, fixes its own mistakes, and iterates until the job is done. Treat it like a fast pair programmer: describe the *outcome* you want, not the steps.",
+      "link": { "url": "https://www.databricks.com/blog/ai-agent-systems", "label": "Agent systems on Databricks" },
+      "phases": ["intro", "setup"],
+      "triggers": [],
+      "weight": 5
+    },
+    {
+      "id": "prompt-outcomes",
+      "title": "Pro tip: prompt for outcomes",
+      "markdown": "Instead of *\"write a PySpark job\"*, try *\"create a pipeline that ingests the CSVs in /Volumes/main/default/raw into a Delta table, with data quality checks\"*. Agents do their best work with a clear definition of done.",
+      "phases": ["build"],
+      "triggers": ["claude_active", "codex_active"],
+      "weight": 8
+    },
+    {
+      "id": "unity-catalog-naming",
+      "title": "Unity Catalog: three-level naming",
+      "markdown": "Everything you create lives at `catalog.schema.object`. Ask your agent to put workshop tables in your assigned schema — governance, lineage and permissions come for free.",
+      "link": { "url": "https://docs.databricks.com/data-governance/unity-catalog/index.html", "label": "Unity Catalog docs" },
+      "tags": ["unity-catalog"],
+      "phases": ["build"],
+      "triggers": [],
+      "weight": 5
+    },
+    {
+      "id": "databricks-cli-ready",
+      "title": "The Databricks CLI is pre-authenticated",
+      "markdown": "Try `databricks current-user me` in any terminal. Your agent can use the full CLI and REST API as *you* — short-lived credentials rotate automatically in the background.",
+      "phases": ["setup", "build"],
+      "triggers": ["bash_active"],
+      "weight": 5
+    },
+    {
+      "id": "serverless-first",
+      "title": "Best practice: serverless first",
+      "markdown": "For new pipelines and SQL, serverless compute starts in seconds and scales to zero — no cluster babysitting. Ask your agent to default to serverless when it creates jobs or pipelines.",
+      "link": { "url": "https://docs.databricks.com/compute/serverless.html", "label": "Serverless compute" },
+      "phases": ["build"],
+      "triggers": [],
+      "weight": 4
+    },
+    {
+      "id": "lakeflow-pipelines",
+      "title": "Declarative pipelines do the heavy lifting",
+      "markdown": "Lakeflow Spark Declarative Pipelines handle retries, dependencies, and incremental processing from a few annotations. Ask your agent for *\"a declarative pipeline with a bronze/silver/gold flow\"* and compare it to hand-rolled Spark.",
+      "link": { "url": "https://docs.databricks.com/delta-live-tables/index.html", "label": "Lakeflow pipelines" },
+      "tags": ["lakeflow"],
+      "phases": ["build"],
+      "triggers": [],
+      "weight": 4
+    },
+    {
+      "id": "genie-spaces",
+      "title": "Give your business users Genie",
+      "markdown": "AI/BI Genie lets anyone ask questions of governed data in plain English. Once your tables land in Unity Catalog today, they're one click away from a Genie space.",
+      "link": { "url": "https://www.databricks.com/product/ai-bi", "label": "AI/BI on Databricks" },
+      "phases": ["build", "wrap"],
+      "triggers": ["elapsed_gt_60"],
+      "weight": 3
+    },
+    {
+      "id": "stuck-tip",
+      "title": "Stuck? Let the agent debug itself",
+      "markdown": "Paste the error straight into the agent and say *\"diagnose and fix\"*. Agents are excellent at reading stack traces — and they learn the shape of your project as they go.",
+      "phases": ["build"],
+      "triggers": ["idle_10m"],
+      "weight": 9
+    },
+    {
+      "id": "wrap-keep-going",
+      "title": "Keep building after today",
+      "markdown": "Everything you used today — Claude on Databricks, the CLI, serverless — works in your own workspace. Bookmark the docs and the free Customer Academy courses to keep the momentum.",
+      "link": { "url": "https://customer-academy.databricks.com", "label": "Customer Academy" },
+      "phases": ["wrap"],
+      "triggers": [],
+      "weight": 10,
+      "pinned": true
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+command:
+  - uvicorn
+  - server.main:app
+  - --host
+  - 0.0.0.0
+  - --port
+  - "8000"
+  - --workers
+  - "1"
+
+env:
+  # PTY fds and session state are process-local: this app MUST run single-worker.
+  - name: HOME
+    value: /app/python/source_code/data/apphome
+
+  # --- Security (workspace groups, no allowlists) ---
+  - name: ADMIN_GROUP
+    value: platform_admins
+  # Optional: restrict attendee access to a group (empty = any workspace user
+  # the app's own permission grants admit).
+  - name: ACCESS_GROUP
+    value: ""
+
+  # --- Workshop / content steering ---
+  - name: WORKSHOP_PHASE
+    value: intro
+  - name: CONTENT_PACK_PATH
+    value: ""
+
+  # --- Cobranding (Databricks theme when unset) ---
+  - name: BRAND_NAME
+    value: ""
+  - name: BRAND_LOGO_URL
+    value: ""
+  - name: BRAND_PRIMARY_COLOR
+    value: ""
+  - name: EVENT_NAME
+    value: ""
+
+  # --- Model gateway / CLI defaults ---
+  - name: DATABRICKS_GATEWAY_HOST
+    value: ""
+  - name: ANTHROPIC_MODEL
+    value: ""
+  - name: CODEX_MODEL
+    value: ""
+
+  # --- Limits ---
+  - name: MAX_SESSIONS_PER_USER
+    value: "3"
+  - name: MAX_SESSIONS_GLOBAL
+    value: "30"
+  - name: SESSION_IDLE_TIMEOUT_SECONDS
+    value: "3600"
