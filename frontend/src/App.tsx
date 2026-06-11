@@ -196,21 +196,7 @@ export default function App() {
           </div>
         </div>
         <nav className="header-links">
-          {shellLinks.map((link) => {
-            const Icon = LINK_ICONS[link.icon] ?? LinkIcon;
-            return (
-              <a
-                key={link.url}
-                href={link.url}
-                target="_blank"
-                rel="noreferrer"
-                className={link.highlight ? "link-highlight" : undefined}
-              >
-                <Icon size={14} />
-                {link.label}
-              </a>
-            );
-          })}
+          {/* 1. Navigation (where am I) */}
           <button
             className={`operator-toggle ${view === "home" ? "operator-toggle-active" : ""}`}
             onClick={() => setView("home")}
@@ -218,10 +204,6 @@ export default function App() {
           >
             <House size={14} />
             Home
-          </button>
-          <button className="operator-toggle" onClick={openCertificate} title="Download your certificate">
-            <Award size={14} />
-            Certificate
           </button>
           {isAdmin && (
             <button
@@ -232,6 +214,35 @@ export default function App() {
               Operator
             </button>
           )}
+          <span className="nav-divider" />
+          {/* 2. Resources (reference links) */}
+          {shellLinks
+            .filter((link) => !link.highlight)
+            .map((link) => {
+              const Icon = LINK_ICONS[link.icon] ?? LinkIcon;
+              return (
+                <a key={link.url} href={link.url} target="_blank" rel="noreferrer">
+                  <Icon size={14} />
+                  {link.label}
+                </a>
+              );
+            })}
+          {/* 3. Actions, then the promoted CTA at the far right */}
+          <button className="operator-toggle" onClick={openCertificate} title="Download your certificate">
+            <Award size={14} />
+            Certificate
+          </button>
+          {shellLinks
+            .filter((link) => link.highlight)
+            .map((link) => {
+              const Icon = LINK_ICONS[link.icon] ?? LinkIcon;
+              return (
+                <a key={link.url} href={link.url} target="_blank" rel="noreferrer" className="link-highlight">
+                  <Icon size={14} />
+                  {link.label}
+                </a>
+              );
+            })}
         </nav>
         <div className="header-user">{config?.user.email}</div>
       </header>

@@ -122,6 +122,13 @@ body {
   color: var(--brand-primary);
 }
 
+.nav-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
 .header-links a.link-highlight {
   color: var(--brand-primary);
   border: 1px solid color-mix(in srgb, var(--brand-primary) 45%, transparent);
