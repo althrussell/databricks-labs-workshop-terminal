@@ -109,18 +109,22 @@ def configure_claude(user: User, token: str) -> None:
     )
 
     available = _discover_serving_endpoints(token)
-    requested = os.environ.get("ANTHROPIC_MODEL", "").strip() or "databricks-claude-opus-4-7"
+    # Newest-first degradation chains; ANTHROPIC_MODEL env pins per event
+    # (e.g. databricks-claude-fable-5 for premium-tier workshops).
+    opus_chain = [
+        "databricks-claude-opus-4-8",
+        "databricks-claude-opus-4-7",
+        "databricks-claude-opus-4-6",
+    ]
+    requested = os.environ.get("ANTHROPIC_MODEL", "").strip()
+    default_chain = ([requested] if requested else []) + opus_chain + ["databricks-claude-sonnet-4-6"]
     settings_path = os.path.join(claude_dir, "settings.json")
     settings = _read_json(settings_path)
     settings.setdefault("env", {}).update({
         "ANTHROPIC_BASE_URL": base_url,
         "ANTHROPIC_AUTH_TOKEN": token,
-        "ANTHROPIC_MODEL": _pick(
-            [requested, "databricks-claude-opus-4-6", "databricks-claude-sonnet-4-6"],
-            available, requested),
-        "ANTHROPIC_DEFAULT_OPUS_MODEL": _pick(
-            ["databricks-claude-opus-4-7", "databricks-claude-opus-4-6"],
-            available, "databricks-claude-opus-4-7"),
+        "ANTHROPIC_MODEL": _pick(default_chain, available, requested or opus_chain[0]),
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": _pick(opus_chain, available, opus_chain[0]),
         "ANTHROPIC_DEFAULT_SONNET_MODEL": _pick(
             ["databricks-claude-sonnet-4-6", "databricks-claude-sonnet-4-5"],
             available, "databricks-claude-sonnet-4-6"),
@@ -128,6 +132,8 @@ def configure_claude(user: User, token: str) -> None:
             ["databricks-claude-haiku-4-5"], available, "databricks-claude-haiku-4-5"),
         "ANTHROPIC_CUSTOM_HEADERS": "x-databricks-use-coding-agent-mode: true",
         "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
+        # The CLI install is shared across attendees — never self-update.
+        "DISABLE_AUTOUPDATER": "1",
     })
     # Workshop terminals run in the attendee's isolated container HOME — skip
     # permission prompts so labs flow without interruptions.

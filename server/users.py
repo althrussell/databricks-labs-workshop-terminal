@@ -36,6 +36,31 @@ class User:
     def bootstrap_home(self) -> None:
         for sub in ("projects", ".claude", ".codex", ".config"):
             os.makedirs(os.path.join(self.home, sub), exist_ok=True)
+        self._link_shared_binaries()
+
+    def _link_shared_binaries(self) -> None:
+        """Symlink shared CLI binaries into ~/.local/bin.
+
+        Claude Code's health check (`claude doctor`) expects its binary at
+        $HOME/.local/bin/claude; with per-user HOMEs the shared install must
+        be linked into each user's home or every session shows a broken-install
+        warning. Linking everything in the shared bin also keeps `databricks`,
+        `codex`, `node` etc. resolvable without relying on PATH ordering.
+        """
+        shared_bin = os.path.join(config.shared_prefix(), "bin")
+        local_bin = os.path.join(self.home, ".local", "bin")
+        os.makedirs(local_bin, exist_ok=True)
+        if not os.path.isdir(shared_bin):
+            return
+        for name in os.listdir(shared_bin):
+            source = os.path.join(shared_bin, name)
+            target = os.path.join(local_bin, name)
+            if os.path.lexists(target):
+                continue
+            try:
+                os.symlink(os.path.realpath(source), target)
+            except OSError:
+                pass
 
     def shell_env(self) -> dict:
         """Env for this user's PTYs — app secrets stripped, identity isolated."""
@@ -56,12 +81,16 @@ class User:
             ):
                 env.pop(key, None)
 
+        # User-local bin first (symlinks into the shared install — claude
+        # expects to resolve from $HOME/.local/bin), shared bin as fallback
+        # for binaries installed after this user's home was bootstrapped.
+        local_bin = os.path.join(self.home, ".local", "bin")
         shared_bin = os.path.join(config.shared_prefix(), "bin")
         env.update({
             "HOME": self.home,
             "TERM": "xterm-256color",
             "USER": self.slug,
-            "PATH": f"{shared_bin}:{env.get('PATH', '')}",
+            "PATH": f"{local_bin}:{shared_bin}:{env.get('PATH', '')}",
             "WORKSHOP_USER_EMAIL": self.email,
         })
         return env
