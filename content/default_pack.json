@@ -201,7 +201,8 @@
       "triggers": [
         "idle_10m"
       ],
-      "weight": 9
+      "weight": 9,
+      "cta": "Unstick yourself →"
     },
     {
       "id": "topic-lakebase",
@@ -380,6 +381,75 @@
       "link": {
         "url": "https://customer-academy.databricks.com",
         "label": "Customer Academy"
+      },
+      "phases": [
+        "wrap"
+      ],
+      "triggers": [],
+      "weight": 10,
+      "pinned": true
+    },
+    {
+      "id": "nudge-say-hi",
+      "title": "Your coach is waiting",
+      "markdown": "Open **Claude Code** and just say *hi* — your coach will introduce itself and guide you from there. No syntax to learn.",
+      "phases": [
+        "intro",
+        "setup"
+      ],
+      "triggers": [
+        "idle_3m"
+      ],
+      "cta": "Say hi to begin →",
+      "weight": 10
+    },
+    {
+      "id": "nudge-show-plan",
+      "title": "Idea: make the agent show its plan",
+      "markdown": "Before a big step, try *“explain your plan before doing anything”*. You'll learn how the agent thinks — and catch wrong turns before they happen.",
+      "phases": [
+        "setup",
+        "build"
+      ],
+      "triggers": [
+        "idle_5m"
+      ],
+      "cta": "Try this →",
+      "weight": 7
+    },
+    {
+      "id": "nudge-quality-checks",
+      "title": "While you're thinking: add quality checks",
+      "markdown": "A great next prompt: *“add data quality expectations to my pipeline and show me what fails”*. Real pipelines earn trust with checks, not hope.",
+      "phases": [
+        "build"
+      ],
+      "triggers": [
+        "idle_5m"
+      ],
+      "cta": "Level it up →",
+      "weight": 8
+    },
+    {
+      "id": "nudge-visualize",
+      "title": "Next step: see your data",
+      "markdown": "Your tables deserve a face. Ask your agent: *“create an AI/BI dashboard for the table we just built”* — it's one prompt away.",
+      "phases": [
+        "build"
+      ],
+      "triggers": [
+        "idle_8m"
+      ],
+      "cta": "Make it visual →",
+      "weight": 6
+    },
+    {
+      "id": "wrap-certificate",
+      "title": "Claim your certificate 🏆",
+      "markdown": "You built real things on Databricks today. Download your personalized certificate — with your stats: agent sessions, lines of code, resources created.",
+      "link": {
+        "url": "#certificate",
+        "label": "Download your certificate"
       },
       "phases": [
         "wrap"

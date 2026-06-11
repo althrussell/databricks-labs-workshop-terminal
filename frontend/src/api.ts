@@ -55,6 +55,7 @@ export interface Nugget {
   pinned: boolean;
   cta: string | null;
   matched_topic: string | null;
+  nudge: boolean;
 }
 
 export interface Broadcast {

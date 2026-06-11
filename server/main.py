@@ -155,6 +155,7 @@ def create_session(body: CreateSessionBody, principal: Principal = Depends(get_c
         )
     except SessionLimitError as e:
         raise HTTPException(status_code=429, detail=str(e))
+    user.sessions_launched[agent["id"]] = user.sessions_launched.get(agent["id"], 0) + 1
     return {"session": session.to_dict()}
 
 
@@ -178,14 +179,42 @@ def get_nuggets(principal: Principal = Depends(get_current_user)):
         triggers.add(f"{session.agent_id}_active")
     user = user_manager.peek(principal.name)
     live_topics: set[str] = set()
+    idle_minutes = 0.0
     if user:
-        if user.last_seen and now - user.last_seen > 600:
-            triggers.add("idle_10m")
         live_topics = {t for t, at in user.topics.items() if now - at < TOPIC_TTL_SECONDS}
+        # True idle = no input AND no terminal output. Session activity covers
+        # both (the reader thread touches it on output), so an agent working
+        # away on the attendee's behalf never counts as idle.
+        signals = [s.last_activity for s in sessions]
+        if user.last_seen:
+            signals.append(user.last_seen)
+        if signals:
+            idle_minutes = max(0.0, (now - max(signals)) / 60)
     return {
         "phase": content_service.phase,
-        "nuggets": content_service.nuggets_for(triggers, live_topics),
+        "nuggets": content_service.nuggets_for(triggers, live_topics, idle_minutes),
     }
+
+
+@app.get("/api/certificate")
+def certificate(name: str, principal: Principal = Depends(get_current_user)):
+    """Brag certificate PDF — downloads straight to the attendee's laptop."""
+    from fastapi.responses import Response
+
+    from . import certificate as cert
+    from . import stats
+
+    display_name = " ".join(name.split())[:60]
+    if not display_name:
+        raise HTTPException(status_code=422, detail="A display name is required")
+    user = user_manager.get(principal.name)
+    pdf = cert.build_pdf(display_name, stats.gather(user))
+    filename = "databricks-workshop-certificate.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/healthz")

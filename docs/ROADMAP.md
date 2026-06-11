@@ -45,7 +45,7 @@ The blank prompt is the scariest moment of the workshop. Kill it.
 | Item | What it feels like | Size |
 |---|---|---|
 | **Topic trail** | A footer strip of chips — "Your session: Lakebase · Genie · MLflow" — built from the topic detection we already run. A personal trail of what *they* explored (not a score); each chip links to docs. | S |
-| **Coach nudges** | Stuck heuristics (idle mid-build, repeated error patterns in output) trigger a gentle, dismissible nudge: "Paste the error to your agent and say *diagnose and fix*." | M |
+| **Coach nudges** ✅ first cut shipped | Idle detection (no input *and* no terminal output — never fires while the agent is working) promotes "💡 Next step" cards to the top of the insights pane: ideas, how-tos, next steps per phase, via generic `idle_<N>m` triggers in the content pack. Follow-up: error-pattern heuristics. | M |
 | **Phase moments** | When the operator advances the phase, attendees get a tasteful interstitial ("☕ Break's over — Build phase: here's what's next") instead of a silent content swap. | S |
 | **Workbench comfort** | Rename tabs, side-by-side split terminals, font size, light theme. The room projects confidence when the tool feels premium. | M |
 
@@ -67,6 +67,7 @@ The workshop ends; the relationship shouldn't.
 
 | Item | What it feels like | Size |
 |---|---|---|
+| **Brag certificate** ✅ shipped | A branded PDF that downloads to the attendee's laptop: their name (lab identities are generic, so they type it), agent sessions, minutes building, lines of code + commits from their synced repos, a workspace resource census, topics explored. Header button + pinned wrap-phase card. | — |
 | **Personal learning recap** | At wrap phase, an agent generates "what you built today" from the attendee's synced repos + topic trail, with Customer Academy links matched to *their* topics. Rendered as the final card and written to their Workspace home. | L |
 | **Continue-at-home pack** | A one-pager in their Workspace: how to run Claude on Databricks in their own workspace, with their workshop repos already synced and waiting. | S |
 | **Quest hand-off slot** | When Quest is deployed alongside, the recap deep-links to "see what it was worth" — a config link, no dependency. | S |

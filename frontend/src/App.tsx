@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  Award,
   BookOpen,
+  Download,
   GraduationCap,
   Link as LinkIcon,
   Plus,
@@ -28,6 +30,9 @@ export default function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [launching, setLaunching] = useState<string | null>(null);
   const [hintSessionId, setHintSessionId] = useState<string | null>(null);
+  const [certOpen, setCertOpen] = useState(false);
+  const [certName, setCertName] = useState("");
+  const [certBusy, setCertBusy] = useState(false);
   const [error, setError] = useState("");
   const [nuggetsCollapsed, setNuggetsCollapsed] = useState(false);
   const [view, setView] = useState<"terminals" | "operator">(
@@ -101,6 +106,37 @@ export default function App() {
     });
   }, []);
 
+  function openCertificate() {
+    if (!certName && config) {
+      // Lab identities are generic — prefill a readable guess, let them fix it.
+      const local = config.user.email.split("@")[0].replace(/[._+-]+/g, " ").trim();
+      setCertName(local.replace(/\b\w/g, (ch) => ch.toUpperCase()));
+    }
+    setCertOpen(true);
+  }
+
+  async function downloadCertificate() {
+    const name = certName.trim();
+    if (!name) return;
+    setCertBusy(true);
+    try {
+      const resp = await fetch(`/api/certificate?name=${encodeURIComponent(name)}`);
+      if (!resp.ok) throw new Error("Certificate generation failed — try again");
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "databricks-workshop-certificate.pdf";
+      a.click();
+      URL.revokeObjectURL(url);
+      setCertOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCertBusy(false);
+    }
+  }
+
   if (!config && !error) {
     return <div className="boot-screen">Loading workshop…</div>;
   }
@@ -137,6 +173,10 @@ export default function App() {
               </a>
             );
           })}
+          <button className="operator-toggle" onClick={openCertificate} title="Download your certificate">
+            <Award size={14} />
+            Certificate
+          </button>
           {isAdmin && (
             <button
               className={`operator-toggle ${view === "operator" ? "operator-toggle-active" : ""}`}
@@ -234,8 +274,47 @@ export default function App() {
             <NuggetsPane
               collapsed={nuggetsCollapsed}
               onToggle={() => setNuggetsCollapsed((c) => !c)}
+              onCertificate={openCertificate}
             />
           )}
+        </div>
+      )}
+
+      {certOpen && (
+        <div className="modal-backdrop" onClick={() => setCertOpen(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2>
+              <Award size={18} /> Your certificate
+            </h2>
+            <p>
+              We'll generate a personalized PDF with your build stats — agent sessions,
+              lines of code, Databricks resources, topics explored. It downloads straight
+              to your laptop.
+            </p>
+            <label className="modal-label" htmlFor="cert-name">
+              Name on the certificate
+            </label>
+            <input
+              id="cert-name"
+              value={certName}
+              onChange={(e) => setCertName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && downloadCertificate()}
+              placeholder="Ada Lovelace"
+              autoFocus
+            />
+            <div className="modal-actions">
+              <button className="phase-btn" onClick={() => setCertOpen(false)}>
+                Cancel
+              </button>
+              <button
+                className="primary-btn"
+                disabled={!certName.trim() || certBusy}
+                onClick={downloadCertificate}
+              >
+                <Download size={14} /> {certBusy ? "Generating…" : "Download PDF"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

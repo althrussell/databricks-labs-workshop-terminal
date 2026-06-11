@@ -7,6 +7,7 @@ import { onAppEvent } from "../events";
 interface Props {
   collapsed: boolean;
   onToggle: () => void;
+  onCertificate: () => void;
 }
 
 const CARD_HEIGHT = 200; // estimated card footprint incl. gap — drives fit count
@@ -15,7 +16,7 @@ const ROTATE_MS = 25000;
 // The pane never scrolls: it shows only as many cards as fit, with the most
 // relevant (contextually matched, then pinned) first, and rotates the
 // remaining slots through the ranked list.
-export default function NuggetsPane({ collapsed, onToggle }: Props) {
+export default function NuggetsPane({ collapsed, onToggle, onCertificate }: Props) {
   const [nuggets, setNuggets] = useState<Nugget[]>([]);
   const [phase, setPhase] = useState("");
   const [offset, setOffset] = useState(0);
@@ -77,8 +78,8 @@ export default function NuggetsPane({ collapsed, onToggle }: Props) {
     );
   }
 
-  // Anchor: the top matched card always holds slot 1; remaining slots rotate.
-  const anchor = nuggets.find((n) => n.matched_topic) ?? null;
+  // Anchor: the top nudge or matched card always holds slot 1; the rest rotate.
+  const anchor = nuggets.find((n) => n.nudge) ?? nuggets.find((n) => n.matched_topic) ?? null;
   const pool = anchor ? nuggets.filter((n) => n.id !== anchor.id) : nuggets;
   const slots = anchor ? fitCount - 1 : fitCount;
   const rotated =
@@ -106,23 +107,36 @@ export default function NuggetsPane({ collapsed, onToggle }: Props) {
         {visible.map((nugget) => (
           <article
             key={nugget.id}
-            className={`nugget ${nugget.matched_topic ? "nugget-matched" : ""}`}
+            className={`nugget ${nugget.matched_topic ? "nugget-matched" : ""} ${
+              nugget.nudge ? "nugget-nudge" : ""
+            }`}
           >
-            {nugget.matched_topic && (
-              <div className="nugget-matched-label">
-                <Sparkle size={10} /> {nugget.cta ?? "Take the next step →"}
+            {nugget.nudge ? (
+              <div className="nugget-nudge-label">
+                💡 {nugget.cta ?? "While you're paused →"}
               </div>
+            ) : (
+              nugget.matched_topic && (
+                <div className="nugget-matched-label">
+                  <Sparkle size={10} /> {nugget.cta ?? "Take the next step →"}
+                </div>
+              )
             )}
             <h3>{nugget.title}</h3>
             <div
               className="nugget-body"
               dangerouslySetInnerHTML={{ __html: marked.parse(nugget.markdown) as string }}
             />
-            {nugget.link && (
-              <a className="nugget-link" href={nugget.link.url} target="_blank" rel="noreferrer">
-                {nugget.link.label} <ExternalLink size={12} />
-              </a>
-            )}
+            {nugget.link &&
+              (nugget.link.url === "#certificate" ? (
+                <button className="nugget-link nugget-link-action" onClick={onCertificate}>
+                  {nugget.link.label} <ExternalLink size={12} />
+                </button>
+              ) : (
+                <a className="nugget-link" href={nugget.link.url} target="_blank" rel="noreferrer">
+                  {nugget.link.label} <ExternalLink size={12} />
+                </a>
+              ))}
           </article>
         ))}
       </div>

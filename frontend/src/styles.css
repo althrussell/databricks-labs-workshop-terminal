@@ -621,6 +621,100 @@ body {
   font-size: 13px;
 }
 
+.nugget-nudge {
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+  background: color-mix(in srgb, var(--warning) 7%, var(--bg-panel));
+}
+
+.nugget-nudge-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--warning);
+  margin-bottom: 6px;
+}
+
+.nugget-link-action {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* ---- modal ---- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 8, 12, 0.65);
+  display: grid;
+  place-items: center;
+  z-index: 50;
+}
+
+.modal {
+  width: 420px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px 24px;
+}
+
+.modal h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.modal p {
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 14px;
+}
+
+.modal-label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.modal input {
+  width: 100%;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.modal-actions .primary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.modal-actions .primary-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 /* ---- misc ---- */
 
 .icon-btn {

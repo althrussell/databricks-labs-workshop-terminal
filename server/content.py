@@ -26,9 +26,10 @@ _DEFAULT_PACK = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "content", "default_pack.json")
 )
 
-KNOWN_TRIGGERS = {"always", "claude_active", "codex_active", "bash_active", "idle_10m"}
+KNOWN_TRIGGERS = {"always", "claude_active", "codex_active", "bash_active"}
 _ELAPSED_PREFIX = "elapsed_gt_"
 _TOPIC_PREFIX = "topic:"
+_IDLE_RE = re.compile(r"^idle_(\d+)m$")
 TOPIC_TTL_SECONDS = 600  # a spotted topic stays "live" for 10 minutes
 
 
@@ -133,11 +134,12 @@ class ContentService:
             return None
 
     def nuggets_for(self, active_triggers: set[str], live_topics: set[str] | None = None,
-                    limit: int = 8) -> list[dict]:
+                    idle_minutes: float = 0.0, limit: int = 8) -> list[dict]:
         """Nuggets for the current phase whose triggers are satisfied.
 
-        Order: pinned, then nuggets matching a topic spotted in the user's
-        terminal (the contextual 'we saw you mention Lakebase' cards), then a
+        Order: pinned, then nudges (idle-triggered next steps / ideas — the
+        attendee is paused, so these are the most relevant thing on screen),
+        then nuggets matching a topic spotted in the user's terminal, then a
         stable weighted shuffle of the rest."""
         with self._lock:
             pack, phase = self._pack, self._phase
@@ -151,12 +153,19 @@ class ContentService:
                     return t[len(_TOPIC_PREFIX):]
             return None
 
+        def is_nudge(n: Nugget) -> bool:
+            for t in n.triggers:
+                m = _IDLE_RE.match(t)
+                if m and idle_minutes >= int(m.group(1)):
+                    return True
+            return False
+
         def eligible(n: Nugget) -> bool:
             if n.phases and phase not in n.phases:
                 return False
             if not n.triggers:
                 return True
-            if matched_topic(n):
+            if matched_topic(n) or is_nudge(n):
                 return True
             for t in n.triggers:
                 if t == "always" or t in active_triggers:
@@ -171,17 +180,21 @@ class ContentService:
 
         candidates = [n for n in pack.nuggets if eligible(n)]
         pinned = [n for n in candidates if n.pinned]
-        topical = [n for n in candidates if not n.pinned and matched_topic(n)]
-        rest = [n for n in candidates if not n.pinned and not matched_topic(n)]
+        unpinned = [n for n in candidates if not n.pinned]
+        nudges = [n for n in unpinned if is_nudge(n)]
+        topical = [n for n in unpinned if not is_nudge(n) and matched_topic(n)]
+        rest = [n for n in unpinned if not is_nudge(n) and not matched_topic(n)]
         # Weighted shuffle, reseeded every 5 minutes so the rotation feels
         # alive but doesn't reshuffle on every poll.
         rng = random.Random(int(time.time() // 300))
         rest = sorted(rest, key=lambda n: rng.random() / max(n.weight, 1))
+        nudges = sorted(nudges, key=lambda n: -n.weight)
 
         results = []
-        for n in (pinned + topical + rest)[:limit]:
+        for n in (pinned + nudges + topical + rest)[:limit]:
             item = n.model_dump()
             item["matched_topic"] = matched_topic(n)
+            item["nudge"] = is_nudge(n)
             results.append(item)
         return results
 

@@ -31,6 +31,7 @@ class User:
         self.lock = threading.Lock()
         self.cli_ready: set[str] = set()  # agent ids with configs written
         self.topics: dict[str, float] = {}  # topic -> last seen (terminal keyword spotting)
+        self.sessions_launched: dict[str, int] = {}  # agent id -> lifetime count
         self.last_seen: float = 0.0
         self.first_seen: float = 0.0
 
