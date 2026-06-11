@@ -1,31 +1,86 @@
 {
   "version": 1,
-  "phases": ["intro", "setup", "build", "wrap"],
+  "phases": [
+    "intro",
+    "setup",
+    "build",
+    "wrap"
+  ],
   "shell": {
     "links": [
-      { "label": "Databricks Docs", "url": "https://docs.databricks.com", "icon": "book-open" },
-      { "label": "Customer Academy", "url": "https://customer-academy.databricks.com", "icon": "graduation-cap" }
+      {
+        "label": "Databricks Docs",
+        "url": "https://docs.databricks.com",
+        "icon": "book-open"
+      },
+      {
+        "label": "Customer Academy",
+        "url": "https://customer-academy.databricks.com",
+        "icon": "graduation-cap"
+      }
     ],
-    "features": { "nuggets_pane": true, "operator_panel": true }
+    "features": {
+      "nuggets_pane": true,
+      "operator_panel": true
+    }
   },
   "topics": {
-    "lakebase": ["lakebase", "postgres", "postgresql", "oltp"],
-    "unity-catalog": ["unity catalog", "uc catalog", "catalog.schema", "grants", "lineage"],
-    "genie": ["genie", "ai/bi", "aibi", "natural language query"],
-    "pipelines": ["lakeflow", "declarative pipeline", "delta live", "dlt", "streaming table", "materialized view", "auto loader"],
-    "vector-search": ["vector search", "embeddings", "similarity search", "rag"],
-    "mlflow": ["mlflow", "experiment tracking", "model registry", "tracing"],
-    "serving": ["model serving", "serving endpoint", "foundation model"],
-    "apps": ["databricks apps", "appkit", "streamlit", "gradio"],
-    "dashboards": ["dashboard", "lakeview", "visualization"],
-    "jobs": ["databricks jobs", "workflow", "cron", "scheduled job"]
+    "lakebase": [
+      "lakebase",
+      "postgresql"
+    ],
+    "unity-catalog": [
+      "unity catalog"
+    ],
+    "genie": [
+      "genie"
+    ],
+    "pipelines": [
+      "lakeflow",
+      "declarative pipeline",
+      "delta live tables",
+      "streaming table",
+      "materialized view",
+      "auto loader"
+    ],
+    "vector-search": [
+      "vector search",
+      "vector index",
+      "embeddings"
+    ],
+    "mlflow": [
+      "mlflow"
+    ],
+    "serving": [
+      "model serving",
+      "serving endpoint",
+      "foundation model"
+    ],
+    "apps": [
+      "databricks apps",
+      "appkit",
+      "streamlit",
+      "gradio"
+    ],
+    "dashboards": [
+      "lakeview",
+      "ai/bi dashboard",
+      "aibi dashboard"
+    ],
+    "jobs": [
+      "databricks job",
+      "lakeflow job",
+      "scheduled job"
+    ]
   },
   "nuggets": [
     {
       "id": "welcome",
       "title": "Welcome to the workshop",
       "markdown": "You're about to build on Databricks with an AI coding agent at your side. Click **Claude Code** or **Codex** above to launch a terminal — your credentials are wired up automatically, nothing to paste.",
-      "phases": ["intro"],
+      "phases": [
+        "intro"
+      ],
       "triggers": [],
       "weight": 10,
       "pinned": true
@@ -34,8 +89,14 @@
       "id": "what-is-a-coding-agent",
       "title": "What makes an agent different from chat?",
       "markdown": "A coding agent doesn't just suggest code — it runs commands, reads files, fixes its own mistakes, and iterates until the job is done. Treat it like a fast pair programmer: describe the *outcome* you want, not the steps.",
-      "link": { "url": "https://www.databricks.com/blog/ai-agent-systems", "label": "Agent systems on Databricks" },
-      "phases": ["intro", "setup"],
+      "link": {
+        "url": "https://www.databricks.com/blog/ai-agent-systems",
+        "label": "Agent systems on Databricks"
+      },
+      "phases": [
+        "intro",
+        "setup"
+      ],
       "triggers": [],
       "weight": 5
     },
@@ -43,17 +104,29 @@
       "id": "prompt-outcomes",
       "title": "Pro tip: prompt for outcomes",
       "markdown": "Instead of *\"write a PySpark job\"*, try *\"create a pipeline that ingests the CSVs in /Volumes/main/default/raw into a Delta table, with data quality checks\"*. Agents do their best work with a clear definition of done.",
-      "phases": ["build"],
-      "triggers": ["claude_active", "codex_active"],
+      "phases": [
+        "build"
+      ],
+      "triggers": [
+        "claude_active",
+        "codex_active"
+      ],
       "weight": 8
     },
     {
       "id": "unity-catalog-naming",
       "title": "Unity Catalog: three-level naming",
       "markdown": "Everything you create lives at `catalog.schema.object`. Ask your agent to put workshop tables in your assigned schema — governance, lineage and permissions come for free.",
-      "link": { "url": "https://docs.databricks.com/data-governance/unity-catalog/index.html", "label": "Unity Catalog docs" },
-      "tags": ["unity-catalog"],
-      "phases": ["build"],
+      "link": {
+        "url": "https://docs.databricks.com/data-governance/unity-catalog/index.html",
+        "label": "Unity Catalog docs"
+      },
+      "tags": [
+        "unity-catalog"
+      ],
+      "phases": [
+        "build"
+      ],
       "triggers": [],
       "weight": 5
     },
@@ -61,16 +134,26 @@
       "id": "databricks-cli-ready",
       "title": "The Databricks CLI is pre-authenticated",
       "markdown": "Try `databricks current-user me` in any terminal. Your agent can use the full CLI and REST API as *you* — short-lived credentials rotate automatically in the background.",
-      "phases": ["setup", "build"],
-      "triggers": ["bash_active"],
+      "phases": [
+        "setup",
+        "build"
+      ],
+      "triggers": [
+        "bash_active"
+      ],
       "weight": 5
     },
     {
       "id": "serverless-first",
       "title": "Best practice: serverless first",
       "markdown": "For new pipelines and SQL, serverless compute starts in seconds and scales to zero — no cluster babysitting. Ask your agent to default to serverless when it creates jobs or pipelines.",
-      "link": { "url": "https://docs.databricks.com/compute/serverless.html", "label": "Serverless compute" },
-      "phases": ["build"],
+      "link": {
+        "url": "https://docs.databricks.com/compute/serverless.html",
+        "label": "Serverless compute"
+      },
+      "phases": [
+        "build"
+      ],
       "triggers": [],
       "weight": 4
     },
@@ -78,9 +161,16 @@
       "id": "lakeflow-pipelines",
       "title": "Declarative pipelines do the heavy lifting",
       "markdown": "Lakeflow Spark Declarative Pipelines handle retries, dependencies, and incremental processing from a few annotations. Ask your agent for *\"a declarative pipeline with a bronze/silver/gold flow\"* and compare it to hand-rolled Spark.",
-      "link": { "url": "https://docs.databricks.com/delta-live-tables/index.html", "label": "Lakeflow pipelines" },
-      "tags": ["lakeflow"],
-      "phases": ["build"],
+      "link": {
+        "url": "https://docs.databricks.com/delta-live-tables/index.html",
+        "label": "Lakeflow pipelines"
+      },
+      "tags": [
+        "lakeflow"
+      ],
+      "phases": [
+        "build"
+      ],
       "triggers": [],
       "weight": 4
     },
@@ -88,115 +178,212 @@
       "id": "genie-spaces",
       "title": "Give your business users Genie",
       "markdown": "AI/BI Genie lets anyone ask questions of governed data in plain English. Once your tables land in Unity Catalog today, they're one click away from a Genie space.",
-      "link": { "url": "https://www.databricks.com/product/ai-bi", "label": "AI/BI on Databricks" },
-      "phases": ["build", "wrap"],
-      "triggers": ["elapsed_gt_60"],
+      "link": {
+        "url": "https://www.databricks.com/product/ai-bi",
+        "label": "AI/BI on Databricks"
+      },
+      "phases": [
+        "build",
+        "wrap"
+      ],
+      "triggers": [
+        "elapsed_gt_60"
+      ],
       "weight": 3
     },
     {
       "id": "stuck-tip",
       "title": "Stuck? Let the agent debug itself",
       "markdown": "Paste the error straight into the agent and say *\"diagnose and fix\"*. Agents are excellent at reading stack traces — and they learn the shape of your project as they go.",
-      "phases": ["build"],
-      "triggers": ["idle_10m"],
+      "phases": [
+        "build"
+      ],
+      "triggers": [
+        "idle_10m"
+      ],
       "weight": 9
     },
     {
       "id": "topic-lakebase",
       "title": "You're using Lakebase 🐘",
       "markdown": "Lakebase is **fully-managed Postgres built into Databricks** — your app gets a real OLTP database with zero infrastructure, branching for dev/test, and synced tables that flow straight into your lakehouse. No separate database vendor, one governance model.",
-      "link": { "url": "https://www.databricks.com/product/lakebase", "label": "Why Lakebase" },
-      "tags": ["lakebase"],
-      "triggers": ["topic:lakebase"],
-      "weight": 10
+      "link": {
+        "url": "https://www.databricks.com/product/lakebase",
+        "label": "Why Lakebase"
+      },
+      "tags": [
+        "lakebase"
+      ],
+      "triggers": [
+        "topic:lakebase"
+      ],
+      "weight": 10,
+      "cta": "Add Postgres to your build →"
     },
     {
       "id": "topic-unity-catalog",
       "title": "Unity Catalog is doing the governance for you",
       "markdown": "Every table, model, and volume you just touched is governed in one place: permissions, lineage, audit, discovery. That's the difference between a demo and something your security team will approve.",
-      "link": { "url": "https://www.databricks.com/product/unity-catalog", "label": "Unity Catalog" },
-      "tags": ["unity-catalog"],
-      "triggers": ["topic:unity-catalog"],
-      "weight": 10
+      "link": {
+        "url": "https://www.databricks.com/product/unity-catalog",
+        "label": "Unity Catalog"
+      },
+      "tags": [
+        "unity-catalog"
+      ],
+      "triggers": [
+        "topic:unity-catalog"
+      ],
+      "weight": 10,
+      "cta": "See your lineage →"
     },
     {
       "id": "topic-genie",
       "title": "Genie: your tables, in plain English",
       "markdown": "The data you're building can be handed to business users today — AI/BI Genie lets them ask questions in natural language with answers grounded in your governed tables. Zero dashboards to build first.",
-      "link": { "url": "https://www.databricks.com/product/ai-bi", "label": "See AI/BI Genie" },
-      "tags": ["genie"],
-      "triggers": ["topic:genie"],
-      "weight": 10
+      "link": {
+        "url": "https://www.databricks.com/product/ai-bi",
+        "label": "See AI/BI Genie"
+      },
+      "tags": [
+        "genie"
+      ],
+      "triggers": [
+        "topic:genie"
+      ],
+      "weight": 10,
+      "cta": "Hand it to the business →"
     },
     {
       "id": "topic-pipelines",
       "title": "Declarative pipelines: you declare, Databricks operates",
       "markdown": "Lakeflow Spark Declarative Pipelines handle orchestration, retries, incremental processing, and data quality enforcement from a few annotations. The pipeline you're building would be hundreds of lines of hand-rolled orchestration anywhere else.",
-      "link": { "url": "https://www.databricks.com/product/data-engineering", "label": "Lakeflow" },
-      "tags": ["pipelines"],
-      "triggers": ["topic:pipelines"],
-      "weight": 10
+      "link": {
+        "url": "https://www.databricks.com/product/data-engineering",
+        "label": "Lakeflow"
+      },
+      "tags": [
+        "pipelines"
+      ],
+      "triggers": [
+        "topic:pipelines"
+      ],
+      "weight": 10,
+      "cta": "Make it production-grade →"
     },
     {
       "id": "topic-vector-search",
       "title": "Vector Search without the vector database",
       "markdown": "Databricks Vector Search syncs embeddings straight from your Delta tables — no separate vector DB to run, govern, or pay for. Your RAG index inherits Unity Catalog permissions automatically.",
-      "link": { "url": "https://www.databricks.com/product/machine-learning/vector-search", "label": "Vector Search" },
-      "tags": ["vector-search"],
-      "triggers": ["topic:vector-search"],
-      "weight": 10
+      "link": {
+        "url": "https://www.databricks.com/product/machine-learning/vector-search",
+        "label": "Vector Search"
+      },
+      "tags": [
+        "vector-search"
+      ],
+      "triggers": [
+        "topic:vector-search"
+      ],
+      "weight": 10,
+      "cta": "Power your RAG →"
     },
     {
       "id": "topic-mlflow",
       "title": "MLflow 3: observability for AI you can act on",
       "markdown": "Every agent call you're tracing lands in MLflow — token costs, latencies, full traces, evaluation scores. It's the difference between 'the demo worked' and 'we know exactly how it behaves in production'.",
-      "link": { "url": "https://www.databricks.com/product/managed-mlflow", "label": "Managed MLflow" },
-      "tags": ["mlflow"],
-      "triggers": ["topic:mlflow"],
-      "weight": 10
+      "link": {
+        "url": "https://www.databricks.com/product/managed-mlflow",
+        "label": "Managed MLflow"
+      },
+      "tags": [
+        "mlflow"
+      ],
+      "triggers": [
+        "topic:mlflow"
+      ],
+      "weight": 10,
+      "cta": "Trace your agent →"
     },
     {
       "id": "topic-serving",
       "title": "One endpoint, every frontier model",
       "markdown": "Model Serving gives you Claude, GPT, Llama and your own models behind one governed, rate-limited, pay-per-token endpoint — the same one powering the agent in your terminal right now.",
-      "link": { "url": "https://www.databricks.com/product/model-serving", "label": "Model Serving" },
-      "tags": ["serving"],
-      "triggers": ["topic:serving"],
-      "weight": 10
+      "link": {
+        "url": "https://www.databricks.com/product/model-serving",
+        "label": "Model Serving"
+      },
+      "tags": [
+        "serving"
+      ],
+      "triggers": [
+        "topic:serving"
+      ],
+      "weight": 10,
+      "cta": "Pick your model →"
     },
     {
       "id": "topic-apps",
       "title": "Ship that app on Databricks Apps",
       "markdown": "What you're building can be deployed as a Databricks App: serverless hosting, workspace SSO, governance built in. No Kubernetes, no separate auth, straight from code to a URL your team can open.",
-      "link": { "url": "https://www.databricks.com/product/databricks-apps", "label": "Databricks Apps" },
-      "tags": ["apps"],
-      "triggers": ["topic:apps"],
-      "weight": 10
+      "link": {
+        "url": "https://www.databricks.com/product/databricks-apps",
+        "label": "Databricks Apps"
+      },
+      "tags": [
+        "apps"
+      ],
+      "triggers": [
+        "topic:apps"
+      ],
+      "weight": 10,
+      "cta": "Ship it as an app →"
     },
     {
       "id": "topic-dashboards",
       "title": "AI/BI Dashboards on live lakehouse data",
       "markdown": "Dashboards here query your governed tables directly — no extracts, no stale copies. Build one with your agent: *\"create a dashboard showing the table we just built\"*.",
-      "link": { "url": "https://www.databricks.com/product/ai-bi", "label": "AI/BI Dashboards" },
-      "tags": ["dashboards"],
-      "triggers": ["topic:dashboards"],
-      "weight": 8
+      "link": {
+        "url": "https://www.databricks.com/product/ai-bi",
+        "label": "AI/BI Dashboards"
+      },
+      "tags": [
+        "dashboards"
+      ],
+      "triggers": [
+        "topic:dashboards"
+      ],
+      "weight": 8,
+      "cta": "Visualize it →"
     },
     {
       "id": "topic-jobs",
       "title": "Lakeflow Jobs: scheduling included",
       "markdown": "Anything you've built can run on a schedule with retries, alerts, and serverless compute — ask your agent to *\"schedule this as a daily job\"* and it's production-ready automation.",
-      "link": { "url": "https://docs.databricks.com/jobs", "label": "Jobs docs" },
-      "tags": ["jobs"],
-      "triggers": ["topic:jobs"],
-      "weight": 8
+      "link": {
+        "url": "https://docs.databricks.com/jobs",
+        "label": "Jobs docs"
+      },
+      "tags": [
+        "jobs"
+      ],
+      "triggers": [
+        "topic:jobs"
+      ],
+      "weight": 8,
+      "cta": "Schedule it →"
     },
     {
       "id": "wrap-keep-going",
       "title": "Keep building after today",
       "markdown": "Everything you used today — Claude on Databricks, the CLI, serverless — works in your own workspace. Bookmark the docs and the free Customer Academy courses to keep the momentum.",
-      "link": { "url": "https://customer-academy.databricks.com", "label": "Customer Academy" },
-      "phases": ["wrap"],
+      "link": {
+        "url": "https://customer-academy.databricks.com",
+        "label": "Customer Academy"
+      },
+      "phases": [
+        "wrap"
+      ],
       "triggers": [],
       "weight": 10,
       "pinned": true

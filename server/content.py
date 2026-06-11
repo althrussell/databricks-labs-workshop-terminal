@@ -29,7 +29,7 @@ _DEFAULT_PACK = os.path.normpath(
 KNOWN_TRIGGERS = {"always", "claude_active", "codex_active", "bash_active", "idle_10m"}
 _ELAPSED_PREFIX = "elapsed_gt_"
 _TOPIC_PREFIX = "topic:"
-TOPIC_TTL_SECONDS = 900  # a spotted topic stays "live" for 15 minutes
+TOPIC_TTL_SECONDS = 600  # a spotted topic stays "live" for 10 minutes
 
 
 class NuggetLink(BaseModel):
@@ -45,6 +45,7 @@ class Nugget(BaseModel):
     tags: list[str] = Field(default_factory=list)
     phases: list[str] = Field(default_factory=list)  # empty = all phases
     triggers: list[str] = Field(default_factory=list)  # empty = always
+    cta: str | None = None  # badge shown when the card is contextually matched
     weight: int = 1
     pinned: bool = False
 

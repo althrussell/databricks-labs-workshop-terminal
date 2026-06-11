@@ -53,6 +53,7 @@ export interface Nugget {
   link: { url: string; label: string } | null;
   tags: string[];
   pinned: boolean;
+  cta: string | null;
   matched_topic: string | null;
 }
 

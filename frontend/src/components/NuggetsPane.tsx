@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { ChevronRight, ExternalLink, Lightbulb, Pin, Sparkle } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronRight, ExternalLink, Lightbulb, Sparkle } from "lucide-react";
 import { marked } from "marked";
 import { api, Nugget } from "../api";
 import { onAppEvent } from "../events";
@@ -9,9 +9,18 @@ interface Props {
   onToggle: () => void;
 }
 
+const CARD_HEIGHT = 200; // estimated card footprint incl. gap — drives fit count
+const ROTATE_MS = 25000;
+
+// The pane never scrolls: it shows only as many cards as fit, with the most
+// relevant (contextually matched, then pinned) first, and rotates the
+// remaining slots through the ranked list.
 export default function NuggetsPane({ collapsed, onToggle }: Props) {
   const [nuggets, setNuggets] = useState<Nugget[]>([]);
   const [phase, setPhase] = useState("");
+  const [offset, setOffset] = useState(0);
+  const [fitCount, setFitCount] = useState(3);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(() => {
     api
@@ -19,6 +28,7 @@ export default function NuggetsPane({ collapsed, onToggle }: Props) {
       .then((data) => {
         setNuggets(data.nuggets);
         setPhase(data.phase);
+        setOffset(0); // back to most relevant on every refresh
       })
       .catch(() => {
         /* keep last good content on transient errors */
@@ -37,6 +47,28 @@ export default function NuggetsPane({ collapsed, onToggle }: Props) {
     };
   }, [refresh]);
 
+  // Fit: measure the list area and show only whole cards.
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const measure = () =>
+      setFitCount(Math.max(1, Math.floor(el.clientHeight / CARD_HEIGHT)));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [collapsed]);
+
+  // Rotate the non-anchored slots through the ranked list.
+  useEffect(() => {
+    if (nuggets.length <= fitCount) return;
+    const timer = setInterval(
+      () => setOffset((o) => (o + 1) % nuggets.length),
+      ROTATE_MS
+    );
+    return () => clearInterval(timer);
+  }, [nuggets.length, fitCount]);
+
   if (collapsed) {
     return (
       <button className="nuggets-collapsed" onClick={onToggle} title="Show insights">
@@ -44,6 +76,16 @@ export default function NuggetsPane({ collapsed, onToggle }: Props) {
       </button>
     );
   }
+
+  // Anchor: the top matched card always holds slot 1; remaining slots rotate.
+  const anchor = nuggets.find((n) => n.matched_topic) ?? null;
+  const pool = anchor ? nuggets.filter((n) => n.id !== anchor.id) : nuggets;
+  const slots = anchor ? fitCount - 1 : fitCount;
+  const rotated =
+    pool.length <= slots
+      ? pool
+      : Array.from({ length: slots }, (_, i) => pool[(offset + i) % pool.length]);
+  const visible = anchor ? [anchor, ...rotated] : rotated;
 
   return (
     <aside className="nuggets-pane">
@@ -57,26 +99,21 @@ export default function NuggetsPane({ collapsed, onToggle }: Props) {
           <ChevronRight size={16} />
         </button>
       </div>
-      <div className="nuggets-list">
-        {nuggets.length === 0 && (
+      <div className="nuggets-list" ref={listRef}>
+        {visible.length === 0 && (
           <div className="nugget-empty">Insights will appear here as the workshop progresses.</div>
         )}
-        {nuggets.map((nugget) => (
+        {visible.map((nugget) => (
           <article
             key={nugget.id}
-            className={`nugget ${nugget.pinned ? "nugget-pinned" : ""} ${
-              nugget.matched_topic ? "nugget-matched" : ""
-            }`}
+            className={`nugget ${nugget.matched_topic ? "nugget-matched" : ""}`}
           >
             {nugget.matched_topic && (
               <div className="nugget-matched-label">
-                <Sparkle size={10} /> spotted in your session
+                <Sparkle size={10} /> {nugget.cta ?? "Take the next step →"}
               </div>
             )}
-            <h3>
-              {nugget.pinned && <Pin size={12} />}
-              {nugget.title}
-            </h3>
+            <h3>{nugget.title}</h3>
             <div
               className="nugget-body"
               dangerouslySetInnerHTML={{ __html: marked.parse(nugget.markdown) as string }}

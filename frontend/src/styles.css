@@ -389,7 +389,9 @@ body {
 }
 
 .nuggets-list {
-  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden; /* never scrolls — cards fit and rotate instead */
   padding: 12px;
   display: flex;
   flex-direction: column;
