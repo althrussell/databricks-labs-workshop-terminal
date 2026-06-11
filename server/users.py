@@ -68,8 +68,12 @@ class User:
         """Env for this user's PTYs — app secrets stripped, identity isolated."""
         env = os.environ.copy()
         # Secrets and CLI-state vars that must never reach an attendee shell.
+        # DATABRICKS_HOST is stripped too: with the host in env (and no token
+        # there), the CLI's unified auth resolves the "env" strategy and then
+        # fails instead of falling through to ~/.databrickscfg. Removing it
+        # forces config-file auth, which we keep rotated.
         for key in (
-            "DATABRICKS_TOKEN",
+            "DATABRICKS_TOKEN", "DATABRICKS_HOST",
             "DATABRICKS_CLIENT_ID", "DATABRICKS_CLIENT_SECRET",
             "DATABRICKS_APP_PORT",
             "CLAUDECODE", "CLAUDE_CODE_SESSION",
@@ -94,6 +98,9 @@ class User:
             "USER": self.slug,
             "PATH": f"{local_bin}:{shared_bin}:{env.get('PATH', '')}",
             "WORKSHOP_USER_EMAIL": self.email,
+            # Belt and braces with the host strip above: the CLI/SDK always
+            # resolve the rotated credentials from ~/.databrickscfg.
+            "DATABRICKS_CONFIG_PROFILE": "DEFAULT",
         })
         return env
 

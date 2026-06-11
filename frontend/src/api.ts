@@ -101,7 +101,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   config: () => request<AppConfig>("/api/config"),
   setupStatus: () =>
-    request<{ ready: Record<string, boolean>; installing: boolean }>("/api/setup-status"),
+    request<{
+      steps: Record<string, { status: string; error: string | null }>;
+      ready: Record<string, boolean>;
+      installing: boolean;
+    }>("/api/setup-status"),
   agents: () =>
     request<{ agents: AgentInfo[]; credential: CredentialStatus }>("/api/agents"),
   sessions: () => request<{ sessions: SessionInfo[] }>("/api/sessions"),

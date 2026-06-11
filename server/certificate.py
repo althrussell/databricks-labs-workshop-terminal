@@ -1,100 +1,159 @@
 """Brag certificate: a branded, landscape A4 PDF of what the attendee built.
 
-Pure reportlab vector drawing — no image assets needed. The attendee supplies
-their display name (lab identities are generic), the event branding comes from
-env, and the stats come from server/stats.py.
+Design follows the Databricks v2 editorial system (html-slides skill): oat
+ground, navy ink, a single lava accent, DM Sans / DM Mono typography, the real
+lockup in the header, and the diamond symbol as a faint background watermark.
+All assets are vendored under assets/brand/ — no network at render time.
 """
 
 from __future__ import annotations
 
 import io
+import logging
+import os
 from datetime import date
 
-from reportlab.lib.colors import HexColor
+from reportlab.graphics import renderPDF
+from reportlab.lib.colors import Color, HexColor
 from reportlab.lib.pagesizes import A4, landscape
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
 from . import config
 
-RED = HexColor("#FF3621")
-INK = HexColor("#131A26")
-SLATE = HexColor("#5A6473")
-PAPER = HexColor("#FAF8F5")
-LINE = HexColor("#E3DED6")
+logger = logging.getLogger(__name__)
+
+_BRAND = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "assets", "brand"))
+
+LAVA = HexColor("#FF3621")
+NAVY = HexColor("#1B3139")
+NAVY_500 = HexColor("#5B7079")
+OAT = HexColor("#F9F7F4")
+OAT_DARK = HexColor("#DCD9D3")
+
+_FONTS = {
+    "DMSans": "dm-sans-regular.ttf",
+    "DMSans-Medium": "dm-sans-medium.ttf",
+    "DMSans-Bold": "dm-sans-bold.ttf",
+    "DMSans-Italic": "dm-sans-italic.ttf",
+    "DMMono": "dm-mono-regular.ttf",
+    "DMMono-Medium": "dm-mono-medium.ttf",
+}
+_fonts_ready = False
 
 
-def _databricks_mark(c: canvas.Canvas, x: float, y: float, s: float) -> None:
-    """Draw a stacked-chevron Databricks-style mark at (x, y), height ~s."""
+def _ensure_fonts() -> dict[str, str]:
+    """Register DM Sans/Mono; fall back to Helvetica when assets are missing."""
+    global _fonts_ready
+    mapping = {
+        "sans": "Helvetica", "medium": "Helvetica", "bold": "Helvetica-Bold",
+        "italic": "Helvetica-Oblique", "mono": "Courier", "mono-medium": "Courier-Bold",
+    }
+    try:
+        if not _fonts_ready:
+            for name, filename in _FONTS.items():
+                pdfmetrics.registerFont(TTFont(name, os.path.join(_BRAND, filename)))
+            _fonts_ready = True
+    except Exception as e:  # noqa: BLE001 — certificate must render regardless
+        logger.warning("brand fonts unavailable (%s) — falling back to Helvetica", e)
+        return mapping
+    return {
+        "sans": "DMSans", "medium": "DMSans-Medium", "bold": "DMSans-Bold",
+        "italic": "DMSans-Italic", "mono": "DMMono", "mono-medium": "DMMono-Medium",
+    }
+
+
+def _svg_drawing(filename: str):
+    try:
+        from svglib.svglib import svg2rlg
+
+        return svg2rlg(os.path.join(_BRAND, filename))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("svg asset %s unavailable: %s", filename, e)
+        return None
+
+
+def _recolor(node, color: Color) -> None:
+    """Recursively repaint a reportlab drawing (for the faint watermark).
+
+    Sets fill unconditionally: svglib leaves ``fillColor`` as None on paths
+    that inherit their paint from a parent group, so a None-guard would skip
+    exactly the shapes that need repainting."""
+    for child in getattr(node, "contents", []) or []:
+        if hasattr(child, "fillColor"):
+            child.fillColor = color
+        if hasattr(child, "fillOpacity"):
+            child.fillOpacity = color.alpha
+        if hasattr(child, "strokeColor"):
+            child.strokeColor = None
+        _recolor(child, color)
+
+
+def _draw_svg(c: canvas.Canvas, drawing, x: float, y: float, height: float) -> float:
+    """Draw an svglib drawing scaled to `height`; returns rendered width."""
+    if drawing is None or not drawing.height:
+        return 0.0
+    scale = height / drawing.height
     c.saveState()
-    c.setFillColor(RED)
-    c.setStrokeColor(RED)
-    for i in range(3):
-        oy = y + i * s * 0.28
-        path = c.beginPath()
-        path.moveTo(x, oy + s * 0.18)
-        path.lineTo(x + s * 0.5, oy + s * 0.42)
-        path.lineTo(x + s, oy + s * 0.18)
-        path.lineTo(x + s * 0.5, oy - s * 0.06)
-        path.close()
-        c.drawPath(path, fill=1, stroke=0)
+    c.translate(x, y)
+    c.scale(scale, scale)
+    renderPDF.draw(drawing, c, 0, 0)
     c.restoreState()
+    return drawing.width * scale
 
 
 def _stat_value(value: int | str) -> str:
-    if isinstance(value, int):
-        return f"{value:,}"
-    return str(value)
+    return f"{value:,}" if isinstance(value, int) else str(value)
 
 
 def build_pdf(name: str, stats: dict) -> bytes:
     branding = config.branding()
     event = branding["event_name"] or "Databricks Workshop"
-    brand = branding["brand_name"]
+    f = _ensure_fonts()
 
     buf = io.BytesIO()
     width, height = landscape(A4)
     c = canvas.Canvas(buf, pagesize=(width, height))
     c.setTitle(f"{event} — Certificate of Achievement")
 
-    # Canvas + frame
-    c.setFillColor(PAPER)
+    # Ground
+    c.setFillColor(OAT)
     c.rect(0, 0, width, height, fill=1, stroke=0)
-    c.setStrokeColor(LINE)
-    c.setLineWidth(1)
-    c.rect(28, 28, width - 56, height - 56, fill=0, stroke=1)
-    c.setFillColor(RED)
-    c.rect(28, height - 36, width - 56, 8, fill=1, stroke=0)
 
-    # Header: mark + brand
-    _databricks_mark(c, 56, height - 96, 34)
-    c.setFillColor(INK)
-    c.setFont("Helvetica-Bold", 17)
-    c.drawString(104, height - 78, brand)
-    c.setFillColor(SLATE)
-    c.setFont("Helvetica", 10.5)
-    c.drawString(104, height - 93, event)
-    c.setFont("Helvetica", 10.5)
-    c.drawRightString(width - 56, height - 78, date.today().strftime("%B %d, %Y"))
+    # Watermark: the diamond symbol, huge and faint, bleeding off bottom-right.
+    symbol = _svg_drawing("databricks-symbol-navy.svg")
+    if symbol is not None:
+        _recolor(symbol, Color(0.106, 0.192, 0.224, alpha=0.05))  # navy @ 5%
+        _draw_svg(c, symbol, width - 330, -130, 460)
 
-    # Title block
-    c.setFillColor(SLATE)
-    c.setFont("Helvetica", 13)
-    c.drawCentredString(width / 2, height - 170, "CERTIFICATE OF ACHIEVEMENT")
-    c.setFillColor(INK)
-    c.setFont("Helvetica-Bold", 40)
-    c.drawCentredString(width / 2, height - 218, name)
-    c.setStrokeColor(RED)
-    c.setLineWidth(2)
-    name_w = max(c.stringWidth(name, "Helvetica-Bold", 40), 200)
-    c.line(width / 2 - name_w / 2, height - 230, width / 2 + name_w / 2, height - 230)
-    c.setFillColor(SLATE)
-    c.setFont("Helvetica", 13)
+    # Lava hairline top — the single accent rule (v2 eyebrow grammar).
+    c.setFillColor(LAVA)
+    c.rect(0, height - 6, width, 6, fill=1, stroke=0)
+
+    # Header: real lockup + date
+    lockup = _svg_drawing("lockup-primary-navy.svg")
+    _draw_svg(c, lockup, 64, height - 92, 30)
+    c.setFillColor(NAVY_500)
+    c.setFont(f["mono"], 10)
+    c.drawRightString(width - 64, height - 82, date.today().strftime("%B %d, %Y").upper())
+
+    # Eyebrow + name + lede
+    c.setFillColor(LAVA)
+    c.setFont(f["mono-medium"], 11)
+    c.drawCentredString(width / 2, height - 168, "C E R T I F I C A T E   O F   A C H I E V E M E N T")
+    c.setFillColor(NAVY)
+    name_size = 54 if c.stringWidth(name, f["bold"], 54) < width - 200 else 40
+    c.setFont(f["bold"], name_size)
+    c.drawCentredString(width / 2, height - 224, name)
+    c.setFillColor(NAVY_500)
+    c.setFont(f["italic"], 14.5)
     c.drawCentredString(
-        width / 2, height - 254,
-        "built with AI coding agents on the Databricks Data + AI Platform",
+        width / 2, height - 252,
+        f"built with AI coding agents on the Databricks Data + AI Platform — {event}",
     )
 
-    # Stats grid
+    # Stats row: editorial columns separated by hairlines, not boxes.
     code = stats.get("code", {})
     resources = stats.get("resources", {})
     resource_total = sum(resources.values()) if resources else 0
@@ -106,52 +165,52 @@ def build_pdf(name: str, stats: dict) -> bytes:
         (_stat_value(resource_total), "Databricks resources"),
         (_stat_value(len(stats.get("topics", []))), "topics explored"),
     ]
-    grid_top = height - 300
-    cell_w = (width - 144) / 3
-    cell_h = 78
+    row_top, row_h = height - 296, 96
+    cell_w = (width - 128) / 6
+    c.setStrokeColor(OAT_DARK)
+    c.setLineWidth(1)
+    c.line(64, row_top, width - 64, row_top)
+    c.line(64, row_top - row_h, width - 64, row_top - row_h)
     for i, (value, label) in enumerate(cells):
-        col, row = i % 3, i // 3
-        cx = 72 + col * cell_w
-        cy = grid_top - row * (cell_h + 14) - cell_h
-        c.setFillColor(HexColor("#FFFFFF"))
-        c.setStrokeColor(LINE)
-        c.roundRect(cx, cy, cell_w - 16, cell_h, 8, fill=1, stroke=1)
-        c.setFillColor(RED)
-        c.setFont("Helvetica-Bold", 26)
-        c.drawCentredString(cx + (cell_w - 16) / 2, cy + 38, value)
-        c.setFillColor(SLATE)
-        c.setFont("Helvetica", 10)
-        c.drawCentredString(cx + (cell_w - 16) / 2, cy + 18, label.upper())
+        cx = 64 + i * cell_w + cell_w / 2
+        if i:
+            c.line(64 + i * cell_w, row_top - 14, 64 + i * cell_w, row_top - row_h + 14)
+        size = 30 if c.stringWidth(value, f["bold"], 30) < cell_w - 18 else 22
+        c.setFillColor(NAVY)
+        c.setFont(f["bold"], size)
+        c.drawCentredString(cx, row_top - 48, value)
+        c.setFillColor(NAVY_500)
+        c.setFont(f["mono"], 8.5)
+        c.drawCentredString(cx, row_top - 72, label.upper())
 
     # Detail lines
-    detail_y = grid_top - 2 * (cell_h + 14) - 26
+    detail_y = row_top - row_h - 30
     details = []
     if resources:
-        parts = [
-            f"{v} {k.rstrip('s') if v == 1 else k}" for k, v in resources.items() if v
-        ]
+        parts = [f"{v} {k.rstrip('s') if v == 1 else k}" for k, v in resources.items() if v]
         if parts:
             details.append("In the workshop workspace: " + ", ".join(parts))
     topics = stats.get("topics", [])
     if topics:
-        details.append("Explored: " + " · ".join(t.replace("-", " ").title() for t in topics))
+        details.append("Explored " + " · ".join(t.replace("-", " ").title() for t in topics))
     if code.get("projects"):
         details.append(
-            f"{code['projects']} project(s), {code.get('files', 0)} files — "
-            "synced to your Databricks Workspace to keep building"
+            f"{code['projects']} project{'s' if code['projects'] != 1 else ''}, "
+            f"{code.get('files', 0)} files — synced to your Databricks Workspace to keep building"
         )
-    c.setFont("Helvetica", 10.5)
-    c.setFillColor(SLATE)
+    c.setFillColor(NAVY_500)
+    c.setFont(f["sans"], 11)
     for line in details[:3]:
         c.drawCentredString(width / 2, detail_y, line)
-        detail_y -= 16
+        detail_y -= 17
 
     # Footer
-    c.setFillColor(SLATE)
-    c.setFont("Helvetica-Oblique", 9.5)
-    c.drawCentredString(
-        width / 2, 36, "Powered by the Databricks Workshop Terminal — databricks.com"
-    )
+    c.setStrokeColor(OAT_DARK)
+    c.line(64, 58, width - 64, 58)
+    c.setFillColor(NAVY_500)
+    c.setFont(f["mono"], 8.5)
+    c.drawString(64, 42, "POWERED BY THE DATABRICKS WORKSHOP TERMINAL")
+    c.drawRightString(width - 64, 42, "DATABRICKS.COM")
 
     c.showPage()
     c.save()

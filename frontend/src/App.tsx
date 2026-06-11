@@ -5,13 +5,13 @@ import {
   Download,
   GraduationCap,
   Link as LinkIcon,
-  Plus,
   ShieldCheck,
   X,
 } from "lucide-react";
 import { api, AgentInfo, AppConfig, SessionInfo } from "./api";
 import databricksLogo from "./assets/databricks-logo.svg";
 import BannerBar from "./components/BannerBar";
+import Hero from "./components/Hero";
 import LaunchBar from "./components/LaunchBar";
 import NuggetsPane from "./components/NuggetsPane";
 import OperatorPanel from "./components/OperatorPanel";
@@ -213,6 +213,7 @@ export default function App() {
       ) : (
         <div className="main">
           <div className="work-area">
+            {sessions.length > 0 && (
             <div className="toolbar">
               <LaunchBar agents={agents} launching={launching} onLaunch={launch} />
               <div className="tabs">
@@ -236,6 +237,7 @@ export default function App() {
                 ))}
               </div>
             </div>
+            )}
 
             {hintSessionId && hintSessionId === activeId && (
               <div className="coach-hint">
@@ -249,15 +251,12 @@ export default function App() {
             )}
             <div className="terminal-stage">
               {sessions.length === 0 && (
-                <div className="empty-state">
-                  <Plus size={28} />
-                  <h2>Launch your first terminal</h2>
-                  <p>
-                    Pick <strong>Claude Code</strong> or <strong>Codex</strong> above — your
-                    Databricks credentials are wired up automatically. Nothing to paste,
-                    nothing to configure.
-                  </p>
-                </div>
+                <Hero
+                  agents={agents}
+                  eventName={branding?.event_name ?? ""}
+                  launching={launching}
+                  onLaunch={launch}
+                />
               )}
               {sessions.map((session) => (
                 <TerminalView

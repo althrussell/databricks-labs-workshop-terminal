@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -145,32 +146,52 @@ def _install_codex() -> None:
     _set("codex", "error", error)
 
 
+# AppKit scaffolding (`databricks apps init`) needs 0.295+; the Apps runtime
+# image ships a much older CLI, so we always install the latest release.
+_DATABRICKS_CLI_MIN = (0, 295)
+
+
+def _databricks_cli_current(path: str) -> bool:
+    try:
+        out = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=15)
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    m = re.search(r"(\d+)\.(\d+)\.(\d+)", out.stdout or "")
+    return bool(m) and (int(m.group(1)), int(m.group(2))) >= _DATABRICKS_CLI_MIN
+
+
 def _install_databricks_cli() -> None:
     _set("databricks", "running")
     prefix = config.shared_prefix()
-    target = os.path.join(prefix, "bin", "databricks")
-    if os.path.exists(target):
+    bin_dir = os.path.join(prefix, "bin")
+    target = os.path.join(bin_dir, "databricks")
+    if os.path.exists(target) and _databricks_cli_current(target):
         _set("databricks", "complete")
         return
-    existing = shutil.which("databricks")
-    if existing:
-        os.makedirs(os.path.dirname(target), exist_ok=True)
-        os.symlink(existing, target)
-        _set("databricks", "complete")
-        return
+    if os.path.lexists(target):
+        os.unlink(target)  # stale or runtime-bundled old version
     try:
         result = subprocess.run(
             ["bash", "-c",
              f"curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh "
-             f"| sh -s -- --target {os.path.join(prefix, 'bin')}"],
+             f"| sh -s -- --target {bin_dir}"],
             capture_output=True, text=True, timeout=300, env=_install_env(),
         )
         if result.returncode == 0 and os.path.exists(target):
             _set("databricks", "complete")
-        else:
-            _set("databricks", "error", (result.stderr or result.stdout)[-500:])
+            return
+        error = (result.stderr or result.stdout)[-500:]
     except (subprocess.TimeoutExpired, OSError) as e:
-        _set("databricks", "error", str(e))
+        error = str(e)
+    # Download failed — the runtime's bundled CLI (old but functional) is
+    # better than nothing for basic auth/workspace commands.
+    existing = shutil.which("databricks")
+    if existing:
+        os.makedirs(bin_dir, exist_ok=True)
+        os.symlink(existing, target)
+        _set("databricks", "complete", error=f"latest install failed, using runtime CLI: {error}")
+    else:
+        _set("databricks", "error", error)
 
 
 def _install_skills() -> None:
