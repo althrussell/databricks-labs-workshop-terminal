@@ -17,6 +17,12 @@
         "label": "Customer Academy",
         "url": "https://customer-academy.databricks.com",
         "icon": "graduation-cap"
+      },
+      {
+        "label": "Get Free Edition",
+        "url": "https://www.databricks.com/learn/free-edition",
+        "icon": "rocket",
+        "highlight": true
       }
     ],
     "features": {
@@ -423,10 +429,10 @@
     {
       "id": "wrap-keep-going",
       "title": "Keep building after today",
-      "markdown": "Everything you used today — Claude on Databricks, the CLI, serverless — works in your own workspace. Bookmark the docs and the free Customer Academy courses to keep the momentum.",
+      "markdown": "Everything you used today works in your own workspace — and you can have one **free, forever**: Databricks Free Edition takes two minutes to set up. Pair it with the free Customer Academy courses to keep the momentum.",
       "link": {
-        "url": "https://customer-academy.databricks.com",
-        "label": "Customer Academy"
+        "url": "https://www.databricks.com/learn/free-edition",
+        "label": "Create your free account"
       },
       "phases": [
         "wrap"

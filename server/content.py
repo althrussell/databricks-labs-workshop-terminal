@@ -56,6 +56,7 @@ class ShellLink(BaseModel):
     label: str
     url: str
     icon: str = "link"
+    highlight: bool = False  # promoted CTA treatment in the nav
 
 
 class WorkspaceLink(BaseModel):

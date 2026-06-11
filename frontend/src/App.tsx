@@ -6,6 +6,7 @@ import {
   GraduationCap,
   House,
   Link as LinkIcon,
+  Rocket,
   ShieldCheck,
   X,
 } from "lucide-react";
@@ -21,6 +22,7 @@ import TerminalView from "./components/TerminalView";
 const LINK_ICONS: Record<string, typeof LinkIcon> = {
   "book-open": BookOpen,
   "graduation-cap": GraduationCap,
+  rocket: Rocket,
   link: LinkIcon,
 };
 
@@ -197,7 +199,13 @@ export default function App() {
           {shellLinks.map((link) => {
             const Icon = LINK_ICONS[link.icon] ?? LinkIcon;
             return (
-              <a key={link.url} href={link.url} target="_blank" rel="noreferrer">
+              <a
+                key={link.url}
+                href={link.url}
+                target="_blank"
+                rel="noreferrer"
+                className={link.highlight ? "link-highlight" : undefined}
+              >
                 <Icon size={14} />
                 {link.label}
               </a>

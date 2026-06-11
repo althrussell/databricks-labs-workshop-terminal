@@ -2,6 +2,7 @@ export interface ShellLink {
   label: string;
   url: string;
   icon: string;
+  highlight?: boolean;
 }
 
 export interface WorkspaceLink {
