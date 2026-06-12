@@ -41,7 +41,27 @@ jobs:
         working-directory: frontend
         # npm install (not ci) + Node 22's newer npm: `npm ci` on Node 20 hit npm's
         # "Exit handler never called!" crash, leaving node_modules incomplete.
-        run: npm install --no-audit --no-fund
+        # That crash also recurs when the registry stalls mid-fetch, so tune npm's
+        # fetch retries and wrap the install in a retry loop (clearing the cache
+        # between attempts) to ride out transient registry hiccups on the runner.
+        env:
+          npm_config_fetch_retries: "5"
+          npm_config_fetch_retry_mintimeout: "10000"
+          npm_config_fetch_retry_maxtimeout: "120000"
+          npm_config_fetch_timeout: "600000"
+        run: |
+          for attempt in 1 2 3; do
+            echo "npm install attempt $attempt"
+            if npm install --no-audit --no-fund; then
+              exit 0
+            fi
+            echo "npm install failed (attempt $attempt); cleaning cache and retrying"
+            npm cache clean --force || true
+            rm -rf node_modules
+            sleep 10
+          done
+          echo "npm install failed after 3 attempts"
+          exit 1
       - name: Type-check
         working-directory: frontend
         # The frontend type-check is the "type checks" half of P1-12. The full
