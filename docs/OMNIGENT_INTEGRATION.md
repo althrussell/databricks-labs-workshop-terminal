@@ -424,6 +424,20 @@ implementation; where this design and the source disagreed, the source won:
   icon (`icon: "omnigent"` → `IMAGE_ICONS` in Hero/LaunchBar), `STEP_LABELS`
   gained tmux/omnigent entries, and the hero's primary card is now the first
   catalog entry rather than hardcoded `claude`.
-- **Still open (needs a deployed dev app):** §6 memory measurement at 30
-  attendees, and the §7 live E2E list (rotation boundary, reattach,
-  two-identity isolation).
+- **Redeploys over live omnigent sessions.** An in-place `apps deploy` onto a
+  container that had hosted an omnigent session failed with "App process did
+  not start within 10 minutes" (suspected: the detached omnigent server/tmux
+  daemons from §4 holding up the supervisor's process handoff). A fresh app
+  (new compute) deployed cleanly. Until root-caused: prefer stop→start (or a
+  fresh app) over in-place redeploy when omnigent sessions have run —
+  Control Tower's teardown/redeploy flow recycles compute, so it is
+  unaffected.
+- **Verified live on Databricks Apps (labs, June 12 2026):** static tmux runs
+  on the Apps runtime image; omnigent installs from staged wheels; the
+  pre-written config bypasses both the provider wizard and (with the `tui:`
+  block) the theme picker; bare `omnigent` lands in polly on
+  `databricks-claude-opus-4-8` and completes a gateway round-trip through the
+  rotating token file.
+- **Still open (needs longer-running E2E):** §6 memory measurement at 30
+  attendees (moot under one-attendee-per-instance topology, P1-11a), and the
+  §7 rotation-boundary / reattach / two-identity checks.
