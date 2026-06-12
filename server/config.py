@@ -27,6 +27,25 @@ def ensure_https(url: str) -> str:
     return url
 
 
+def control_tower_ingest_url() -> str:
+    """Control Tower's event-ingest base URL (contract C3b). Empty disables emit."""
+    return _env("CONTROL_TOWER_INGEST_URL")
+
+
+def control_tower_ingest_token() -> str:
+    """Shared X-Ingest-Token CT vends for the event-ingest endpoint."""
+    return _env("CONTROL_TOWER_INGEST_TOKEN")
+
+
+def workshop_run_id() -> str:
+    """CT lab run id this terminal belongs to (injected at deploy)."""
+    return _env("WORKSHOP_RUN_ID")
+
+
+def workspace_id() -> str:
+    return _env("DATABRICKS_WORKSPACE_ID")
+
+
 def databricks_host() -> str:
     return ensure_https(_env("DATABRICKS_HOST").rstrip("/"))
 
