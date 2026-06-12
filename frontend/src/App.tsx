@@ -8,6 +8,7 @@ import {
   Link as LinkIcon,
   Rocket,
   ShieldCheck,
+  SquareTerminal,
   X,
 } from "lucide-react";
 import { api, AgentInfo, AppConfig, SessionInfo } from "./api";
@@ -93,6 +94,19 @@ export default function App() {
     } finally {
       setLaunching(null);
     }
+  }
+
+  // Home-screen cards: an attendee clicking the agent they already have open
+  // wants to get back to it, not open a duplicate — and at the session cap a
+  // failed launch from Home would otherwise leave no way back to the tabs.
+  function openOrLaunch(agentId: string) {
+    const existing = sessions.find((s) => s.agent_id === agentId && !s.exited);
+    if (existing) {
+      setActiveId(existing.id);
+      setView("terminals");
+      return;
+    }
+    launch(agentId);
   }
 
   // Ideation chips / insight-card prompts: type the text into the attendee's
@@ -205,6 +219,16 @@ export default function App() {
             <House size={14} />
             Home
           </button>
+          {sessions.length > 0 && (
+            <button
+              className={`operator-toggle ${view === "terminals" ? "operator-toggle-active" : ""}`}
+              onClick={() => setView("terminals")}
+              title="Back to your open terminals"
+            >
+              <SquareTerminal size={14} />
+              Terminals ({sessions.length})
+            </button>
+          )}
           {isAdmin && (
             <button
               className={`operator-toggle ${view === "operator" ? "operator-toggle-active" : ""}`}
@@ -315,7 +339,7 @@ export default function App() {
                   workspaceLinks={config?.shell.workspace_links ?? []}
                   hasSessions={sessions.length > 0}
                   launching={launching}
-                  onLaunch={launch}
+                  onLaunch={openOrLaunch}
                   onIdea={ideaToSession}
                 />
               )}
