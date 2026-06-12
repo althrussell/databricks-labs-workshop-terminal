@@ -118,7 +118,9 @@ export default function Hero({
         </p>
 
         <div className="hero-cards">
-          {agents.map((agent, i) => {
+          {/* The home screen sells the AI agents; the plain bash terminal
+              stays reachable from the in-session LaunchBar toolbar. */}
+          {agents.filter((agent) => agent.id !== "bash").map((agent, i) => {
             const Icon = ICONS[agent.icon] ?? SquareTerminal;
             const imageIcon = IMAGE_ICONS[agent.icon];
             const busy = launching === agent.id;
