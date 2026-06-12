@@ -25,6 +25,7 @@ from .auth import Principal, get_current_user, is_admin
 from .bootstrap import install
 from .content import content_service
 from .credentials import CredentialError, credential_manager, ensure_user_credentials
+from .event_emitter import event_emitter, flush_loop
 from .events import event_hub
 from .sessions import SessionLimitError, session_manager
 from .users import user_manager
@@ -58,13 +59,27 @@ async def lifespan(app: FastAPI):
     session_manager.output_observer = _observe_output
     event_hub.attach_loop(loop)
     os.makedirs(config.users_root(), exist_ok=True)
+    emitter_stop = None
     if not config.local_dev():
         install.run_in_background()
         credential_manager.start()
+        # C3b: background flusher pushes buffered attendee events to Control
+        # Tower. Only starts when CT ingest is configured (emitter.enabled).
+        if event_emitter.enabled:
+            import threading
+
+            emitter_stop = threading.Event()
+            threading.Thread(
+                target=flush_loop, args=(event_emitter, emitter_stop),
+                daemon=True, name="event-emitter-flush",
+            ).start()
+            logger.info("event emitter started (run_id=%s)", event_emitter.run_id)
     else:
         logger.info("LOCAL_DEV=1 — skipping CLI installers and credential rotation")
     logger.info("workshop terminal up (phase=%s)", content_service.phase)
     yield
+    if emitter_stop is not None:
+        emitter_stop.set()
 
 
 app = FastAPI(title="Databricks Workshop Terminal", lifespan=lifespan)
@@ -157,6 +172,8 @@ def create_session(body: CreateSessionBody, principal: Principal = Depends(get_c
     except SessionLimitError as e:
         raise HTTPException(status_code=429, detail=str(e))
     user.sessions_launched[agent["id"]] = user.sessions_launched.get(agent["id"], 0) + 1
+    # C3b: emit a session.started event (no-op unless CT ingest is configured).
+    event_emitter.emit("session.started", principal.name, {"agent": agent["id"]})
     return {"session": session.to_dict()}
 
 
