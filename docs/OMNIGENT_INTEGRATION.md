@@ -1,161 +1,392 @@
-# Omnigent Integration Plan
+# Design: Omnigent as the Primary Workshop Interface
 
 **Status: proposed — not yet implemented.**
+**Scope:** Workshop Terminal only. No changes to the Omnigent project itself.
 
-Omnigent is Databricks' agent meta-harness (OSS launch imminent;
-`omnigent==0.1.0rc2` on PyPI today). It wraps coding agents — Claude Code,
-Codex, and YAML-declared custom agents — in managed sessions with a TUI, a
-server, and a web UI. This plan makes Omnigent the **primary interface** in
-the Workshop Terminal: attendees land in the `omnigent` TUI by default, with
-Claude and Codex selectable as harnesses through it. Bare `claude` / `codex`
-launch modes stay available as fallbacks.
+## 1. Context
 
-## Decisions
+Omnigent is Databricks' agent meta-harness (public OSS launch imminent;
+`omnigent==0.1.0rc2` is on PyPI today). It wraps coding agents — Claude Code,
+Codex, and YAML-declared custom agents — in managed sessions: a TUI, a local
+FastAPI server, session persistence, sub-agent orchestration (the bundled
+`polly` orchestrator), and a web UI.
 
-| Question | Decision |
-|---|---|
-| Server topology | **Embedded, per-attendee** — each attendee's first `omnigent` invocation auto-spawns a local server keyed to their isolated `$HOME`. No separate server app, no shared-server auth. Sessions are ephemeral with the app — acceptable for workshops. |
-| Default UX | Terminal boots straight into the `omnigent` TUI; `omnigent claude` / `omnigent codex` offered as direct session types too. |
-| Fallback | Bare `claude` / `codex` catalog entries kept (demoted in order). The existing `AGENT_CATALOG_PATH` override remains the operator escape hatch to re-promote them mid-event. |
-| Install source | PyPI (`omnigent==0.1.0rc2`), env-pinned via `OMNIGENT_VERSION`; bump to GA next week — one env change. |
+Today the Workshop Terminal launches **bare** `claude` / `codex` CLIs. This
+design makes Omnigent the **default session type**: attendees land in the
+`omnigent` TUI, with `omnigent claude` and `omnigent codex` as direct session
+types, and the bare CLIs kept as demoted fallbacks.
 
-## Why this fits the existing architecture
+### Goals
 
-- **Per-user isolation falls out of per-user HOMEs.** Omnigent resolves all
-  state via `Path.home()` (`~/.omnigent/config.yaml`, `~/.omnigent/local_server.pid`).
-  Its local-server port picker bind-probes 6767 and falls back to a free port,
-  and discovery goes through each HOME's pidfile — concurrent attendees on one
-  container don't collide. Auto-spawned servers run in single-user loopback
-  mode (`OMNIGENT_LOCAL_SINGLE_USER=1`), so no accounts/auth machinery is needed.
-- **Credentials reuse the existing rotation plumbing.** Omnigent's `kind: gateway`
-  provider supports `auth_command` — a shell command that prints a bearer token,
-  refreshed on a 15-minute cadence that matches our token lifetime exactly. We
-  write the rotating token to a per-user file and point `auth_command` at it;
-  rotation never rewrites YAML.
-- **The launch catalog is already config-driven.** New session types are pure
-  `content/agents.json` entries — `launch_command()` handles multi-word
-  commands, the frontend renders whatever the catalog returns (unknown icons
-  fall back), and readiness gating works per-binary. **No frontend build and
-  no backend launch-code changes are required.**
+- Omnigent TUI is the first button an attendee sees and the one that works.
+- Claude and Codex both usable through Omnigent, authenticated against the
+  same Databricks model gateway the app already wires up.
+- Zero new credential surface: reuse the existing vended-PAT → rotating-token
+  chain unchanged.
+- GA version bump is a single env change.
+- Bare `claude` / `codex` remain one click away if the rc misbehaves mid-event.
 
-## Changes
+### Non-goals
 
-### 1. Bootstrap installers — `server/bootstrap/install.py`
+- No shared/central Omnigent server app. Sessions are ephemeral with the
+  workshop container.
+- No Omnigent web UI exposure to attendees (the TUI is the interface; the
+  per-user web UI would need per-user ports through the Apps proxy — out of
+  scope).
+- No changes to the operator/admin API. Catalog reordering via the existing
+  `AGENT_CATALOG_PATH` override is the operator escape hatch.
 
-- `OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "0.1.0rc2")` beside
-  the `CODEX_VERSION` pin.
-- `_install_tmux()` — omnigent's claude/codex wrappers hard-require tmux and
-  the Apps runtime has no package manager. Skip if `shutil.which("tmux")`;
-  else curl a pinned static musl build (e.g. `mjakob-gh/build-static-tmux`
-  release asset, sha256-verified, `TMUX_STATIC_URL` env override) into the
-  shared prefix `bin/` — same pattern as the databricks CLI installer.
-- `_install_omnigent()` — ensure `uv` (probe PATH, else curl the astral
-  installer into the shared prefix), then
-  `uv tool install --python 3.12 omnigent==$OMNIGENT_VERSION` with
-  `UV_TOOL_DIR` / `UV_TOOL_BIN_DIR` / `UV_PYTHON_INSTALL_DIR` pointed into the
-  shared prefix. uv fetches a standalone CPython 3.12 — omnigent requires
-  ≥3.12 regardless of the runtime Python, with no root needed. Stamp the
-  installed version in a sidecar file and **reinstall when the pin changes**
-  (unlike the exists→done shortcut the claude installer uses) so the GA bump
-  actually takes effect on redeploy.
-- Extend `status()["ready"]` with `"omnigent"` (venv **and** tmux complete);
-  add both steps to the `run_in_background()` pool.
+## 2. Architecture overview
 
-### 2. Per-attendee provisioning — `server/cli_config.py`, `server/users.py`
-
-- New `configure_omnigent(user, token)` wired into `configure_all()`:
-  - Write the rotating token to `~/.config/workshop/gateway-token` (0600).
-    Add the same write to `update_tokens()` — the rotation fast path never
-    touches YAML.
-  - Write `~/.omnigent/config.yaml` (no `server:` key → per-user auto-spawn):
-
-    ```yaml
-    providers:
-      databricks-gateway:
-        kind: gateway
-        default: true
-        anthropic:
-          base_url: <gateway_host()>/anthropic
-          auth_command: cat <user.home>/.config/workshop/gateway-token
-          models:
-            default: <same opus/sonnet chain as configure_claude>
-        openai:
-          base_url: <gateway_host()>/openai/v1
-          wire_api: responses
-          auth_command: cat <user.home>/.config/workshop/gateway-token
-          models:
-            default: <CODEX_MODEL or databricks-gpt-5-5>
-    ```
-
-  - Reuse `gateway_host()` and the existing model-pick chains; fall back to
-    `/serving-endpoints` base URLs when no gateway resolves, mirroring
-    `configure_claude` / `configure_codex`.
-- `users.py` `shell_env()` additions:
-  - `TMUX_TMPDIR=$HOME/.cache/tmux` — **critical**: all attendees share one OS
-    uid, and tmux's default socket dir is `/tmp/tmux-<uid>`; without this every
-    attendee lands in the same tmux server.
-  - `OMNIGENT_NO_UPDATE_CHECK=1` — the install is shared; never self-update
-    (mirrors `DISABLE_AUTOUPDATER` for claude).
-
-### 3. Session types — `content/agents.json` (catalog-only)
-
-```json
-{ "id": "omnigent",        "label": "Omnigent",          "command": "omnigent",        "requires": ["omnigent", "claude"], "order": 1 },
-{ "id": "omnigent-claude", "label": "Omnigent · Claude", "command": "omnigent claude", "requires": ["omnigent", "claude"], "order": 2 },
-{ "id": "omnigent-codex",  "label": "Omnigent · Codex",  "command": "omnigent codex",  "requires": ["omnigent", "codex"],  "order": 3 }
+```
+Databricks App container (single uvicorn worker)
+│
+├─ FastAPI app (existing)            ── PTY sessions, auth, rotation, catalog
+│
+├─ shared prefix  DATA_ROOT/shared/
+│   ├─ bin/   node, claude, codex, databricks, tmux*, omnigent*   (*new)
+│   ├─ uv-tools/omnigent/            ── uv-managed venv, CPython 3.12*
+│   └─ uv-python/                    ── uv-downloaded interpreters*
+│
+└─ per-attendee HOME  DATA_ROOT/users/<slug>/
+    ├─ .claude/settings.json         ── existing (bare-claude fallback path)
+    ├─ .codex/config.toml, .env      ── existing (bare-codex fallback path)
+    ├─ .config/workshop/gateway-token   ── NEW: rotating token file (0600)
+    ├─ .omnigent/config.yaml         ── NEW: gateway provider, written once
+    ├─ .omnigent/local_server.pid    ── omnigent-managed (auto-spawned server)
+    └─ .cache/tmux/                  ── NEW: per-user tmux socket dir
 ```
 
-Existing `claude` / `codex` entries demoted to order 10/11 (fallbacks); `bash`
-stays 99. Operators can re-promote bare modes mid-event via the existing
-`AGENT_CATALOG_PATH` override without a deploy.
+**Per-attendee servers, not shared.** Omnigent resolves all state via
+`Path.home()`. An attendee's first `omnigent` invocation auto-spawns a local
+server recorded in *their* `~/.omnigent/local_server.pid`. The port picker
+bind-probes 6767 and falls back to an OS-assigned free port; discovery is
+always via the pidfile, never an assumed port — so N attendees on one
+container cannot collide. Auto-spawned servers run with
+`OMNIGENT_LOCAL_SINGLE_USER=1` (loopback `local` identity) — no accounts mode,
+no passwords, no auth machinery.
 
-### 4. `app.yaml`
+The trust model is unchanged from today: all attendees share one OS uid and
+isolation is cooperative/HOME-based. A motivated attendee could already read
+another's `~/.databrickscfg`; the omnigent loopback servers add nothing
+qualitatively new.
 
-New env entries: `OMNIGENT_VERSION` (`"0.1.0rc2"`), optional `TMUX_STATIC_URL`.
+## 3. Component design
 
-### 5. Tests
+### 3.1 Bootstrap installers — `server/bootstrap/install.py`
 
-`tests/test_omnigent_config.py` beside the existing suites:
-- `configure_omnigent` writes valid YAML with the right base URLs, models, and
-  `auth_command` path; token file is 0600.
-- `update_tokens` refreshes the token file without rewriting YAML.
-- Installer version-stamp logic triggers reinstall on pin change.
-- Catalog gating: omnigent entries report `ready: false` until both readiness
-  keys complete.
+Two new install steps following the existing patterns (idempotent, shared
+prefix, readiness keys, background pool).
 
-### 6. GA bump (next week)
+**Pins** (top of file, beside `CODEX_VERSION`):
 
-One change: `OMNIGENT_VERSION` default → GA version. The sidecar version stamp
-makes the redeploy reinstall; re-run the smoke checklist.
+```python
+OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "0.1.0rc2")
+TMUX_STATIC_URL = os.environ.get(
+    "TMUX_STATIC_URL",
+    "https://github.com/mjakob-gh/build-static-tmux/releases/download/v3.5a/tmux.linux-amd64.gz",
+)
+TMUX_STATIC_SHA256 = os.environ.get("TMUX_STATIC_SHA256", "<pin at implementation time>")
+UV_INSTALLER_URL = os.environ.get("UV_INSTALLER_URL", "https://astral.sh/uv/install.sh")
+```
 
-## Ordered tasks (de-risk first)
+**`_install_tmux()`** — omnigent's `claude` / `codex` wrappers hard-require
+tmux (refuse to start without it) and the Apps runtime has no package manager.
 
-1. **Manual spike on the live app (before any code):** deploy current main to
-   `workshop-terminal-dev`, open a bash attendee terminal, hand-install the
-   static tmux + `uv tool install --python 3.12 omnigent==0.1.0rc2`, hand-write
-   a `config.yaml`, run `omnigent` and `omnigent claude`. This validates every
-   hard unknown in one session: Python 3.12 via uv on the Apps runtime, the
-   static tmux binary, tmux-inside-xterm.js rendering/resize, local-server
-   auto-spawn, and gateway `auth_command` auth.
-2. **Memory check:** spawn 3–5 omnigent servers under distinct fake HOMEs,
-   measure RSS → confirm the per-user-server model fits the container; if not,
-   pivot to one shared server in accounts mode (documented fallback).
-3. Bootstrap installers + `app.yaml` env.
-4. `configure_omnigent` + token-file rotation + `shell_env()` additions;
-   confirm a pre-written config skips omnigent's first-run wizard on rc2.
-5. Catalog entries + readiness gating + tests.
-6. End-to-end on `workshop-terminal-dev`: two attendee identities → distinct
-   per-HOME server ports; token rotation survives >15 min inside a live
-   `omnigent claude` session; PTY reattach/scrollback replay with tmux's
-   alternate screen.
-7. GA bump + redeploy + smoke.
+1. If `shutil.which("tmux")` or `$PREFIX/bin/tmux` exists → complete.
+2. `curl -fsSL $TMUX_STATIC_URL | gunzip > $PREFIX/bin/tmux` (download to a
+   temp path first, verify sha256, then move into place; `chmod 755`).
+3. Smoke: `tmux -V` exits 0.
 
-## Risks
+The static musl build is fully self-contained (no terminfo dependency issues
+under `TERM=xterm-256color`). Fallback if the GitHub release is unreachable:
+vendor the gzipped binary under `assets/bin/` in this repo (decision deferred
+to the de-risk spike; the URL path keeps the repo small).
 
-| Risk | Mitigation |
+**`_install_omnigent()`** — omnigent requires Python ≥3.12; the Apps runtime
+Python must not be assumed. `uv` solves both: it downloads a standalone
+CPython and manages an isolated tool venv, no root required.
+
+1. Resolve `uv`: `shutil.which("uv")`, else
+   `curl -fsSL $UV_INSTALLER_URL | env UV_INSTALL_DIR=$PREFIX/bin sh`.
+2. Install with all uv state on the persistent volume:
+
+   ```python
+   env = _install_env()
+   env.update({
+       "UV_TOOL_DIR": os.path.join(prefix, "uv-tools"),
+       "UV_TOOL_BIN_DIR": os.path.join(prefix, "bin"),
+       "UV_PYTHON_INSTALL_DIR": os.path.join(prefix, "uv-python"),
+   })
+   subprocess.run(
+       [uv, "tool", "install", "--force", "--python", "3.12",
+        f"omnigent=={OMNIGENT_VERSION}"],
+       env=env, timeout=600, ...
+   )
+   ```
+
+   `uv tool install` drops the `omnigent` entry point into `UV_TOOL_BIN_DIR`
+   (= the shared `bin/` every user already symlinks).
+3. **Version stamp:** write `$PREFIX/omnigent.version` after success; on boot,
+   if the stamp ≠ `OMNIGENT_VERSION`, reinstall (`--force` makes this safe).
+   This is deliberately different from the claude installer's exists→done
+   shortcut — it's what makes the GA bump a pure env change (§8).
+
+**Readiness:** `status()["ready"]["omnigent"] = (omnigent complete AND tmux
+complete)`. Both steps join the `run_in_background()` thread pool (they are
+independent of node).
+
+Failure isolation: if either step errors, only the omnigent catalog entries
+stay disabled ("installing…" → operators see the error in `/api/setup-status`);
+bare claude/codex are unaffected.
+
+### 3.2 Credentials — `server/cli_config.py`
+
+#### Token file (new)
+
+`~/.config/workshop/gateway-token`, mode 0600, containing the current rotating
+token. Written by `configure_omnigent()` at first session and by
+`update_tokens()` on every rotation (a 1-line file write — the YAML config is
+**never** rewritten on rotation).
+
+#### `configure_omnigent(user, token)` (new, called from `configure_all`)
+
+Writes `~/.omnigent/config.yaml`. Literal output (gateway case):
+
+```yaml
+# Generated by the workshop terminal — do not edit.
+providers:
+  databricks-gateway:
+    kind: gateway
+    default: true
+    anthropic:
+      base_url: https://<ws-id>.ai-gateway.cloud.databricks.com/anthropic
+      auth_command: cat /app/python/source_code/data/users/<slug>/.config/workshop/gateway-token
+      models:
+        default: databricks-claude-opus-4-8     # _pick() over the same chain as configure_claude
+    openai:
+      base_url: https://<ws-id>.ai-gateway.cloud.databricks.com/openai/v1
+      wire_api: responses
+      auth_command: cat /app/python/source_code/data/users/<slug>/.config/workshop/gateway-token
+      models:
+        default: databricks-gpt-5-5             # CODEX_MODEL env or default
+```
+
+Schema notes (verified against omnigent `onboarding/provider_config.py`):
+
+- `kind: gateway` entries carry per-family blocks (`anthropic:` / `openai:`)
+  directly under the entry.
+- Exactly one secret source per family; we use `auth_command` — a shell
+  command that prints a bearer token, re-run by omnigent on a 15-minute
+  refresh cadence (`auth_refresh_interval_ms=900000` default), which matches
+  the app's 15-min token TTL / 10-min rotation exactly.
+- `auth_command` uses the **absolute** token path (no `$HOME` expansion
+  dependence).
+- `default: true` makes this provider the default for **both** families it
+  serves — bare `omnigent`, `omnigent claude`, and `omnigent codex` all route
+  through it with no further selection.
+- No `server:` key in the config → omnigent auto-spawns the per-user local
+  server on first use.
+- When `gateway_host()` resolves empty, fall back to
+  `{databricks_host()}/serving-endpoints/anthropic` and
+  `{databricks_host()}/serving-endpoints` — mirroring `configure_claude` /
+  `configure_codex` exactly.
+- Model defaults reuse the existing `_discover_serving_endpoints()` +
+  `_pick()` chains verbatim — one source of truth for model selection.
+
+`config.yaml` is written idempotently on every `configure_all` (same as the
+claude/codex configs); its content is deterministic for a given deployment,
+so rewrites are no-ops in practice. Attendee edits are intentionally
+clobbered on reconnect (same policy as `settings.json` today).
+
+#### `update_tokens(user, token)` (modified)
+
+Add one branch: if `~/.config/workshop/gateway-token` exists, rewrite it
+(0600). If missing, call `configure_omnigent(user, token)`. Symmetric with
+the existing claude/codex branches.
+
+#### Credential precedence — the decided rule
+
+There are two auth paths into Claude Code and they coexist by design:
+
+| Path | Mechanism | Used by |
+|---|---|---|
+| App-managed `~/.claude/settings.json` | `env.ANTHROPIC_AUTH_TOKEN` (static, file rewritten every 10 min) + `ANTHROPIC_BASE_URL` | bare `claude` sessions (today's behavior, unchanged) |
+| Omnigent provider | terminal-env `ANTHROPIC_BASE_URL` + `apiKeyHelper` = the provider's `auth_command` (dynamic, re-minted ≤15 min) | `omnigent claude` sessions |
+
+Verified omnigent behavior (`claude_native.py`): the wrapper injects
+`ANTHROPIC_BASE_URL` and an `apiKeyHelper` into the **tmux terminal process
+env** — it does not write or modify `~/.claude/settings.json`. Claude Code
+gives an `ANTHROPIC_AUTH_TOKEN` from settings.json precedence over
+`apiKeyHelper`, so inside an omnigent session the effective behavior is
+**parity with bare claude** (settings token wins; the apiKeyHelper is a
+dormant redundant path that becomes load-bearing only if the settings token
+is absent).
+
+**Rule: the app's `update_tokens()` remains the single rotation authority for
+both paths** (settings.json token + gateway-token file). Neither path ever
+fights the other because omnigent never touches settings.json and the app
+never touches `~/.omnigent`. The >15-minute live-session test (§7) validates
+both paths under rotation in one run.
+
+Codex is simpler: omnigent's codex wrapper builds its provider config from the
+omnigent provider entry (auth_command-based) independently of
+`~/.codex/config.toml`; bare codex keeps using `.codex/.env`. Same
+single-rotation-authority rule applies.
+
+### 3.3 Per-user environment — `server/users.py`
+
+`shell_env()` gains two entries:
+
+```python
+# All attendees share one OS uid; tmux's default socket dir is /tmp/tmux-<uid>,
+# which would merge every attendee into ONE tmux server (cross-user session
+# visibility + key collisions). Per-user socket dir restores isolation.
+"TMUX_TMPDIR": os.path.join(self.home, ".cache", "tmux"),
+# The omnigent install is shared across attendees — never self-update
+# (mirrors DISABLE_AUTOUPDATER for claude).
+"OMNIGENT_NO_UPDATE_CHECK": "1",
+```
+
+`bootstrap_home()` adds `.cache/tmux` and `.config/workshop` to the directory
+list. The existing `_link_shared_binaries()` already picks up `omnigent` and
+`tmux` from the shared bin — no change.
+
+### 3.4 Session types — `content/agents.json` (catalog only)
+
+```json
+[
+  { "id": "omnigent",        "label": "Omnigent",          "description": "Databricks' agent meta-harness — managed sessions over Claude and Codex.", "icon": "sparkles", "command": "omnigent",        "requires": ["omnigent"],          "order": 1 },
+  { "id": "omnigent-claude", "label": "Omnigent · Claude", "description": "Claude Code in a managed Omnigent session.",                               "icon": "sparkles", "command": "omnigent claude", "requires": ["omnigent", "claude"], "order": 2 },
+  { "id": "omnigent-codex",  "label": "Omnigent · Codex",  "description": "Codex in a managed Omnigent session.",                                     "icon": "bot",      "command": "omnigent codex",  "requires": ["omnigent", "codex"],  "order": 3 },
+  { "id": "claude",          "...": "existing entry, order → 10" },
+  { "id": "codex",           "...": "existing entry, order → 11" },
+  { "id": "bash",            "...": "existing entry, order 99 unchanged" }
+]
+```
+
+`requires` semantics:
+
+- `omnigent-claude` / `omnigent-codex` need the **native CLI binary** present
+  (omnigent wraps it in tmux) → require both keys.
+- Bare `omnigent` derives its harness from configured credentials (verified
+  in omnigent `cli.py`: anthropic creds → the `polly` orchestrator on the
+  claude-sdk harness, which is the bundled SDK — **no** `claude` binary
+  needed) → requires only `omnigent`.
+
+No backend changes: `launch_command()` already wraps multi-word commands in
+`bash -c "<cmd>; exec /bin/bash"`. No frontend changes: `LaunchBar` renders
+the catalog as ordered, unknown icons fall back to the terminal icon, and
+readiness gating per `requires` key already works.
+
+### 3.5 `app.yaml`
+
+```yaml
+  # --- Omnigent (agent meta-harness) ---
+  - name: OMNIGENT_VERSION
+    value: "0.1.0rc2"
+  - name: TMUX_STATIC_URL
+    value: ""
+```
+
+(`TMUX_STATIC_SHA256` pinned in code; env override exists for emergencies.)
+
+## 4. Process lifecycle
+
+New long-lived per-attendee processes appear with this design:
+
+| Process | Started by | Survives PTY close? |
+|---|---|---|
+| omnigent local server (uvicorn) | first `omnigent` invocation | **yes** (daemonized, pidfile) |
+| tmux server + session | `omnigent claude` / `codex` | **yes** (that's tmux's job) |
+| claude / codex inside tmux | omnigent wrapper | yes, inside tmux |
+
+Policy:
+
+- **Surviving the PTY is a feature, not a leak**: an attendee whose websocket
+  drops (or who closes the tab) reconnects, launches the same session type,
+  and omnigent **reattaches** to the existing tmux session and running server
+  — work in progress survives. This is strictly better than today's bare
+  CLIs, which die with the PTY.
+- **The app's idle reaper (`SESSION_IDLE_TIMEOUT_SECONDS`) is unchanged**: it
+  reaps the *PTY*, not the attendee's background processes. Orphaned omnigent
+  servers idle at ~zero CPU; memory is the constraint (§6, de-risk task 2).
+- **Cleanup**: none in v1 beyond container restart (Control Tower redeploys
+  reset everything — `DATA_ROOT` persistence notwithstanding, processes die
+  with the container). If the memory measurement demands it, v1.1 adds a
+  sweep in the existing reaper: for each user idle > N hours, `tmux -S
+  <their socket> kill-server` + `omnigent server stop`-equivalent
+  (kill pidfile PID). Explicitly out of v1 scope.
+
+## 5. Failure modes
+
+| Failure | Behavior |
 |---|---|
-| Static tmux on the Apps container (no apt) | Task 1 spike; vendor the binary as a repo asset if the download is blocked |
-| Per-user server memory (N × FastAPI + SQLite) | Task 2 measurement; named fallback: shared server, accounts mode |
-| rc2 sharp edges (first-run wizard, provider routing) | Task 1 manual run before code; bare claude/codex fallback stays one click away |
-| tmux-in-PTY rendering/resize in xterm.js | Task 1; verify SIGWINCH propagation and scrollback replay |
-| First-launch latency (per-user server cold boot) | Acceptable for workshops; document "starting…"; optional pre-warm at session create later |
+| tmux/omnigent download blocked at boot | `omnigent*` catalog entries stay "installing…" with the error in `/api/setup-status`; bare claude/codex unaffected. Operators see it immediately. |
+| omnigent rc bug mid-workshop | Operator re-promotes bare entries via `AGENT_CATALOG_PATH` content-pack override — no redeploy. |
+| Gateway token expired in token file | `auth_command` is re-run per refresh; next mint reads the rotated file. A single failed request window (<rotation period) is possible, same as today. |
+| Attendee deletes `~/.omnigent/config.yaml` | Next session's `configure_all` rewrites it (omnigent would otherwise drop into its first-run wizard — annoying, not dangerous). |
+| Port exhaustion / pidfile corruption | Omnigent's picker falls back to OS-assigned ports; a corrupt pidfile means one orphaned server and a fresh spawn — degraded, not broken. |
+| Two PTYs, same user, same time | Both resolve the same pidfile → share one local server. Supported (it's omnigent's normal multi-client model). |
+
+## 6. Memory budget (gate for this design)
+
+Per attendee at steady state: one uvicorn server (FastAPI + SQLite) + one
+tmux server + the harness process. The de-risk spike measures real RSS; the
+go/no-go line is **30 concurrent attendees fitting the app container with
+≥25% headroom** (matching `MAX_SESSIONS_GLOBAL=30`). If it doesn't fit, the
+fallback design is one shared `omnigent server` in accounts mode +
+per-attendee `omnigent login` — significantly more auth machinery, which is
+exactly why measurement comes before code.
+
+## 7. Test plan
+
+**De-risk spike (before any code, on `workshop-terminal-dev`):**
+
+1. Bash attendee terminal → hand-install static tmux + uv + omnigent rc2
+   exactly per §3.1 commands.
+2. Hand-write §3.2's `config.yaml` + token file → `omnigent` (TUI renders in
+   xterm.js? wizard skipped?), `omnigent claude` (tmux alternate screen,
+   resize via SIGWINCH, gateway round-trip).
+3. RSS measurement per §6.
+
+**Unit tests (`tests/test_omnigent_config.py`):**
+
+- `configure_omnigent` writes parseable YAML; correct base URLs (gateway and
+  serving-endpoints fallback); `auth_command` carries the absolute per-user
+  path; token file is 0600.
+- `update_tokens` rewrites the token file without touching `config.yaml`
+  (mtime assertion); creates both via `configure_omnigent` when absent.
+- Installer: version stamp mismatch triggers reinstall; match short-circuits.
+- Catalog: `omnigent-*` entries report `ready: false` until both readiness
+  keys complete; `omnigent` needs only its own key.
+
+**Live E2E (deployed dev app):**
+
+- Two attendee identities → distinct pidfiles/ports; sessions don't cross.
+- One `omnigent claude` session held >15 min with prompts before/after a
+  rotation boundary — validates **both** credential paths of §3.2 under
+  rotation.
+- Kill the PTY (idle reaper), reconnect, relaunch → reattach to the same
+  tmux session with scrollback intact.
+- Bare `claude` still works (fallback regression).
+
+## 8. Rollout
+
+1. Land this design; implement behind the catalog (omnigent entries simply
+   appear when ready).
+2. Deploy to `workshop-terminal-dev`; run the E2E list.
+3. **GA bump (next week):** change `OMNIGENT_VERSION` env → GA version;
+   redeploy. The version stamp forces the reinstall; re-run the E2E smoke.
+4. First real event runs with bare claude/codex still in the catalog at
+   order 10/11. Remove them (or not) based on observed stability.
+
+## 9. Open questions
+
+- Static tmux availability/compat on the Apps runtime image — **answered by
+  spike task 1** (vendor-in-repo is the fallback).
+- Whether rc2's first-run wizard is fully bypassed by a pre-written
+  `config.yaml` — spike task 2; if not, pin the exact missing key with the
+  omnigent team before GA.
+- Memory at 30 attendees — spike task 3, gates the whole single-container
+  design (§6).
