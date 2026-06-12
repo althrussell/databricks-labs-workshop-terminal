@@ -114,6 +114,12 @@ def _workspace_resources() -> dict:
     }
 
 
+# P1-14: the stats payload carries a schema_version so Control Tower can
+# validate the shape and react to changes instead of silently zeroing fields.
+# Bump this whenever the payload's structure changes.
+STATS_SCHEMA_VERSION = 1
+
+
 def gather_user(user: User, *, fresh: bool = True) -> dict:
     """Per-user stats (no workspace census — that's instance-level)."""
     now = time.time()
@@ -121,6 +127,8 @@ def gather_user(user: User, *, fresh: bool = True) -> dict:
     agent_sessions = sum(
         n for agent, n in user.sessions_launched.items() if agent != "bash"
     )
+    # Abandonment signal: building time accrued but no recent activity.
+    idle_seconds = int(now - user.last_seen) if user.last_seen else None
     return {
         "email": user.email,
         "minutes_building": minutes,
@@ -128,18 +136,26 @@ def gather_user(user: User, *, fresh: bool = True) -> dict:
         "terminal_sessions": sum(user.sessions_launched.values()),
         "topics": sorted(user.topics.keys()),
         "code": _code_stats(user, fresh=fresh),
+        # P1-14 error/abandonment telemetry.
+        "errors": user.errors,
+        "idle_seconds": idle_seconds,
     }
 
 
 def gather(user: User) -> dict:
     """Certificate view: this user's stats + the workspace census."""
-    return {**gather_user(user), "resources": _workspace_resources()}
+    return {
+        "schema_version": STATS_SCHEMA_VERSION,
+        **gather_user(user),
+        "resources": _workspace_resources(),
+    }
 
 
 def gather_all(users: list[User]) -> dict:
     """Harvest view for Control Tower: every user (cached code stats) plus
     one instance-level workspace census."""
     return {
+        "schema_version": STATS_SCHEMA_VERSION,
         "users": [gather_user(u, fresh=False) for u in users],
         "resources": _workspace_resources(),
     }

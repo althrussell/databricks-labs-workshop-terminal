@@ -144,6 +144,7 @@ def create_session(body: CreateSessionBody, principal: Principal = Depends(get_c
         ensure_user_credentials(user)
     except CredentialError as e:
         if requires:
+            user.errors += 1  # P1-14: failed agent launch (no credential)
             raise HTTPException(status_code=503, detail=str(e))
         logger.warning("bash session for %s without credentials: %s", principal.name, e)
 
