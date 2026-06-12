@@ -124,13 +124,17 @@ def _link_skills(user: User) -> None:
 # -- ~/.claude.json (onboarding + MCP servers) --
 
 def _write_claude_json(user: User) -> None:
+    # P1-21: public MCP servers are an indirect prompt-injection egress path for
+    # the autonomous, token-bearing agent. Off by default; operators opt in per
+    # event via ENABLE_PUBLIC_MCP. When off, the agent has no external MCP egress.
     mcp_servers = {}
-    deepwiki = os.environ.get("DEEPWIKI_MCP_URL", DEFAULT_DEEPWIKI_MCP).strip()
-    exa = os.environ.get("EXA_MCP_URL", DEFAULT_EXA_MCP).strip()
-    if deepwiki:
-        mcp_servers["deepwiki"] = {"type": "http", "url": deepwiki}
-    if exa:
-        mcp_servers["exa"] = {"type": "http", "url": exa}
+    if config.enable_public_mcp():
+        deepwiki = os.environ.get("DEEPWIKI_MCP_URL", DEFAULT_DEEPWIKI_MCP).strip()
+        exa = os.environ.get("EXA_MCP_URL", DEFAULT_EXA_MCP).strip()
+        if deepwiki:
+            mcp_servers["deepwiki"] = {"type": "http", "url": deepwiki}
+        if exa:
+            mcp_servers["exa"] = {"type": "http", "url": exa}
 
     path = os.path.join(user.home, ".claude.json")
     try:

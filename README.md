@@ -60,6 +60,15 @@ Built to be deployed (and torn down) as workshop infrastructure by
   membership resolved via SCIM — using the caller's bearer token for service
   principals, or the vended credential to look attendees up by email.
   Optional `ACCESS_GROUP` restricts attendees.
+- **Agent egress & autonomy** (P1-21): the agent runs autonomously
+  (`WORKSHOP_AUTO_MODE`, no approval prompts) with a live workspace credential.
+  This is acceptable **only** under the one-workspace-per-attendee topology
+  (see the isolation note above), where the blast radius is a single disposable
+  workspace. To limit the indirect prompt-injection surface, **public MCP
+  servers (DeepWiki, Exa) are off by default** — opt in per event with
+  `ENABLE_PUBLIC_MCP=true` — and the ai-dev-kit skills overlay is **pinnable**
+  via `AI_DEV_KIT_REF` (default `main`; pin a tag/SHA for an event so attendees
+  run a known, reviewed skills version rather than the branch tip at boot).
 
 ## Deploying
 
