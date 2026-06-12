@@ -9,6 +9,7 @@ so nothing privileged is readable from inside an attendee terminal.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import re
 import threading
@@ -24,6 +25,8 @@ _SHELL_ENV_ALLOWLIST = frozenset({
     "LANG", "LANGUAGE", "TZ", "SHELL", "COLORTERM",
 })
 _SHELL_ENV_ALLOWLIST_PREFIXES = ("LC_",)
+
+_topology_log = logging.getLogger("workshop.topology")
 
 
 def email_slug(email: str) -> str:
@@ -125,9 +128,19 @@ class UserManager:
     def get(self, email: str) -> User:
         with self._lock:
             user = self._users.get(email)
-            if user is None:
+            is_new = user is None
+            if is_new:
                 user = User(email)
                 self._users[email] = user
+            distinct = len(self._users)
+        if is_new and distinct > 1:
+            # P1-11a: a second distinct attendee on one instance breaks the
+            # one-workspace-per-attendee credential-isolation model.
+            from . import topology
+
+            warning = topology.second_attendee_warning(distinct)
+            if warning:
+                _topology_log.warning("topology: %s", warning)
         user.bootstrap_home()
         return user
 

@@ -83,6 +83,11 @@ async def lifespan(app: FastAPI):
             logger.info("event emitter started (run_id=%s)", event_emitter.run_id)
     else:
         logger.info("LOCAL_DEV=1 — skipping CLI installers and credential rotation")
+    from . import topology
+
+    topo_warning = topology.startup_warning()
+    if topo_warning:
+        logger.warning("topology: %s", topo_warning)
     logger.info("workshop terminal up (phase=%s)", content_service.phase)
     yield
     if emitter_stop is not None:
