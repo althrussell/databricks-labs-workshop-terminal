@@ -39,6 +39,42 @@ def vended_pat() -> str:
     return os.environ.get("WORKSHOP_PAT", "").strip()
 
 
+def app_identity_bearer() -> str | None:
+    """Bearer for the app's OWN service-principal OAuth identity (P1-2).
+
+    Databricks Apps run as a service principal and inject its OAuth credentials
+    into the runtime; the SDK's ``WorkspaceClient()`` authenticates as that SP.
+    We use it to mint the short-lived CLI tokens **without** a long-lived,
+    workspace-admin ``WORKSHOP_PAT`` sitting in ``app.yaml`` env where an
+    attendee (``CAN_MANAGE`` + ``/Workspace/Shared``) could read it. The app's
+    OAuth client secret is platform-managed, not an attendee-readable file/env
+    var, and attendees only ever receive the rotating 15-minute tokens minted
+    from it. Returns ``None`` if the app identity can't authenticate (e.g. local
+    dev), so callers fall back to the vended PAT.
+    """
+    if config.local_dev():
+        # Local dev / tests have no app service-principal identity; skip the SDK
+        # auth probe (it would block trying auth methods that can't succeed).
+        return None
+    try:
+        from databricks.sdk import WorkspaceClient
+
+        headers = WorkspaceClient().config.authenticate()  # type: ignore[no-untyped-call]
+        auth = (headers or {}).get("Authorization", "")
+        if auth.lower().startswith("bearer "):
+            return auth[7:].strip() or None
+    except Exception as e:  # noqa: BLE001 — any auth failure → fall back
+        logger.warning("app-identity auth unavailable: %s", e)
+    return None
+
+
+def _bootstrap_auth() -> str | None:
+    """Auth used to MINT short-lived CLI tokens: the app's own OAuth identity
+    first (P1-2 — no attendee-readable admin PAT), else a vended PAT for
+    backwards compatibility / environments without an app identity."""
+    return app_identity_bearer() or (vended_pat() or None)
+
+
 class CredentialManager:
     """Instance-level credential: bootstrap from WORKSHOP_PAT, rotate if able."""
 
@@ -48,6 +84,7 @@ class CredentialManager:
         self._token_id: str | None = None
         self._minted_at: float = 0.0
         self._rotating = False  # True once we've successfully minted our own
+        self._bootstrap_ok = False  # True if app identity or a vended PAT can bootstrap
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -59,31 +96,60 @@ class CredentialManager:
     def healthy(self) -> bool:
         with self._lock:
             if self._token is None:
-                return bool(vended_pat())
+                return self._bootstrap_ok or bool(vended_pat())
             if not self._rotating:
                 return True  # serving the vended PAT directly
             return (time.time() - self._minted_at) < TOKEN_LIFETIME
 
     def token(self) -> str:
-        """Current CLI token: our freshest minted token, else the vended PAT."""
+        """Current CLI token: our freshest minted token, else mint one now.
+
+        The minted token is what attendees' CLIs receive — short-lived and
+        rotating. In the P1-2 app-identity mode there is no static token to
+        serve, so a first call mints on demand from the app's own OAuth identity.
+        A vended PAT (legacy) is served directly only if minting is unavailable.
+        """
         with self._lock:
             minted = self._token if self._rotating else None
             fresh = minted and (time.time() - self._minted_at) < TOKEN_LIFETIME
         if minted and fresh:
             return minted
+
+        # No fresh minted token — try to mint now (app identity or PAT bootstrap).
+        self._rotate_once()
+        with self._lock:
+            minted = self._token if self._rotating else None
+            fresh = minted and (time.time() - self._minted_at) < TOKEN_LIFETIME
+        if minted and fresh:
+            return minted
+
+        # Minting unavailable. Serve a vended PAT directly if one exists (legacy).
         bootstrap = vended_pat()
-        if not bootstrap:
-            raise CredentialError(
-                "No workshop credential configured — Control Tower must inject "
-                "the WORKSHOP_PAT environment variable (or secret) at deploy time."
-            )
-        return bootstrap
+        if bootstrap:
+            return bootstrap
+        raise CredentialError(
+            "No workshop credential available — the app's own identity can't "
+            "mint a token and no WORKSHOP_PAT is set. Grant the app's service "
+            "principal token-create permission, or inject WORKSHOP_PAT."
+        )
 
     def start(self) -> None:
-        """Begin the rotation loop (no-op without a vended credential)."""
-        if not vended_pat():
-            logger.warning("WORKSHOP_PAT not set — terminals can't authenticate until it is")
+        """Begin the rotation loop.
+
+        Bootstraps from the app's own OAuth identity (P1-2) when available, else
+        a vended PAT. No-op if neither can authenticate.
+        """
+        self._bootstrap_ok = bool(_bootstrap_auth())
+        if not self._bootstrap_ok:
+            logger.warning(
+                "no app identity and no WORKSHOP_PAT — terminals can't "
+                "authenticate until a credential is available"
+            )
             return
+        if vended_pat() and not app_identity_bearer():
+            logger.info("credential bootstrap: vended WORKSHOP_PAT (no app identity)")
+        else:
+            logger.info("credential bootstrap: app service-principal OAuth identity (P1-2)")
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
@@ -100,9 +166,11 @@ class CredentialManager:
             rotating = self._rotating
             last_error = self.last_error
         return {
-            "configured": bool(vended_pat()),
+            "configured": self._bootstrap_ok or rotating or bool(vended_pat()),
             "rotating": rotating,
             "healthy": self.healthy,  # acquires the lock itself — must be outside
+            "source": "vended_pat" if (vended_pat() and not self._bootstrap_ok)
+            else ("app_identity" if not vended_pat() else "app_identity_or_pat"),
             "last_error": last_error,
         }
 
@@ -118,8 +186,24 @@ class CredentialManager:
             except Exception as e:
                 logger.error("credential rotation failed unexpectedly: %s", e)
 
+    def _mint_auth(self) -> str | None:
+        """Auth for the next mint: chain off our fresh minted token if we have
+        one, else the bootstrap (app identity, then vended PAT)."""
+        with self._lock:
+            if self._rotating and self._token and (
+                time.time() - self._minted_at
+            ) < TOKEN_LIFETIME:
+                return self._token
+        return _bootstrap_auth()
+
     def _rotate_once(self) -> None:
-        auth_token = self.token()
+        auth_token = self._mint_auth()
+        if not auth_token:
+            self.last_error = (
+                "no credential to mint with — app identity can't authenticate "
+                "and no WORKSHOP_PAT set"
+            )
+            return
         host = config.databricks_host()
         try:
             resp = requests.post(
