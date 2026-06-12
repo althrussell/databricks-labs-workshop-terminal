@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronRight, ExternalLink, Lightbulb, Sparkle } from "lucide-react";
-import { marked } from "marked";
+import { renderNuggetMarkdown } from "../safeMarkdown";
 import { api, Nugget } from "../api";
 import { onAppEvent } from "../events";
 
@@ -126,7 +126,7 @@ export default function NuggetsPane({ collapsed, onToggle, onCertificate, onTryP
             <h3>{nugget.title}</h3>
             <div
               className="nugget-body"
-              dangerouslySetInnerHTML={{ __html: marked.parse(nugget.markdown) as string }}
+              dangerouslySetInnerHTML={{ __html: renderNuggetMarkdown(nugget.markdown) }}
             />
             <div className="nugget-actions">
               {nugget.prompt && (
