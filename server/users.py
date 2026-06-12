@@ -15,6 +15,16 @@ import threading
 
 from . import config
 
+# Deny-by-default allowlist for attendee PTY environments (gap P0-1). Only
+# non-secret, shell-functional host vars are copied through; PATH/TERM/HOME/USER
+# and the per-user identity are set explicitly in shell_env(). Everything else
+# (vended credentials incl. WORKSHOP_PAT, registry tokens, CLI state, app
+# internals) is dropped by construction — it is never added here.
+_SHELL_ENV_ALLOWLIST = frozenset({
+    "LANG", "LANGUAGE", "TZ", "SHELL", "COLORTERM",
+})
+_SHELL_ENV_ALLOWLIST_PREFIXES = ("LC_",)
+
 
 def email_slug(email: str) -> str:
     """Stable, filesystem-safe slug: local part + short hash of the full email."""
@@ -65,41 +75,40 @@ class User:
                 pass
 
     def shell_env(self) -> dict:
-        """Env for this user's PTYs — app secrets stripped, identity isolated."""
-        env = os.environ.copy()
-        # Secrets and CLI-state vars that must never reach an attendee shell.
-        # DATABRICKS_HOST is stripped too: with the host in env (and no token
-        # there), the CLI's unified auth resolves the "env" strategy and then
-        # fails instead of falling through to ~/.databrickscfg. Removing it
-        # forces config-file auth, which we keep rotated.
-        for key in (
-            "DATABRICKS_TOKEN", "DATABRICKS_HOST",
-            "DATABRICKS_CLIENT_ID", "DATABRICKS_CLIENT_SECRET",
-            "DATABRICKS_APP_PORT",
-            "CLAUDECODE", "CLAUDE_CODE_SESSION",
-            "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY",
-            "NPM_TOKEN", "UV_DEFAULT_INDEX",
-        ):
-            env.pop(key, None)
-        for key in list(env):
-            if key.startswith("npm_config_//") or (
-                key.startswith("UV_INDEX_") and key.endswith(("_PASSWORD", "_USERNAME"))
-            ):
-                env.pop(key, None)
+        """Env for this user's PTYs, built deny-by-default (gap P0-1).
+
+        We start from an EMPTY environment and copy only an explicit allowlist
+        of non-secret host vars, then set the per-user identity. The previous
+        copy-and-subtract approach leaked WORKSHOP_PAT because newly-added
+        secrets were not also added to the strip list; an allowlist cannot leak
+        a variable nobody allowed.
+
+        The agent CLIs do not need app secrets in the shell: cli_config /
+        user_content read gateway, model, and MCP settings from the *app's*
+        environment and bake them into per-user config files
+        (~/.databrickscfg, ~/.claude.json) that the agent reads. DATABRICKS_HOST
+        is deliberately absent so unified auth resolves the rotated credentials
+        from ~/.databrickscfg rather than a tokenless "env" strategy.
+        """
+        src = os.environ
+        env: dict[str, str] = {
+            key: value
+            for key, value in src.items()
+            if key in _SHELL_ENV_ALLOWLIST or key.startswith(_SHELL_ENV_ALLOWLIST_PREFIXES)
+        }
 
         # User-local bin first (symlinks into the shared install — claude
         # expects to resolve from $HOME/.local/bin), shared bin as fallback
         # for binaries installed after this user's home was bootstrapped.
         local_bin = os.path.join(self.home, ".local", "bin")
         shared_bin = os.path.join(config.shared_prefix(), "bin")
+        base_path = src.get("PATH", "/usr/local/bin:/usr/bin:/bin")
         env.update({
             "HOME": self.home,
             "TERM": "xterm-256color",
             "USER": self.slug,
-            "PATH": f"{local_bin}:{shared_bin}:{env.get('PATH', '')}",
+            "PATH": f"{local_bin}:{shared_bin}:{base_path}",
             "WORKSHOP_USER_EMAIL": self.email,
-            # Belt and braces with the host strip above: the CLI/SDK always
-            # resolve the rotated credentials from ~/.databrickscfg.
             "DATABRICKS_CONFIG_PROFILE": "DEFAULT",
         })
         return env
