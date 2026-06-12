@@ -56,10 +56,19 @@ def test_git_identity_and_sync_hook(client, monkeypatch):
     assert "databricks sync" in hook
 
 
-def test_claude_json_mcp(client, monkeypatch):
+def test_claude_json_mcp_off_by_default(client, monkeypatch):
+    # P1-21: public MCP egress is opt-in; default is no external MCP servers.
+    monkeypatch.delenv("ENABLE_PUBLIC_MCP", raising=False)
     home = _provisioned_home(client, monkeypatch)
     data = json.load(open(os.path.join(home, ".claude.json")))
     assert data["hasCompletedOnboarding"] is True
+    assert data["mcpServers"] == {}
+
+
+def test_claude_json_mcp_opt_in(client, monkeypatch):
+    monkeypatch.setenv("ENABLE_PUBLIC_MCP", "true")
+    home = _provisioned_home(client, monkeypatch)
+    data = json.load(open(os.path.join(home, ".claude.json")))
     assert "deepwiki" in data["mcpServers"] and "exa" in data["mcpServers"]
 
 
