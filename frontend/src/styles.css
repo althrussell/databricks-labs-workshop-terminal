@@ -474,6 +474,10 @@ body {
   background: color-mix(in srgb, var(--brand-primary) 14%, transparent);
 }
 
+.hero-card-logo {
+  object-fit: contain;
+}
+
 .hero-card-label {
   font-weight: 700;
   font-size: 15.5px;

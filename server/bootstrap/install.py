@@ -7,6 +7,8 @@ lands. Everything is idempotent so Control Tower redeploys are cheap.
 
 from __future__ import annotations
 
+import gzip
+import hashlib
 import logging
 import os
 import re
@@ -25,6 +27,23 @@ CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.46.0")
 CLAUDE_INSTALLER_URL = os.environ.get(
     "CLAUDE_INSTALLER_URL", "https://claude.ai/install.sh"
 )
+# Omnigent (agent meta-harness) + its runtime deps. The GA bump is a pure env
+# change: the version stamp written by _install_omnigent() forces a reinstall
+# whenever OMNIGENT_VERSION differs from what's on disk.
+OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "").strip() or "0.1.0rc2"
+# Until omnigent's public PyPI launch, OMNIGENT_PIP_SPEC points the installer
+# at an alternate source (a wheel path staged on the volume, an internal index
+# package, or a git URL). Once on PyPI the default version spec takes over.
+OMNIGENT_PIP_SPEC = os.environ.get("OMNIGENT_PIP_SPEC", "").strip() or f"omnigent=={OMNIGENT_VERSION}"
+# Omnigent's claude/codex wrappers hard-require tmux and the Apps runtime has
+# no package manager — install a fully static musl build into the shared bin.
+TMUX_STATIC_URL = os.environ.get("TMUX_STATIC_URL", "").strip() or (
+    "https://github.com/mjakob-gh/build-static-tmux/releases/download/v3.6b/tmux.linux-amd64.stripped.gz"
+)
+TMUX_STATIC_SHA256 = os.environ.get("TMUX_STATIC_SHA256", "").strip() or (
+    "a23e56e9913d610c31f2893a1c9c669a73cb8bb2b8ded1180f6572bb55e52ca5"
+)
+UV_INSTALLER_URL = os.environ.get("UV_INSTALLER_URL", "").strip() or "https://astral.sh/uv/install.sh"
 # Skills are overlaid from ai-dev-kit at boot; the vendored copy in assets/skills
 # is the offline fallback (and carries the workflow skills that don't come from
 # ai-dev-kit). P1-21: the ref is pinnable (AI_DEV_KIT_REF) so an event runs a
@@ -54,6 +73,12 @@ def status() -> dict:
         "bash": True,
         "claude": steps.get("claude", {}).get("status") == "complete",
         "codex": steps.get("codex", {}).get("status") == "complete",
+        # Both the meta-harness and tmux (its terminal backend) must land
+        # before any omnigent session type is launchable.
+        "omnigent": (
+            steps.get("omnigent", {}).get("status") == "complete"
+            and steps.get("tmux", {}).get("status") == "complete"
+        ),
     }
     installing = any(s.get("status") in (None, "pending", "running") for s in steps.values())
     return {"steps": steps, "ready": ready, "installing": installing}
@@ -147,6 +172,105 @@ def _install_codex() -> None:
         logger.warning("codex install attempt %d/3 failed", attempt)
         time.sleep(5)
     _set("codex", "error", error)
+
+
+def _install_tmux() -> None:
+    """Static tmux into the shared bin (omnigent's terminal backend)."""
+    _set("tmux", "running")
+    prefix = config.shared_prefix()
+    tmux_bin = os.path.join(prefix, "bin", "tmux")
+    if os.path.exists(tmux_bin) or shutil.which("tmux"):
+        if not os.path.exists(tmux_bin) and shutil.which("tmux"):
+            os.makedirs(os.path.dirname(tmux_bin), exist_ok=True)
+            os.symlink(shutil.which("tmux"), tmux_bin)
+        _set("tmux", "complete")
+        return
+    staging = tmux_bin + ".download"
+    try:
+        result = subprocess.run(
+            ["curl", "-fsSL", "-o", staging + ".gz", TMUX_STATIC_URL],
+            capture_output=True, text=True, timeout=300, env=_install_env(),
+        )
+        if result.returncode != 0:
+            raise RuntimeError((result.stderr or result.stdout)[-300:])
+        with open(staging + ".gz", "rb") as f:
+            payload = f.read()
+        if TMUX_STATIC_SHA256:
+            digest = hashlib.sha256(payload).hexdigest()
+            if digest != TMUX_STATIC_SHA256:
+                raise RuntimeError(f"tmux sha256 mismatch: got {digest[:16]}…")
+        with open(staging, "wb") as f:
+            f.write(gzip.decompress(payload))
+        os.chmod(staging, 0o755)
+        os.replace(staging, tmux_bin)
+        smoke = subprocess.run(
+            [tmux_bin, "-V"], capture_output=True, text=True,
+            timeout=30, env=_install_env(),
+        )
+        if smoke.returncode != 0:
+            raise RuntimeError(f"tmux -V failed: {(smoke.stderr or smoke.stdout)[-200:]}")
+        _set("tmux", "complete")
+    except (subprocess.TimeoutExpired, OSError, RuntimeError) as e:
+        _set("tmux", "error", str(e))
+    finally:
+        for leftover in (staging, staging + ".gz"):
+            if os.path.exists(leftover):
+                os.unlink(leftover)
+
+
+def _omnigent_stamp_path() -> str:
+    return os.path.join(config.shared_prefix(), "omnigent.version")
+
+
+def _install_omnigent() -> None:
+    """Omnigent via uv (needs Python ≥3.12 — uv brings its own interpreter).
+
+    Unlike the claude installer's exists→done shortcut, a version stamp gates
+    the reinstall so bumping OMNIGENT_VERSION (or OMNIGENT_PIP_SPEC) in env is
+    the whole GA rollout.
+    """
+    _set("omnigent", "running")
+    prefix = config.shared_prefix()
+    omnigent_bin = os.path.join(prefix, "bin", "omnigent")
+    stamp = _omnigent_stamp_path()
+    try:
+        with open(stamp) as f:
+            installed = f.read().strip()
+    except OSError:
+        installed = ""
+    if os.path.exists(omnigent_bin) and installed == OMNIGENT_PIP_SPEC:
+        _set("omnigent", "complete")
+        return
+    env = _install_env()
+    # All uv state on the persistent volume so redeploys reuse it.
+    env.update({
+        "UV_TOOL_DIR": os.path.join(prefix, "uv-tools"),
+        "UV_TOOL_BIN_DIR": os.path.join(prefix, "bin"),
+        "UV_PYTHON_INSTALL_DIR": os.path.join(prefix, "uv-python"),
+    })
+    try:
+        uv = shutil.which("uv", path=env["PATH"])
+        if not uv:
+            result = subprocess.run(
+                ["bash", "-c",
+                 f"curl -fsSL {UV_INSTALLER_URL} "
+                 f"| env UV_INSTALL_DIR={os.path.join(prefix, 'bin')} UV_NO_MODIFY_PATH=1 sh"],
+                capture_output=True, text=True, timeout=300, env=env,
+            )
+            uv = os.path.join(prefix, "bin", "uv")
+            if result.returncode != 0 or not os.path.exists(uv):
+                raise RuntimeError(f"uv install failed: {(result.stderr or result.stdout)[-300:]}")
+        result = subprocess.run(
+            [uv, "tool", "install", "--force", "--python", "3.12", OMNIGENT_PIP_SPEC],
+            capture_output=True, text=True, timeout=600, env=env,
+        )
+        if result.returncode != 0 or not os.path.exists(omnigent_bin):
+            raise RuntimeError((result.stderr or result.stdout)[-500:])
+        with open(stamp, "w") as f:
+            f.write(OMNIGENT_PIP_SPEC)
+        _set("omnigent", "complete")
+    except (subprocess.TimeoutExpired, OSError, RuntimeError) as e:
+        _set("omnigent", "error", str(e))
 
 
 # AppKit scaffolding (`databricks apps init`) needs 0.295+; the Apps runtime
@@ -266,7 +390,7 @@ def _install_skills() -> None:
 
 
 def run_in_background() -> None:
-    for step in ("node", "claude", "codex", "databricks", "skills"):
+    for step in ("node", "claude", "codex", "databricks", "skills", "tmux", "omnigent"):
         _set(step, "pending")
 
     def orchestrate():
@@ -275,16 +399,21 @@ def run_in_background() -> None:
             _install_node()
         except RuntimeError:
             # Without node, codex can't install; claude's installer is
-            # self-contained, so still try it.
+            # self-contained, so still try it. tmux/omnigent don't need node.
             _set("codex", "error", "skipped: node install failed")
-            _install_claude()
-            _install_databricks_cli()
-            _install_skills()
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                pool.submit(_install_claude)
+                pool.submit(_install_databricks_cli)
+                pool.submit(_install_skills)
+                pool.submit(_install_tmux)
+                pool.submit(_install_omnigent)
             return
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        with ThreadPoolExecutor(max_workers=6) as pool:
             pool.submit(_install_claude)
             pool.submit(_install_codex)
             pool.submit(_install_databricks_cli)
             pool.submit(_install_skills)
+            pool.submit(_install_tmux)
+            pool.submit(_install_omnigent)
 
     threading.Thread(target=orchestrate, daemon=True, name="bootstrap").start()
