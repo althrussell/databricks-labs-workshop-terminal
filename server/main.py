@@ -54,6 +54,13 @@ def _observe_output(session, chunk: str) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
+    # P1-11: if a state path is configured, attach the metadata journal so
+    # sessions survive a restart as surfaced ghosts (the live PTYs cannot).
+    state_path = config.session_state_path()
+    if state_path:
+        from .session_store import SessionMetadataStore
+
+        session_manager.configure_store(SessionMetadataStore(state_path))
     session_manager.attach_loop(loop)
     session_manager.output_observer = _observe_output
     event_hub.attach_loop(loop)
@@ -117,7 +124,22 @@ class CreateSessionBody(BaseModel):
 
 @app.get("/api/sessions")
 def list_sessions(principal: Principal = Depends(get_current_user)):
-    return {"sessions": [s.to_dict() for s in session_manager.list_for(principal.name)]}
+    # Live sessions plus any ended-on-restart ghosts (P1-11), so the attendee
+    # sees terminals lost to a server restart instead of a silent blank.
+    live = [s.to_dict() for s in session_manager.list_for(principal.name)]
+    prior = [
+        {
+            "id": g.get("id"),
+            "agent_id": g.get("agent_id"),
+            "label": g.get("label"),
+            "created_at": g.get("created_at"),
+            "last_activity": g.get("last_activity"),
+            "exited": True,
+            "exit_reason": g.get("exit_reason", "server_restarted"),
+        }
+        for g in session_manager.prior_for(principal.name)
+    ]
+    return {"sessions": live, "prior_sessions": prior}
 
 
 @app.post("/api/sessions")

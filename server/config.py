@@ -68,6 +68,17 @@ def session_idle_timeout() -> int:
     return _env_int("SESSION_IDLE_TIMEOUT_SECONDS", 3600)
 
 
+def session_state_path() -> str:
+    """File path for the session-metadata journal (P1-11), or "" to disable.
+
+    When set, the SessionManager journals live-session metadata + a scrollback
+    tail so that after a server restart the attendee sees which terminals they
+    had (ended on restart) with replay, instead of a silent blank. Empty keeps
+    the manager fully in-memory.
+    """
+    return _env("SESSION_STATE_PATH")
+
+
 def workshop_phase_default() -> str:
     return _env("WORKSHOP_PHASE", "intro")
 

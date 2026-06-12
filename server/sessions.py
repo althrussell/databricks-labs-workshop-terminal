@@ -68,6 +68,26 @@ class Session:
         with self.lock:
             return "".join(self.scrollback)
 
+    def metadata(self, *, scrollback_tail: int = 200) -> dict:
+        """Persistable metadata + a scrollback tail for restart recovery (P1-11).
+
+        Excludes the un-persistable live PTY handles (fd, pid); keeps what's
+        needed to tell an attendee which terminal they had and replay its last
+        output after a restart.
+        """
+        with self.lock:
+            tail = "".join(list(self.scrollback)[-scrollback_tail:])
+        return {
+            "id": self.id,
+            "owner_email": self.owner_email,
+            "agent_id": self.agent_id,
+            "label": self.label,
+            "created_at": self.created_at,
+            "last_activity": self.last_activity,
+            "exited": self.exited,
+            "scrollback_tail": tail,
+        }
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
@@ -80,7 +100,7 @@ class Session:
 
 
 class SessionManager:
-    def __init__(self):
+    def __init__(self, store=None):
         self._sessions: dict[str, Session] = {}
         self._lock = threading.Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -88,6 +108,50 @@ class SessionManager:
         # Optional observer fed each output chunk (topic spotting). Must be
         # fast and must never raise into the reader thread.
         self.output_observer = None
+        # Optional metadata journal (P1-11). When set, live sessions are
+        # persisted so a restart can surface them; prior ghosts loaded once.
+        self._store = store
+        self._prior: dict[str, list[dict]] = {}
+
+    def configure_store(self, store) -> None:
+        """Attach a metadata journal and load any pre-restart sessions as ghosts."""
+        self._store = store
+        self.load_prior()
+
+    def load_prior(self) -> None:
+        """Read the journal's pre-restart live sessions into per-owner ghosts."""
+        self._prior = {}
+        if self._store is None:
+            return
+        for ghost in self._store.prior_live_sessions():
+            owner = ghost.get("owner_email")
+            if owner:
+                self._prior.setdefault(owner, []).append(ghost)
+        # The journal is now stale (those PTYs are gone); fresh sessions will
+        # repopulate it. Clearing avoids re-surfacing the same ghosts forever.
+        self._store.clear()
+
+    def prior_for(self, owner_email: str) -> list[dict]:
+        """Ended-on-restart ghost sessions for an owner (newest first)."""
+        ghosts = list(self._prior.get(owner_email, []))
+        ghosts.sort(key=lambda g: g.get("last_activity", 0), reverse=True)
+        return ghosts
+
+    def _persist(self, session: Session) -> None:
+        if self._store is None:
+            return
+        try:
+            self._store.upsert(session.metadata())
+        except Exception:  # noqa: BLE001 — journaling must never break a session
+            logger.warning("session journal upsert failed for %s", session.id[:8])
+
+    def _persist_exit(self, session_id: str, reason: str) -> None:
+        if self._store is None:
+            return
+        try:
+            self._store.mark_exited(session_id, reason)
+        except Exception:  # noqa: BLE001
+            logger.warning("session journal exit mark failed for %s", session_id[:8])
 
     def attach_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
@@ -157,6 +221,7 @@ class SessionManager:
                 raise SessionLimitError("Terminal limit reached — close one first.")
             self._sessions[session.id] = session
 
+        self._persist(session)
         threading.Thread(
             target=self._read_pty, args=(session,), daemon=True,
             name=f"pty-reader-{session.id[:8]}",
@@ -180,6 +245,13 @@ class SessionManager:
             pass
         with self._lock:
             self._sessions.pop(session.id, None)
+        # A deliberately-closed session is no longer a restart ghost: drop it
+        # from the journal so it isn't surfaced after a future restart.
+        if self._store is not None:
+            try:
+                self._store.remove(session.id)
+            except Exception:  # noqa: BLE001
+                logger.warning("session journal remove failed for %s", session.id[:8])
         logger.info("session %s terminated", session.id[:8])
 
     # -- internals --
@@ -233,10 +305,17 @@ class SessionManager:
             time.sleep(REAPER_INTERVAL)
             timeout = config.session_idle_timeout()
             now = time.time()
-            stale = [s for s in self.snapshot() if now - s.last_activity > timeout]
+            live = self.snapshot()
+            stale = [s for s in live if now - s.last_activity > timeout]
             for session in stale:
                 logger.info("reaping idle session %s (owner=%s)", session.id[:8], session.owner_email)
                 self.terminate(session)
+            # Refresh the journal so a restart replays reasonably recent
+            # scrollback/activity (within one reaper interval), not create-time.
+            if self._store is not None:
+                for session in live:
+                    if not session.exited:
+                        self._persist(session)
 
 
 class SessionLimitError(Exception):
