@@ -94,6 +94,17 @@ def topic_detection_enabled() -> bool:
     return _env("TOPIC_DETECTION", "true").lower() not in ("false", "0", "no", "off")
 
 
+def enable_public_mcp() -> bool:
+    """Whether to wire public MCP servers (DeepWiki, Exa) into the agent.
+
+    Off by default (gap P1-21): the agents run autonomously with a live
+    workspace token, so fetching from public MCP servers is an indirect
+    prompt-injection egress path. Operators opt in per event when the content
+    warrants it. With this off, the agent's MCP server list is empty
+    (workspace-internal only)."""
+    return _env("ENABLE_PUBLIC_MCP", "false").lower() in ("1", "true", "yes", "on")
+
+
 def branding() -> dict:
     return {
         "brand_name": _env("BRAND_NAME") or "Databricks",

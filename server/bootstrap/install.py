@@ -25,12 +25,15 @@ CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.46.0")
 CLAUDE_INSTALLER_URL = os.environ.get(
     "CLAUDE_INSTALLER_URL", "https://claude.ai/install.sh"
 )
-# Skills are always fetched LATEST from ai-dev-kit at boot; the vendored copy
-# in assets/skills is the offline fallback (and carries the workflow skills
-# that don't come from ai-dev-kit).
+# Skills are overlaid from ai-dev-kit at boot; the vendored copy in assets/skills
+# is the offline fallback (and carries the workflow skills that don't come from
+# ai-dev-kit). P1-21: the ref is pinnable (AI_DEV_KIT_REF) so an event runs a
+# known, reviewed skills version rather than whatever is on the branch tip at
+# boot. Default "main"; events should pin a tag or commit SHA.
 AI_DEV_KIT_REPO = os.environ.get(
     "AI_DEV_KIT_REPO", "https://github.com/databricks-solutions/ai-dev-kit.git"
 )
+AI_DEV_KIT_REF = os.environ.get("AI_DEV_KIT_REF", "main").strip() or "main"
 _ASSETS_SKILLS = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "..", "assets", "skills")
 )
@@ -220,16 +223,25 @@ def _install_skills() -> None:
 
     clone_dir = os.path.join(prefix, "ai-dev-kit")
     try:
-        if os.path.isdir(os.path.join(clone_dir, ".git")):
-            result = subprocess.run(
-                ["git", "-C", clone_dir, "pull", "--ff-only", "--depth", "1"],
-                capture_output=True, text=True, timeout=120, env=_install_env(),
-            )
-        else:
+        # Pinned-ref clone (P1-21): --branch accepts a tag or branch; for a
+        # full-SHA pin we clone then checkout. Re-clone each boot so the pinned
+        # ref is authoritative rather than whatever a stale checkout holds.
+        shutil.rmtree(clone_dir, ignore_errors=True)
+        result = subprocess.run(
+            ["git", "clone", "--depth", "1", "--branch", AI_DEV_KIT_REF,
+             AI_DEV_KIT_REPO, clone_dir],
+            capture_output=True, text=True, timeout=300, env=_install_env(),
+        )
+        if result.returncode != 0:
+            # --branch rejects raw commit SHAs; fall back to clone + checkout.
             shutil.rmtree(clone_dir, ignore_errors=True)
-            result = subprocess.run(
-                ["git", "clone", "--depth", "1", AI_DEV_KIT_REPO, clone_dir],
+            subprocess.run(
+                ["git", "clone", AI_DEV_KIT_REPO, clone_dir],
                 capture_output=True, text=True, timeout=300, env=_install_env(),
+            )
+            result = subprocess.run(
+                ["git", "-C", clone_dir, "checkout", AI_DEV_KIT_REF],
+                capture_output=True, text=True, timeout=120, env=_install_env(),
             )
         if result.returncode != 0:
             raise RuntimeError((result.stderr or result.stdout)[-300:])
@@ -245,7 +257,7 @@ def _install_skills() -> None:
                 shutil.rmtree(target, ignore_errors=True)
                 shutil.copytree(source, target)
                 updated += 1
-        logger.info("skills: %d refreshed from ai-dev-kit@latest", updated)
+        logger.info("skills: %d refreshed from ai-dev-kit@%s", updated, AI_DEV_KIT_REF)
         _set("skills", "complete")
     except (subprocess.TimeoutExpired, OSError, RuntimeError) as e:
         # Network/git failure — the vendored copy still serves.
