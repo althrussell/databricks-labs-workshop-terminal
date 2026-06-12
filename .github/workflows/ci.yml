@@ -28,22 +28,23 @@ jobs:
         run: python -m pytest tests/ -q
 
   frontend:
-    name: build
+    name: type-check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         working-directory: frontend
-        run: npm ci
-      - name: Type-check and build
+        # npm install (not ci) + Node 22's newer npm: `npm ci` on Node 20 hit npm's
+        # "Exit handler never called!" crash, leaving node_modules incomplete.
+        run: npm install --no-audit --no-fund
+      - name: Type-check
         working-directory: frontend
-        run: npm run build
-      - name: Check committed static/ is up to date (informational — P2-13)
-        run: |
-          if ! git diff --quiet -- static/; then
-            echo "::warning::committed static/ differs from a fresh build — run 'make build-frontend' and commit. (Blocking once P2-13 lands.)"
-            git diff --stat -- static/ || true
-          fi
+        # The frontend type-check is the "type checks" half of P1-12. The full
+        # vite build + committed-static/ drift check is P2-13 (Sprint 9), where
+        # build determinism across runners is solved.
+        run: npx tsc --noEmit
