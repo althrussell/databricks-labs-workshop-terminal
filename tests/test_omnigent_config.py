@@ -173,10 +173,10 @@ def test_catalog_gates_omnigent_entries(client, monkeypatch):
     agents = {
         a["id"]: a for a in client.get("/api/agents", headers={"X-Forwarded-Email": "a@b.co"}).json()["agents"]
     }
+    # Omnigent gates on its own readiness key; claude/codex are independent.
     assert agents["omnigent"]["ready"] is False
-    assert agents["omnigent-claude"]["ready"] is False
-    assert agents["omnigent-codex"]["ready"] is False
     assert agents["claude"]["ready"] is True
-    # Omnigent entries lead the catalog; bare CLIs are demoted fallbacks.
+    assert agents["codex"]["ready"] is True
+    # One button per agent: Omnigent leads, then the direct CLIs.
     ordered = [a["id"] for a in sorted(agents.values(), key=lambda a: a["order"])]
-    assert ordered[:3] == ["omnigent", "omnigent-claude", "omnigent-codex"]
+    assert ordered == ["omnigent", "claude", "codex", "bash"]

@@ -2,29 +2,11 @@
   {
     "id": "omnigent",
     "label": "Omnigent",
-    "description": "Databricks' agent meta-harness — managed sessions over Claude and Codex.",
+    "description": "Databricks' agent meta-harness — orchestrates Claude and Codex in managed sessions.",
     "icon": "omnigent",
     "command": "omnigent",
     "requires": ["omnigent"],
     "order": 1
-  },
-  {
-    "id": "omnigent-claude",
-    "label": "Omnigent · Claude",
-    "description": "Claude Code in a managed Omnigent session.",
-    "icon": "omnigent",
-    "command": "omnigent claude",
-    "requires": ["omnigent", "claude"],
-    "order": 2
-  },
-  {
-    "id": "omnigent-codex",
-    "label": "Omnigent · Codex",
-    "description": "Codex in a managed Omnigent session.",
-    "icon": "omnigent",
-    "command": "omnigent codex",
-    "requires": ["omnigent", "codex"],
-    "order": 3
   },
   {
     "id": "claude",
@@ -33,7 +15,7 @@
     "icon": "sparkles",
     "command": "claude",
     "requires": ["claude"],
-    "order": 10
+    "order": 2
   },
   {
     "id": "codex",
@@ -42,7 +24,7 @@
     "icon": "bot",
     "command": "codex",
     "requires": ["codex"],
-    "order": 11
+    "order": 3
   },
   {
     "id": "bash",

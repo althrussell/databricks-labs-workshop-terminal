@@ -424,6 +424,14 @@ implementation; where this design and the source disagreed, the source won:
   icon (`icon: "omnigent"` → `IMAGE_ICONS` in Hero/LaunchBar), `STEP_LABELS`
   gained tmux/omnigent entries, and the hero's primary card is now the first
   catalog entry rather than hardcoded `claude`.
+- **Catalog simplified to one button per agent** (vs §3.4's six entries):
+  Omnigent (order 1), Claude Code (2), Codex (3), Terminal (99). The
+  `omnigent claude` / `omnigent codex` wrapped session types were dropped as
+  separate buttons — Claude/Codex-through-Omnigent lives inside the Omnigent
+  TUI (polly sub-agents), while the Claude Code and Codex buttons stay the
+  direct CLIs (which also preserves them as the §1 fallback path). The
+  wrapped commands remain available to operators via an
+  `AGENT_CATALOG_PATH` content pack.
 - **Redeploys over live omnigent sessions.** An in-place `apps deploy` onto a
   container that had hosted an omnigent session failed with "App process did
   not start within 10 minutes" (suspected: the detached omnigent server/tmux
