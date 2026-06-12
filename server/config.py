@@ -109,6 +109,24 @@ def session_state_path() -> str:
     return _env("SESSION_STATE_PATH")
 
 
+def agents_enabled_default() -> bool:
+    """Deploy-time default for whether coding (LLM) agents may launch (P1-16).
+
+    The operator kill-switch (see server/spend.py) overrides this at runtime.
+    """
+    return _env("AGENTS_ENABLED", "true").lower() not in ("false", "0", "no", "off")
+
+
+def max_agent_launches_per_user() -> int:
+    """Per-attendee lifetime cap on coding-agent launches; 0 = unlimited (P1-16).
+
+    WT can't see model-serving tokens (agents run as CLI subprocesses in PTYs),
+    so the controllable spend proxy is how many LLM-agent sessions an attendee
+    starts. Bash sessions are free and never counted.
+    """
+    return _env_int("MAX_AGENT_LAUNCHES_PER_USER", 0)
+
+
 def workshop_phase_default() -> str:
     return _env("WORKSHOP_PHASE", "intro")
 

@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import agents, config, user_content
+from . import agents, config, spend, user_content
 from .admin import router as admin_router
 from .auth import Principal, get_current_user, is_admin
 from .bootstrap import install
@@ -168,16 +168,25 @@ def create_session(body: CreateSessionBody, principal: Principal = Depends(get_c
     if agent is None:
         raise HTTPException(status_code=404, detail=f"Unknown agent '{body.agent_id}'")
 
+    user = user_manager.get(principal.name)
+    user.last_seen = time.time()
+    if not user.first_seen:
+        user.first_seen = time.time()
+
+    # P1-16: operator kill-switch + per-attendee budget for LLM agents (bash is
+    # always free). Gate first — a paused or over-budget attendee gets a clear,
+    # cheap refusal before any readiness/credential/provision work, and isn't
+    # told an agent is "still installing" when it's actually paused.
+    try:
+        spend.check_can_launch(user, agent)
+    except spend.SpendBlocked as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+
     requires = agent.get("requires", [])
     ready = install.status()["ready"]
     missing = [r for r in requires if not ready.get(r, False)]
     if missing:
         raise HTTPException(status_code=409, detail=f"{agent['label']} is still installing — try again in a moment")
-
-    user = user_manager.get(principal.name)
-    user.last_seen = time.time()
-    if not user.first_seen:
-        user.first_seen = time.time()
 
     # Write/refresh this user's CLI configs from the vended credential. Agent
     # CLIs hard-require it; bash degrades gracefully (shell works, databricks
