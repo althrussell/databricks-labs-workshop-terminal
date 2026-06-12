@@ -83,6 +83,17 @@ def max_sessions_global() -> int:
     return _env_int("MAX_SESSIONS_GLOBAL", 30)
 
 
+def allow_shared_topology() -> bool:
+    """Opt-in acknowledgement that one instance may serve multiple attendees.
+
+    Off by default (gap P1-11a): the supported model is one workspace per
+    attendee. See server/topology.py.
+    """
+    return _env("ALLOW_SHARED_TOPOLOGY").strip().lower() in {
+        "1", "true", "yes", "on", "enabled", "enable",
+    }
+
+
 def session_idle_timeout() -> int:
     return _env_int("SESSION_IDLE_TIMEOUT_SECONDS", 3600)
 

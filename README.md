@@ -16,9 +16,14 @@ Built to be deployed (and torn down) as workshop infrastructure by
 - **Zero-touch auth**: Control Tower vends a workspace credential at deploy
   time (`WORKSHOP_PAT`); the app chains short-lived rotating tokens off it
   and feeds them to every CLI config. Attendees never see a token screen.
-- **Fully isolated sessions**: per-user HOME directories, sessions strictly
-  bound to their owner, secrets stripped from terminal env. Up to 10
-  attendees per instance.
+- **Session isolation**: per-user HOME directories, sessions strictly bound to
+  their owner, secrets stripped from terminal env (deny-by-default). Note this is
+  HOME/PTY-level isolation, not credential isolation — the vended credential and
+  git identity are shared instance-wide. The supported topology is **one
+  disposable workspace (and instance) per attendee**; running multiple attendees
+  on one instance is unsupported unless you set `ALLOW_SHARED_TOPOLOGY=true` to
+  acknowledge the shared-credential caveat. The instance warns at startup and when
+  a second attendee appears.
 - **Resilient terminals**: PTYs survive page refreshes and wifi blips —
   reconnect and your scrollback replays.
 - **Insight nuggets**: a collapsible pane of docs, best practices, and
