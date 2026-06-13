@@ -9,6 +9,15 @@ live during the workshop.
 Built to be deployed (and torn down) as workshop infrastructure by
 [databricks-labs-control-tower](https://github.com/althrussell/databricks-labs-control-tower).
 
+## Architecture
+
+Control Tower deploys the Workshop Terminal into each attendee's isolated
+workspace and pushes phase/broadcast updates live. The app vends a short-lived,
+rotating `WORKSHOP_PAT`, serves config-driven content packs and an AI Dev Kit,
+and exposes a group-gated operator admin panel.
+
+![Workshop Terminal architecture](docs/images/architecture.png)
+
 ## What attendees get
 
 - **Launch buttons** for Claude Code, Codex, and a plain terminal — the agent
