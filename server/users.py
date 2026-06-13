@@ -50,7 +50,11 @@ class User:
         self.first_seen: float = 0.0
 
     def bootstrap_home(self) -> None:
-        for sub in ("projects", ".claude", ".codex", ".config"):
+        for sub in (
+            "projects", ".claude", ".codex", ".config",
+            os.path.join(".config", "workshop"),  # rotating gateway-token file
+            os.path.join(".cache", "tmux"),       # per-user tmux socket dir
+        ):
             os.makedirs(os.path.join(self.home, sub), exist_ok=True)
         self._link_shared_binaries()
 
@@ -114,6 +118,21 @@ class User:
             "PATH": f"{local_bin}:{shared_bin}:{base_path}",
             "WORKSHOP_USER_EMAIL": self.email,
             "DATABRICKS_CONFIG_PROFILE": "DEFAULT",
+            # Omnigent runs its terminals on private per-instance sockets
+            # (tmux -S), but attendees can also run bare tmux in a bash
+            # session — whose default socket dir /tmp/tmux-<uid> would merge
+            # every attendee (shared uid) into ONE tmux server. Per-user
+            # socket dir keeps that path isolated too.
+            "TMUX_TMPDIR": os.path.join(self.home, ".cache", "tmux"),
+            # The omnigent install is shared across attendees — never
+            # self-update (mirrors DISABLE_AUTOUPDATER for claude).
+            "OMNIGENT_NO_UPDATE_CHECK": "1",
+            # Omnigent's gateway harnesses cache the auth_command result for
+            # 15 min by default — the same as our token lifetime, so a token
+            # already ≤10 min old at read (rotation interval) could be served
+            # up to 10 min past expiry. 4 min keeps worst-case age at 14 min.
+            "HARNESS_CLAUDE_SDK_GATEWAY_AUTH_REFRESH_INTERVAL_MS": "240000",
+            "HARNESS_CODEX_GATEWAY_AUTH_REFRESH_INTERVAL_MS": "240000",
         })
         return env
 

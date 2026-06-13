@@ -44,6 +44,9 @@ def test_only_allowlisted_and_explicit_keys_present(monkeypatch):
     explicit = {
         "HOME", "TERM", "USER", "PATH",
         "WORKSHOP_USER_EMAIL", "DATABRICKS_CONFIG_PROFILE",
+        "TMUX_TMPDIR", "OMNIGENT_NO_UPDATE_CHECK",
+        "HARNESS_CLAUDE_SDK_GATEWAY_AUTH_REFRESH_INTERVAL_MS",
+        "HARNESS_CODEX_GATEWAY_AUTH_REFRESH_INTERVAL_MS",
     }
     allowed_exact = {"LANG", "LANGUAGE", "TZ", "SHELL", "COLORTERM"}
     for key in env:

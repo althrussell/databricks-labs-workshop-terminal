@@ -28,6 +28,9 @@ def main() -> int:
     parser.add_argument("--name", default="workshop-terminal-dev")
     parser.add_argument("--no-pat", action="store_true",
                         help="skip minting/injecting the WORKSHOP_PAT dev credential")
+    parser.add_argument("--omnigent-wheels", default="",
+                        help="dir of omnigent wheels to stage with the app (pre-PyPI: "
+                             "uploads *.whl and points OMNIGENT_PIP_SPEC/UV_FIND_LINKS at them)")
     args = parser.parse_args()
 
     from databricks.sdk import WorkspaceClient
@@ -44,6 +47,21 @@ def main() -> int:
         workshop_pat = w.tokens.create(
             comment=f"{args.name} vended credential", lifetime_seconds=43200
         ).token_value
+
+    # Pre-PyPI omnigent: stage wheels alongside the source so the container
+    # installs from them. The Apps runtime mounts the source at
+    # /app/python/source_code, so that's where UV_FIND_LINKS must point.
+    omnigent_spec = ""
+    wheels: list[str] = []
+    if args.omnigent_wheels:
+        wheels = sorted(
+            f for f in os.listdir(args.omnigent_wheels) if f.endswith(".whl")
+        )
+        main_wheel = next((f for f in wheels if f.startswith("omnigent-")), None)
+        if not main_wheel:
+            print(f"no omnigent-*.whl in {args.omnigent_wheels}", file=sys.stderr)
+            return 1
+        omnigent_spec = f"omnigent=={main_wheel.split('-')[1]}"
 
     print(f"Importing source to {target}")
     for root, dirs, files in os.walk(REPO_ROOT):
@@ -66,9 +84,26 @@ def main() -> int:
                     b"- name: WORKSHOP_PAT\n    value: \"\"",
                     f"- name: WORKSHOP_PAT\n    value: \"{workshop_pat}\"".encode(),
                 )
+            if rel == "app.yaml" and omnigent_spec:
+                content = content.replace(
+                    b"- name: OMNIGENT_PIP_SPEC\n    value: \"\"",
+                    f"- name: OMNIGENT_PIP_SPEC\n    value: \"{omnigent_spec}\"".encode(),
+                ).replace(
+                    b"- name: UV_FIND_LINKS\n    value: \"\"",
+                    b"- name: UV_FIND_LINKS\n    value: \"/app/python/source_code/wheels\"",
+                )
             ws_path = f"{target}/{rel}".replace("\\", "/")
             w.workspace.mkdirs(os.path.dirname(ws_path))
             w.workspace.upload(ws_path, io.BytesIO(content), format=ImportFormat.AUTO, overwrite=True)
+
+    for name in wheels:
+        print(f"Staging wheel {name}")
+        with open(os.path.join(args.omnigent_wheels, name), "rb") as f:
+            w.workspace.mkdirs(f"{target}/wheels")
+            w.workspace.upload(
+                f"{target}/wheels/{name}", io.BytesIO(f.read()),
+                format=ImportFormat.AUTO, overwrite=True,
+            )
 
     print(f"Creating app {args.name}")
     try:

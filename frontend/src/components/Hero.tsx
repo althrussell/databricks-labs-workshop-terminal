@@ -15,6 +15,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { api, AgentInfo, IdeaPrompt, Nugget, WorkspaceLink } from "../api";
+import omnigentLogo from "../assets/omnigent.png";
 
 const ICONS: Record<string, typeof Bot> = {
   sparkles: Sparkles,
@@ -28,12 +29,19 @@ const ICONS: Record<string, typeof Bot> = {
   link: LinkIcon,
 };
 
+// Catalog icons that are bundled images rather than lucide glyph names.
+const IMAGE_ICONS: Record<string, string> = {
+  omnigent: omnigentLogo,
+};
+
 const STEP_LABELS: Record<string, string> = {
   node: "Preparing the runtime",
   claude: "Installing Claude Code",
   codex: "Installing Codex",
   databricks: "Authenticating the Databricks CLI",
   skills: "Fetching the latest Databricks skills",
+  tmux: "Preparing the session manager",
+  omnigent: "Installing Omnigent",
 };
 
 interface Props {
@@ -110,19 +118,28 @@ export default function Hero({
         </p>
 
         <div className="hero-cards">
-          {agents.map((agent, i) => {
+          {/* The home screen sells the AI agents; the plain bash terminal
+              stays reachable from the in-session LaunchBar toolbar. */}
+          {agents.filter((agent) => agent.id !== "bash").map((agent, i) => {
             const Icon = ICONS[agent.icon] ?? SquareTerminal;
+            const imageIcon = IMAGE_ICONS[agent.icon];
             const busy = launching === agent.id;
             return (
               <button
                 key={agent.id}
-                className={`hero-card ${agent.id === "claude" ? "hero-card-primary" : ""}`}
+                className={`hero-card ${i === 0 ? "hero-card-primary" : ""}`}
                 style={{ animationDelay: `${i * 90}ms` }}
                 disabled={!agent.ready || busy}
                 onClick={() => onLaunch(agent.id)}
               >
                 <span className="hero-card-icon">
-                  {busy ? <Loader2 size={22} className="spin" /> : <Icon size={22} />}
+                  {busy ? (
+                    <Loader2 size={22} className="spin" />
+                  ) : imageIcon ? (
+                    <img src={imageIcon} alt="" className="hero-card-logo" width={22} height={22} />
+                  ) : (
+                    <Icon size={22} />
+                  )}
                 </span>
                 <span className="hero-card-label">{agent.label}</span>
                 <span className="hero-card-desc">{agent.description}</span>

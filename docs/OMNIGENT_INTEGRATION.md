@@ -1,6 +1,6 @@
 # Design: Omnigent as the Primary Workshop Interface
 
-**Status: proposed — not yet implemented.**
+**Status: implemented (June 2026) — see §10 for deltas from this design.**
 **Scope:** Workshop Terminal only. No changes to the Omnigent project itself.
 
 ## 1. Context
@@ -390,3 +390,62 @@ exactly why measurement comes before code.
   omnigent team before GA.
 - Memory at 30 attendees — spike task 3, gates the whole single-container
   design (§6).
+
+## 10. Implementation deltas (June 2026)
+
+Verified against the omnigent source (`~/code/agent-framework`) during
+implementation; where this design and the source disagreed, the source won:
+
+- **PyPI spec.** `omnigent==0.1.0rc2` is NOT on public PyPI yet. The installer
+  takes `OMNIGENT_PIP_SPEC` (wheel path / internal index spec / git URL,
+  `UV_FIND_LINKS` for sibling wheels `omnigent-client` / `omnigent-ui-sdk`);
+  the version stamp records the effective spec, so either env var change
+  triggers reinstall.
+- **tmux pin.** The v3.5a release in §3.1 does not exist; pinned v3.6b
+  (`tmux.linux-amd64.stripped.gz`, sha256 `a23e56e9…` in code). The artifact
+  is downloaded once, hash-verified, then decompressed (no re-fetch).
+- **Auth refresh cadence.** `auth_refresh_interval_ms` is NOT a provider
+  `config.yaml` key (it lives in ucode's state.json, which we don't use).
+  The §3.2 "matches exactly" claim was also wrong: a token can be 10 min old
+  when omnigent's 15-min cache reads it → up to ~10 min of expired-token use.
+  Fixed via the per-harness env overrides in `shell_env()`:
+  `HARNESS_CLAUDE_SDK_GATEWAY_AUTH_REFRESH_INTERVAL_MS=240000` and
+  `HARNESS_CODEX_GATEWAY_AUTH_REFRESH_INTERVAL_MS=240000` (worst-case token
+  age 14 min < 15 min lifetime).
+- **tmux isolation.** Omnigent runs every terminal on a private per-instance
+  socket (`tmux -S <mkdtemp>/tmux.sock`) — §3.3's cross-attendee collision
+  cannot happen in omnigent sessions. `TMUX_TMPDIR` is still set per-user to
+  isolate bare `tmux` runs from a bash session.
+- **Wizard bypass confirmed in source** (`cli._pick_first_run_harness`): a
+  config.yaml whose default provider serves anthropic sends bare `omnigent`
+  straight to polly on claude-sdk — no wizard. The generated config was
+  validated against omnigent's own `provider_config.load_config()`.
+- **Frontend was not zero-change.** The octopus logo ships as a bundled image
+  icon (`icon: "omnigent"` → `IMAGE_ICONS` in Hero/LaunchBar), `STEP_LABELS`
+  gained tmux/omnigent entries, and the hero's primary card is now the first
+  catalog entry rather than hardcoded `claude`.
+- **Catalog simplified to one button per agent** (vs §3.4's six entries):
+  Omnigent (order 1), Claude Code (2), Codex (3), Terminal (99). The
+  `omnigent claude` / `omnigent codex` wrapped session types were dropped as
+  separate buttons — Claude/Codex-through-Omnigent lives inside the Omnigent
+  TUI (polly sub-agents), while the Claude Code and Codex buttons stay the
+  direct CLIs (which also preserves them as the §1 fallback path). The
+  wrapped commands remain available to operators via an
+  `AGENT_CATALOG_PATH` content pack.
+- **Redeploys over live omnigent sessions.** An in-place `apps deploy` onto a
+  container that had hosted an omnigent session failed with "App process did
+  not start within 10 minutes" (suspected: the detached omnigent server/tmux
+  daemons from §4 holding up the supervisor's process handoff). A fresh app
+  (new compute) deployed cleanly. Until root-caused: prefer stop→start (or a
+  fresh app) over in-place redeploy when omnigent sessions have run —
+  Control Tower's teardown/redeploy flow recycles compute, so it is
+  unaffected.
+- **Verified live on Databricks Apps (labs, June 12 2026):** static tmux runs
+  on the Apps runtime image; omnigent installs from staged wheels; the
+  pre-written config bypasses both the provider wizard and (with the `tui:`
+  block) the theme picker; bare `omnigent` lands in polly on
+  `databricks-claude-opus-4-8` and completes a gateway round-trip through the
+  rotating token file.
+- **Still open (needs longer-running E2E):** §6 memory measurement at 30
+  attendees (moot under one-attendee-per-instance topology, P1-11a), and the
+  §7 rotation-boundary / reattach / two-identity checks.

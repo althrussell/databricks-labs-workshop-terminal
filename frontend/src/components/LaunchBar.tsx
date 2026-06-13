@@ -1,10 +1,15 @@
 import { Bot, Loader2, Sparkles, SquareTerminal } from "lucide-react";
 import { AgentInfo } from "../api";
+import omnigentLogo from "../assets/omnigent.png";
 
 const ICONS: Record<string, typeof Bot> = {
   sparkles: Sparkles,
   bot: Bot,
   terminal: SquareTerminal,
+};
+
+const IMAGE_ICONS: Record<string, string> = {
+  omnigent: omnigentLogo,
 };
 
 interface Props {
@@ -18,6 +23,7 @@ export default function LaunchBar({ agents, launching, onLaunch }: Props) {
     <div className="launch-bar">
       {agents.map((agent) => {
         const Icon = ICONS[agent.icon] ?? SquareTerminal;
+        const imageIcon = IMAGE_ICONS[agent.icon];
         const busy = launching === agent.id;
         return (
           <button
@@ -29,6 +35,8 @@ export default function LaunchBar({ agents, launching, onLaunch }: Props) {
           >
             {busy || !agent.ready ? (
               <Loader2 size={16} className="spin" />
+            ) : imageIcon ? (
+              <img src={imageIcon} alt="" width={16} height={16} />
             ) : (
               <Icon size={16} />
             )}
