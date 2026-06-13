@@ -13,6 +13,8 @@ import logging
 import os
 import shlex
 
+from . import config
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_CATALOG = os.path.join(os.path.dirname(__file__), "..", "content", "agents.json")
@@ -39,6 +41,11 @@ def load_catalog() -> list[dict]:
         logger.error("agent catalog unreadable at %s: %s — bash only", path, e)
     if not any(a.get("id") == "bash" for a in agents):
         agents.append(_BASH)
+    # Omnigent is feature-flagged off by default (not on public PyPI yet). When
+    # disabled, drop it everywhere at once — no card, no launch — regardless of
+    # which catalog source (default or AGENT_CATALOG_PATH) declared it.
+    if not config.omnigent_enabled():
+        agents = [a for a in agents if a.get("id") != "omnigent"]
     return sorted(agents, key=lambda a: a.get("order", 50))
 
 

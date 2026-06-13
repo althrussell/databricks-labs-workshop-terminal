@@ -85,7 +85,12 @@ def main() -> int:
                     f"- name: WORKSHOP_PAT\n    value: \"{workshop_pat}\"".encode(),
                 )
             if rel == "app.yaml" and omnigent_spec:
+                # Staging wheels means we want omnigent ON — flip the feature
+                # flag too, otherwise the catalog/installer ignore the wheels.
                 content = content.replace(
+                    b"- name: OMNIGENT_ENABLED\n    value: \"false\"",
+                    b"- name: OMNIGENT_ENABLED\n    value: \"true\"",
+                ).replace(
                     b"- name: OMNIGENT_PIP_SPEC\n    value: \"\"",
                     f"- name: OMNIGENT_PIP_SPEC\n    value: \"{omnigent_spec}\"".encode(),
                 ).replace(

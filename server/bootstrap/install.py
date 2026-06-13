@@ -390,7 +390,11 @@ def _install_skills() -> None:
 
 
 def run_in_background() -> None:
-    for step in ("node", "claude", "codex", "databricks", "skills", "tmux", "omnigent"):
+    omnigent = config.omnigent_enabled()
+    steps = ["node", "claude", "codex", "databricks", "skills"]
+    if omnigent:
+        steps += ["tmux", "omnigent"]
+    for step in steps:
         _set(step, "pending")
 
     def orchestrate():
@@ -401,19 +405,21 @@ def run_in_background() -> None:
             # Without node, codex can't install; claude's installer is
             # self-contained, so still try it. tmux/omnigent don't need node.
             _set("codex", "error", "skipped: node install failed")
-            with ThreadPoolExecutor(max_workers=4) as pool:
+            with ThreadPoolExecutor(max_workers=5) as pool:
                 pool.submit(_install_claude)
                 pool.submit(_install_databricks_cli)
                 pool.submit(_install_skills)
-                pool.submit(_install_tmux)
-                pool.submit(_install_omnigent)
+                if omnigent:
+                    pool.submit(_install_tmux)
+                    pool.submit(_install_omnigent)
             return
         with ThreadPoolExecutor(max_workers=6) as pool:
             pool.submit(_install_claude)
             pool.submit(_install_codex)
             pool.submit(_install_databricks_cli)
             pool.submit(_install_skills)
-            pool.submit(_install_tmux)
-            pool.submit(_install_omnigent)
+            if omnigent:
+                pool.submit(_install_tmux)
+                pool.submit(_install_omnigent)
 
     threading.Thread(target=orchestrate, daemon=True, name="bootstrap").start()
