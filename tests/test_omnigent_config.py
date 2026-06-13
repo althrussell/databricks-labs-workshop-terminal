@@ -27,6 +27,13 @@ def _no_endpoint_discovery(monkeypatch):
     monkeypatch.setattr(cli_config, "_discover_serving_endpoints", lambda token: set())
 
 
+@pytest.fixture(autouse=True)
+def _omnigent_on(monkeypatch):
+    """Most tests here exercise the omnigent path, which is feature-flagged off
+    by default. Turn it on; the dedicated gating test overrides this."""
+    monkeypatch.setenv("OMNIGENT_ENABLED", "true")
+
+
 def _config_path(user):
     return os.path.join(user.home, ".omnigent", "config.yaml")
 
@@ -180,3 +187,41 @@ def test_catalog_gates_omnigent_entries(client, monkeypatch):
     # One button per agent: Omnigent leads, then the direct CLIs.
     ordered = [a["id"] for a in sorted(agents.values(), key=lambda a: a["order"])]
     assert ordered == ["omnigent", "claude", "codex", "bash"]
+
+
+def test_feature_flag_off_hides_omnigent_everywhere(client, monkeypatch):
+    """Default (OFF): no catalog entry, launch rejected, configs/installers skipped."""
+    monkeypatch.setenv("OMNIGENT_ENABLED", "false")
+
+    # Catalog: omnigent absent; the other agents are unaffected.
+    from server import agents as agents_mod
+    ids = [a["id"] for a in agents_mod.load_catalog()]
+    assert "omnigent" not in ids
+    assert ids == ["claude", "codex", "bash"]
+    assert agents_mod.get_agent("omnigent") is None
+
+    # API surface: omnigent not offered.
+    body = client.get("/api/agents", headers={"X-Forwarded-Email": "a@b.co"}).json()
+    assert "omnigent" not in {a["id"] for a in body["agents"]}
+
+    # Credential config: configure_all writes no omnigent config and does not
+    # mark omnigent ready.
+    u = User("flagoff@example.com")
+    u.bootstrap_home()
+    monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
+    cli_config.configure_all(u, "tok-1")
+    assert not os.path.exists(_config_path(u))
+    assert "omnigent" not in u.cli_ready
+
+    # Installer: omnigent/tmux steps are never registered.
+    install._state.clear()
+    monkeypatch.setattr(install, "_install_node", lambda: install._set("node", "complete"))
+    for fn in ("_install_claude", "_install_codex", "_install_databricks_cli",
+               "_install_skills", "_install_tmux", "_install_omnigent"):
+        monkeypatch.setattr(install, fn, lambda *a, **k: None)
+    install.run_in_background()
+    import time as _t
+    _t.sleep(0.2)
+    steps = install.status()["steps"]
+    assert "omnigent" not in steps
+    assert "tmux" not in steps

@@ -54,6 +54,11 @@ env:
     value: ""
 
   # --- Omnigent (agent meta-harness) ---
+  # Feature flag, default OFF: omnigent is not on public PyPI yet, so a default
+  # deploy must not install it or show a launch card that can't start. Flip to
+  # "true" (and ensure OMNIGENT_PIP_SPEC resolves) when omnigent goes public.
+  - name: OMNIGENT_ENABLED
+    value: "false"
   # The GA bump is this one env change: the installer's version stamp forces
   # a reinstall on mismatch. TMUX_STATIC_URL/SHA256 are pinned in code; the
   # env overrides exist for emergencies (e.g. GitHub release unreachable).

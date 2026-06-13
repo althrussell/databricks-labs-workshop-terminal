@@ -292,8 +292,12 @@ def configure_all(user: User, token: str) -> None:
     configure_databricks_cli(user, token)
     configure_claude(user, token)
     configure_codex(user, token)
-    configure_omnigent(user, token)
-    user.cli_ready.update({"claude", "codex", "databricks", "omnigent"})
+    user.cli_ready.update({"claude", "codex", "databricks"})
+    # Omnigent is feature-flagged off by default — don't write a config (or
+    # spend an endpoint-discovery round-trip) for a session type we don't offer.
+    if config.omnigent_enabled():
+        configure_omnigent(user, token)
+        user.cli_ready.add("omnigent")
 
 
 def update_tokens(user: User, token: str) -> None:
@@ -317,10 +321,12 @@ def update_tokens(user: User, token: str) -> None:
 
     # Omnigent reads the token through auth_command at request time, so
     # rotation is a 1-line file write — config.yaml is never touched here.
-    if os.path.exists(os.path.join(user.home, ".omnigent", "config.yaml")):
-        _write_gateway_token(user, token)
-    else:
-        configure_omnigent(user, token)
+    # Only when the feature is enabled (otherwise there is nothing to rotate).
+    if config.omnigent_enabled():
+        if os.path.exists(os.path.join(user.home, ".omnigent", "config.yaml")):
+            _write_gateway_token(user, token)
+        else:
+            configure_omnigent(user, token)
 
 
 def _read_json(path: str) -> dict:
