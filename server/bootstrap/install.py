@@ -27,14 +27,28 @@ CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.46.0")
 CLAUDE_INSTALLER_URL = os.environ.get(
     "CLAUDE_INSTALLER_URL", "https://claude.ai/install.sh"
 )
-# Omnigent (agent meta-harness) + its runtime deps. The GA bump is a pure env
-# change: the version stamp written by _install_omnigent() forces a reinstall
-# whenever OMNIGENT_VERSION differs from what's on disk.
-OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "").strip() or "0.1.0rc2"
-# Until omnigent's public PyPI launch, OMNIGENT_PIP_SPEC points the installer
-# at an alternate source (a wheel path staged on the volume, an internal index
-# package, or a git URL). Once on PyPI the default version spec takes over.
-OMNIGENT_PIP_SPEC = os.environ.get("OMNIGENT_PIP_SPEC", "").strip() or f"omnigent=={OMNIGENT_VERSION}"
+# Omnigent (agent meta-harness) + its runtime deps. Omnigent is GA on public
+# PyPI, so the default installs the latest release (unpinned). OMNIGENT_VERSION
+# is an optional one-line pin for an event (empty = latest); an explicit
+# OMNIGENT_PIP_SPEC (wheel path / git URL / pinned spec, for air-gap or
+# pre-release staging) wins verbatim. The sibling deps omnigent-client /
+# omnigent-ui-sdk resolve transitively from PyPI.
+_OMNIGENT_PIN = os.environ.get("OMNIGENT_VERSION", "").strip()
+OMNIGENT_PIP_SPEC = (
+    os.environ.get("OMNIGENT_PIP_SPEC", "").strip()
+    or (f"omnigent=={_OMNIGENT_PIN}" if _OMNIGENT_PIN else "omnigent")
+)
+
+
+def _is_pinned(spec: str) -> bool:
+    """Whether the pip spec names a fixed version or source (vs. bare 'omnigent').
+
+    A pinned spec is reproducible, so the version stamp can short-circuit a
+    reinstall. An unpinned bare package must reinstall every boot to actually
+    track the latest PyPI release (the stamp would otherwise freeze the
+    first-installed version forever on a persistent DATA_ROOT volume).
+    """
+    return spec.startswith("git+") or any(t in spec for t in ("==", "@", "/", ".whl"))
 # Omnigent's claude/codex wrappers hard-require tmux and the Apps runtime has
 # no package manager — install a fully static musl build into the shared bin.
 TMUX_STATIC_URL = os.environ.get("TMUX_STATIC_URL", "").strip() or (
@@ -226,8 +240,10 @@ def _install_omnigent() -> None:
     """Omnigent via uv (needs Python ≥3.12 — uv brings its own interpreter).
 
     Unlike the claude installer's exists→done shortcut, a version stamp gates
-    the reinstall so bumping OMNIGENT_VERSION (or OMNIGENT_PIP_SPEC) in env is
-    the whole GA rollout.
+    the reinstall for a *pinned* spec, so pinning OMNIGENT_VERSION (or
+    OMNIGENT_PIP_SPEC) in env is a one-line change. An unpinned bare 'omnigent'
+    reinstalls every boot (uv --force re-resolves to the latest PyPI release;
+    the uv cache makes a no-change boot cheap) so "track latest" really does.
     """
     _set("omnigent", "running")
     prefix = config.shared_prefix()
@@ -238,7 +254,11 @@ def _install_omnigent() -> None:
             installed = f.read().strip()
     except OSError:
         installed = ""
-    if os.path.exists(omnigent_bin) and installed == OMNIGENT_PIP_SPEC:
+    if (
+        _is_pinned(OMNIGENT_PIP_SPEC)
+        and os.path.exists(omnigent_bin)
+        and installed == OMNIGENT_PIP_SPEC
+    ):
         _set("omnigent", "complete")
         return
     env = _install_env()

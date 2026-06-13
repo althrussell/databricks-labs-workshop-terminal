@@ -128,15 +128,15 @@ def max_agent_launches_per_user() -> int:
 
 
 def omnigent_enabled() -> bool:
-    """Whether the Omnigent meta-harness session type is offered (default OFF).
+    """Whether the Omnigent meta-harness session type is offered (default ON).
 
-    Omnigent is not on public PyPI yet, so a default deploy must not install it
-    or show a launch card that can't start. When enabled, the bootstrap installs
-    omnigent + tmux, the catalog exposes the Omnigent session, and per-user
-    omnigent configs are written. Flip OMNIGENT_ENABLED=true (and make sure
-    OMNIGENT_PIP_SPEC resolves — staged wheels or PyPI GA) to turn it on.
+    Omnigent is GA on public PyPI, so the default deploy installs it (latest
+    `omnigent`) alongside tmux, the catalog leads with the Omnigent session, and
+    per-user omnigent configs are written. Operators opt OUT with
+    OMNIGENT_ENABLED=false (e.g. air-gapped events where the PyPI install can't
+    reach out, or to fall back to bare claude/codex only).
     """
-    return _env("OMNIGENT_ENABLED", "false").lower() in ("true", "1", "yes", "on")
+    return _env("OMNIGENT_ENABLED", "true").lower() not in ("false", "0", "no", "off")
 
 
 def workshop_phase_default() -> str:

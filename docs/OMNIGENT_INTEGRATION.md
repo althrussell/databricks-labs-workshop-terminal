@@ -5,11 +5,12 @@
 
 ## 1. Context
 
-Omnigent is Databricks' agent meta-harness (public OSS launch imminent;
-`omnigent==0.1.0rc2` is on PyPI today). It wraps coding agents — Claude Code,
-Codex, and YAML-declared custom agents — in managed sessions: a TUI, a local
-FastAPI server, session persistence, sub-agent orchestration (the bundled
-`polly` orchestrator), and a web UI.
+Omnigent is Databricks' agent meta-harness, now GA on public PyPI
+(`uv tool install omnigent` / `pip install omnigent`; the sibling deps
+`omnigent-client` / `omnigent-ui-sdk` resolve transitively). It wraps coding
+agents — Claude Code, Codex, and YAML-declared custom agents — in managed
+sessions: a TUI, a local FastAPI server, session persistence, sub-agent
+orchestration (the bundled `polly` orchestrator), and a web UI.
 
 Today the Workshop Terminal launches **bare** `claude` / `codex` CLIs. This
 design makes Omnigent the **default session type**: attendees land in the
@@ -376,8 +377,11 @@ exactly why measurement comes before code.
 1. Land this design; implement behind the catalog (omnigent entries simply
    appear when ready).
 2. Deploy to `workshop-terminal-dev`; run the E2E list.
-3. **GA bump (next week):** change `OMNIGENT_VERSION` env → GA version;
-   redeploy. The version stamp forces the reinstall; re-run the E2E smoke.
+3. **GA flip (done, June 2026):** omnigent is public on PyPI, so
+   `OMNIGENT_ENABLED` now defaults ON (in both `app.yaml` and `config.py`) and
+   the installer pulls the latest `omnigent` from PyPI unpinned
+   (`OMNIGENT_VERSION` empty). Operators opt out with `OMNIGENT_ENABLED=false`;
+   pin a version per event via `OMNIGENT_VERSION`.
 4. First real event runs with bare claude/codex still in the catalog at
    order 10/11. Remove them (or not) based on observed stability.
 
@@ -396,11 +400,15 @@ exactly why measurement comes before code.
 Verified against the omnigent source (`~/code/agent-framework`) during
 implementation; where this design and the source disagreed, the source won:
 
-- **PyPI spec.** `omnigent==0.1.0rc2` is NOT on public PyPI yet. The installer
-  takes `OMNIGENT_PIP_SPEC` (wheel path / internal index spec / git URL,
-  `UV_FIND_LINKS` for sibling wheels `omnigent-client` / `omnigent-ui-sdk`);
-  the version stamp records the effective spec, so either env var change
-  triggers reinstall.
+- **PyPI spec (updated at GA).** Omnigent is now GA on public PyPI, so the
+  default install is a plain `uv tool install omnigent` (latest; the sibling
+  deps `omnigent-client` / `omnigent-ui-sdk` resolve transitively). The
+  installer defaults to a bare unpinned `omnigent` and reinstalls every boot
+  so it tracks the latest release (the version stamp only short-circuits a
+  *pinned* spec — see `_is_pinned`). `OMNIGENT_VERSION` is an optional one-line
+  pin; `OMNIGENT_PIP_SPEC` (wheel path / internal index / git URL) +
+  `UV_FIND_LINKS` (sibling wheels) are demoted to air-gap / pre-release
+  staging escape hatches.
 - **tmux pin.** The v3.5a release in §3.1 does not exist; pinned v3.6b
   (`tmux.linux-amd64.stripped.gz`, sha256 `a23e56e9…` in code). The artifact
   is downloaded once, hash-verified, then decompressed (no re-fetch).

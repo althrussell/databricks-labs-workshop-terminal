@@ -54,21 +54,25 @@ env:
     value: ""
 
   # --- Omnigent (agent meta-harness) ---
-  # Feature flag, default OFF: omnigent is not on public PyPI yet, so a default
-  # deploy must not install it or show a launch card that can't start. Flip to
-  # "true" (and ensure OMNIGENT_PIP_SPEC resolves) when omnigent goes public.
+  # Feature flag, default ON: omnigent is GA on public PyPI, so the default
+  # deploy installs the latest `omnigent` (sibling deps omnigent-client /
+  # omnigent-ui-sdk resolve transitively) + tmux, and leads the catalog with
+  # the Omnigent session. Set to "false" to opt out (air-gapped events, or to
+  # offer bare claude/codex only).
   - name: OMNIGENT_ENABLED
-    value: "false"
-  # The GA bump is this one env change: the installer's version stamp forces
-  # a reinstall on mismatch. TMUX_STATIC_URL/SHA256 are pinned in code; the
-  # env overrides exist for emergencies (e.g. GitHub release unreachable).
+    value: "true"
+  # Optional one-line version pin for an event (empty = track latest from
+  # PyPI). A pinned version short-circuits reinstall via the installer's
+  # version stamp; unpinned reinstalls each boot to stay on latest.
+  # TMUX_STATIC_URL/SHA256 are pinned in code; the env overrides below exist
+  # for emergencies (e.g. GitHub release unreachable).
   - name: OMNIGENT_VERSION
-    value: "0.1.0rc2"
-  # Pre-GA escape hatch: omnigent is not on public PyPI yet. Point this at a
-  # wheel staged on the volume, an internal index spec, or a git URL; leave
-  # empty to install omnigent==$OMNIGENT_VERSION from PyPI (post-launch).
-  # Sibling wheels (omnigent-client, omnigent-ui-sdk) staged next to the main
-  # wheel are picked up by also setting UV_FIND_LINKS to that directory.
+    value: ""
+  # Escape hatch for air-gapped / pre-release installs only — NOT needed for
+  # the default PyPI path. Point this at a wheel staged on the volume, an
+  # internal index spec, or a git URL; sibling wheels (omnigent-client,
+  # omnigent-ui-sdk) staged next to the main wheel are picked up by also
+  # setting UV_FIND_LINKS to that directory.
   - name: OMNIGENT_PIP_SPEC
     value: ""
   - name: UV_FIND_LINKS

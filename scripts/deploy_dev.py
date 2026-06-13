@@ -48,9 +48,11 @@ def main() -> int:
             comment=f"{args.name} vended credential", lifetime_seconds=43200
         ).token_value
 
-    # Pre-PyPI omnigent: stage wheels alongside the source so the container
-    # installs from them. The Apps runtime mounts the source at
-    # /app/python/source_code, so that's where UV_FIND_LINKS must point.
+    # Air-gap / pre-release escape hatch: omnigent is GA on PyPI and installs
+    # from there by default, so this is only needed to test a local wheel build
+    # (or where PyPI is unreachable). Stage wheels alongside the source; the
+    # Apps runtime mounts it at /app/python/source_code, so that's where
+    # UV_FIND_LINKS must point.
     omnigent_spec = ""
     wheels: list[str] = []
     if args.omnigent_wheels:
@@ -85,12 +87,10 @@ def main() -> int:
                     f"- name: WORKSHOP_PAT\n    value: \"{workshop_pat}\"".encode(),
                 )
             if rel == "app.yaml" and omnigent_spec:
-                # Staging wheels means we want omnigent ON — flip the feature
-                # flag too, otherwise the catalog/installer ignore the wheels.
+                # Point the (already-on) omnigent install at the staged wheels:
+                # a pinned spec + UV_FIND_LINKS make uv resolve from the volume
+                # instead of PyPI. OMNIGENT_ENABLED already ships "true".
                 content = content.replace(
-                    b"- name: OMNIGENT_ENABLED\n    value: \"false\"",
-                    b"- name: OMNIGENT_ENABLED\n    value: \"true\"",
-                ).replace(
                     b"- name: OMNIGENT_PIP_SPEC\n    value: \"\"",
                     f"- name: OMNIGENT_PIP_SPEC\n    value: \"{omnigent_spec}\"".encode(),
                 ).replace(
