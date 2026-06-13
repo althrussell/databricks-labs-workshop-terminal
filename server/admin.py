@@ -12,6 +12,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from . import config, spend
 from .auth import require_admin
 from .content import Broadcast, ContentPack, content_service
 from .credentials import credential_manager
@@ -36,6 +37,36 @@ def admin_state():
         "broadcast": (b.model_dump() if (b := content_service.active_broadcast()) else None),
         "started_at": content_service.started_at,
     }
+
+
+class AgentControlBody(BaseModel):
+    enabled: bool
+
+
+@router.get("/agent-controls")
+def agent_controls():
+    """P1-16: kill-switch state + per-attendee LLM-agent spend metering.
+
+    Lets an operator see who's consuming agent sessions and pause new launches
+    fleet-wide if spend runs hot. Bash sessions are free and excluded.
+    """
+    return {
+        "agents_enabled": spend.agents_enabled(),
+        "max_agent_launches_per_user": config.max_agent_launches_per_user(),
+        "attendees": sorted(
+            (spend.metering(u) for u in user_manager.all()),
+            key=lambda m: m["agent_launches"],
+            reverse=True,
+        ),
+    }
+
+
+@router.post("/agent-controls")
+def set_agent_controls(body: AgentControlBody):
+    """Operator kill-switch: pause (``enabled=false``) or resume new LLM-agent
+    launches across the whole instance, effective immediately."""
+    spend.set_kill_switch(killed=not body.enabled)
+    return {"agents_enabled": spend.agents_enabled()}
 
 
 @router.post("/content-pack")
