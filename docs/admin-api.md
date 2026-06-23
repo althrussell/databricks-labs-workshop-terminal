@@ -145,6 +145,7 @@ python scripts/push_content.py presence
 | `LAB_COACH` | `true` | Append lab-coach instructions to attendee agent memory |
 | `TOPIC_DETECTION` | `true` | Terminal keyword spotting for contextual insights |
 | `AI_DEV_KIT_REPO` | github databricks-solutions/ai-dev-kit | Skills source fetched latest at every boot |
+| `AI_DEV_KIT_REF` | `main` | Git ref (tag/branch/SHA) for the skills overlay. **Pin a reviewed tag/SHA per event** so attendees run a known skills version (incl. the AppKit-default app skill) instead of the branch tip at boot |
 | `DEEPWIKI_MCP_URL` / `EXA_MCP_URL` | public endpoints | MCP servers for attendee agents (empty string disables) |
 | `ACCESS_GROUP` | *(unset)* | Optional group restricting attendee access |
 | `WORKSHOP_PHASE` | `intro` | Phase on (re)start |

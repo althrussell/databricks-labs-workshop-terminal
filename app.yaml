@@ -35,6 +35,14 @@ env:
   - name: CONTENT_PACK_PATH
     value: ""
 
+  # --- Skills overlay (ai-dev-kit) ---
+  # Skills are fetched from ai-dev-kit at every boot. Default ref is "main"
+  # (branch tip). STRONGLY pin a reviewed tag or commit SHA per event so every
+  # attendee runs a known skills version (incl. the AppKit-default app skill)
+  # rather than whatever lands on the branch mid-workshop.
+  - name: AI_DEV_KIT_REF
+    value: ""
+
   # --- Cobranding (Databricks theme when unset) ---
   - name: BRAND_NAME
     value: ""

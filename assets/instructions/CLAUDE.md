@@ -51,13 +51,21 @@ databricks clusters list
 
 Before starting any new project:
 
-1. **Always initialize a git repo first:**
+1. **Always create the project with `workshop-init-project` first:**
    ```bash
-   mkdir my-project && cd my-project && git init
+   cd "$(workshop-init-project my-project)"
    ```
-2. **Why?** Every git commit automatically syncs your work to the Databricks
-   Workspace at `/Workspace/Users/{your-email}/projects/{project-name}/` — so
-   your workshop work survives after this environment is torn down.
+   This makes `~/projects/my-project`, runs `git init`, and commits the
+   workshop's AppKit project memory as both `CLAUDE.md` and `AGENTS.md` so the
+   rules travel with the repo into every agent and sub-agent (including
+   Omnigent's workers running in isolated worktrees). The command prints the
+   project path, so the `cd "$(...)"` lands you inside it.
+2. **Why a helper?** Every git commit automatically syncs your work to the
+   Databricks Workspace at
+   `/Workspace/Users/{your-email}/projects/{project-name}/` — so your workshop
+   work survives after this environment is torn down. The committed
+   `CLAUDE.md`/`AGENTS.md` also guarantee the AppKit baseline is followed no
+   matter which agent or harness picks up the work.
 3. **Then start building** — commit early and often.
 
 ## How to work with users — clarify, recommend, confirm
@@ -78,15 +86,23 @@ Databricks project):
 - **End every build with the payoff:** give the user the live URL (app,
   dashboard, job run) and a short, plain-language recap of what you built.
 
-## Building apps — default to AppKit
+## Building apps — always use AppKit
 
-When the user asks to build an app, dashboard, tool, or UI **without naming a
-framework**, default to **AppKit** (React + Vite + TypeScript) following the
-`databricks-apps-python` skill. Only use a Python framework
-(Streamlit/Dash/Gradio/Flask) when the user explicitly names one. If the app
-needs to **save data**, provision Lakebase non-interactively following the
-`databricks-lakebase-provisioned` skill — never tell the user to click
-resources together in the Databricks UI. Apps with no saved state skip
+AppKit is the required baseline for every app. For this workshop, **every app,
+dashboard, tool, or UI you build MUST use AppKit** (React + Vite + TypeScript)
+following the `databricks-apps-python` skill — scaffold it with
+`databricks apps init` and apply the CoDA UX defaults from the skill's
+`7-appkit-ux.md`. This applies no matter which agent you are (Claude, Codex, or
+Omnigent).
+
+Do **not** reach for a Python framework (Streamlit / Dash / Gradio / Flask /
+FastAPI / Reflex). The only exception is when an attendee **explicitly and
+insistently** asks for a specific Python framework — in that case confirm
+that's really what they want, then proceed. Otherwise it is always AppKit.
+
+If the app needs to **save data**, provision Lakebase non-interactively
+following the `databricks-lakebase-provisioned` skill — never tell the user to
+click resources together in the Databricks UI. Apps with no saved state skip
 Lakebase.
 
 ## Things to remember

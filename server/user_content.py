@@ -5,6 +5,10 @@ their first session) after their HOME is bootstrapped:
 
 - ~/.claude/CLAUDE.md       — workshop instructions (+ lab coach when enabled)
 - ~/.codex/AGENTS.md        — the same instructions adapted for Codex
+- ~/.local/bin/workshop-init-project — project bootstrap that commits the AppKit
+                              mandate as project-level CLAUDE.md + AGENTS.md (the
+                              only channel Omnigent's worktree-bound Codex worker
+                              reads), backed by ~/.config/workshop/project-memory.md
 - ~/.claude/agents/         — TDD subagent definitions (prd-writer, implementer, ...)
 - ~/.claude/skills          — symlink to the shared skills library (latest
                               ai-dev-kit, fetched at boot) — also linked at
@@ -43,6 +47,7 @@ def provision(user: User) -> None:
         return
     for step in (
         _write_instructions,
+        _install_project_helper,
         _install_subagents,
         _link_skills,
         _write_claude_json,
@@ -83,6 +88,31 @@ def _write_instructions(user: User) -> None:
     adapted = re.sub(r"^#\s+.*$", "# Codex Agent Instructions", text, count=1, flags=re.MULTILINE)
     with open(agents_md, "w") as f:
         f.write(adapted)
+
+
+# -- project memory (project-level CLAUDE.md / AGENTS.md via a bootstrap helper) --
+
+def _install_project_helper(user: User) -> None:
+    """Install the project bootstrap helper + its project-memory template.
+
+    Home-level ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md reach Claude, Codex,
+    and Omnigent's polly brain — but polly's Codex sub-agent runs in an isolated
+    CODEX_HOME inside a git worktree, so it never sees the global AGENTS.md. The
+    only channel that survives that is a *committed, project-level* AGENTS.md,
+    which `workshop-init-project` writes (and commits) into every new project so
+    it propagates into worktrees. Defense-in-depth for the other agents too.
+    """
+    template_src = os.path.join(_ASSETS, "instructions", "project_memory.md")
+    template_dst = os.path.join(user.home, ".config", "workshop", "project-memory.md")
+    os.makedirs(os.path.dirname(template_dst), exist_ok=True)
+    shutil.copy2(template_src, template_dst)
+
+    helper_src = os.path.join(_ASSETS, "bin", "workshop-init-project")
+    local_bin = os.path.join(user.home, ".local", "bin")
+    os.makedirs(local_bin, exist_ok=True)
+    helper_dst = os.path.join(local_bin, "workshop-init-project")
+    shutil.copy2(helper_src, helper_dst)
+    os.chmod(helper_dst, 0o755)
 
 
 # -- subagents --
