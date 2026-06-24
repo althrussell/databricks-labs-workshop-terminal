@@ -48,6 +48,7 @@ def provision(user: User) -> None:
     for step in (
         _write_instructions,
         _install_project_helper,
+        _install_cli_helpers,
         _install_subagents,
         _link_skills,
         _write_claude_json,
@@ -113,6 +114,27 @@ def _install_project_helper(user: User) -> None:
     helper_dst = os.path.join(local_bin, "workshop-init-project")
     shutil.copy2(helper_src, helper_dst)
     os.chmod(helper_dst, 0o755)
+
+
+def _install_cli_helpers(user: User) -> None:
+    """Install the dual-identity CLI helpers.
+
+    - ``databricks-me``: run the databricks CLI as the attendee (``[me]`` /OBO
+      profile) with reactive token self-heal, so the agent can read the data the
+      attendee is actually governed by.
+    - ``workshop-grant-me``: trigger an immediate entitlement reconcile so a
+      just-built non-UC resource is usable by the labuser without waiting for
+      the next sweep.
+    """
+    local_bin = os.path.join(user.home, ".local", "bin")
+    os.makedirs(local_bin, exist_ok=True)
+    for name in ("databricks-me", "workshop-grant-me"):
+        src = os.path.join(_ASSETS, "bin", name)
+        if not os.path.isfile(src):
+            continue
+        dst = os.path.join(local_bin, name)
+        shutil.copy2(src, dst)
+        os.chmod(dst, 0o755)
 
 
 # -- subagents --

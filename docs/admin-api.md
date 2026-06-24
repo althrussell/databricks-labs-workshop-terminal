@@ -4,6 +4,11 @@ This is the integration surface for **Control Tower** (and on-site operators)
 to steer a live workshop. All endpoints live under `/api/admin/*` on the
 deployed app URL.
 
+> **Provisioning the app?** See
+> [`control-tower-implementation.md`](./control-tower-implementation.md) for the
+> per-attendee setup contract — especially the app-SP `token CAN_USE` grant that
+> makes credentials rotate (without it, agent sessions return `503`).
+
 ## Authentication & authorization
 
 Authorization is **workspace-group based** — there are no email allowlists.
@@ -141,7 +146,51 @@ Levels: `info`, `success`, `warning`.
 
 ### `GET /api/admin/presence`
 Per-attendee status: online (active in the last 60 s), first/last seen,
-PAT health, open sessions (agent, created, last activity).
+credential health, open sessions (agent, created, last activity), and per
+attendee `obo` (OBO/`me`-profile freshness — see below). The top level also
+carries `credential` and `entitlements` status blocks.
+
+### OBO + entitlements status (operator pre-flight)
+
+When `ENABLE_OBO` is on, `GET /api/config` and `GET /api/admin/presence` carry
+an `obo` block per attendee:
+
+```json
+{ "enabled": true, "profile": "me",
+  "scopes": "catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql",
+  "present": true, "fresh": true, "expires_in": 3210, "last_refresh": 1750000000 }
+```
+
+`fresh: false` (or `present: false`) means the attendee's `databricks --profile
+me ...` reads won't work yet — usually the tab isn't open, consent wasn't
+granted, or `user_api_scopes` is missing on the app resource. Catch it here
+**before** the event.
+
+When `ENABLE_ENTITLEMENTS` is on, an `entitlements` block reports the SP-driven
+reconciler that makes SP-created resources usable by the labuser:
+
+```json
+{ "enabled": true, "catalog": "wsh_alice", "schema": null, "ok": true,
+  "last_reconcile": 1750000000, "last_error": null, "interval": 300 }
+```
+
+`ok: false` with a `last_error` means a grant is failing (commonly the app SP
+lacks permission on `WORKSHOP_CATALOG`, or the catalog name is wrong). The
+reconciler also emits an `entitlements.health` event to Control Tower (same
+envelope as `credential.health`) so a drifted/missing grant alerts ahead of the
+event.
+
+### App callback endpoints (not admin-gated)
+
+Two small endpoints back the in-terminal helper scripts; both accept an
+`{"email": "<attendee>"}` body so a PTY helper (no proxy identity) can call
+them, and both no-op cleanly when the feature is disabled:
+
+- `POST /api/obo/refresh` — force-writes the freshest captured OBO token to the
+  `me` profile and nudges the tab (the `databricks-me` 401 self-heal path).
+- `POST /api/entitlements/reconcile` — runs an immediate entitlement reconcile
+  for the attendee (the `workshop-grant-me` path), returning the per-resource
+  grant summary.
 
 ### `GET /api/admin/stats`
 Harvest endpoint for Control Tower's event-impact capture: per-attendee
@@ -187,6 +236,14 @@ python scripts/push_content.py presence
 | `MAX_SESSIONS_PER_USER` / `MAX_SESSIONS_GLOBAL` | 3 / 30 | Terminal caps |
 | `SESSION_IDLE_TIMEOUT_SECONDS` | 3600 | Idle PTY reap |
 | `SESSION_STATE_PATH` | *(unset)* | Journal path so terminals survive a restart as relaunchable "ended on restart" ghosts. **Recommended for real events** |
+| `ENABLE_OBO` | `false` | Persist each attendee's forwarded OBO token to a `me` CLI profile so the agent can read data **as the attendee** (`databricks-me`). Requires user authorization + `user_api_scopes` on the app resource (set by CT, not here) |
+| `OBO_PROFILE_NAME` | `me` | CLI profile name backed by the OBO token |
+| `OBO_SCOPES` | `catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql` | Doc/health hint; must match the scopes CT set on the app resource (the app cannot set its own scopes). No `unity-catalog` scope exists — use the granular `catalog.*:read` scopes (list UC metadata) + `sql` (query data) |
+| `ENABLE_ENTITLEMENTS` | `false` | Run the SP-driven reconciler that grants the labuser access to SP-created resources (UC catalog grant + non-UC `CAN_MANAGE`) |
+| `WORKSHOP_CATALOG` | *(unset)* | Per-attendee catalog the agent creates UC objects in; the reconciler verifies/re-applies the labuser's `ALL PRIVILEGES` on it. Also surfaced to the attendee shell |
+| `WORKSHOP_SCHEMA` | *(unset)* | Optional default schema within `WORKSHOP_CATALOG` |
+| `ENTITLEMENT_RECONCILE_INTERVAL` | `300` | Seconds between reconcile sweeps |
+| `ENTITLEMENT_TRANSFER_OWNERSHIP` | `false` | Also transfer SP-created UC catalog ownership to the labuser (grant-based usability is the default) |
 
 All env is read at runtime — Control Tower `env_overrides` and in-place
 `app.yaml` edits take effect on restart with no rebuild.

@@ -26,6 +26,49 @@ env:
   - name: WORKSHOP_PAT
     value: ""
 
+  # --- OBO dual-profile + entitlements (governance-faithful UC as the attendee) ---
+  # When ENABLE_OBO is on, the app persists each attendee's forwarded
+  # on-behalf-of-user token to a second databricks CLI profile (`me`) so the
+  # agent can run `databricks --profile me ...` (via the `databricks-me` helper)
+  # and see exactly the Unity Catalog objects the attendee is governed by. The
+  # SP `[DEFAULT]` profile still powers all build/deploy/provision work.
+  #
+  # IMPORTANT: the OBO *scopes* are NOT set here. They live on the app resource:
+  # Control Tower enables user authorization and sets `user_api_scopes` (baseline
+  # `catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql` — there
+  # is NO `unity-catalog` scope; use the granular `catalog.*:read` scopes to list
+  # the attendee's UC metadata + `sql` to query their data), admin-grants
+  # consent, and restarts the app after a scope change. See
+  # docs/control-tower-implementation.md §8.
+  - name: ENABLE_OBO
+    value: "false"
+  # The CLI profile name backed by the OBO token (default `me`).
+  - name: OBO_PROFILE_NAME
+    value: "me"
+  # Documentation/health hint only — must match the scopes CT set on the app
+  # resource. The app cannot set its own scopes.
+  - name: OBO_SCOPES
+    value: "catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql"
+
+  # When ENABLE_ENTITLEMENTS is on, an SP-driven reconciler makes resources the
+  # app SP creates usable by the attendee (labuser): ALL_PRIVILEGES on
+  # WORKSHOP_CATALOG (inherited by every object created inside it) + CAN_MANAGE
+  # on non-UC resources (apps/jobs/pipelines/db-instances/serving). CT must
+  # provision WORKSHOP_CATALOG with the labuser as OWNER + ALL PRIVILEGES and
+  # the app SP granted CREATE/USE — see docs/control-tower-implementation.md §9.
+  - name: ENABLE_ENTITLEMENTS
+    value: "false"
+  - name: WORKSHOP_CATALOG
+    value: ""
+  - name: WORKSHOP_SCHEMA
+    value: ""
+  - name: ENTITLEMENT_RECONCILE_INTERVAL
+    value: "300"
+  # Off by default: grant-based ALL PRIVILEGES is enough for usability. Set true
+  # only if the attendee must drop/alter SP-created UC objects as owner.
+  - name: ENTITLEMENT_TRANSFER_OWNERSHIP
+    value: "false"
+
   # --- Security (workspace groups, no allowlists) ---
   - name: ADMIN_GROUP
     value: platform_admins

@@ -156,10 +156,22 @@ def _check_access(principal: Principal) -> None:
         raise HTTPException(status_code=403, detail=f"Access requires membership in the '{group}' group")
 
 
+def _capture_obo(principal: Principal) -> None:
+    """Feed the attendee's forwarded OBO token to the OBO manager so the ``me``
+    CLI profile stays fresh. Guarded — capture must never break a request."""
+    try:
+        from . import obo
+
+        obo.obo_manager.capture(principal.name, principal.access_token)
+    except Exception:  # noqa: BLE001 — never fail a request on OBO bookkeeping
+        pass
+
+
 def get_current_user(request: Request) -> Principal:
     """FastAPI dependency: identify + authorize the attendee for any route."""
     principal = _principal_from_headers(request.headers)
     _check_access(principal)
+    _capture_obo(principal)
     return principal
 
 
@@ -176,6 +188,7 @@ async def get_ws_user(websocket: WebSocket) -> Principal | None:
     try:
         principal = _principal_from_headers(websocket.headers)
         _check_access(principal)
+        _capture_obo(principal)
         return principal
     except HTTPException:
         await websocket.close(code=4403)

@@ -47,6 +47,51 @@ databricks jobs list
 databricks clusters list
 ```
 
+## Two identities — build as the workshop, read data as YOU
+
+There are two databricks CLI profiles, and they are NOT interchangeable:
+
+- **`DEFAULT` (the workshop service principal)** — the identity for everything
+  you *build, deploy, and provision*: apps, jobs, pipelines, Lakebase, model
+  setup, workspace sync. It is reliable for long, unattended, and idle runs.
+  Plain `databricks ...` uses it. Keep using it for all creation work.
+- **`me` (you, the signed-in attendee)** — your *personal* identity. Use it
+  whenever you need to show or query **the data this attendee actually has
+  access to** — it respects their Unity Catalog grants, row filters, and column
+  masks. The service principal sees different catalogs than the attendee, so
+  listing catalogs as `DEFAULT` is misleading.
+
+**To list or query the catalogs, schemas, tables, and data the attendee can
+see, always use the `databricks-me` helper** (a thin wrapper around
+`databricks --profile me ...` that auto-recovers an expired token):
+
+```bash
+databricks-me current-user me      # confirms it runs as the attendee, not the SP
+databricks-me catalogs list        # the attendee's catalogs
+databricks-me schemas list <catalog>
+databricks-me tables list <catalog> <schema>
+```
+
+Caveat: the `me` identity comes from the live browser tab. If the tab has been
+idle or closed for more than ~1 hour and `databricks-me` reports an expired
+session, ask the attendee to refresh the workshop tab, then retry. (Building
+and deploying are unaffected — they run as `DEFAULT`.)
+
+## Where to create things — always inside `$WORKSHOP_CATALOG`
+
+So that everything you build is automatically usable by the attendee:
+
+- **Unity Catalog objects (schemas, tables, volumes, functions): create them
+  inside `$WORKSHOP_CATALOG`** (use `$WORKSHOP_SCHEMA` when set). The attendee
+  has inherited `ALL PRIVILEGES` on that catalog, so anything you create there
+  is instantly usable by them and visible via `databricks-me`. Never create a
+  brand-new top-level catalog — objects there would not be usable by the
+  attendee (and you typically can't create one anyway).
+- **Non-UC resources (apps, jobs, Lakebase/Postgres instances, pipelines,
+  serving endpoints):** these are auto-shared to the attendee within ~one
+  reconcile interval. For *instant* access after a build, run `workshop-grant-me`
+  — it grants the attendee `CAN_MANAGE` on what you just created.
+
 ## Project setup
 
 Before starting any new project:
@@ -112,4 +157,5 @@ Lakebase.
 - Serverless compute first: new jobs, pipelines, and SQL should default to
   serverless unless there's a reason not to.
 - Everything you create belongs in Unity Catalog at `catalog.schema.object` —
-  use the schema the workshop assigned you.
+  use `$WORKSHOP_CATALOG` (and `$WORKSHOP_SCHEMA` when set), the catalog the
+  workshop assigned you, so it stays usable by you (see "Where to create").

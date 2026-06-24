@@ -12,10 +12,11 @@ import time
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from . import config, spend
+from . import config, obo, spend
 from .auth import require_admin
 from .content import Broadcast, ContentPack, content_service
 from .credentials import credential_manager
+from .entitlements import entitlement_manager
 from .events import event_hub
 from .sessions import session_manager
 from .users import user_manager
@@ -123,10 +124,12 @@ def presence():
             "last_seen": user.last_seen,
             "first_seen": user.first_seen,
             "cli_ready": bool(user.cli_ready),
+            "obo": obo.obo_manager.status(user.email),
             "sessions": [s.to_dict() for s in sessions],
         })
     return {
         "users": sorted(users, key=lambda u: u["email"]),
         "session_count": session_manager.count_all(),
         "credential": credential_manager.status(),
+        "entitlements": entitlement_manager.status(),
     }

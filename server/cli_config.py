@@ -7,6 +7,7 @@ their own home directory, fed by their own rotating PAT.
 
 from __future__ import annotations
 
+import configparser
 import json
 import logging
 import os
@@ -281,11 +282,51 @@ def configure_omnigent(user: User, token: str) -> None:
     os.chmod(config_path, 0o600)
 
 
+def _databrickscfg_path(user: User) -> str:
+    return os.path.join(user.home, ".databrickscfg")
+
+
+def _write_databrickscfg_profile(user: User, profile: str, token: str) -> None:
+    """Read-modify-write a single profile in ``~/.databrickscfg`` without
+    clobbering the others, under the per-user lock.
+
+    The SP rotation thread writes ``[DEFAULT]`` and OBO capture writes ``[me]``
+    from different threads; a whole-file overwrite (the old behaviour) would let
+    one silently drop the other's profile. configparser preserves every section
+    on round-trip, and ``[me]`` always sets its own ``host``+``token`` so the
+    configparser ``[DEFAULT]`` inheritance can't bleed the SP token into it.
+    """
+    path = _databrickscfg_path(user)
+    host = config.databricks_host()
+    with user.lock:
+        parser = configparser.ConfigParser()
+        try:
+            parser.read(path)
+        except (configparser.Error, OSError):
+            parser = configparser.ConfigParser()  # corrupt file — rewrite clean
+        if profile.upper() == "DEFAULT":
+            parser["DEFAULT"]["host"] = host
+            parser["DEFAULT"]["token"] = token
+        else:
+            if not parser.has_section(profile):
+                parser.add_section(profile)
+            parser[profile]["host"] = host
+            parser[profile]["token"] = token
+        with open(path, "w") as f:
+            parser.write(f)
+        os.chmod(path, 0o600)
+
+
 def configure_databricks_cli(user: User, token: str) -> None:
-    cfg_path = os.path.join(user.home, ".databrickscfg")
-    with open(cfg_path, "w") as f:
-        f.write(f"[DEFAULT]\nhost = {config.databricks_host()}\ntoken = {token}\n")
-    os.chmod(cfg_path, 0o600)
+    """Write the SP rotating credential to ``[DEFAULT]`` — the agent's
+    build/deploy/provision identity — preserving any ``[me]``/OBO profile."""
+    _write_databrickscfg_profile(user, "DEFAULT", token)
+
+
+def update_me_profile(user: User, obo_token: str) -> None:
+    """Write the attendee's OBO token to the ``[me]`` profile (governance-faithful
+    Unity Catalog reads as the attendee), preserving ``[DEFAULT]``."""
+    _write_databrickscfg_profile(user, config.obo_profile_name(), obo_token)
 
 
 def configure_all(user: User, token: str) -> None:

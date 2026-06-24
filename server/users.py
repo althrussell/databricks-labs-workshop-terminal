@@ -133,7 +133,22 @@ class User:
             # up to 10 min past expiry. 4 min keeps worst-case age at 14 min.
             "HARNESS_CLAUDE_SDK_GATEWAY_AUTH_REFRESH_INTERVAL_MS": "240000",
             "HARNESS_CODEX_GATEWAY_AUTH_REFRESH_INTERVAL_MS": "240000",
+            # Loopback URL the per-user CLI helpers (databricks-me,
+            # workshop-grant-me) call back into the app with. Derived from the
+            # app's serving port; never exposes the raw DATABRICKS_APP_PORT.
+            "WORKSHOP_APP_URL": f"http://localhost:{src.get('DATABRICKS_APP_PORT', '8000').strip() or '8000'}",
         })
+        # Non-secret namespace hints so the agent/skills create objects inside
+        # the attendee's catalog (inherited grants make them usable as `me`).
+        # The OBO token itself never enters the shell — deny-by-default covers it.
+        catalog = config.workshop_catalog()
+        if catalog:
+            env["WORKSHOP_CATALOG"] = catalog
+        schema = config.workshop_schema()
+        if schema:
+            env["WORKSHOP_SCHEMA"] = schema
+        if config.obo_enabled():
+            env["OBO_PROFILE_NAME"] = config.obo_profile_name()
         return env
 
 
