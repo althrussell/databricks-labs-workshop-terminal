@@ -57,7 +57,10 @@ def test_websocket_rejected_without_identity(client, monkeypatch):
     from starlette.websockets import WebSocketDisconnect
 
     monkeypatch.delenv("LOCAL_DEV")
-    with pytest.raises(WebSocketDisconnect) as exc:
-        with client.websocket_connect("/ws/events"):
-            pass
+    # The socket is accepted first, then closed 4403, so the close code reaches
+    # the client (a pre-accept close would surface to browsers as a generic
+    # 1006). The disconnect is observed on the first receive, not at connect.
+    with client.websocket_connect("/ws/events") as ws:
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_text()
     assert exc.value.code == 4403

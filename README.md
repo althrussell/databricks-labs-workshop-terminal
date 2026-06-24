@@ -22,9 +22,12 @@ and exposes a group-gated operator admin panel.
 
 - **Launch buttons** for Claude Code, Codex, and a plain terminal — the agent
   catalog is config-driven (`content/agents.json`), extensible per event.
-- **Zero-touch auth**: Control Tower vends a workspace credential at deploy
-  time (`WORKSHOP_PAT`); the app chains short-lived rotating tokens off it
-  and feeds them to every CLI config. Attendees never see a token screen.
+- **Zero-touch auth**: grant the app's service principal token `CAN_USE` at
+  deploy time and the app mints short-lived rotating tokens from its
+  auto-refreshed OAuth identity — no static secret, nothing to expire across an
+  idle window, and no attendee ever creates a PAT. A vended `WORKSHOP_PAT` is an
+  emergency-only fallback (reported `degraded` since it doesn't rotate).
+  Attendees never see a token screen.
 - **Session isolation**: per-user HOME directories, sessions strictly bound to
   their owner, secrets stripped from terminal env (deny-by-default). Note this is
   HOME/PTY-level isolation, not credential isolation — the vended credential and
@@ -86,14 +89,23 @@ and exposes a group-gated operator admin panel.
 
 ## Deploying
 
-### Prerequisite: vended credential
+### Prerequisite: the attendee CLI credential
 
-The deployer (Control Tower) must inject a workspace credential as the
-`WORKSHOP_PAT` env var (or secret). Databricks Apps OBO scopes exclude the
-Token API, so the app can't mint credentials itself — see
-[docs/admin-api.md](docs/admin-api.md) for the vending contract. Without it
-the app serves plain terminals and shows a clear banner, but agent CLIs
-can't authenticate.
+The bulletproof option: **grant the app's service principal token `CAN_USE`**
+at provision time. The app then mints short-lived rotating tokens from its
+auto-refreshed OAuth identity — no static secret, nothing to expire across a
+deploy-then-idle-then-event window, and rotation self-heals within ~30s of the
+grant landing. As an emergency-only fallback the deployer may inject a vended
+`WORKSHOP_PAT` (a static, non-rotating token reported `degraded`). Databricks
+Apps OBO scopes exclude the Token API, so the app can't mint per-user PATs from
+forwarded tokens — see [docs/admin-api.md](docs/admin-api.md) for the full
+contract and credential-health alerting. Without either credential the app
+serves plain terminals and shows a clear banner, but agent CLIs can't
+authenticate.
+
+For events deployed ahead of time, also set `SESSION_STATE_PATH` so terminals
+survive a restart as relaunchable ghosts (see the env table in
+[docs/admin-api.md](docs/admin-api.md)).
 
 ### Via Control Tower
 

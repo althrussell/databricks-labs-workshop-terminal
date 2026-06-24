@@ -46,7 +46,11 @@ export default function TerminalView({ sessionId, active, onExit }: Props) {
     fitRef.current = fit;
 
     let retryDelay = 500;
+    let attempts = 0;
     let disposed = false;
+    // Ceiling on consecutive failed reconnects so N tabs hitting a down/empty
+    // instance can't turn into an unbounded request storm against it.
+    const MAX_ATTEMPTS = 12;
 
     function connect() {
       if (disposed || closedRef.current) return;
@@ -56,6 +60,7 @@ export default function TerminalView({ sessionId, active, onExit }: Props) {
 
       socket.onopen = () => {
         retryDelay = 500;
+        attempts = 0;
         term.clear();
         sendResize();
       };
@@ -73,14 +78,31 @@ export default function TerminalView({ sessionId, active, onExit }: Props) {
         socketRef.current = null;
         if (disposed || closedRef.current) return;
         if (ev.code === 4404) {
-          // Session is gone server-side (reaped or restart) — don't retry.
+          // Session is gone server-side (reaped or restart) — don't retry. The
+          // server now accepts before closing, so this code actually arrives.
           closedRef.current = true;
-          term.write("\r\n\x1b[90m[session no longer exists — the workshop may have restarted]\x1b[0m\r\n");
+          term.write("\r\n\x1b[90m[session no longer exists — the workshop may have restarted. Relaunch it from Home.]\x1b[0m\r\n");
           onExit(sessionId);
           return;
         }
+        if (ev.code === 4403) {
+          // Auth failed (e.g. the forwarded identity/token went stale). Blind
+          // retries can't fix this — reload once to refresh the proxy identity.
+          closedRef.current = true;
+          term.write("\r\n\x1b[33m[session expired — refreshing…]\x1b[0m\r\n");
+          setTimeout(() => location.reload(), 1500);
+          return;
+        }
+        attempts += 1;
+        if (attempts > MAX_ATTEMPTS) {
+          closedRef.current = true;
+          term.write("\r\n\x1b[31m[lost connection to the workshop — reload the page to reconnect]\x1b[0m\r\n");
+          return;
+        }
         term.write("\r\n\x1b[33m[reconnecting…]\x1b[0m\r\n");
-        setTimeout(connect, retryDelay);
+        // Exponential backoff with jitter to avoid a synchronized thundering herd.
+        const jitter = Math.random() * retryDelay;
+        setTimeout(connect, retryDelay + jitter);
         retryDelay = Math.min(retryDelay * 2, 10000);
       };
     }

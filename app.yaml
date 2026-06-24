@@ -13,11 +13,16 @@ env:
   - name: HOME
     value: /app/python/source_code/data/apphome
 
-  # --- Attendee CLI credential (vended by Control Tower) ---
-  # A workspace token injected at deploy time (env_overrides, or replace with
-  # a valueFrom secret resource). The app chains short-lived rotating tokens
-  # off it when the credential can use the Token API; otherwise it serves the
-  # vended token directly. Attendees never handle tokens.
+  # --- Attendee CLI credential ---
+  # PREFERRED: grant the app's own service principal token CAN_USE at provision
+  # time. The app then mints short-lived rotating tokens from its auto-refreshed
+  # OAuth identity — no static secret here, nothing to expire across a
+  # deploy-then-idle-then-event window, and no attendee ever creates a PAT.
+  #
+  # WORKSHOP_PAT is an EMERGENCY-ONLY fallback: a vended workspace token for
+  # environments without a usable app identity. It is a static credential that
+  # expires with no rotation behind it, so the app reports it as "degraded" and
+  # alerts. Prefer the service-principal grant for any large or long-lived event.
   - name: WORKSHOP_PAT
     value: ""
 
@@ -97,3 +102,12 @@ env:
     value: "30"
   - name: SESSION_IDLE_TIMEOUT_SECONDS
     value: "3600"
+
+  # --- Session journal (restart recovery) ---
+  # Set a path on the app's data volume so live-session metadata + a scrollback
+  # tail survive a restart: attendees see their terminals as relaunchable
+  # "ended on restart" ghosts (the live PTYs cannot survive) instead of a blank
+  # screen, and the client stops cleanly on the 4404 close instead of looping.
+  # STRONGLY recommended for any real event.
+  - name: SESSION_STATE_PATH
+    value: /app/python/source_code/data/sessions.json

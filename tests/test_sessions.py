@@ -24,10 +24,28 @@ def test_sessions_are_owner_scoped(client):
     import pytest
     from starlette.websockets import WebSocketDisconnect
 
-    with pytest.raises(WebSocketDisconnect) as exc:
-        with client.websocket_connect(f"/ws/sessions/{session['id']}", headers=BOB):
-            pass
-    assert exc.value.code == 4404  # indistinguishable from a nonexistent session
+    # The socket is accepted first, then closed 4404 (so the code reaches the
+    # browser); the disconnect surfaces on the first receive. A wrong owner is
+    # indistinguishable from a nonexistent session.
+    with client.websocket_connect(f"/ws/sessions/{session['id']}", headers=BOB) as ws:
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_text()
+    assert exc.value.code == 4404
+
+
+def test_ws_nonexistent_session_closes_4404_after_accept(client):
+    """A vanished/unknown session (e.g. after a restart wiped process-local
+    PTYs) must close with 4404 AFTER accept, so the client receives the code
+    and can stop instead of reconnecting forever."""
+    import uuid
+
+    import pytest
+    from starlette.websockets import WebSocketDisconnect
+
+    with client.websocket_connect(f"/ws/sessions/{uuid.uuid4()}", headers=ALICE) as ws:
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_text()
+    assert exc.value.code == 4404
 
 
 def test_per_user_session_cap(client, monkeypatch):

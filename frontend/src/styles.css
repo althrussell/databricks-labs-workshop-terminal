@@ -979,6 +979,25 @@ body {
   font-size: 13px;
 }
 
+.credential-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+
+.credential-source {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.credential-error {
+  margin-top: 8px;
+  color: var(--warning);
+  font-size: 13px;
+}
+
 .nugget-nudge {
   border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
   background: color-mix(in srgb, var(--warning) 7%, var(--bg-panel));

@@ -275,8 +275,27 @@ export default function App() {
       {config && !config.credential.configured && (
         <div className="banner banner-warning">
           <span>
-            Workshop credential not configured — Control Tower must inject WORKSHOP_PAT at
-            deploy time. Plain terminals work; coding agents can't authenticate yet.
+            Workshop credential not configured — Control Tower must grant the app service
+            principal token access (or inject WORKSHOP_PAT) at deploy time. Plain terminals
+            work; coding agents can't authenticate yet.
+          </span>
+        </div>
+      )}
+      {config && config.credential.configured && config.credential.state === "degraded" && (
+        <div className="banner banner-warning">
+          <span>
+            Workshop credential is <strong>not rotating</strong> — serving a static token that
+            will expire with no automatic refresh. Grant the app service principal token
+            CAN_USE so it can mint short-lived rotating tokens before the event.
+          </span>
+        </div>
+      )}
+      {config && config.credential.state === "unhealthy" && (
+        <div className="banner banner-warning">
+          <span>
+            Workshop credential is <strong>unhealthy</strong>
+            {config.credential.last_error ? ` — ${config.credential.last_error}` : ""}.
+            Coding agents may fail to authenticate until this is fixed.
           </span>
         </div>
       )}

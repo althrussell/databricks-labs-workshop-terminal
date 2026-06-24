@@ -19,25 +19,56 @@ Authorization is **workspace-group based** — there are no email allowlists.
 
 Group membership is cached for 5 minutes.
 
-## Prerequisite: Control Tower vends the attendee credential
+## Prerequisite: the attendee CLI credential
 
 Databricks Apps OBO scopes deliberately exclude the Token API (verified
 June 2026: no token-related value exists in the `user_api_scopes` registry),
-so the app cannot mint attendee PATs itself. Instead, **Control Tower vends a
-workspace credential at provision time** and injects it as the `WORKSHOP_PAT`
-env var — either via `env_overrides` / in-place `app.yaml` edit (its existing
-mechanism), or as an app secret resource with `valueFrom`.
+so the app cannot mint per-user PATs from forwarded tokens. There are two ways
+to supply the credential; **the first is strongly preferred for any large or
+long-lived event** (e.g. deployed days before, idle, then used on the day):
 
-- The credential should be permitted to call `/api/2.0/token/create` (token
-  `CAN_USE`): the app then chains 15-minute rotating tokens off it and never
-  exposes the vended PAT beyond bootstrap. Without that permission the app
-  serves the vended PAT to CLIs directly — still functional, less hardened.
-- The vended credential is never revoked by the app, so restarts re-bootstrap
-  from env cleanly. Control Tower should revoke it at teardown.
-- If `WORKSHOP_PAT` is missing the app still serves bash terminals and shows
-  a clear banner; agent CLI launches return 503.
-- The same credential is the app's SCIM fallback for resolving attendee group
-  membership (operator gating), so it needs SCIM read access.
+### Preferred: grant the app service principal token `CAN_USE`
+
+At provision time, grant the app's own service principal token-create
+(`CAN_USE`) in the workspace. The app then mints **15-minute rotating tokens
+from its service-principal OAuth identity** — which the platform auto-refreshes
+— and fans them out to attendee CLIs. There is **no static secret in `app.yaml`
+and nothing to expire across an idle window**, and no attendee ever creates a
+PAT. Rotation self-heals within ~30s once the grant lands (no redeploy needed).
+Attendees act as the per-instance service principal (acceptable under the
+one-workspace-per-attendee topology).
+
+### Emergency-only: vended `WORKSHOP_PAT`
+
+For environments without a usable app identity, Control Tower may vend a
+workspace token as `WORKSHOP_PAT` (via `env_overrides` / in-place `app.yaml`
+edit, or an app secret resource with `valueFrom`).
+
+- A vended PAT is a **static credential that expires with no rotation behind
+  it** — a time bomb for events deployed ahead of time. If the PAT can itself
+  call `/api/2.0/token/create`, the app will chain rotating tokens off it; if
+  not, it serves the PAT directly and reports the credential **`degraded`**.
+- Provision the PAT with a lifetime comfortably exceeding deploy-to-event-end,
+  and watch the credential health (below). Control Tower should revoke it at
+  teardown.
+- If `WORKSHOP_PAT` is missing **and** the app identity can't mint, the app
+  still serves bash terminals and shows a clear banner; agent CLI launches
+  return 503.
+
+### Credential health and alerting
+
+A background probe verifies the credential end-to-end on a ~5-minute cadence —
+through idle windows too — and classifies it as `rotating` (healthy),
+`degraded` (a static credential is being served, no rotation), or `unhealthy`
+(the credential was rejected/expired or nothing is configured). The state is
+exposed in `credential` on `GET /api/config` and `GET /api/admin/presence`,
+surfaced as an operator banner, and emitted to Control Tower as a
+`credential.health` event so a misconfigured grant or an expiring credential is
+caught hours/days before the event, not at first use on the day.
+
+The app identity (or vended PAT) is also the app's SCIM credential for
+resolving attendee group membership (operator gating), so it needs SCIM read
+access.
 
 ## Endpoints
 
@@ -140,7 +171,7 @@ python scripts/push_content.py presence
 
 | Var | Default | Purpose |
 |---|---|---|
-| `WORKSHOP_PAT` | *(unset)* | Vended workspace credential for attendee CLIs (required for agents) |
+| `WORKSHOP_PAT` | *(unset)* | Emergency-only vended workspace credential. Prefer granting the app SP token `CAN_USE` so it mints rotating tokens from its OAuth identity (no expiry clock); a static PAT is reported `degraded` |
 | `ADMIN_GROUP` | `platform_admins` | Group that grants operator/admin access |
 | `LAB_COACH` | `true` | Append lab-coach instructions to attendee agent memory |
 | `TOPIC_DETECTION` | `true` | Terminal keyword spotting for contextual insights |
@@ -155,6 +186,7 @@ python scripts/push_content.py presence
 | `ANTHROPIC_MODEL` / `CODEX_MODEL` | sensible pins | Default models for the CLIs |
 | `MAX_SESSIONS_PER_USER` / `MAX_SESSIONS_GLOBAL` | 3 / 30 | Terminal caps |
 | `SESSION_IDLE_TIMEOUT_SECONDS` | 3600 | Idle PTY reap |
+| `SESSION_STATE_PATH` | *(unset)* | Journal path so terminals survive a restart as relaunchable "ended on restart" ghosts. **Recommended for real events** |
 
 All env is read at runtime — Control Tower `env_overrides` and in-place
 `app.yaml` edits take effect on restart with no rebuild.
