@@ -15,7 +15,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { api, AgentInfo, IdeaPrompt, Nugget, WorkspaceLink } from "../api";
-import omnigentLogo from "../assets/omnigent.png";
+import omnigentLogo from "../assets/omnigent.svg";
 
 const ICONS: Record<string, typeof Bot> = {
   sparkles: Sparkles,

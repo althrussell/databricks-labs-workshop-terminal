@@ -118,8 +118,10 @@ def test_rotation_creates_config_when_absent(user, monkeypatch):
 # -- installer version stamp --
 
 def test_version_stamp_match_short_circuits(monkeypatch, tmp_path):
+    """A pinned spec whose stamp already matches must NOT reinstall."""
     from server import config
     monkeypatch.setattr(config, "shared_prefix", lambda: str(tmp_path))
+    monkeypatch.setattr(install, "OMNIGENT_PIP_SPEC", "omnigent==0.1.0")
     os.makedirs(tmp_path / "bin")
     (tmp_path / "bin" / "omnigent").write_text("#!/bin/sh\n")
     (tmp_path / "omnigent.version").write_text(install.OMNIGENT_PIP_SPEC)
@@ -130,6 +132,42 @@ def test_version_stamp_match_short_circuits(monkeypatch, tmp_path):
     monkeypatch.setattr(install.subprocess, "run", boom)
     install._install_omnigent()
     assert install.status()["steps"]["omnigent"]["status"] == "complete"
+
+
+def test_unpinned_spec_always_reinstalls(monkeypatch, tmp_path):
+    """A bare 'omnigent' (unpinned, tracking latest) must reinstall even when
+    the binary + a matching stamp already exist — otherwise the first-installed
+    version freezes forever on the persistent volume."""
+    from server import config
+    monkeypatch.setattr(config, "shared_prefix", lambda: str(tmp_path))
+    monkeypatch.setattr(install, "OMNIGENT_PIP_SPEC", "omnigent")
+    os.makedirs(tmp_path / "bin")
+    (tmp_path / "bin" / "omnigent").write_text("#!/bin/sh\n")
+    (tmp_path / "omnigent.version").write_text("omnigent")  # stamp matches spec
+    calls = []
+
+    class FakeResult:
+        returncode = 0
+        stdout = stderr = ""
+
+    def fake_run(argv, **kw):
+        calls.append(argv)
+        return FakeResult()
+
+    monkeypatch.setattr(install.subprocess, "run", fake_run)
+    monkeypatch.setattr(install.shutil, "which", lambda *a, **kw: "/usr/bin/uv")
+    install._install_omnigent()
+    assert any("tool" in c and "install" in c for c in calls if isinstance(c, list)), (
+        "unpinned spec must not short-circuit on stamp match"
+    )
+    assert install.status()["steps"]["omnigent"]["status"] == "complete"
+
+
+def test_is_pinned_classification():
+    assert install._is_pinned("omnigent==0.1.0")
+    assert install._is_pinned("git+https://github.com/omnigent-ai/omnigent")
+    assert install._is_pinned("/app/python/source_code/wheels/omnigent-0.1.0-py3-none-any.whl")
+    assert not install._is_pinned("omnigent")
 
 
 def test_version_stamp_mismatch_reinstalls(monkeypatch, tmp_path):

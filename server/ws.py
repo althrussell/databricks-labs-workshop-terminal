@@ -30,15 +30,19 @@ router = APIRouter()
 
 @router.websocket("/ws/sessions/{session_id}")
 async def session_socket(websocket: WebSocket, session_id: str):
+    # Accept BEFORE validating so the 4403/4404 close code actually reaches the
+    # browser. A pre-accept close surfaces as a generic 1006, which the client
+    # can't distinguish from a network blip — that's what turned a vanished
+    # session (restart/reap) or an auth failure into an endless reconnect storm.
+    await websocket.accept()
     principal = await get_ws_user(websocket)
     if principal is None:
-        return
+        return  # get_ws_user already closed 4403
     session = session_manager.get(session_id, principal.name)
     if session is None:
         await websocket.close(code=4404)
         return
 
-    await websocket.accept()
     user = user_manager.get(principal.name)
     user.last_seen = time.time()
 
@@ -98,10 +102,10 @@ async def session_socket(websocket: WebSocket, session_id: str):
 
 @router.websocket("/ws/events")
 async def events_socket(websocket: WebSocket):
+    await websocket.accept()  # accept first so a 4403 close code reaches the client
     principal = await get_ws_user(websocket)
     if principal is None:
-        return
-    await websocket.accept()
+        return  # get_ws_user already closed 4403
     user = user_manager.get(principal.name)
     if not user.first_seen:
         user.first_seen = time.time()

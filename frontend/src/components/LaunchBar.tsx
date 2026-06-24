@@ -1,6 +1,6 @@
 import { Bot, Loader2, Sparkles, SquareTerminal } from "lucide-react";
 import { AgentInfo } from "../api";
-import omnigentLogo from "../assets/omnigent.png";
+import omnigentLogo from "../assets/omnigent.svg";
 
 const ICONS: Record<string, typeof Bot> = {
   sparkles: Sparkles,

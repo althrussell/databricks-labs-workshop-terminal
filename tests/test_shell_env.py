@@ -47,6 +47,9 @@ def test_only_allowlisted_and_explicit_keys_present(monkeypatch):
         "TMUX_TMPDIR", "OMNIGENT_NO_UPDATE_CHECK",
         "HARNESS_CLAUDE_SDK_GATEWAY_AUTH_REFRESH_INTERVAL_MS",
         "HARNESS_CODEX_GATEWAY_AUTH_REFRESH_INTERVAL_MS",
+        "WORKSHOP_APP_URL",
+        # Conditional (only when configured): WORKSHOP_CATALOG, WORKSHOP_SCHEMA,
+        # OBO_PROFILE_NAME — covered in test_obo.py.
     }
     allowed_exact = {"LANG", "LANGUAGE", "TZ", "SHELL", "COLORTERM"}
     for key in env:

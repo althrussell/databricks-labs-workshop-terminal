@@ -47,17 +47,70 @@ databricks jobs list
 databricks clusters list
 ```
 
+## Two identities — build as the workshop, read data as YOU
+
+There are two databricks CLI profiles, and they are NOT interchangeable:
+
+- **`DEFAULT` (the workshop service principal)** — the identity for everything
+  you *build, deploy, and provision*: apps, jobs, pipelines, Lakebase, model
+  setup, workspace sync. It is reliable for long, unattended, and idle runs.
+  Plain `databricks ...` uses it. Keep using it for all creation work.
+- **`me` (you, the signed-in attendee)** — your *personal* identity. Use it
+  whenever you need to show or query **the data this attendee actually has
+  access to** — it respects their Unity Catalog grants, row filters, and column
+  masks. The service principal sees different catalogs than the attendee, so
+  listing catalogs as `DEFAULT` is misleading.
+
+**To list or query the catalogs, schemas, tables, and data the attendee can
+see, always use the `databricks-me` helper** (a thin wrapper around
+`databricks --profile me ...` that auto-recovers an expired token):
+
+```bash
+databricks-me current-user me      # confirms it runs as the attendee, not the SP
+databricks-me catalogs list        # the attendee's catalogs
+databricks-me schemas list <catalog>
+databricks-me tables list <catalog> <schema>
+```
+
+Caveat: the `me` identity comes from the live browser tab. If the tab has been
+idle or closed for more than ~1 hour and `databricks-me` reports an expired
+session, ask the attendee to refresh the workshop tab, then retry. (Building
+and deploying are unaffected — they run as `DEFAULT`.)
+
+## Where to create things — always inside `$WORKSHOP_CATALOG`
+
+So that everything you build is automatically usable by the attendee:
+
+- **Unity Catalog objects (schemas, tables, volumes, functions): create them
+  inside `$WORKSHOP_CATALOG`** (use `$WORKSHOP_SCHEMA` when set). The attendee
+  has inherited `ALL PRIVILEGES` on that catalog, so anything you create there
+  is instantly usable by them and visible via `databricks-me`. Never create a
+  brand-new top-level catalog — objects there would not be usable by the
+  attendee (and you typically can't create one anyway).
+- **Non-UC resources (apps, jobs, Lakebase/Postgres instances, pipelines,
+  serving endpoints):** these are auto-shared to the attendee within ~one
+  reconcile interval. For *instant* access after a build, run `workshop-grant-me`
+  — it grants the attendee `CAN_MANAGE` on what you just created.
+
 ## Project setup
 
 Before starting any new project:
 
-1. **Always initialize a git repo first:**
+1. **Always create the project with `workshop-init-project` first:**
    ```bash
-   mkdir my-project && cd my-project && git init
+   cd "$(workshop-init-project my-project)"
    ```
-2. **Why?** Every git commit automatically syncs your work to the Databricks
-   Workspace at `/Workspace/Users/{your-email}/projects/{project-name}/` — so
-   your workshop work survives after this environment is torn down.
+   This makes `~/projects/my-project`, runs `git init`, and commits the
+   workshop's AppKit project memory as both `CLAUDE.md` and `AGENTS.md` so the
+   rules travel with the repo into every agent and sub-agent (including
+   Omnigent's workers running in isolated worktrees). The command prints the
+   project path, so the `cd "$(...)"` lands you inside it.
+2. **Why a helper?** Every git commit automatically syncs your work to the
+   Databricks Workspace at
+   `/Workspace/Users/{your-email}/projects/{project-name}/` — so your workshop
+   work survives after this environment is torn down. The committed
+   `CLAUDE.md`/`AGENTS.md` also guarantee the AppKit baseline is followed no
+   matter which agent or harness picks up the work.
 3. **Then start building** — commit early and often.
 
 ## How to work with users — clarify, recommend, confirm
@@ -78,15 +131,23 @@ Databricks project):
 - **End every build with the payoff:** give the user the live URL (app,
   dashboard, job run) and a short, plain-language recap of what you built.
 
-## Building apps — default to AppKit
+## Building apps — always use AppKit
 
-When the user asks to build an app, dashboard, tool, or UI **without naming a
-framework**, default to **AppKit** (React + Vite + TypeScript) following the
-`databricks-apps-python` skill. Only use a Python framework
-(Streamlit/Dash/Gradio/Flask) when the user explicitly names one. If the app
-needs to **save data**, provision Lakebase non-interactively following the
-`databricks-lakebase-provisioned` skill — never tell the user to click
-resources together in the Databricks UI. Apps with no saved state skip
+AppKit is the required baseline for every app. For this workshop, **every app,
+dashboard, tool, or UI you build MUST use AppKit** (React + Vite + TypeScript)
+following the `databricks-apps-python` skill — scaffold it with
+`databricks apps init` and apply the CoDA UX defaults from the skill's
+`7-appkit-ux.md`. This applies no matter which agent you are (Claude, Codex, or
+Omnigent).
+
+Do **not** reach for a Python framework (Streamlit / Dash / Gradio / Flask /
+FastAPI / Reflex). The only exception is when an attendee **explicitly and
+insistently** asks for a specific Python framework — in that case confirm
+that's really what they want, then proceed. Otherwise it is always AppKit.
+
+If the app needs to **save data**, provision Lakebase non-interactively
+following the `databricks-lakebase-provisioned` skill — never tell the user to
+click resources together in the Databricks UI. Apps with no saved state skip
 Lakebase.
 
 ## Things to remember
@@ -96,4 +157,5 @@ Lakebase.
 - Serverless compute first: new jobs, pipelines, and SQL should default to
   serverless unless there's a reason not to.
 - Everything you create belongs in Unity Catalog at `catalog.schema.object` —
-  use the schema the workshop assigned you.
+  use `$WORKSHOP_CATALOG` (and `$WORKSHOP_SCHEMA` when set), the catalog the
+  workshop assigned you, so it stays usable by you (see "Where to create").

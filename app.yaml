@@ -13,13 +13,61 @@ env:
   - name: HOME
     value: /app/python/source_code/data/apphome
 
-  # --- Attendee CLI credential (vended by Control Tower) ---
-  # A workspace token injected at deploy time (env_overrides, or replace with
-  # a valueFrom secret resource). The app chains short-lived rotating tokens
-  # off it when the credential can use the Token API; otherwise it serves the
-  # vended token directly. Attendees never handle tokens.
+  # --- Attendee CLI credential ---
+  # PREFERRED: grant the app's own service principal token CAN_USE at provision
+  # time. The app then mints short-lived rotating tokens from its auto-refreshed
+  # OAuth identity — no static secret here, nothing to expire across a
+  # deploy-then-idle-then-event window, and no attendee ever creates a PAT.
+  #
+  # WORKSHOP_PAT is an EMERGENCY-ONLY fallback: a vended workspace token for
+  # environments without a usable app identity. It is a static credential that
+  # expires with no rotation behind it, so the app reports it as "degraded" and
+  # alerts. Prefer the service-principal grant for any large or long-lived event.
   - name: WORKSHOP_PAT
     value: ""
+
+  # --- OBO dual-profile + entitlements (governance-faithful UC as the attendee) ---
+  # When ENABLE_OBO is on, the app persists each attendee's forwarded
+  # on-behalf-of-user token to a second databricks CLI profile (`me`) so the
+  # agent can run `databricks --profile me ...` (via the `databricks-me` helper)
+  # and see exactly the Unity Catalog objects the attendee is governed by. The
+  # SP `[DEFAULT]` profile still powers all build/deploy/provision work.
+  #
+  # IMPORTANT: the OBO *scopes* are NOT set here. They live on the app resource:
+  # Control Tower enables user authorization and sets `user_api_scopes` (baseline
+  # `catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql` — there
+  # is NO `unity-catalog` scope; use the granular `catalog.*:read` scopes to list
+  # the attendee's UC metadata + `sql` to query their data), admin-grants
+  # consent, and restarts the app after a scope change. See
+  # docs/control-tower-implementation.md §8.
+  - name: ENABLE_OBO
+    value: "false"
+  # The CLI profile name backed by the OBO token (default `me`).
+  - name: OBO_PROFILE_NAME
+    value: "me"
+  # Documentation/health hint only — must match the scopes CT set on the app
+  # resource. The app cannot set its own scopes.
+  - name: OBO_SCOPES
+    value: "catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql"
+
+  # When ENABLE_ENTITLEMENTS is on, an SP-driven reconciler makes resources the
+  # app SP creates usable by the attendee (labuser): ALL_PRIVILEGES on
+  # WORKSHOP_CATALOG (inherited by every object created inside it) + CAN_MANAGE
+  # on non-UC resources (apps/jobs/pipelines/db-instances/serving). CT must
+  # provision WORKSHOP_CATALOG with the labuser as OWNER + ALL PRIVILEGES and
+  # the app SP granted CREATE/USE — see docs/control-tower-implementation.md §9.
+  - name: ENABLE_ENTITLEMENTS
+    value: "false"
+  - name: WORKSHOP_CATALOG
+    value: ""
+  - name: WORKSHOP_SCHEMA
+    value: ""
+  - name: ENTITLEMENT_RECONCILE_INTERVAL
+    value: "300"
+  # Off by default: grant-based ALL PRIVILEGES is enough for usability. Set true
+  # only if the attendee must drop/alter SP-created UC objects as owner.
+  - name: ENTITLEMENT_TRANSFER_OWNERSHIP
+    value: "false"
 
   # --- Security (workspace groups, no allowlists) ---
   - name: ADMIN_GROUP
@@ -33,6 +81,14 @@ env:
   - name: WORKSHOP_PHASE
     value: intro
   - name: CONTENT_PACK_PATH
+    value: ""
+
+  # --- Skills overlay (ai-dev-kit) ---
+  # Skills are fetched from ai-dev-kit at every boot. Default ref is "main"
+  # (branch tip). STRONGLY pin a reviewed tag or commit SHA per event so every
+  # attendee runs a known skills version (incl. the AppKit-default app skill)
+  # rather than whatever lands on the branch mid-workshop.
+  - name: AI_DEV_KIT_REF
     value: ""
 
   # --- Cobranding (Databricks theme when unset) ---
@@ -54,21 +110,25 @@ env:
     value: ""
 
   # --- Omnigent (agent meta-harness) ---
-  # Feature flag, default OFF: omnigent is not on public PyPI yet, so a default
-  # deploy must not install it or show a launch card that can't start. Flip to
-  # "true" (and ensure OMNIGENT_PIP_SPEC resolves) when omnigent goes public.
+  # Feature flag, default ON: omnigent is GA on public PyPI, so the default
+  # deploy installs the latest `omnigent` (sibling deps omnigent-client /
+  # omnigent-ui-sdk resolve transitively) + tmux, and leads the catalog with
+  # the Omnigent session. Set to "false" to opt out (air-gapped events, or to
+  # offer bare claude/codex only).
   - name: OMNIGENT_ENABLED
-    value: "false"
-  # The GA bump is this one env change: the installer's version stamp forces
-  # a reinstall on mismatch. TMUX_STATIC_URL/SHA256 are pinned in code; the
-  # env overrides exist for emergencies (e.g. GitHub release unreachable).
+    value: "true"
+  # Optional one-line version pin for an event (empty = track latest from
+  # PyPI). A pinned version short-circuits reinstall via the installer's
+  # version stamp; unpinned reinstalls each boot to stay on latest.
+  # TMUX_STATIC_URL/SHA256 are pinned in code; the env overrides below exist
+  # for emergencies (e.g. GitHub release unreachable).
   - name: OMNIGENT_VERSION
-    value: "0.1.0rc2"
-  # Pre-GA escape hatch: omnigent is not on public PyPI yet. Point this at a
-  # wheel staged on the volume, an internal index spec, or a git URL; leave
-  # empty to install omnigent==$OMNIGENT_VERSION from PyPI (post-launch).
-  # Sibling wheels (omnigent-client, omnigent-ui-sdk) staged next to the main
-  # wheel are picked up by also setting UV_FIND_LINKS to that directory.
+    value: ""
+  # Escape hatch for air-gapped / pre-release installs only — NOT needed for
+  # the default PyPI path. Point this at a wheel staged on the volume, an
+  # internal index spec, or a git URL; sibling wheels (omnigent-client,
+  # omnigent-ui-sdk) staged next to the main wheel are picked up by also
+  # setting UV_FIND_LINKS to that directory.
   - name: OMNIGENT_PIP_SPEC
     value: ""
   - name: UV_FIND_LINKS
@@ -85,3 +145,12 @@ env:
     value: "30"
   - name: SESSION_IDLE_TIMEOUT_SECONDS
     value: "3600"
+
+  # --- Session journal (restart recovery) ---
+  # Set a path on the app's data volume so live-session metadata + a scrollback
+  # tail survive a restart: attendees see their terminals as relaunchable
+  # "ended on restart" ghosts (the live PTYs cannot survive) instead of a blank
+  # screen, and the client stops cleanly on the 4404 close instead of looping.
+  # STRONGLY recommended for any real event.
+  - name: SESSION_STATE_PATH
+    value: /app/python/source_code/data/sessions.json

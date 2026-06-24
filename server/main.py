@@ -14,17 +14,18 @@ from contextlib import asynccontextmanager
 
 import asyncio
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import agents, config, spend, user_content
+from . import agents, config, obo, spend, user_content
 from .admin import router as admin_router
 from .auth import Principal, get_current_user, is_admin
 from .bootstrap import install
 from .content import content_service
 from .credentials import CredentialError, credential_manager, ensure_user_credentials
+from .entitlements import entitlement_manager
 from .event_emitter import event_emitter, flush_loop
 from .events import event_hub
 from .sessions import SessionLimitError, session_manager
@@ -70,6 +71,9 @@ async def lifespan(app: FastAPI):
     if not config.local_dev():
         install.run_in_background()
         credential_manager.start()
+        # SP-driven entitlement reconciler: keeps the labuser able to use the
+        # resources the app SP creates (no-op unless ENABLE_ENTITLEMENTS).
+        entitlement_manager.start()
         # C3b: background flusher pushes buffered attendee events to Control
         # Tower. Only starts when CT ingest is configured (emitter.enabled).
         if event_emitter.enabled:
@@ -92,6 +96,7 @@ async def lifespan(app: FastAPI):
     yield
     if emitter_stop is not None:
         emitter_stop.set()
+    entitlement_manager.stop()
 
 
 app = FastAPI(title="Databricks Workshop Terminal", lifespan=lifespan)
@@ -115,12 +120,50 @@ def get_config(principal: Principal = Depends(get_current_user)):
             "max_sessions_per_user": config.max_sessions_per_user(),
         },
         "credential": credential_manager.status(),
+        "obo": obo.obo_manager.status(principal.name),
+        "entitlements": entitlement_manager.status(),
     }
 
 
 @app.get("/api/setup-status")
 def setup_status(_: Principal = Depends(get_current_user)):
     return install.status()
+
+
+class _EmailBody(BaseModel):
+    # Helpers running inside the attendee PTY have no proxy identity headers, so
+    # they pass their own $WORKSHOP_USER_EMAIL. A browser caller carries the
+    # forwarded headers instead and may omit this.
+    email: str | None = None
+
+
+@app.post("/api/obo/refresh")
+def obo_refresh(body: _EmailBody, request: Request):
+    """Reactive OBO self-heal (layer 2). Called by the ``databricks-me`` wrapper
+    on a 401/403: captures a fresh forwarded token if the caller is the browser,
+    force-writes the latest captured token to the ``me`` profile, and nudges any
+    connected tab to deliver an even fresher token on its next poll."""
+    email = (body.email or request.headers.get("x-forwarded-email") or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=422, detail="email required")
+    token = (request.headers.get("x-forwarded-access-token") or "").strip()
+    if token:
+        obo.obo_manager.capture(email, token)
+    written = obo.obo_manager.force_refresh(email)
+    try:
+        event_hub.publish({"t": "obo_refresh", "email": email})
+    except Exception:  # noqa: BLE001 — nudge is best-effort
+        pass
+    return {"written": written, **obo.obo_manager.status(email)}
+
+
+@app.post("/api/entitlements/reconcile")
+def reconcile_entitlements(body: _EmailBody, request: Request):
+    """On-demand entitlement reconcile (the ``workshop-grant-me`` path): makes a
+    just-created app/job/Lakebase instance usable by the labuser immediately
+    instead of waiting for the next sweep."""
+    email = (body.email or request.headers.get("x-forwarded-email") or "").strip().lower() or None
+    return entitlement_manager.reconcile(email=email)
 
 
 @app.get("/api/agents")

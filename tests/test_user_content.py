@@ -2,8 +2,15 @@
 
 import json
 import os
+import subprocess
 
 from .conftest import ALICE
+
+# Canonical AppKit mandate sentence — must appear verbatim in every memory
+# channel an agent/harness can read (home CLAUDE.md + AGENTS.md, and the
+# committed project-level CLAUDE.md + AGENTS.md). The single-source assertion
+# fails loud if a skills refresh or instruction edit ever drops it.
+APPKIT_MANDATE = "AppKit is the required baseline for every app."
 
 
 def _provisioned_home(client, monkeypatch):
@@ -26,6 +33,69 @@ def test_instructions_written_with_coach(client, monkeypatch):
     agents_md = open(os.path.join(home, ".codex", "AGENTS.md")).read()
     assert agents_md.startswith("# Codex Agent Instructions")
     assert "workshop-lab-coach" in agents_md
+
+
+def test_appkit_mandate_in_home_memory(client, monkeypatch):
+    # The mandate must reach Claude (CLAUDE.md) and Codex (AGENTS.md) at the
+    # home/global scope.
+    home = _provisioned_home(client, monkeypatch)
+    claude_md = open(os.path.join(home, ".claude", "CLAUDE.md")).read()
+    agents_md = open(os.path.join(home, ".codex", "AGENTS.md")).read()
+    assert APPKIT_MANDATE in claude_md
+    assert APPKIT_MANDATE in agents_md
+
+
+def test_project_helper_installed(client, monkeypatch):
+    home = _provisioned_home(client, monkeypatch)
+
+    helper = os.path.join(home, ".local", "bin", "workshop-init-project")
+    assert os.path.isfile(helper)
+    assert os.access(helper, os.X_OK)
+
+    template = os.path.join(home, ".config", "workshop", "project-memory.md")
+    assert APPKIT_MANDATE in open(template).read()
+
+
+def test_project_helper_commits_appkit_memory(client, monkeypatch, tmp_path):
+    """Running the helper must produce a project whose CLAUDE.md and AGENTS.md
+    are committed (so they propagate into Omnigent's git worktrees) and carry
+    the mandate."""
+    home = _provisioned_home(client, monkeypatch)
+    helper = os.path.join(home, ".local", "bin", "workshop-init-project")
+
+    # Isolated HOME so we exercise the helper without the provisioned home's
+    # post-commit workspace-sync hook. The template is the contract the
+    # provisioned home installs.
+    fake_home = tmp_path / "attendee"
+    (fake_home / ".config" / "workshop").mkdir(parents=True)
+    src_template = os.path.join(home, ".config", "workshop", "project-memory.md")
+    (fake_home / ".config" / "workshop" / "project-memory.md").write_text(
+        open(src_template).read()
+    )
+    env = {
+        "HOME": str(fake_home),
+        "PATH": os.environ["PATH"],
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_AUTHOR_NAME": "Attendee",
+        "GIT_AUTHOR_EMAIL": "attendee@example.com",
+        "GIT_COMMITTER_NAME": "Attendee",
+        "GIT_COMMITTER_EMAIL": "attendee@example.com",
+    }
+    out = subprocess.run(
+        ["bash", helper, "my-app"], env=env, capture_output=True, text=True, timeout=30
+    )
+    assert out.returncode == 0, out.stderr
+    project = fake_home / "projects" / "my-app"
+    assert APPKIT_MANDATE in (project / "CLAUDE.md").read_text()
+    assert APPKIT_MANDATE in (project / "AGENTS.md").read_text()
+
+    # Both files must be committed (tracked) — untracked files do not propagate
+    # into the worktrees Omnigent's sub-agents run in.
+    tracked = subprocess.run(
+        ["git", "-C", str(project), "ls-files"],
+        env=env, capture_output=True, text=True, timeout=30,
+    ).stdout.split()
+    assert "CLAUDE.md" in tracked and "AGENTS.md" in tracked
 
 
 def test_coach_disabled_by_env(client, monkeypatch):

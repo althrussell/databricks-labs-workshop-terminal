@@ -69,6 +69,30 @@ following the `databricks-lakebase-provisioned` skill and bind it
 non-interactively — never tell the attendee to click resources together in the
 Databricks UI.
 
+## 3b. Showing the attendee THEIR data
+
+When the attendee wants to see "my data" / "my catalogs" / "what's in my
+tables", use the `databricks-me` helper — it runs as the attendee, so it shows
+exactly what *they* have access to (a plain `databricks` command runs as the
+workshop's robot identity and would show the wrong thing):
+
+```bash
+databricks-me catalogs list
+databricks-me tables list <catalog> <schema>
+```
+
+Build and deploy work (apps, pipelines, Lakebase) keeps using the normal
+`databricks` commands — that's the reliable workshop identity. Only "show me MY
+data" reads use `databricks-me`.
+
+If `databricks-me` says the personal session expired, it just means the browser
+tab went to sleep — in plain language, ask them to refresh the workshop tab and
+try again. Nothing they built is lost.
+
+Always create their tables and files inside `$WORKSHOP_CATALOG` so they can use
+them afterwards; for apps/databases you build, you can run `workshop-grant-me`
+to give them access right away.
+
 ## 4. End every build with the payoff
 
 When the build is deployed, always finish with:

@@ -68,12 +68,26 @@ def _scim_me_groups(token: str) -> set[str] | None:
         return None
 
 
+def scim_token_valid(token: str) -> bool:
+    """True if ``token`` authenticates against SCIM /Me.
+
+    Used by the credential self-probe to distinguish a valid-but-can't-mint
+    credential (degraded) from a rejected/expired one (unhealthy).
+    """
+    return bool(token) and _scim_me_groups(token) is not None
+
+
 def _scim_lookup_groups_by_email(email: str) -> set[str] | None:
-    """Resolve a user's groups by email using the app's vended credential."""
-    from .credentials import vended_pat
+    """Resolve a user's groups by email using the app's own credential.
+
+    Prefers the app service-principal OAuth identity (auto-refreshed, no expiry
+    clock); the vended PAT is an emergency-only fallback so operator/attendee
+    group resolution does not silently depend on an expiring static token.
+    """
+    from .credentials import app_identity_bearer, vended_pat
 
     host = config.databricks_host()
-    token = vended_pat()
+    token = app_identity_bearer() or vended_pat()
     if not host or not token:
         return None
     try:
@@ -142,18 +156,39 @@ def _check_access(principal: Principal) -> None:
         raise HTTPException(status_code=403, detail=f"Access requires membership in the '{group}' group")
 
 
+def _capture_obo(principal: Principal) -> None:
+    """Feed the attendee's forwarded OBO token to the OBO manager so the ``me``
+    CLI profile stays fresh. Guarded — capture must never break a request."""
+    try:
+        from . import obo
+
+        obo.obo_manager.capture(principal.name, principal.access_token)
+    except Exception:  # noqa: BLE001 — never fail a request on OBO bookkeeping
+        pass
+
+
 def get_current_user(request: Request) -> Principal:
     """FastAPI dependency: identify + authorize the attendee for any route."""
     principal = _principal_from_headers(request.headers)
     _check_access(principal)
+    _capture_obo(principal)
     return principal
 
 
 async def get_ws_user(websocket: WebSocket) -> Principal | None:
-    """Authorize a websocket BEFORE accept(). Returns None (and closes 4403) on failure."""
+    """Authorize an ALREADY-ACCEPTED websocket. Returns None and closes 4403 on
+    failure.
+
+    The caller MUST ``await websocket.accept()`` first. A close during the
+    opening handshake (pre-accept) reaches browsers only as a generic 1006 with
+    no application code, so the client can't tell "auth failed" / "session gone"
+    from a transient network blip and reconnects blindly forever. Accepting
+    first means the 4403/4404 close code is delivered and the client can stop.
+    """
     try:
         principal = _principal_from_headers(websocket.headers)
         _check_access(principal)
+        _capture_obo(principal)
         return principal
     except HTTPException:
         await websocket.close(code=4403)

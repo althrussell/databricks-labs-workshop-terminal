@@ -28,9 +28,17 @@ function connect() {
       /* ignore malformed frames */
     }
   };
-  socket.onclose = () => {
+  socket.onclose = (ev) => {
     socket = null;
-    setTimeout(connect, retryDelay);
+    if (ev.code === 4403) {
+      // Auth failed (stale forwarded identity) — reload once to refresh it
+      // rather than reconnecting blindly forever.
+      setTimeout(() => location.reload(), 1500);
+      return;
+    }
+    // Exponential backoff with jitter so all tabs don't reconnect in lockstep.
+    const jitter = Math.random() * retryDelay;
+    setTimeout(connect, retryDelay + jitter);
     retryDelay = Math.min(retryDelay * 2, 15000);
   };
 }

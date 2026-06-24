@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { Megaphone, RadioTower, Users } from "lucide-react";
-import { api, PresenceUser } from "../api";
+import { KeyRound, Megaphone, RadioTower, Users } from "lucide-react";
+import { api, CredentialStatus, PresenceUser } from "../api";
 
 export default function OperatorPanel() {
   const [phases, setPhases] = useState<string[]>([]);
   const [phase, setPhase] = useState("");
   const [users, setUsers] = useState<PresenceUser[]>([]);
   const [sessionCount, setSessionCount] = useState(0);
+  const [credential, setCredential] = useState<CredentialStatus | null>(null);
   const [message, setMessage] = useState("");
   const [level, setLevel] = useState("info");
   const [status, setStatus] = useState("");
@@ -25,6 +26,7 @@ export default function OperatorPanel() {
       .then((data) => {
         setUsers(data.users);
         setSessionCount(data.session_count);
+        setCredential(data.credential);
       })
       .catch(() => undefined);
   }, []);
@@ -58,6 +60,27 @@ export default function OperatorPanel() {
 
   return (
     <div className="operator-panel">
+      {credential && (
+        <section className="op-card">
+          <h2>
+            <KeyRound size={16} /> Credential health
+          </h2>
+          <div className="credential-status">
+            <span className={`dot ${credential.healthy ? "dot-online" : "dot-offline"}`} />
+            <strong>{credentialLabel(credential)}</strong>
+            <span className="credential-source">source: {credential.source}</span>
+            {credential.token_expires_in != null && (
+              <span className="credential-source">
+                token refreshes in {Math.max(0, Math.round(credential.token_expires_in / 60))}m
+              </span>
+            )}
+          </div>
+          {credential.state !== "rotating" && credential.last_error && (
+            <p className="credential-error">{credential.last_error}</p>
+          )}
+        </section>
+      )}
+
       <section className="op-card">
         <h2>
           <RadioTower size={16} /> Workshop phase
@@ -140,6 +163,19 @@ export default function OperatorPanel() {
       {status && <div className="op-status">{status}</div>}
     </div>
   );
+}
+
+function credentialLabel(c: CredentialStatus): string {
+  switch (c.state) {
+    case "rotating":
+      return "Rotating short-lived tokens";
+    case "degraded":
+      return "Degraded — static token, not rotating";
+    case "unhealthy":
+      return "Unhealthy — credential not usable";
+    default:
+      return c.configured ? "Configured (checking…)" : "Not configured";
+  }
 }
 
 function timeAgo(epoch: number): string {

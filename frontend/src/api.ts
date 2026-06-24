@@ -21,6 +21,10 @@ export interface CredentialStatus {
   configured: boolean;
   rotating: boolean;
   healthy: boolean;
+  degraded: boolean;
+  state: "unknown" | "rotating" | "degraded" | "unhealthy";
+  source: string;
+  token_expires_in: number | null;
   last_error: string | null;
 }
 
