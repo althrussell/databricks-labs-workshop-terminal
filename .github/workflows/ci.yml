@@ -41,17 +41,19 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          # Node 24 ships npm 11.x. Node 22's bundled npm 10.9.8 reliably hangs
+          # for ~10 min on the hosted runner and crashes with "Exit handler never
+          # called!" (a known npm 10.x bug) — npm 11 installs the same lockfile in
+          # seconds.
+          node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         working-directory: frontend
         # Prefer `npm ci` (deterministic, lockfile-driven, restore-from-cache
-        # friendly, and reliable on Node 22 / npm 11 — the "Exit handler never
-        # called!" crash was a Node 20 / older-npm issue). Fall back to
-        # `npm install` if `npm ci` fails, and wrap both in a retry loop (clearing
-        # node_modules + cache between attempts) to ride out transient registry
-        # hiccups on the hosted runner.
+        # friendly). Fall back to `npm install` if `npm ci` fails, and wrap both
+        # in a retry loop (clearing node_modules + cache between attempts) to ride
+        # out any transient registry hiccups on the hosted runner.
         env:
           npm_config_fetch_retries: "5"
           npm_config_fetch_retry_mintimeout: "5000"
