@@ -55,6 +55,13 @@ jobs:
         # in a retry loop (clearing node_modules + cache between attempts) to ride
         # out any transient registry hiccups on the hosted runner.
         env:
+          # The committed package-lock.json resolves packages from the internal
+          # `npm-proxy.dev.databricks.com` (reachable for devs, NOT from the
+          # hosted runner — that's why installs hung ~10 min then crashed with
+          # "Exit handler never called!"). Point CI at the public registry and
+          # rewrite the resolved host so the lockfile stays proxy-based for devs.
+          npm_config_registry: "https://registry.npmjs.org/"
+          npm_config_replace_registry_host: "always"
           npm_config_fetch_retries: "5"
           npm_config_fetch_retry_mintimeout: "5000"
           npm_config_fetch_retry_maxtimeout: "30000"
