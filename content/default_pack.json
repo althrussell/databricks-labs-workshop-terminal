@@ -115,6 +115,15 @@
       "databricks job",
       "lakeflow job",
       "scheduled job"
+    ],
+    "build-complete": [
+      "successfully deployed",
+      "app is running",
+      "deployment complete",
+      "app started",
+      "build succeeded",
+      "live at https",
+      "your app is live"
     ]
   },
   "nuggets": [
@@ -425,6 +434,26 @@
       "weight": 8,
       "cta": "Schedule it →",
       "prompt": "Schedule what we built as a daily job with email notifications."
+    },
+    {
+      "id": "promote-cta",
+      "title": "Build complete — save your docs",
+      "markdown": "Your agent just finished a build. Ask it to generate handoff documentation — architecture spec, security review, Jira stories, test cases, and a build prompt — uploaded automatically to your Databricks Volume so you can share and revisit everything you built today.",
+      "tags": [
+        "promote",
+        "build"
+      ],
+      "phases": [
+        "build",
+        "wrap"
+      ],
+      "triggers": [
+        "topic:build-complete"
+      ],
+      "cta": "Generate my docs →",
+      "prompt": "Please generate handoff documentation for what I just built and upload it to my Databricks Volume.",
+      "weight": 1,
+      "pinned": true
     },
     {
       "id": "wrap-keep-going",

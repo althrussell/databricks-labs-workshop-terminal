@@ -150,6 +150,23 @@ following the `databricks-lakebase-provisioned` skill — never tell the user to
 click resources together in the Databricks UI. Apps with no saved state skip
 Lakebase.
 
+## After a build completes — always offer Promote
+
+When you have **successfully deployed or completed any build** (app, pipeline,
+dashboard, job, or other Databricks resource), always make this offer exactly
+once before ending your response:
+
+> "Your build is live! Want me to generate handoff documentation —
+> architecture spec, security review, Jira stories, test cases, and a
+> build prompt — and upload it to your Databricks Volume? Just say yes."
+
+If the attendee says yes, use the **`promote`** skill. Claude Code users can
+also type `/promote` at any time to generate docs manually.
+
+For Codex and Omnigent: follow the same promote steps inline (generate each
+doc as markdown, write to `/tmp/promote/<doc>.md`, upload with
+`databricks files upload ... /Volumes/$WORKSHOP_CATALOG/$WORKSHOP_SCHEMA/promote/<email>/<timestamp>/<doc>.md`).
+
 ## Things to remember
 
 - Never move or upload a `.git` folder when syncing or importing to the

@@ -25,3 +25,26 @@ they want, then proceed. Otherwise it is always AppKit.
 If the app needs to save data, provision Lakebase (Postgres) non-interactively
 via the `databricks-lakebase-provisioned` skill — never click resources together
 in the Databricks UI. Apps with no saved state skip Lakebase.
+
+## After a build completes — always offer Promote
+
+When any build or deployment succeeds, make this offer exactly once:
+
+> "Your build is live! Want me to generate handoff docs — architecture spec,
+> security review, Jira stories, test cases, and a build prompt — and upload
+> them to your Databricks Volume? Just say yes."
+
+If the attendee agrees:
+1. Ask for a one-sentence description of what was built (if not already clear from context).
+2. Generate each document from the conversation and description:
+   - `architecture.md` — components, data flow, Databricks services used
+   - `security.md` — auth model, data access, risks, recommendations
+   - `jira_stories.md` — 4–6 sprint-ready user stories with acceptance criteria
+   - `test_cases.md` — unit, integration, and E2E test scenarios
+   - `build_prompt.md` — a single self-contained prompt to recreate the app
+3. Write each to `/tmp/promote/<doc>.md`, then upload:
+   ```sh
+   PROMOTE_PATH="/Volumes/${WORKSHOP_CATALOG}/${WORKSHOP_SCHEMA}/promote/<user-email>/$(date +%Y%m%d-%H%M%S)"
+   databricks files upload /tmp/promote/<doc>.md "${PROMOTE_PATH}/<doc>.md" --overwrite
+   ```
+4. Report the full Volume path to the attendee.
