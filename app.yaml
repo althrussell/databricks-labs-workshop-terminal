@@ -104,6 +104,9 @@ env:
   # --- Model gateway / CLI defaults ---
   - name: DATABRICKS_GATEWAY_HOST
     value: ""
+  # Default Claude model is Sonnet 5 (fast, capable, cheaper than Opus). Set
+  # this to pin a different model per event, e.g. databricks-claude-opus-4-8
+  # for a premium-tier workshop. Opus stays reachable via /model regardless.
   - name: ANTHROPIC_MODEL
     value: ""
   - name: CODEX_MODEL

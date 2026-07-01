@@ -123,18 +123,24 @@ def configure_claude(user: User, token: str) -> None:
         "databricks-claude-opus-4-7",
         "databricks-claude-opus-4-6",
     ]
+    sonnet_chain = [
+        "databricks-claude-sonnet-5",
+        "databricks-claude-sonnet-4-6",
+        "databricks-claude-sonnet-4-5",
+    ]
     requested = os.environ.get("ANTHROPIC_MODEL", "").strip()
-    default_chain = ([requested] if requested else []) + opus_chain + ["databricks-claude-sonnet-4-6"]
+    # Default to Sonnet 5 (fast, capable, cheaper than Opus) — the right
+    # everyday driver for workshops; ANTHROPIC_MODEL pins Opus per event.
+    default_chain = ([requested] if requested else []) + sonnet_chain + opus_chain
     settings_path = os.path.join(claude_dir, "settings.json")
     settings = _read_json(settings_path)
     env = settings.setdefault("env", {})
     env.update({
         "ANTHROPIC_BASE_URL": base_url,
-        "ANTHROPIC_MODEL": _pick(default_chain, available, requested or opus_chain[0]),
+        "ANTHROPIC_MODEL": _pick(default_chain, available, requested or sonnet_chain[0]),
         "ANTHROPIC_DEFAULT_OPUS_MODEL": _pick(opus_chain, available, opus_chain[0]),
         "ANTHROPIC_DEFAULT_SONNET_MODEL": _pick(
-            ["databricks-claude-sonnet-4-6", "databricks-claude-sonnet-4-5"],
-            available, "databricks-claude-sonnet-4-6"),
+            sonnet_chain, available, sonnet_chain[0]),
         "ANTHROPIC_DEFAULT_HAIKU_MODEL": _pick(
             ["databricks-claude-haiku-4-5"], available, "databricks-claude-haiku-4-5"),
         "ANTHROPIC_CUSTOM_HEADERS": "x-databricks-use-coding-agent-mode: true",
@@ -259,16 +265,22 @@ def configure_omnigent(user: User, token: str) -> None:
     )
 
     # Same selection chains as configure_claude / configure_codex — one source
-    # of truth for which models an event runs.
+    # of truth for which models an event runs. Default to Sonnet 5; the
+    # ANTHROPIC_MODEL env pins Opus (or another model) per event.
     available = _discover_serving_endpoints(token)
+    sonnet_chain = [
+        "databricks-claude-sonnet-5",
+        "databricks-claude-sonnet-4-6",
+        "databricks-claude-sonnet-4-5",
+    ]
     opus_chain = [
         "databricks-claude-opus-4-8",
         "databricks-claude-opus-4-7",
         "databricks-claude-opus-4-6",
     ]
     requested = os.environ.get("ANTHROPIC_MODEL", "").strip()
-    claude_chain = ([requested] if requested else []) + opus_chain + ["databricks-claude-sonnet-4-6"]
-    claude_model = _pick(claude_chain, available, requested or opus_chain[0])
+    claude_chain = ([requested] if requested else []) + sonnet_chain + opus_chain
+    claude_model = _pick(claude_chain, available, requested or sonnet_chain[0])
     codex_model = os.environ.get("CODEX_MODEL", "").strip() or "databricks-gpt-5-5"
 
     # auth_command uses the absolute token path: omnigent re-runs it inside
