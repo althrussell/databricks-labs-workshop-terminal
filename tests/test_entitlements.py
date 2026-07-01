@@ -63,7 +63,7 @@ def _mgr(monkeypatch, fake):
 
 
 def test_disabled_reconcile_is_noop(monkeypatch):
-    monkeypatch.delenv("ENABLE_ENTITLEMENTS", raising=False)
+    monkeypatch.setenv("ENABLE_ENTITLEMENTS", "false")  # default is now ON
     from server import entitlements
 
     assert entitlements.EntitlementManager().reconcile("a@example.com") == {"enabled": False}
@@ -125,7 +125,7 @@ def test_failure_emits_health_and_never_raises(monkeypatch, enabled):
 
 
 def test_start_skips_thread_when_disabled(monkeypatch):
-    monkeypatch.delenv("ENABLE_ENTITLEMENTS", raising=False)
+    monkeypatch.setenv("ENABLE_ENTITLEMENTS", "false")  # default is now ON
     from server import entitlements
 
     mgr = entitlements.EntitlementManager()

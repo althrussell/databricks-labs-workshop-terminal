@@ -193,9 +193,10 @@ def test_obo_refresh_endpoint_requires_email(client):
     assert resp.status_code == 200 or resp.status_code == 422
 
 
-def test_entitlements_reconcile_endpoint_disabled(client):
+def test_entitlements_reconcile_endpoint_disabled(client, monkeypatch):
     from .conftest import ALICE
 
+    monkeypatch.setenv("ENABLE_ENTITLEMENTS", "false")  # default is now ON
     resp = client.post("/api/entitlements/reconcile", json={"email": "alice@example.com"}, headers=ALICE)
     assert resp.status_code == 200
     assert resp.json() == {"enabled": False}

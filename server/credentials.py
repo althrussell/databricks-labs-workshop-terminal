@@ -355,17 +355,23 @@ class CredentialManager:
             )
 
     def _adopt_minted(self, data: dict) -> None:
-        """Make a freshly minted token the served token, fan it out, and revoke
-        the previously-minted one (never the vended PAT)."""
+        """Make a freshly minted token the served token and fan it out.
+
+        We deliberately do NOT revoke the previously-minted token here. Live
+        agent processes (Claude's apiKeyHelper, Codex's provider auth command,
+        Omnigent's gateway auth_command) re-read the rotating token file on
+        their own ~4-min cadence, so at any instant a running process may still
+        be holding the prior token. Revoking it the moment we rotate would 401
+        that process until its next refresh; instead we let the old token expire
+        naturally on its short (TOKEN_LIFETIME) clock. The extra live tokens are
+        bounded — at most a couple within one lifetime window — and short-lived.
+        """
         with self._lock:
-            old_token_id = self._token_id
             self._token = data["token_value"]
             self._token_id = data["token_info"]["token_id"]
             self._minted_at = time.time()
             self._rotating = True
         self._fanout(data["token_value"])
-        if old_token_id:
-            self._revoke(old_token_id, data["token_value"])
 
     def _revoke(self, token_id: str, auth_token: str) -> None:
         host = config.databricks_host()
