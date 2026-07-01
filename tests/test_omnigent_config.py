@@ -87,9 +87,26 @@ def test_model_defaults_pick_from_available(user, monkeypatch):
     cli_config.configure_omnigent(user, "tok-1")
     with open(_config_path(user)) as f:
         text = f.read()
-    # Opus 4.8 absent → chain degrades to 4.7; codex default unaffected.
+    # Only opus-4-7 available → the sonnet-first chain degrades all the way
+    # through to it; codex default unaffected.
     assert "default: databricks-claude-opus-4-7" in text
     assert "default: databricks-gpt-5-5" in text
+
+
+def test_default_claude_model_is_sonnet_5(user, monkeypatch):
+    """With models available and no ANTHROPIC_MODEL pin, the default Claude
+    model is Sonnet 5 (not Opus)."""
+    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
+    monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
+    monkeypatch.setattr(
+        cli_config, "_discover_serving_endpoints",
+        lambda token: {"databricks-claude-sonnet-5", "databricks-claude-opus-4-8"},
+    )
+    cli_config.configure_omnigent(user, "tok-1")
+    with open(_config_path(user)) as f:
+        text = f.read()
+    assert "default: databricks-claude-sonnet-5" in text
+    assert "default: databricks-claude-opus-4-8" not in text
 
 
 def test_runner_idle_timeout_written(user, monkeypatch):
