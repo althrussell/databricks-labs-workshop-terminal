@@ -103,6 +103,12 @@ def configure_claude(user: User, token: str) -> None:
     claude_dir = os.path.join(user.home, ".claude")
     os.makedirs(claude_dir, exist_ok=True)
 
+    # The rotating token lives in a file an apiKeyHelper re-reads (below), never
+    # baked statically into settings.json — a long-running `claude` process
+    # would otherwise hold the token captured at startup and 401 the moment the
+    # rotation loop moved on.
+    _write_gateway_token(user, token)
+
     gateway = gateway_host()
     base_url = (
         f"{gateway}/anthropic" if gateway
@@ -121,9 +127,9 @@ def configure_claude(user: User, token: str) -> None:
     default_chain = ([requested] if requested else []) + opus_chain + ["databricks-claude-sonnet-4-6"]
     settings_path = os.path.join(claude_dir, "settings.json")
     settings = _read_json(settings_path)
-    settings.setdefault("env", {}).update({
+    env = settings.setdefault("env", {})
+    env.update({
         "ANTHROPIC_BASE_URL": base_url,
-        "ANTHROPIC_AUTH_TOKEN": token,
         "ANTHROPIC_MODEL": _pick(default_chain, available, requested or opus_chain[0]),
         "ANTHROPIC_DEFAULT_OPUS_MODEL": _pick(opus_chain, available, opus_chain[0]),
         "ANTHROPIC_DEFAULT_SONNET_MODEL": _pick(
@@ -135,7 +141,19 @@ def configure_claude(user: User, token: str) -> None:
         "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
         # The CLI install is shared across attendees — never self-update.
         "DISABLE_AUTOUPDATER": "1",
+        # Re-run apiKeyHelper on this cadence (ms) so a live process always picks
+        # up the rotated token well before the 15-min minted lifetime expires
+        # (matches the omnigent harness refresh window). A 401 also forces an
+        # immediate re-run, so a mid-flight rotation self-heals either way.
+        "CLAUDE_CODE_API_KEY_HELPER_TTL_MS": "240000",
     })
+    # A static ANTHROPIC_AUTH_TOKEN in the env block would take precedence over
+    # apiKeyHelper (making the helper dormant) and reintroduce the stale-token
+    # 401. Drop it so the dynamic helper is the sole credential source.
+    env.pop("ANTHROPIC_AUTH_TOKEN", None)
+    # apiKeyHelper prints the current rotating token; Claude sends it as the
+    # bearer to the gateway. Absolute path — Claude runs it via /bin/sh.
+    settings["apiKeyHelper"] = f"cat {_gateway_token_path(user)}"
     # Workshop "auto mode": zero permission prompts inside the attendee's
     # isolated container HOME. WORKSHOP_AUTO_MODE=false restores safe prompts.
     if config.auto_mode_enabled():
@@ -157,6 +175,11 @@ def configure_codex(user: User, token: str) -> None:
     codex_dir = os.path.join(user.home, ".codex")
     os.makedirs(codex_dir, exist_ok=True)
 
+    # Same rotating token file Claude's apiKeyHelper reads; Codex re-runs the
+    # provider auth command on a timer (below) so a live process never holds a
+    # revoked/expired token.
+    _write_gateway_token(user, token)
+
     gateway = gateway_host()
     base_url = (
         f"{gateway}/openai/v1" if gateway
@@ -173,6 +196,12 @@ def configure_codex(user: User, token: str) -> None:
             'sandbox_mode = "danger-full-access"\n'
         )
 
+    # A provider `auth` command is Codex's apiKeyHelper equivalent: Codex re-runs
+    # it every refresh_interval_ms (and on a 401) and uses its stdout as the
+    # bearer. Reading the rotating token file this way is what lets a
+    # long-running Codex session survive token rotation — a static
+    # `env_key = "OPENAI_API_KEY"` (read once at startup) does not.
+    token_path = _gateway_token_path(user)
     config_toml = (
         "# Databricks Model Serving configuration (generated — do not edit)\n"
         f'model = "{model}"\n'
@@ -183,16 +212,16 @@ def configure_codex(user: User, token: str) -> None:
         "[model_providers.databricks]\n"
         'name = "Databricks Model Serving"\n'
         f'base_url = "{base_url}"\n'
-        'env_key = "OPENAI_API_KEY"\n'
         'wire_api = "responses"\n'
+        "\n"
+        "[model_providers.databricks.auth]\n"
+        'command = "cat"\n'
+        f'args = ["{token_path}"]\n'
+        "timeout_ms = 5000\n"
+        "refresh_interval_ms = 240000\n"
     )
     with open(os.path.join(codex_dir, "config.toml"), "w") as f:
         f.write(config_toml)
-
-    env_path = os.path.join(codex_dir, ".env")
-    with open(env_path, "w") as f:
-        f.write(f"OPENAI_API_KEY={token}\n")
-    os.chmod(env_path, 0o600)
 
 
 def _gateway_token_path(user: User) -> str:
@@ -251,6 +280,12 @@ def configure_omnigent(user: User, token: str) -> None:
         # workshop terminal renders dark.
         "tui:\n"
         "  theme: dark\n"
+        # Keep the background runner alive across attendee idle (lunch, closed
+        # tab). Omnigent defaults this to 3600s and then exits with "runner
+        # idle timeout reached" — surfacing as "Runner disconnected
+        # unexpectedly" when the attendee returns. 0 disables the watchdog.
+        "runner:\n"
+        f"  idle_timeout_s: {config.omnigent_runner_idle_timeout()}\n"
         "providers:\n"
         "  databricks-gateway:\n"
         "    kind: gateway\n"
@@ -342,32 +377,29 @@ def configure_all(user: User, token: str) -> None:
 
 
 def update_tokens(user: User, token: str) -> None:
-    """Rotation fast path: swap the literal token in existing config files."""
+    """Rotation fast path: rewrite the rotating token file the agents read.
+
+    Claude (apiKeyHelper), Codex (provider ``auth`` command), and Omnigent
+    (gateway ``auth_command``) all read the same ``gateway-token`` file at
+    request time, so rotation is a single 1-line file write — none of their
+    generated configs (settings.json / config.toml / config.yaml) is touched.
+    A running agent process therefore always picks up the fresh token on its
+    next refresh instead of holding the one captured at startup. Falls back to
+    a full (re)configure only when an agent's config is missing (first run).
+    """
     configure_databricks_cli(user, token)
+    _write_gateway_token(user, token)
 
-    settings_path = os.path.join(user.home, ".claude", "settings.json")
-    settings = _read_json(settings_path)
-    if settings.get("env", {}).get("ANTHROPIC_AUTH_TOKEN") is not None:
-        settings["env"]["ANTHROPIC_AUTH_TOKEN"] = token
-        _write_json(settings_path, settings)
-    else:
+    if not os.path.exists(os.path.join(user.home, ".claude", "settings.json")):
         configure_claude(user, token)
-
-    codex_env = os.path.join(user.home, ".codex", ".env")
-    if os.path.exists(codex_env):
-        with open(codex_env, "w") as f:
-            f.write(f"OPENAI_API_KEY={token}\n")
-    else:
+    if not os.path.exists(os.path.join(user.home, ".codex", "config.toml")):
         configure_codex(user, token)
 
-    # Omnigent reads the token through auth_command at request time, so
-    # rotation is a 1-line file write — config.yaml is never touched here.
-    # Only when the feature is enabled (otherwise there is nothing to rotate).
-    if config.omnigent_enabled():
-        if os.path.exists(os.path.join(user.home, ".omnigent", "config.yaml")):
-            _write_gateway_token(user, token)
-        else:
-            configure_omnigent(user, token)
+    # Omnigent config is only present/needed when the feature is enabled.
+    if config.omnigent_enabled() and not os.path.exists(
+        os.path.join(user.home, ".omnigent", "config.yaml")
+    ):
+        configure_omnigent(user, token)
 
 
 def _read_json(path: str) -> dict:

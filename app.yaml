@@ -57,7 +57,7 @@ env:
   # provision WORKSHOP_CATALOG with the labuser as OWNER + ALL PRIVILEGES and
   # the app SP granted CREATE/USE — see docs/control-tower-implementation.md §9.
   - name: ENABLE_ENTITLEMENTS
-    value: "false"
+    value: "true"
   - name: WORKSHOP_CATALOG
     value: ""
   - name: WORKSHOP_SCHEMA
@@ -124,6 +124,12 @@ env:
   # for emergencies (e.g. GitHub release unreachable).
   - name: OMNIGENT_VERSION
     value: ""
+  # Seconds the Omnigent background runner stays alive with no active work
+  # before self-terminating. Omnigent's own default is 3600 (1h), which drops
+  # attendees who step away ("Runner disconnected unexpectedly"). 0 = never
+  # reap the runner (default; the container lifecycle bounds it instead).
+  - name: OMNIGENT_RUNNER_IDLE_TIMEOUT_S
+    value: "0"
   # Escape hatch for air-gapped / pre-release installs only — NOT needed for
   # the default PyPI path. Point this at a wheel staged on the volume, an
   # internal index spec, or a git URL; sibling wheels (omnigent-client,
@@ -143,8 +149,10 @@ env:
     value: "3"
   - name: MAX_SESSIONS_GLOBAL
     value: "30"
+  # 8h: survive lunch/closed-laptop without reaping a terminal the attendee
+  # stepped away from. Memory, not idle PTYs, is the real constraint here.
   - name: SESSION_IDLE_TIMEOUT_SECONDS
-    value: "3600"
+    value: "28800"
 
   # --- Session journal (restart recovery) ---
   # Set a path on the app's data volume so live-session metadata + a scrollback

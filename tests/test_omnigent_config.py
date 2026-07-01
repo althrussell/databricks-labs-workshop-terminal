@@ -92,6 +92,18 @@ def test_model_defaults_pick_from_available(user, monkeypatch):
     assert "default: databricks-gpt-5-5" in text
 
 
+def test_runner_idle_timeout_written(user, monkeypatch):
+    """The runner idle-timeout knob must land in config.yaml so Omnigent's
+    background runner doesn't self-terminate after 1h ("Runner disconnected")."""
+    monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
+    monkeypatch.setenv("OMNIGENT_RUNNER_IDLE_TIMEOUT_S", "0")
+    cli_config.configure_omnigent(user, "tok-1")
+    with open(_config_path(user)) as f:
+        text = f.read()
+    assert "runner:" in text
+    assert "idle_timeout_s: 0" in text
+
+
 # -- update_tokens --
 
 def test_rotation_rewrites_token_not_config(user, monkeypatch):
@@ -105,6 +117,61 @@ def test_rotation_rewrites_token_not_config(user, monkeypatch):
     assert os.stat(_config_path(user)).st_mtime_ns == config_mtime, (
         "rotation must not rewrite config.yaml"
     )
+
+
+# -- claude / codex dynamic auth (survive rotation without process restart) --
+
+def test_claude_uses_apikeyhelper_not_static_token(user, monkeypatch):
+    """settings.json must carry an apiKeyHelper (reading the rotating token
+    file) and NO static ANTHROPIC_AUTH_TOKEN — else the helper is dormant and a
+    live process keeps 401ing on the revoked startup token."""
+    import json
+    monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
+    cli_config.configure_claude(user, "tok-1")
+    settings = json.load(open(os.path.join(user.home, ".claude", "settings.json")))
+    assert "ANTHROPIC_AUTH_TOKEN" not in settings["env"]
+    assert settings["apiKeyHelper"] == f"cat {_token_path(user)}"
+    assert settings["env"]["CLAUDE_CODE_API_KEY_HELPER_TTL_MS"] == "240000"
+    with open(_token_path(user)) as f:
+        assert f.read().strip() == "tok-1"
+
+
+def test_codex_uses_auth_command_not_env_key(user, monkeypatch):
+    """config.toml must route auth through a provider auth command reading the
+    rotating token file, not a static env_key/.env captured at startup."""
+    monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
+    cli_config.configure_codex(user, "tok-1")
+    toml = open(os.path.join(user.home, ".codex", "config.toml")).read()
+    assert "[model_providers.databricks.auth]" in toml
+    assert 'command = "cat"' in toml
+    assert _token_path(user) in toml
+    assert "refresh_interval_ms" in toml
+    assert "env_key" not in toml
+    assert not os.path.exists(os.path.join(user.home, ".codex", ".env"))
+
+
+def test_rotation_updates_token_file_for_all_agents(user, monkeypatch):
+    """A single token-file rewrite is the whole rotation for claude+codex+
+    omnigent; their generated configs are not touched (only the file rotates)."""
+    import json
+    monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
+    cli_config.configure_all(user, "tok-1")
+    settings_path = os.path.join(user.home, ".claude", "settings.json")
+    codex_toml_path = os.path.join(user.home, ".codex", "config.toml")
+    s_mtime = os.stat(settings_path).st_mtime_ns
+    c_mtime = os.stat(codex_toml_path).st_mtime_ns
+    time.sleep(0.01)
+
+    cli_config.update_tokens(user, "tok-2")
+
+    with open(_token_path(user)) as f:
+        assert f.read().strip() == "tok-2"
+    # Configs untouched — the dynamic auth commands re-read the rotated file.
+    assert os.stat(settings_path).st_mtime_ns == s_mtime
+    assert os.stat(codex_toml_path).st_mtime_ns == c_mtime
+    # And the static-token trap is still absent after rotation.
+    settings = json.load(open(settings_path))
+    assert "ANTHROPIC_AUTH_TOKEN" not in settings["env"]
 
 
 def test_rotation_creates_config_when_absent(user, monkeypatch):

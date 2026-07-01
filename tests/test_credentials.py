@@ -39,8 +39,16 @@ def test_session_create_writes_cli_configs(client, monkeypatch):
     home = user_manager.get("alice@example.com").home
     cfg = open(os.path.join(home, ".databrickscfg")).read()
     assert "dapi-test-token" in cfg
-    codex_env = open(os.path.join(home, ".codex", ".env")).read()
-    assert "OPENAI_API_KEY=dapi-test-token" in codex_env
+    # Codex/Claude read the rotating token from a file via a dynamic auth
+    # command (apiKeyHelper / provider auth), never a static env baked in at
+    # startup — so a live process survives rotation. The token lands in the
+    # shared gateway-token file, and codex config points at it.
+    token_file = open(os.path.join(home, ".config", "workshop", "gateway-token")).read()
+    assert token_file.strip() == "dapi-test-token"
+    codex_toml = open(os.path.join(home, ".codex", "config.toml")).read()
+    assert "[model_providers.databricks.auth]" in codex_toml
+    assert "gateway-token" in codex_toml
+    assert not os.path.exists(os.path.join(home, ".codex", ".env"))
 
 
 def test_config_exposes_credential_status(client, monkeypatch):
@@ -160,6 +168,29 @@ def test_idle_recovery_remints_after_token_goes_stale(monkeypatch):
 
     assert m.token() == "second"  # re-minted on demand, not a stale/served PAT
     assert m.status()["state"] == "rotating"
+
+
+def test_rotation_does_not_revoke_in_use_token(monkeypatch):
+    """When rotating with live consumers, the previously-minted token must NOT
+    be revoked: running agent processes re-read the token file on their own
+    cadence and may still be holding it. Revoking eagerly 401s them mid-session
+    (the Codex/Claude stale-token bug). The old token expires on its own clock."""
+    from server import credentials as cred
+
+    m = _manager(monkeypatch, sessions=2)
+    monkeypatch.setattr(cred, "app_identity_bearer", lambda: "app-oauth-bearer")
+    post = _PostMock(mint_values=["first", "second"])
+    monkeypatch.setattr(cred.requests, "post", post)
+
+    # First mint (bootstrap), then an adopting probe rotates to a new token.
+    assert m.token() == "first"
+    m._self_probe(adopt=True)
+
+    assert m.token() == "second"  # rotated
+    # Rotation with live sessions issues creates only — never a delete.
+    assert not any(url.endswith("/token/delete") for url, _ in post.calls), (
+        "in-use minted token must expire naturally, not be revoked on rotation"
+    )
 
 
 def test_scim_lookup_prefers_app_identity_over_pat(monkeypatch):

@@ -105,7 +105,12 @@ def allow_shared_topology() -> bool:
 
 
 def session_idle_timeout() -> int:
-    return _env_int("SESSION_IDLE_TIMEOUT_SECONDS", 3600)
+    # 8 hours: long enough to survive a lunch break / closed laptop lid without
+    # reaping the attendee's PTY out from under a returning session (the old
+    # 1-hour default reaped a terminal an attendee stepped away from, and lined
+    # up exactly with Omnigent's 1-hour runner idle timeout for a double hit).
+    # Memory, not idle PTYs, is the real constraint on a per-attendee instance.
+    return _env_int("SESSION_IDLE_TIMEOUT_SECONDS", 28800)
 
 
 def session_state_path() -> str:
@@ -147,6 +152,21 @@ def omnigent_enabled() -> bool:
     reach out, or to fall back to bare claude/codex only).
     """
     return _env("OMNIGENT_ENABLED", "true").lower() not in ("false", "0", "no", "off")
+
+
+def omnigent_runner_idle_timeout() -> int:
+    """Seconds Omnigent's background runner stays alive with no active work
+    before self-terminating (written as ``runner.idle_timeout_s``).
+
+    Omnigent's own default is 3600s (1 hour) — but on a disposable
+    one-workspace-per-attendee instance that is far too short: an attendee who
+    steps away for lunch returns to a dead runner ("Runner disconnected
+    unexpectedly" / "turn failed") even though their PTY and tmux session are
+    still there. ``0`` disables the watchdog entirely; the default here (0)
+    keeps the runner alive for the life of the container, matching the "surviving
+    the PTY is a feature" policy. Operators can set a finite value if runner
+    memory on long idle instances becomes a concern."""
+    return _env_int("OMNIGENT_RUNNER_IDLE_TIMEOUT_S", 0)
 
 
 def workshop_phase_default() -> str:
@@ -223,10 +243,18 @@ def obo_scopes() -> str:
 
 
 def entitlements_enabled() -> bool:
-    """Whether the SP-driven entitlement reconciler runs (``ENABLE_ENTITLEMENTS``,
-    default off for staged rollout). When on, the labuser is reliably granted
-    access to resources the app service principal creates."""
-    return _env_bool("ENABLE_ENTITLEMENTS", False)
+    """Whether the SP-driven entitlement reconciler runs (``ENABLE_ENTITLEMENTS``).
+
+    Default ON. The agent builds and deploys as the app service principal (the
+    reliable identity for long/idle/cross-1h work), so without reconciliation
+    the *attendee* has no access to anything the agent creates — they open the
+    app they just deployed and get denied. This loop closes that gap by granting
+    the labuser ALL_PRIVILEGES on ``WORKSHOP_CATALOG`` (inherited by every object
+    the SP creates inside it) and ``CAN_MANAGE`` on non-UC resources
+    (apps/jobs/pipelines/db-instances/serving). It is idempotent and a no-op when
+    ``WORKSHOP_CATALOG`` is unset and no SP-created resources exist, so leaving it
+    on is safe. Set ``ENABLE_ENTITLEMENTS=false`` to opt out."""
+    return _env_bool("ENABLE_ENTITLEMENTS", True)
 
 
 def workshop_catalog() -> str:
