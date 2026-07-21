@@ -154,11 +154,30 @@ take effect on restart with **no rebuild**. Set these per instance:
 | `CONTROL_TOWER_INGEST_TOKEN` | shared `X-Ingest-Token` | auth for ingest |
 | `ADMIN_GROUP` | `platform_admins` (or your group) | operator gating |
 | `EVENT_NAME` / `BRAND_*` | per-event branding | cobranding |
+| `ANTHROPIC_MODEL` | a READY Databricks Claude serving endpoint, e.g. `databricks-claude-opus-4-8` | default Claude model for this app instance |
+| `CODEX_MODEL` | a READY Databricks OpenAI-compatible serving endpoint, e.g. `databricks-gpt-5-5` | default Codex model for this app instance |
 | `WORKSHOP_PAT` | **leave empty** | use the SP grant, not a static PAT |
 | `ENABLE_OBO` | `true` *(opt-in)* | persist the attendee OBO token to the `me` profile (§8) — also needs user authorization + `user_api_scopes` on the app resource |
 | `ENABLE_ENTITLEMENTS` | `true` *(opt-in)* | run the labuser-usability reconciler (§9) |
 | `WORKSHOP_CATALOG` | per-attendee catalog name | the catalog the agent creates UC objects in; the reconciler verifies the labuser's `ALL PRIVILEGES` on it (§9) |
 | `WORKSHOP_SCHEMA` | *(optional)* | default schema within `WORKSHOP_CATALOG` |
+
+Model defaults can vary by event or attendee because CT applies overrides to
+each app instance independently. For example, set
+`ANTHROPIC_MODEL=databricks-claude-sonnet-5` for a standard workshop and
+`ANTHROPIC_MODEL=databricks-claude-opus-4-8` for a premium workshop. The value
+is a Databricks serving endpoint name, not an Anthropic public API model id.
+At attendee bootstrap the app prefers the requested READY endpoint, then
+degrades through its built-in model chain if endpoint discovery reports it
+unavailable. Leaving the override empty preserves the app defaults.
+
+The CT simulator accepts the same settings:
+
+```bash
+python scripts/deploy_ct_sim.py \
+  --anthropic-model databricks-claude-opus-4-8 \
+  --codex-model databricks-gpt-5-5
+```
 
 Leave `MAX_SESSIONS_*`, `SESSION_IDLE_TIMEOUT_SECONDS` at defaults unless the
 event needs otherwise. Full table in [`admin-api.md`](./admin-api.md#deploy-time-configuration-env-vars).

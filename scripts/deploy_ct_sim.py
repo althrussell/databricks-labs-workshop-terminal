@@ -7,7 +7,8 @@ including the OBO dual-profile feature (§8) and entitlement provisioning (§9):
 
   1. Import source to the deploying user's workspace home.
   2. Edit the *uploaded* app.yaml in place (never the git copy) to vend a
-     WORKSHOP_PAT and turn on ENABLE_OBO / ENABLE_ENTITLEMENTS / WORKSHOP_CATALOG.
+     WORKSHOP_PAT, set optional model defaults, and turn on ENABLE_OBO /
+     ENABLE_ENTITLEMENTS / WORKSHOP_CATALOG.
   3. Create the app, declaring user_api_scopes (catalog.*:read + sql) on the app
      resource (the OBO scope ceiling). NOTE: there is no `unity-catalog` scope —
      use the granular `catalog.catalogs:read` / `catalog.schemas:read` /
@@ -61,6 +62,16 @@ def main() -> int:
                         help="skip the vended WORKSHOP_PAT (rely on the SP token CAN_USE grant)")
     parser.add_argument("--no-obo", action="store_true", help="leave ENABLE_OBO off")
     parser.add_argument("--no-entitlements", action="store_true", help="leave ENABLE_ENTITLEMENTS off")
+    parser.add_argument(
+        "--anthropic-model",
+        default="",
+        help="Databricks serving endpoint to prefer as the Claude default",
+    )
+    parser.add_argument(
+        "--codex-model",
+        default="",
+        help="Databricks serving endpoint to prefer as the Codex default",
+    )
     args = parser.parse_args()
 
     from databricks.sdk import WorkspaceClient
@@ -102,6 +113,7 @@ def main() -> int:
                 content = _patch_app_yaml(
                     content, workshop_pat, enable_obo, enable_ent,
                     args.catalog if enable_ent else "", args.scopes,
+                    args.anthropic_model.strip(), args.codex_model.strip(),
                 )
             ws_path = f"{target}/{rel}".replace("\\", "/")
             w.workspace.mkdirs(os.path.dirname(ws_path))
@@ -140,7 +152,16 @@ def main() -> int:
     return 0
 
 
-def _patch_app_yaml(content, pat, enable_obo, enable_ent, catalog, scopes):
+def _patch_app_yaml(
+    content,
+    pat,
+    enable_obo,
+    enable_ent,
+    catalog,
+    scopes,
+    anthropic_model="",
+    codex_model="",
+):
     def sub(b, k, v):
         return b.replace(
             f'- name: {k}\n    value: ""'.encode(),
@@ -162,6 +183,10 @@ def _patch_app_yaml(content, pat, enable_obo, enable_ent, catalog, scopes):
         )
         if catalog:
             content = sub(content, "WORKSHOP_CATALOG", catalog)
+    if anthropic_model:
+        content = sub(content, "ANTHROPIC_MODEL", anthropic_model)
+    if codex_model:
+        content = sub(content, "CODEX_MODEL", codex_model)
     return content
 
 
