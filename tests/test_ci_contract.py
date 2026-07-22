@@ -62,6 +62,15 @@ def test_frontend_ci_matches_deployed_node_pin():
     assert setup["with"]["node-version"] == "22.14.0"
 
 
+def test_frontend_tests_use_an_explicit_typescript_runtime_on_node_22():
+    package = yaml.safe_load((ROOT / "frontend" / "package.json").read_text())
+    test_command = package["scripts"]["test"]
+
+    assert test_command.startswith("tsx --test ")
+    assert "node --test" not in test_command
+    assert package["devDependencies"]["tsx"]
+
+
 def test_initial_sessions_failure_is_caught_and_surfaced():
     source = (ROOT / "frontend" / "src" / "App.tsx").read_text()
     request = source.split("api.sessions()", 1)[1].split("refreshAgents()", 1)[0]
