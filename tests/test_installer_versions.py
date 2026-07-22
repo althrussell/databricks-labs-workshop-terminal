@@ -13,6 +13,7 @@ from server.bootstrap import install
 class _SyntheticArtifactContract:
     def __init__(self, root):
         self.root = root
+        self._entries = {}
         self.ai_dev_kit = {
             "version": install.AI_DEV_KIT_REF,
             "source": install.AI_DEV_KIT_REPO,
@@ -30,24 +31,25 @@ class _SyntheticArtifactContract:
             "codex_npm_launcher_package",
             "codex_native_package_linux_x64",
         }:
+            if name in self._entries:
+                return self._entries[name]
             from tests.test_codex_artifacts import make_codex_tarballs
 
             launcher, native = make_codex_tarballs(self.root)
-            path = (
-                launcher
-                if name == "codex_npm_launcher_package"
-                else native
-            )
-            entry = {
+            self._entries["codex_npm_launcher_package"] = {
                 "version": install.CODEX_VERSION,
-                "source": str(path),
-                "sha256": install._file_checksum(path),
+                "source": str(launcher),
+                "sha256": install._file_checksum(launcher),
             }
-            if name == "codex_native_package_linux_x64":
-                entry["executable_sha256"] = __import__(
-                    "hashlib"
-                ).sha256(b"reviewed-native").hexdigest()
-            return entry
+            self._entries["codex_native_package_linux_x64"] = {
+                "version": install.CODEX_VERSION,
+                "source": str(native),
+                "sha256": install._file_checksum(native),
+                "executable_sha256": __import__("hashlib")
+                .sha256(b"reviewed-native")
+                .hexdigest(),
+            }
+            return self._entries[name]
         path = self.root / name
         if name in {"omnigent_wheelhouse", "python_3_12_runtime"}:
             path.mkdir(exist_ok=True)
@@ -139,6 +141,16 @@ def test_official_installer_commands_are_exactly_versioned():
         "https://raw.githubusercontent.com/databricks/setup-cli/"
         f"v{install.DATABRICKS_CLI_VERSION}/install.sh"
     )
+
+
+def test_synthetic_codex_artifacts_are_stable_across_repeated_reads(
+    restore_installer_state,
+):
+    launcher_first = restore_installer_state.entry("codex_npm_launcher_package")
+    native_first = restore_installer_state.entry("codex_native_package_linux_x64")
+
+    assert restore_installer_state.entry("codex_npm_launcher_package") == launcher_first
+    assert restore_installer_state.entry("codex_native_package_linux_x64") == native_first
 
 
 def test_status_exposes_secret_free_expected_and_actual_release_manifest():
