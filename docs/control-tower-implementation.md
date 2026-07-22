@@ -202,6 +202,15 @@ take effect on restart with **no rebuild**. Set these per instance:
 | `WORKSHOP_CATALOG` | per-attendee catalog name | the catalog the agent creates UC objects in; the reconciler verifies the labuser's `ALL PRIVILEGES` on it (§9) |
 | `WORKSHOP_SCHEMA` | *(optional)* | default schema within `WORKSHOP_CATALOG` |
 
+Model defaults can vary by event or attendee because CT applies overrides to
+each app instance independently. For example, set
+`ANTHROPIC_MODEL=databricks-claude-sonnet-5` for a standard workshop and
+`ANTHROPIC_MODEL=databricks-claude-opus-4-8` for a premium workshop. The value
+is a Databricks serving endpoint name, not an Anthropic public API model id.
+At attendee bootstrap the app prefers the requested READY endpoint, then
+degrades through its built-in model chain if endpoint discovery reports it
+unavailable. Leaving the override empty preserves the app defaults.
+
 Keep `MAX_SESSIONS_GLOBAL <= MAX_SESSIONS_PER_USER` and
 `ALLOW_SHARED_TOPOLOGY=false`; the release contract is one attendee per app
 instance. Full table in
