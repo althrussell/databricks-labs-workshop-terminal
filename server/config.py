@@ -90,7 +90,7 @@ def max_sessions_per_user() -> int:
 
 
 def max_sessions_global() -> int:
-    return _env_int("MAX_SESSIONS_GLOBAL", 30)
+    return _env_int("MAX_SESSIONS_GLOBAL", max_sessions_per_user())
 
 
 def allow_shared_topology() -> bool:
@@ -102,6 +102,16 @@ def allow_shared_topology() -> bool:
     return _env("ALLOW_SHARED_TOPOLOGY").strip().lower() in {
         "1", "true", "yes", "on", "enabled", "enable",
     }
+
+
+def workshop_attendee_email() -> str:
+    """Control-Tower-bound attendee identity for this app instance."""
+    return _env("WORKSHOP_ATTENDEE_EMAIL").lower()
+
+
+def workshop_app_sp_id() -> str:
+    """Numeric SCIM ID of this Databricks App's service principal."""
+    return _env("WORKSHOP_APP_SP_ID")
 
 
 def session_idle_timeout() -> int:
@@ -116,10 +126,9 @@ def session_idle_timeout() -> int:
 def session_state_path() -> str:
     """File path for the session-metadata journal (P1-11), or "" to disable.
 
-    When set, the SessionManager journals live-session metadata + a scrollback
-    tail so that after a server restart the attendee sees which terminals they
-    had (ended on restart) with replay, instead of a silent blank. Empty keeps
-    the manager fully in-memory.
+    When set, the SessionManager journals metadata only so that after a server
+    restart the attendee sees which terminals ended and can relaunch them.
+    Raw terminal output remains in memory and is never persisted.
     """
     return _env("SESSION_STATE_PATH")
 

@@ -11,24 +11,103 @@ set -uo pipefail
 PROFILE="${OBO_PROFILE_NAME:-me}"
 APP="${WORKSHOP_APP_URL:-http://localhost:8000}"
 EMAIL="${WORKSHOP_USER_EMAIL:-}"
+CAPABILITY_FILE="$HOME/.config/workshop/callback-capability"
+REFRESH_TIMEOUT="${OBO_REFRESH_TIMEOUT_SECONDS:-5}"
+REFRESH_POLL="${OBO_REFRESH_POLL_SECONDS:-0.25}"
 
 _run() { databricks --profile "$PROFILE" "$@"; }
 _is_auth_err() { printf '%s' "$1" | grep -Eqi '401|403|expired|invalid[_ ]?token|unauthor|default auth|cannot configure'; }
+_token_state() {
+  python3 - "$HOME/.databrickscfg" "$PROFILE" <<'PY'
+import base64
+import binascii
+import configparser
+import hashlib
+import json
+import math
+import sys
+import time
+
+path, profile = sys.argv[1:]
+cfg = configparser.ConfigParser()
+try:
+    cfg.read(path)
+    token = cfg[profile].get("token", "")
+except (configparser.Error, KeyError, OSError):
+    token = ""
+if not token:
+    print("missing 0")
+    raise SystemExit
+
+parts = token.split(".")
+fresh = True
+if len(parts) == 3:
+    try:
+        payload = parts[1]
+        payload += "=" * (-len(payload) % 4)
+        decoded = base64.b64decode(payload, altchars=b"-_", validate=True)
+        claims = json.loads(decoded.decode("utf-8"))
+    except (
+        binascii.Error,
+        json.JSONDecodeError,
+        TypeError,
+        UnicodeDecodeError,
+        ValueError,
+    ):
+        # JWT inspection is best-effort. A changed value remains valid freshness
+        # evidence when its payload cannot be inspected.
+        pass
+    else:
+        if isinstance(claims, dict) and "exp" in claims:
+            try:
+                exp = float(claims["exp"])
+                if math.isfinite(exp):
+                    fresh = exp > time.time() + 60
+            except (TypeError, ValueError):
+                pass
+# A changed fingerprint is freshness evidence for opaque/uninspectable tokens.
+# Only a valid numeric JWT exp within the margin can mark it stale.
+fingerprint = hashlib.sha256(token.encode()).hexdigest()
+print(f"{fingerprint} {1 if fresh else 0}")
+PY
+}
+_wait_for_new_token() {
+  local before="$1" current attempts
+  attempts="$(python3 - "$REFRESH_TIMEOUT" "$REFRESH_POLL" <<'PY'
+import math
+import sys
+timeout, poll = map(float, sys.argv[1:])
+print(max(1, math.ceil(timeout / max(poll, 0.01))))
+PY
+)"
+  for ((i = 0; i < attempts; i++)); do
+    sleep "$REFRESH_POLL"
+    current="$(_token_state 2>/dev/null || true)"
+    if [ "$current" != "$before" ] && [[ "$current" == *" 1" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
 
 out="$(_run "$@" 2>&1)"; rc=$?
 if [ $rc -ne 0 ] && _is_auth_err "$out"; then
   # Reactive self-heal: ask the app to write the freshest captured token and
-  # nudge the browser tab, then retry once.
+  # nudge the browser tab. Retry only after the profile proves that a different,
+  # non-expired token arrived; never blindly retry the same rejected token.
+  before="$(_token_state 2>/dev/null || true)"
   curl -fsS -X POST "$APP/api/obo/refresh" \
     -H 'Content-Type: application/json' \
+    -H "X-Workshop-Capability: $(<"$CAPABILITY_FILE")" \
     -d "{\"email\":\"${EMAIL}\"}" >/dev/null 2>&1 || true
-  sleep 2
-  out="$(_run "$@" 2>&1)"; rc=$?
+  if _wait_for_new_token "$before"; then
+    out="$(_run "$@" 2>&1)"; rc=$?
+  fi
 fi
 
 printf '%s\n' "$out"
 if [ $rc -ne 0 ] && _is_auth_err "$out"; then
   echo "" >&2
-  echo "Your personal Databricks session may have expired — refresh the workshop tab in your browser, then retry. (Building and deploying still work normally on the default profile.)" >&2
+  echo "Your personal Databricks session may have expired — return to the workshop tab, then retry. It refreshes automatically when the tab is active; no OBO refresh is possible while the browser sends no request. (Building and deploying still work normally on the default profile.)" >&2
 fi
 exit $rc

@@ -8,6 +8,7 @@ reattaching replays the scrollback deque before streaming live output.
 from __future__ import annotations
 
 import asyncio
+import codecs
 import fcntl
 import logging
 import os
@@ -21,6 +22,7 @@ import threading
 import time
 import uuid
 from collections import deque
+from collections.abc import Callable
 
 from . import config
 from .users import User
@@ -29,7 +31,98 @@ logger = logging.getLogger(__name__)
 
 GRACEFUL_SHUTDOWN_WAIT = 1.0
 REAPER_INTERVAL = 60
-SCROLLBACK_LINES = 2000
+SCROLLBACK_MAX_BYTES = 2 * 1024 * 1024
+TERMINAL_SUBSCRIBER_QUEUE_SIZE = 128
+
+
+def _utf8_tail(value: str | bytes, max_bytes: int) -> bytes:
+    """Return a valid UTF-8 suffix no larger than max_bytes."""
+    raw = value.encode("utf-8") if isinstance(value, str) else value
+    if len(raw) <= max_bytes:
+        return raw
+    return raw[-max_bytes:].decode("utf-8", errors="ignore").encode("utf-8")
+
+
+class ByteScrollback:
+    """UTF-8-safe terminal replay bounded by encoded byte size."""
+
+    def __init__(self, max_bytes: int = SCROLLBACK_MAX_BYTES):
+        self.max_bytes = max(1, max_bytes)
+        self._chunks: deque[bytes] = deque()
+        self._size = 0
+
+    def append(self, text: str) -> None:
+        chunk = _utf8_tail(text, self.max_bytes)
+        if not chunk:
+            return
+        self._chunks.append(chunk)
+        self._size += len(chunk)
+        while self._size > self.max_bytes and self._chunks:
+            excess = self._size - self.max_bytes
+            first = self._chunks.popleft()
+            self._size -= len(first)
+            if len(first) > excess:
+                kept = _utf8_tail(first, len(first) - excess)
+                if kept:
+                    self._chunks.appendleft(kept)
+                    self._size += len(kept)
+
+    def text(self, max_bytes: int | None = None) -> str:
+        raw = b"".join(self._chunks)
+        if max_bytes is not None:
+            raw = _utf8_tail(raw, max_bytes)
+        return raw.decode("utf-8")
+
+    def __len__(self) -> int:
+        return self._size
+
+
+class Utf8StreamDecoder:
+    """Incrementally decode PTY bytes without corrupting split code points."""
+
+    def __init__(self):
+        self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+
+    def decode(self, chunk: bytes) -> str:
+        return self._decoder.decode(chunk, final=False)
+
+    def flush(self) -> str:
+        return self._decoder.decode(b"", final=True)
+
+
+class TerminalSubscriberQueue(asyncio.Queue):
+    """Bounded queue that forces reconnect on overflow.
+
+    Terminal bytes cannot use a drop policy without corrupting terminal
+    semantics. On overflow, pending frames are replaced by an overflow signal;
+    the WebSocket closes and its reconnect receives the bounded replay.
+    """
+
+    def __init__(
+        self,
+        maxsize: int,
+        on_overflow: Callable[[], None] | None = None,
+    ):
+        super().__init__(maxsize=maxsize)
+        self.overflowed = False
+        self.overflow_count = 0
+        self.max_depth = 0
+        self._on_overflow = on_overflow
+
+    def put_nowait(self, item) -> None:
+        if self.overflowed:
+            return
+        try:
+            super().put_nowait(item)
+            self.max_depth = max(self.max_depth, self.qsize())
+        except asyncio.QueueFull:
+            self.overflowed = True
+            self.overflow_count += 1
+            if self._on_overflow is not None:
+                self._on_overflow()
+            while not self.empty():
+                self.get_nowait()
+            super().put_nowait({"t": "overflow"})
 
 
 class Session:
@@ -41,7 +134,7 @@ class Session:
         self.label = label
         self.master_fd = master_fd
         self.pid = pid
-        self.scrollback: deque[str] = deque(maxlen=SCROLLBACK_LINES)
+        self.scrollback = ByteScrollback()
         self.lock = threading.Lock()
         self.created_at = time.time()
         self.last_activity = time.time()
@@ -66,27 +159,25 @@ class Session:
 
     def replay_text(self) -> str:
         with self.lock:
-            return "".join(self.scrollback)
+            return self.scrollback.text()
 
-    def metadata(self, *, scrollback_tail: int = 200) -> dict:
-        """Persistable metadata + a scrollback tail for restart recovery (P1-11).
+    def metadata(self) -> dict:
+        """Persistable metadata for restart recovery (P1-11).
 
         Excludes the un-persistable live PTY handles (fd, pid); keeps what's
-        needed to tell an attendee which terminal they had and replay its last
-        output after a restart.
+        needed to tell an attendee which terminal they had. Terminal output is
+        intentionally in-memory only and is never written to the journal.
         """
         with self.lock:
-            tail = "".join(list(self.scrollback)[-scrollback_tail:])
-        return {
-            "id": self.id,
-            "owner_email": self.owner_email,
-            "agent_id": self.agent_id,
-            "label": self.label,
-            "created_at": self.created_at,
-            "last_activity": self.last_activity,
-            "exited": self.exited,
-            "scrollback_tail": tail,
-        }
+            return {
+                "id": self.id,
+                "owner_email": self.owner_email,
+                "agent_id": self.agent_id,
+                "label": self.label,
+                "created_at": self.created_at,
+                "last_activity": self.last_activity,
+                "exited": self.exited,
+            }
 
     def to_dict(self) -> dict:
         return {
@@ -112,6 +203,9 @@ class SessionManager:
         # persisted so a restart can surface them; prior ghosts loaded once.
         self._store = store
         self._prior: dict[str, list[dict]] = {}
+        self._queue_lock = threading.Lock()
+        self._terminal_queue_overflows = 0
+        self._terminal_queue_max_depth = 0
 
     def configure_store(self, store) -> None:
         """Attach a metadata journal and load any pre-restart sessions as ghosts."""
@@ -124,6 +218,10 @@ class SessionManager:
         if self._store is None:
             return
         for ghost in self._store.prior_live_sessions():
+            ghost = dict(ghost)
+            # Older journals may contain raw terminal output. Never retain or
+            # return it after loading into the metadata-only ghost model.
+            ghost.pop("scrollback_tail", None)
             owner = ghost.get("owner_email")
             if owner:
                 self._prior.setdefault(owner, []).append(ghost)
@@ -133,9 +231,87 @@ class SessionManager:
 
     def prior_for(self, owner_email: str) -> list[dict]:
         """Ended-on-restart ghost sessions for an owner (newest first)."""
-        ghosts = list(self._prior.get(owner_email, []))
+        with self._lock:
+            ghosts = list(self._prior.get(owner_email, []))
         ghosts.sort(key=lambda g: g.get("last_activity", 0), reverse=True)
         return ghosts
+
+    def acknowledge_prior(self, owner_email: str, session_id: str) -> bool:
+        """Remove one restart ghost only when it belongs to this owner."""
+        with self._lock:
+            ghosts = self._prior.get(owner_email, [])
+            remaining = [ghost for ghost in ghosts if ghost.get("id") != session_id]
+            if len(remaining) == len(ghosts):
+                return False
+            if remaining:
+                self._prior[owner_email] = remaining
+            else:
+                self._prior.pop(owner_email, None)
+            return True
+
+    def _new_subscriber(self, max_queue: int) -> TerminalSubscriberQueue:
+        def record_overflow() -> None:
+            with self._queue_lock:
+                self._terminal_queue_overflows += 1
+
+        return TerminalSubscriberQueue(max_queue, record_overflow)
+
+    def subscribe(
+        self,
+        session: Session,
+        *,
+        max_queue: int = TERMINAL_SUBSCRIBER_QUEUE_SIZE,
+    ) -> TerminalSubscriberQueue:
+        queue = self._new_subscriber(max_queue)
+        with session.lock:
+            session.subscribers.add(queue)
+        return queue
+
+    def attach_with_replay(
+        self,
+        session: Session,
+        *,
+        max_queue: int = TERMINAL_SUBSCRIBER_QUEUE_SIZE,
+    ) -> tuple[str, TerminalSubscriberQueue, bool]:
+        """Atomically snapshot replay state and register the live subscriber."""
+        queue = self._new_subscriber(max_queue)
+        with session.lock:
+            replay = session.scrollback.text()
+            exited = session.exited
+            session.subscribers.add(queue)
+        return replay, queue, exited
+
+    def unsubscribe(self, session: Session, queue: TerminalSubscriberQueue) -> None:
+        with session.lock:
+            session.subscribers.discard(queue)
+        with self._queue_lock:
+            self._terminal_queue_max_depth = max(
+                self._terminal_queue_max_depth,
+                queue.max_depth,
+            )
+
+    def queue_metrics(self) -> dict:
+        with self._lock:
+            sessions = list(self._sessions.values())
+        with self._queue_lock:
+            overflows = self._terminal_queue_overflows
+            observed_max = self._terminal_queue_max_depth
+        subscribers: list[TerminalSubscriberQueue] = []
+        for session in sessions:
+            with session.lock:
+                subscribers.extend(session.subscribers)
+        current_depth = sum(queue.qsize() for queue in subscribers)
+        max_depth = max([observed_max, *(queue.max_depth for queue in subscribers)], default=0)
+        return {
+            "terminal": {
+                "subscribers": len(subscribers),
+                "queue_capacity": TERMINAL_SUBSCRIBER_QUEUE_SIZE,
+                "current_depth": current_depth,
+                "max_depth": max_depth,
+                "overflows": overflows,
+                "policy": "disconnect_and_replay",
+            }
+        }
 
     def _persist(self, session: Session) -> None:
         if self._store is None:
@@ -258,6 +434,18 @@ class SessionManager:
 
     def _read_pty(self, session: Session) -> None:
         fd = session.master_fd
+        decoder = Utf8StreamDecoder()
+
+        def handle_output(decoded: str) -> None:
+            if not decoded:
+                return
+            self.publish_output(session, decoded)
+            if self.output_observer is not None:
+                try:
+                    self.output_observer(session, decoded)
+                except Exception:  # noqa: BLE001 — never break the reader
+                    pass
+
         while True:
             with self._lock:
                 if session.id not in self._sessions:
@@ -268,16 +456,7 @@ class SessionManager:
                     output = os.read(fd, 65536)
                     if not output:
                         break  # EOF — process exited
-                    decoded = output.decode(errors="replace")
-                    with session.lock:
-                        session.scrollback.append(decoded)
-                        session.last_activity = time.time()
-                    if self.output_observer is not None:
-                        try:
-                            self.output_observer(session, decoded)
-                        except Exception:  # noqa: BLE001 — never break the reader
-                            pass
-                    self._fanout(session, {"t": "output", "data": decoded})
+                    handle_output(decoder.decode(output))
                 else:
                     try:
                         if os.waitpid(session.pid, os.WNOHANG)[0] != 0:
@@ -287,6 +466,7 @@ class SessionManager:
             except OSError:
                 break
 
+        handle_output(decoder.flush())
         session.exited = True
         self._fanout(session, {"t": "exit"})
         self.terminate(session)
@@ -297,8 +477,40 @@ class SessionManager:
             return
         with session.lock:
             subscribers = list(session.subscribers)
+        self._dispatch(subscribers, message)
+
+    def publish_output(self, session: Session, decoded: str) -> None:
+        """Append output and select recipients in one lock transaction."""
+        loop = self._loop
+        with session.lock:
+            session.scrollback.append(decoded)
+            session.last_activity = time.time()
+            subscribers = list(session.subscribers)
+        if loop is not None:
+            self._dispatch(subscribers, {"t": "output", "data": decoded})
+
+    def _dispatch(
+        self,
+        subscribers: list[TerminalSubscriberQueue],
+        message: dict,
+    ) -> None:
+        loop = self._loop
+        if loop is None:
+            return
         for queue in subscribers:
-            loop.call_soon_threadsafe(queue.put_nowait, message)
+            loop.call_soon_threadsafe(self._put_terminal_message, queue, message)
+
+    def _put_terminal_message(
+        self,
+        queue: TerminalSubscriberQueue,
+        message: dict,
+    ) -> None:
+        queue.put_nowait(message)
+        with self._queue_lock:
+            self._terminal_queue_max_depth = max(
+                self._terminal_queue_max_depth,
+                queue.max_depth,
+            )
 
     def _reaper_loop(self) -> None:
         while True:

@@ -23,6 +23,26 @@ def test_gather_all_includes_schema_version():
         assert "idle_seconds" in row
 
 
+def test_gather_all_exposes_websocket_queue_metrics(monkeypatch):
+    from server.events import event_hub
+    from server.sessions import session_manager
+
+    monkeypatch.setattr(
+        session_manager,
+        "queue_metrics",
+        lambda: {"terminal": {"current_depth": 2, "overflows": 1}},
+    )
+    monkeypatch.setattr(
+        event_hub,
+        "metrics",
+        lambda: {"current_depth": 3, "overflows": 4, "policy": "drop_oldest"},
+    )
+
+    queues = stats.gather_all([])["websocket_queues"]
+    assert queues["terminal"]["overflows"] == 1
+    assert queues["events"]["overflows"] == 4
+
+
 def test_error_counter_surfaces():
     user = User("alice@example.com")
     assert stats.gather_user(user)["errors"] == 0

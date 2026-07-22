@@ -1,7 +1,7 @@
 # Databricks Workshop Terminal
 
-A purpose-built, multi-user Databricks App for AI-coding-agent training
-events. Attendees open one URL and get **one-click Claude Code / Codex
+A purpose-built, one-attendee-per-instance Databricks App for AI-coding-agent
+training events. Each attendee opens one URL and gets **one-click Claude Code / Codex
 terminals** with their Databricks credentials wired up automatically — plus a
 steerable right-hand pane of curated Databricks insights that operators drive
 live during the workshop.
@@ -12,9 +12,10 @@ Built to be deployed (and torn down) as workshop infrastructure by
 ## Architecture
 
 Control Tower deploys the Workshop Terminal into each attendee's isolated
-workspace and pushes phase/broadcast updates live. The app vends a short-lived,
-rotating `WORKSHOP_PAT`, serves config-driven content packs and an AI Dev Kit,
-and exposes a group-gated operator admin panel.
+workspace and pushes phase/broadcast updates live. The app distributes its
+short-lived, auto-refreshing app-SP OAuth bearer to attendee CLIs, serves
+config-driven content packs and an AI Dev Kit, and exposes a group-gated
+operator admin panel.
 
 ![Workshop Terminal architecture](docs/images/architecture.png)
 
@@ -22,20 +23,29 @@ and exposes a group-gated operator admin panel.
 
 - **Launch buttons** for Claude Code, Codex, and a plain terminal — the agent
   catalog is config-driven (`content/agents.json`), extensible per event.
-- **Zero-touch auth**: grant the app's service principal token `CAN_USE` at
-  deploy time and the app mints short-lived rotating tokens from its
-  auto-refreshed OAuth identity — no static secret, nothing to expire across an
-  idle window, and no attendee ever creates a PAT. A vended `WORKSHOP_PAT` is an
+- **Zero-touch auth**: Databricks Apps injects auto-refreshing app-SP OAuth
+  credentials; the server creates one explicit `oauth-m2m` SDK client, removes
+  duplicate client-secret environment variables, makes the production Linux
+  process non-dumpable, and binds each bearer to the injected app client ID
+  through `GET /api/2.0/current-user/me` (`applicationId` or
+  `application_id`). `userName` is diagnostic only and never proves app
+  identity; a username-only response continues to SCIM
+  `/Me.applicationId` fallback. A 200 response without an exact authoritative
+  identity match is never sufficient. Safe endpoint statuses and observed
+  identity IDs are exposed in credential health; bearer values and response
+  bodies are not. This is a process boundary—not secret
+  erasure from the SDK object's memory. No token ACL or PAT mint is required,
+  and no attendee creates a PAT. A vended `WORKSHOP_PAT` is an
   emergency-only fallback (reported `degraded` since it doesn't rotate).
   Attendees never see a token screen.
 - **Session isolation**: per-user HOME directories, sessions strictly bound to
   their owner, secrets stripped from terminal env (deny-by-default). Note this is
   HOME/PTY-level isolation, not credential isolation — the vended credential and
   git identity are shared instance-wide. The supported topology is **one
-  disposable workspace (and instance) per attendee**; running multiple attendees
-  on one instance is unsupported unless you set `ALLOW_SHARED_TOPOLOGY=true` to
-  acknowledge the shared-credential caveat. The instance warns at startup and when
-  a second attendee appears.
+  disposable workspace (and instance) per attendee**. Control Tower must inject
+  `WORKSHOP_ATTENDEE_EMAIL`; a different attendee receives a clear 403/4403.
+  Running multiple attendees on one instance is unsupported unless you set
+  `ALLOW_SHARED_TOPOLOGY=true` to acknowledge the shared-credential caveat.
 - **Resilient terminals**: PTYs survive page refreshes and wifi blips —
   reconnect and your scrollback replays.
 - **Insight nuggets**: a collapsible pane of docs, best practices, and
@@ -46,8 +56,9 @@ and exposes a group-gated operator admin panel.
   content (`TOPIC_DETECTION=false` to disable).
 - **A coached first run**: launching Claude greets the attendee
   ("agent speaks first"), a lab-coach persona adapts to technical vs business
-  attendees, the latest [ai-dev-kit](https://github.com/databricks-solutions/ai-dev-kit)
-  skills are fetched at every boot, TDD subagents are pre-installed, and every
+  attendees, event-pinned [ai-dev-kit](https://github.com/databricks-solutions/ai-dev-kit)
+  skills are installed only from the reviewed artifact manifest, TDD subagents
+  are pre-installed, and every
   git commit auto-syncs to the attendee's Workspace home so their work
   survives teardown.
 
@@ -69,9 +80,10 @@ and exposes a group-gated operator admin panel.
 - **Frontend**: React + TypeScript + Vite + xterm.js. The production build is
   **committed to `static/`** because Control Tower deploys the repo
   as-cloned with no build step.
-- **No external state**: no Lakebase, no database. Content/phase live in
-  memory and reset to the deployed pack on restart; teardown is a plain
-  `apps.delete`.
+- **Persistent metadata, not content**: no Lakebase or database is required.
+  Session lifecycle metadata can persist on the app volume for restart ghosts;
+  terminal output and attendee content are never persisted. Content/phase live
+  in memory and reset to the deployed pack on restart.
 - **Security**: workspace-group based. Identity from the Apps proxy headers;
   operator access requires `ADMIN_GROUP` (default `platform_admins`)
   membership resolved via SCIM — using the caller's bearer token for service
@@ -84,28 +96,49 @@ and exposes a group-gated operator admin panel.
   workspace. To limit the indirect prompt-injection surface, **public MCP
   servers (DeepWiki, Exa) are off by default** — opt in per event with
   `ENABLE_PUBLIC_MCP=true` — and the ai-dev-kit skills overlay is **pinnable**
-  via `AI_DEV_KIT_REF` (default `main`; pin a tag/SHA for an event so attendees
-  run a known, reviewed skills version rather than the branch tip at boot).
+  via `AI_DEV_KIT_REF`; event readiness requires the same reviewed ref, commit,
+  and content SHA-256 in `ARTIFACT_MANIFEST_PATH`.
 
 ## Deploying
 
+`app.yaml` starts Uvicorn with exactly one worker and no explicit host or port
+arguments. In the observed failed deployment, list-form
+`${DATABRICKS_APP_PORT}` reached Uvicorn literally and was rejected as an
+invalid integer. This app deliberately relies instead on the documented
+auto-injected `UVICORN_HOST=0.0.0.0` and `UVICORN_PORT`.
+
 ### Prerequisite: the attendee CLI credential
 
-The bulletproof option: **grant the app's service principal token `CAN_USE`**
-at provision time. The app then mints short-lived rotating tokens from its
-auto-refreshed OAuth identity — no static secret, nothing to expire across a
-deploy-then-idle-then-event window, and rotation self-heals within ~30s of the
-grant landing. As an emergency-only fallback the deployer may inject a vended
+The normal credential is the short-lived app-SP OAuth bearer returned by the
+Databricks SDK from the platform-managed Databricks Apps identity. The app
+reacquires and validates it through idle windows and fans out only fresh,
+changed bearers. There is no token ACL prerequisite, PAT lifetime cap, or app
+client secret in attendee shell env; production Linux startup fails unless
+same-UID `/proc`/ptrace access is blocked with a non-dumpable server process.
+As an emergency-only fallback the deployer may inject a vended
 `WORKSHOP_PAT` (a static, non-rotating token reported `degraded`). Databricks
-Apps OBO scopes exclude the Token API, so the app can't mint per-user PATs from
-forwarded tokens — see [docs/admin-api.md](docs/admin-api.md) for the full
-contract and credential-health alerting. Without either credential the app
+Apps OBO remains separate and powers attendee-governed reads through `[me]`;
+the app OAuth bearer powers reliable builds through `[DEFAULT]`. See
+[docs/admin-api.md](docs/admin-api.md) for the full contract and
+credential-health alerting. Without either credential the app
 serves plain terminals and shows a clear banner, but agent CLIs can't
 authenticate.
 
-For events deployed ahead of time, also set `SESSION_STATE_PATH` so terminals
-survive a restart as relaunchable ghosts (see the env table in
+For events, set `WORKSHOP_ATTENDEE_EMAIL` to the identity assigned to this
+instance; `/readyz` remains red until it is present. Also set
+`SESSION_STATE_PATH` so terminals
+survive a restart as metadata-only relaunchable ghosts; raw terminal output
+remains in memory and is never journaled (see the env table in
 [docs/admin-api.md](docs/admin-api.md)).
+
+Control Tower must also provide `ARTIFACT_MANIFEST_PATH`. The reviewed contract
+pins staged files or controlled-mirror URLs and SHA-256 values for Node (both
+linux-x64 and linux-arm64), tmux, Claude installer/binary, separate Codex npm
+launcher/native packages, Databricks CLI installer/archive, uv binary, exact
+Python 3.12 runtime tree, complete Omnigent wheelhouse/hashed lock, and the
+ai-dev-kit commit/content. Downloads are verified before execution or
+extraction; persistent reuse requires both the trusted artifact checksum and
+the installed binary checksum.
 
 ### Via Control Tower
 
@@ -113,6 +146,13 @@ Add a `WorkshopApp` row pointing at this repo (`git_url`, branch `main`).
 Configure per-event behaviour through `env_overrides` — every variable in
 [docs/admin-api.md](docs/admin-api.md#deploy-time-configuration-env-vars) is
 read at runtime.
+
+`scripts/deploy_ct_sim.py` reuses an existing dedicated catalog only when CT
+supplies exact expected owner, creator, type, isolation mode, and storage-root
+provenance. It verifies that metadata before mutation and reads back owner plus
+attendee/app-SP grants afterward. Post-deploy acceptance also requires an
+attendee OAuth token (the deployer token is reused only when identities match)
+to call `/api/config`, reconcile entitlements, and prove `/readyz` green.
 
 ### Dev smoke test
 

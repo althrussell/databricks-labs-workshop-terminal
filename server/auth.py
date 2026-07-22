@@ -16,7 +16,9 @@ by email via SCIM with the Control-Tower-vended workspace credential
 
 from __future__ import annotations
 
+from collections import OrderedDict
 import logging
+import hashlib
 import threading
 import time
 
@@ -28,7 +30,10 @@ from . import config
 logger = logging.getLogger(__name__)
 
 _CACHE_TTL = 300
-_groups_cache: dict[str, tuple[float, set[str]]] = {}
+_GROUPS_CACHE_MAX = 4096
+_TOKEN_PRINCIPAL_CACHE_MAX = 1024
+_groups_cache: OrderedDict[str, tuple[float, set[str]]] = OrderedDict()
+_token_principal_cache: OrderedDict[str, tuple[float, str]] = OrderedDict()
 _cache_lock = threading.Lock()
 
 
@@ -43,7 +48,7 @@ class Principal:
         return f"Principal({self.name})"
 
 
-def _scim_me_groups(token: str) -> set[str] | None:
+def _scim_me_identity(token: str) -> tuple[set[str], str | None] | None:
     """Resolve the calling principal's group display-names via SCIM /Me.
 
     Returns None on failure (treat as 'unknown', not 'no groups').
@@ -55,17 +60,24 @@ def _scim_me_groups(token: str) -> set[str] | None:
         resp = requests.get(
             f"{host}/api/2.0/preview/scim/v2/Me",
             headers={"Authorization": f"Bearer {token}"},
-            params={"attributes": "groups,userName"},
+            params={"attributes": "id,groups,userName"},
             timeout=10,
         )
         if resp.status_code != 200:
-            logger.warning("SCIM /Me failed (%s): %s", resp.status_code, resp.text[:200])
+            logger.warning("SCIM /Me failed with status %s", resp.status_code)
             return None
-        groups = resp.json().get("groups", []) or []
-        return {g.get("display", "") for g in groups if g.get("display")}
+        payload = resp.json()
+        groups = payload.get("groups", []) or []
+        principal_id = str(payload.get("id") or "").strip() or None
+        return ({g.get("display", "") for g in groups if g.get("display")}, principal_id)
     except requests.RequestException as e:
         logger.warning("SCIM /Me request failed: %s", e)
         return None
+
+
+def _scim_me_groups(token: str) -> set[str] | None:
+    identity = _scim_me_identity(token)
+    return identity[0] if identity is not None else None
 
 
 def scim_token_valid(token: str) -> bool:
@@ -98,7 +110,7 @@ def _scim_lookup_groups_by_email(email: str) -> set[str] | None:
             timeout=10,
         )
         if resp.status_code != 200:
-            logger.warning("SCIM Users lookup failed (%s): %s", resp.status_code, resp.text[:200])
+            logger.warning("SCIM Users lookup failed with status %s", resp.status_code)
             return None
         resources = resp.json().get("Resources", []) or []
         if not resources:
@@ -117,14 +129,44 @@ def get_groups(principal: Principal) -> set[str]:
         return set(filter(None, os.environ.get("DEV_GROUPS", "").split(",")))
 
     now = time.time()
+    token_digest = (
+        hashlib.sha256(principal.access_token.encode("utf-8")).hexdigest()
+        if principal.access_token
+        else None
+    )
     with _cache_lock:
-        cached = _groups_cache.get(principal.name)
+        expired_group_keys = [
+            key
+            for key, (cached_at, _) in _groups_cache.items()
+            if now - cached_at >= _CACHE_TTL
+        ]
+        for key in expired_group_keys:
+            _groups_cache.pop(key, None)
+        expired = [
+            digest
+            for digest, (cached_at, _) in _token_principal_cache.items()
+            if now - cached_at >= _CACHE_TTL
+        ]
+        for digest in expired:
+            _token_principal_cache.pop(digest, None)
+        principal_key = principal.name
+        if token_digest:
+            mapping = _token_principal_cache.get(token_digest)
+            if mapping and now - mapping[0] < _CACHE_TTL:
+                _token_principal_cache.move_to_end(token_digest)
+                principal_key = f"principal:{mapping[1]}"
+            else:
+                principal_key = f"token:{token_digest}"
+        cached = _groups_cache.get(principal_key)
         if cached and now - cached[0] < _CACHE_TTL:
+            _groups_cache.move_to_end(principal_key)
             return cached[1]
 
     # Caller's own token first (SPs, or browsers when user authorization is
     # enabled); otherwise look the user up with the vended app credential.
-    groups = _scim_me_groups(principal.access_token or "")
+    identity = _scim_me_identity(principal.access_token or "")
+    groups = identity[0] if identity is not None else None
+    validated_principal_id = identity[1] if identity is not None else None
     if groups is None and "@" in principal.name:
         groups = _scim_lookup_groups_by_email(principal.name)
     if groups is None:
@@ -132,7 +174,25 @@ def get_groups(principal: Principal) -> set[str]:
         # membership checks below.
         return set()
     with _cache_lock:
-        _groups_cache[principal.name] = (now, groups)
+        cache_key = principal.name
+        if token_digest:
+            if validated_principal_id:
+                cache_key = f"principal:{validated_principal_id}"
+                for digest, (_, mapped_id) in list(
+                    _token_principal_cache.items()
+                ):
+                    if mapped_id == validated_principal_id and digest != token_digest:
+                        _token_principal_cache.pop(digest, None)
+                _token_principal_cache[token_digest] = (now, validated_principal_id)
+                _token_principal_cache.move_to_end(token_digest)
+                while len(_token_principal_cache) > _TOKEN_PRINCIPAL_CACHE_MAX:
+                    _token_principal_cache.popitem(last=False)
+            else:
+                cache_key = f"token:{token_digest}"
+        _groups_cache[cache_key] = (now, groups)
+        _groups_cache.move_to_end(cache_key)
+        while len(_groups_cache) > _GROUPS_CACHE_MAX:
+            _groups_cache.popitem(last=False)
     return groups
 
 
@@ -151,6 +211,24 @@ def _principal_from_headers(headers) -> Principal:
 
 
 def _check_access(principal: Principal) -> None:
+    attendee = config.workshop_attendee_email()
+    if (
+        attendee
+        and principal.name != attendee
+        and not config.allow_shared_topology()
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"This workshop instance is assigned to {attendee}; "
+                "request a separate attendee instance."
+            ),
+        )
+    if not attendee and not config.local_dev() and not config.allow_shared_topology():
+        raise HTTPException(
+            status_code=403,
+            detail="WORKSHOP_ATTENDEE_EMAIL is required for attendee access",
+        )
     group = config.access_group()
     if group and group not in get_groups(principal):
         raise HTTPException(status_code=403, detail=f"Access requires membership in the '{group}' group")
@@ -205,7 +283,7 @@ def require_admin(request: Request) -> Principal:
     bearer = (request.headers.get("authorization") or "").removeprefix("Bearer ").strip()
     has_proxy_identity = bool(request.headers.get("x-forwarded-email") or request.headers.get("x-forwarded-user"))
     if bearer and not has_proxy_identity:
-        principal = Principal(f"sp:{bearer[:8]}", bearer)
+        principal = Principal("service-principal", bearer)
     else:
         principal = _principal_from_headers(request.headers)
 

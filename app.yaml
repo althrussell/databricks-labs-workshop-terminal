@@ -1,10 +1,6 @@
 command:
   - uvicorn
   - server.main:app
-  - --host
-  - 0.0.0.0
-  - --port
-  - "8000"
   - --workers
   - "1"
 
@@ -14,16 +10,21 @@ env:
     value: /app/python/source_code/data/apphome
 
   # --- Attendee CLI credential ---
-  # PREFERRED: grant the app's own service principal token CAN_USE at provision
-  # time. The app then mints short-lived rotating tokens from its auto-refreshed
-  # OAuth identity — no static secret here, nothing to expire across a
-  # deploy-then-idle-then-event window, and no attendee ever creates a PAT.
+  # PREFERRED: Databricks Apps injects the app service principal's auto-refreshing
+  # OAuth credentials. The server captures them into one explicit oauth-m2m SDK
+  # client, scrubs client-secret env aliases, and makes the production Linux
+  # process non-dumpable before PTYs launch. Credential files receive only the
+  # resulting short-lived bearer; no token API permission or PAT mint is required.
   #
   # WORKSHOP_PAT is an EMERGENCY-ONLY fallback: a vended workspace token for
   # environments without a usable app identity. It is a static credential that
   # expires with no rotation behind it, so the app reports it as "degraded" and
-  # alerts. Prefer the service-principal grant for any large or long-lived event.
+  # alerts. Restore direct app-identity OAuth for any large or long-lived event.
   - name: WORKSHOP_PAT
+    value: ""
+  # Control Tower patches this after app creation from service_principal_id.
+  # It is the numeric SCIM ID used with DATABRICKS_CLIENT_ID to bind SCIM /Me.
+  - name: WORKSHOP_APP_SP_ID
     value: ""
 
   # --- OBO dual-profile + entitlements (governance-faithful UC as the attendee) ---
@@ -76,6 +77,11 @@ env:
   # the app's own permission grants admit).
   - name: ACCESS_GROUP
     value: ""
+  # REQUIRED for event admission: Control Tower injects the one attendee email
+  # assigned to this app instance. Attendee HTTP/WebSocket requests from any
+  # other identity receive 403 unless shared topology is explicitly enabled.
+  - name: WORKSHOP_ATTENDEE_EMAIL
+    value: ""
 
   # --- Workshop / content steering ---
   - name: WORKSHOP_PHASE
@@ -84,10 +90,10 @@ env:
     value: ""
 
   # --- Skills overlay (ai-dev-kit) ---
-  # Skills are fetched from ai-dev-kit at every boot. Default ref is "main"
-  # (branch tip). STRONGLY pin a reviewed tag or commit SHA per event so every
-  # attendee runs a known skills version (incl. the AppKit-default app skill)
-  # rather than whatever lands on the branch mid-workshop.
+  # Skills are fetched once, stamped with ref + resolved commit + content
+  # checksum on the persistent volume, then verified and reused on restart.
+  # STRONGLY pin a reviewed tag or commit SHA per event so every attendee runs
+  # a known skills version rather than a moving branch tip.
   - name: AI_DEV_KIT_REF
     value: ""
 
@@ -111,37 +117,43 @@ env:
     value: ""
   - name: CODEX_MODEL
     value: ""
+  # Release-candidate CLI pins. Control Tower may override these only as part
+  # of a reviewed event release.
+  - name: CLAUDE_CODE_VERSION
+    value: "2.1.216"
+  - name: CODEX_CLI_VERSION
+    value: "0.144.6"
+  - name: DATABRICKS_CLI_VERSION
+    value: "1.8.0"
+  - name: NODE_VERSION
+    value: "22.14.0"
+  # REQUIRED for event readiness. CT stages or mounts a reviewed JSON contract
+  # containing source + SHA-256 for every installer/archive/package and the
+  # ai-dev-kit commit/content digest. Missing/partial manifests keep /readyz red.
+  - name: ARTIFACT_MANIFEST_PATH
+    value: ""
 
   # --- Omnigent (agent meta-harness) ---
-  # Feature flag, default ON: omnigent is GA on public PyPI, so the default
-  # deploy installs the latest `omnigent` (sibling deps omnigent-client /
-  # omnigent-ui-sdk resolve transitively) + tmux, and leads the catalog with
-  # the Omnigent session. Set to "false" to opt out (air-gapped events, or to
-  # offer bare claude/codex only).
+  # Feature flag, default ON: installs Omnigent (and transitive siblings) plus
+  # tmux, then leads the catalog with the Omnigent session. Set to "false" to
+  # opt out (air-gapped events, or to offer bare claude/codex only).
   - name: OMNIGENT_ENABLED
     value: "true"
-  # Optional one-line version pin for an event (empty = track latest from
-  # PyPI). A pinned version short-circuits reinstall via the installer's
-  # version stamp; unpinned reinstalls each boot to stay on latest.
+  # Exact release-candidate pin. A pinned version short-circuits reinstall via
+  # the installer's version stamp.
   # TMUX_STATIC_URL/SHA256 are pinned in code; the env overrides below exist
   # for emergencies (e.g. GitHub release unreachable).
   - name: OMNIGENT_VERSION
-    value: ""
+    value: "0.5.1"
   # Seconds the Omnigent background runner stays alive with no active work
   # before self-terminating. Omnigent's own default is 3600 (1h), which drops
   # attendees who step away ("Runner disconnected unexpectedly"). 0 = never
   # reap the runner (default; the container lifecycle bounds it instead).
   - name: OMNIGENT_RUNNER_IDLE_TIMEOUT_S
     value: "0"
-  # Escape hatch for air-gapped / pre-release installs only — NOT needed for
-  # the default PyPI path. Point this at a wheel staged on the volume, an
-  # internal index spec, or a git URL; sibling wheels (omnigent-client,
-  # omnigent-ui-sdk) staged next to the main wheel are picked up by also
-  # setting UV_FIND_LINKS to that directory.
-  - name: OMNIGENT_PIP_SPEC
-    value: ""
-  - name: UV_FIND_LINKS
-    value: ""
+  # Omnigent has no network fallback. ARTIFACT_MANIFEST_PATH must identify a
+  # checksum-verified uv binary, complete Python 3.12 runtime tree, complete
+  # local wheelhouse, and fully pinned --require-hashes transitive lock.
   - name: TMUX_STATIC_URL
     value: ""
   - name: TMUX_STATIC_SHA256
@@ -151,17 +163,20 @@ env:
   - name: MAX_SESSIONS_PER_USER
     value: "3"
   - name: MAX_SESSIONS_GLOBAL
-    value: "30"
+    value: "3"
+  # The security boundary is one attendee per app instance. Shared topology is
+  # not release-ready even when explicitly acknowledged.
+  - name: ALLOW_SHARED_TOPOLOGY
+    value: "false"
   # 8h: survive lunch/closed-laptop without reaping a terminal the attendee
   # stepped away from. Memory, not idle PTYs, is the real constraint here.
   - name: SESSION_IDLE_TIMEOUT_SECONDS
     value: "28800"
 
   # --- Session journal (restart recovery) ---
-  # Set a path on the app's data volume so live-session metadata + a scrollback
-  # tail survive a restart: attendees see their terminals as relaunchable
-  # "ended on restart" ghosts (the live PTYs cannot survive) instead of a blank
-  # screen, and the client stops cleanly on the 4404 close instead of looping.
+  # Set a path on the app's data volume so metadata survives a restart:
+  # attendees see relaunchable "ended on restart" ghosts (live PTYs cannot
+  # survive) instead of a blank screen. Raw terminal output is never persisted.
   # STRONGLY recommended for any real event.
   - name: SESSION_STATE_PATH
     value: /app/python/source_code/data/sessions.json

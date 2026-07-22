@@ -11,19 +11,22 @@ have no access to anything the SP creates. This reconciler closes that gap:
   catalog* is instantly usable by the labuser — and therefore visible through
   the ``me``/OBO profile. (The agent is instructed to create UC objects only
   inside ``$WORKSHOP_CATALOG``.)
-- **Non-UC (apps, jobs, pipelines, database instances, serving endpoints):**
-  these do not inherit, so the loop enumerates them and grants the labuser
-  ``CAN_MANAGE`` via each resource's permissions API.
+- **Non-UC:** resource-specific adapters paginate their APIs, verify the app SP
+  as creator/owner, enforce the current run boundary, then transfer ownership
+  where supported or grant ``CAN_MANAGE``. Pipelines and SQL warehouses use an
+  at-start ID baseline because their list APIs lack reliable creation times.
 
-All calls use the app SP bearer (``credentials.app_identity_bearer``), are
-idempotent (additive PATCH — re-running is a no-op), never block a session, and
-emit an ``entitlements.health`` event to Control Tower on failure (same envelope
-as ``credential.health``). Modeled on ``server/credentials.py``.
+An in-memory transition ledger records discovered, verified, handed-off, and
+failed resources for attendee and Control Tower status surfaces. All calls use
+the app SP bearer and emit ``entitlements.health`` on failure.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 import logging
+import os
 import threading
 import time
 
@@ -36,15 +39,66 @@ logger = logging.getLogger(__name__)
 HEARTBEAT = 30                # loop wake interval (seconds)
 ALERT_REEMIT_INTERVAL = 1800  # re-emit a degraded health event at most every 30 min
 
-# Non-UC resource types to sweep: (label, list_url, response_key, id_field,
-# permissions object_type). The generic Permissions API
-# (PATCH /api/2.0/permissions/{type}/{id}) additively grants CAN_MANAGE.
-_NON_UC = (
-    ("jobs", "/api/2.1/jobs/list", "jobs", "job_id", "jobs"),
-    ("pipelines", "/api/2.0/pipelines", "statuses", "pipeline_id", "pipelines"),
-    ("serving-endpoints", "/api/2.0/serving-endpoints", "endpoints", "id", "serving-endpoints"),
-    ("apps", "/api/2.0/apps", "apps", "name", "apps"),
-    ("database-instances", "/api/2.0/database/instances", "database_instances", "name", "database-instances"),
+@dataclass(frozen=True)
+class ResourceSpec:
+    label: str
+    list_path: str
+    items_key: str
+    id_field: str
+    permission_type: str
+    creator_field: str | None
+    created_field: str | None
+    list_params: dict = field(default_factory=dict)
+    supports_owner: bool = False
+    requires_baseline: bool = False
+    created_millis: bool = False
+    unsupported_reason: str | None = None
+
+
+# Every adapter names the API's permission identifier, not merely its display
+# name. Pipelines and warehouses do not expose a reliable creation timestamp,
+# so they are eligible only when absent from the at-start baseline.
+_RESOURCE_SPECS = (
+    ResourceSpec(
+        "jobs", "/api/2.2/jobs/list", "jobs", "job_id", "jobs",
+        "creator_user_name", "created_time", {"limit": 100},
+        supports_owner=True, created_millis=True,
+    ),
+    ResourceSpec(
+        "pipelines", "/api/2.0/pipelines", "statuses", "pipeline_id", "pipelines",
+        "creator_user_name", None, {"max_results": 100},
+        supports_owner=True, requires_baseline=True,
+    ),
+    ResourceSpec(
+        "serving-endpoints", "/api/2.0/serving-endpoints", "endpoints", "id",
+        "serving-endpoints", "creator", "creation_timestamp", created_millis=True,
+    ),
+    ResourceSpec(
+        "apps", "/api/2.0/apps", "apps", "name", "apps", "creator", "create_time",
+        {"page_size": 100},
+    ),
+    ResourceSpec(
+        "database-instances", "/api/2.0/database/instances", "database_instances",
+        "name", "database-instances", "creator", "creation_time", {"page_size": 100},
+    ),
+    ResourceSpec(
+        "database-projects", "/api/2.0/postgres/projects", "projects",
+        "project_id", "database-projects", "status.owner", "create_time",
+        {"page_size": 100},
+    ),
+    ResourceSpec(
+        "warehouses", "/api/2.0/sql/warehouses", "warehouses", "id", "warehouses",
+        "creator_name", None, {"page_size": 100},
+        supports_owner=True, requires_baseline=True,
+    ),
+    ResourceSpec(
+        "dashboards", "/api/2.0/lakeview/dashboards", "dashboards", "dashboard_id",
+        "dashboards", None, "create_time", {"page_size": 100},
+        unsupported_reason=(
+            "unsupported creator verification: Lakeview list/get responses "
+            "do not expose an authoritative creator identity"
+        ),
+    ),
 )
 
 
@@ -68,6 +122,29 @@ def _patch(url: str, bearer: str, body: dict) -> tuple[bool, str | None]:
     return False, f"{resp.status_code} {resp.text[:200]}"
 
 
+def _get_json(
+    url: str, bearer: str, params: dict | None = None
+) -> tuple[dict | None, str | None]:
+    try:
+        resp = requests.get(
+            url,
+            headers={"Authorization": f"Bearer {bearer}"},
+            params=params or {},
+            timeout=30,
+        )
+    except requests.RequestException as e:
+        return None, str(e)
+    if resp.status_code != 200:
+        return None, f"{resp.status_code} {resp.text[:200]}"
+    try:
+        payload = resp.json()
+    except ValueError as e:
+        return None, f"invalid JSON: {e}"
+    if not isinstance(payload, dict):
+        return None, "response was not an object"
+    return payload, None
+
+
 def _grant_catalog_all_privileges(
     host: str, bearer: str, catalog: str, principal: str
 ) -> tuple[bool, str | None]:
@@ -85,56 +162,130 @@ def _set_catalog_owner(
     return _patch(url, bearer, {"owner": principal})
 
 
-def _enumerate(host: str, bearer: str, list_url: str, resp_key: str, id_field: str) -> list[str]:
-    resp = requests.get(
-        f"{host}{list_url}", headers={"Authorization": f"Bearer {bearer}"}, timeout=30
-    )
-    if resp.status_code != 200:
-        raise RuntimeError(f"{resp.status_code} {resp.text[:120]}")
-    items = resp.json().get(resp_key, []) or []
-    return [str(it[id_field]) for it in items if isinstance(it, dict) and it.get(id_field) is not None]
-
-
-def _grant_can_manage(
-    host: str, bearer: str, perm_type: str, resource_id: str, principal: str
+def _verify_catalog_access(
+    host: str, bearer: str, catalog: str, principal: str
 ) -> tuple[bool, str | None]:
-    url = f"{host}/api/2.0/permissions/{perm_type}/{resource_id}"
-    body = {"access_control_list": [{"user_name": principal, "permission_level": "CAN_MANAGE"}]}
-    return _patch(url, bearer, body)
+    metadata, error = _get_json(
+        f"{host}/api/2.1/unity-catalog/catalogs/{catalog}", bearer
+    )
+    if error:
+        return False, f"catalog metadata read: {error}"
+    permissions, error = _get_json(
+        f"{host}/api/2.1/unity-catalog/permissions/catalog/{catalog}", bearer
+    )
+    if error:
+        return False, f"catalog permissions read: {error}"
+    owner = str((metadata or {}).get("owner") or "").strip().lower()
+    privileges: set[str] = set()
+    for assignment in (permissions or {}).get("privilege_assignments", []) or []:
+        if (
+            isinstance(assignment, dict)
+            and str(assignment.get("principal") or "").strip().lower()
+            == principal.lower()
+        ):
+            privileges.update(
+                str(value) for value in assignment.get("privileges", [])
+            )
+    if owner != principal.lower():
+        return False, f"catalog owner is {owner or 'unset'}, expected attendee"
+    if "ALL_PRIVILEGES" not in privileges:
+        return False, "attendee ALL_PRIVILEGES grant not visible after patch"
+    return True, None
 
 
-def _sweep_non_uc(host: str, bearer: str, principal: str) -> tuple[dict, list[str]]:
-    counts: dict[str, int] = {}
-    errors: list[str] = []
-    for label, list_url, resp_key, id_field, perm_type in _NON_UC:
+def _enumerate(host: str, bearer: str, spec: ResourceSpec) -> list[dict]:
+    items: list[dict] = []
+    page_token: str | None = None
+    seen_tokens: set[str] = set()
+    while True:
+        params = dict(spec.list_params)
+        if page_token:
+            params["page_token"] = page_token
+        payload, error = _get_json(f"{host}{spec.list_path}", bearer, params)
+        if error:
+            raise RuntimeError(error)
+        assert payload is not None
+        page_items = payload.get(spec.items_key, []) or []
+        items.extend(item for item in page_items if isinstance(item, dict))
+        next_token = payload.get("next_page_token")
+        if not next_token:
+            return items
+        page_token = str(next_token)
+        if page_token in seen_tokens:
+            raise RuntimeError("pagination returned a repeated next_page_token")
+        seen_tokens.add(page_token)
+
+
+def _permission_url(host: str, spec: ResourceSpec, resource_id: str) -> str:
+    return f"{host}/api/2.0/permissions/{spec.permission_type}/{resource_id}"
+
+
+def _sp_identities(host: str, bearer: str) -> set[str]:
+    identities = {
+        value.strip().lower()
+        for value in (os.environ.get("DATABRICKS_CLIENT_ID", ""),)
+        if value.strip()
+    }
+    payload, _ = _get_json(
+        f"{host}/api/2.0/preview/scim/v2/Me",
+        bearer,
+        {"attributes": "id,userName,applicationId"},
+    )
+    if payload:
+        for key in ("id", "userName", "applicationId"):
+            value = payload.get(key)
+            if value:
+                identities.add(str(value).strip().lower())
+    return identities
+
+
+def _timestamp_seconds(value, *, milliseconds: bool = False) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value) / 1000.0 if milliseconds else float(value)
+    if isinstance(value, str) and value.strip():
+        raw = value.strip()
         try:
-            ids = _enumerate(host, bearer, list_url, resp_key, id_field)
-        except Exception as e:  # noqa: BLE001 — one resource type failing must not stop the rest
-            errors.append(f"{label} list: {e}")
-            continue
-        granted = 0
-        for rid in ids:
-            ok, err = _grant_can_manage(host, bearer, perm_type, rid, principal)
-            if ok:
-                granted += 1
-            elif err:
-                errors.append(f"{label} {rid}: {err}")
-        counts[label] = granted
-    return counts, errors
+            numeric = float(raw)
+        except ValueError:
+            try:
+                return datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(
+                    timezone.utc
+                ).timestamp()
+            except ValueError:
+                return None
+        return numeric / 1000.0 if milliseconds else numeric
+    return None
+
+
+def _field_value(item: dict, path: str) -> object | None:
+    value: object = item
+    for part in path.split("."):
+        if not isinstance(value, dict):
+            return None
+        value = value.get(part)
+    return value
 
 
 class EntitlementManager:
     """Background reconciliation loop + on-demand trigger."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, run_started_at: float | None = None) -> None:
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._lock = threading.Lock()
+        self._run_started_at = run_started_at if run_started_at is not None else time.time()
+        self._baseline: dict[str, set[str]] = {}
+        self._baseline_ready: set[str] = set()
+        self._ledger: dict[tuple[str, str, str], dict] = {}
         self._last_run_at = 0.0
         self._last_reconcile = 0.0
         self._ok: bool | None = None
         self._last_error: str | None = None
         self._last_alert_at = 0.0
+        self._last_verified_at = 0.0
+        self._verified_email: str | None = None
+        self._verified_catalog: str | None = None
+        self._verification_source: str | None = None
 
     def start(self) -> None:
         if not config.entitlements_enabled():
@@ -143,6 +294,9 @@ class EntitlementManager:
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
+        # Capture pre-existing IDs before any attendee session can create
+        # resources. Failure is fail-closed for adapters without create_time.
+        self.capture_baseline()
         self._thread = threading.Thread(
             target=self._loop, daemon=True, name="entitlement-reconcile"
         )
@@ -155,6 +309,37 @@ class EntitlementManager:
 
     def stop(self) -> None:
         self._stop.set()
+
+    def capture_baseline(self) -> dict:
+        """Snapshot APIs that cannot prove creation time.
+
+        Only resources absent from a successfully captured baseline can be
+        handed off later. A failed snapshot never widens access.
+        """
+        host = config.databricks_host()
+        bearer = _sp_bearer()
+        result = {"captured": [], "errors": []}
+        if not host or not bearer:
+            result["errors"].append("no app service-principal bearer/host")
+            return result
+        for spec in _RESOURCE_SPECS:
+            if not spec.requires_baseline:
+                continue
+            try:
+                items = _enumerate(host, bearer, spec)
+                ids = {
+                    str(item[spec.id_field])
+                    for item in items
+                    if item.get(spec.id_field) is not None
+                }
+            except Exception as e:  # noqa: BLE001 — fail closed per adapter
+                result["errors"].append(f"{spec.label}: {e}")
+                continue
+            with self._lock:
+                self._baseline[spec.label] = ids
+                self._baseline_ready.add(spec.label)
+            result["captured"].append(spec.label)
+        return result
 
     def _loop(self) -> None:
         while not self._stop.wait(timeout=HEARTBEAT):
@@ -178,8 +363,20 @@ class EntitlementManager:
 
         from .users import user_manager
 
+        source = "on_demand" if email else "background"
         emails = [email] if email else [u.email for u in user_manager.all()]
-        result: dict = {"enabled": True, "emails": emails, "catalog": None, "non_uc": {}, "errors": []}
+        result: dict = {
+            "enabled": True,
+            "emails": emails,
+            "catalog": None,
+            "non_uc": {},
+            "errors": [],
+        }
+        if not emails:
+            msg = "no attendee available for entitlement verification"
+            self._record(False, msg)
+            result["errors"] = [msg]
+            return result
 
         bearer = _sp_bearer()
         host = config.databricks_host()
@@ -191,9 +388,12 @@ class EntitlementManager:
 
         errors: list[str] = []
         catalog = config.workshop_catalog()
-        if catalog:
+        if not catalog:
+            errors.append("WORKSHOP_CATALOG is not configured")
+        else:
             for em in emails:
-                if "@" not in em:
+                if not em or "@" not in em:
+                    errors.append("invalid attendee identity for catalog verification")
                     continue
                 ok, err = _grant_catalog_all_privileges(host, bearer, catalog, em)
                 if not ok and err:
@@ -203,17 +403,327 @@ class EntitlementManager:
                 if not ok and err:
                     errors.append(f"catalog owner: {err}")
             result["catalog"] = catalog
+            for em in emails:
+                if not em or "@" not in em:
+                    continue
+                verified, error = _verify_catalog_access(
+                    host, bearer, catalog, em
+                )
+                if not verified:
+                    errors.append(
+                        f"catalog verification {em}: {error or 'failed'}"
+                    )
+                else:
+                    with self._lock:
+                        self._last_verified_at = time.time()
+                        self._verified_email = em
+                        self._verified_catalog = catalog
+                        self._verification_source = source
 
-        for em in emails:
-            if "@" not in em:
-                continue
-            counts, errs = _sweep_non_uc(host, bearer, em)
-            result["non_uc"][em] = counts
-            errors.extend(errs)
+        identities = _sp_identities(host, bearer)
+        if not identities:
+            errors.append("cannot verify app service-principal identity")
+        else:
+            for em in emails:
+                if "@" not in em:
+                    continue
+                counts, errs = self._handoff_resources(
+                    host, bearer, em, identities
+                )
+                result["non_uc"][em] = counts
+                errors.extend(errs)
 
         self._record(not errors, "; ".join(errors[:5]) if errors else None)
         result["errors"] = errors
+        result["handoff"] = self._handoff_snapshot()
         return result
+
+    def _handoff_resources(
+        self,
+        host: str,
+        bearer: str,
+        principal: str,
+        sp_identities: set[str],
+    ) -> tuple[dict[str, int], list[str]]:
+        counts: dict[str, int] = {}
+        errors: list[str] = []
+        for spec in _RESOURCE_SPECS:
+            try:
+                items = _enumerate(host, bearer, spec)
+            except Exception as e:  # noqa: BLE001 — isolate API failures
+                message = f"{spec.label} list: {e}"
+                errors.append(message)
+                self._transition(
+                    principal, spec.label, "<discovery>", "failed", error=message
+                )
+                continue
+            granted = 0
+            for item in items:
+                raw_id = item.get(spec.id_field)
+                if raw_id is None:
+                    errors.append(f"{spec.label}: response missing {spec.id_field}")
+                    continue
+                resource_id = str(raw_id)
+                previous_level = self._handed_off_level(
+                    principal, spec.label, resource_id
+                )
+                if previous_level:
+                    durable, verification_error, effective_level = (
+                        self._verify_resource_permission(
+                            host, bearer, spec, resource_id, principal
+                        )
+                    )
+                    if verification_error:
+                        message = f"permission verification: {verification_error}"
+                        errors.append(f"{spec.label} {resource_id}: {message}")
+                        self._transition(
+                            principal, spec.label, resource_id, "failed", error=message
+                        )
+                        continue
+                    if durable:
+                        granted += 1
+                        self._transition(
+                            principal,
+                            spec.label,
+                            resource_id,
+                            "handed_off",
+                            permission_level=effective_level,
+                        )
+                        continue
+                self._transition(principal, spec.label, resource_id, "discovered")
+
+                if spec.unsupported_reason:
+                    self._transition(
+                        principal,
+                        spec.label,
+                        resource_id,
+                        "unsupported",
+                        error=spec.unsupported_reason,
+                    )
+                    continue
+
+                verified, verification_error = self._verify_resource(
+                    host, bearer, spec, resource_id, item, sp_identities
+                )
+                if verification_error:
+                    errors.append(f"{spec.label} {resource_id}: {verification_error}")
+                    self._transition(
+                        principal,
+                        spec.label,
+                        resource_id,
+                        "failed",
+                        error=verification_error,
+                    )
+                    continue
+                if not verified:
+                    continue
+                self._transition(
+                    principal, spec.label, resource_id, "verified_creator"
+                )
+
+                ok, err, permission_level = self._grant_resource(
+                    host, bearer, spec, resource_id, principal
+                )
+                if ok:
+                    granted += 1
+                    self._transition(
+                        principal,
+                        spec.label,
+                        resource_id,
+                        "handed_off",
+                        permission_level=permission_level,
+                    )
+                else:
+                    message = err or "permission handoff failed"
+                    errors.append(f"{spec.label} {resource_id}: {message}")
+                    self._transition(
+                        principal,
+                        spec.label,
+                        resource_id,
+                        "failed",
+                        error=message,
+                    )
+            counts[spec.label] = granted
+        return counts, errors
+
+    def _handed_off_level(
+        self, principal: str, resource_type: str, resource_id: str
+    ) -> str | None:
+        with self._lock:
+            entry = self._ledger.get((principal, resource_type, resource_id))
+            if entry and entry["state"] == "handed_off":
+                return str(entry.get("permission_level") or "") or None
+            return None
+
+    def _verify_resource(
+        self,
+        host: str,
+        bearer: str,
+        spec: ResourceSpec,
+        resource_id: str,
+        item: dict,
+        sp_identities: set[str],
+    ) -> tuple[bool, str | None]:
+        if spec.unsupported_reason:
+            return False, spec.unsupported_reason
+        if spec.creator_field:
+            creator = str(_field_value(item, spec.creator_field) or "").strip().lower()
+            if not creator or creator not in sp_identities:
+                return False, None
+
+        if spec.requires_baseline:
+            with self._lock:
+                ready = spec.label in self._baseline_ready
+                existed = resource_id in self._baseline.get(spec.label, set())
+            if not ready:
+                return False, "at-start baseline unavailable; refusing handoff"
+            return (not existed), None
+
+        created_at = _timestamp_seconds(
+            item.get(spec.created_field or ""),
+            milliseconds=spec.created_millis,
+        )
+        if created_at is None:
+            return False, "creation time unavailable; refusing handoff"
+        return created_at >= self._run_started_at, None
+
+    def _grant_resource(
+        self,
+        host: str,
+        bearer: str,
+        spec: ResourceSpec,
+        resource_id: str,
+        principal: str,
+    ) -> tuple[bool, str | None, str]:
+        url = _permission_url(host, spec, resource_id)
+        if spec.supports_owner:
+            owner_body = {
+                "access_control_list": [{
+                    "user_name": principal,
+                    "permission_level": "IS_OWNER",
+                }]
+            }
+            ok, _ = _patch(url, bearer, owner_body)
+            if ok:
+                verified, error, effective = self._verify_resource_permission(
+                    host, bearer, spec, resource_id, principal
+                )
+                if not verified:
+                    return (
+                        False,
+                        f"permission verification: {error or 'required effective access absent'}",
+                        "IS_OWNER",
+                    )
+                return True, None, effective or "IS_OWNER"
+        body = {
+            "access_control_list": [{
+                "user_name": principal,
+                "permission_level": "CAN_MANAGE",
+            }]
+        }
+        ok, error = _patch(url, bearer, body)
+        if not ok:
+            return False, error, "CAN_MANAGE"
+        verified, verification_error, effective = self._verify_resource_permission(
+            host, bearer, spec, resource_id, principal
+        )
+        if not verified:
+            return (
+                False,
+                f"permission verification: {verification_error or 'required effective access absent'}",
+                "CAN_MANAGE",
+            )
+        return True, None, effective or "CAN_MANAGE"
+
+    def _verify_resource_permission(
+        self,
+        host: str,
+        bearer: str,
+        spec: ResourceSpec,
+        resource_id: str,
+        principal: str,
+    ) -> tuple[bool, str | None, str | None]:
+        payload, error = _get_json(
+            _permission_url(host, spec, resource_id), bearer
+        )
+        if error:
+            return False, error, None
+        for entry in (payload or {}).get("access_control_list", []) or []:
+            if not isinstance(entry, dict):
+                continue
+            identity = str(
+                entry.get("user_name")
+                or entry.get("service_principal_name")
+                or entry.get("group_name")
+                or ""
+            ).strip().lower()
+            if identity != principal.lower():
+                continue
+            levels = {
+                str(permission.get("permission_level") or "")
+                for permission in entry.get("all_permissions", []) or []
+                if isinstance(permission, dict)
+            }
+            if "IS_OWNER" in levels:
+                return True, None, "IS_OWNER"
+            if "CAN_MANAGE" in levels:
+                return True, None, "CAN_MANAGE"
+        return False, None, None
+
+    def _transition(
+        self,
+        principal: str,
+        resource_type: str,
+        resource_id: str,
+        state: str,
+        *,
+        error: str | None = None,
+        permission_level: str | None = None,
+    ) -> None:
+        key = (principal, resource_type, resource_id)
+        with self._lock:
+            entry = self._ledger.setdefault(key, {
+                "email": principal,
+                "resource_type": resource_type,
+                "resource_id": resource_id,
+                "state": state,
+                "states": [],
+                "error": None,
+                "permission_level": None,
+                "updated_at": 0.0,
+            })
+            if not entry["states"] or entry["states"][-1] != state:
+                entry["states"].append(state)
+            entry["state"] = state
+            entry["error"] = error
+            if permission_level:
+                entry["permission_level"] = permission_level
+            entry["updated_at"] = time.time()
+
+    def _handoff_snapshot(self) -> dict:
+        with self._lock:
+            details = [dict(entry) for entry in self._ledger.values()]
+        summary = {
+            state: sum(1 for entry in details if entry["state"] == state)
+            for state in (
+                "discovered",
+                "verified_creator",
+                "handed_off",
+                "unsupported",
+                "failed",
+            )
+        }
+        return {
+            "summary": summary,
+            "details": sorted(
+                details,
+                key=lambda entry: (
+                    entry["email"],
+                    entry["resource_type"],
+                    entry["resource_id"],
+                ),
+            ),
+        }
 
     def _record(self, ok: bool, error: str | None) -> None:
         now = time.time()
@@ -247,6 +757,10 @@ class EntitlementManager:
             ok = self._ok
             last_reconcile = self._last_reconcile
             last_error = self._last_error
+            last_verified_at = self._last_verified_at
+            verified_email = self._verified_email
+            verified_catalog = self._verified_catalog
+            verification_source = self._verification_source
         return {
             "enabled": config.entitlements_enabled(),
             "catalog": config.workshop_catalog() or None,
@@ -254,7 +768,15 @@ class EntitlementManager:
             "ok": ok,
             "last_reconcile": last_reconcile or None,
             "last_error": last_error,
+            "thread_alive": bool(self._thread and self._thread.is_alive()),
+            "last_verified_at": last_verified_at or None,
+            "verified_email": verified_email,
+            "verified_catalog": verified_catalog,
+            "verification_source": verification_source,
             "interval": config.entitlement_reconcile_interval(),
+            "run_started_at": self._run_started_at,
+            "baseline_ready": sorted(self._baseline_ready),
+            "handoff": self._handoff_snapshot(),
         }
 
 

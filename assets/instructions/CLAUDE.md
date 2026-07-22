@@ -74,8 +74,10 @@ databricks-me tables list <catalog> <schema>
 
 Caveat: the `me` identity comes from the live browser tab. If the tab has been
 idle or closed for more than ~1 hour and `databricks-me` reports an expired
-session, ask the attendee to refresh the workshop tab, then retry. (Building
-and deploying are unaffected — they run as `DEFAULT`.)
+session, ask the attendee to return to the workshop tab; focus/visibility
+automatically forwards a fresh token, then retry. No OBO refresh is possible
+while the browser sends no request. (Building and deploying are unaffected —
+they run as `DEFAULT`.)
 
 ## Where to create things — always inside `$WORKSHOP_CATALOG`
 

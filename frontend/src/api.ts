@@ -23,8 +23,9 @@ export interface CredentialStatus {
   healthy: boolean;
   degraded: boolean;
   state: "unknown" | "rotating" | "degraded" | "unhealthy";
-  source: string;
+  source: "app_identity_oauth" | "emergency_workshop_pat" | "unknown";
   token_expires_in: number | null;
+  last_successful_at: number | null;
   last_error: string | null;
 }
 
@@ -66,6 +67,41 @@ export interface SessionInfo {
   created_at: number;
   last_activity: number;
   exited: boolean;
+}
+
+export interface PriorSessionInfo extends SessionInfo {
+  exited: true;
+  exit_reason: string;
+}
+
+export interface SessionPayload {
+  sessions: SessionInfo[];
+  prior_sessions?: PriorSessionInfo[];
+}
+
+export function splitSessionPayload(payload: SessionPayload): {
+  live: SessionInfo[];
+  prior: PriorSessionInfo[];
+} {
+  const prior = payload.prior_sessions ?? [];
+  const priorIds = new Set(prior.map((session) => session.id));
+  return {
+    live: payload.sessions.filter(
+      (session) => !session.exited && !priorIds.has(session.id)
+    ),
+    prior,
+  };
+}
+
+export async function relaunchAndAcknowledge(
+  prior: PriorSessionInfo,
+  create: (agentId: string) => Promise<SessionInfo | null>,
+  acknowledge: (priorId: string) => Promise<unknown>
+): Promise<SessionInfo | null> {
+  // Consume first: if the response is lost, no replacement has been created,
+  // so retrying or using the normal launch action cannot duplicate a session.
+  await acknowledge(prior.id);
+  return create(prior.agent_id);
 }
 
 export interface Nugget {
@@ -131,13 +167,15 @@ export const api = {
     }>("/api/setup-status"),
   agents: () =>
     request<{ agents: AgentInfo[]; credential: CredentialStatus }>("/api/agents"),
-  sessions: () => request<{ sessions: SessionInfo[] }>("/api/sessions"),
+  sessions: () => request<SessionPayload>("/api/sessions"),
   createSession: (agentId: string) =>
     request<{ session: SessionInfo }>("/api/sessions", {
       method: "POST",
       body: JSON.stringify({ agent_id: agentId }),
     }),
   closeSession: (id: string) => request(`/api/sessions/${id}`, { method: "DELETE" }),
+  ackPriorSession: (id: string) =>
+    request(`/api/sessions/prior/${encodeURIComponent(id)}`, { method: "DELETE" }),
   typeIntoSession: (id: string, text: string) =>
     request(`/api/sessions/${id}/type`, {
       method: "POST",

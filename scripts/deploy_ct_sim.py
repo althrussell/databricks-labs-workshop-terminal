@@ -6,23 +6,27 @@ Control-Tower contract documented in ``docs/control-tower-implementation.md``,
 including the OBO dual-profile feature (§8) and entitlement provisioning (§9):
 
   1. Import source to the deploying user's workspace home.
-  2. Edit the *uploaded* app.yaml in place (never the git copy) to vend a
-     WORKSHOP_PAT and turn on ENABLE_OBO / ENABLE_ENTITLEMENTS / WORKSHOP_CATALOG.
+  2. Patch the *uploaded* app.yaml bytes (never the git copy) with the attendee,
+     OBO/entitlement settings, admin group, and reviewed release pins.
   3. Create the app, declaring user_api_scopes (catalog.*:read + sql) on the app
      resource (the OBO scope ceiling). NOTE: there is no `unity-catalog` scope —
      use the granular `catalog.catalogs:read` / `catalog.schemas:read` /
      `catalog.tables:read` scopes (list UC metadata) + `sql` (query data).
-  4. Grant the app's service principal ``token CAN_USE`` (the §2 critical grant).
-  5. Provision the per-attendee catalog: labuser OWNER + ALL_PRIVILEGES, app SP
-     USE_CATALOG + CREATE_SCHEMA (§9).
-  6. Deploy and print an acceptance summary.
+  4. Provision the per-attendee catalog: labuser OWNER + ALL_PRIVILEGES/MANAGE, app SP
+     catalog-scoped MANAGE + USE_CATALOG + CREATE_SCHEMA (§9).
+  5. Deploy and require the app to report healthy direct app-identity OAuth.
+  6. Print an acceptance summary.
 
-Each CT step is fail-soft: a step that needs an admin grant the deployer lacks
-logs a warning and the deploy proceeds, so you always get a running app plus a
-clear report of what still needs a workspace admin.
+Event deployment defaults to no static PAT and fails closed on missing OBO
+scopes. Permission assumptions are reported explicitly and produce a nonzero
+exit instead of silently claiming readiness. Use --dry-run/--validate to print
+the secret-free mutation plan without calling workspace APIs.
 
   export DATABRICKS_CONFIG_PROFILE=labs
-  python scripts/deploy_ct_sim.py --name workshop-terminal-ct
+  python scripts/deploy_ct_sim.py --name workshop-terminal-ct \
+    --ai-dev-kit-ref v1.2.3 \
+    --anthropic-model databricks-claude-sonnet-5 \
+    --codex-model databricks-gpt-5-6-codex
 
 Requires: databricks-sdk.
 """
@@ -32,60 +36,236 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import io
+import json
 import os
+import re
 import sys
 import time
 
+import requests
+import yaml
+
 EXCLUDE = ["node_modules*", ".venv*", "__pycache__*", ".git*", "frontend/node_modules*", "*.pyc", "uploads*"]
 REPO_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
+DEFAULT_SCOPES = "catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql"
+BASELINE_SCOPES = frozenset(DEFAULT_SCOPES.split(","))
+EXACT_DEFAULTS = {
+    "claude_code_version": "2.1.216",
+    "codex_cli_version": "0.144.6",
+    "databricks_cli_version": "1.8.0",
+    "omnigent_version": "0.5.1",
+    "node_version": "22.14.0",
+}
+SEMVER_PATTERN = (
+    r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
+    r"(?:-(?:"
+    r"(?:0|[1-9][0-9]*)"
+    r"|(?:[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
+    r")(?:\.(?:"
+    r"(?:0|[1-9][0-9]*)"
+    r"|(?:[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
+    r"))*)?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+)
+SEMVER_RE = re.compile(rf"^{SEMVER_PATTERN}$")
+VERSION_TAG_RE = re.compile(rf"^v{SEMVER_PATTERN}$")
+MODEL_ENDPOINT_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+FLOATING_MODEL_WORDS = frozenset({"latest", "stable", "default", "auto", "current"})
 
 
 def _log(step: str, msg: str) -> None:
     print(f"[ct-sim] {step:<14} {msg}", flush=True)
 
 
-def main() -> int:
+def _parse_args(argv=None, *, environ=None):
+    environ = os.environ if environ is None else environ
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", default="workshop-terminal-ct")
     parser.add_argument("--attendee", default="",
                         help="labuser email used for OBO + entitlement grants "
-                             "(default: the deploying user)")
+                             "(required for --dry-run; otherwise defaults to deployer)")
     parser.add_argument("--catalog", default="workshop_ct_sim",
                         help="WORKSHOP_CATALOG to provision (labuser owner + ALL PRIVILEGES)")
+    parser.add_argument("--catalog-existing-owner", default="")
+    parser.add_argument("--catalog-existing-creator", default="")
+    parser.add_argument("--catalog-existing-type", default="")
+    parser.add_argument("--catalog-existing-isolation-mode", default="")
+    parser.add_argument("--catalog-existing-storage-root", default="")
+    parser.add_argument(
+        "--attendee-token-env",
+        default="WORKSHOP_ATTENDEE_TOKEN",
+        help="external CT OAuth exchange result used for attendee acceptance",
+    )
     parser.add_argument(
         "--scopes",
-        default="catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql",
+        default=DEFAULT_SCOPES,
         help="OBO user_api_scopes declared on the app resource (comma-separated). "
              "No 'unity-catalog' scope exists — use the granular 'catalog.*:read' scopes.")
-    parser.add_argument("--no-pat", action="store_true",
-                        help="skip the vended WORKSHOP_PAT (rely on the SP token CAN_USE grant)")
+    parser.add_argument(
+        "--with-emergency-pat",
+        action="store_true",
+        help="explicitly inject WORKSHOP_PAT from the environment (degraded emergency fallback)",
+    )
     parser.add_argument("--no-obo", action="store_true", help="leave ENABLE_OBO off")
     parser.add_argument("--no-entitlements", action="store_true", help="leave ENABLE_ENTITLEMENTS off")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--non-event-mode",
+        action="store_true",
+        help="allow disabling event-required OBO/entitlements for non-event development",
+    )
+    parser.add_argument(
+        "--profile",
+        default="",
+        help="Databricks CLI profile (or set DATABRICKS_CONFIG_PROFILE)",
+    )
+    parser.add_argument("--admin-group", default="platform_admins")
+    parser.add_argument("--ai-dev-kit-ref", required=True,
+                        help="reviewed ai-dev-kit tag or commit SHA (branch tips rejected)")
+    parser.add_argument("--anthropic-model", required=True,
+                        help="exact reviewed Anthropic serving endpoint")
+    parser.add_argument("--codex-model", required=True,
+                        help="exact reviewed Codex serving endpoint")
+    parser.add_argument("--claude-code-version", default=EXACT_DEFAULTS["claude_code_version"])
+    parser.add_argument("--codex-cli-version", default=EXACT_DEFAULTS["codex_cli_version"])
+    parser.add_argument("--databricks-cli-version", default=EXACT_DEFAULTS["databricks_cli_version"])
+    parser.add_argument("--omnigent-version", default=EXACT_DEFAULTS["omnigent_version"])
+    parser.add_argument("--node-version", default=EXACT_DEFAULTS["node_version"])
+    parser.add_argument("--dry-run", "--validate", dest="dry_run", action="store_true",
+                        help="print a secret-free settings/grant plan without API mutations")
+    args = parser.parse_args(argv)
+    _validate_args(parser, args, environ)
+    return args
+
+
+def _parse_scopes(value):
+    return [scope.strip() for scope in value.split(",") if scope.strip()]
+
+
+def _applied_scopes_include(requested, applied):
+    return set(requested).issubset(set(applied))
+
+
+def _require_applied_scopes(app, requested):
+    applied = list(getattr(app, "user_api_scopes", None) or [])
+    missing = sorted(set(requested) - set(applied))
+    if missing:
+        raise RuntimeError(
+            "app is missing requested OBO scopes: " + ",".join(missing)
+        )
+    return applied
+
+
+def _validate_args(parser, args, environ):
+    args.profile = (
+        args.profile.strip()
+        or str(environ.get("DATABRICKS_CONFIG_PROFILE", "")).strip()
+    )
+    if not args.profile:
+        parser.error("--profile or DATABRICKS_CONFIG_PROFILE is required")
+    if not args.non_event_mode and (args.no_obo or args.no_entitlements):
+        parser.error(
+            "--no-obo/--no-entitlements require explicit --non-event-mode; "
+            "event validation requires both features"
+        )
+    if not args.non_event_mode and args.with_emergency_pat:
+        parser.error(
+            "--with-emergency-pat requires --non-event-mode; event acceptance "
+            "requires direct app-identity OAuth"
+        )
+    scopes = _parse_scopes(args.scopes)
+    missing_scopes = sorted(BASELINE_SCOPES - set(scopes))
+    if not args.non_event_mode and missing_scopes:
+        parser.error(
+            "event OBO scopes are missing baseline values: "
+            + ",".join(missing_scopes)
+        )
+    ref = args.ai_dev_kit_ref
+    if not (re.fullmatch(r"[0-9A-Fa-f]{40}", ref) or VERSION_TAG_RE.fullmatch(ref)):
+        parser.error(
+            "--ai-dev-kit-ref must be a full 40-hex commit SHA or strict "
+            "version tag (vMAJOR.MINOR.PATCH with optional prerelease/build)"
+        )
+    for field in (
+        "claude_code_version",
+        "codex_cli_version",
+        "databricks_cli_version",
+        "omnigent_version",
+        "node_version",
+    ):
+        value = getattr(args, field)
+        if not SEMVER_RE.fullmatch(value):
+            parser.error(
+                f"--{field.replace('_', '-')} must be an exact semantic version"
+            )
+    for field in ("anthropic_model", "codex_model"):
+        value = getattr(args, field)
+        words = set(re.split(r"[._-]+", value.lower()))
+        if (
+            not MODEL_ENDPOINT_RE.fullmatch(value)
+            or not any(char.isdigit() for char in value)
+            or words & FLOATING_MODEL_WORDS
+        ):
+            parser.error(
+                f"--{field.replace('_', '-')} must be an explicit non-floating "
+                "model endpoint name"
+            )
+    if args.dry_run and not args.attendee.strip():
+        parser.error("--attendee is required for --dry-run/--validate")
+
+
+def main(argv=None, *, environ=None) -> int:
+    args = _parse_args(argv, environ=environ)
+    enable_obo = not args.no_obo
+    enable_ent = not args.no_entitlements
+    scopes = _parse_scopes(args.scopes) if enable_obo else []
+
+    if args.dry_run:
+        settings = _event_settings_from_args(args, args.attendee.strip(), "")
+        _print_dry_run(_dry_run_plan(
+            name=args.name,
+            attendee=args.attendee.strip(),
+            catalog=args.catalog,
+            scopes=scopes,
+            settings=settings,
+            admin_group=args.admin_group,
+            profile=args.profile,
+            emergency_pat=args.with_emergency_pat,
+            catalog_provenance=_catalog_provenance_from_args(args),
+        ))
+        return 0
 
     from databricks.sdk import WorkspaceClient
     from databricks.sdk.service.apps import App, AppDeployment
     from databricks.sdk.service.workspace import ImportFormat
 
-    w = WorkspaceClient()
-    me = w.current_user.me().user_name
+    w = _make_workspace_client(WorkspaceClient, args.profile)
+    me_record = w.current_user.me()
+    me = me_record.user_name
     attendee = args.attendee.strip() or me
-    enable_obo = not args.no_obo
-    enable_ent = not args.no_entitlements
     target = f"/Workspace/Users/{me}/apps/{args.name}"
-    _log("identity", f"deploying as {me} -> app '{args.name}' (attendee/labuser={attendee})")
+    _log(
+        "identity",
+        f"profile={args.profile}; deploying as {me} -> app '{args.name}' "
+        f"(attendee/labuser={attendee})",
+    )
 
-    # --- vended credential (CT vends its own; here a 12h PAT as the deployer) ---
+    # Emergency-only static credential. Never mint one here: the event default is
+    # direct app-identity OAuth, and fallback material must be explicitly supplied.
     workshop_pat = ""
-    if not args.no_pat:
-        workshop_pat = w.tokens.create(
-            comment=f"{args.name} ct-sim vended credential", lifetime_seconds=43200
-        ).token_value
-        _log("credential", "minted 12h WORKSHOP_PAT (vended credential)")
+    if args.with_emergency_pat:
+        workshop_pat = str((environ or os.environ).get("WORKSHOP_PAT", "")).strip()
+        if not workshop_pat:
+            raise RuntimeError(
+                "--with-emergency-pat requires WORKSHOP_PAT in the environment"
+            )
+        _log("credential", "DEGRADED: injecting explicit emergency WORKSHOP_PAT")
+
+    settings = _event_settings_from_args(args, attendee, workshop_pat)
 
     # --- 1+2. import source, editing the uploaded app.yaml in place ---
     _log("import", f"uploading source to {target}")
     n_files = 0
+    uploaded_app_yaml = None
     for root, dirs, files in os.walk(REPO_ROOT):
         rel_root = os.path.relpath(root, REPO_ROOT)
         dirs[:] = [
@@ -99,10 +279,8 @@ def main() -> int:
             with open(os.path.join(root, name), "rb") as f:
                 content = f.read()
             if rel == "app.yaml":
-                content = _patch_app_yaml(
-                    content, workshop_pat, enable_obo, enable_ent,
-                    args.catalog if enable_ent else "", args.scopes,
-                )
+                content = _patch_app_yaml(content, settings)
+                uploaded_app_yaml = content
             ws_path = f"{target}/{rel}".replace("\\", "/")
             w.workspace.mkdirs(os.path.dirname(ws_path))
             w.workspace.upload(ws_path, io.BytesIO(content), format=ImportFormat.AUTO, overwrite=True)
@@ -110,22 +288,33 @@ def main() -> int:
     _log("import", f"uploaded {n_files} files")
 
     # --- 3. create app, declaring OBO scopes on the app resource ---
-    scopes = [s.strip() for s in args.scopes.split(",") if s.strip()] if enable_obo else None
-    app = _create_app(w, App, args.name, scopes)
+    app = _create_app(w, App, args.name, scopes, fail_closed=True)
+    if enable_obo:
+        _require_applied_scopes(app, scopes)
+    if uploaded_app_yaml is None:
+        raise RuntimeError("source bundle did not contain app.yaml")
+    uploaded_app_yaml = _patch_uploaded_app_yaml_with_sp_id(
+        w, target, ImportFormat.AUTO, uploaded_app_yaml, app
+    )
     sp_id = getattr(app, "service_principal_client_id", None)
+    if not sp_id:
+        raise RuntimeError("app did not expose service_principal_client_id")
     _log("create", f"app SP client id = {sp_id}")
 
-    # --- 4. grant the app SP token CAN_USE (the critical §2 grant) ---
-    if sp_id:
-        _grant_token_can_use(w, sp_id)
-    else:
-        _log("token-grant", "WARN no service_principal_client_id on app — skipping token CAN_USE")
+    group_status = _configure_admin_group(w, args.admin_group, sp_id, me_record)
 
-    # --- 5. provision the per-attendee catalog (§9) ---
+    # --- 4. provision the per-attendee catalog (§9) ---
+    catalog_ok = True
     if enable_ent:
-        _provision_catalog(w, args.catalog, attendee, sp_id)
+        catalog_ok = _provision_catalog(
+            w,
+            args.catalog,
+            attendee,
+            sp_id,
+            provenance=_catalog_provenance_from_args(args),
+        )
 
-    # --- 6. deploy ---
+    # --- 5. deploy, then prove the runtime acquired direct OAuth ---
     _log("deploy", "deploying source bundle ...")
     deployment = w.apps.deploy_and_wait(
         app_name=args.name, app_deployment=AppDeployment(source_code_path=target)
@@ -133,42 +322,362 @@ def main() -> int:
     app = w.apps.get(args.name)
     state = deployment.status.state if deployment.status else "unknown"
     _log("deploy", f"deployment state = {state}")
+    deployer_token = _authorization_bearer(w.config.authenticate())
+    attendee_token = (
+        deployer_token
+        if attendee == me
+        else str((environ or os.environ).get(args.attendee_token_env, "")).strip()
+    )
+    acceptance = _post_deploy_acceptance(
+        app.url,
+        attendee=attendee,
+        attendee_token=attendee_token,
+        request=requests.request,
+        now=time.time(),
+        workshop_pat_present=bool(workshop_pat),
+    )
+    direct_oauth_ok = acceptance["ok"]
+    _log(
+        "credential",
+        "healthy direct app-identity OAuth"
+        if direct_oauth_ok
+        else "UNHEALTHY: direct app-identity OAuth not validated after deploy",
+    )
+    if acceptance["blocker"]:
+        _log("acceptance", f"BLOCKED: {acceptance['blocker']}")
 
-    applied_scopes = getattr(app, "user_api_scopes", None) or []
+    applied_scopes = (
+        _require_applied_scopes(app, scopes)
+        if enable_obo
+        else list(getattr(app, "user_api_scopes", None) or [])
+    )
     _print_summary(args, me, attendee, app, sp_id, enable_obo, enable_ent,
-                   bool(workshop_pat), applied_scopes)
+                   bool(workshop_pat), applied_scopes, direct_oauth_ok,
+                   catalog_ok, group_status)
+    assumptions_ok = (
+        direct_oauth_ok
+        and catalog_ok
+        and group_status["app_sp_member"]
+        and group_status["deployer_member"]
+        and (not enable_obo or _applied_scopes_include(scopes, applied_scopes))
+    )
+    if not assumptions_ok:
+        _log("result", "INCOMPLETE: one or more event-readiness assumptions failed")
+        return 1
     return 0
 
 
-def _patch_app_yaml(content, pat, enable_obo, enable_ent, catalog, scopes):
-    def sub(b, k, v):
-        return b.replace(
-            f'- name: {k}\n    value: ""'.encode(),
-            f'- name: {k}\n    value: "{v}"'.encode(),
-        )
+def _event_settings(
+    *,
+    attendee,
+    catalog,
+    scopes,
+    admin_group,
+    ai_dev_kit_ref,
+    anthropic_model,
+    codex_model,
+    claude_code_version,
+    codex_cli_version,
+    databricks_cli_version,
+    omnigent_version,
+    node_version,
+    workshop_pat,
+    enable_obo=True,
+    enable_entitlements=True,
+):
+    return {
+        "WORKSHOP_PAT": workshop_pat,
+        "WORKSHOP_APP_SP_ID": "",
+        "WORKSHOP_ATTENDEE_EMAIL": attendee,
+        "WORKSHOP_CATALOG": catalog if enable_entitlements else "",
+        "ENABLE_OBO": str(enable_obo).lower(),
+        "ENABLE_ENTITLEMENTS": str(enable_entitlements).lower(),
+        "OBO_SCOPES": scopes if enable_obo else "",
+        "ADMIN_GROUP": admin_group,
+        "AI_DEV_KIT_REF": ai_dev_kit_ref,
+        "ANTHROPIC_MODEL": anthropic_model,
+        "CODEX_MODEL": codex_model,
+        "CLAUDE_CODE_VERSION": claude_code_version,
+        "CODEX_CLI_VERSION": codex_cli_version,
+        "DATABRICKS_CLI_VERSION": databricks_cli_version,
+        "OMNIGENT_VERSION": omnigent_version,
+        "NODE_VERSION": node_version,
+    }
 
-    if pat:
-        content = sub(content, "WORKSHOP_PAT", pat)
-    if enable_obo:
-        content = content.replace(
-            b'- name: ENABLE_OBO\n    value: "false"',
-            b'- name: ENABLE_OBO\n    value: "true"',
-        )
-        content = sub(content, "OBO_SCOPES", scopes) if b'OBO_SCOPES\n    value: ""' in content else content
-    if enable_ent:
-        content = content.replace(
-            b'- name: ENABLE_ENTITLEMENTS\n    value: "false"',
-            b'- name: ENABLE_ENTITLEMENTS\n    value: "true"',
-        )
-        if catalog:
-            content = sub(content, "WORKSHOP_CATALOG", catalog)
-    return content
+
+def _event_settings_from_args(args, attendee, workshop_pat):
+    return _event_settings(
+        attendee=attendee,
+        catalog=args.catalog,
+        scopes=args.scopes,
+        admin_group=args.admin_group,
+        ai_dev_kit_ref=args.ai_dev_kit_ref,
+        anthropic_model=args.anthropic_model,
+        codex_model=args.codex_model,
+        claude_code_version=args.claude_code_version,
+        codex_cli_version=args.codex_cli_version,
+        databricks_cli_version=args.databricks_cli_version,
+        omnigent_version=args.omnigent_version,
+        node_version=args.node_version,
+        workshop_pat=workshop_pat,
+        enable_obo=not args.no_obo,
+        enable_entitlements=not args.no_entitlements,
+    )
 
 
-def _create_app(w, App, name, scopes):
+def _patch_app_yaml(content, settings):
+    """Replace only named env scalar values while preserving all other bytes."""
+    text = content.decode("utf-8")
+    original = yaml.safe_load(text)
+    env = original.get("env") if isinstance(original, dict) else None
+    if not isinstance(env, list):
+        raise ValueError("app.yaml must contain an env list")
+    names = [item.get("name") for item in env if isinstance(item, dict)]
+    duplicate_names = sorted({
+        name for name in names if name and names.count(name) > 1
+    })
+    if duplicate_names:
+        raise ValueError(
+            "app.yaml contains duplicate env names: " + ", ".join(duplicate_names)
+        )
+    missing = sorted(set(settings) - set(names))
+    if missing:
+        raise ValueError(f"app.yaml missing required event settings: {', '.join(missing)}")
+
+    lines = text.splitlines(keepends=True)
+    env_index, env_indent = _find_env_section(lines)
+    section_end = _section_end(lines, env_index + 1, env_indent)
+    blocks = _env_blocks(lines, env_index + 1, section_end)
+    replacements = {}
+    for name, value in settings.items():
+        start, end = blocks.get(name, (None, None))
+        if start is None:
+            raise ValueError(f"could not locate textual env block for {name}")
+        value_lines = [
+            index
+            for index in range(start, end)
+            if re.match(r"^[ \t]*value[ \t]*:", lines[index])
+        ]
+        if len(value_lines) != 1:
+            raise ValueError(f"env block {name} must contain exactly one scalar value")
+        index = value_lines[0]
+        replacements[index] = _replace_yaml_scalar_line(lines[index], str(value))
+    for index, replacement in replacements.items():
+        lines[index] = replacement
+
+    patched = "".join(lines).encode("utf-8")
+    result = yaml.safe_load(patched)
+    result_env = result.get("env") if isinstance(result, dict) else None
+    result_values = {
+        item.get("name"): item.get("value")
+        for item in (result_env or [])
+        if isinstance(item, dict)
+    }
+    incorrect = [
+        name
+        for name, value in settings.items()
+        if result_values.get(name) != str(value)
+    ]
+    if incorrect:
+        raise ValueError(
+            "patched app.yaml failed env validation: " + ", ".join(sorted(incorrect))
+        )
+    return patched
+
+
+def _patch_uploaded_app_yaml_with_sp_id(w, target, import_format, content, app):
+    """Patch the post-create numeric app SP ID into the uploaded app.yaml."""
+    service_principal_id = str(
+        getattr(app, "service_principal_id", None) or ""
+    ).strip()
+    if not re.fullmatch(r"[0-9]+", service_principal_id):
+        raise RuntimeError(
+            "app create/get response did not expose numeric service_principal_id"
+        )
+    patched = _patch_app_yaml(
+        content, {"WORKSHOP_APP_SP_ID": service_principal_id}
+    )
+    w.workspace.upload(
+        f"{target}/app.yaml",
+        io.BytesIO(patched),
+        format=import_format,
+        overwrite=True,
+    )
+    _log("create", f"app SP numeric SCIM id = {service_principal_id}")
+    return patched
+
+
+def _find_env_section(lines):
+    matches = []
+    for index, line in enumerate(lines):
+        body = line.rstrip("\r\n")
+        match = re.match(r"^(?P<indent>[ ]*)env[ \t]*:[ \t]*(?:#.*)?$", body)
+        if match:
+            matches.append((index, len(match.group("indent"))))
+    if len(matches) != 1:
+        raise ValueError("app.yaml must contain exactly one textual env section")
+    return matches[0]
+
+
+def _line_indent(line):
+    stripped = line.lstrip(" ")
+    return len(line) - len(stripped)
+
+
+def _section_end(lines, start, parent_indent):
+    for index in range(start, len(lines)):
+        stripped = lines[index].strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if _line_indent(lines[index]) <= parent_indent:
+            return index
+    return len(lines)
+
+
+def _env_blocks(lines, start, end):
+    item_pattern = re.compile(r"^(?P<indent>[ ]*)-[ \t]+name[ \t]*:[ \t]*(?P<name>.*)$")
+    items = []
+    for index in range(start, end):
+        body = lines[index].rstrip("\r\n")
+        match = item_pattern.match(body)
+        if not match:
+            continue
+        parsed = yaml.safe_load("name: " + match.group("name"))
+        name = parsed.get("name") if isinstance(parsed, dict) else None
+        if not isinstance(name, str):
+            raise ValueError("env item name must be a string")
+        items.append((index, len(match.group("indent")), name))
+    blocks = {}
+    for position, (item_start, indent, name) in enumerate(items):
+        item_end = end
+        for next_start, next_indent, _ in items[position + 1:]:
+            if next_indent == indent:
+                item_end = next_start
+                break
+        blocks[name] = (item_start, item_end)
+    return blocks
+
+
+def _replace_yaml_scalar_line(line, value):
+    newline = ""
+    if line.endswith("\r\n"):
+        line, newline = line[:-2], "\r\n"
+    elif line.endswith("\n"):
+        line, newline = line[:-1], "\n"
+    match = re.match(r"^(?P<prefix>[ \t]*value[ \t]*:[ \t]*)(?P<body>.*)$", line)
+    if not match:
+        raise ValueError("env value must be a scalar line")
+    body = match.group("body")
+    comment_index = _yaml_comment_index(body)
+    before_comment = body if comment_index is None else body[:comment_index]
+    scalar_end = len(before_comment.rstrip(" \t"))
+    suffix = before_comment[scalar_end:]
+    if comment_index is not None:
+        suffix += body[comment_index:]
+    return (
+        match.group("prefix")
+        + json.dumps(value, ensure_ascii=False)
+        + suffix
+        + newline
+    )
+
+
+def _yaml_comment_index(value):
+    quote = None
+    escaped = False
+    for index, char in enumerate(value):
+        if quote == '"' and escaped:
+            escaped = False
+            continue
+        if quote == '"' and char == "\\":
+            escaped = True
+            continue
+        if quote:
+            if char == quote:
+                quote = None
+            continue
+        if char in {"'", '"'}:
+            quote = char
+        elif char == "#" and (index == 0 or value[index - 1].isspace()):
+            return index
+    return None
+
+
+def _quoted(value):
+    text = str(value)
+    if not text or "\x00" in text or "\n" in text or "\r" in text:
+        raise ValueError("catalog and principal identifiers must be non-empty single-line values")
+    return f"`{text.replace('`', '``')}`"
+
+
+def _catalog_sql_plan(catalog, attendee, sp_id, *, create=True):
+    cat = _quoted(catalog)
+    user = _quoted(attendee)
+    sp = _quoted(sp_id)
+    statements = [
+        f"GRANT ALL PRIVILEGES ON CATALOG {cat} TO {user}",
+        f"GRANT MANAGE ON CATALOG {cat} TO {user}",
+        f"GRANT MANAGE, USE CATALOG, CREATE SCHEMA ON CATALOG {cat} TO {sp}",
+        f"ALTER CATALOG {cat} OWNER TO {user}",
+    ]
+    if create:
+        statements.insert(
+            0,
+            f"CREATE CATALOG IF NOT EXISTS {cat} "
+            "COMMENT 'Workshop CT-sim per-attendee catalog'",
+        )
+    return statements
+
+
+def _dry_run_plan(
+    *,
+    name,
+    attendee,
+    catalog,
+    scopes,
+    settings,
+    admin_group,
+    profile,
+    emergency_pat,
+    catalog_provenance=None,
+):
+    safe_settings = dict(settings)
+    safe_settings["WORKSHOP_APP_SP_ID"] = "<resolved-after-app-create>"
+    if safe_settings.get("WORKSHOP_PAT"):
+        safe_settings["WORKSHOP_PAT"] = "<redacted-emergency-pat>"
+    return {
+        "mode": "validate",
+        "mutates_workspace": False,
+        "app_name": name,
+        "profile": profile,
+        "attendee": attendee,
+        "credential_mode": (
+            "degraded_emergency_pat" if emergency_pat else "direct_app_identity_oauth_no_pat"
+        ),
+        "patched_settings": safe_settings,
+        "user_api_scopes": list(scopes),
+        "admin_group_plan": {
+            "group": admin_group,
+            "app_service_principal_membership": "required",
+            "deployer_membership": "required_and_verified_at_apply",
+        },
+        "catalog_sql": _catalog_sql_plan(catalog, attendee, "<app-service-principal-client-id>"),
+        "catalog_existing_provenance": catalog_provenance,
+        "workspace_grants": [],
+    }
+
+
+def _print_dry_run(plan):
+    print(json.dumps(plan, indent=2, sort_keys=True))
+
+
+def _make_workspace_client(workspace_client_cls, profile):
+    return workspace_client_cls(profile=profile)
+
+
+def _create_app(w, App, name, scopes, *, fail_closed=True):
     kwargs = {"name": name}
-    if scopes:
-        kwargs["user_api_scopes"] = scopes
+    kwargs["user_api_scopes"] = list(scopes)
     try:
         w.apps.create_and_wait(App(**kwargs))
         _log("create", f"app created (user_api_scopes={scopes})")
@@ -177,33 +686,71 @@ def _create_app(w, App, name, scopes):
         if "already exists" in msg.lower():
             _log("create", "app exists — updating scopes + redeploying")
             try:
-                if scopes:
-                    w.apps.update(name, App(**kwargs))
+                w.apps.update(name, App(**kwargs))
             except Exception as ue:  # noqa: BLE001
+                if fail_closed:
+                    raise
                 _log("create", f"WARN could not update user_api_scopes: {ue}")
-        elif scopes:
-            _log("create", f"WARN create with scopes failed ({msg.splitlines()[0]}); retrying without scopes")
-            w.apps.create_and_wait(App(name=name))
-        else:
+        elif fail_closed:
             raise
+        else:
+            _log("create", f"WARN create with scopes failed: {msg.splitlines()[0]}")
+            w.apps.create_and_wait(App(name=name))
     return w.apps.get(name)
 
 
-def _grant_token_can_use(w, sp_id):
-    from databricks.sdk.service.settings import TokenAccessControlRequest, TokenPermissionLevel
+def _scim_literal(value):
+    return str(value).replace("\\", "\\\\").replace('"', '\\"')
 
-    try:
-        w.token_management.update_permissions(
-            access_control_list=[
-                TokenAccessControlRequest(
-                    service_principal_name=sp_id,
-                    permission_level=TokenPermissionLevel.CAN_USE,
-                )
-            ]
+
+def _configure_admin_group(w, group_name, sp_id, me_record):
+    """Ensure the app SP is in ADMIN_GROUP and report the deployer's assumption."""
+    groups = list(w.groups.list(
+        filter=f'displayName eq "{_scim_literal(group_name)}"',
+    ))
+    if len(groups) != 1:
+        raise RuntimeError(
+            f"ADMIN_GROUP {group_name!r} must resolve to exactly one workspace group"
         )
-        _log("token-grant", f"granted token CAN_USE to app SP {sp_id}")
-    except Exception as e:  # noqa: BLE001
-        _log("token-grant", f"WARN could not grant token CAN_USE (needs workspace admin): {e}")
+    group = w.groups.get(groups[0].id)
+    service_principals = list(w.service_principals.list(
+        filter=f'applicationId eq "{_scim_literal(sp_id)}"',
+    ))
+    if len(service_principals) != 1:
+        raise RuntimeError("app service principal could not be resolved for ADMIN_GROUP")
+    member_id = str(service_principals[0].id)
+    existing_ids = {
+        str(getattr(member, "value", ""))
+        for member in (getattr(group, "members", None) or [])
+    }
+    if member_id not in existing_ids:
+        w.api_client.do(
+            "PATCH",
+            f"/api/2.0/preview/scim/v2/Groups/{group.id}",
+            body={
+                "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+                "Operations": [{
+                    "op": "add",
+                    "path": "members",
+                    "value": [{"value": member_id}],
+                }],
+            },
+        )
+    deployer_groups = {
+        getattr(group_ref, "display", None)
+        for group_ref in (getattr(me_record, "groups", None) or [])
+    }
+    deployer_member = group_name in deployer_groups
+    _log("admin-group", f"app SP is a member of {group_name}")
+    if deployer_member:
+        _log("admin-group", f"deployer is a member of {group_name}")
+    else:
+        _log("admin-group", f"WARN deployer is not reported as a member of {group_name}")
+    return {
+        "name": group_name,
+        "app_sp_member": True,
+        "deployer_member": deployer_member,
+    }
 
 
 def _pick_warehouse(w):
@@ -216,14 +763,26 @@ def _pick_warehouse(w):
 
 
 def _sql(w, wh, stmt):
-    from databricks.sdk.service.sql import StatementState
-    r = w.statement_execution.execute_statement(statement=stmt, warehouse_id=wh, wait_timeout="50s")
-    if r.status.state == StatementState.FAILED:
-        raise RuntimeError(r.status.error.message if r.status.error else "statement failed")
+    r = w.statement_execution.execute_statement(
+        statement=stmt,
+        warehouse_id=wh,
+        wait_timeout="50s",
+    )
+    status = getattr(r, "status", None)
+    state = getattr(status, "state", None)
+    state_value = getattr(state, "value", state)
+    state_name = "unknown" if state_value is None else str(state_value)
+    if state_name.rsplit(".", 1)[-1].upper() != "SUCCEEDED":
+        error = getattr(status, "error", None)
+        detail = getattr(error, "message", None)
+        suffix = f": {detail}" if detail else ""
+        raise RuntimeError(
+            f"SQL statement did not succeed (state={state_name}){suffix}"
+        )
     return r
 
 
-def _provision_catalog(w, catalog, attendee, sp_id):
+def _provision_catalog(w, catalog, attendee, sp_id, *, provenance=None):
     """CT §9: per-attendee catalog, labuser OWNER + ALL PRIVILEGES, app SP USE/CREATE.
 
     Tries the SDK create; on a Default-Storage metastore (no storage root) the
@@ -231,62 +790,276 @@ def _provision_catalog(w, catalog, attendee, sp_id):
     warehouse (which resolves default storage). Grants are issued via SQL too —
     the typed ``grants.update`` enum mis-serializes on some SDK builds.
     """
-    exists = False
-    try:
-        w.catalogs.get(catalog)
-        exists = True
-        _log("catalog", f"catalog '{catalog}' exists — reusing")
-    except Exception:  # noqa: BLE001 — not found / no access
-        try:
-            w.catalogs.create(name=catalog, comment="Workshop CT-sim per-attendee catalog")
-            exists = True
-            _log("catalog", f"created catalog '{catalog}' (SDK)")
-        except Exception as e:  # noqa: BLE001
-            _log("catalog", f"SDK create blocked ({str(e).splitlines()[0]}); trying SQL")
-
     wh = _pick_warehouse(w)
-    if not exists:
-        if not wh:
-            _log("catalog", "WARN no warehouse available to CREATE CATALOG via SQL — skipping")
-            return
-        try:
-            _sql(w, wh, f"CREATE CATALOG IF NOT EXISTS {catalog} "
-                        f"COMMENT 'Workshop CT-sim per-attendee catalog'")
-            _log("catalog", f"created catalog '{catalog}' (SQL/default-storage)")
-        except Exception as e:  # noqa: BLE001
-            _log("catalog", f"WARN could not create catalog '{catalog}': {e}")
-            return
-
     if not wh:
-        _log("catalog", "WARN no warehouse to issue GRANTs — set owner/grants manually")
-        return
+        _log("catalog", "WARN no warehouse to create catalog and issue scoped grants")
+        return False
     try:
-        _sql(w, wh, f"GRANT ALL PRIVILEGES ON CATALOG {catalog} TO `{attendee}`")
-        if sp_id:
-            _sql(w, wh, f"GRANT USE CATALOG, CREATE SCHEMA ON CATALOG {catalog} TO `{sp_id}`")
-        _log("catalog", f"granted ALL PRIVILEGES to {attendee}; USE/CREATE to app SP")
+        existing = _catalog_info(w, catalog)
+        if existing is not None:
+            if not provenance:
+                raise RuntimeError(
+                    "existing catalog reuse requires explicit CT provenance"
+                )
+            _require_catalog_provenance(existing, provenance)
+            _log("catalog", f"reusing existing dedicated catalog {catalog}")
+        for statement in _catalog_sql_plan(
+            catalog, attendee, sp_id, create=existing is None
+        ):
+            _sql(w, wh, statement)
+        _verify_catalog_access(w, catalog, attendee, sp_id, provenance)
+        _log(
+            "catalog",
+            "attendee OWNER + ALL PRIVILEGES + MANAGE; app SP catalog-scoped "
+            "MANAGE + USE CATALOG + CREATE SCHEMA",
+        )
+        return True
     except Exception as e:  # noqa: BLE001
-        _log("catalog", f"WARN could not set catalog grants: {e}")
-    try:
-        w.catalogs.update(name=catalog, owner=attendee)
-        _log("catalog", f"set catalog owner = {attendee}")
-    except Exception as e:  # noqa: BLE001
-        _log("catalog", f"WARN could not set catalog owner: {e}")
+        _log("catalog", f"WARN catalog provisioning incomplete: {e}")
+        return False
 
 
-def _print_summary(args, me, attendee, app, sp_id, enable_obo, enable_ent, vended, applied_scopes):
+def _catalog_info(w, catalog):
+    try:
+        value = w.catalogs.get(catalog)
+        return value if getattr(value, "name", None) == catalog else None
+    except Exception as error:  # noqa: BLE001 - SDK exception type varies by version
+        code = str(getattr(error, "error_code", "")).upper()
+        message = str(error).lower()
+        if code in {"RESOURCE_DOES_NOT_EXIST", "NOT_FOUND"} or any(
+            text in message for text in ("does not exist", "not found")
+        ):
+            return None
+        raise
+
+
+def _metadata_value(value):
+    raw = getattr(value, "value", value)
+    return None if raw is None else str(raw)
+
+
+def _require_catalog_provenance(info, provenance):
+    fields = {
+        "owner": "owner",
+        "creator": "created_by",
+        "catalog_type": "catalog_type",
+        "isolation_mode": "isolation_mode",
+        "storage_root": "storage_root",
+    }
+    if set(provenance) != set(fields):
+        raise RuntimeError("existing catalog provenance requires all fields")
+    for expected_name, actual_name in fields.items():
+        actual = _metadata_value(getattr(info, actual_name, None))
+        expected_value = provenance[expected_name]
+        if expected_name == "storage_root" and expected_value is None:
+            if actual is not None:
+                raise RuntimeError(
+                    "existing catalog provenance mismatch for storage_root"
+                )
+            continue
+        expected = str(expected_value or "")
+        if actual is None:
+            raise RuntimeError(
+                f"existing catalog API metadata missing {expected_name}"
+            )
+        if not expected:
+            raise RuntimeError(
+                f"existing catalog provenance missing {expected_name}"
+            )
+        if actual != expected:
+            raise RuntimeError(
+                f"existing catalog provenance mismatch for {expected_name}"
+            )
+
+
+def _verify_catalog_access(w, catalog, attendee, sp_id, provenance):
+    info = w.catalogs.get(catalog)
+    if _metadata_value(getattr(info, "owner", None)) != attendee:
+        raise RuntimeError("catalog owner read-back did not match attendee")
+    if provenance:
+        preserved = dict(provenance)
+        preserved["owner"] = attendee
+        _require_catalog_provenance(info, preserved)
+    result = w.grants.get(securable_type="catalog", full_name=catalog)
+    grants = {}
+    for assignment in getattr(result, "privilege_assignments", None) or []:
+        grants[str(getattr(assignment, "principal", ""))] = {
+            _metadata_value(privilege).upper().replace(" ", "_")
+            for privilege in (getattr(assignment, "privileges", None) or [])
+        }
+    attendee_required = {"ALL_PRIVILEGES", "MANAGE"}
+    app_required = {"MANAGE", "USE_CATALOG", "CREATE_SCHEMA"}
+    if not attendee_required.issubset(grants.get(attendee, set())):
+        raise RuntimeError("attendee catalog grants failed read-back verification")
+    if not app_required.issubset(grants.get(sp_id, set())):
+        raise RuntimeError("app SP catalog grants failed read-back verification")
+
+
+def _catalog_provenance_from_args(args):
+    raw = {
+        "owner": args.catalog_existing_owner.strip(),
+        "creator": args.catalog_existing_creator.strip(),
+        "catalog_type": args.catalog_existing_type.strip(),
+        "isolation_mode": args.catalog_existing_isolation_mode.strip(),
+        "storage_root": args.catalog_existing_storage_root.strip(),
+    }
+    if not any(raw.values()):
+        return None
+    missing = [name for name, value in raw.items() if not value]
+    if missing:
+        raise ValueError(
+            "existing catalog reuse requires all provenance fields or none"
+        )
+    values = dict(raw)
+    if raw["storage_root"].casefold() == "null":
+        values["storage_root"] = None
+    return values
+
+
+def _verify_direct_oauth(w, app_url, *, attempts=1, interval=0, sleep=time.sleep):
+    """Require the deployed app to report recently validated direct OAuth."""
+    for attempt in range(max(1, int(attempts))):
+        try:
+            response = requests.get(
+                f"{str(app_url).rstrip('/')}/api/admin/presence",
+                headers=w.config.authenticate(),
+                timeout=30,
+            )
+            payload = response.json() if response.status_code == 200 else {}
+            credential = (
+                payload.get("credential", {}) if isinstance(payload, dict) else {}
+            )
+            if (
+                credential.get("state") == "rotating"
+                and credential.get("source") == "app_identity_oauth"
+                and credential.get("healthy") is True
+            ):
+                return True
+        except (requests.RequestException, ValueError, AttributeError):
+            pass
+        if attempt + 1 < max(1, int(attempts)):
+            sleep(max(0, interval))
+    return False
+
+
+def _authorization_bearer(headers):
+    value = str((headers or {}).get("Authorization") or "")
+    return value[7:].strip() if value.lower().startswith("bearer ") else ""
+
+
+def _post_deploy_acceptance(
+    app_url,
+    *,
+    attendee,
+    attendee_token,
+    request=requests.request,
+    now,
+    workshop_pat_present,
+):
+    """Seed attendee OBO, reconcile, then require the complete deep gate."""
+    if workshop_pat_present:
+        return {
+            "ok": False,
+            "blocker": "WORKSHOP_PAT is forbidden by event acceptance",
+        }
+    if not attendee_token:
+        return {
+            "ok": False,
+            "blocker": (
+                "external Control Tower attendee OAuth exchange is required "
+                "to seed /api/config and OBO"
+            ),
+        }
+    base = str(app_url).rstrip("/")
+    headers = {"Authorization": f"Bearer {attendee_token}"}
+    try:
+        config_response = request(
+            "GET", f"{base}/api/config", headers=headers, timeout=30
+        )
+        config_payload = (
+            config_response.json() if config_response.status_code == 200 else {}
+        )
+        if config_response.status_code in {401, 403}:
+            return {
+                "ok": False,
+                "blocker": (
+                    "external Control Tower attendee OAuth exchange could not "
+                    "authenticate to /api/config"
+                ),
+            }
+        credential = (
+            config_payload.get("credential", {})
+            if isinstance(config_payload, dict)
+            else {}
+        )
+        last_success = credential.get("last_successful_at")
+        credential_ok = (
+            credential.get("state") == "rotating"
+            and credential.get("source") == "app_identity_oauth"
+            and credential.get("healthy") is True
+            and isinstance(last_success, (int, float))
+            and 0 <= now - float(last_success) <= 600
+        )
+        if not credential_ok:
+            return {"ok": False, "blocker": "direct OAuth status is not fresh"}
+        reconcile_response = request(
+            "POST",
+            f"{base}/api/entitlements/reconcile",
+            headers=headers,
+            json={"email": attendee},
+            timeout=30,
+        )
+        if reconcile_response.status_code != 200:
+            return {"ok": False, "blocker": "entitlement reconcile failed"}
+        ready_response = request(
+            "GET", f"{base}/readyz", headers=headers, timeout=30
+        )
+        ready_payload = ready_response.json() if ready_response.status_code == 200 else {}
+        if not (
+            ready_response.status_code == 200
+            and isinstance(ready_payload, dict)
+            and ready_payload.get("ready") is True
+            and ready_payload.get("status") == "ready"
+        ):
+            return {"ok": False, "blocker": "/readyz did not become green"}
+        return {"ok": True, "blocker": None}
+    except (requests.RequestException, ValueError, AttributeError):
+        return {"ok": False, "blocker": "post-deploy app acceptance request failed"}
+
+
+def _print_summary(
+    args,
+    me,
+    attendee,
+    app,
+    sp_id,
+    enable_obo,
+    enable_ent,
+    vended,
+    applied_scopes,
+    direct_oauth_ok,
+    catalog_ok,
+    group_status,
+):
     print("\n" + "=" * 72)
     print("CT-SIM DEPLOYMENT SUMMARY")
     print("=" * 72)
     print(f"  app name        : {args.name}")
+    print(f"  profile         : {args.profile}")
     print(f"  app url         : {app.url}")
     print(f"  deployed by     : {me}")
     print(f"  attendee/labuser: {attendee}")
-    print(f"  app SP id       : {sp_id}")
-    print(f"  vended PAT      : {'yes (degraded — prefer SP grant)' if vended else 'no (SP token CAN_USE)'}")
+    print(f"  app SP client id: {sp_id}")
+    print(f"  app SP numeric id: {app.service_principal_id}")
+    print(f"  emergency PAT   : {'yes (degraded fallback)' if vended else 'no'}")
     scope_str = ",".join(applied_scopes) if applied_scopes else "(none applied — defaults iam.* only)"
     print(f"  OBO             : {'ENABLED, user_api_scopes=' + scope_str if enable_obo else 'off'}")
     print(f"  entitlements    : {'ENABLED, catalog=' + args.catalog if enable_ent else 'off'}")
+    print(f"  direct OAuth    : {'healthy' if direct_oauth_ok else 'UNHEALTHY'}")
+    print(f"  catalog grants  : {'configured' if catalog_ok else 'INCOMPLETE'}")
+    print(f"  ADMIN_GROUP     : {group_status['name']}")
+    print(f"    app SP member : {group_status['app_sp_member']}")
+    print(f"    deployer member: {group_status['deployer_member']}")
     print("\nAcceptance checks (open the app URL in a browser first to mint an OBO token):")
     print(f"  curl -s {app.url}/api/config -H 'Authorization: Bearer <admin>' | jq '.credential,.obo,.entitlements'")
     print("  In a terminal session:")

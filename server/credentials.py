@@ -1,11 +1,10 @@
-"""Workspace credential for attendee CLIs — minted from the app's identity.
+"""Workspace credential for attendee CLIs — direct app-identity OAuth.
 
-Databricks Apps OBO scopes deliberately exclude the Token API, so the app
-cannot mint per-user PATs from forwarded tokens. The bulletproof model is to
-mint short-lived rotating tokens from the **app's own service-principal OAuth
-identity** (P1-2): that identity is platform-managed and auto-refreshed, so
-there is no long-lived secret to expire across a deploy-then-idle-then-event
-window. Attendees never touch tokens.
+Databricks Apps injects platform-managed app service-principal OAuth
+credentials. ``WorkspaceClient.config.authenticate()`` returns their current
+short-lived access bearer; this module validates and distributes that bearer
+directly. The client secret never enters attendee shells/files and the app never
+calls workspace token create/delete APIs.
 
 For backwards compatibility the app still accepts a vended ``WORKSHOP_PAT`` as
 an *emergency-only* bootstrap, but a static PAT is a time bomb (it expires with
@@ -19,8 +18,12 @@ alerted hours/days before the event, not at first use on the day.
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
 import os
+import platform
+import re
 import threading
 import time
 
@@ -30,15 +33,26 @@ from . import config
 
 logger = logging.getLogger(__name__)
 
-TOKEN_LIFETIME = 900          # 15 minutes — lifetime of each minted CLI token
-PROBE_INTERVAL = 300          # 5 minutes — health probe / rotation cadence
+_workspace_client = None
+_app_client_id: str | None = None
+_identity_lock = threading.Lock()
+_secret_protection = {
+    "initialized": False,
+    "env_scrubbed": False,
+    "non_dumpable": False,
+    "ok": False,
+    "error": None,
+}
+
+PROBE_INTERVAL = 300          # 5 minutes — OAuth refresh / validation cadence
+OAUTH_VALIDATION_MAX_AGE = 600
+OAUTH_EXPIRY_MARGIN = 60
 HEARTBEAT = 30                # loop wake interval
 ALERT_REEMIT_INTERVAL = 1800  # re-emit an unhealthy/degraded alert at most every 30 min
-TOKEN_COMMENT = "workshop-terminal-auto"
 
 # Credential health states surfaced through status()["state"].
 STATE_UNKNOWN = "unknown"      # not yet probed
-STATE_ROTATING = "rotating"    # minting fresh short-lived tokens — fully healthy
+STATE_ROTATING = "rotating"    # recently validated auto-refreshing OAuth
 STATE_DEGRADED = "degraded"    # serving a static credential, no rotation (time bomb)
 STATE_UNHEALTHY = "unhealthy"  # credential rejected/expired or nothing configured
 
@@ -51,17 +65,110 @@ def vended_pat() -> str:
     return os.environ.get("WORKSHOP_PAT", "").strip()
 
 
+def _set_non_dumpable() -> bool:
+    """Block same-UID ptrace and /proc memory/environ reads on Linux."""
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL(None, use_errno=True)
+        return libc.prctl(4, 0, 0, 0, 0) == 0  # PR_SET_DUMPABLE
+    except (AttributeError, OSError):
+        return False
+
+
+def _secret_env_names() -> list[str]:
+    return [
+        name
+        for name in os.environ
+        if name.startswith("DATABRICKS_CLIENT_SECRET")
+        or name.startswith("DATABRICKS_OAUTH_CLIENT_SECRET")
+    ]
+
+
+def initialize_app_identity(
+    *,
+    workspace_client_cls=None,
+    harden_fn=_set_non_dumpable,
+    system: str | None = None,
+):
+    """Create exactly one explicit OAuth M2M client, then scrub/harden secrets."""
+    global _workspace_client, _app_client_id, _secret_protection
+    with _identity_lock:
+        if _workspace_client is not None:
+            return _workspace_client
+        host = os.environ.get("DATABRICKS_HOST", "").strip()
+        client_id = os.environ.get("DATABRICKS_CLIENT_ID", "").strip()
+        client_secret = os.environ.get("DATABRICKS_CLIENT_SECRET", "").strip()
+        if not all((host, client_id, client_secret)):
+            _secret_protection = {
+                "initialized": False,
+                "env_scrubbed": False,
+                "non_dumpable": False,
+                "ok": False,
+                "error": "explicit OAuth M2M environment is incomplete",
+            }
+            raise RuntimeError("DATABRICKS_HOST/CLIENT_ID/CLIENT_SECRET are required")
+        if workspace_client_cls is None:
+            from databricks.sdk import WorkspaceClient
+
+            workspace_client_cls = WorkspaceClient
+        client = workspace_client_cls(
+            host=host,
+            client_id=client_id,
+            client_secret=client_secret,
+            auth_type="oauth-m2m",
+        )
+        _workspace_client = client
+        _app_client_id = client_id
+        for name in _secret_env_names():
+            os.environ.pop(name, None)
+            os.unsetenv(name)
+        env_scrubbed = not _secret_env_names()
+        linux = (system or platform.system()) == "Linux"
+        non_dumpable = bool(harden_fn()) if linux else True
+        ok = env_scrubbed and non_dumpable
+        _secret_protection = {
+            "initialized": True,
+            "env_scrubbed": env_scrubbed,
+            "non_dumpable": non_dumpable,
+            "ok": ok,
+            "error": None if ok else "server process could not be made non-dumpable",
+        }
+        if linux and not non_dumpable and not config.local_dev():
+            _workspace_client = None
+            raise RuntimeError("production Linux server process must be non-dumpable")
+        return client
+
+
+def secret_protection_status() -> dict:
+    return dict(_secret_protection)
+
+
+def _reset_app_identity_for_tests() -> None:
+    global _workspace_client, _app_client_id, _secret_protection
+    with _identity_lock:
+        _workspace_client = None
+        _app_client_id = None
+        _secret_protection = {
+            "initialized": False,
+            "env_scrubbed": False,
+            "non_dumpable": False,
+            "ok": False,
+            "error": None,
+        }
+
+
 def app_identity_bearer() -> str | None:
     """Bearer for the app's OWN service-principal OAuth identity (P1-2).
 
     Databricks Apps run as a service principal and inject its OAuth credentials
-    into the runtime; the SDK's ``WorkspaceClient()`` authenticates as that SP.
-    We use it to mint the short-lived CLI tokens **without** a long-lived,
+    into the runtime; our explicit singleton ``WorkspaceClient`` authenticates
+    with ``auth_type="oauth-m2m"`` as that SP.
+    We distribute the current short-lived OAuth bearer **without** a long-lived,
     workspace-admin ``WORKSHOP_PAT`` sitting in ``app.yaml`` env where an
     attendee (``CAN_MANAGE`` + ``/Workspace/Shared``) could read it. The app's
     OAuth client secret is platform-managed, not an attendee-readable file/env
-    var, and attendees only ever receive the rotating 15-minute tokens minted
-    from it. Returns ``None`` if the app identity can't authenticate (e.g. local
+    var. Returns ``None`` if the app identity can't authenticate (e.g. local
     dev), so callers fall back to the vended PAT.
     """
     if config.local_dev():
@@ -69,9 +176,9 @@ def app_identity_bearer() -> str | None:
         # auth probe (it would block trying auth methods that can't succeed).
         return None
     try:
-        from databricks.sdk import WorkspaceClient
-
-        headers = WorkspaceClient().config.authenticate()  # type: ignore[no-untyped-call]
+        if _workspace_client is None:
+            return None
+        headers = _workspace_client.config.authenticate()
         auth = (headers or {}).get("Authorization", "")
         if auth.lower().startswith("bearer "):
             return auth[7:].strip() or None
@@ -81,119 +188,139 @@ def app_identity_bearer() -> str | None:
 
 
 def _bootstrap_auth() -> str | None:
-    """Auth used to MINT short-lived CLI tokens: the app's own OAuth identity
-    first (P1-2 — no attendee-readable admin PAT), else a vended PAT for
-    backwards compatibility / environments without an app identity."""
+    """Current app OAuth bearer, or the explicit emergency PAT fallback."""
     return app_identity_bearer() or (vended_pat() or None)
 
 
-def _bootstrap_source() -> str | None:
-    """Which credential ``_bootstrap_auth`` would use right now, for reporting."""
-    if app_identity_bearer():
-        return "app_identity"
-    if vended_pat():
-        return "vended_pat"
-    return None
+def _identity_request(
+    url: str, endpoint: str, token: str
+) -> tuple[dict, dict | None]:
+    """Call one identity endpoint and retain only safe, identity-shaped evidence."""
+    entry = {
+        "endpoint": endpoint,
+        "status": None,
+        "observed_identity": {},
+    }
+    try:
+        response = requests.get(
+            url,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+    except requests.RequestException:
+        entry["status"] = "request_error"
+        return entry, None
+
+    entry["status"] = response.status_code
+    if response.status_code != 200:
+        return entry, None
+    try:
+        payload = response.json()
+    except (AttributeError, ValueError):
+        return entry, None
+    if not isinstance(payload, dict):
+        return entry, None
+
+    for field in ("applicationId", "application_id", "userName", "id"):
+        value = payload.get(field)
+        if isinstance(value, (str, int)) and str(value):
+            entry["observed_identity"][field] = str(value)
+    return entry, payload
+
+
+def _identity_values(payload: dict | None, fields: tuple[str, ...]) -> list[str]:
+    if not payload:
+        return []
+    return [
+        str(payload[field])
+        for field in fields
+        if isinstance(payload.get(field), (str, int)) and str(payload[field])
+    ]
+
+
+def _primary_identity_value(
+    payload: dict | None, fields: tuple[str, ...]
+) -> str | None:
+    values = _identity_values(payload, fields)
+    return values[0] if values else None
 
 
 class CredentialManager:
-    """Instance-level credential: mint+rotate from the app identity when able,
-    fall back to a vended PAT (reported degraded), and self-probe for health."""
+    """Serve the app SP's auto-refreshing OAuth bearer directly to attendee CLIs.
 
-    def __init__(self, session_count_fn):
+    The Databricks Apps runtime owns the client secret and refresh grant. This
+    manager only receives short-lived access bearers from ``WorkspaceClient``,
+    validates them against a read-only workspace endpoint, and copies changed
+    bearers into attendee-owned token files. ``WORKSHOP_PAT`` is an explicit
+    degraded fallback and is never used to mint another credential.
+    """
+
+    def __init__(self, session_count_fn, *, now_fn=time.time):
         self._session_count_fn = session_count_fn
+        self._now = now_fn
         self._token: str | None = None
-        self._token_id: str | None = None
-        self._minted_at: float = 0.0
-        self._rotating = False  # True once we can mint our own short-lived tokens
-        self._bootstrap_ok = False  # True if app identity or a vended PAT can bootstrap
+        self._expires_at: float | None = None
+        self._rotating = False
+        self._source: str | None = None
+        self._bootstrap_ok = False
         self._health = STATE_UNKNOWN
         self._lock = threading.Lock()
+        self._refresh_lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._last_probe = 0.0
+        self._last_successful_at = 0.0
         self._last_alert_at = 0.0
         self.last_error: str | None = None
+        self._validation_diagnostic: dict | None = None
 
     # -- public --
 
     @property
     def healthy(self) -> bool:
-        """True when attendees can get a working token right now.
-
-        ``rotating`` means minting is proven to work, so ``token()`` can always
-        hand out a fresh short-lived token even if the currently-held one has
-        aged out during idle — that is healthy. ``degraded``/``unhealthy`` are
-        not. Before the first probe resolves we stay optimistic if anything can
-        bootstrap, so a freshly-started app doesn't flap a false alarm.
-        """
         with self._lock:
-            state = self._health
-            bootstrap_ok = self._bootstrap_ok
-        if state == STATE_ROTATING:
-            return True
-        if state in (STATE_DEGRADED, STATE_UNHEALTHY):
-            return False
-        return bootstrap_ok or bool(vended_pat())
+            return self._effective_state_locked() == STATE_ROTATING
 
     def token(self) -> str:
-        """Current CLI token: our freshest minted token, else mint one now.
-
-        The minted token is what attendees' CLIs receive — short-lived and
-        rotating. There is no static token to serve in app-identity mode, so a
-        first call (or the first call after an idle gap, where the previous
-        minted token has aged out) mints on demand. A vended PAT is served
-        directly only if minting is unavailable (emergency fallback).
-        """
+        """Return fresh direct OAuth, refreshing/validating after idle on demand."""
         with self._lock:
-            minted = self._token if self._rotating else None
-            fresh = minted and (time.time() - self._minted_at) < TOKEN_LIFETIME
-        if minted and fresh:
-            return minted
-
-        # No fresh minted token — try to mint now (app identity or PAT bootstrap).
+            token = self._token
+            fresh = self._oauth_fresh_locked()
+        if token and fresh:
+            return token
         self._rotate_once()
         with self._lock:
-            minted = self._token if self._rotating else None
-            fresh = minted and (time.time() - self._minted_at) < TOKEN_LIFETIME
-        if minted and fresh:
-            return minted
-
-        # Minting unavailable. Serve a vended PAT directly if one exists (legacy,
-        # emergency-only — health is reported degraded/unhealthy by the probe).
-        bootstrap = vended_pat()
-        if bootstrap:
-            return bootstrap
+            token = self._token
+            fresh = self._oauth_fresh_locked()
+        if token and fresh:
+            return token
+        emergency = vended_pat()
+        if emergency and self._validate_emergency_pat(emergency):
+            return emergency
         raise CredentialError(
-            "No workshop credential available — the app's own identity can't "
-            "mint a token and no WORKSHOP_PAT is set. Grant the app's service "
-            "principal token-create permission, or inject WORKSHOP_PAT."
+            "No workshop credential available — Databricks Apps app-identity "
+            "OAuth could not authenticate and no emergency WORKSHOP_PAT is set."
         )
 
     def start(self) -> None:
-        """Begin the rotation + health-probe loop.
-
-        Bootstraps from the app's own OAuth identity (P1-2) when available, else
-        a vended PAT. The loop runs even when nothing can bootstrap yet, so the
-        credential self-heals if a grant/PAT lands later (e.g. between deploy
-        and event day).
-        """
-        self._bootstrap_ok = bool(_bootstrap_auth())
+        """Begin periodic OAuth acquisition and validation through idle windows."""
+        # Validate synchronously so post-deploy health checks never observe a
+        # false ``unknown`` window before the maintenance thread's first wake.
+        self._self_probe(adopt=True)
+        with self._lock:
+            self._bootstrap_ok = self._source is not None
         if not self._bootstrap_ok:
             logger.warning(
-                "no app identity and no WORKSHOP_PAT — terminals can't "
-                "authenticate until a credential is available; the probe will "
-                "keep checking and self-heal once one appears"
+                "no app-identity OAuth and no emergency WORKSHOP_PAT available"
             )
             self._set_health(
                 STATE_UNHEALTHY,
-                "no app identity and no WORKSHOP_PAT configured — grant the app "
-                "service principal token CAN_USE, or inject WORKSHOP_PAT",
+                "app-identity OAuth unavailable and no emergency WORKSHOP_PAT configured",
             )
-        elif vended_pat() and not app_identity_bearer():
-            logger.info("credential bootstrap: vended WORKSHOP_PAT (no app identity)")
+        elif self.status()["source"] == "emergency_workshop_pat":
+            logger.warning("credential bootstrap: emergency WORKSHOP_PAT")
         else:
-            logger.info("credential bootstrap: app service-principal OAuth identity (P1-2)")
+            logger.info("credential bootstrap: direct app service-principal OAuth")
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
@@ -207,31 +334,33 @@ class CredentialManager:
 
     def status(self) -> dict:
         with self._lock:
-            state = self._health
+            state = self._effective_state_locked()
             rotating = self._rotating
-            minted_at = self._minted_at
             last_error = self.last_error
             bootstrap_ok = self._bootstrap_ok
-        token_expires_in = None
-        if rotating and minted_at:
-            token_expires_in = max(0, int(TOKEN_LIFETIME - (time.time() - minted_at)))
-        # Cheap source derivation (no SDK probe — status() is polled often):
+            last_successful_at = self._last_successful_at
+            source = self._source
+            expires_at = self._expires_at
+            validation_diagnostic = self._validation_diagnostic
         has_pat = bool(vended_pat())
-        if has_pat and not bootstrap_ok:
-            source = "vended_pat"
-        elif not has_pat:
-            source = "app_identity"
-        else:
-            source = "app_identity_or_pat"
+        if source is None:
+            source = "emergency_workshop_pat" if has_pat else "unknown"
+        token_expires_in = (
+            max(0, int(expires_at - self._now()))
+            if expires_at is not None
+            else None
+        )
         return {
             "configured": bootstrap_ok or rotating or has_pat,
-            "rotating": rotating,
-            "healthy": self.healthy,  # acquires the lock itself — must be outside
+            "rotating": state == STATE_ROTATING and rotating,
+            "healthy": state == STATE_ROTATING,
             "degraded": state == STATE_DEGRADED,
             "state": state,
             "source": source,
             "token_expires_in": token_expires_in,
+            "last_successful_at": last_successful_at or None,
             "last_error": last_error,
+            "validation_diagnostic": validation_diagnostic,
         }
 
     # -- internals --
@@ -244,153 +373,236 @@ class CredentialManager:
                 logger.error("credential maintenance failed unexpectedly: %s", e)
 
     def _tick(self) -> None:
-        now = time.time()
+        now = self._now()
         if now - self._last_probe < PROBE_INTERVAL:
             return
         self._last_probe = now
-        # Adopt (rotate + fan out) the minted token when there are live
-        # consumers; otherwise verify mint capability without churning tokens
-        # nobody is using. Either way health is classified and alerted.
-        self._self_probe(adopt=self._session_count_fn() > 0)
-
-    def _mint_auth(self) -> str | None:
-        """Auth for the next mint: chain off our fresh minted token if we have
-        one, else the bootstrap (app identity, then vended PAT)."""
-        with self._lock:
-            if self._rotating and self._token and (
-                time.time() - self._minted_at
-            ) < TOKEN_LIFETIME:
-                return self._token
-        return _bootstrap_auth()
+        self._self_probe(adopt=True)
 
     def _rotate_once(self) -> None:
-        """On-demand mint used by token(). Kept cheap — full health
-        classification (degraded vs dead) is owned by the periodic probe."""
-        auth_token = self._mint_auth()
-        if not auth_token:
-            self.last_error = (
-                "no credential to mint with — app identity can't authenticate "
-                "and no WORKSHOP_PAT set"
-            )
-            return
-        host = config.databricks_host()
-        try:
-            resp = requests.post(
-                f"{host}/api/2.0/token/create",
-                headers={"Authorization": f"Bearer {auth_token}"},
-                json={"lifetime_seconds": TOKEN_LIFETIME, "comment": TOKEN_COMMENT},
-                timeout=30,
-            )
-        except requests.RequestException as e:
-            self.last_error = f"token create request failed: {e}"
-            return
-        if resp.status_code != 200:
-            self.last_error = (
-                f"token create failed ({resp.status_code}); serving credential "
-                "without rotation — grant the app SP token CAN_USE to enable it"
-            )
-            return
-        self._adopt_minted(resp.json())
-        self._set_health(STATE_ROTATING, None)
-        logger.info("credential rotated (lifetime=%ss)", TOKEN_LIFETIME)
+        with self._refresh_lock:
+            with self._lock:
+                if self._oauth_fresh_locked():
+                    return
+            self._probe_unlocked(adopt=True)
 
     def _self_probe(self, *, adopt: bool) -> None:
-        """Verify the credential end-to-end and surface degradation early.
+        """Acquire app OAuth, validate it read-only, and adopt changed bearers."""
+        with self._refresh_lock:
+            self._probe_unlocked(adopt=adopt)
 
-        Runs on a slow cadence through idle windows so a misconfigured grant or
-        an expiring credential is caught and alerted BEFORE attendees hit it.
-        """
-        auth = self._mint_auth()
-        if not auth:
-            self._set_health(
-                STATE_UNHEALTHY,
-                "no credential available to mint or authenticate with — grant "
-                "the app SP token CAN_USE, or inject WORKSHOP_PAT",
-            )
+    def _probe_unlocked(self, *, adopt: bool) -> None:
+        oauth = app_identity_bearer()
+        if oauth:
+            if not self._validate(oauth):
+                self._set_health(
+                    STATE_UNHEALTHY,
+                    self.last_error
+                    or "app-identity OAuth bearer was rejected by the workspace",
+                    clear=True,
+                )
+                return
+            expires_at = _jwt_expiry(oauth)
+            if expires_at is not None and expires_at <= self._now() + OAUTH_EXPIRY_MARGIN:
+                self._set_health(
+                    STATE_UNHEALTHY,
+                    "app-identity OAuth bearer is too close to expiry",
+                    clear=True,
+                )
+                return
+            self._adopt_oauth(oauth, expires_at, fanout=adopt)
             return
-        host = config.databricks_host()
-        try:
-            resp = requests.post(
-                f"{host}/api/2.0/token/create",
-                headers={"Authorization": f"Bearer {auth}"},
-                json={"lifetime_seconds": TOKEN_LIFETIME, "comment": TOKEN_COMMENT},
-                timeout=30,
-            )
-        except requests.RequestException as e:
-            # A single network blip is not "unhealthy" — note it and let the
-            # next probe re-decide rather than alarming on transient failures.
-            self.last_error = f"probe mint request failed: {e}"
-            return
-        if resp.status_code == 200:
-            data = resp.json()
-            if adopt:
-                self._adopt_minted(data)
-            else:
-                # Verify-only during idle: prove mint capability, then revoke the
-                # probe token so idle windows don't accumulate live tokens.
-                with self._lock:
-                    self._rotating = True
-                self._revoke(data["token_info"]["token_id"], data["token_value"])
-            self._set_health(STATE_ROTATING, None)
-            return
-        # Mint failed: tell a valid-but-can't-mint credential (degraded — a
-        # static credential is being served) from a rejected/expired one.
-        from . import auth as auth_mod
 
-        with self._lock:
-            self._rotating = False
-        if auth_mod.scim_token_valid(auth):
-            self._set_health(
-                STATE_DEGRADED,
-                f"cannot mint short-lived tokens ({resp.status_code}); serving a "
-                "static credential without rotation — grant the app service "
-                "principal token CAN_USE to enable rotation before the event",
-            )
+        emergency = vended_pat()
+        if emergency:
+            self._validate_emergency_pat(emergency)
         else:
             self._set_health(
                 STATE_UNHEALTHY,
-                f"the served credential was rejected by the workspace "
-                f"({resp.status_code}); it may have expired — re-grant the app SP "
-                "or re-vend WORKSHOP_PAT before the event",
+                "app-identity OAuth unavailable and no emergency WORKSHOP_PAT configured",
+                clear=True,
             )
 
-    def _adopt_minted(self, data: dict) -> None:
-        """Make a freshly minted token the served token and fan it out.
-
-        We deliberately do NOT revoke the previously-minted token here. Live
-        agent processes (Claude's apiKeyHelper, Codex's provider auth command,
-        Omnigent's gateway auth_command) re-read the rotating token file on
-        their own ~4-min cadence, so at any instant a running process may still
-        be holding the prior token. Revoking it the moment we rotate would 401
-        that process until its next refresh; instead we let the old token expire
-        naturally on its short (TOKEN_LIFETIME) clock. The extra live tokens are
-        bounded — at most a couple within one lifetime window — and short-lived.
-        """
-        with self._lock:
-            self._token = data["token_value"]
-            self._token_id = data["token_info"]["token_id"]
-            self._minted_at = time.time()
-            self._rotating = True
-        self._fanout(data["token_value"])
-
-    def _revoke(self, token_id: str, auth_token: str) -> None:
+    def _validate(self, token: str, *, require_app_identity: bool = True) -> bool:
         host = config.databricks_host()
-        try:
-            requests.post(
-                f"{host}/api/2.0/token/delete",
-                headers={"Authorization": f"Bearer {auth_token}"},
-                json={"token_id": token_id},
-                timeout=30,
-            )
-        except requests.RequestException as e:
-            logger.warning("revoke of minted token failed: %s", e)
+        expected = str(_app_client_id or os.environ.get("DATABRICKS_CLIENT_ID") or "")
+        expected_sp_id = os.environ.get("WORKSHOP_APP_SP_ID", "").strip()
+        expected_sp_id_valid = bool(re.fullmatch(r"[0-9]+", expected_sp_id))
+        diagnostic = {
+            "result": "pending",
+            "expected_application_id": expected or None,
+            "observed_application_id": None,
+            "expected_service_principal_id": expected_sp_id or None,
+            "observed_service_principal_id": None,
+            "endpoints": [],
+        }
 
-    def _set_health(self, state: str, error: str | None) -> None:
+        current_entry, current_payload = _identity_request(
+            f"{host}/api/2.0/current-user/me",
+            "current-user/me",
+            token,
+        )
+        diagnostic["endpoints"].append(current_entry)
+        if not require_app_identity and current_entry["status"] == 200:
+            diagnostic["result"] = "authenticated"
+            self._validation_diagnostic = diagnostic
+            self.last_error = None
+            return True
+
+        if not expected:
+            diagnostic["result"] = "expected_identity_missing"
+            self._record_validation_failure(diagnostic)
+            return False
+        if not expected_sp_id_valid:
+            diagnostic["result"] = "expected_service_principal_id_invalid"
+            self._record_validation_failure(diagnostic)
+            return False
+
+        current_id = _primary_identity_value(
+            current_payload, ("applicationId", "application_id")
+        )
+        if current_id:
+            current_sp_id = _primary_identity_value(current_payload, ("id",))
+            diagnostic["observed_application_id"] = current_id
+            diagnostic["observed_service_principal_id"] = current_sp_id
+            if current_id == expected and current_sp_id == expected_sp_id:
+                diagnostic["result"] = "matched"
+                self._validation_diagnostic = diagnostic
+                self.last_error = None
+                return True
+            diagnostic["result"] = "identity_mismatch"
+            self._record_validation_failure(diagnostic)
+            return False
+
+        scim_entry, scim_payload = _identity_request(
+            f"{host}/api/2.0/preview/scim/v2/Me",
+            "scim/v2/Me",
+            token,
+        )
+        diagnostic["endpoints"].append(scim_entry)
+        if not require_app_identity and scim_entry["status"] == 200:
+            diagnostic["result"] = "authenticated"
+            self._validation_diagnostic = diagnostic
+            self.last_error = None
+            return True
+
+        scim_application_id = _identity_values(
+            scim_payload, ("applicationId", "application_id")
+        )
+        if scim_application_id:
+            scim_sp_id = _primary_identity_value(scim_payload, ("id",))
+            diagnostic["observed_application_id"] = scim_application_id[0]
+            diagnostic["observed_service_principal_id"] = scim_sp_id
+            if (
+                scim_application_id == [expected]
+                and scim_sp_id == expected_sp_id
+            ):
+                diagnostic["result"] = "matched"
+                self._validation_diagnostic = diagnostic
+                self.last_error = None
+                return True
+            diagnostic["result"] = "identity_mismatch"
+        elif scim_entry["status"] == 200:
+            scim_user_name = _primary_identity_value(scim_payload, ("userName",))
+            scim_sp_id = _primary_identity_value(scim_payload, ("id",))
+            diagnostic["observed_application_id"] = scim_user_name
+            diagnostic["observed_service_principal_id"] = scim_sp_id
+            if scim_user_name == expected and scim_sp_id == expected_sp_id:
+                diagnostic["result"] = "matched"
+                self._validation_diagnostic = diagnostic
+                self.last_error = None
+                return True
+            else:
+                diagnostic["result"] = "identity_mismatch"
+        else:
+            diagnostic["result"] = "endpoints_unavailable"
+        self._record_validation_failure(diagnostic)
+        return False
+
+    def _record_validation_failure(self, diagnostic: dict) -> None:
+        self._validation_diagnostic = diagnostic
+        endpoint_statuses = ", ".join(
+            f"{entry['endpoint']}={entry['status']}"
+            for entry in diagnostic["endpoints"]
+        )
+        self.last_error = (
+            f"OAuth identity validation failed: {diagnostic['result']}"
+            f" ({endpoint_statuses})"
+        )
+
+    def _validate_emergency_pat(self, token: str) -> bool:
+        if self._validate(token, require_app_identity=False):
+            self._set_health(
+                STATE_DEGRADED,
+                "serving explicit emergency WORKSHOP_PAT without automatic refresh",
+                clear=True,
+                source="emergency_workshop_pat",
+            )
+            return True
+        else:
+            self._set_health(
+                STATE_UNHEALTHY,
+                "emergency WORKSHOP_PAT was rejected by the workspace",
+                clear=True,
+            )
+            return False
+
+    def _adopt_oauth(
+        self, token: str, expires_at: float | None, *, fanout: bool
+    ) -> None:
+        with self._lock:
+            changed = token != self._token
+            self._token = token
+            self._expires_at = expires_at
+            self._last_successful_at = self._now()
+            self._rotating = True
+            self._source = "app_identity_oauth"
+            self._bootstrap_ok = True
+        self._set_health(STATE_ROTATING, None)
+        if changed and fanout:
+            self._fanout(token)
+
+    def _oauth_fresh_locked(self) -> bool:
+        if (
+            not self._token
+            or not self._rotating
+            or self._health != STATE_ROTATING
+            or self._source != "app_identity_oauth"
+            or self._now() - self._last_successful_at > OAUTH_VALIDATION_MAX_AGE
+        ):
+            return False
+        return (
+            self._expires_at is None
+            or self._expires_at > self._now() + OAUTH_EXPIRY_MARGIN
+        )
+
+    def _effective_state_locked(self) -> str:
+        if self._health == STATE_ROTATING and not self._oauth_fresh_locked():
+            return STATE_UNHEALTHY
+        return self._health
+
+    def _set_health(
+        self,
+        state: str,
+        error: str | None,
+        *,
+        clear: bool = False,
+        source: str | None = None,
+    ) -> None:
         """Record health, log it (recurring for not-healthy so it stays visible
         in app logs), and emit a Control Tower alert on change / periodically."""
-        now = time.time()
+        now = self._now()
         with self._lock:
             changed = state != self._health
+            if clear:
+                self._token = None
+                self._expires_at = None
+                self._rotating = False
+                self._source = None
+                self._last_successful_at = 0.0
+                self._bootstrap_ok = False
+            if source is not None:
+                self._source = source
             self._health = state
             self.last_error = error
         if state == STATE_ROTATING:
@@ -414,7 +626,7 @@ class CredentialManager:
             event_emitter.emit(
                 "credential.health",
                 "system",
-                {"state": state, "error": error, "source": _bootstrap_source()},
+                {"state": state, "error": error, "source": self.status()["source"]},
             )
         except Exception:  # noqa: BLE001 — alerting must never break the loop
             pass
@@ -429,6 +641,18 @@ class CredentialManager:
                 cli_config.update_tokens(user, token)
             except OSError as e:
                 logger.warning("token fanout to %s failed: %s", user.email, e)
+
+
+def _jwt_expiry(token: str) -> float | None:
+    """Read ``exp`` as freshness metadata; signature validation stays server-side."""
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        value = json.loads(base64.urlsafe_b64decode(payload).decode("utf-8"))
+        expiry = value.get("exp")
+        return float(expiry) if isinstance(expiry, (int, float)) else None
+    except (ValueError, IndexError, TypeError, json.JSONDecodeError):
+        return None
 
 
 def _count_sessions() -> int:

@@ -11,12 +11,14 @@ set -uo pipefail
 
 APP="${WORKSHOP_APP_URL:-http://localhost:8000}"
 EMAIL="${WORKSHOP_USER_EMAIL:-}"
+CAPABILITY_FILE="$HOME/.config/workshop/callback-capability"
 
 if curl -fsS -X POST "$APP/api/entitlements/reconcile" \
      -H 'Content-Type: application/json' \
+     -H "X-Workshop-Capability: $(<"$CAPABILITY_FILE")" \
      -d "{\"email\":\"${EMAIL}\"}"; then
   echo ""
-  echo "Requested an entitlement reconcile — you now have CAN_MANAGE on resources created in this workspace."
+  echo "Requested a verified entitlement handoff for resources created during this workshop run."
 else
   echo "Could not reach the workshop app to reconcile entitlements (it may be disabled for this event)." >&2
   exit 1

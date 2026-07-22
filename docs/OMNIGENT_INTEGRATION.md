@@ -76,57 +76,29 @@ qualitatively new.
 
 ### 3.1 Bootstrap installers — `server/bootstrap/install.py`
 
-Two new install steps following the existing patterns (idempotent, shared
-prefix, readiness keys, background pool).
+Both install steps are idempotent, checksum-stamped, and governed by the
+Control Tower-reviewed `ARTIFACT_MANIFEST_PATH` contract documented in
+`docs/artifact-manifest.md`.
 
-**Pins** (top of file, beside `CODEX_VERSION`):
+**`_install_tmux()`** verifies the reviewed static archive before extraction,
+then verifies and stamps the installed binary before reuse.
 
-```python
-OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "0.1.0rc2")
-TMUX_STATIC_URL = os.environ.get(
-    "TMUX_STATIC_URL",
-    "https://github.com/mjakob-gh/build-static-tmux/releases/download/v3.5a/tmux.linux-amd64.gz",
-)
-TMUX_STATIC_SHA256 = os.environ.get("TMUX_STATIC_SHA256", "<pin at implementation time>")
-UV_INSTALLER_URL = os.environ.get("UV_INSTALLER_URL", "https://astral.sh/uv/install.sh")
-```
+**`_install_omnigent()`** has no network or interpreter-download path. Control
+Tower stages:
 
-**`_install_tmux()`** — omnigent's `claude` / `codex` wrappers hard-require
-tmux (refuse to start without it) and the Apps runtime has no package manager.
+1. the exact uv executable and its SHA-256;
+2. the complete Python 3.12 runtime tree, its deterministic content SHA-256,
+   and the executable's relative path;
+3. a complete wheelhouse with deterministic directory content SHA-256; and
+4. a fully pinned direct/transitive requirements lock with SHA-256 hashes.
 
-1. If `shutil.which("tmux")` or `$PREFIX/bin/tmux` exists → complete.
-2. `curl -fsSL $TMUX_STATIC_URL | gunzip > $PREFIX/bin/tmux` (download to a
-   temp path first, verify sha256, then move into place; `chmod 755`).
-3. Smoke: `tmux -V` exits 0.
-
-The static musl build is fully self-contained (no terminfo dependency issues
-under `TERM=xterm-256color`). Fallback if the GitHub release is unreachable:
-vendor the gzipped binary under `assets/bin/` in this repo (decision deferred
-to the de-risk spike; the URL path keeps the repo small).
-
-**`_install_omnigent()`** — omnigent requires Python ≥3.12; the Apps runtime
-Python must not be assumed. `uv` solves both: it downloads a standalone
-CPython and manages an isolated tool venv, no root required.
-
-1. Resolve `uv`: `shutil.which("uv")`, else
-   `curl -fsSL $UV_INSTALLER_URL | env UV_INSTALL_DIR=$PREFIX/bin sh`.
-2. Install with all uv state on the persistent volume:
-
-   ```python
-   env = _install_env()
-   env.update({
-       "UV_TOOL_DIR": os.path.join(prefix, "uv-tools"),
-       "UV_TOOL_BIN_DIR": os.path.join(prefix, "bin"),
-       "UV_PYTHON_INSTALL_DIR": os.path.join(prefix, "uv-python"),
-   })
-   subprocess.run(
-       [uv, "tool", "install", "--force", "--python", "3.12",
-        f"omnigent=={OMNIGENT_VERSION}"],
-       env=env, timeout=600, ...
-   )
-   ```
-
-   `uv tool install` drops the `omnigent` entry point into `UV_TOOL_BIN_DIR`
+Bootstrap runs the staged uv executable with `UV_OFFLINE=1`,
+`UV_NO_INDEX=1`, and `UV_PYTHON_DOWNLOADS=never`; creates the venv using the
+explicit staged Python path; and installs from the wheelhouse using
+`--require-hashes`. Existing uv/Python executables are never selected from
+`PATH`. Reuse requires the reviewed uv, complete Python runtime, wheelhouse,
+lock, complete installed venv (scripts, site-packages, dependencies), and
+Omnigent binary checksums to match the persistent stamp.
    (= the shared `bin/` every user already symlinks).
 3. **Version stamp:** write `$PREFIX/omnigent.version` after success; on boot,
    if the stamp ≠ `OMNIGENT_VERSION`, reinstall (`--force` makes this safe).
@@ -400,15 +372,10 @@ exactly why measurement comes before code.
 Verified against the omnigent source (`~/code/agent-framework`) during
 implementation; where this design and the source disagreed, the source won:
 
-- **PyPI spec (updated at GA).** Omnigent is now GA on public PyPI, so the
-  default install is a plain `uv tool install omnigent` (latest; the sibling
-  deps `omnigent-client` / `omnigent-ui-sdk` resolve transitively). The
-  installer defaults to a bare unpinned `omnigent` and reinstalls every boot
-  so it tracks the latest release (the version stamp only short-circuits a
-  *pinned* spec — see `_is_pinned`). `OMNIGENT_VERSION` is an optional one-line
-  pin; `OMNIGENT_PIP_SPEC` (wheel path / internal index / git URL) +
-  `UV_FIND_LINKS` (sibling wheels) are demoted to air-gap / pre-release
-  staging escape hatches.
+- **Offline event supply chain (updated July 2026).** Public PyPI resolution is
+  not permitted during event bootstrap. `OMNIGENT_VERSION` must match the
+  reviewed, fully hashed lock and complete staged wheelhouse; uv and Python
+  are staged and checksum-verified executables.
 - **tmux pin.** The v3.5a release in §3.1 does not exist; pinned v3.6b
   (`tmux.linux-amd64.stripped.gz`, sha256 `a23e56e9…` in code). The artifact
   is downloaded once, hash-verified, then decompressed (no re-fetch).

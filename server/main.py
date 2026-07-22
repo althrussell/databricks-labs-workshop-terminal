@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from contextlib import asynccontextmanager
 
@@ -19,12 +20,17 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import agents, config, obo, spend, user_content
+from . import agents, config, obo, operational, readiness, spend, user_content
 from .admin import router as admin_router
 from .auth import Principal, get_current_user, is_admin
 from .bootstrap import install
 from .content import content_service
-from .credentials import CredentialError, credential_manager, ensure_user_credentials
+from .credentials import (
+    CredentialError,
+    credential_manager,
+    ensure_user_credentials,
+    initialize_app_identity,
+)
 from .entitlements import entitlement_manager
 from .event_emitter import event_emitter, flush_loop
 from .events import event_hub
@@ -53,6 +59,43 @@ def _observe_output(session, chunk: str) -> None:
             user.topics[topic] = now
 
 
+def _start_control_tower_threads(
+    emitter,
+    stop: threading.Event,
+    *,
+    thread_factory=threading.Thread,
+) -> list[threading.Thread]:
+    reporter = operational.OperationalHealthReporter(emitter)
+    threads = [
+        thread_factory(
+            target=flush_loop,
+            args=(emitter, stop),
+            daemon=True,
+            name="event-emitter-flush",
+        ),
+        thread_factory(
+            target=reporter.run,
+            args=(stop,),
+            daemon=True,
+            name="operational-health",
+        ),
+    ]
+    for thread in threads:
+        thread.start()
+    return threads
+
+
+def _stop_control_tower_threads(
+    stop: threading.Event,
+    threads: list,
+    *,
+    join_timeout: float = 1.0,
+) -> None:
+    stop.set()
+    for thread in threads:
+        thread.join(timeout=join_timeout)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
@@ -68,7 +111,12 @@ async def lifespan(app: FastAPI):
     event_hub.attach_loop(loop)
     os.makedirs(config.users_root(), exist_ok=True)
     emitter_stop = None
+    emitter_threads = []
     if not config.local_dev():
+        # Capture the platform-injected M2M secret into one explicit SDK client,
+        # scrub it from process env, and harden the same-UID process boundary
+        # before installers or attendee PTYs can start.
+        initialize_app_identity()
         install.run_in_background()
         credential_manager.start()
         # SP-driven entitlement reconciler: keeps the labuser able to use the
@@ -77,13 +125,11 @@ async def lifespan(app: FastAPI):
         # C3b: background flusher pushes buffered attendee events to Control
         # Tower. Only starts when CT ingest is configured (emitter.enabled).
         if event_emitter.enabled:
-            import threading
-
             emitter_stop = threading.Event()
-            threading.Thread(
-                target=flush_loop, args=(event_emitter, emitter_stop),
-                daemon=True, name="event-emitter-flush",
-            ).start()
+            emitter_threads = _start_control_tower_threads(
+                event_emitter,
+                emitter_stop,
+            )
             logger.info("event emitter started (run_id=%s)", event_emitter.run_id)
     else:
         logger.info("LOCAL_DEV=1 — skipping CLI installers and credential rotation")
@@ -93,15 +139,27 @@ async def lifespan(app: FastAPI):
     if topo_warning:
         logger.warning("topology: %s", topo_warning)
     logger.info("workshop terminal up (phase=%s)", content_service.phase)
-    yield
-    if emitter_stop is not None:
-        emitter_stop.set()
-    entitlement_manager.stop()
+    try:
+        yield
+    finally:
+        if emitter_stop is not None:
+            _stop_control_tower_threads(emitter_stop, emitter_threads)
+        entitlement_manager.stop()
 
 
 app = FastAPI(title="Databricks Workshop Terminal", lifespan=lifespan)
 app.include_router(admin_router)
 app.include_router(ws_router)
+
+
+@app.middleware("http")
+async def record_operational_http_status(request: Request, call_next):
+    response = await call_next(request)
+    try:
+        operational.metrics.record_http(response.status_code)
+    except Exception:  # noqa: BLE001 - telemetry must never break responses
+        pass
+    return response
 
 
 # ---- public API (attendee-scoped) ----
@@ -137,21 +195,49 @@ class _EmailBody(BaseModel):
     email: str | None = None
 
 
+def _callback_identity(body: _EmailBody, request: Request) -> Principal:
+    """Authenticate a browser proxy call or attendee helper capability."""
+    capability = (request.headers.get("x-workshop-capability") or "").strip()
+    if capability:
+        email = (body.email or "").strip().lower()
+        if not email:
+            raise HTTPException(status_code=422, detail="email required")
+        if not user_content.verify_callback_capability(email, capability):
+            raise HTTPException(status_code=403, detail="invalid callback capability")
+        return Principal(email)
+
+    # Browser requests are authenticated by the Databricks Apps proxy. Do not
+    # use auth's LOCAL_DEV identity fallback here: a headerless external/direct
+    # request must remain denied even in a development process.
+    has_proxy_identity = bool(
+        request.headers.get("x-forwarded-email")
+        or request.headers.get("x-forwarded-user")
+    )
+    if not has_proxy_identity:
+        raise HTTPException(status_code=403, detail="callback authentication required")
+    principal = get_current_user(request)
+    requested = (body.email or "").strip().lower()
+    if requested and requested != principal.name:
+        raise HTTPException(status_code=403, detail="callback email does not match caller")
+    return principal
+
+
 @app.post("/api/obo/refresh")
 def obo_refresh(body: _EmailBody, request: Request):
     """Reactive OBO self-heal (layer 2). Called by the ``databricks-me`` wrapper
     on a 401/403: captures a fresh forwarded token if the caller is the browser,
     force-writes the latest captured token to the ``me`` profile, and nudges any
     connected tab to deliver an even fresher token on its next poll."""
-    email = (body.email or request.headers.get("x-forwarded-email") or "").strip().lower()
-    if not email:
-        raise HTTPException(status_code=422, detail="email required")
-    token = (request.headers.get("x-forwarded-access-token") or "").strip()
+    principal = _callback_identity(body, request)
+    email = principal.name
+    token = principal.access_token
     if token:
         obo.obo_manager.capture(email, token)
     written = obo.obo_manager.force_refresh(email)
     try:
-        event_hub.publish({"t": "obo_refresh", "email": email})
+        # Attendee-neutral nudge: every tab may refresh its own authenticated
+        # identity, but no tab should learn another attendee's email.
+        event_hub.publish({"t": "obo_refresh"})
     except Exception:  # noqa: BLE001 — nudge is best-effort
         pass
     return {"written": written, **obo.obo_manager.status(email)}
@@ -162,8 +248,8 @@ def reconcile_entitlements(body: _EmailBody, request: Request):
     """On-demand entitlement reconcile (the ``workshop-grant-me`` path): makes a
     just-created app/job/Lakebase instance usable by the labuser immediately
     instead of waiting for the next sweep."""
-    email = (body.email or request.headers.get("x-forwarded-email") or "").strip().lower() or None
-    return entitlement_manager.reconcile(email=email)
+    principal = _callback_identity(body, request)
+    return entitlement_manager.reconcile(email=principal.name)
 
 
 @app.get("/api/agents")
@@ -203,6 +289,16 @@ def list_sessions(principal: Principal = Depends(get_current_user)):
         for g in session_manager.prior_for(principal.name)
     ]
     return {"sessions": live, "prior_sessions": prior}
+
+
+@app.delete("/api/sessions/prior/{session_id}")
+def acknowledge_prior_session(
+    session_id: str,
+    principal: Principal = Depends(get_current_user),
+):
+    if not session_manager.acknowledge_prior(principal.name, session_id):
+        raise HTTPException(status_code=404, detail="Prior session not found")
+    return {"status": "ok"}
 
 
 @app.post("/api/sessions")
@@ -342,6 +438,12 @@ def certificate(name: str, principal: Principal = Depends(get_current_user)):
 @app.get("/healthz")
 def healthz():
     return {"status": "ok"}
+
+
+@app.get("/readyz")
+def readyz():
+    report = readiness.evaluate_runtime()
+    return JSONResponse(report, status_code=200 if report["ready"] else 503)
 
 
 # ---- static frontend (committed Vite build) ----

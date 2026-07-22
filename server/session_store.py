@@ -2,14 +2,14 @@
 
 A Workshop Terminal session owns a live PTY (an fd + child process) that cannot
 survive the server process restarting. What *can* survive is its **metadata** —
-who owned it, which agent, its label, timing, and a tail of scrollback. This
-store journals that to a JSON file so that after a restart the server can tell
-each attendee which terminals they had (now ended) and replay the last output,
-instead of showing a silent blank.
+who owned it, which agent, its label, and timing. Raw terminal output stays in
+memory only. This store journals metadata to JSON so that after a restart the
+server can tell each attendee which terminals they had (now ended), instead of
+showing a silent blank.
 
 Design:
 - One JSON object keyed by session_id; written atomically (temp file + rename)
-  so a crash mid-write can't corrupt it.
+  with mode 0600 so a crash mid-write can't corrupt it or expose metadata.
 - Every method is **fail-soft**: persistence runs on the session hot path, so a
   bad path or a disk error is logged and swallowed — it must never take down a
   terminal.
@@ -109,6 +109,7 @@ class SessionMetadataStore:
             directory = os.path.dirname(self.path) or "."
             os.makedirs(directory, exist_ok=True)
             fd, tmp = tempfile.mkstemp(dir=directory, prefix=".session-journal-")
+            os.fchmod(fd, 0o600)
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as fh:
                     json.dump(data, fh)
