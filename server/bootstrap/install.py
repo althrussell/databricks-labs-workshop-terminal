@@ -9,46 +9,41 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+import json
 import logging
 import os
+import platform
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
+import fcntl
+from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 
 from .. import config
+from .artifacts import (
+    ArtifactManifest,
+    ArtifactManifestError,
+    directory_checksum as _directory_checksum,
+)
+from .codex_artifacts import install_native_alias, validate_codex_tarballs
 
 logger = logging.getLogger(__name__)
 
 # Pinned versions — bump deliberately per release.
-CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.46.0")
+CLAUDE_VERSION = os.environ.get("CLAUDE_CODE_VERSION", "2.1.216").strip()
+CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.144.6").strip()
+DATABRICKS_CLI_VERSION = os.environ.get("DATABRICKS_CLI_VERSION", "1.8.0").strip()
+OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "0.5.1").strip()
+NODE_VERSION = os.environ.get("NODE_VERSION", "22.14.0").strip()
 CLAUDE_INSTALLER_URL = os.environ.get(
     "CLAUDE_INSTALLER_URL", "https://claude.ai/install.sh"
 )
-# Omnigent (agent meta-harness) + its runtime deps. Omnigent is GA on public
-# PyPI, so the default installs the latest release (unpinned). OMNIGENT_VERSION
-# is an optional one-line pin for an event (empty = latest); an explicit
-# OMNIGENT_PIP_SPEC (wheel path / git URL / pinned spec, for air-gap or
-# pre-release staging) wins verbatim. The sibling deps omnigent-client /
-# omnigent-ui-sdk resolve transitively from PyPI.
-_OMNIGENT_PIN = os.environ.get("OMNIGENT_VERSION", "").strip()
-OMNIGENT_PIP_SPEC = (
-    os.environ.get("OMNIGENT_PIP_SPEC", "").strip()
-    or (f"omnigent=={_OMNIGENT_PIN}" if _OMNIGENT_PIN else "omnigent")
-)
-
-
-def _is_pinned(spec: str) -> bool:
-    """Whether the pip spec names a fixed version or source (vs. bare 'omnigent').
-
-    A pinned spec is reproducible, so the version stamp can short-circuit a
-    reinstall. An unpinned bare package must reinstall every boot to actually
-    track the latest PyPI release (the stamp would otherwise freeze the
-    first-installed version forever on a persistent DATA_ROOT volume).
-    """
-    return spec.startswith("git+") or any(t in spec for t in ("==", "@", "/", ".whl"))
+# Omnigent event installs are always fully offline: reviewed uv and Python
+# executables, wheelhouse, and a fully hashed transitive lock.
 # Omnigent's claude/codex wrappers hard-require tmux and the Apps runtime has
 # no package manager — install a fully static musl build into the shared bin.
 TMUX_STATIC_URL = os.environ.get("TMUX_STATIC_URL", "").strip() or (
@@ -57,7 +52,6 @@ TMUX_STATIC_URL = os.environ.get("TMUX_STATIC_URL", "").strip() or (
 TMUX_STATIC_SHA256 = os.environ.get("TMUX_STATIC_SHA256", "").strip() or (
     "a23e56e9913d610c31f2893a1c9c669a73cb8bb2b8ded1180f6572bb55e52ca5"
 )
-UV_INSTALLER_URL = os.environ.get("UV_INSTALLER_URL", "").strip() or "https://astral.sh/uv/install.sh"
 # Skills are overlaid from ai-dev-kit at boot; the vendored copy in assets/skills
 # is the offline fallback (and carries the workflow skills that don't come from
 # ai-dev-kit). P1-21: the ref is pinnable (AI_DEV_KIT_REF) so an event runs a
@@ -75,12 +69,139 @@ _state_lock = threading.Lock()
 _state: dict[str, dict] = {}
 
 
-def _set(step: str, status: str, error: str | None = None) -> None:
+def _artifact_contract() -> ArtifactManifest:
+    return ArtifactManifest.from_path(
+        os.environ.get("ARTIFACT_MANIFEST_PATH", "").strip()
+    )
+
+
+def _verified_artifact(name: str) -> tuple[str, dict]:
+    contract = _artifact_contract()
+    entry = contract.entry(name)
+    staging = os.path.join(config.shared_prefix(), "artifacts")
+    return contract.verified_local_path(name, staging_dir=staging), entry
+
+
+def _artifact_binary_stamp_path(name: str) -> str:
+    return os.path.join(config.shared_prefix(), f"{name}.install.json")
+
+
+def _write_artifact_binary_stamp(
+    name: str, entry: dict, binary_path: str
+) -> str:
+    checksum = _file_checksum(binary_path)
+    if not checksum:
+        raise RuntimeError(f"{name} installed binary checksum unavailable")
+    _write_json_atomic(
+        _artifact_binary_stamp_path(name),
+        {
+            "artifact_sha256": entry["sha256"],
+            "binary_sha256": checksum,
+        },
+    )
+    return checksum
+
+
+def _artifact_binary_reusable(name: str, entry: dict, binary_path: str) -> bool:
+    stamp = _read_json(_artifact_binary_stamp_path(name))
+    actual = _file_checksum(binary_path)
+    return bool(
+        actual
+        and stamp.get("artifact_sha256") == entry["sha256"]
+        and stamp.get("binary_sha256") == actual
+    )
+
+
+def _set(
+    step: str,
+    status: str,
+    error: str | None = None,
+    *,
+    expected_version: str | None = None,
+    actual_version: str | None = None,
+    release_source: str | None = None,
+    resolved_commit: str | None = None,
+    source: str | None = None,
+    expected_checksum: str | None = None,
+    actual_checksum: str | None = None,
+    clear_release: bool = False,
+) -> None:
+    now = time.time()
     with _state_lock:
-        _state[step] = {"status": status, "error": error, "at": time.time()}
+        previous = _state.get(step, {})
+        reset_run = status == "pending"
+        started_at = (
+            now
+            if status == "running"
+            else (None if reset_run else previous.get("started_at"))
+        )
+        completed_at = (
+            now
+            if status in {"complete", "error"}
+            else None
+        )
+        _state[step] = {
+            "status": status,
+            "error": error,
+            "at": now,
+            "source": (
+                source
+                if source is not None
+                else (None if reset_run else previous.get("source"))
+            ),
+            "started_at": started_at,
+            "completed_at": completed_at,
+            "duration_ms": (
+                max(0, round((completed_at - started_at) * 1000))
+                if isinstance(started_at, (int, float))
+                and isinstance(completed_at, (int, float))
+                else None
+            ),
+            "expected_version": (
+                expected_version
+                if expected_version is not None
+                else previous.get("expected_version")
+            ),
+            "actual_version": (
+                actual_version
+                if actual_version is not None
+                else (None if clear_release else previous.get("actual_version"))
+            ),
+            "release_source": (
+                release_source
+                if release_source is not None
+                else (None if clear_release else previous.get("release_source"))
+            ),
+            "resolved_commit": (
+                resolved_commit
+                if resolved_commit is not None
+                else (None if clear_release else previous.get("resolved_commit"))
+            ),
+            "expected_checksum": (
+                expected_checksum
+                if expected_checksum is not None
+                else previous.get("expected_checksum")
+            ),
+            "actual_checksum": (
+                actual_checksum
+                if actual_checksum is not None
+                else (None if clear_release else previous.get("actual_checksum"))
+            ),
+        }
+
+
+def _release_specs() -> dict[str, tuple[bool, str]]:
+    return {
+        "claude": (True, CLAUDE_VERSION),
+        "codex": (True, CODEX_VERSION),
+        "databricks": (True, DATABRICKS_CLI_VERSION),
+        "omnigent": (config.omnigent_enabled(), OMNIGENT_VERSION),
+    }
 
 
 def status() -> dict:
+    from .artifacts import status as artifact_manifest_status
+
     with _state_lock:
         steps = dict(_state)
     ready = {
@@ -95,7 +216,342 @@ def status() -> dict:
         ),
     }
     installing = any(s.get("status") in (None, "pending", "running") for s in steps.values())
-    return {"steps": steps, "ready": ready, "installing": installing}
+    release_manifest = {}
+    for name, (enabled, expected) in _release_specs().items():
+        step = steps.get(name, {})
+        actual = step.get("actual_version")
+        release_manifest[name] = {
+            "enabled": enabled,
+            "expected": expected,
+            "actual": actual,
+            "match": bool(
+                enabled
+                and steps.get(name, {}).get("status") == "complete"
+                and expected
+                and actual == expected
+            ),
+            "source": step.get("source"),
+            "started_at": step.get("started_at"),
+            "completed_at": step.get("completed_at"),
+            "duration_ms": step.get("duration_ms"),
+            "expected_checksum": step.get("expected_checksum"),
+            "actual_checksum": step.get("actual_checksum"),
+        }
+    skills = steps.get("skills", {})
+    skills_actual = skills.get("actual_version")
+    skills_source = skills.get("release_source")
+    resolved_commit = skills.get("resolved_commit")
+    release_manifest["ai_dev_kit"] = {
+        "enabled": True,
+        "expected": AI_DEV_KIT_REF,
+        "actual": skills_actual,
+        "match": bool(
+            skills.get("status") == "complete"
+            and skills_source in {"network", "prewarmed"}
+            and skills_actual == AI_DEV_KIT_REF
+            and resolved_commit
+        ),
+        "source": skills_source,
+        "resolved_commit": resolved_commit,
+        "checksum": skills.get("actual_checksum"),
+        "started_at": skills.get("started_at"),
+        "completed_at": skills.get("completed_at"),
+        "duration_ms": skills.get("duration_ms"),
+        "expected_checksum": skills.get("expected_checksum"),
+        "actual_checksum": skills.get("actual_checksum"),
+    }
+    artifact_status = artifact_manifest_status(
+        os.environ.get("ARTIFACT_MANIFEST_PATH", "").strip()
+    )
+    artifact_proof = (
+        _prewarm_status_unlocked()
+        if artifact_status.get("ok") is True
+        else {"reusable": False, "manifest": {}}
+    )
+    return {
+        "steps": steps,
+        "ready": ready,
+        "installing": installing,
+        "release_manifest": release_manifest,
+        "artifact_manifest": artifact_status,
+        "artifact_proof": artifact_proof,
+    }
+
+
+def prewarm_status() -> dict:
+    with _install_file_lock(exclusive=False):
+        return _prewarm_status_unlocked()
+
+
+def _prewarm_status_unlocked() -> dict:
+    """Verify persistent restart inputs directly from disk, not process state."""
+    prefix = config.shared_prefix()
+    try:
+        contract = _artifact_contract()
+    except ArtifactManifestError:
+        contract = None
+    bin_dir = os.path.join(prefix, "bin")
+    expected_versions = {
+        "node": NODE_VERSION,
+        "claude": CLAUDE_VERSION,
+        "codex": CODEX_VERSION,
+        "databricks": DATABRICKS_CLI_VERSION,
+    }
+    if config.omnigent_enabled():
+        expected_versions["omnigent"] = OMNIGENT_VERSION
+
+    binaries: dict[str, dict] = {}
+    artifact_names = {
+        "node": (
+            "node_linux_arm64"
+            if platform.machine().lower() in {"aarch64", "arm64"}
+            else "node_linux_x64"
+        ),
+        "claude": "claude_installer",
+        "codex": "codex_npm_launcher_package",
+        "databricks": "databricks_cli_archive_linux_x64",
+        "omnigent": "uv_binary",
+    }
+    for name, expected in expected_versions.items():
+        path = os.path.join(bin_dir, name)
+        actual = _read_cli_version(path) if os.path.isfile(path) else None
+        binary_checksum = _file_checksum(path)
+        stamp_ok = True
+        artifact_entry = contract.entry(artifact_names[name]) if contract else None
+        artifact_ok = bool(
+            artifact_entry
+            and _artifact_binary_reusable(name, artifact_entry, path)
+        )
+        if name == "codex" and contract:
+            artifact_ok = _codex_install_reusable(
+                prefix,
+                contract.entry("codex_npm_launcher_package"),
+                contract.entry("codex_native_package_linux_x64"),
+            )
+        if name == "omnigent" and contract:
+            artifact_ok = _omnigent_install_reusable(
+                prefix,
+                {
+                    artifact_name: contract.entry(artifact_name)
+                    for artifact_name in (
+                        "uv_binary",
+                        "python_3_12_runtime",
+                        "omnigent_wheelhouse",
+                        "omnigent_lock",
+                    )
+                },
+            )
+        if name == "claude" and contract:
+            artifact_ok = (
+                artifact_ok
+                and binary_checksum == contract.entry("claude_binary")["sha256"]
+            )
+        binaries[name] = {
+            "expected": expected,
+            "actual": actual,
+            "actual_checksum": binary_checksum or None,
+            "source": "persistent",
+            "reusable": bool(
+                expected
+                and actual == expected
+                and binary_checksum
+                and stamp_ok
+                and artifact_ok
+            ),
+        }
+
+    if config.omnigent_enabled():
+        tmux_path = os.path.join(bin_dir, "tmux")
+        tmux_stamp = _read_json(os.path.join(prefix, "tmux.install.json"))
+        tmux_checksum = _file_checksum(tmux_path)
+        stamped_binary_checksum = str(tmux_stamp.get("binary_sha256") or "")
+        binaries["tmux"] = {
+            "expected": stamped_binary_checksum or None,
+            "actual": tmux_checksum or None,
+            "expected_checksum": (
+                contract.entry("tmux_linux_x64")["sha256"] if contract else None
+            ),
+            "actual_checksum": tmux_checksum or None,
+            "source": "persistent",
+            "reusable": bool(
+                tmux_checksum
+                and contract is not None
+                and tmux_stamp.get("archive_sha256")
+                == contract.entry("tmux_linux_x64")["sha256"]
+                and stamped_binary_checksum == tmux_checksum
+            ),
+        }
+
+    stamp = _read_json(_skills_stamp_path())
+    try:
+        persistent_skills = _persistent_skills_install(
+            os.path.join(prefix, "ai-dev-kit"),
+            os.path.join(prefix, "skills"),
+        )
+    except (OSError, RuntimeError, subprocess.TimeoutExpired):
+        persistent_skills = None
+    resolved_commit = str(stamp.get("resolved_commit") or "") or None
+    expected_checksum = str(stamp.get("content_checksum") or "") or None
+    skills_reusable = persistent_skills is not None
+    actual_commit = persistent_skills[0] if persistent_skills else resolved_commit
+    actual_checksum = persistent_skills[1] if persistent_skills else None
+    ai_dev_kit = {
+        "expected_ref": AI_DEV_KIT_REF,
+        "actual_ref": stamp.get("ref"),
+        "resolved_commit": actual_commit,
+        "expected_checksum": expected_checksum,
+        "actual_checksum": actual_checksum,
+        "source": "persistent",
+        "reusable": skills_reusable,
+    }
+    reusable = all(entry["reusable"] for entry in binaries.values()) and skills_reusable
+    return {
+        "reusable": reusable,
+        "manifest": {
+            "expected_binaries": sorted(binaries),
+            "binaries": binaries,
+            "ai_dev_kit": ai_dev_kit,
+        },
+    }
+
+
+def _parse_version(output: str) -> str | None:
+    match = re.search(r"(?<!\d)(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)(?!\d)", output)
+    return match.group(1) if match else None
+
+
+def _read_cli_version(path: str) -> str | None:
+    try:
+        result = subprocess.run(
+            [path, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=_install_env(),
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    return _parse_version(f"{result.stdout}\n{result.stderr}")
+
+
+def _file_checksum(path: os.PathLike[str] | str) -> str:
+    digest = hashlib.sha256()
+    try:
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError:
+        return ""
+    return digest.hexdigest()
+
+
+def _skills_stamp_path() -> str:
+    return os.path.join(config.shared_prefix(), "ai-dev-kit.install.json")
+
+
+def _read_json(path: str) -> dict:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            value = json.load(handle)
+    except (OSError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _write_json_atomic(path: str, value: dict) -> None:
+    _write_text_atomic(path, f"{json.dumps(value, sort_keys=True)}\n")
+
+
+def _write_text_atomic(path: str, value: str) -> None:
+    directory = os.path.dirname(os.path.abspath(path))
+    basename = os.path.basename(path)
+    fd, staging = tempfile.mkstemp(
+        dir=directory,
+        prefix=f".{basename}.",
+        suffix=".tmp",
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(value)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(staging, path)
+    finally:
+        if os.path.exists(staging):
+            os.unlink(staging)
+
+
+@contextmanager
+def _install_file_lock(*, exclusive: bool):
+    """Cross-process lock for every shared-prefix read/mutation transaction."""
+    prefix = config.shared_prefix()
+    os.makedirs(prefix, exist_ok=True)
+    lock_path = os.path.join(prefix, ".bootstrap.lock")
+    with open(lock_path, "a+b") as lock_file:
+        operation = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+        fcntl.flock(lock_file.fileno(), operation)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def _persistent_skills_install(
+    clone_dir: str,
+    skills_dir: str,
+) -> tuple[str, str] | None:
+    """Return verified (commit, checksum), otherwise force a network refresh."""
+    artifact = _artifact_contract().entry("ai_dev_kit")
+    stamp = _read_json(_skills_stamp_path())
+    commit = str(stamp.get("resolved_commit") or "")
+    expected_checksum = str(stamp.get("content_checksum") or "")
+    if (
+        stamp.get("repo") != artifact["source"]
+        or stamp.get("ref") != AI_DEV_KIT_REF
+        or stamp.get("artifact_sha256") != artifact["sha256"]
+        or commit.lower() != str(artifact["commit"]).lower()
+        or expected_checksum != artifact["content_sha256"]
+        or not re.fullmatch(r"[0-9a-fA-F]{40}", commit)
+        or not re.fullmatch(r"[0-9a-f]{64}", expected_checksum)
+    ):
+        return None
+    result = subprocess.run(
+        ["git", "-C", clone_dir, "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=_install_env(),
+    )
+    if result.returncode != 0 or (result.stdout or "").strip().lower() != commit.lower():
+        return None
+    upstream = os.path.join(clone_dir, "databricks-skills")
+    names = {
+        name
+        for name in os.listdir(upstream)
+        if os.path.isdir(os.path.join(upstream, name))
+    } if os.path.isdir(upstream) else set()
+    if not names:
+        return None
+    upstream_checksum = _directory_checksum(upstream, names)
+    installed_checksum = _directory_checksum(skills_dir, names)
+    if upstream_checksum != expected_checksum or installed_checksum != expected_checksum:
+        return None
+    return commit, expected_checksum
+
+
+def _claude_install_argv() -> list[str]:
+    # Execute only the checksum-verified staged installer with an exact version.
+    return ["bash", "-s", CLAUDE_VERSION]
+
+
+def _databricks_installer_url() -> str:
+    # setup-cli documents pinning by replacing `main` with release tag `vX.Y.Z`.
+    return (
+        "https://raw.githubusercontent.com/databricks/setup-cli/"
+        f"v{DATABRICKS_CLI_VERSION}/install.sh"
+    )
 
 
 def _install_env() -> dict:
@@ -109,25 +565,86 @@ def _install_env() -> dict:
 
 
 def _install_node() -> None:
-    _set("node", "running")
+    artifact_name = (
+        "node_linux_arm64"
+        if platform.machine().lower() in {"aarch64", "arm64"}
+        else "node_linux_x64"
+    )
+    artifact_path, artifact = _verified_artifact(artifact_name)
+    _set(
+        "node",
+        "running",
+        expected_version=NODE_VERSION,
+        source="network",
+    )
+    node_path = os.path.join(config.shared_prefix(), "bin", "node")
+    actual = _read_cli_version(node_path) if os.path.isfile(node_path) else None
+    if (
+        actual == NODE_VERSION
+        and _artifact_binary_reusable("node", artifact, node_path)
+    ):
+        _set(
+            "node",
+            "complete",
+            actual_version=actual,
+            source="prewarmed",
+            expected_checksum=artifact["sha256"],
+            actual_checksum=_file_checksum(node_path),
+        )
+        return
     script = os.path.join(os.path.dirname(__file__), "install_node.sh")
+    env = _install_env()
+    env["NODE_ARCHIVE_PATH"] = artifact_path
+    env["NODE_ARCHIVE_SHA256"] = artifact["sha256"]
     result = subprocess.run(
         ["bash", script, config.shared_prefix()],
-        capture_output=True, text=True, timeout=300, env=_install_env(),
+        capture_output=True, text=True, timeout=300, env=env,
     )
     if result.returncode == 0:
-        _set("node", "complete")
+        actual = _read_cli_version(node_path)
+        source = "staged"
+        if actual != NODE_VERSION:
+            _set(
+                "node",
+                "error",
+                f"node version mismatch: expected {NODE_VERSION}, got {actual or 'unknown'}",
+                actual_version=actual,
+                source=source,
+            )
+            raise RuntimeError("node install failed")
+        binary_checksum = _write_artifact_binary_stamp("node", artifact, node_path)
+        _set(
+            "node",
+            "complete",
+            actual_version=actual,
+            source=source,
+            expected_checksum=artifact["sha256"],
+            actual_checksum=binary_checksum,
+        )
     else:
         _set("node", "error", (result.stderr or result.stdout)[-500:])
         raise RuntimeError("node install failed")
 
 
 def _install_claude() -> None:
-    _set("claude", "running")
+    installer_path, installer_artifact = _verified_artifact("claude_installer")
+    _, binary_artifact = _verified_artifact("claude_binary")
+    _set("claude", "running", expected_version=CLAUDE_VERSION, source="network")
     prefix = config.shared_prefix()
     claude_bin = os.path.join(prefix, "bin", "claude")
-    if os.path.exists(claude_bin):
-        _set("claude", "complete")
+    actual = _read_cli_version(claude_bin) if os.path.exists(claude_bin) else None
+    if (
+        actual == CLAUDE_VERSION
+        and _artifact_binary_reusable("claude", installer_artifact, claude_bin)
+        and _file_checksum(claude_bin) == binary_artifact["sha256"]
+    ):
+        _set(
+            "claude",
+            "complete",
+            expected_version=CLAUDE_VERSION,
+            actual_version=actual,
+            source="prewarmed",
+        )
         return
     env = _install_env()
     # The installer targets $HOME/.local — point HOME at the shared prefix's
@@ -136,43 +653,152 @@ def _install_claude() -> None:
     os.makedirs(staging, exist_ok=True)
     env["HOME"] = staging
     try:
-        curl = subprocess.Popen(
-            ["curl", "-fsSL", CLAUDE_INSTALLER_URL], stdout=subprocess.PIPE, env=env,
-        )
-        result = subprocess.run(
-            ["bash"], stdin=curl.stdout, capture_output=True, text=True,
-            timeout=300, env=env,
-        )
-        curl.stdout.close()
-        curl.wait()
+        with open(installer_path, "rb") as installer:
+            result = subprocess.run(
+                _claude_install_argv(),
+                stdin=installer,
+                capture_output=True,
+                text=True,
+                timeout=300,
+                env=env,
+            )
         installed = os.path.join(staging, ".local", "bin", "claude")
         if result.returncode == 0 and os.path.exists(installed):
             os.makedirs(os.path.dirname(claude_bin), exist_ok=True)
             if os.path.lexists(claude_bin):
                 os.unlink(claude_bin)
             os.symlink(installed, claude_bin)
-            _set("claude", "complete")
+            actual = _read_cli_version(claude_bin)
+            if actual != CLAUDE_VERSION:
+                raise RuntimeError(
+                    f"claude version mismatch: expected {CLAUDE_VERSION}, got {actual or 'unknown'}"
+                )
+            if _file_checksum(installed) != binary_artifact["sha256"]:
+                raise RuntimeError("claude installed binary checksum mismatch")
+            checksum = _write_artifact_binary_stamp(
+                "claude", installer_artifact, installed
+            )
+            _set(
+                "claude",
+                "complete",
+                expected_version=CLAUDE_VERSION,
+                actual_version=actual,
+                source="staged",
+                expected_checksum=binary_artifact["sha256"],
+                actual_checksum=checksum,
+            )
         else:
-            _set("claude", "error", (result.stderr or result.stdout)[-500:])
-    except (subprocess.TimeoutExpired, OSError) as e:
-        _set("claude", "error", str(e))
+            raise RuntimeError((result.stderr or result.stdout)[-500:])
+    except (subprocess.TimeoutExpired, OSError, RuntimeError) as e:
+        _set(
+            "claude",
+            "error",
+            str(e),
+            expected_version=CLAUDE_VERSION,
+            actual_version=actual,
+        )
+
+
+def _find_codex_native_binary(prefix: str) -> str | None:
+    candidates = []
+    root = os.path.join(prefix, "lib", "node_modules")
+    for current, _, files in os.walk(root):
+        if "codex" in files and f"{os.sep}vendor{os.sep}" in current:
+            candidates.append(os.path.join(current, "codex"))
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _codex_install_reusable(
+    prefix: str, launcher_artifact: dict, native_artifact: dict
+) -> bool:
+    launcher = os.path.join(prefix, "bin", "codex")
+    stamp = _read_json(os.path.join(prefix, "codex.install.json"))
+    native_relative = str(stamp.get("native_relative_path") or "")
+    native = os.path.normpath(os.path.join(prefix, native_relative))
+    launcher_tree = os.path.normpath(
+        os.path.join(
+            prefix, str(stamp.get("launcher_tree_relative_path") or "")
+        )
+    )
+    native_tree = os.path.normpath(
+        os.path.join(
+            prefix, str(stamp.get("native_tree_relative_path") or "")
+        )
+    )
+    root_prefix = os.path.abspath(prefix) + os.sep
+    if not all(
+        path.startswith(root_prefix)
+        for path in (native, launcher_tree, native_tree)
+    ):
+        return False
+    launcher_checksum = _file_checksum(launcher)
+    native_checksum = _file_checksum(native)
+    launcher_tree_checksum = _directory_checksum(launcher_tree)
+    native_tree_checksum = _directory_checksum(native_tree)
+    return bool(
+        launcher_checksum
+        and native_checksum
+        and launcher_tree_checksum
+        and native_tree_checksum
+        and stamp.get("launcher_package_sha256") == launcher_artifact["sha256"]
+        and stamp.get("native_package_sha256") == native_artifact["sha256"]
+        and stamp.get("launcher_sha256") == launcher_checksum
+        and stamp.get("native_sha256") == native_checksum
+        and stamp.get("launcher_tree_sha256") == launcher_tree_checksum
+        and stamp.get("native_tree_sha256") == native_tree_checksum
+        and native_checksum == native_artifact["executable_sha256"]
+    )
 
 
 def _install_codex() -> None:
-    _set("codex", "running")
+    launcher_path, launcher_artifact = _verified_artifact(
+        "codex_npm_launcher_package"
+    )
+    native_package_path, native_artifact = _verified_artifact(
+        "codex_native_package_linux_x64"
+    )
+    validate_codex_tarballs(
+        launcher_path, native_package_path, CODEX_VERSION
+    )
+    _set("codex", "running", expected_version=CODEX_VERSION, source="staged")
     prefix = config.shared_prefix()
     codex_bin = os.path.join(prefix, "bin", "codex")
-    if os.path.exists(codex_bin):
-        _set("codex", "complete")
+    actual = _read_cli_version(codex_bin) if os.path.exists(codex_bin) else None
+    if (
+        actual == CODEX_VERSION
+        and _codex_install_reusable(prefix, launcher_artifact, native_artifact)
+    ):
+        _set(
+            "codex",
+            "complete",
+            expected_version=CODEX_VERSION,
+            actual_version=actual,
+            source="prewarmed",
+        )
         return
     env = _install_env()
+    npm_cache = os.path.join(prefix, "npm-offline-cache")
+    shutil.rmtree(npm_cache, ignore_errors=True)
+    os.makedirs(npm_cache, exist_ok=True)
+    env["npm_config_offline"] = "true"
+    env["npm_config_cache"] = npm_cache
     npm = os.path.join(prefix, "bin", "npm")
     if not os.path.exists(npm):
         npm = "npm"
     for attempt in range(1, 4):
         try:
             result = subprocess.run(
-                [npm, "install", "-g", f"--prefix={prefix}", f"@openai/codex@{CODEX_VERSION}"],
+                [
+                    npm,
+                    "install",
+                    "-g",
+                    "--offline",
+                    "--no-audit",
+                    "--no-fund",
+                    "--omit=optional",
+                    f"--prefix={prefix}",
+                    launcher_path,
+                ],
                 capture_output=True, text=True, timeout=300, env=env,
             )
         except (subprocess.TimeoutExpired, OSError) as e:
@@ -181,49 +807,155 @@ def _install_codex() -> None:
         else:
             error = (result.stderr or result.stdout)[-500:]
         if result and result.returncode == 0 and os.path.exists(codex_bin):
-            _set("codex", "complete")
-            return
+            alias_directory = os.path.join(
+                prefix,
+                "lib",
+                "node_modules",
+                "@openai",
+                "codex",
+                "node_modules",
+                "@openai",
+                "codex-linux-x64",
+            )
+            try:
+                install_native_alias(
+                    launcher_path,
+                    native_package_path,
+                    alias_directory,
+                    CODEX_VERSION,
+                )
+            except RuntimeError as extraction_error:
+                error = str(extraction_error)
+                continue
+            actual = _read_cli_version(codex_bin)
+            native_binary = _find_codex_native_binary(prefix)
+            if (
+                actual == CODEX_VERSION
+                and native_binary
+                and _file_checksum(native_binary)
+                == native_artifact["executable_sha256"]
+            ):
+                launcher_checksum = _file_checksum(codex_bin)
+                native_checksum = _file_checksum(native_binary)
+                launcher_root = os.path.join(
+                    prefix, "lib", "node_modules", "@openai", "codex"
+                )
+                launcher_tree_checksum = _directory_checksum(launcher_root)
+                native_tree_checksum = _directory_checksum(alias_directory)
+                _write_json_atomic(
+                    os.path.join(prefix, "codex.install.json"),
+                    {
+                        "launcher_package_sha256": launcher_artifact["sha256"],
+                        "native_package_sha256": native_artifact["sha256"],
+                        "launcher_sha256": launcher_checksum,
+                        "native_sha256": native_checksum,
+                        "launcher_tree_sha256": launcher_tree_checksum,
+                        "native_tree_sha256": native_tree_checksum,
+                        "launcher_tree_relative_path": os.path.relpath(
+                            launcher_root, prefix
+                        ),
+                        "native_tree_relative_path": os.path.relpath(
+                            alias_directory, prefix
+                        ),
+                        "native_relative_path": os.path.relpath(
+                            native_binary, prefix
+                        ),
+                    },
+                )
+                _set(
+                    "codex",
+                    "complete",
+                    expected_version=CODEX_VERSION,
+                    actual_version=actual,
+                    source="staged",
+                    expected_checksum=native_artifact["executable_sha256"],
+                    actual_checksum=native_checksum,
+                )
+                return
+            error = (
+                f"codex version mismatch: expected {CODEX_VERSION}, "
+                f"got {actual or 'unknown'}"
+            )
         logger.warning("codex install attempt %d/3 failed", attempt)
         time.sleep(5)
-    _set("codex", "error", error)
+    _set(
+        "codex",
+        "error",
+        error,
+        expected_version=CODEX_VERSION,
+        actual_version=actual,
+    )
 
 
 def _install_tmux() -> None:
     """Static tmux into the shared bin (omnigent's terminal backend)."""
-    _set("tmux", "running")
+    artifact_path, artifact = _verified_artifact("tmux_linux_x64")
+    _set(
+        "tmux",
+        "running",
+        source="network",
+        expected_checksum=artifact["sha256"],
+    )
     prefix = config.shared_prefix()
     tmux_bin = os.path.join(prefix, "bin", "tmux")
-    if os.path.exists(tmux_bin) or shutil.which("tmux"):
-        if not os.path.exists(tmux_bin) and shutil.which("tmux"):
-            os.makedirs(os.path.dirname(tmux_bin), exist_ok=True)
-            os.symlink(shutil.which("tmux"), tmux_bin)
-        _set("tmux", "complete")
-        return
+    stamp_path = os.path.join(prefix, "tmux.install.json")
+    stamp = _read_json(stamp_path)
+    binary_checksum = _file_checksum(tmux_bin)
+    if (
+        os.path.isfile(tmux_bin)
+        and stamp.get("archive_sha256") == artifact["sha256"]
+        and stamp.get("binary_sha256") == binary_checksum
+        and binary_checksum
+    ):
+        smoke = subprocess.run(
+            [tmux_bin, "-V"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=_install_env(),
+        )
+        if smoke.returncode == 0:
+            _set(
+                "tmux",
+                "complete",
+                source="prewarmed",
+                expected_checksum=artifact["sha256"],
+                actual_checksum=binary_checksum,
+            )
+            return
     staging = tmux_bin + ".download"
     try:
-        result = subprocess.run(
-            ["curl", "-fsSL", "-o", staging + ".gz", TMUX_STATIC_URL],
-            capture_output=True, text=True, timeout=300, env=_install_env(),
-        )
-        if result.returncode != 0:
-            raise RuntimeError((result.stderr or result.stdout)[-300:])
+        shutil.copyfile(artifact_path, staging + ".gz")
         with open(staging + ".gz", "rb") as f:
             payload = f.read()
-        if TMUX_STATIC_SHA256:
-            digest = hashlib.sha256(payload).hexdigest()
-            if digest != TMUX_STATIC_SHA256:
-                raise RuntimeError(f"tmux sha256 mismatch: got {digest[:16]}…")
+        digest = hashlib.sha256(payload).hexdigest()
+        if digest != artifact["sha256"]:
+            raise RuntimeError("tmux sha256 mismatch")
         with open(staging, "wb") as f:
             f.write(gzip.decompress(payload))
         os.chmod(staging, 0o755)
         os.replace(staging, tmux_bin)
+        binary_checksum = _file_checksum(tmux_bin)
         smoke = subprocess.run(
             [tmux_bin, "-V"], capture_output=True, text=True,
             timeout=30, env=_install_env(),
         )
         if smoke.returncode != 0:
             raise RuntimeError(f"tmux -V failed: {(smoke.stderr or smoke.stdout)[-200:]}")
-        _set("tmux", "complete")
+        _write_json_atomic(
+            stamp_path,
+            {
+                "archive_sha256": artifact["sha256"],
+                "binary_sha256": binary_checksum,
+            },
+        )
+        _set(
+            "tmux",
+            "complete",
+            source="staged",
+            expected_checksum=artifact["sha256"],
+            actual_checksum=binary_checksum,
+        )
     except (subprocess.TimeoutExpired, OSError, RuntimeError) as e:
         _set("tmux", "error", str(e))
     finally:
@@ -233,112 +965,279 @@ def _install_tmux() -> None:
 
 
 def _omnigent_stamp_path() -> str:
-    return os.path.join(config.shared_prefix(), "omnigent.version")
+    return os.path.join(config.shared_prefix(), "omnigent.install.json")
+
+
+def _omnigent_install_reusable(prefix: str, entries: dict[str, dict]) -> bool:
+    stamp = _read_json(os.path.join(prefix, "omnigent.install.json"))
+    omnigent_bin = os.path.join(prefix, "bin", "omnigent")
+    checks = {
+        "uv_sha256": _file_checksum(entries["uv_binary"]["source"]),
+        "python_runtime_sha256": _directory_checksum(
+            entries["python_3_12_runtime"]["source"]
+        ),
+        "lock_sha256": _file_checksum(entries["omnigent_lock"]["source"]),
+        "wheelhouse_sha256": _directory_checksum(
+            entries["omnigent_wheelhouse"]["source"]
+        ),
+        "binary_sha256": _file_checksum(omnigent_bin),
+        "venv_sha256": _directory_checksum(
+            os.path.join(prefix, "omnigent-venv")
+        ),
+    }
+    expected = {
+        "uv_sha256": entries["uv_binary"]["sha256"],
+        "python_runtime_sha256": entries["python_3_12_runtime"][
+            "content_sha256"
+        ],
+        "lock_sha256": entries["omnigent_lock"]["sha256"],
+        "wheelhouse_sha256": entries["omnigent_wheelhouse"]["content_sha256"],
+    }
+    return bool(
+        checks["binary_sha256"]
+        and checks["venv_sha256"]
+        and all(checks[key] == value for key, value in expected.items())
+        and all(stamp.get(key) == value for key, value in checks.items())
+    )
 
 
 def _install_omnigent() -> None:
-    """Omnigent via uv (needs Python ≥3.12 — uv brings its own interpreter).
-
-    Unlike the claude installer's exists→done shortcut, a version stamp gates
-    the reinstall for a *pinned* spec, so pinning OMNIGENT_VERSION (or
-    OMNIGENT_PIP_SPEC) in env is a one-line change. An unpinned bare 'omnigent'
-    reinstalls every boot (uv --force re-resolves to the latest PyPI release;
-    the uv cache makes a no-change boot cheap) so "track latest" really does.
-    """
-    _set("omnigent", "running")
+    """Install Omnigent from a reviewed, fully offline uv supply chain."""
+    _set("omnigent", "running", expected_version=OMNIGENT_VERSION, source="staged")
+    paths: dict[str, str] = {}
+    entries: dict[str, dict] = {}
+    try:
+        for name in (
+            "uv_binary",
+            "python_3_12_runtime",
+            "omnigent_wheelhouse",
+            "omnigent_lock",
+        ):
+            paths[name], entries[name] = _verified_artifact(name)
+    except (OSError, RuntimeError) as error:
+        _set(
+            "omnigent",
+            "error",
+            str(error),
+            expected_version=OMNIGENT_VERSION,
+        )
+        return
     prefix = config.shared_prefix()
     omnigent_bin = os.path.join(prefix, "bin", "omnigent")
     stamp = _omnigent_stamp_path()
-    try:
-        with open(stamp) as f:
-            installed = f.read().strip()
-    except OSError:
-        installed = ""
+    actual = _read_cli_version(omnigent_bin) if os.path.exists(omnigent_bin) else None
     if (
-        _is_pinned(OMNIGENT_PIP_SPEC)
-        and os.path.exists(omnigent_bin)
-        and installed == OMNIGENT_PIP_SPEC
+        actual == OMNIGENT_VERSION
+        and _omnigent_install_reusable(prefix, entries)
     ):
-        _set("omnigent", "complete")
+        _set(
+            "omnigent",
+            "complete",
+            expected_version=OMNIGENT_VERSION,
+            actual_version=actual,
+            source="prewarmed",
+        )
         return
     env = _install_env()
-    # All uv state on the persistent volume so redeploys reuse it.
     env.update({
-        "UV_TOOL_DIR": os.path.join(prefix, "uv-tools"),
-        "UV_TOOL_BIN_DIR": os.path.join(prefix, "bin"),
-        "UV_PYTHON_INSTALL_DIR": os.path.join(prefix, "uv-python"),
+        "UV_OFFLINE": "1",
+        "UV_NO_INDEX": "1",
+        "UV_PYTHON_DOWNLOADS": "never",
     })
+    venv = os.path.join(prefix, "omnigent-venv")
+    python_executable = os.path.join(
+        paths["python_3_12_runtime"],
+        entries["python_3_12_runtime"]["executable_relative_path"],
+    )
     try:
-        uv = shutil.which("uv", path=env["PATH"])
-        if not uv:
-            result = subprocess.run(
-                ["bash", "-c",
-                 f"curl -fsSL {UV_INSTALLER_URL} "
-                 f"| env UV_INSTALL_DIR={os.path.join(prefix, 'bin')} UV_NO_MODIFY_PATH=1 sh"],
-                capture_output=True, text=True, timeout=300, env=env,
-            )
-            uv = os.path.join(prefix, "bin", "uv")
-            if result.returncode != 0 or not os.path.exists(uv):
-                raise RuntimeError(f"uv install failed: {(result.stderr or result.stdout)[-300:]}")
+        lock_text = open(paths["omnigent_lock"], encoding="utf-8").read()
+        if f"omnigent=={OMNIGENT_VERSION}" not in lock_text:
+            raise RuntimeError("Omnigent lock does not pin the configured version")
         result = subprocess.run(
-            [uv, "tool", "install", "--force", "--python", "3.12", OMNIGENT_PIP_SPEC],
+            [
+                paths["uv_binary"],
+                "venv",
+                "--clear",
+                "--python",
+                python_executable,
+                venv,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            env=env,
+        )
+        if result.returncode != 0:
+            raise RuntimeError("offline Omnigent venv creation failed")
+        result = subprocess.run(
+            [
+                paths["uv_binary"],
+                "pip",
+                "install",
+                "--python",
+                os.path.join(venv, "bin", "python"),
+                "--offline",
+                "--no-index",
+                "--find-links",
+                paths["omnigent_wheelhouse"],
+                "--require-hashes",
+                "-r",
+                paths["omnigent_lock"],
+            ],
             capture_output=True, text=True, timeout=600, env=env,
         )
-        if result.returncode != 0 or not os.path.exists(omnigent_bin):
+        installed_bin = os.path.join(venv, "bin", "omnigent")
+        if result.returncode != 0 or not os.path.exists(installed_bin):
             raise RuntimeError((result.stderr or result.stdout)[-500:])
-        with open(stamp, "w") as f:
-            f.write(OMNIGENT_PIP_SPEC)
-        _set("omnigent", "complete")
+        if os.path.lexists(omnigent_bin):
+            os.unlink(omnigent_bin)
+        os.symlink(installed_bin, omnigent_bin)
+        actual = _read_cli_version(omnigent_bin)
+        if actual != OMNIGENT_VERSION:
+            raise RuntimeError(
+                f"omnigent version mismatch: expected {OMNIGENT_VERSION}, "
+                f"got {actual or 'unknown'}"
+            )
+        binary_checksum = _file_checksum(omnigent_bin)
+        venv_checksum = _directory_checksum(venv)
+        _write_json_atomic(stamp, {
+            "uv_sha256": entries["uv_binary"]["sha256"],
+            "python_runtime_sha256": entries["python_3_12_runtime"][
+                "content_sha256"
+            ],
+            "lock_sha256": entries["omnigent_lock"]["sha256"],
+            "wheelhouse_sha256": entries["omnigent_wheelhouse"]["content_sha256"],
+            "binary_sha256": binary_checksum,
+            "venv_sha256": venv_checksum,
+        })
+        _set(
+            "omnigent",
+            "complete",
+            expected_version=OMNIGENT_VERSION,
+            actual_version=actual,
+            source="staged",
+            expected_checksum=entries["omnigent_lock"]["sha256"],
+            actual_checksum=binary_checksum,
+        )
     except (subprocess.TimeoutExpired, OSError, RuntimeError) as e:
-        _set("omnigent", "error", str(e))
-
-
-# AppKit scaffolding (`databricks apps init`) needs 0.295+; the Apps runtime
-# image ships a much older CLI, so we always install the latest release.
-_DATABRICKS_CLI_MIN = (0, 295)
+        _set(
+            "omnigent",
+            "error",
+            str(e),
+            expected_version=OMNIGENT_VERSION,
+            actual_version=actual,
+        )
 
 
 def _databricks_cli_current(path: str) -> bool:
-    try:
-        out = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=15)
-    except (subprocess.TimeoutExpired, OSError):
-        return False
-    m = re.search(r"(\d+)\.(\d+)\.(\d+)", out.stdout or "")
-    return bool(m) and (int(m.group(1)), int(m.group(2))) >= _DATABRICKS_CLI_MIN
+    return _read_cli_version(path) == DATABRICKS_CLI_VERSION
 
 
 def _install_databricks_cli() -> None:
-    _set("databricks", "running")
+    archive_path, archive_artifact = _verified_artifact(
+        "databricks_cli_archive_linux_x64"
+    )
+    _verified_artifact("databricks_cli_installer")
+    _set(
+        "databricks",
+        "running",
+        expected_version=DATABRICKS_CLI_VERSION,
+        source="network",
+    )
     prefix = config.shared_prefix()
     bin_dir = os.path.join(prefix, "bin")
     target = os.path.join(bin_dir, "databricks")
-    if os.path.exists(target) and _databricks_cli_current(target):
-        _set("databricks", "complete")
+    actual = _read_cli_version(target) if os.path.exists(target) else None
+    if (
+        actual == DATABRICKS_CLI_VERSION
+        and _artifact_binary_reusable("databricks", archive_artifact, target)
+    ):
+        _set(
+            "databricks",
+            "complete",
+            expected_version=DATABRICKS_CLI_VERSION,
+            actual_version=actual,
+            source="prewarmed",
+        )
         return
     if os.path.lexists(target):
         os.unlink(target)  # stale or runtime-bundled old version
     try:
-        result = subprocess.run(
-            ["bash", "-c",
-             f"curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh "
-             f"| sh -s -- --target {bin_dir}"],
-            capture_output=True, text=True, timeout=300, env=_install_env(),
-        )
-        if result.returncode == 0 and os.path.exists(target):
-            _set("databricks", "complete")
+        with tempfile.TemporaryDirectory(prefix="databricks-cli-") as staging:
+            shutil.unpack_archive(archive_path, staging, format="zip")
+            candidates = [
+                os.path.join(current, name)
+                for current, _, files in os.walk(staging)
+                for name in files
+                if name == "databricks"
+            ]
+            if len(candidates) != 1:
+                raise RuntimeError("Databricks CLI archive layout is invalid")
+            shutil.copyfile(candidates[0], target)
+            os.chmod(target, 0o755)
+        actual = _read_cli_version(target) if os.path.exists(target) else None
+        if (
+            os.path.exists(target)
+            and actual == DATABRICKS_CLI_VERSION
+        ):
+            checksum = _write_artifact_binary_stamp(
+                "databricks", archive_artifact, target
+            )
+            _set(
+                "databricks",
+                "complete",
+                expected_version=DATABRICKS_CLI_VERSION,
+                actual_version=actual,
+                source="staged",
+                expected_checksum=archive_artifact["sha256"],
+                actual_checksum=checksum,
+            )
             return
-        error = (result.stderr or result.stdout)[-500:]
-    except (subprocess.TimeoutExpired, OSError) as e:
+        error = (
+            f"version mismatch: expected {DATABRICKS_CLI_VERSION}, "
+            f"got {actual or 'unknown'}"
+        )
+    except (subprocess.TimeoutExpired, OSError, RuntimeError, shutil.ReadError) as e:
         error = str(e)
-    # Download failed — the runtime's bundled CLI (old but functional) is
-    # better than nothing for basic auth/workspace commands.
-    existing = shutil.which("databricks")
-    if existing:
-        os.makedirs(bin_dir, exist_ok=True)
-        os.symlink(existing, target)
-        _set("databricks", "complete", error=f"latest install failed, using runtime CLI: {error}")
-    else:
-        _set("databricks", "error", error)
+    _set(
+        "databricks",
+        "error",
+        error,
+        expected_version=DATABRICKS_CLI_VERSION,
+        actual_version=actual,
+    )
+
+
+def _publish_skills_tree(staged: str, target: str) -> None:
+    """Swap one complete skills tree into place; never expose a mixed tree."""
+    parent = os.path.dirname(target)
+    backup = tempfile.mkdtemp(prefix=".skills-previous-", dir=parent)
+    os.rmdir(backup)
+    had_target = os.path.exists(target)
+    try:
+        if had_target:
+            os.replace(target, backup)
+        os.replace(staged, target)
+    except Exception:
+        if had_target and os.path.exists(backup) and not os.path.exists(target):
+            os.replace(backup, target)
+        raise
+    finally:
+        shutil.rmtree(backup, ignore_errors=True)
+
+
+def _stage_vendored_skills(prefix: str) -> str:
+    staged = tempfile.mkdtemp(prefix=".skills-stage-", dir=prefix)
+    try:
+        if os.path.isdir(_ASSETS_SKILLS):
+            for name in os.listdir(_ASSETS_SKILLS):
+                source = os.path.join(_ASSETS_SKILLS, name)
+                if os.path.isdir(source):
+                    shutil.copytree(source, os.path.join(staged, name))
+        return staged
+    except Exception:
+        shutil.rmtree(staged, ignore_errors=True)
+        raise
 
 
 def _install_skills() -> None:
@@ -349,38 +1248,54 @@ def _install_skills() -> None:
     2. Shallow-clone ai-dev-kit and overlay databricks-skills/* so attendees
        always run the absolute latest published skills.
     """
-    _set("skills", "running")
+    artifact = _artifact_contract().entry("ai_dev_kit")
+    if artifact["version"] != AI_DEV_KIT_REF:
+        raise RuntimeError("ai-dev-kit manifest version does not match configured ref")
+    _set(
+        "skills",
+        "running",
+        expected_version=AI_DEV_KIT_REF,
+        source="staged",
+        clear_release=True,
+    )
     prefix = config.shared_prefix()
     skills_dir = os.path.join(prefix, "skills")
-
-    try:
-        os.makedirs(skills_dir, exist_ok=True)
-        if os.path.isdir(_ASSETS_SKILLS):
-            for name in os.listdir(_ASSETS_SKILLS):
-                source = os.path.join(_ASSETS_SKILLS, name)
-                target = os.path.join(skills_dir, name)
-                if os.path.isdir(source) and not os.path.exists(target):
-                    shutil.copytree(source, target)
-    except OSError as e:
-        _set("skills", "error", f"vendored copy failed: {e}")
-        return
-
+    os.makedirs(prefix, exist_ok=True)
     clone_dir = os.path.join(prefix, "ai-dev-kit")
+    staged: str | None = None
     try:
-        # Pinned-ref clone (P1-21): --branch accepts a tag or branch; for a
-        # full-SHA pin we clone then checkout. Re-clone each boot so the pinned
-        # ref is authoritative rather than whatever a stale checkout holds.
+        persistent = _persistent_skills_install(clone_dir, skills_dir)
+        if persistent is not None:
+            resolved_commit, checksum = persistent
+            _set(
+                "skills",
+                "complete",
+                expected_version=AI_DEV_KIT_REF,
+                actual_version=AI_DEV_KIT_REF,
+                release_source="prewarmed",
+                resolved_commit=resolved_commit,
+                source="prewarmed",
+                expected_checksum=checksum,
+                actual_checksum=checksum,
+            )
+            return
+
+        staged = _stage_vendored_skills(prefix)
+
+        # Pinned-ref clone: --branch accepts a tag or branch; for a full-SHA
+        # pin we clone then checkout. Invalid or tampered persistent content is
+        # discarded and rebuilt from the reviewed ref.
         shutil.rmtree(clone_dir, ignore_errors=True)
         result = subprocess.run(
             ["git", "clone", "--depth", "1", "--branch", AI_DEV_KIT_REF,
-             AI_DEV_KIT_REPO, clone_dir],
+             artifact["source"], clone_dir],
             capture_output=True, text=True, timeout=300, env=_install_env(),
         )
         if result.returncode != 0:
             # --branch rejects raw commit SHAs; fall back to clone + checkout.
             shutil.rmtree(clone_dir, ignore_errors=True)
             subprocess.run(
-                ["git", "clone", AI_DEV_KIT_REPO, clone_dir],
+                ["git", "clone", artifact["source"], clone_dir],
                 capture_output=True, text=True, timeout=300, env=_install_env(),
             )
             result = subprocess.run(
@@ -390,6 +1305,21 @@ def _install_skills() -> None:
         if result.returncode != 0:
             raise RuntimeError((result.stderr or result.stdout)[-300:])
 
+        resolved = subprocess.run(
+            ["git", "-C", clone_dir, "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=_install_env(),
+        )
+        resolved_commit = (resolved.stdout or "").strip()
+        if resolved.returncode != 0 or not re.fullmatch(
+            r"[0-9a-fA-F]{40}", resolved_commit
+        ):
+            raise RuntimeError("unable to verify fetched ai-dev-kit commit")
+        if resolved_commit.lower() != str(artifact["commit"]).lower():
+            raise RuntimeError("fetched ai-dev-kit commit differs from reviewed manifest")
+
         upstream = os.path.join(clone_dir, "databricks-skills")
         updated = 0
         if os.path.isdir(upstream):
@@ -397,16 +1327,143 @@ def _install_skills() -> None:
                 source = os.path.join(upstream, name)
                 if not os.path.isdir(source):
                     continue
-                target = os.path.join(skills_dir, name)
+                target = os.path.join(staged, name)
                 shutil.rmtree(target, ignore_errors=True)
                 shutil.copytree(source, target)
                 updated += 1
+        if not updated:
+            raise RuntimeError("fetched ai-dev-kit contains no databricks skills")
+        names = {
+            name
+            for name in os.listdir(upstream)
+            if os.path.isdir(os.path.join(upstream, name))
+        }
+        checksum = _directory_checksum(upstream, names)
+        if not checksum:
+            raise RuntimeError("unable to checksum fetched ai-dev-kit skills")
+        if _directory_checksum(staged, names) != checksum:
+            raise RuntimeError("installed ai-dev-kit skills checksum mismatch")
+        if checksum != artifact["content_sha256"]:
+            raise RuntimeError("ai-dev-kit content differs from reviewed manifest")
+        _publish_skills_tree(staged, skills_dir)
+        staged = None
+        _write_json_atomic(
+            _skills_stamp_path(),
+            {
+                "repo": artifact["source"],
+                "ref": AI_DEV_KIT_REF,
+                "resolved_commit": resolved_commit,
+                "content_checksum": checksum,
+                "artifact_sha256": artifact["sha256"],
+            },
+        )
         logger.info("skills: %d refreshed from ai-dev-kit@%s", updated, AI_DEV_KIT_REF)
-        _set("skills", "complete")
+        _set(
+            "skills",
+            "complete",
+            expected_version=AI_DEV_KIT_REF,
+            actual_version=AI_DEV_KIT_REF,
+            release_source="network",
+            resolved_commit=resolved_commit,
+            source="network",
+            expected_checksum=checksum,
+            actual_checksum=checksum,
+        )
     except (subprocess.TimeoutExpired, OSError, RuntimeError) as e:
-        # Network/git failure — the vendored copy still serves.
         logger.warning("ai-dev-kit fetch failed (%s) — using vendored skills", e)
-        _set("skills", "complete", error=f"vendored fallback: {e}")
+        if staged is not None:
+            shutil.rmtree(staged, ignore_errors=True)
+            staged = None
+        if not os.path.isdir(skills_dir):
+            try:
+                staged = _stage_vendored_skills(prefix)
+                _publish_skills_tree(staged, skills_dir)
+                staged = None
+            except OSError as vendored_error:
+                _set(
+                    "skills",
+                    "error",
+                    f"vendored copy failed: {vendored_error}",
+                    expected_version=AI_DEV_KIT_REF,
+                    release_source="vendored_fallback",
+                    source="staged",
+                )
+                return
+        _set(
+            "skills",
+            "complete",
+            error=f"vendored fallback: {e}",
+            expected_version=AI_DEV_KIT_REF,
+            release_source="vendored_fallback",
+            source="staged",
+        )
+    finally:
+        if staged is not None:
+            shutil.rmtree(staged, ignore_errors=True)
+
+
+def _guard_installer(
+    step: str,
+    operation,
+    *,
+    expected_version: str | None = None,
+    source: str = "staged",
+):
+    def guarded() -> None:
+        _set(
+            step,
+            "running",
+            expected_version=expected_version,
+            source=source,
+        )
+        try:
+            operation()
+        except Exception as error:  # noqa: BLE001 - step must leave pending/running
+            _set(
+                step,
+                "error",
+                str(error),
+                expected_version=expected_version,
+                source=source,
+            )
+
+    return guarded
+
+
+_install_node = _guard_installer(
+    "node", _install_node, expected_version=NODE_VERSION
+)
+_install_claude = _guard_installer(
+    "claude", _install_claude, expected_version=CLAUDE_VERSION
+)
+_install_codex = _guard_installer(
+    "codex", _install_codex, expected_version=CODEX_VERSION
+)
+_install_tmux = _guard_installer("tmux", _install_tmux)
+_install_omnigent = _guard_installer(
+    "omnigent", _install_omnigent, expected_version=OMNIGENT_VERSION
+)
+_install_databricks_cli = _guard_installer(
+    "databricks",
+    _install_databricks_cli,
+    expected_version=DATABRICKS_CLI_VERSION,
+)
+_install_skills = _guard_installer(
+    "skills", _install_skills, expected_version=AI_DEV_KIT_REF
+)
+
+
+def _run_parallel_installers(tasks, *, max_workers: int) -> None:
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {
+            pool.submit(operation): step
+            for step, operation in tasks
+        }
+        for future, step in futures.items():
+            try:
+                future.result()
+            except Exception as error:  # noqa: BLE001 - consume every future
+                _set(step, "error", str(error))
 
 
 def run_in_background() -> None:
@@ -417,29 +1474,51 @@ def run_in_background() -> None:
     for step in steps:
         _set(step, "pending")
 
-    def orchestrate():
+    def orchestrate_locked():
         os.makedirs(os.path.join(config.shared_prefix(), "bin"), exist_ok=True)
         try:
+            _artifact_contract()
+        except ArtifactManifestError as error:
+            for step in steps:
+                _set(step, "error", str(error))
+            return
+        try:
             _install_node()
-        except RuntimeError:
+        except Exception as error:  # noqa: BLE001 - monkeypatched/custom wrapper
+            _set("node", "error", str(error))
+        with _state_lock:
+            node_ready = _state.get("node", {}).get("status") == "complete"
+        if not node_ready:
             # Without node, codex can't install; claude's installer is
             # self-contained, so still try it. tmux/omnigent don't need node.
             _set("codex", "error", "skipped: node install failed")
-            with ThreadPoolExecutor(max_workers=5) as pool:
-                pool.submit(_install_claude)
-                pool.submit(_install_databricks_cli)
-                pool.submit(_install_skills)
-                if omnigent:
-                    pool.submit(_install_tmux)
-                    pool.submit(_install_omnigent)
-            return
-        with ThreadPoolExecutor(max_workers=6) as pool:
-            pool.submit(_install_claude)
-            pool.submit(_install_codex)
-            pool.submit(_install_databricks_cli)
-            pool.submit(_install_skills)
+            tasks = [
+                ("claude", _install_claude),
+                ("databricks", _install_databricks_cli),
+                ("skills", _install_skills),
+            ]
             if omnigent:
-                pool.submit(_install_tmux)
-                pool.submit(_install_omnigent)
+                tasks.extend([
+                    ("tmux", _install_tmux),
+                    ("omnigent", _install_omnigent),
+                ])
+            _run_parallel_installers(tasks, max_workers=5)
+            return
+        tasks = [
+            ("claude", _install_claude),
+            ("codex", _install_codex),
+            ("databricks", _install_databricks_cli),
+            ("skills", _install_skills),
+        ]
+        if omnigent:
+            tasks.extend([
+                ("tmux", _install_tmux),
+                ("omnigent", _install_omnigent),
+            ])
+        _run_parallel_installers(tasks, max_workers=6)
+
+    def orchestrate():
+        with _install_file_lock(exclusive=True):
+            orchestrate_locked()
 
     threading.Thread(target=orchestrate, daemon=True, name="bootstrap").start()

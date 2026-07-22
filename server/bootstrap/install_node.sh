@@ -16,22 +16,16 @@ NODE_MIN_MAJOR="${NODE_MIN_MAJOR:-22}"
 NODE_VERSION="${NODE_VERSION:-22.14.0}"
 NODE_DIST_MIRROR="${NODE_DIST_MIRROR:-https://nodejs.org/dist}"
 NODE_DIST_MIRROR="${NODE_DIST_MIRROR%/}"
+NODE_ARCHIVE_PATH="${NODE_ARCHIVE_PATH:-}"
+NODE_ARCHIVE_SHA256="${NODE_ARCHIVE_SHA256:-}"
 
-current_major() {
-  command -v node >/dev/null 2>&1 || return 1
-  node --version 2>/dev/null | sed 's/^v//' | cut -d. -f1
-}
-
-if [ -x "$INSTALL_DIR/bin/node" ]; then
-  echo "Node $("$INSTALL_DIR/bin/node" --version) already installed at ${INSTALL_DIR}; skipping."
-  exit 0
+if [ -z "$NODE_ARCHIVE_PATH" ] || [ -z "$NODE_ARCHIVE_SHA256" ]; then
+  echo "ERROR: reviewed Node artifact path and SHA-256 are required." >&2
+  exit 1
 fi
 
-if maj="$(current_major)"; then
-  if [ "${maj:-0}" -ge "$NODE_MIN_MAJOR" ] 2>/dev/null; then
-    echo "Node v$(node --version | sed 's/^v//') already satisfies >= v${NODE_MIN_MAJOR}; skipping install."
-    exit 0
-  fi
+if [ -x "$INSTALL_DIR/bin/node" ]; then
+  rm -f "$INSTALL_DIR/bin/node" "$INSTALL_DIR/bin/npm" "$INSTALL_DIR/bin/npx"
 fi
 
 arch="$(uname -m)"
@@ -41,10 +35,13 @@ case "$arch" in
   *) echo "ERROR: unsupported architecture '${arch}'." >&2; exit 1 ;;
 esac
 
-url="${NODE_DIST_MIRROR}/v${NODE_VERSION}/node-v${NODE_VERSION}-${node_arch}.tar.xz"
-echo "Downloading ${url}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-curl -fsSL "$url" -o "$tmp/node.tar.xz"
+cp "$NODE_ARCHIVE_PATH" "$tmp/node.tar.xz"
+actual_sha="$(sha256sum "$tmp/node.tar.xz" | awk '{print $1}')"
+if [ "$actual_sha" != "$NODE_ARCHIVE_SHA256" ]; then
+  echo "ERROR: Node archive SHA-256 mismatch." >&2
+  exit 1
+fi
 tar -xJf "$tmp/node.tar.xz" -C "$INSTALL_DIR" --strip-components=1
 echo "Installed Node $("$INSTALL_DIR/bin/node" --version) to ${INSTALL_DIR}"

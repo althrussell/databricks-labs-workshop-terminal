@@ -40,6 +40,19 @@ logger = logging.getLogger(__name__)
 FRESH_MARGIN = 60
 
 
+def _decode_jwt_claims(token: str) -> dict:
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            return {}
+        payload = parts[1]
+        payload += "=" * (-len(payload) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload))
+        return claims if isinstance(claims, dict) else {}
+    except (ValueError, binascii.Error, json.JSONDecodeError, TypeError):
+        return {}
+
+
 def decode_jwt_exp(token: str) -> float | None:
     """Best-effort parse of a JWT's ``exp`` (seconds since epoch).
 
@@ -48,24 +61,42 @@ def decode_jwt_exp(token: str) -> float | None:
     non-JWT / unparseable tokens (then freshness falls back to "present").
     """
     try:
-        parts = token.split(".")
-        if len(parts) != 3:
-            return None
-        payload = parts[1]
-        payload += "=" * (-len(payload) % 4)  # restore base64 padding
-        claims = json.loads(base64.urlsafe_b64decode(payload))
+        claims = _decode_jwt_claims(token)
         exp = claims.get("exp")
         return float(exp) if exp is not None else None
-    except (ValueError, binascii.Error, json.JSONDecodeError, TypeError):
+    except (ValueError, TypeError):
         return None
 
 
+def decode_jwt_scopes(token: str) -> set[str]:
+    """Read scopes from a trusted proxy-forwarded OAuth JWT."""
+    claims = _decode_jwt_claims(token)
+    raw = claims.get("scope", claims.get("scp", []))
+    if isinstance(raw, str):
+        return {scope for scope in raw.replace(",", " ").split() if scope}
+    if isinstance(raw, list):
+        return {
+            scope.strip()
+            for scope in raw
+            if isinstance(scope, str) and scope.strip()
+        }
+    return set()
+
+
 class _Record:
-    __slots__ = ("token", "exp", "captured_at", "written_token", "written_at")
+    __slots__ = (
+        "token",
+        "exp",
+        "scopes",
+        "captured_at",
+        "written_token",
+        "written_at",
+    )
 
     def __init__(self, token: str, exp: float | None, captured_at: float):
         self.token = token
         self.exp = exp
+        self.scopes = decode_jwt_scopes(token)
         self.captured_at = captured_at
         self.written_token: str | None = None
         self.written_at: float = 0.0
@@ -102,6 +133,7 @@ class OboManager:
             else:
                 rec.token = token
                 rec.exp = decode_jwt_exp(token)
+                rec.scopes = decode_jwt_scopes(token)
                 rec.captured_at = now
             # Throttle: only touch the file when the token string actually
             # changed. Rewriting an identical token can't extend its life, so a
@@ -128,28 +160,76 @@ class OboManager:
             logger.warning("OBO force-refresh for %s failed: %s", email, e)
             return False
 
+    def user_ready(self, user) -> None:
+        """Flush a token captured before ``user`` had a bootstrapped home.
+
+        User creation calls this only after releasing the user-registry lock and
+        creating the home, so the callback cannot recurse into ``get()`` or
+        deadlock with token capture.
+        """
+        if not config.obo_enabled():
+            return
+        with self._lock:
+            rec = self._by_email.get(user.email)
+            needs_write = rec is not None and rec.written_token != rec.token
+        if not needs_write or rec is None:
+            return
+        try:
+            self._write_user(user, rec)
+        except Exception as e:  # noqa: BLE001 — user creation must still succeed
+            logger.warning("Deferred OBO write for %s failed: %s", user.email, e)
+
     def _write(self, email: str, rec: _Record) -> None:
         from .users import user_manager
 
         user = user_manager.peek(email)
         if user is None:
-            return  # home not bootstrapped yet — next capture after first session
+            return  # user_ready() flushes this as soon as the home is bootstrapped
+        self._write_user(user, rec)
+
+    def _write_user(self, user, rec: _Record) -> None:
         from . import cli_config
 
-        token = rec.token
-        cli_config.update_me_profile(user, token)
-        with self._lock:
-            rec.written_token = token
-            rec.written_at = time.time()
+        # Serialize the token selection and disk write with every other
+        # per-user config update. Capture never holds _lock while waiting for
+        # user.lock, so briefly reading the record in the opposite direction
+        # here cannot form a lock cycle. Selecting *after* user.lock is acquired
+        # means an older queued writer always writes the newest held token.
+        with user.lock:
+            with self._lock:
+                token = rec.token
+                # Keep record commit atomic with the disk write. status() and
+                # later captures wait until both agree. Use the lock-held helper
+                # so this path never recursively acquires user.lock.
+                cli_config.update_me_profile_locked(user, token)
+                rec.written_token = token
+                rec.written_at = time.time()
 
     def status(self, email: str | None = None) -> dict:
         """Health/presence view for one attendee (no token material)."""
         enabled = config.obo_enabled()
         with self._lock:
-            rec = self._by_email.get(email) if email else None
+            rec = self._by_email.get(email) if email else max(
+                self._by_email.values(),
+                key=lambda candidate: candidate.captured_at,
+                default=None,
+            )
             present = rec is not None and bool(rec.written_token)
             exp = rec.exp if rec else None
             last_refresh = rec.written_at if rec else 0.0
+            observed_scopes = set(rec.scopes) if rec else set()
+            validated_at = rec.captured_at if rec and rec.scopes else 0.0
+        configured_scopes = {
+            scope.strip()
+            for scope in config.obo_scopes().split(",")
+            if scope.strip()
+        }
+        if not observed_scopes:
+            validation_state = "pending"
+        elif configured_scopes <= observed_scopes:
+            validation_state = "verified"
+        else:
+            validation_state = "insufficient"
         expires_in: int | None = None
         fresh = present
         if exp is not None:
@@ -159,6 +239,12 @@ class OboManager:
             "enabled": enabled,
             "profile": config.obo_profile_name(),
             "scopes": config.obo_scopes(),
+            "configured_scopes": sorted(configured_scopes),
+            "observed_scopes": sorted(observed_scopes),
+            "verified_scopes": sorted(observed_scopes),
+            "validation_state": validation_state,
+            "scope_source": "jwt_claim" if observed_scopes else None,
+            "validated_at": validated_at or None,
             "present": present,
             "fresh": bool(enabled and fresh),
             "expires_in": expires_in,

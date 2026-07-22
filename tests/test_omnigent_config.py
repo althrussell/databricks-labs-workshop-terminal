@@ -5,6 +5,7 @@ untouched by rotation — only the gateway-token file rotates. The installer's
 version stamp (not exists→done) is what makes the GA bump a pure env change.
 """
 
+import json
 import os
 import time
 
@@ -201,14 +202,72 @@ def test_rotation_creates_config_when_absent(user, monkeypatch):
 
 # -- installer version stamp --
 
+
+def _mock_omnigent_artifacts(monkeypatch, tmp_path):
+    uv = tmp_path / "uv"
+    python_runtime = tmp_path / "python-runtime"
+    python = python_runtime / "bin/python3.12"
+    lock = tmp_path / "omnigent.lock"
+    wheelhouse = tmp_path / "wheelhouse"
+    wheelhouse.mkdir(exist_ok=True)
+    uv.write_bytes(b"reviewed-uv")
+    python.parent.mkdir(parents=True)
+    python.write_bytes(b"reviewed-python")
+    lock.write_text(
+        f"omnigent=={install.OMNIGENT_VERSION} --hash=sha256:{'a' * 64}\n"
+    )
+    (wheelhouse / "omnigent.whl").write_bytes(b"reviewed-wheel")
+    entries = {
+        "uv_binary": {"source": str(uv), "sha256": install._file_checksum(uv)},
+        "python_3_12_runtime": {
+            "source": str(python_runtime),
+            "content_sha256": install._directory_checksum(python_runtime),
+            "executable_relative_path": "bin/python3.12",
+        },
+        "omnigent_lock": {
+            "source": str(lock),
+            "sha256": install._file_checksum(lock),
+        },
+        "omnigent_wheelhouse": {
+            "source": str(wheelhouse),
+            "content_sha256": install._directory_checksum(wheelhouse),
+        },
+    }
+    monkeypatch.setattr(
+        install,
+        "_verified_artifact",
+        lambda name: (entries[name]["source"], entries[name]),
+    )
+    return entries
+
+
+def _write_omnigent_stamp(tmp_path, entries):
+    venv_python = tmp_path / "omnigent-venv/bin/python"
+    venv_python.parent.mkdir(parents=True, exist_ok=True)
+    venv_python.write_bytes(b"venv-python")
+    site = tmp_path / "omnigent-venv/lib/python3.12/site-packages/omnigent.py"
+    site.parent.mkdir(parents=True, exist_ok=True)
+    site.write_bytes(b"omnigent")
+    (tmp_path / "omnigent.install.json").write_text(json.dumps({
+        "uv_sha256": entries["uv_binary"]["sha256"],
+        "python_runtime_sha256": entries["python_3_12_runtime"]["content_sha256"],
+        "lock_sha256": entries["omnigent_lock"]["sha256"],
+        "wheelhouse_sha256": entries["omnigent_wheelhouse"]["content_sha256"],
+        "binary_sha256": install._file_checksum(tmp_path / "bin" / "omnigent"),
+        "venv_sha256": install._directory_checksum(tmp_path / "omnigent-venv"),
+    }))
+
+
 def test_version_stamp_match_short_circuits(monkeypatch, tmp_path):
     """A pinned spec whose stamp already matches must NOT reinstall."""
     from server import config
     monkeypatch.setattr(config, "shared_prefix", lambda: str(tmp_path))
-    monkeypatch.setattr(install, "OMNIGENT_PIP_SPEC", "omnigent==0.1.0")
+    monkeypatch.setattr(install, "OMNIGENT_VERSION", "0.1.0")
+    monkeypatch.setattr(install, "_read_cli_version", lambda _: "0.1.0")
     os.makedirs(tmp_path / "bin")
     (tmp_path / "bin" / "omnigent").write_text("#!/bin/sh\n")
-    (tmp_path / "omnigent.version").write_text(install.OMNIGENT_PIP_SPEC)
+    entries = _mock_omnigent_artifacts(monkeypatch, tmp_path)
+    _write_omnigent_stamp(tmp_path, entries)
 
     def boom(*a, **kw):
         raise AssertionError("must not reinstall on stamp match")
@@ -218,48 +277,30 @@ def test_version_stamp_match_short_circuits(monkeypatch, tmp_path):
     assert install.status()["steps"]["omnigent"]["status"] == "complete"
 
 
-def test_unpinned_spec_always_reinstalls(monkeypatch, tmp_path):
-    """A bare 'omnigent' (unpinned, tracking latest) must reinstall even when
-    the binary + a matching stamp already exist — otherwise the first-installed
-    version freezes forever on the persistent volume."""
+def test_reviewed_stamp_cannot_trigger_network_resolution(monkeypatch, tmp_path):
     from server import config
     monkeypatch.setattr(config, "shared_prefix", lambda: str(tmp_path))
-    monkeypatch.setattr(install, "OMNIGENT_PIP_SPEC", "omnigent")
     os.makedirs(tmp_path / "bin")
     (tmp_path / "bin" / "omnigent").write_text("#!/bin/sh\n")
-    (tmp_path / "omnigent.version").write_text("omnigent")  # stamp matches spec
-    calls = []
-
-    class FakeResult:
-        returncode = 0
-        stdout = stderr = ""
-
-    def fake_run(argv, **kw):
-        calls.append(argv)
-        return FakeResult()
-
-    monkeypatch.setattr(install.subprocess, "run", fake_run)
-    monkeypatch.setattr(install.shutil, "which", lambda *a, **kw: "/usr/bin/uv")
-    install._install_omnigent()
-    assert any("tool" in c and "install" in c for c in calls if isinstance(c, list)), (
-        "unpinned spec must not short-circuit on stamp match"
+    entries = _mock_omnigent_artifacts(monkeypatch, tmp_path)
+    _write_omnigent_stamp(tmp_path, entries)
+    monkeypatch.setattr(install, "_read_cli_version", lambda _: install.OMNIGENT_VERSION)
+    monkeypatch.setattr(
+        install.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("reviewed reusable install must not resolve network")
+        ),
     )
+    install._install_omnigent()
     assert install.status()["steps"]["omnigent"]["status"] == "complete"
-
-
-def test_is_pinned_classification():
-    assert install._is_pinned("omnigent==0.1.0")
-    assert install._is_pinned("git+https://github.com/omnigent-ai/omnigent")
-    assert install._is_pinned("/app/python/source_code/wheels/omnigent-0.1.0-py3-none-any.whl")
-    assert not install._is_pinned("omnigent")
-
-
 def test_version_stamp_mismatch_reinstalls(monkeypatch, tmp_path):
     from server import config
     monkeypatch.setattr(config, "shared_prefix", lambda: str(tmp_path))
     os.makedirs(tmp_path / "bin")
     (tmp_path / "bin" / "omnigent").write_text("#!/bin/sh\n")
-    (tmp_path / "omnigent.version").write_text("0.0.0-old")
+    _mock_omnigent_artifacts(monkeypatch, tmp_path)
+    (tmp_path / "omnigent.install.json").write_text("{}")
     calls = []
 
     class FakeResult:
@@ -268,13 +309,21 @@ def test_version_stamp_mismatch_reinstalls(monkeypatch, tmp_path):
 
     def fake_run(argv, **kw):
         calls.append(argv)
+        venv_bin = tmp_path / "omnigent-venv/bin"
+        venv_bin.mkdir(parents=True, exist_ok=True)
+        (venv_bin / "python").write_bytes(b"python")
+        if argv[1] == "pip":
+            (venv_bin / "omnigent").write_bytes(b"omnigent")
         return FakeResult()
 
     monkeypatch.setattr(install.subprocess, "run", fake_run)
-    monkeypatch.setattr(install.shutil, "which", lambda *a, **kw: "/usr/bin/uv")
+    versions = iter(["0.4.0", install.OMNIGENT_VERSION])
+    monkeypatch.setattr(install, "_read_cli_version", lambda _: next(versions))
     install._install_omnigent()
-    assert any("tool" in c and "install" in c for c in calls if isinstance(c, list))
-    assert (tmp_path / "omnigent.version").read_text() == install.OMNIGENT_PIP_SPEC
+    assert any(c[1:3] == ["pip", "install"] for c in calls)
+    assert json.loads((tmp_path / "omnigent.install.json").read_text())[
+        "wheelhouse_sha256"
+    ]
     assert install.status()["steps"]["omnigent"]["status"] == "complete"
 
 

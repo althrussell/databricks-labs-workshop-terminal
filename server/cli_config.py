@@ -2,7 +2,7 @@
 
 Adapted from CoDA's setup_claude.py / setup_codex.py / cli_auth.py, but
 parameterized by user HOME: each attendee gets their own config files under
-their own home directory, fed by their own rotating PAT.
+their own home directory, fed by the app's auto-refreshing OAuth bearer.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import re
+import tempfile
 import threading
 
 import requests
@@ -99,7 +100,7 @@ def _pick(preferred: list[str], available: set[str], fallback: str) -> str:
 
 # -- per-user config writers --
 
-def configure_claude(user: User, token: str) -> None:
+def configure_claude(user: User, token: str, *, write_token: bool = True) -> None:
     claude_dir = os.path.join(user.home, ".claude")
     os.makedirs(claude_dir, exist_ok=True)
 
@@ -107,7 +108,8 @@ def configure_claude(user: User, token: str) -> None:
     # baked statically into settings.json — a long-running `claude` process
     # would otherwise hold the token captured at startup and 401 the moment the
     # rotation loop moved on.
-    _write_gateway_token(user, token)
+    if write_token:
+        _write_gateway_token(user, token)
 
     gateway = gateway_host()
     base_url = (
@@ -148,8 +150,8 @@ def configure_claude(user: User, token: str) -> None:
         # The CLI install is shared across attendees — never self-update.
         "DISABLE_AUTOUPDATER": "1",
         # Re-run apiKeyHelper on this cadence (ms) so a live process always picks
-        # up the rotated token well before the 15-min minted lifetime expires
-        # (matches the omnigent harness refresh window). A 401 also forces an
+        # up a changed app OAuth bearer every four minutes (matching the
+        # omnigent harness refresh window). A 401 also forces an
         # immediate re-run, so a mid-flight rotation self-heals either way.
         "CLAUDE_CODE_API_KEY_HELPER_TTL_MS": "240000",
     })
@@ -177,14 +179,15 @@ def configure_claude(user: User, token: str) -> None:
     _write_json(claude_json_path, claude_json)
 
 
-def configure_codex(user: User, token: str) -> None:
+def configure_codex(user: User, token: str, *, write_token: bool = True) -> None:
     codex_dir = os.path.join(user.home, ".codex")
     os.makedirs(codex_dir, exist_ok=True)
 
     # Same rotating token file Claude's apiKeyHelper reads; Codex re-runs the
     # provider auth command on a timer (below) so a live process never holds a
     # revoked/expired token.
-    _write_gateway_token(user, token)
+    if write_token:
+        _write_gateway_token(user, token)
 
     gateway = gateway_host()
     base_url = (
@@ -236,14 +239,16 @@ def _gateway_token_path(user: User) -> str:
 
 def _write_gateway_token(user: User, token: str) -> None:
     """The rotating token file omnigent's auth_command reads (one line, 0600)."""
+    with user.lock:
+        _write_gateway_token_locked(user, token)
+
+
+def _write_gateway_token_locked(user: User, token: str) -> None:
     path = _gateway_token_path(user)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        f.write(f"{token}\n")
-    os.chmod(path, 0o600)
+    _atomic_write_text(path, f"{token}\n")
 
 
-def configure_omnigent(user: User, token: str) -> None:
+def configure_omnigent(user: User, token: str, *, write_token: bool = True) -> None:
     """Write ~/.omnigent/config.yaml: one gateway provider, both model families.
 
     The provider's auth_command reads the rotating token file, so this YAML is
@@ -252,7 +257,8 @@ def configure_omnigent(user: User, token: str) -> None:
     `omnigent claude`, and `omnigent codex` through it with no selection, and
     a present default provider bypasses omnigent's first-run wizard entirely.
     """
-    _write_gateway_token(user, token)
+    if write_token:
+        _write_gateway_token(user, token)
 
     gateway = gateway_host()
     anthropic_base = (
@@ -343,25 +349,33 @@ def _write_databrickscfg_profile(user: User, profile: str, token: str) -> None:
     on round-trip, and ``[me]`` always sets its own ``host``+``token`` so the
     configparser ``[DEFAULT]`` inheritance can't bleed the SP token into it.
     """
+    with user.lock:
+        _write_databrickscfg_profile_locked(user, profile, token)
+
+
+def _write_databrickscfg_profile_locked(
+    user: User, profile: str, token: str
+) -> None:
     path = _databrickscfg_path(user)
     host = config.databricks_host()
-    with user.lock:
+    parser = configparser.ConfigParser()
+    try:
+        parser.read(path)
+    except (configparser.Error, OSError):
         parser = configparser.ConfigParser()
-        try:
-            parser.read(path)
-        except (configparser.Error, OSError):
-            parser = configparser.ConfigParser()  # corrupt file — rewrite clean
-        if profile.upper() == "DEFAULT":
-            parser["DEFAULT"]["host"] = host
-            parser["DEFAULT"]["token"] = token
-        else:
-            if not parser.has_section(profile):
-                parser.add_section(profile)
-            parser[profile]["host"] = host
-            parser[profile]["token"] = token
-        with open(path, "w") as f:
-            parser.write(f)
-        os.chmod(path, 0o600)
+    if profile.upper() == "DEFAULT":
+        parser["DEFAULT"]["host"] = host
+        parser["DEFAULT"]["token"] = token
+    else:
+        if not parser.has_section(profile):
+            parser.add_section(profile)
+        parser[profile]["host"] = host
+        parser[profile]["token"] = token
+    import io
+
+    output = io.StringIO()
+    parser.write(output)
+    _atomic_write_text(path, output.getvalue())
 
 
 def configure_databricks_cli(user: User, token: str) -> None:
@@ -376,16 +390,29 @@ def update_me_profile(user: User, obo_token: str) -> None:
     _write_databrickscfg_profile(user, config.obo_profile_name(), obo_token)
 
 
+def update_me_profile_locked(user: User, obo_token: str) -> None:
+    """Caller already holds ``user.lock``; avoid recursive lock acquisition."""
+    _write_databrickscfg_profile_locked(
+        user, config.obo_profile_name(), obo_token
+    )
+
+
 def configure_all(user: User, token: str) -> None:
-    configure_databricks_cli(user, token)
-    configure_claude(user, token)
-    configure_codex(user, token)
+    # Reserve ordering before network discovery. If a rotation arrives while
+    # model discovery runs, its newer revision commits the core files and this
+    # initial configure is forbidden from rolling them back afterward.
+    with user.lock:
+        revision = _next_credential_revision_locked(user)
+    configure_claude(user, token, write_token=False)
+    configure_codex(user, token, write_token=False)
     user.cli_ready.update({"claude", "codex", "databricks"})
     # Omnigent is feature-flagged off by default — don't write a config (or
     # spend an endpoint-discovery round-trip) for a session type we don't offer.
     if config.omnigent_enabled():
-        configure_omnigent(user, token)
+        configure_omnigent(user, token, write_token=False)
         user.cli_ready.add("omnigent")
+    with user.lock:
+        _commit_core_credentials_locked(user, token, revision)
 
 
 def update_tokens(user: User, token: str) -> None:
@@ -399,19 +426,62 @@ def update_tokens(user: User, token: str) -> None:
     next refresh instead of holding the one captured at startup. Falls back to
     a full (re)configure only when an agent's config is missing (first run).
     """
-    configure_databricks_cli(user, token)
-    _write_gateway_token(user, token)
+    with user.lock:
+        revision = _next_credential_revision_locked(user)
+        _commit_core_credentials_locked(user, token, revision)
+        missing_claude = not os.path.exists(
+            os.path.join(user.home, ".claude", "settings.json")
+        )
+        missing_codex = not os.path.exists(
+            os.path.join(user.home, ".codex", "config.toml")
+        )
+        missing_omnigent = config.omnigent_enabled() and not os.path.exists(
+            os.path.join(user.home, ".omnigent", "config.yaml")
+        )
 
-    if not os.path.exists(os.path.join(user.home, ".claude", "settings.json")):
-        configure_claude(user, token)
-    if not os.path.exists(os.path.join(user.home, ".codex", "config.toml")):
-        configure_codex(user, token)
+    if missing_claude:
+        configure_claude(user, token, write_token=False)
+    if missing_codex:
+        configure_codex(user, token, write_token=False)
 
     # Omnigent config is only present/needed when the feature is enabled.
-    if config.omnigent_enabled() and not os.path.exists(
-        os.path.join(user.home, ".omnigent", "config.yaml")
-    ):
-        configure_omnigent(user, token)
+    if missing_omnigent:
+        configure_omnigent(user, token, write_token=False)
+
+
+def _next_credential_revision_locked(user: User) -> int:
+    user._credential_revision += 1
+    return user._credential_revision
+
+
+def _commit_core_credentials_locked(
+    user: User, token: str, revision: int
+) -> bool:
+    if revision != user._credential_revision:
+        return False
+    _write_databrickscfg_profile_locked(user, "DEFAULT", token)
+    _write_gateway_token_locked(user, token)
+    return True
+
+
+def _atomic_write_text(path: str, content: str) -> None:
+    """Replace a credential file atomically with mode 0600."""
+    parent = os.path.dirname(path)
+    os.makedirs(parent, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".credential-", suffix=".tmp", dir=parent)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        os.chmod(path, 0o600)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
 
 
 def _read_json(path: str) -> dict:

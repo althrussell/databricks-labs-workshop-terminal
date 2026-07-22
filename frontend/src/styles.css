@@ -308,6 +308,56 @@ body {
   background: #0e1116;
 }
 
+.prior-sessions {
+  position: absolute;
+  z-index: 3;
+  top: 18px;
+  right: 18px;
+  width: min(420px, calc(100% - 36px));
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-panel) 94%, transparent);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 28%);
+}
+
+.prior-sessions h2 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+.prior-session {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.prior-session > div {
+  min-width: 0;
+}
+
+.prior-session strong,
+.prior-session span {
+  display: block;
+}
+
+.prior-session span {
+  margin-top: 2px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.prior-session .primary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  flex-shrink: 0;
+}
+
 /* ---- hero (empty state) ---- */
 
 .hero {

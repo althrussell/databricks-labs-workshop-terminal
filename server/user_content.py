@@ -22,9 +22,11 @@ their first session) after their HOME is bootstrapped:
 from __future__ import annotations
 
 import json
+import hmac
 import logging
 import os
 import re
+import secrets
 import shutil
 
 from . import config
@@ -34,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 _ASSETS = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "assets"))
 _COACH_MARKER = "<!-- workshop-lab-coach -->"
+_CALLBACK_CAPABILITY = os.path.join(".config", "workshop", "callback-capability")
 
 DEFAULT_DEEPWIKI_MCP = "https://mcp.deepwiki.com/mcp"
 DEFAULT_EXA_MCP = "https://mcp.exa.ai/mcp"
@@ -46,6 +49,7 @@ def provision(user: User) -> None:
     if user.email in _provisioned:
         return
     for step in (
+        _write_callback_capability,
         _write_instructions,
         _install_project_helper,
         _install_cli_helpers,
@@ -60,6 +64,44 @@ def provision(user: User) -> None:
             logger.warning("user content step %s failed for %s: %s",
                            step.__name__, user.email, e)
     _provisioned.add(user.email)
+
+
+def callback_capability_path(user: User) -> str:
+    return os.path.join(user.home, _CALLBACK_CAPABILITY)
+
+
+def _write_callback_capability(user: User) -> None:
+    """Create the attendee-bound loopback callback capability once.
+
+    The helper reads this file directly; the value is deliberately absent from
+    the PTY environment and never logged.
+    """
+    path = callback_capability_path(user)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        os.chmod(path, 0o600)
+        return
+    with os.fdopen(fd, "w") as f:
+        f.write(secrets.token_urlsafe(32))
+        f.write("\n")
+    os.chmod(path, 0o600)
+
+
+def verify_callback_capability(email: str, supplied: str) -> bool:
+    """Constant-time verification against an already-provisioned attendee."""
+    from .users import user_manager
+
+    user = user_manager.peek(email)
+    if user is None or not supplied:
+        return False
+    try:
+        with open(callback_capability_path(user)) as f:
+            expected = f.read().strip()
+    except OSError:
+        return False
+    return bool(expected) and hmac.compare_digest(expected, supplied)
 
 
 # -- instructions (CLAUDE.md / AGENTS.md + lab coach) --

@@ -86,8 +86,9 @@ Build and deploy work (apps, pipelines, Lakebase) keeps using the normal
 data" reads use `databricks-me`.
 
 If `databricks-me` says the personal session expired, it just means the browser
-tab went to sleep — in plain language, ask them to refresh the workshop tab and
-try again. Nothing they built is lost.
+tab went to sleep. Ask them to return to the workshop tab, which automatically
+forwards a fresh token when it becomes active, then try again. The app cannot
+refresh OBO while no browser request exists. Nothing they built is lost.
 
 Always create their tables and files inside `$WORKSHOP_CATALOG` so they can use
 them afterwards; for apps/databases you build, you can run `workshop-grant-me`

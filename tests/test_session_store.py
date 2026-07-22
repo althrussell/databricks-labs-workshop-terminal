@@ -33,6 +33,18 @@ def test_upsert_and_load_roundtrip(store):
     assert data["s1"]["owner_email"] == "alice@example.com"
 
 
+def test_live_session_metadata_does_not_persist_terminal_output():
+    from server.sessions import Session
+
+    session = Session("alice@example.com", "bash", "Terminal", -1, -1)
+    session.scrollback.append("secret terminal output")
+
+    metadata = session.metadata()
+
+    assert "scrollback_tail" not in metadata
+    assert "secret terminal output" not in repr(metadata)
+
+
 def test_upsert_without_id_is_ignored(store):
     store.upsert({"owner_email": "alice@example.com"})
     assert store.load() == {}
@@ -65,6 +77,7 @@ def test_writes_are_atomic_and_leave_no_temp_files(store, tmp_path):
     # And the file is valid JSON.
     with open(store.path) as fh:
         assert "s1" in json.load(fh)
+    assert os.stat(store.path).st_mode & 0o777 == 0o600
 
 
 def test_corrupt_journal_loads_as_empty(store):
@@ -102,6 +115,50 @@ def test_manager_surfaces_prior_live_sessions_after_restart(store):
     # The journal is cleared after load so the same ghosts aren't re-surfaced
     # on the next restart; freshly created sessions repopulate it.
     assert store.load() == {}
+
+
+def test_legacy_prior_scrollback_is_not_returned(client, store):
+    from .conftest import ALICE
+    from server.sessions import session_manager
+
+    store.upsert(
+        _meta(
+            "s1",
+            owner="alice@example.com",
+            scrollback_tail="legacy secret output",
+        )
+    )
+    previous_prior = session_manager._prior
+    previous_store = session_manager._store
+    try:
+        session_manager.configure_store(store)
+        payload = client.get("/api/sessions", headers=ALICE).json()["prior_sessions"][0]
+        assert payload["exit_reason"] == "server_restarted"
+        assert "scrollback_tail" not in payload
+        assert "legacy secret output" not in repr(payload)
+    finally:
+        session_manager._prior = previous_prior
+        session_manager._store = previous_store
+
+
+def test_prior_ghost_acknowledgement_is_owner_scoped(client):
+    from .conftest import ALICE, BOB
+    from server.sessions import session_manager
+
+    previous_prior = session_manager._prior
+    session_manager._prior = {
+        "alice@example.com": [_meta("ghost-1", exited=True, exit_reason="server_restarted")]
+    }
+    try:
+        denied = client.delete("/api/sessions/prior/ghost-1", headers=BOB)
+        assert denied.status_code == 404
+        assert len(client.get("/api/sessions", headers=ALICE).json()["prior_sessions"]) == 1
+
+        acknowledged = client.delete("/api/sessions/prior/ghost-1", headers=ALICE)
+        assert acknowledged.status_code == 200
+        assert client.get("/api/sessions", headers=ALICE).json()["prior_sessions"] == []
+    finally:
+        session_manager._prior = previous_prior
 
 
 def test_manager_without_store_is_inert(store):

@@ -1,7 +1,3 @@
-# CI — gap P1-12. On every PR and push to main: run the Python test suite, and
-# type-check + build the frontend. The committed static/ drift check is wired as
-# informational pre-work for P2-13 (built-in-CI); it is made blocking there once
-# build determinism across runners is confirmed.
 name: CI
 
 on:
@@ -17,75 +13,52 @@ jobs:
   backend:
     name: pytest
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.15"
+      - name: Validate requirements lock
+        run: |
+          uv pip compile requirements.in --output-file requirements.txt
+          uv pip compile requirements-dev.in --output-file requirements-dev.txt
+          git diff --exit-code -- requirements.txt requirements-dev.txt
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest httpx
+        run: pip install -r requirements-dev.txt
       - name: Run tests
         run: python -m pytest tests/ -q
 
   frontend:
-    name: type-check
+    name: test-and-build
     runs-on: ubuntu-latest
-    # Informational until P2-13 (Sprint 9) solves frontend build/npm determinism
-    # across runners. Kept non-blocking so a transient frontend-install failure
-    # never blocks a PR whose backend (pytest) is the real gate. Made blocking in
-    # P2-13.
-    continue-on-error: true
-    # Cap the job so a stalled registry fetch can't hang for the full 6h default.
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          # Node 24 ships npm 11.x. Node 22's bundled npm 10.9.8 reliably hangs
-          # for ~10 min on the hosted runner and crashes with "Exit handler never
-          # called!" (a known npm 10.x bug) — npm 11 installs the same lockfile in
-          # seconds.
-          node-version: "24"
+          node-version: "22.14.0"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         working-directory: frontend
-        # Prefer `npm ci` (deterministic, lockfile-driven, restore-from-cache
-        # friendly). Fall back to `npm install` if `npm ci` fails, and wrap both
-        # in a retry loop (clearing node_modules + cache between attempts) to ride
-        # out any transient registry hiccups on the hosted runner.
         env:
-          # The committed package-lock.json resolves packages from the internal
-          # `npm-proxy.dev.databricks.com` (reachable for devs, NOT from the
-          # hosted runner — that's why installs hung ~10 min then crashed with
-          # "Exit handler never called!"). Point CI at the public registry and
-          # rewrite the resolved host so the lockfile stays proxy-based for devs.
           npm_config_registry: "https://registry.npmjs.org/"
           npm_config_replace_registry_host: "always"
-          npm_config_fetch_retries: "5"
-          npm_config_fetch_retry_mintimeout: "5000"
-          npm_config_fetch_retry_maxtimeout: "30000"
-          # Fail a stalled fetch fast (60s) so the retry loop below cycles
-          # quickly rather than hanging on one unreachable request.
           npm_config_fetch_timeout: "60000"
-        run: |
-          for attempt in 1 2 3; do
-            echo "::group::dependency install attempt $attempt"
-            if npm ci --no-audit --no-fund || npm install --no-audit --no-fund; then
-              echo "::endgroup::"
-              exit 0
-            fi
-            echo "::endgroup::"
-            echo "install failed (attempt $attempt); cleaning cache and retrying"
-            npm cache clean --force || true
-            rm -rf node_modules
-            sleep $((attempt * 10))
-          done
-          echo "dependency install failed after 3 attempts"
-          exit 1
-      - name: Type-check
+        run: npm ci --no-audit --no-fund
+      - name: Run frontend tests
         working-directory: frontend
-        # The frontend type-check is the "type checks" half of P1-12. The full
-        # vite build + committed-static/ drift check is P2-13 (Sprint 9), where
-        # build determinism across runners is solved.
-        run: npx tsc --noEmit
+        run: npm test
+      - name: Build production frontend
+        working-directory: frontend
+        run: npm run build
+      - name: Verify committed frontend assets
+        run: |
+          git diff --exit-code -- static
+          test -z "$(git status --porcelain -- static)"

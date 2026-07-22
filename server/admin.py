@@ -20,8 +20,19 @@ from .entitlements import entitlement_manager
 from .events import event_hub
 from .sessions import session_manager
 from .users import user_manager
+from .bootstrap import install
 
 router = APIRouter(prefix="/api/admin", dependencies=[Depends(require_admin)])
+
+
+@router.get("/setup-status")
+def admin_setup_status():
+    return install.status()
+
+
+@router.get("/prewarm-status")
+def admin_prewarm_status():
+    return install.prewarm_status()
 
 
 class PhaseBody(BaseModel):

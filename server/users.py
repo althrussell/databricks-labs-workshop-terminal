@@ -41,7 +41,10 @@ class User:
         self.email = email
         self.slug = email_slug(email)
         self.home = os.path.join(config.users_root(), self.slug)
+        # Serializes all per-user config writes. Lock-held helpers avoid
+        # recursion, so a plain Lock also catches accidental nested acquisition.
         self.lock = threading.Lock()
+        self._credential_revision = 0
         self.cli_ready: set[str] = set()  # agent ids with configs written
         self.topics: dict[str, float] = {}  # topic -> last seen (terminal keyword spotting)
         self.sessions_launched: dict[str, int] = {}  # agent id -> lifetime count
@@ -127,10 +130,8 @@ class User:
             # The omnigent install is shared across attendees — never
             # self-update (mirrors DISABLE_AUTOUPDATER for claude).
             "OMNIGENT_NO_UPDATE_CHECK": "1",
-            # Omnigent's gateway harnesses cache the auth_command result for
-            # 15 min by default — the same as our token lifetime, so a token
-            # already ≤10 min old at read (rotation interval) could be served
-            # up to 10 min past expiry. 4 min keeps worst-case age at 14 min.
+            # Re-read the app OAuth bearer file every four minutes so long-lived
+            # agents promptly adopt SDK refreshes; a 401 also forces refresh.
             "HARNESS_CLAUDE_SDK_GATEWAY_AUTH_REFRESH_INTERVAL_MS": "240000",
             "HARNESS_CODEX_GATEWAY_AUTH_REFRESH_INTERVAL_MS": "240000",
             # Loopback URL the per-user CLI helpers (databricks-me,
@@ -176,6 +177,13 @@ class UserManager:
             if warning:
                 _topology_log.warning("topology: %s", warning)
         user.bootstrap_home()
+        # Auth captures the forwarded OBO token before some routes create the
+        # user's home (notably the first request after an app restart). Flush
+        # that deferred token immediately now that its destination exists.
+        # This runs outside the registry lock to avoid lock inversion/recursion.
+        from . import obo
+
+        obo.obo_manager.user_ready(user)
         return user
 
     def peek(self, email: str) -> User | None:

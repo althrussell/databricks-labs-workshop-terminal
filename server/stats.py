@@ -117,7 +117,7 @@ def _workspace_resources() -> dict:
 # P1-14: the stats payload carries a schema_version so Control Tower can
 # validate the shape and react to changes instead of silently zeroing fields.
 # Bump this whenever the payload's structure changes.
-STATS_SCHEMA_VERSION = 1
+STATS_SCHEMA_VERSION = 2
 
 
 def gather_user(user: User, *, fresh: bool = True) -> dict:
@@ -154,8 +154,15 @@ def gather(user: User) -> dict:
 def gather_all(users: list[User]) -> dict:
     """Harvest view for Control Tower: every user (cached code stats) plus
     one instance-level workspace census."""
+    from .events import event_hub
+    from .sessions import session_manager
+
     return {
         "schema_version": STATS_SCHEMA_VERSION,
         "users": [gather_user(u, fresh=False) for u in users],
         "resources": _workspace_resources(),
+        "websocket_queues": {
+            **session_manager.queue_metrics(),
+            "events": event_hub.metrics(),
+        },
     }

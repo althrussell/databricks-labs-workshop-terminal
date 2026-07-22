@@ -6,8 +6,7 @@ deployed app URL.
 
 > **Provisioning the app?** See
 > [`control-tower-implementation.md`](./control-tower-implementation.md) for the
-> per-attendee setup contract — especially the app-SP `token CAN_USE` grant that
-> makes credentials rotate (without it, agent sessions return `503`).
+> per-attendee setup contract and post-deploy direct-OAuth health gate.
 
 ## Authentication & authorization
 
@@ -26,20 +25,30 @@ Group membership is cached for 5 minutes.
 
 ## Prerequisite: the attendee CLI credential
 
-Databricks Apps OBO scopes deliberately exclude the Token API (verified
-June 2026: no token-related value exists in the `user_api_scopes` registry),
-so the app cannot mint per-user PATs from forwarded tokens. There are two ways
-to supply the credential; **the first is strongly preferred for any large or
-long-lived event** (e.g. deployed days before, idle, then used on the day):
+Databricks Apps injects platform-managed app-SP OAuth credentials. The SDK's
+explicit `WorkspaceClient(host=..., client_id=..., client_secret=...,
+auth_type="oauth-m2m")` returns the current short-lived bearer. The server
+removes client-secret env aliases after constructing that singleton and, on
+production Linux, sets `PR_SET_DUMPABLE=0` before installers or PTYs start.
+This protects the same-UID process boundary; it does not claim the SDK object
+contains no secret in memory. OBO remains the attendee-governed `[me]` profile.
 
-### Preferred: grant the app service principal token `CAN_USE`
+### Normal: direct app-identity OAuth
 
-At provision time, grant the app's own service principal token-create
-(`CAN_USE`) in the workspace. The app then mints **15-minute rotating tokens
-from its service-principal OAuth identity** — which the platform auto-refreshes
-— and fans them out to attendee CLIs. There is **no static secret in `app.yaml`
-and nothing to expire across an idle window**, and no attendee ever creates a
-PAT. Rotation self-heals within ~30s once the grant lands (no redeploy needed).
+No token ACL or Token API call is required. The manager reacquires OAuth every
+five minutes, tracks JWT `exp` when inspectable, and first validates
+`GET /api/2.0/current-user/me`. The returned `applicationId`,
+or `application_id` must exactly equal the injected `DATABRICKS_CLIENT_ID`;
+HTTP 200 alone is not accepted. `userName` is retained only as safe diagnostic
+context and never proves app identity. If that lower-privilege endpoint lacks
+an authoritative application-ID field, SCIM `/Me` is attempted as a fallback
+and its `applicationId` must match exactly. An authoritative mismatch is
+rejected rather than overridden by the fallback. The manager then fans out
+only fresh, changed bearers. A first request after an idle validation window
+reacquires on demand. There is **no static secret in `app.yaml`**, credential
+files contain only access bearers, and no attendee creates a PAT. `/readyz`
+fails closed if environment scrubbing or production Linux non-dumpable
+hardening did not succeed.
 Attendees act as the per-instance service principal (acceptable under the
 one-workspace-per-attendee topology).
 
@@ -50,26 +59,30 @@ workspace token as `WORKSHOP_PAT` (via `env_overrides` / in-place `app.yaml`
 edit, or an app secret resource with `valueFrom`).
 
 - A vended PAT is a **static credential that expires with no rotation behind
-  it** — a time bomb for events deployed ahead of time. If the PAT can itself
-  call `/api/2.0/token/create`, the app will chain rotating tokens off it; if
-  not, it serves the PAT directly and reports the credential **`degraded`**.
+  it** — a time bomb for events deployed ahead of time. It is served directly,
+  never used to mint another token, and always reports **`degraded`**.
 - Provision the PAT with a lifetime comfortably exceeding deploy-to-event-end,
   and watch the credential health (below). Control Tower should revoke it at
   teardown.
-- If `WORKSHOP_PAT` is missing **and** the app identity can't mint, the app
+- If `WORKSHOP_PAT` is missing **and** the app identity can't authenticate, the app
   still serves bash terminals and shows a clear banner; agent CLI launches
   return 503.
 
 ### Credential health and alerting
 
 A background probe verifies the credential end-to-end on a ~5-minute cadence —
-through idle windows too — and classifies it as `rotating` (healthy),
+through idle windows too — and classifies source `app_identity_oauth` as
+`rotating` only while validation is recent,
 `degraded` (a static credential is being served, no rotation), or `unhealthy`
 (the credential was rejected/expired or nothing is configured). The state is
 exposed in `credential` on `GET /api/config` and `GET /api/admin/presence`,
 surfaced as an operator banner, and emitted to Control Tower as a
-`credential.health` event so a misconfigured grant or an expiring credential is
+`credential.health` event so broken OAuth or an expiring fallback is
 caught hours/days before the event, not at first use on the day.
+The `validation_diagnostic` status field records the validation result, each
+endpoint's HTTP status, and only allowlisted observed identity fields/IDs
+(`applicationId`, `application_id`, `userName`, `id`). It never stores the
+bearer or response body.
 
 The app identity (or vended PAT) is also the app's SCIM credential for
 resolving attendee group membership (operator gating), so it needs SCIM read
@@ -220,30 +233,49 @@ python scripts/push_content.py presence
 
 | Var | Default | Purpose |
 |---|---|---|
-| `WORKSHOP_PAT` | *(unset)* | Emergency-only vended workspace credential. Prefer granting the app SP token `CAN_USE` so it mints rotating tokens from its OAuth identity (no expiry clock); a static PAT is reported `degraded` |
+| `WORKSHOP_PAT` | *(unset)* | Emergency-only vended workspace credential. Normal mode uses direct `app_identity_oauth`; a static PAT is always reported `degraded` |
+| `WORKSHOP_APP_SP_ID` | *(unset; required for `/readyz`)* | Numeric SCIM `service_principal_id` returned by app create/get. Control Tower patches the uploaded `app.yaml` after app creation and before deploy; SCIM `/Me` must match this ID together with `DATABRICKS_CLIENT_ID` in `userName` when `applicationId` is absent |
 | `ADMIN_GROUP` | `platform_admins` | Group that grants operator/admin access |
 | `LAB_COACH` | `true` | Append lab-coach instructions to attendee agent memory |
 | `TOPIC_DETECTION` | `true` | Terminal keyword spotting for contextual insights |
-| `AI_DEV_KIT_REPO` | github databricks-solutions/ai-dev-kit | Skills source fetched latest at every boot |
-| `AI_DEV_KIT_REF` | `main` | Git ref (tag/branch/SHA) for the skills overlay. **Pin a reviewed tag/SHA per event** so attendees run a known skills version (incl. the AppKit-default app skill) instead of the branch tip at boot |
+| `AI_DEV_KIT_REPO` | github databricks-solutions/ai-dev-kit | Skills source; event use is constrained by the reviewed artifact manifest |
+| `AI_DEV_KIT_REF` | empty in `app.yaml` | Exact reviewed tag/SHA for the skills overlay; must match the manifest ref, commit, and content SHA-256 |
+| `ARTIFACT_MANIFEST_PATH` | empty | Required CT-supplied reviewed installer/archive/package contract; missing, partial, or unverifiable manifests keep `/readyz` red |
+| `CLAUDE_CODE_VERSION` | `2.1.216` in `app.yaml` | Exact reviewed Claude Code CLI release candidate |
+| `CODEX_CLI_VERSION` | `0.144.6` in `app.yaml` | Exact reviewed Codex CLI release candidate |
+| `OMNIGENT_VERSION` | `0.5.1` in `app.yaml` | Exact reviewed Omnigent release candidate |
+| `DATABRICKS_CLI_VERSION` | `1.8.0` in `app.yaml` | Exact reviewed Databricks CLI release input |
 | `DEEPWIKI_MCP_URL` / `EXA_MCP_URL` | public endpoints | MCP servers for attendee agents (empty string disables) |
 | `ACCESS_GROUP` | *(unset)* | Optional group restricting attendee access |
+| `WORKSHOP_ATTENDEE_EMAIL` | *(unset; required for `/readyz`)* | Control-Tower-injected email assigned to this one app instance. A different attendee receives HTTP 403 / WebSocket 4403 unless `ALLOW_SHARED_TOPOLOGY=true`. Admin service-principal routes remain group-authorized and independent of this binding |
 | `WORKSHOP_PHASE` | `intro` | Phase on (re)start |
 | `CONTENT_PACK_PATH` | *(unset)* | Alternate pack file inside the deployed source |
 | `BRAND_NAME` / `BRAND_LOGO_URL` / `BRAND_PRIMARY_COLOR` / `EVENT_NAME` | *(unset)* | Cobranding |
 | `DATABRICKS_GATEWAY_HOST` | auto-probed | AI Gateway override for CLI model traffic |
-| `ANTHROPIC_MODEL` / `CODEX_MODEL` | sensible pins | Default models for the CLIs |
-| `MAX_SESSIONS_PER_USER` / `MAX_SESSIONS_GLOBAL` | 3 / 30 | Terminal caps |
-| `SESSION_IDLE_TIMEOUT_SECONDS` | 3600 | Idle PTY reap |
-| `SESSION_STATE_PATH` | *(unset)* | Journal path so terminals survive a restart as relaunchable "ended on restart" ghosts. **Recommended for real events** |
+| `ANTHROPIC_MODEL` / `CODEX_MODEL` | *(unset)* | Required event release pins for the CLI model endpoints; `/readyz` stays red until both are explicit |
+| `MAX_SESSIONS_PER_USER` / `MAX_SESSIONS_GLOBAL` | 3 / 3 | Terminal caps; global must not exceed per-user for the one-attendee topology |
+| `ALLOW_SHARED_TOPOLOGY` | `false` | Shared use is unsupported and fails `/readyz` |
+| `SESSION_IDLE_TIMEOUT_SECONDS` | 28800 | Idle PTY reap |
+| `SESSION_STATE_PATH` | `/app/python/source_code/data/sessions.json` in `app.yaml` | Mode-0600 metadata-only journal for relaunchable "ended on restart" ghosts. Raw terminal output is never persisted. `/readyz` exercises atomic sibling write/read semantics without touching the real journal |
 | `ENABLE_OBO` | `false` | Persist each attendee's forwarded OBO token to a `me` CLI profile so the agent can read data **as the attendee** (`databricks-me`). Requires user authorization + `user_api_scopes` on the app resource (set by CT, not here) |
 | `OBO_PROFILE_NAME` | `me` | CLI profile name backed by the OBO token |
 | `OBO_SCOPES` | `catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql` | Doc/health hint; must match the scopes CT set on the app resource (the app cannot set its own scopes). No `unity-catalog` scope exists — use the granular `catalog.*:read` scopes (list UC metadata) + `sql` (query data) |
-| `ENABLE_ENTITLEMENTS` | `false` | Run the SP-driven reconciler that grants the labuser access to SP-created resources (UC catalog grant + non-UC `CAN_MANAGE`) |
-| `WORKSHOP_CATALOG` | *(unset)* | Per-attendee catalog the agent creates UC objects in; the reconciler verifies/re-applies the labuser's `ALL PRIVILEGES` on it. Also surfaced to the attendee shell |
+| `ENABLE_ENTITLEMENTS` | `true` in `app.yaml` | Run the SP-driven reconciler that grants the labuser access to SP-created resources (UC catalog grant + non-UC `CAN_MANAGE`) |
+| `WORKSHOP_CATALOG` | *(unset)* | Dedicated per-attendee catalog. Attendee remains OWNER + `ALL PRIVILEGES`; app SP receives catalog-scoped `MANAGE`, `USE_CATALOG`, `CREATE_SCHEMA` so it can create content and read/patch only this catalog's grants. Also surfaced to the attendee shell |
 | `WORKSHOP_SCHEMA` | *(unset)* | Optional default schema within `WORKSHOP_CATALOG` |
 | `ENTITLEMENT_RECONCILE_INTERVAL` | `300` | Seconds between reconcile sweeps |
 | `ENTITLEMENT_TRANSFER_OWNERSHIP` | `false` | Also transfer SP-created UC catalog ownership to the labuser (grant-based usability is the default) |
 
 All env is read at runtime — Control Tower `env_overrides` and in-place
 `app.yaml` edits take effect on restart with no rebuild.
+
+For event admission, use `GET /readyz`, not `GET /healthz`. Readiness returns
+HTTP 503 with machine-readable per-check state until topology, the required
+`WORKSHOP_ATTENDEE_EMAIL` binding, a numeric and authoritatively verified
+`WORKSHOP_APP_SP_ID`, a recent
+successful app-identity OAuth validation (without `WORKSHOP_PAT`), exact installed CLI
+versions, atomic journal I/O, recent attendee catalog grant/owner proof, a live
+or freshly successful entitlement reconciler, actually observed OBO token
+scopes, and every release pin are green. A configured `OBO_SCOPES` hint alone
+never satisfies readiness. The exact create-to-ready sequence and JSON contract are in
+[`control-tower-implementation.md`](./control-tower-implementation.md#machine-enforced-readiness-contract).

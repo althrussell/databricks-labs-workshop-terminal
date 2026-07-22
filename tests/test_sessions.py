@@ -50,6 +50,8 @@ def test_ws_nonexistent_session_closes_4404_after_accept(client):
 
 def test_per_user_session_cap(client, monkeypatch):
     monkeypatch.setenv("MAX_SESSIONS_PER_USER", "2")
+    monkeypatch.setenv("MAX_SESSIONS_GLOBAL", "4")
+    monkeypatch.setenv("ALLOW_SHARED_TOPOLOGY", "true")
     _create(client, ALICE)
     _create(client, ALICE)
     resp = client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE)

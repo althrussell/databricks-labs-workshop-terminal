@@ -1,8 +1,8 @@
 # Control Tower implementation instructions
 
 What **Control Tower (CT)** must implement to provision, configure, and operate
-the Workshop Terminal app reliably at event scale — including the one grant that
-makes credentials rotate (without it, attendee agent sessions return `503`).
+the Workshop Terminal app reliably at event scale, including the post-deploy
+proof that Databricks Apps supplied healthy direct app-identity OAuth.
 
 This is the integration contract. For the live steering API (phase/broadcast/
 content), see [`admin-api.md`](./admin-api.md).
@@ -14,106 +14,141 @@ content), see [`admin-api.md`](./admin-api.md).
 | # | CT must... | Why | Failure mode if skipped |
 |---|---|---|---|
 | 1 | Deploy **one app instance per attendee**, single worker | PTY fds + credential + git identity are instance-wide and not uid-isolated | Attendees share one identity; security model broken |
-| 2 | Grant the **app's own service principal `token CAN_USE`** at provision time | App mints 15-min rotating tokens from its auto-refreshed OAuth identity | `token/create` → 403, credential `degraded`, `POST /api/sessions` → **503** |
+| 2 | Require healthy direct app-SP OAuth after deploy (`source=app_identity_oauth`, recent `state=rotating`) | Databricks Apps injects auto-refreshing OAuth; no token ACL/PAT mint is needed | `/readyz` stays red and coding-agent launches return **503** |
 | 3 | Make the app SP a member of **`ADMIN_GROUP`** (default `platform_admins`) | SCIM group resolution + operator gating | Operator panel/admin API denied |
 | 4 | Set **`SESSION_STATE_PATH`** to a data-volume path | Terminals survive restart as relaunchable ghosts | Blank screen + client reconnect loop after any restart |
 | 5 | **Pin `AI_DEV_KIT_REF`** to a reviewed tag/SHA per event | Skills are fetched at every boot from a branch tip otherwise | Attendees run un-reviewed skills mid-event |
 | 6 | Ingest the **`credential.health`** event (set `CONTROL_TOWER_INGEST_URL`/`_TOKEN`, `WORKSHOP_RUN_ID`) | Catch a bad grant hours/days ahead, not at T-0 | First sign of trouble is an attendee 503 on event day |
 | 7 | *(OBO opt-in)* Enable **user authorization** + set the app's **`user_api_scopes`** (`catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql`; no `unity-catalog` scope exists), admin-grant consent, restart, set `ENABLE_OBO=true` | Agent can read data **as the attendee** (governance-faithful UC), not as the SP | `databricks --profile me` empty/401; attendee sees the SP's catalogs, not theirs |
-| 8 | *(OBO opt-in)* Provision a **per-attendee catalog** (labuser OWNER + `ALL PRIVILEGES`, app SP `CREATE`/`USE`), pass it as **`WORKSHOP_CATALOG`**, set `ENABLE_ENTITLEMENTS=true` | Everything the SP builds is usable by the labuser (UC by inheritance, non-UC by sweep) | Labuser can't `SELECT`/manage what the agent created |
+| 8 | *(OBO opt-in)* Reuse a matching dedicated catalog when FEVM already provisioned it; otherwise create it. Ensure labuser OWNER + `ALL PRIVILEGES` + `MANAGE`; app SP catalog-scoped `MANAGE`, `USE_CATALOG`, `CREATE_SCHEMA`; pass **`WORKSHOP_CATALOG`** and set `ENABLE_ENTITLEMENTS=true` | Works without `CREATE CATALOG` entitlement while preserving exact scoped grants | Reconciliation cannot verify/reapply grants, or the labuser/app SP cannot use created objects |
+| 9 | Gate admission on **`GET /readyz` returning 200** | The deep gate proves topology, credentials, installers, persistence, catalog, entitlements, OBO, and release pins together | A process can be live at `/healthz` while unsafe or incomplete for attendees |
+| 10 | Inject **`WORKSHOP_ATTENDEE_EMAIL`** with the attendee assigned to this instance | Binds every attendee HTTP/WebSocket request to the Control Tower assignment | A second attendee is denied with 403/4403 instead of sharing instance-wide credentials |
+| 11 | After app create/get, patch uploaded `app.yaml` with numeric **`WORKSHOP_APP_SP_ID=service_principal_id`** before every new or existing-app deploy | Live SCIM `/Me` identifies the app with `userName=<client UUID>` plus numeric `id`, but may omit `applicationId` | `/readyz` stays red because app-SP OAuth cannot be authoritatively bound |
 
-Items 2–3 are the ones most commonly missed and caused the live `503`s we just
-debugged on labs. Items 7–8 are the OBO dual-profile feature — opt-in per event;
-skip them and the app behaves exactly as before (SP-only identity).
+Items 2–3 are the credential/admin prerequisites most likely to block launches.
+Items 7–8 are the OBO dual-profile feature — opt-in per event;
+skip them and the app behaves exactly as before (SP-only identity), but the
+event-readiness gate remains red. **Control Tower is implemented externally to
+this repository**; in this phase its integration must validate two independently
+provisioned attendee instances end to end before releasing a fleet.
 
 ---
 
 ## 1. Provisioning order (per attendee)
 
-The app's service principal **does not exist until the app is created**, so the
-`CAN_USE` grant must come *after* create and *before* (or shortly after) start:
+The app's service principal **does not exist until the app is created**.
+Databricks Apps then injects and refreshes its OAuth credentials:
 
 ```
-1. Create the per-attendee workspace            (existing CT flow)
-2. Create the app  ─────────────────────────────► returns service_principal_client_id
-3. Grant that SP `token CAN_USE`   ◄── STEP 2 above (the critical one)
-4. Add that SP to ADMIN_GROUP                     (SCIM / group membership)
-5. Sync source + set env overrides + deploy/start
-6. Verify credential.state == "rotating"          (acceptance gate, §5)
-7. Teardown at event end (revoke, delete)          (§6)
+1. Create or get the per-attendee workspace and app
+   └─ app create/get returns service_principal_client_id and numeric service_principal_id
+2. Patch the already-uploaded app.yaml with WORKSHOP_APP_SP_ID=service_principal_id,
+   then configure groups, OBO scopes, and every reviewed release pin
+3. Detect/reuse an existing dedicated catalog; create only when absent
+4. Ensure attendee OWNER + ALL PRIVILEGES + MANAGE and app-SP scoped grants
+5. Keep WORKSHOP_PAT empty (unless explicitly accepting degraded emergency mode)
+6. Sync source, deploy, and start the app (one Uvicorn worker; documented
+   auto-injected `UVICORN_HOST`/`UVICORN_PORT`, with no explicit host/port args)
+7. Verify direct OAuth through the admin credential status, then poll GET /readyz
+   until HTTP 200; HTTP 503 blocks attendee admission
+8. Validate the same contract on a second independent instance
+9. Teardown at event end (revoke and delete)
 ```
 
-Rotation **self-heals within ~30s** once the grant lands — if the app was already
-started, no redeploy is needed; the background probe picks it up within one
-~5-minute cycle. Grant-before-start just makes the first boot clean.
+OAuth acquisition and validation repeat every ~5 minutes and on demand after
+idle. Live agents re-read the shared bearer file every four minutes.
+
+In the observed failed deployment, list-form `${DATABRICKS_APP_PORT}` reached
+Uvicorn literally and was rejected as an invalid integer. This app therefore
+keeps only `--workers 1` in `app.yaml` and deliberately relies on the documented
+auto-injected `UVICORN_HOST=0.0.0.0` and `UVICORN_PORT`.
 
 *OBO dual-profile (opt-in):* additionally enable user authorization + set
 `user_api_scopes` on the app resource (admin-consent, then restart), provision
 the per-attendee catalog, and set `ENABLE_OBO`/`ENABLE_ENTITLEMENTS`/
 `WORKSHOP_CATALOG`. See §8–9.
 
+### Machine-enforced readiness contract
+
+`GET /healthz` is liveness only: it returns `200 {"status":"ok"}` whenever the
+web process can answer. It must not be used to admit attendees.
+
+`GET /readyz` is the release gate. It returns JSON with top-level `status`
+(`ready` or `not_ready`), boolean `ready`, and a `checks` object. Every check
+contains boolean `ok`, `state` (`green` or `red`), a non-secret `detail`, and
+check-specific metadata. It returns HTTP 200 only when every hard check is
+green; otherwise it returns the complete report with HTTP 503.
+
+The hard checks are:
+
+1. `topology`: shared topology is off and
+   `MAX_SESSIONS_GLOBAL <= MAX_SESSIONS_PER_USER`.
+2. `attendee_identity`: `WORKSHOP_ATTENDEE_EMAIL` is present and valid. The
+   attendee routes enforce an exact normalized-email match; admin service
+   principals continue to use `ADMIN_GROUP` authorization.
+3. `credentials`: state is `rotating`, source is `app_identity_oauth`,
+   `WORKSHOP_PAT` is absent, and successful OAuth validation occurred within the
+   bounded freshness window. JWT expiry is tracked when inspectable; a stale
+   validation or static fallback is not release-ready.
+4. `app_sp_binding`: `WORKSHOP_APP_SP_ID` is numeric and the latest safe OAuth
+   diagnostic proves the same numeric SCIM ID with the expected app client UUID.
+   A missing, non-numeric, mismatched, or unverified ID is not release-ready.
+5. `installers`: Node, Claude, Codex, Databricks CLI, skills, and—when
+   enabled—tmux and Omnigent have completed installation. The release manifest
+   reports each enabled CLI's expected and observed version, and readiness
+   requires an exact match.
+6. `session_state`: `SESSION_STATE_PATH` is a file destination whose parent
+   supports mode-0600 SessionMetadataStore-style atomic write/read. The journal
+   contains restart metadata only—never terminal output. The probe uses and
+   removes a disposable sibling; it never mutates the real journal.
+7. `catalog`: `WORKSHOP_CATALOG` matches a recent successful read-after-patch
+   proof that the attendee is owner and has `ALL_PRIVILEGES`.
+8. `entitlements`: reconciliation is enabled and healthy, has recent
+   attendee/catalog proof, and either its background thread is alive or a
+   fresh on-demand reconcile succeeded. Empty-attendee runs fail closed.
+9. `obo`: OBO is enabled, the configured hint includes the required scopes,
+   and a trusted proxy-forwarded attendee token has actually exposed
+   `catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql` in its
+   JWT `scope`/`scp` claim. The profile must be present and fresh, and that scope
+   observation must be no older than 300 seconds. Before a token is observed—or
+   after it expires/goes stale—HTTP remains 503.
+10. `release_pins`: `AI_DEV_KIT_REF` is not a branch tip; exact Claude Code,
+   Codex CLI, Omnigent, Databricks CLI, Anthropic model, and Codex model pins
+   are present; and every enabled installed CLI version equals its expected
+   value. Bootstrap also resolves the fetched `AI_DEV_KIT_REF` to a commit,
+   checksums installed content, and records source `network` or `prewarmed`.
+   A vendored fallback keeps the app usable after a network failure but never
+   claims the configured ref was installed and keeps readiness red.
+
+The report and release manifest never include token or secret values. CT should poll with bounded
+backoff during installer/reconciler startup, fail the instance on persistent
+503, and retain the per-check report as release evidence. For this phase,
+exercise the full create-to-ready sequence on **two instances**; a single green
+instance does not validate the external Control Tower implementation.
+
 ---
 
-## 2. The critical grant — app SP `token CAN_USE`
+## 2. The credential contract — direct app-identity OAuth
 
-Databricks Apps OBO scopes deliberately exclude the Token API, so the app cannot
-mint per-user PATs from forwarded tokens. Instead it mints rotating tokens **from
-its own service-principal OAuth identity** — but only if that SP holds workspace
-token-create (`CAN_USE`).
+Live discovery showed token authorization endpoints return
+`tokens tokens does not exist` even where `enableTokensConfig=true`.
+Token ACLs and a 15-minute workspace-PAT cap are therefore not prerequisites.
 
-Read the app's SP client id from the create/get response field
-`service_principal_client_id` (an application/client UUID, e.g.
-`9945abef-8d09-45e0-b85a-7b1b05b6c6ef`), then grant **additively** (PATCH — do
-not overwrite the existing `admins → CAN_MANAGE`).
-
-**REST (PATCH = additive):**
-
-```http
-PATCH /api/2.0/permissions/authorization/tokens
-Authorization: Bearer <CT workspace-admin token>
-Content-Type: application/json
-
-{
-  "access_control_list": [
-    { "service_principal_name": "<APP_SP_CLIENT_ID>", "permission_level": "CAN_USE" }
-  ]
-}
-```
-
-> Use `service_principal_name` = the SP's **application/client id**, not its
-> numeric id or display name.
-
-**CLI equivalent:**
-
-```bash
-databricks permissions update authorization tokens --profile <WS> --json '{
-  "access_control_list": [
-    { "service_principal_name": "<APP_SP_CLIENT_ID>", "permission_level": "CAN_USE" }
-  ]
-}'
-```
-
-**Python SDK equivalent:**
-
-```python
-from databricks.sdk import WorkspaceClient
-from databricks.sdk.service.settings import (
-    TokenAccessControlRequest, TokenPermissionLevel,
-)
-
-w = WorkspaceClient(profile="<WS>")  # workspace admin
-w.token_management.update_token_permissions(
-    access_control_list=[
-        TokenAccessControlRequest(
-            service_principal_name="<APP_SP_CLIENT_ID>",
-            permission_level=TokenPermissionLevel.CAN_USE,
-        )
-    ]
-)
-```
-
-The caller (CT's deployer SP) must be a workspace admin (or hold `CAN_MANAGE` on
-token authorization) to set this.
+Databricks Apps injects app-SP OAuth client credentials and refreshes them.
+The app calls its explicit OAuth-M2M client's `config.authenticate()`, validates
+the returned bearer first with the lower-privilege
+`GET /api/2.0/current-user/me` first. An exact `applicationId` or
+`application_id == DATABRICKS_CLIENT_ID` is authoritative only when the same
+payload's numeric `id == WORKSHOP_APP_SP_ID`. When the application-ID field is
+absent or the endpoint is unavailable, SCIM `/Me` may instead prove the
+conjunction `userName == DATABRICKS_CLIENT_ID` **and**
+`id == WORKSHOP_APP_SP_ID`, where the expected SP ID must be numeric.
+`userName` alone is never accepted. Missing, non-numeric, or mismatched expected
+or observed IDs are rejected. Credential status retains only safe expected and
+observed IDs, endpoint statuses, and allowlisted identity fields—never the
+bearer or response body. The app tracks JWT `exp` when
+inspectable and distributes only fresh/changed bearers. The app client secret
+never enters attendee-readable env, shell, or files.
 
 ### Emergency-only fallback: `WORKSHOP_PAT`
 
@@ -121,7 +156,7 @@ If a usable app identity is genuinely unavailable, CT may vend a workspace token
 as the `WORKSHOP_PAT` env var. This is a **static credential with no rotation
 behind it** — the app reports it `degraded` and alerts. If used, provision the
 PAT with a lifetime well beyond deploy-to-event-end and **revoke at teardown**.
-Prefer the SP grant for anything large or long-lived.
+It is never considered rotating and is never used to create another PAT.
 
 ---
 
@@ -129,7 +164,7 @@ Prefer the SP grant for anything large or long-lived.
 
 | Grant | Scope | Purpose |
 |---|---|---|
-| `token CAN_USE` | workspace token authorization | mint rotating attendee tokens (§2) |
+| `MANAGE`, `USE_CATALOG`, `CREATE_SCHEMA` | only the attendee's dedicated catalog | GET/PATCH its grants and create workshop schemas; add narrower object-create privileges only when the content requires them |
 | Member of `ADMIN_GROUP` (`platform_admins`) | workspace group | SCIM group resolution + operator/admin access |
 | SCIM read (`/Me`, `/Users`) | workspace | resolve attendee group membership for operator gating |
 
@@ -146,17 +181,22 @@ take effect on restart with **no rebuild**. Set these per instance:
 
 | Var | Set to | Why |
 |---|---|---|
-| `SESSION_STATE_PATH` | `/app/python/source_code/data/sessions.json` | restart recovery (item 4) |
+| `SESSION_STATE_PATH` | `/app/python/source_code/data/sessions.json` | metadata-only restart recovery (item 4); raw terminal output remains in memory |
+| `WORKSHOP_ATTENDEE_EMAIL` | the attendee email assigned to this instance | fail-closed attendee identity binding; required by `/readyz` |
+| `WORKSHOP_APP_SP_ID` | numeric `service_principal_id` from app create/get | authoritative SCIM `/Me` app binding; patch the uploaded `app.yaml` after app creation and before deploy |
 | `AI_DEV_KIT_REF` | a reviewed **tag or commit SHA** | freeze skills per event (item 5) |
+| `CLAUDE_CODE_VERSION` | `2.1.216` release candidate | reviewed Claude Code CLI release |
+| `CODEX_CLI_VERSION` | `0.144.6` release candidate | reviewed Codex CLI release |
+| `OMNIGENT_VERSION` | `0.5.1` release candidate | reviewed Omnigent release |
+| `DATABRICKS_CLI_VERSION` | reviewed exact version | make the Databricks CLI input explicit |
+| `ANTHROPIC_MODEL` / `CODEX_MODEL` | reviewed endpoint names | prevent model drift between instances |
 | `WORKSHOP_RUN_ID` | CT's run id for this attendee | event attribution on ingested events |
 | `DATABRICKS_WORKSPACE_ID` | the workspace id | event attribution |
 | `CONTROL_TOWER_INGEST_URL` | CT ingest base URL | enable real-time event push (§5) |
 | `CONTROL_TOWER_INGEST_TOKEN` | shared `X-Ingest-Token` | auth for ingest |
 | `ADMIN_GROUP` | `platform_admins` (or your group) | operator gating |
 | `EVENT_NAME` / `BRAND_*` | per-event branding | cobranding |
-| `ANTHROPIC_MODEL` | a READY Databricks Claude serving endpoint, e.g. `databricks-claude-opus-4-8` | default Claude model for this app instance |
-| `CODEX_MODEL` | a READY Databricks OpenAI-compatible serving endpoint, e.g. `databricks-gpt-5-5` | default Codex model for this app instance |
-| `WORKSHOP_PAT` | **leave empty** | use the SP grant, not a static PAT |
+| `WORKSHOP_PAT` | **leave empty** | use direct app-identity OAuth, not a static PAT |
 | `ENABLE_OBO` | `true` *(opt-in)* | persist the attendee OBO token to the `me` profile (§8) — also needs user authorization + `user_api_scopes` on the app resource |
 | `ENABLE_ENTITLEMENTS` | `true` *(opt-in)* | run the labuser-usability reconciler (§9) |
 | `WORKSHOP_CATALOG` | per-attendee catalog name | the catalog the agent creates UC objects in; the reconciler verifies the labuser's `ALL PRIVILEGES` on it (§9) |
@@ -171,16 +211,10 @@ At attendee bootstrap the app prefers the requested READY endpoint, then
 degrades through its built-in model chain if endpoint discovery reports it
 unavailable. Leaving the override empty preserves the app defaults.
 
-The CT simulator accepts the same settings:
-
-```bash
-python scripts/deploy_ct_sim.py \
-  --anthropic-model databricks-claude-opus-4-8 \
-  --codex-model databricks-gpt-5-5
-```
-
-Leave `MAX_SESSIONS_*`, `SESSION_IDLE_TIMEOUT_SECONDS` at defaults unless the
-event needs otherwise. Full table in [`admin-api.md`](./admin-api.md#deploy-time-configuration-env-vars).
+Keep `MAX_SESSIONS_GLOBAL <= MAX_SESSIONS_PER_USER` and
+`ALLOW_SHARED_TOPOLOGY=false`; the release contract is one attendee per app
+instance. Full table in
+[`admin-api.md`](./admin-api.md#deploy-time-configuration-env-vars).
 
 ---
 
@@ -238,7 +272,7 @@ admin-group caller:
 ```bash
 curl -s https://<app-url>/api/config \
   -H "Authorization: Bearer <admin token>" | jq .credential
-# expect: { "state": "rotating", "healthy": true, "degraded": false, "source": "app-identity", ... }
+# expect: { "state": "rotating", "healthy": true, "degraded": false, "source": "app_identity_oauth", ... }
 ```
 
 ...or check the app logs for:
@@ -247,9 +281,9 @@ curl -s https://<app-url>/api/config \
 server.credentials INFO credential healthy — rotating short-lived tokens
 ```
 
-If you instead see `credential degraded: cannot mint short-lived tokens (403)`,
-the §2 grant is missing or not yet applied — apply it; rotation recovers within
-~30s with no redeploy.
+If you instead see `credential degraded`, the explicit emergency
+`WORKSHOP_PAT` fallback is active. If OAuth validation is stale or rejected,
+the state is `unhealthy`; inspect Databricks Apps app-identity authentication.
 
 ---
 
@@ -257,8 +291,8 @@ the §2 grant is missing or not yet applied — apply it; rotation recovers with
 
 - Delete the per-attendee app + workspace per existing CT flow.
 - If a `WORKSHOP_PAT` was vended (emergency path only), **revoke it** explicitly.
-- App-SP rotating tokens are short-lived (15 min) and auto-expire; no manual
-  revoke needed, but deleting the app removes the SP and its grants.
+- App-SP OAuth access bearers expire naturally; no token-delete call is needed.
+  Deleting the app removes the SP and its scoped grants.
 
 ---
 
@@ -304,7 +338,11 @@ This is **additive** to the SP grants in §2–3 (which keep powering `[DEFAULT]
 and model traffic). Verify per instance: `GET /api/config` → `obo.fresh == true`
 while a tab is open, and `databricks --profile me current-user me` returns the
 attendee email (not the SP). `obo.present == false` with a tab open ⇒ scopes or
-consent missing.
+consent missing. OBO cannot refresh while there is no browser request, because
+Apps exposes no refresh token to the app. Recovery is automatic when the
+attendee returns to the tab: focus, visible-state, or socket reconnect forces an
+authenticated config request through the Apps proxy and captures its fresh
+forwarded user token; no manual page refresh is required.
 
 The labuser identity used everywhere (UC grants, presence) is the attendee
 email from `X-Forwarded-Email`.
@@ -314,9 +352,13 @@ email from `X-Forwarded-Email`.
 Because the SP (not the labuser) creates resources, the labuser would have no
 access to them. Provision a per-attendee catalog so usability is automatic:
 
-- **Create a per-attendee catalog** with the **labuser as `OWNER`** and
-  **`ALL PRIVILEGES` granted to the labuser**, and the **app SP granted
-  `CREATE` + `USE`**. UC privileges inherit downward, so this single grant makes
+- **Create a per-attendee catalog** where the **attendee remains OWNER +
+  `ALL PRIVILEGES`** and grant the **app SP `MANAGE`, `USE_CATALOG`, and
+  `CREATE_SCHEMA` only on that attendee's dedicated catalog**. Add narrower
+  catalog/object creation privileges only when the workshop content needs them.
+  `MANAGE` is required because the reconciler performs GET/PATCH on that
+  catalog's grants. Do not grant ownership or account/metastore-wide privileges
+  to the app SP. UC privileges inherit downward, so the attendee grant makes
   every schema/table/volume the SP later creates inside the catalog instantly
   usable by the labuser — and visible via the `me`/OBO profile.
 - **Pass the catalog name as `WORKSHOP_CATALOG`** (optional `WORKSHOP_SCHEMA`).
@@ -328,8 +370,8 @@ access to them. Provision a per-attendee catalog so usability is automatic:
   endpoints), granting the labuser `CAN_MANAGE` (these don't inherit). All calls
   run as the app SP, are idempotent, and emit `entitlements.health` on failure.
 
-Grant payloads the app issues (the app SP needs permission to make these — i.e.
-it must own/manage the catalog and the swept resources):
+Grant payloads the app issues (the app SP uses catalog-scoped `MANAGE`; it does
+not need ownership or metastore-wide `MANAGE`):
 
 ```http
 PATCH /api/2.1/unity-catalog/permissions/catalog/<WORKSHOP_CATALOG>
@@ -345,9 +387,137 @@ can `SELECT` the table and the labuser has `CAN_MANAGE` on the app/instance
 (immediately after `workshop-grant-me`, and after a sweep with no inline call).
 `GET /api/admin/presence` → `entitlements.ok == true`.
 
+## 10. Prewarm and two-instance verification contract
+
+Prewarm each app once against its persistent data volume before event doors.
+Before deployment, CT stages every local path referenced by the reviewed
+`ARTIFACT_MANIFEST_PATH` contract. For Codex this includes separate npm
+launcher and platform-native package tarballs plus the expected installed
+native executable checksum. For Omnigent this includes the uv binary, exact
+Python 3.12 runtime tree, complete wheelhouse, and fully pinned transitive lock
+with hashes. Reuse verifies the complete installed venv and runtime tree, not
+only their launchers. No Omnigent input may be a URL; runtime uses `UV_OFFLINE=1`,
+`UV_NO_INDEX=1`, `UV_PYTHON_DOWNLOADS=never`, and `--require-hashes`.
+
+Bootstrap records each step's `source` (`prewarmed`, `cache`, or `staged`),
+start/completion timestamps, duration, and expected/actual
+version/ref/checksum in attendee-scoped `GET /api/setup-status` and
+admin-bearer-compatible `GET /api/admin/setup-status`. The ai-dev-kit overlay is
+reused only when its persistent stamp binds the configured repository + pinned
+ref to a resolved commit and both the checkout and installed skill content
+match the recorded checksum. A missing/tampered stamp, checkout, or installed
+overlay forces a fresh reviewed refresh. Vendored fallback remains visible as
+`vendored_fallback` and keeps `/readyz` closed.
+
+`GET /api/admin/prewarm-status` independently re-verifies persistent on-disk
+binaries, exact versions, separate Codex launcher/native stamps, tmux checksum
+stamp, Omnigent uv/Python/wheelhouse/lock/binary stamp, and ai-dev-kit
+ref/resolved-commit/content checksum. It does not trust the current process's
+installer state or the initial `network`/`prewarmed` source. Shared-prefix
+mutation is serialized by a cross-process file lock; skills are assembled in a
+complete staging tree and swapped as a unit, and stamps use unique same-volume
+temporary files plus atomic rename.
+
+Control Tower remains responsible for app authentication, provisioning,
+grants, and deployment. The repository's helper is read-only and does not
+create or modify infrastructure:
+
+```bash
+export DATABRICKS_TOKEN='<external CT bearer>'
+python scripts/ct_verify.py \
+  --app-url https://app-a.example \
+  --app-url https://app-b.example \
+  --timeout 300
+```
+
+Alternatively pass `--manifest inventory.json`. Exactly two apps are required:
+
+```json
+{
+  "apps": [
+    {"name": "canary-a", "url": "https://app-a.example", "workspace_host": "https://workspace-a.example", "token_env": "APP_A_ADMIN_TOKEN", "attendee_token_env": "APP_A_ATTENDEE_TOKEN"},
+    {"name": "canary-b", "url": "https://app-b.example", "workspace_host": "https://workspace-b.example", "token_env": "APP_B_ADMIN_TOKEN", "attendee_token_env": "APP_B_ATTENDEE_TOKEN"}
+  ]
+}
+```
+
+The helper waits for `/readyz`, `/api/admin/setup-status`, and
+`/api/admin/prewarm-status`; requires reusable on-disk proof; and compares the
+complete canonical release and prewarm manifests across both instances,
+including identical resolved ai-dev-kit commits and checksums. Initial
+`network` versus restart `prewarmed` provenance does not create drift. It prints
+one stable JSON object and exits `0` only when both apps are ready and identical
+(`1` not ready/timeout/mismatch, `2` invalid input). It never prints bearer
+tokens.
+
+Inventory names and normalized URLs must be unique. URLs require HTTPS and may
+not contain userinfo, query strings, or fragments. Local development may opt in
+to `http://localhost`/loopback only with `--allow-local-http`.
+
+## 11. Operational health ingestion
+
+When CT ingest is enabled, the app periodically emits `operational.health`
+through the same bounded, nonblocking `event_emitter` path. The payload includes
+bootstrap duration/error counts; HTTP `409`/`429`/`503` counts; current/total
+WebSocket attachments; terminal and EventHub subscriber overflow/current
+metrics; live PTY count; Linux RSS when available; credential state/freshness;
+and entitlement handoff failure count.
+The payload selects fields explicitly and contains no tokens or detailed error
+text. CT should alert on rising bootstrap errors, `503`s, overflows, stale
+credentials, or handoff failures and use `/api/admin/stats` as reconciliation.
+The emitter flusher and operational reporter retain their thread handles and
+are signalled and briefly joined during app shutdown.
+
+## 12. Fleet operations, restart recovery, and kill switch
+
+Use an inventory in the format above. All operations have bounded timeouts,
+emit deterministic JSON, and support `--dry-run`:
+
+```bash
+# Readiness/setup/phase/launch-control rollup
+python scripts/ct_fleet.py --inventory inventory.json status
+
+# Pause or resume new LLM-agent launches fleet-wide (existing PTYs continue)
+python scripts/ct_fleet.py --inventory inventory.json --dry-run pause
+python scripts/ct_fleet.py --inventory inventory.json pause
+python scripts/ct_fleet.py --inventory inventory.json resume
+
+# After restart, restore content first and then the active phase
+python scripts/ct_fleet.py --inventory inventory.json repush \
+  --content-pack event_pack.json --phase build
+```
+
+The fleet kill switch is `POST /api/admin/agent-controls` with
+`{"enabled": false}`. It pauses new paid-agent launches only; bash and already
+running sessions remain available. Resume with `{"enabled": true}`.
+
+Restarted apps retain phase only in process memory, so CT must re-push the
+content pack and then phase after readiness returns. Session metadata on the
+persistent `SESSION_STATE_PATH` surfaces prior terminals as restart ghosts; CT
+must not treat those as live PTYs.
+
+## 13. External teardown
+
+Before deletion, capture a read-only final report:
+
+```bash
+python scripts/ct_fleet.py --inventory inventory.json teardown-report
+```
+
+The helper only reads presence, state, and launch-control status and retains a
+bounded summary: presence/session counts, phase, credential/entitlement state,
+and agent controls. It never retains attendee identities, raw payloads, tokens,
+or detailed errors, and never deletes the app, workspace, catalog, or
+credentials. External CT must then
+perform the §7 teardown, record per-resource success/failure, retry bounded
+transient failures, revoke any emergency `WORKSHOP_PAT`, and retain the final
+report with the event run. The app must never delete itself.
+
 ## Appendix — quick reference
 
 - App SP client id: `service_principal_client_id` from `apps create` / `apps get`.
+- App SP numeric SCIM id: `service_principal_id` from `apps create` / `apps get`;
+  patch it into uploaded `app.yaml` as `WORKSHOP_APP_SP_ID` before deploy.
 - Critical grant: `PATCH /api/2.0/permissions/authorization/tokens` →
   `{service_principal_name: <client_id>, permission_level: CAN_USE}` (additive).
 - Health states: `rotating` (good) · `degraded` · `unhealthy` · `unknown`.

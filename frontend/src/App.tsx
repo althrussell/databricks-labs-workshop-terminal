@@ -11,7 +11,15 @@ import {
   SquareTerminal,
   X,
 } from "lucide-react";
-import { api, AgentInfo, AppConfig, SessionInfo } from "./api";
+import {
+  api,
+  AgentInfo,
+  AppConfig,
+  PriorSessionInfo,
+  SessionInfo,
+  relaunchAndAcknowledge,
+  splitSessionPayload,
+} from "./api";
 import databricksLogo from "./assets/databricks-logo.svg";
 import BannerBar from "./components/BannerBar";
 import Hero from "./components/Hero";
@@ -19,6 +27,7 @@ import LaunchBar from "./components/LaunchBar";
 import NuggetsPane from "./components/NuggetsPane";
 import OperatorPanel from "./components/OperatorPanel";
 import TerminalView from "./components/TerminalView";
+import { bindIdentityRefresh, onAppEvent } from "./events";
 
 const LINK_ICONS: Record<string, typeof LinkIcon> = {
   "book-open": BookOpen,
@@ -31,6 +40,7 @@ export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [priorSessions, setPriorSessions] = useState<PriorSessionInfo[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [launching, setLaunching] = useState<string | null>(null);
   const [hintSessionId, setHintSessionId] = useState<string | null>(null);
@@ -38,6 +48,7 @@ export default function App() {
   const [certName, setCertName] = useState("");
   const [certBusy, setCertBusy] = useState(false);
   const [error, setError] = useState("");
+  const [connectionLost, setConnectionLost] = useState(false);
   const [nuggetsCollapsed, setNuggetsCollapsed] = useState(false);
   const [view, setView] = useState<"home" | "terminals" | "operator">(
     location.pathname.startsWith("/operator") ? "operator" : "home"
@@ -47,30 +58,53 @@ export default function App() {
     api.agents().then((data) => setAgents(data.agents)).catch(() => undefined);
   }, []);
 
-  useEffect(() => {
-    api
-      .config()
-      .then((cfg) => {
-        setConfig(cfg);
-        if (cfg.branding.brand_primary_color) {
-          document.documentElement.style.setProperty(
-            "--brand-primary",
-            cfg.branding.brand_primary_color
-          );
-        }
-        document.title = cfg.branding.event_name || `${cfg.branding.brand_name} Workshop`;
-      })
-      .catch((e) => setError(e.message));
+  const refreshIdentity = useCallback(async () => {
+    const cfg = await api.config();
+    setConfig(cfg);
+    if (cfg.branding.brand_primary_color) {
+      document.documentElement.style.setProperty(
+        "--brand-primary",
+        cfg.branding.brand_primary_color
+      );
+    }
+    document.title = cfg.branding.event_name || `${cfg.branding.brand_name} Workshop`;
+  }, []);
 
-    api.sessions().then((data) => {
-      setSessions(data.sessions);
-      if (data.sessions.length > 0) setActiveId(data.sessions[0].id);
-    });
+  useEffect(() => {
+    const refresh = () =>
+      refreshIdentity().catch((e) =>
+        setError(e instanceof Error ? e.message : String(e))
+      );
+    refresh();
+    const stopIdentityRefresh = bindIdentityRefresh(refresh);
+
+    api.sessions()
+      .then((data) => {
+        const { live, prior } = splitSessionPayload(data);
+        setSessions(live);
+        setPriorSessions(prior);
+        if (live.length > 0) setActiveId(live[0].id);
+      })
+      .catch((e) => setError(
+        e instanceof Error ? e.message : String(e)
+      ));
 
     refreshAgents();
     const interval = setInterval(refreshAgents, 5000);
-    return () => clearInterval(interval);
-  }, [refreshAgents]);
+    return () => {
+      clearInterval(interval);
+      stopIdentityRefresh();
+    };
+  }, [refreshAgents, refreshIdentity]);
+
+  useEffect(
+    () =>
+      onAppEvent((event) => {
+        if (event.t === "connection_lost") setConnectionLost(true);
+        if (event.t === "reconnected") setConnectionLost(false);
+      }),
+    []
+  );
 
   // Stop polling agents once everything is installed.
   const allReady = agents.length > 0 && agents.every((a) => a.ready);
@@ -93,6 +127,23 @@ export default function App() {
       return null;
     } finally {
       setLaunching(null);
+    }
+  }
+
+  async function relaunchPrior(prior: PriorSessionInfo) {
+    try {
+      await relaunchAndAcknowledge(
+        prior,
+        launch,
+        api.ackPriorSession
+      );
+      // A successful acknowledgement consumes the ghost even if replacement
+      // launch fails; the attendee can use the normal launch action afterward.
+      setPriorSessions((current) =>
+        current.filter((item) => item.id !== prior.id)
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -272,21 +323,28 @@ export default function App() {
       </header>
 
       <BannerBar initial={config?.broadcast ?? null} />
+      {connectionLost && (
+        <div className="banner banner-warning">
+          <span>
+            Connection to workshop updates was lost. Reload the page to reconnect.
+          </span>
+        </div>
+      )}
       {config && !config.credential.configured && (
         <div className="banner banner-warning">
           <span>
-            Workshop credential not configured — Control Tower must grant the app service
-            principal token access (or inject WORKSHOP_PAT) at deploy time. Plain terminals
-            work; coding agents can't authenticate yet.
+            Workshop credential not configured — the Databricks Apps runtime has not
+            provided a valid app-identity OAuth bearer. Plain terminals work; coding
+            agents can't authenticate yet.
           </span>
         </div>
       )}
       {config && config.credential.configured && config.credential.state === "degraded" && (
         <div className="banner banner-warning">
           <span>
-            Workshop credential is <strong>not rotating</strong> — serving a static token that
-            will expire with no automatic refresh. Grant the app service principal token
-            CAN_USE so it can mint short-lived rotating tokens before the event.
+            Workshop credential is <strong>degraded</strong> — serving the explicit emergency
+            WORKSHOP_PAT fallback without automatic refresh. Restore app-identity OAuth
+            before the event.
           </span>
         </div>
       )}
@@ -350,6 +408,30 @@ export default function App() {
               </div>
             )}
             <div className="terminal-stage">
+              {priorSessions.length > 0 && (view === "home" || sessions.length === 0) && (
+                <section className="prior-sessions" aria-label="Sessions ended on restart">
+                  <h2>Sessions ended when the workshop restarted</h2>
+                  {priorSessions.map((prior) => (
+                    <article className="prior-session" key={prior.id}>
+                      <div>
+                        <strong>{prior.label}</strong>
+                        <span>
+                          {prior.exit_reason === "server_restarted"
+                            ? "Ended on workshop restart"
+                            : prior.exit_reason}
+                        </span>
+                      </div>
+                      <button
+                        className="primary-btn"
+                        disabled={launching !== null}
+                        onClick={() => relaunchPrior(prior)}
+                      >
+                        <Rocket size={14} /> Relaunch
+                      </button>
+                    </article>
+                  ))}
+                </section>
+              )}
               {(view === "home" || sessions.length === 0) && (
                 <Hero
                   agents={agents}
