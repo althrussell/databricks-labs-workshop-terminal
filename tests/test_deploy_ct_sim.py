@@ -40,7 +40,7 @@ def test_uploaded_yaml_patch_sets_current_event_contract_without_mutating_repo()
         claude_code_version="2.1.216",
         codex_cli_version="0.144.6",
         databricks_cli_version="1.8.0",
-        omnigent_version="0.5.1",
+        omnigent_version="0.7.0",
         node_version="22.14.0",
         workshop_pat="",
     )

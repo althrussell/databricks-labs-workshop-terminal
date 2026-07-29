@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Omnigent Control Tower handoff",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "deployment", "resources", "environment", "remote_host"],
+  "properties": {
+    "contract_version": {"type": "string", "const": "1.3"},
+    "deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["app_name", "app_url", "deployment_id", "server_version", "source_repo", "source_ref", "source_subdir"],
+      "properties": {
+        "app_name": {"type": "string", "minLength": 1},
+        "app_url": {"type": "string", "minLength": 1},
+        "deployment_id": {"type": "string", "minLength": 1},
+        "server_version": {"type": "string", "const": "0.7.0"},
+        "source_repo": {"type": "string", "minLength": 1},
+        "source_ref": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "source_subdir": {"type": "string", "const": "deploy/omnigent-app"}
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lakebase_endpoint", "lakebase_database", "artifact_volume", "app_resource_keys"],
+      "properties": {
+        "lakebase_endpoint": {"type": "string", "minLength": 1},
+        "lakebase_database": {"type": "string", "minLength": 1},
+        "artifact_volume": {"type": "string", "minLength": 1},
+        "app_resource_keys": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["lakebase", "artifact_volume"],
+          "properties": {
+            "lakebase": {"type": "string", "const": "postgres"},
+            "artifact_volume": {"type": "string", "const": "artifact_volume"}
+          }
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["OMNIGENT_APP_URL", "WORKSHOP_ATTENDEE_EMAIL", "ALLOW_SHARED_TOPOLOGY", "MAX_SESSIONS_PER_USER", "MAX_SESSIONS_GLOBAL"],
+      "properties": {
+        "OMNIGENT_APP_URL": {"type": "string", "minLength": 1},
+        "WORKSHOP_ATTENDEE_EMAIL": {"type": "string", "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"},
+        "ALLOW_SHARED_TOPOLOGY": {"type": "string", "const": "false"},
+        "MAX_SESSIONS_PER_USER": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+        "MAX_SESSIONS_GLOBAL": {"type": "string", "pattern": "^[1-9][0-9]*$"}
+      }
+    },
+    "remote_host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "status", "expected_host_id", "host_id_derivation", "authentication", "verified_commands"],
+      "properties": {
+        "enabled": {"type": "boolean", "const": true},
+        "status": {
+          "type": "string",
+          "enum": ["waiting_for_token", "starting", "running", "backoff", "error", "stopped", "connected"]
+        },
+        "expected_host_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+        "host_id_derivation": {"type": "string", "const": "sha256(databricks-workshop-terminal/omnigent-host-id/v1\\0<normalized-server-url>\\0<normalized-attendee-email>)[:32]"},
+        "authentication": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "owner_identity", "refresh_trigger", "static_secret_required"],
+          "properties": {
+            "kind": {"type": "string", "const": "obo_token_mirror"},
+            "owner_identity": {"type": "string", "const": "attendee"},
+            "refresh_trigger": {"type": "string", "const": "authenticated_browser_request"},
+            "static_secret_required": {"type": "boolean", "const": false}
+          }
+        },
+        "verified_commands": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["host", "terminal"],
+          "properties": {
+            "host": {"type": "string", "const": "omnigent host --server <OMNIGENT_APP_URL> --non-interactive"},
+            "terminal": {"type": "string", "const": "omnigent run --server <OMNIGENT_APP_URL>"}
+          }
+        }
+      }
+    }
+  }
+}

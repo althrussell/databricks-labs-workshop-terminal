@@ -1,0 +1,27 @@
+{
+  "contract_version": "1.3",
+  "ready": false,
+  "status": "provisioning",
+  "app": {
+    "ready": true,
+    "health_http_status": 200,
+    "health_body": {
+      "status": "ok"
+    },
+    "server_version": "0.7.0"
+  },
+  "resources": {
+    "lakebase_ready": true,
+    "artifact_volume_ready": true
+  },
+  "remote_host": {
+    "required": true,
+    "enabled": true,
+    "connected": false,
+    "status": "waiting_for_token",
+    "expected_host_id": "8c3fc3abde5c16b852de91c26bbcc052",
+    "host_id": null,
+    "last_seen_at": null
+  },
+  "failure": null
+}

@@ -18,6 +18,7 @@ from .content import Broadcast, ContentPack, content_service
 from .credentials import credential_manager
 from .entitlements import entitlement_manager
 from .events import event_hub
+from .omnigent_remote import remote_host_manager
 from .sessions import session_manager
 from .users import user_manager
 from .bootstrap import install
@@ -121,6 +122,12 @@ def harvest_stats():
         "session_count": session_manager.count_all(),
     }
     return payload
+
+
+@router.get("/omnigent-host-readiness")
+def omnigent_host_readiness():
+    """Token-free verified host readiness for Control Tower reconciliation."""
+    return remote_host_manager.readiness(config.workshop_attendee_email())
 
 
 @router.get("/presence")

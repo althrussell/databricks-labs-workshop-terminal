@@ -302,6 +302,28 @@ export default function App() {
                 </a>
               );
             })}
+          {config?.workspace_url && (
+            <a
+              href={config.workspace_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open the Databricks workspace"
+            >
+              <LinkIcon size={14} />
+              Open Workspace
+            </a>
+          )}
+          {config?.omnigent_remote.enabled && config.omnigent_remote.url && (
+            <a
+              href={config.omnigent_remote.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open the dedicated Omnigent app"
+            >
+              <Rocket size={14} />
+              Open Omnigent
+            </a>
+          )}
           {/* 3. Actions, then the promoted CTA at the far right */}
           <button className="operator-toggle" onClick={openCertificate} title="Download your certificate">
             <Award size={14} />

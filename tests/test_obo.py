@@ -15,8 +15,17 @@ def _b64(d: dict) -> str:
     return base64.urlsafe_b64encode(json.dumps(d).encode()).rstrip(b"=").decode()
 
 
-def make_jwt(exp: float, *, scope=None, scp=None) -> str:
+def make_jwt(
+    exp: float,
+    iat: float | None = None,
+    *,
+    scope=None,
+    scp=None,
+) -> str:
+    """A minimal unsigned JWT carrying auth ordering and scope claims."""
     claims = {"exp": int(exp)}
+    if iat is not None:
+        claims["iat"] = int(iat)
     if scope is not None:
         claims["scope"] = scope
     if scp is not None:
@@ -36,6 +45,13 @@ def test_decode_jwt_exp_reads_expiry():
 
     exp = int(time.time()) + 1800
     assert obo.decode_jwt_exp(make_jwt(exp)) == exp
+
+
+def test_decode_jwt_times_reads_iat_and_exp():
+    from server import obo
+
+    now = int(time.time())
+    assert obo.decode_jwt_times(make_jwt(now + 1800, now)) == (now, now + 1800)
 
 
 def test_decode_jwt_exp_none_for_non_jwt():
@@ -458,6 +474,81 @@ def test_capability_is_bound_to_attendee(client):
     )
     assert own.status_code == 200
     assert spoof.status_code == 403
+
+
+def test_obo_refresh_rejects_body_email_different_from_proxy_identity(
+    client, monkeypatch
+):
+    from server import obo
+    from .conftest import ALICE
+
+    captures = []
+    monkeypatch.setattr(
+        obo.obo_manager,
+        "capture",
+        lambda email, token: captures.append((email, token)),
+    )
+    response = client.post(
+        "/api/obo/refresh",
+        json={"email": "bob@example.com"},
+        headers={**ALICE, "X-Forwarded-Access-Token": "alice-token"},
+    )
+
+    assert response.status_code == 403
+    assert captures == [("alice@example.com", "alice-token")]
+
+
+def test_obo_refresh_binds_browser_token_to_matching_proxy_identity(
+    client, monkeypatch
+):
+    from server import obo
+    from .conftest import ALICE
+
+    captures = []
+    monkeypatch.setattr(
+        obo.obo_manager,
+        "capture",
+        lambda email, token: captures.append((email, token)),
+    )
+    monkeypatch.setattr(obo.obo_manager, "force_refresh", lambda email: True)
+    monkeypatch.setattr(
+        obo.obo_manager,
+        "status",
+        lambda email: {"enabled": True, "email": email},
+    )
+    response = client.post(
+        "/api/obo/refresh",
+        json={"email": "ALICE@example.com"},
+        headers={**ALICE, "X-Forwarded-Access-Token": "alice-token"},
+    )
+
+    assert response.status_code == 200
+    assert captures == [("alice@example.com", "alice-token")]
+
+
+def test_obo_refresh_preserves_loopback_helper_body_email(client, monkeypatch):
+    from server import obo
+
+    refreshed = []
+    monkeypatch.setattr(
+        obo.obo_manager,
+        "force_refresh",
+        lambda email: refreshed.append(email) or True,
+    )
+    monkeypatch.setattr(
+        obo.obo_manager,
+        "status",
+        lambda email: {"enabled": True, "email": email},
+    )
+    capability = _callback_capability("helper@example.com")
+    response = client.post(
+        "/api/obo/refresh",
+        json={"email": "helper@example.com"},
+        headers={"X-Workshop-Capability": capability},
+    )
+
+    assert response.status_code == 200
+    assert refreshed == ["helper@example.com"]
 
 
 def test_entitlements_reconcile_endpoint_disabled(client, monkeypatch):

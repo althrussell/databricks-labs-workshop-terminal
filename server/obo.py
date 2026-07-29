@@ -27,8 +27,12 @@ import base64
 import binascii
 import json
 import logging
+import os
+import stat
+import tempfile
 import threading
 import time
+from pathlib import Path
 
 from . import config
 
@@ -53,19 +57,33 @@ def _decode_jwt_claims(token: str) -> dict:
         return {}
 
 
-def decode_jwt_exp(token: str) -> float | None:
-    """Best-effort parse of a JWT's ``exp`` (seconds since epoch).
+def decode_jwt_times(token: str) -> tuple[float | None, float | None]:
+    """Best-effort parse of JWT ``iat`` and ``exp`` timestamps.
 
     No signature verification and no new dependency — we only read the
-    self-reported expiry to surface ``expires_in``. Returns ``None`` for
-    non-JWT / unparseable tokens (then freshness falls back to "present").
+    self-reported timestamps for capture ordering and expiry.
     """
     try:
         claims = _decode_jwt_claims(token)
+        iat = claims.get("iat")
         exp = claims.get("exp")
-        return float(exp) if exp is not None else None
+        return (
+            float(iat) if iat is not None else None,
+            float(exp) if exp is not None else None,
+        )
     except (ValueError, TypeError):
-        return None
+        return None, None
+
+
+def decode_jwt_exp(token: str) -> float | None:
+    return decode_jwt_times(token)[1]
+
+
+def _token_order(iat: float | None, exp: float | None) -> tuple[float, float]:
+    return (
+        iat if iat is not None else float("-inf"),
+        exp if exp is not None else float("-inf"),
+    )
 
 
 def decode_jwt_scopes(token: str) -> set[str]:
@@ -86,16 +104,26 @@ def decode_jwt_scopes(token: str) -> set[str]:
 class _Record:
     __slots__ = (
         "token",
+        "iat",
         "exp",
+        "last_capture_exp",
         "scopes",
         "captured_at",
         "written_token",
         "written_at",
     )
 
-    def __init__(self, token: str, exp: float | None, captured_at: float):
+    def __init__(
+        self,
+        token: str,
+        iat: float | None,
+        exp: float | None,
+        captured_at: float,
+    ):
         self.token = token
+        self.iat = iat
         self.exp = exp
+        self.last_capture_exp = exp
         self.scopes = decode_jwt_scopes(token)
         self.captured_at = captured_at
         self.written_token: str | None = None
@@ -116,23 +144,59 @@ class OboManager:
         Guarded: a no-op when OBO is disabled or no token is present, and never
         raises into the request path.
         """
-        if not config.obo_enabled() or not token or "@" not in (email or ""):
+        email = (email or "").strip().lower()
+        remote_url = config.omnigent_app_url()
+        if (
+            not (config.obo_enabled() or remote_url)
+            or not token
+            or "@" not in email
+        ):
             return
         try:
+            if remote_url:
+                # Remote auth can arrive on the first authenticated request,
+                # before a terminal/session path has created the attendee HOME.
+                from .users import user_manager
+
+                user_manager.get(email)
             self._capture(email, token)
         except Exception as e:  # noqa: BLE001 — capture must never break a request
             logger.warning("OBO capture for %s failed: %s", email, e)
 
     def _capture(self, email: str, token: str) -> None:
         now = time.time()
+        token_iat, token_exp = decode_jwt_times(token)
         with self._lock:
             rec = self._by_email.get(email)
+            # Concurrent proxy requests can complete out of order. Never let a
+            # late expired snapshot replace a bearer that is still fresh.
+            if (
+                rec is not None
+                and token_exp is not None
+                and token_exp <= now
+                and rec.exp is not None
+                and rec.exp > now
+            ):
+                # Mark the latest observed auth snapshot stale for health
+                # reporting, while preserving the still-usable on-disk token.
+                rec.last_capture_exp = token_exp
+                rec.captured_at = now
+                return
+            if (
+                rec is not None
+                and rec.token != token
+                and _token_order(token_iat, token_exp)
+                <= _token_order(rec.iat, rec.exp)
+            ):
+                return
             if rec is None:
-                rec = _Record(token, decode_jwt_exp(token), now)
+                rec = _Record(token, token_iat, token_exp, now)
                 self._by_email[email] = rec
             else:
                 rec.token = token
-                rec.exp = decode_jwt_exp(token)
+                rec.iat = token_iat
+                rec.exp = token_exp
+                rec.last_capture_exp = token_exp
                 rec.scopes = decode_jwt_scopes(token)
                 rec.captured_at = now
             # Throttle: only touch the file when the token string actually
@@ -147,7 +211,7 @@ class OboManager:
         """Force-write the latest captured token for ``email`` (the reactive
         self-heal path used by ``/api/obo/refresh`` and the ``databricks-me``
         wrapper). Returns True if a token was written, False if none is held."""
-        if not config.obo_enabled():
+        if not (config.obo_enabled() or config.omnigent_remote_enabled()):
             return False
         with self._lock:
             rec = self._by_email.get(email)
@@ -167,7 +231,7 @@ class OboManager:
         creating the home, so the callback cannot recurse into ``get()`` or
         deadlock with token capture.
         """
-        if not config.obo_enabled():
+        if not (config.obo_enabled() or config.omnigent_remote_enabled()):
             return
         with self._lock:
             rec = self._by_email.get(user.email)
@@ -195,15 +259,34 @@ class OboManager:
         # user.lock, so briefly reading the record in the opposite direction
         # here cannot form a lock cycle. Selecting *after* user.lock is acquired
         # means an older queued writer always writes the newest held token.
+        mirrored = False
+        mirrored_exp: float | None = None
         with user.lock:
             with self._lock:
-                token = rec.token
+                current = self._by_email.get(user.email)
+                if current is None:
+                    return
+                token = current.token
                 # Keep record commit atomic with the disk write. status() and
                 # later captures wait until both agree. Use the lock-held helper
                 # so this path never recursively acquires user.lock.
-                cli_config.update_me_profile_locked(user, token)
-                rec.written_token = token
-                rec.written_at = time.time()
+                if config.obo_enabled():
+                    cli_config.update_me_profile_locked(user, token)
+                remote_url = config.omnigent_app_url()
+                if remote_url and current.exp is not None:
+                    mirrored_exp = current.exp
+                    _write_omnigent_token_locked(
+                        user.home,
+                        remote_url,
+                        token,
+                        user.email,
+                        current.exp,
+                    )
+                    mirrored = True
+                current.written_token = token
+                current.written_at = time.time()
+        if mirrored and mirrored_exp is not None and mirrored_exp > time.time():
+            _notify_remote_host(user.email)
 
     def status(self, email: str | None = None) -> dict:
         """Health/presence view for one attendee (no token material)."""
@@ -215,7 +298,7 @@ class OboManager:
                 default=None,
             )
             present = rec is not None and bool(rec.written_token)
-            exp = rec.exp if rec else None
+            exp = rec.last_capture_exp if rec else None
             last_refresh = rec.written_at if rec else 0.0
             observed_scopes = set(rec.scopes) if rec else set()
             validated_at = rec.captured_at if rec and rec.scopes else 0.0
@@ -253,3 +336,62 @@ class OboManager:
 
 
 obo_manager = OboManager()
+
+
+def _write_omnigent_token_locked(
+    home: str,
+    server_url: str,
+    token: str,
+    user_id: str,
+    expires_at: float,
+) -> None:
+    """Merge one Omnigent server record using an atomic durable replace.
+
+    The caller holds the attendee's existing ``User.lock``, serializing this
+    read/merge/write with every other auth snapshot for that HOME.
+    """
+    directory = Path(home) / ".omnigent"
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "auth_tokens.json"
+    data: dict = {}
+    try:
+        loaded = json.loads(path.read_text())
+        if isinstance(loaded, dict):
+            data = loaded
+    except (OSError, json.JSONDecodeError):
+        pass
+    data[server_url.rstrip("/")] = {
+        "token": token,
+        "user_id": user_id.lower(),
+        "expires_at": expires_at,
+    }
+
+    fd, temporary = tempfile.mkstemp(
+        prefix=".auth_tokens.", suffix=".tmp", dir=directory
+    )
+    try:
+        os.fchmod(fd, stat.S_IRUSR | stat.S_IWUSR)
+        with os.fdopen(fd, "w") as handle:
+            json.dump(data, handle, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+        dir_fd = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def _notify_remote_host(email: str) -> None:
+    """Wake the per-user host after a fresh token reached disk."""
+    from .omnigent_remote import remote_host_manager
+
+    remote_host_manager.notify(email)

@@ -187,7 +187,7 @@ take effect on restart with **no rebuild**. Set these per instance:
 | `AI_DEV_KIT_REF` | a reviewed **tag or commit SHA** | freeze skills per event (item 5) |
 | `CLAUDE_CODE_VERSION` | `2.1.216` release candidate | reviewed Claude Code CLI release |
 | `CODEX_CLI_VERSION` | `0.144.6` release candidate | reviewed Codex CLI release |
-| `OMNIGENT_VERSION` | `0.5.1` release candidate | reviewed Omnigent release |
+| `OMNIGENT_VERSION` | `0.7.0` release candidate | reviewed Omnigent release matched to the dedicated App protocol |
 | `DATABRICKS_CLI_VERSION` | reviewed exact version | make the Databricks CLI input explicit |
 | `ANTHROPIC_MODEL` / `CODEX_MODEL` | reviewed endpoint names | prevent model drift between instances |
 | `WORKSHOP_RUN_ID` | CT's run id for this attendee | event attribution on ingested events |

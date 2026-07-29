@@ -48,6 +48,10 @@ export interface AppConfig {
   broadcast: Broadcast | null;
   limits: { max_sessions_per_user: number };
   credential: CredentialStatus;
+  omnigent_remote: {
+    enabled: boolean;
+    url: string;
+  };
 }
 
 export interface AgentInfo {

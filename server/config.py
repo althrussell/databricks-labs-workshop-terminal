@@ -8,6 +8,8 @@ never be cached at import or baked into the frontend build.
 from __future__ import annotations
 
 import os
+import re
+from urllib.parse import urlsplit, urlunsplit
 
 
 def _env(name: str, default: str = "") -> str:
@@ -163,6 +165,81 @@ def omnigent_enabled() -> bool:
     return _env("OMNIGENT_ENABLED", "true").lower() not in ("false", "0", "no", "off")
 
 
+def normalize_omnigent_app_url(
+    raw: str, *, allow_loopback_http: bool = False
+) -> str:
+    """Validate and canonicalize an Omnigent server URL."""
+    raw = raw.strip()
+    if not raw:
+        return ""
+    parsed = urlsplit(raw)
+    if not parsed.scheme or not parsed.netloc:
+        raise ValueError("OMNIGENT_APP_URL must be an absolute URL")
+    if parsed.username or parsed.password:
+        raise ValueError("OMNIGENT_APP_URL must not contain credentials")
+    if parsed.query or parsed.fragment:
+        raise ValueError("OMNIGENT_APP_URL must not contain query or fragment")
+    scheme = parsed.scheme.lower()
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        raise ValueError("OMNIGENT_APP_URL must include a host")
+    loopback = hostname in {"localhost", "127.0.0.1", "::1"}
+    if scheme != "https" and not (
+        allow_loopback_http and scheme == "http" and loopback
+    ):
+        raise ValueError(
+            "OMNIGENT_APP_URL must use https (loopback http is local-dev only)"
+        )
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("OMNIGENT_APP_URL contains an invalid port") from exc
+    host_for_netloc = f"[{hostname}]" if ":" in hostname else hostname
+    default_port = (scheme == "https" and port == 443) or (
+        scheme == "http" and port == 80
+    )
+    netloc = (
+        host_for_netloc
+        if not port or default_port
+        else f"{host_for_netloc}:{port}"
+    )
+    path = parsed.path.rstrip("/")
+    return urlunsplit((scheme, netloc, path, "", ""))
+
+
+def omnigent_app_url() -> str:
+    """Normalized dedicated Omnigent App URL; empty keeps local behavior.
+
+    Production must use TLS. Local development may target a loopback HTTP
+    server for integration tests, but never a non-loopback cleartext host.
+    """
+    return normalize_omnigent_app_url(
+        _env("OMNIGENT_APP_URL"), allow_loopback_http=local_dev()
+    )
+
+
+def omnigent_remote_enabled() -> bool:
+    return bool(omnigent_app_url())
+
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def workshop_attendee_email() -> str:
+    """Configured owner for a dedicated remote-Omnigent terminal instance."""
+    raw = _env("WORKSHOP_ATTENDEE_EMAIL")
+    if not raw:
+        if omnigent_remote_enabled():
+            raise ValueError(
+                "WORKSHOP_ATTENDEE_EMAIL is required when OMNIGENT_APP_URL is set"
+            )
+        return ""
+    normalized = raw.lower()
+    if not _EMAIL_RE.fullmatch(normalized):
+        raise ValueError("WORKSHOP_ATTENDEE_EMAIL must be a valid email address")
+    return normalized
+
+
 def omnigent_runner_idle_timeout() -> int:
     """Seconds Omnigent's background runner stays alive with no active work
     before self-terminating (written as ``runner.idle_timeout_s``).
@@ -176,6 +253,11 @@ def omnigent_runner_idle_timeout() -> int:
     the PTY is a feature" policy. Operators can set a finite value if runner
     memory on long idle instances becomes a concern."""
     return _env_int("OMNIGENT_RUNNER_IDLE_TIMEOUT_S", 0)
+
+
+def omnigent_host_stable_runtime() -> int:
+    """Runtime that resets remote-host crash backoff after a healthy stretch."""
+    return max(1, _env_int("OMNIGENT_HOST_STABLE_RUNTIME_S", 30))
 
 
 def workshop_phase_default() -> str:

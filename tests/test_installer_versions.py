@@ -495,10 +495,10 @@ def test_omnigent_installs_from_complete_offline_supply_chain(
     (python_runtime / "lib/python3.12/os.py").parent.mkdir(parents=True)
     (python_runtime / "lib/python3.12/os.py").write_bytes(b"stdlib")
     lock.write_text(
-        "omnigent==0.5.1 --hash=sha256:" + "a" * 64 + "\n"
-        "omnigent-client==0.5.1 --hash=sha256:" + "b" * 64 + "\n"
+        "omnigent==0.7.0 --hash=sha256:" + "a" * 64 + "\n"
+        "omnigent-client==0.7.0 --hash=sha256:" + "b" * 64 + "\n"
     )
-    (wheelhouse / "omnigent-0.5.1-py3-none-any.whl").write_bytes(b"wheel")
+    (wheelhouse / "omnigent-0.7.0-py3-none-any.whl").write_bytes(b"wheel")
     entries = {
         "uv_binary": {
             "source": str(uv),
@@ -619,7 +619,7 @@ def test_all_release_candidate_defaults_are_exact():
     assert install.CLAUDE_VERSION == "2.1.216"
     assert install.CODEX_VERSION == "0.144.6"
     assert install.DATABRICKS_CLI_VERSION == "1.8.0"
-    assert install.OMNIGENT_VERSION == "0.5.1"
+    assert install.OMNIGENT_VERSION == "0.7.0"
 
 
 def test_ai_dev_kit_fetch_records_exact_ref_and_resolved_commit(

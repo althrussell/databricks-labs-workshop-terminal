@@ -52,6 +52,16 @@ hardening did not succeed.
 Attendees act as the per-instance service principal (acceptable under the
 one-workspace-per-attendee topology).
 
+### Remote Omnigent topology enforcement
+
+When `OMNIGENT_APP_URL` is configured, one attendee per Workshop Terminal
+instance is mandatory, not advisory. Startup fails if
+`ALLOW_SHARED_TOPOLOGY=true` or if
+`MAX_SESSIONS_GLOBAL > MAX_SESSIONS_PER_USER`, because attendee OBO mirrors
+live in separate HOMEs under the same Unix uid. Deploy one instance/workspace
+per attendee and use single-attendee session caps. This enforcement does not
+apply when `OMNIGENT_APP_URL` is empty, preserving local Omnigent behavior.
+
 ### Emergency-only: vended `WORKSHOP_PAT`
 
 For environments without a usable app identity, Control Tower may vend a
@@ -205,6 +215,12 @@ them, and both no-op cleanly when the feature is disabled:
   for the attendee (the `workshop-grant-me` path), returning the per-resource
   grant summary.
 
+`GET /api/omnigent-host` is authenticated and attendee-scoped. It returns only
+sanitized supervisor state (`disabled`, `waiting_for_token`, `starting`,
+`running`, `backoff`, `stopped`, or `error`); `running` means process-alive, not
+control-plane connected. `/api/config` exposes only the non-secret normalized
+Omnigent App URL and enabled state.
+
 ### `GET /api/admin/stats`
 Harvest endpoint for Control Tower's event-impact capture: per-attendee
 build stats (`email`, `minutes_building`, `agent_sessions`,
@@ -213,6 +229,16 @@ one instance-level workspace resource census, and `instance`
 {phase, started_at, session_count}. Code stats are cached ~5 minutes, so
 periodic polling is cheap. Control Tower persists snapshots into its
 Lakebase for reporting that survives workspace teardown.
+
+### `GET /api/admin/omnigent-host-readiness`
+Admin/SP-authenticated, token-free readiness used by Control Tower alongside
+stats collection. It returns the exact local supervisor `status`, `connected`,
+and `expected_host_id`; `host_id` and `last_seen_at` appear only after a fresh
+attendee-owned bearer verifies `GET /v1/hosts/{expected_host_id}` as `online`.
+`last_seen_at` is the UTC timestamp when Workshop Terminal completed that
+successful verification; upstream v0.7.0's host response has no last-seen field.
+Network/auth/offline/mismatch results remain disconnected and never expose the
+bearer.
 
 ## CLI usage
 
@@ -243,7 +269,7 @@ python scripts/push_content.py presence
 | `ARTIFACT_MANIFEST_PATH` | empty | Required CT-supplied reviewed installer/archive/package contract; missing, partial, or unverifiable manifests keep `/readyz` red |
 | `CLAUDE_CODE_VERSION` | `2.1.216` in `app.yaml` | Exact reviewed Claude Code CLI release candidate |
 | `CODEX_CLI_VERSION` | `0.144.6` in `app.yaml` | Exact reviewed Codex CLI release candidate |
-| `OMNIGENT_VERSION` | `0.5.1` in `app.yaml` | Exact reviewed Omnigent release candidate |
+| `OMNIGENT_VERSION` | `0.7.0` in `app.yaml` | Exact reviewed Omnigent release candidate, matched to the dedicated App protocol |
 | `DATABRICKS_CLI_VERSION` | `1.8.0` in `app.yaml` | Exact reviewed Databricks CLI release input |
 | `DEEPWIKI_MCP_URL` / `EXA_MCP_URL` | public endpoints | MCP servers for attendee agents (empty string disables) |
 | `ACCESS_GROUP` | *(unset)* | Optional group restricting attendee access |
@@ -260,6 +286,8 @@ python scripts/push_content.py presence
 | `ENABLE_OBO` | `false` | Persist each attendee's forwarded OBO token to a `me` CLI profile so the agent can read data **as the attendee** (`databricks-me`). Requires user authorization + `user_api_scopes` on the app resource (set by CT, not here) |
 | `OBO_PROFILE_NAME` | `me` | CLI profile name backed by the OBO token |
 | `OBO_SCOPES` | `catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql` | Doc/health hint; must match the scopes CT set on the app resource (the app cannot set its own scopes). No `unity-catalog` scope exists — use the granular `catalog.*:read` scopes (list UC metadata) + `sql` (query data) |
+| `OMNIGENT_APP_URL` | *(unset)* | Dedicated Omnigent App URL. Empty keeps local Omnigent behavior; a production value must be HTTPS. Remote mode mirrors attendee OBO independently of `ENABLE_OBO` |
+| `OMNIGENT_HOST_STABLE_RUNTIME_S` | `30` | Process runtime that resets remote-host crash backoff |
 | `ENABLE_ENTITLEMENTS` | `true` in `app.yaml` | Run the SP-driven reconciler that grants the labuser access to SP-created resources (UC catalog grant + non-UC `CAN_MANAGE`) |
 | `WORKSHOP_CATALOG` | *(unset)* | Dedicated per-attendee catalog. Attendee remains OWNER + `ALL PRIVILEGES`; app SP receives catalog-scoped `MANAGE`, `USE_CATALOG`, `CREATE_SCHEMA` so it can create content and read/patch only this catalog's grants. Also surfaced to the attendee shell |
 | `WORKSHOP_SCHEMA` | *(unset)* | Optional default schema within `WORKSHOP_CATALOG` |

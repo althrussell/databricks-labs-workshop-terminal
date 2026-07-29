@@ -4,7 +4,7 @@
     "label": "Omnigent",
     "description": "Databricks' agent meta-harness — orchestrates Claude and Codex in managed sessions.",
     "icon": "omnigent",
-    "command": "omnigent",
+    "command": "workshop-omnigent",
     "requires": ["omnigent"],
     "order": 1
   },

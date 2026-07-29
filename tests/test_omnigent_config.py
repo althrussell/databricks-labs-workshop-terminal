@@ -10,6 +10,7 @@ import os
 import time
 
 import pytest
+import yaml
 
 from server import cli_config
 from server.bootstrap import install
@@ -120,6 +121,38 @@ def test_runner_idle_timeout_written(user, monkeypatch):
         text = f.read()
     assert "runner:" in text
     assert "idle_timeout_s: 0" in text
+
+
+def test_configure_restart_preserves_upstream_host_identity_and_unrelated_keys(
+    user, monkeypatch
+):
+    monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
+    path = _config_path(user)
+    with open(path, "w") as handle:
+        yaml.safe_dump(
+            {
+                "host": {"id": "stable-host-id", "name": "workshop-host"},
+                "unrelated": {"keep": True},
+                "providers": {"upstream-custom": {"kind": "anthropic"}},
+            },
+            handle,
+        )
+
+    cli_config.configure_omnigent(user, "tok-1")
+    first = yaml.safe_load(open(path))
+    cli_config.configure_omnigent(user, "tok-2")
+    restarted = yaml.safe_load(open(path))
+
+    assert restarted["host"] == {
+        "id": "stable-host-id",
+        "name": "workshop-host",
+    }
+    assert restarted["unrelated"] == {"keep": True}
+    assert restarted["providers"]["upstream-custom"] == {"kind": "anthropic"}
+    assert restarted["providers"]["databricks-gateway"]["default"] is True
+    assert restarted == first
+    assert os.stat(path).st_mode & 0o777 == 0o600
+    assert not [name for name in os.listdir(os.path.dirname(path)) if name.endswith(".tmp")]
 
 
 # -- update_tokens --
