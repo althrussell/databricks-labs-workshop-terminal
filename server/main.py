@@ -34,6 +34,7 @@ from .credentials import (
 from .entitlements import entitlement_manager
 from .event_emitter import event_emitter, flush_loop
 from .events import event_hub
+from .omnigent_remote import remote_host_manager
 from .sessions import SessionLimitError, session_manager
 from .users import user_manager
 from .ws import router as ws_router
@@ -112,38 +113,40 @@ async def lifespan(app: FastAPI):
     os.makedirs(config.users_root(), exist_ok=True)
     emitter_stop = None
     emitter_threads = []
-    if not config.local_dev():
-        # Capture the platform-injected M2M secret into one explicit SDK client,
-        # scrub it from process env, and harden the same-UID process boundary
-        # before installers or attendee PTYs can start.
-        initialize_app_identity()
-        install.run_in_background()
-        credential_manager.start()
-        # SP-driven entitlement reconciler: keeps the labuser able to use the
-        # resources the app SP creates (no-op unless ENABLE_ENTITLEMENTS).
-        entitlement_manager.start()
-        # C3b: background flusher pushes buffered attendee events to Control
-        # Tower. Only starts when CT ingest is configured (emitter.enabled).
-        if event_emitter.enabled:
-            emitter_stop = threading.Event()
-            emitter_threads = _start_control_tower_threads(
-                event_emitter,
-                emitter_stop,
-            )
-            logger.info("event emitter started (run_id=%s)", event_emitter.run_id)
-    else:
-        logger.info("LOCAL_DEV=1 — skipping CLI installers and credential rotation")
-    from . import topology
-
-    topo_warning = topology.startup_warning()
-    if topo_warning:
-        logger.warning("topology: %s", topo_warning)
-    logger.info("workshop terminal up (phase=%s)", content_service.phase)
     try:
+        remote_host_manager.start()
+        if not config.local_dev():
+            # Capture the platform-injected M2M secret into one explicit SDK
+            # client, scrub it from process env, and harden the same-UID process
+            # boundary before installers or attendee PTYs can start.
+            initialize_app_identity()
+            install.run_in_background()
+            credential_manager.start()
+            # SP-driven entitlement reconciler: keeps the labuser able to use the
+            # resources the app SP creates (no-op unless ENABLE_ENTITLEMENTS).
+            entitlement_manager.start()
+            # C3b: background flusher pushes buffered attendee events to Control
+            # Tower. Only starts when CT ingest is configured (emitter.enabled).
+            if event_emitter.enabled:
+                emitter_stop = threading.Event()
+                emitter_threads = _start_control_tower_threads(
+                    event_emitter,
+                    emitter_stop,
+                )
+                logger.info("event emitter started (run_id=%s)", event_emitter.run_id)
+        else:
+            logger.info("LOCAL_DEV=1 — skipping CLI installers and credential rotation")
+        from . import topology
+
+        topo_warning = topology.startup_warning()
+        if topo_warning:
+            logger.warning("topology: %s", topo_warning)
+        logger.info("workshop terminal up (phase=%s)", content_service.phase)
         yield
     finally:
         if emitter_stop is not None:
             _stop_control_tower_threads(emitter_stop, emitter_threads)
+        remote_host_manager.stop()
         entitlement_manager.stop()
 
 
@@ -179,6 +182,10 @@ def get_config(principal: Principal = Depends(get_current_user)):
         },
         "credential": credential_manager.status(),
         "obo": obo.obo_manager.status(principal.name),
+        "omnigent_remote": {
+            "enabled": config.omnigent_remote_enabled(),
+            "url": config.omnigent_app_url(),
+        },
         "entitlements": entitlement_manager.status(),
     }
 
@@ -186,6 +193,12 @@ def get_config(principal: Principal = Depends(get_current_user)):
 @app.get("/api/setup-status")
 def setup_status(_: Principal = Depends(get_current_user)):
     return install.status()
+
+
+@app.get("/api/omnigent-host")
+def omnigent_host_status(principal: Principal = Depends(get_current_user)):
+    """Sanitized verified remote-host readiness for the authenticated attendee."""
+    return remote_host_manager.readiness(principal.name)
 
 
 class _EmailBody(BaseModel):
@@ -230,9 +243,6 @@ def obo_refresh(body: _EmailBody, request: Request):
     connected tab to deliver an even fresher token on its next poll."""
     principal = _callback_identity(body, request)
     email = principal.name
-    token = principal.access_token
-    if token:
-        obo.obo_manager.capture(email, token)
     written = obo.obo_manager.force_refresh(email)
     try:
         # Attendee-neutral nudge: every tab may refresh its own authenticated

@@ -6,11 +6,11 @@ whole app), per-user HOMEs are not uid-isolated, and git-sync writes as a single
 identity. Running multiple distinct attendees on one instance therefore collapses
 credential isolation and attribution.
 
-This module makes that assumption explicit and loud rather than implicit. It does
-not hard-fail (an operator may knowingly opt in via ALLOW_SHARED_TOPOLOGY for a
-trusted small group), but it warns at startup when the session caps permit more
-than one attendee, and warns at runtime the moment a second distinct attendee
-actually appears.
+Static session-cap checks remain defense in depth, but they do not establish
+identity: several principals can use sessions sequentially or below the cap.
+When remote Omnigent is enabled, ``validate_remote_omnigent`` fails startup on
+any multi-attendee configuration, and ``auth`` rejects every principal other
+than ``WORKSHOP_ATTENDEE_EMAIL`` before HOME creation or credential writes.
 """
 
 from __future__ import annotations
@@ -25,6 +25,27 @@ def config_permits_multi_attendee(global_cap: int, per_user_cap: int) -> bool:
     consume the global pool, so a second attendee could also get sessions.
     """
     return global_cap > per_user_cap
+
+
+def validate_remote_omnigent() -> None:
+    """Fail closed when remote OBO files would share one Unix uid."""
+    if not config.omnigent_app_url():
+        return
+    if config.allow_shared_topology():
+        raise ValueError(
+            "Remote Omnigent requires one attendee per instance because OBO "
+            "tokens are stored under a shared Unix uid. Unset "
+            "ALLOW_SHARED_TOPOLOGY and deploy one Workshop Terminal instance "
+            "per attendee workspace."
+        )
+    if config_permits_multi_attendee(
+        config.max_sessions_global(), config.max_sessions_per_user()
+    ):
+        raise ValueError(
+            "Remote Omnigent requires one attendee per instance. Configure "
+            "MAX_SESSIONS_GLOBAL <= MAX_SESSIONS_PER_USER and deploy one "
+            "Workshop Terminal instance per attendee workspace."
+        )
 
 
 def startup_warning() -> str | None:
@@ -63,6 +84,7 @@ def second_attendee_warning(distinct_attendees: int) -> str | None:
 
 __all__ = [
     "config_permits_multi_attendee",
+    "validate_remote_omnigent",
     "startup_warning",
     "second_attendee_warning",
 ]

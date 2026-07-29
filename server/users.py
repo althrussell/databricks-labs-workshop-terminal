@@ -12,6 +12,7 @@ import hashlib
 import logging
 import os
 import re
+import tempfile
 import threading
 
 from . import config
@@ -45,6 +46,7 @@ class User:
         # recursion, so a plain Lock also catches accidental nested acquisition.
         self.lock = threading.Lock()
         self._credential_revision = 0
+        self._bootstrapped = False
         self.cli_ready: set[str] = set()  # agent ids with configs written
         self.topics: dict[str, float] = {}  # topic -> last seen (terminal keyword spotting)
         self.sessions_launched: dict[str, int] = {}  # agent id -> lifetime count
@@ -53,13 +55,21 @@ class User:
         self.first_seen: float = 0.0
 
     def bootstrap_home(self) -> None:
-        for sub in (
-            "projects", ".claude", ".codex", ".config",
-            os.path.join(".config", "workshop"),  # rotating gateway-token file
-            os.path.join(".cache", "tmux"),       # per-user tmux socket dir
-        ):
-            os.makedirs(os.path.join(self.home, sub), exist_ok=True)
-        self._link_shared_binaries()
+        if self._bootstrapped:
+            return
+        with self.lock:
+            if self._bootstrapped:
+                return
+            for sub in (
+                "projects", ".claude", ".codex", ".config", ".omnigent",
+                os.path.join(".config", "workshop"),  # rotating gateway-token file
+                os.path.join(".cache", "tmux"),       # per-user tmux socket dir
+            ):
+                os.makedirs(os.path.join(self.home, sub), exist_ok=True)
+            self._link_shared_binaries()
+            self._write_empty_remote_databricks_config()
+            self._write_omnigent_helper()
+            self._bootstrapped = True
 
     def _link_shared_binaries(self) -> None:
         """Symlink shared CLI binaries into ~/.local/bin.
@@ -84,6 +94,44 @@ class User:
                 os.symlink(os.path.realpath(source), target)
             except OSError:
                 pass
+
+    def _write_omnigent_helper(self) -> None:
+        """Install the stable TUI entrypoint used by the Omnigent catalog card."""
+        path = os.path.join(self.home, ".local", "bin", "workshop-omnigent")
+        content = (
+            "#!/bin/sh\n"
+            "set -eu\n"
+            'if [ -n "${OMNIGENT_APP_URL:-}" ]; then\n'
+            "  unset DATABRICKS_TOKEN DATABRICKS_CLIENT_ID "
+            "DATABRICKS_CLIENT_SECRET DATABRICKS_HOST\n"
+            '  export DATABRICKS_CONFIG_FILE="$HOME/.config/workshop/'
+            'omnigent-empty-databrickscfg"\n'
+            "  export DATABRICKS_CONFIG_PROFILE="
+            "workshop-omnigent-no-credentials\n"
+            '  exec omnigent run --server "$OMNIGENT_APP_URL" "$@"\n'
+            "fi\n"
+            'exec omnigent "$@"\n'
+        )
+        try:
+            with open(path) as existing:
+                if existing.read() == content:
+                    os.chmod(path, 0o755)
+                    return
+        except OSError:
+            pass
+        _atomic_write(path, content, 0o755)
+
+    def _write_empty_remote_databricks_config(self) -> None:
+        path = os.path.join(
+            self.home, ".config", "workshop", "omnigent-empty-databrickscfg"
+        )
+        try:
+            if os.path.getsize(path) == 0:
+                os.chmod(path, 0o600)
+                return
+        except OSError:
+            pass
+        _atomic_write(path, "", 0o600)
 
     def shell_env(self) -> dict:
         """Env for this user's PTYs, built deny-by-default (gap P0-1).
@@ -150,6 +198,9 @@ class User:
             env["WORKSHOP_SCHEMA"] = schema
         if config.obo_enabled():
             env["OBO_PROFILE_NAME"] = config.obo_profile_name()
+        remote_url = config.omnigent_app_url()
+        if remote_url:
+            env["OMNIGENT_APP_URL"] = remote_url
         return env
 
 
@@ -196,3 +247,30 @@ class UserManager:
 
 
 user_manager = UserManager()
+
+
+def _atomic_write(path: str, content: str, mode: int) -> None:
+    """Durably replace a generated user file without partial readers."""
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(
+        prefix=f".{os.path.basename(path)}.", suffix=".tmp", dir=directory
+    )
+    try:
+        os.fchmod(fd, mode)
+        with os.fdopen(fd, "w") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        os.chmod(path, mode)
+        dir_fd = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass

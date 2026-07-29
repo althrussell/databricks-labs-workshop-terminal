@@ -134,23 +134,33 @@ env:
     value: ""
 
   # --- Omnigent (agent meta-harness) ---
-  # Feature flag, default ON: installs Omnigent (and transitive siblings) plus
-  # tmux, then leads the catalog with the Omnigent session. Set to "false" to
-  # opt out (air-gapped events, or to offer bare claude/codex only).
+  # Feature flag, default ON: installs the reviewed Omnigent 0.7.0 artifact
+  # set (including transitive siblings) plus tmux, then leads the catalog with
+  # the Omnigent session. Set to "false" to opt out.
   - name: OMNIGENT_ENABLED
     value: "true"
-  # Exact release-candidate pin. A pinned version short-circuits reinstall via
-  # the installer's version stamp.
+  # Exact release-candidate pin, deliberately matched to the dedicated App's
+  # protocol-compatible release.
   # TMUX_STATIC_URL/SHA256 are pinned in code; the env overrides below exist
   # for emergencies (e.g. GitHub release unreachable).
   - name: OMNIGENT_VERSION
-    value: "0.5.1"
+    value: "0.7.0"
+  # Dedicated Omnigent App URL. Empty preserves the existing local-server
+  # behavior. Control Tower sets the attendee-specific HTTPS URL when remote
+  # host/TUI integration is enabled.
+  - name: OMNIGENT_APP_URL
+    value: ""
+  # Remote mode uses the instance-wide WORKSHOP_ATTENDEE_EMAIL binding above.
   # Seconds the Omnigent background runner stays alive with no active work
   # before self-terminating. Omnigent's own default is 3600 (1h), which drops
   # attendees who step away ("Runner disconnected unexpectedly"). 0 = never
   # reap the runner (default; the container lifecycle bounds it instead).
   - name: OMNIGENT_RUNNER_IDLE_TIMEOUT_S
     value: "0"
+  # A host that stays alive this long is considered stable and resets its
+  # supervisor crash-backoff history.
+  - name: OMNIGENT_HOST_STABLE_RUNTIME_S
+    value: "30"
   # Omnigent has no network fallback. ARTIFACT_MANIFEST_PATH must identify a
   # checksum-verified uv binary, complete Python 3.12 runtime tree, complete
   # local wheelhouse, and fully pinned --require-hashes transitive lock.

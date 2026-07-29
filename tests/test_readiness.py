@@ -27,7 +27,7 @@ def _good_inputs(tmp_path):
         "AI_DEV_KIT_REF": "v1.2.3",
         "CLAUDE_CODE_VERSION": "2.1.216",
         "CODEX_CLI_VERSION": "0.144.6",
-        "OMNIGENT_VERSION": "0.5.1",
+        "OMNIGENT_VERSION": "0.7.0",
         "DATABRICKS_CLI_VERSION": "1.8.0",
         "ANTHROPIC_MODEL": "databricks-claude-sonnet-5",
         "CODEX_MODEL": "databricks-gpt-5-5",
@@ -83,7 +83,7 @@ def _good_inputs(tmp_path):
                 "claude": "2.1.216",
                 "codex": "0.144.6",
                 "databricks": "1.8.0",
-                "omnigent": "0.5.1",
+                "omnigent": "0.7.0",
             }.items()
         } | {
             "ai_dev_kit": {

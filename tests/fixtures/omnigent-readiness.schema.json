@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Omnigent workshop readiness",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "ready", "status", "app", "resources", "remote_host", "failure"],
+  "properties": {
+    "contract_version": {"type": "string", "const": "1.3"},
+    "ready": {"type": "boolean"},
+    "status": {"type": "string", "enum": ["provisioning", "ready", "degraded", "blocked", "failed"]},
+    "app": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ready", "health_http_status", "health_body", "server_version"],
+      "properties": {
+        "ready": {"type": "boolean"},
+        "health_http_status": {"type": "integer"},
+        "health_body": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status"],
+          "properties": {"status": {"type": "string", "const": "ok"}}
+        },
+        "server_version": {"type": "string", "const": "0.7.0"}
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lakebase_ready", "artifact_volume_ready"],
+      "properties": {
+        "lakebase_ready": {"type": "boolean"},
+        "artifact_volume_ready": {"type": "boolean"}
+      }
+    },
+    "remote_host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "enabled", "connected", "status", "expected_host_id", "host_id", "last_seen_at"],
+      "properties": {
+        "required": {"type": "boolean", "const": true},
+        "enabled": {"type": "boolean", "const": true},
+        "connected": {"type": "boolean"},
+        "status": {
+          "type": "string",
+          "enum": ["waiting_for_token", "starting", "running", "backoff", "error", "stopped", "connected"]
+        },
+        "expected_host_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+        "host_id": {
+          "anyOf": [
+            {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+            {"type": "null"}
+          ]
+        },
+        "last_seen_at": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "description": "UTC timestamp when Workshop Terminal last successfully verified the exact host online"
+        }
+      }
+    },
+    "failure": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": {"type": "string", "minLength": 1},
+        "message": {"type": "string", "minLength": 1},
+        "retryable": {"type": "boolean"}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "required": ["ready"],
+        "properties": {"ready": {"const": true}}
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "status": {"const": "ready"},
+          "app": {
+            "type": "object",
+            "properties": {"ready": {"const": true}}
+          },
+          "resources": {
+            "type": "object",
+            "properties": {
+              "lakebase_ready": {"const": true},
+              "artifact_volume_ready": {"const": true}
+            }
+          },
+          "remote_host": {
+            "type": "object",
+            "properties": {
+              "connected": {"const": true},
+              "status": {"const": "connected"},
+              "host_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+              "last_seen_at": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "remote_host": {
+            "type": "object",
+            "properties": {"connected": {"const": true}}
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "remote_host": {
+            "type": "object",
+            "properties": {
+              "status": {"const": "connected"},
+              "host_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+              "last_seen_at": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "remote_host": {
+            "type": "object",
+            "properties": {"status": {"const": "connected"}}
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "remote_host": {
+            "type": "object",
+            "properties": {
+              "connected": {"const": true},
+              "host_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+              "last_seen_at": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "remote_host": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "enum": ["waiting_for_token", "starting", "running", "backoff", "error", "stopped"]
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "remote_host": {
+            "type": "object",
+            "properties": {"connected": {"const": false}}
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "remote_host": {
+            "type": "object",
+            "properties": {"status": {"enum": ["error", "stopped"]}}
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "status": {"const": "failed"},
+          "failure": {"type": "object"}
+        }
+      }
+    }
+  ]
+}

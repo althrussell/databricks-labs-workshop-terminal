@@ -1,0 +1,44 @@
+{
+  "contract_version": "1.3",
+  "deployment": {
+    "app_name": "event-123-alice-omnigent",
+    "app_url": "https://event-123-alice-omnigent.example.databricksapps.com",
+    "deployment_id": "dep_01JEXAMPLE",
+    "server_version": "0.7.0",
+    "source_repo": "https://github.com/althrussell/databricks-labs-workshop-terminal",
+    "source_ref": "0123456789abcdef0123456789abcdef01234567",
+    "source_subdir": "deploy/omnigent-app"
+  },
+  "resources": {
+    "lakebase_endpoint": "projects/event-123-alice/branches/production/endpoints/primary",
+    "lakebase_database": "projects/event-123-alice/branches/production/databases/databricks-postgres",
+    "artifact_volume": "event_123.alice_omnigent.artifacts",
+    "app_resource_keys": {
+      "lakebase": "postgres",
+      "artifact_volume": "artifact_volume"
+    }
+  },
+  "environment": {
+    "OMNIGENT_APP_URL": "https://event-123-alice-omnigent.example.databricksapps.com",
+    "WORKSHOP_ATTENDEE_EMAIL": "alice@example.com",
+    "ALLOW_SHARED_TOPOLOGY": "false",
+    "MAX_SESSIONS_PER_USER": "3",
+    "MAX_SESSIONS_GLOBAL": "3"
+  },
+  "remote_host": {
+    "enabled": true,
+    "status": "waiting_for_token",
+    "expected_host_id": "8c3fc3abde5c16b852de91c26bbcc052",
+    "host_id_derivation": "sha256(databricks-workshop-terminal/omnigent-host-id/v1\\0<normalized-server-url>\\0<normalized-attendee-email>)[:32]",
+    "authentication": {
+      "kind": "obo_token_mirror",
+      "owner_identity": "attendee",
+      "refresh_trigger": "authenticated_browser_request",
+      "static_secret_required": false
+    },
+    "verified_commands": {
+      "host": "omnigent host --server <OMNIGENT_APP_URL> --non-interactive",
+      "terminal": "omnigent run --server <OMNIGENT_APP_URL>"
+    }
+  }
+}

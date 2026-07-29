@@ -1,0 +1,13 @@
+command: ["python", "app.py"]
+
+env:
+  - name: AP_LAKEBASE_ENDPOINT
+    valueFrom: postgres
+  - name: AP_ARTIFACT_VOLUME_PATH
+    valueFrom: artifact_volume
+  - name: OMNIGENT_AUTH_PROVIDER
+    value: header
+  - name: OMNIGENT_BUILD_VERSION
+    value: "0.7.0"
+  - name: OMNIGENT_BUILD_SHA
+    value: "35519fb04743f66b30cac8a40695d5d72fa163ea"
