@@ -451,10 +451,16 @@ def test_one_host_process_per_attendee_under_concurrent_notifications(
         )
     )
     calls = []
+    process = _FakeProcess()
 
     def popen(argv, **kwargs):
         calls.append((argv, kwargs))
-        return _FakeProcess()
+        return process
+
+    def killpg(_pid, sig):
+        process.returncode = -sig
+
+    monkeypatch.setattr("server.omnigent_remote.os.killpg", killpg)
 
     hosts = RemoteHostManager(
         user_manager=users,
