@@ -283,14 +283,11 @@ def test_scim_me_numeric_sp_id_mismatch_is_rejected(fresh_manager, monkeypatch):
     assert diagnostic["endpoints"][1]["observed_identity"]["id"] == "54321"
 
 
-@pytest.mark.parametrize("expected_sp_id", ["", "sp-123", "12.3"])
-def test_scim_pair_rejects_missing_or_non_numeric_expected_sp_id(
+@pytest.mark.parametrize("expected_sp_id", ["sp-123", "12.3"])
+def test_scim_pair_rejects_non_numeric_expected_sp_id(
     fresh_manager, monkeypatch, expected_sp_id
 ):
-    if expected_sp_id:
-        monkeypatch.setenv("WORKSHOP_APP_SP_ID", expected_sp_id)
-    else:
-        monkeypatch.delenv("WORKSHOP_APP_SP_ID", raising=False)
+    monkeypatch.setenv("WORKSHOP_APP_SP_ID", expected_sp_id)
     monkeypatch.setattr(cred.config, "databricks_host", lambda: "https://x.test")
     monkeypatch.setattr(
         cred.requests,
@@ -308,10 +305,91 @@ def test_scim_pair_rejects_missing_or_non_numeric_expected_sp_id(
     )
 
 
-def test_application_id_exact_match_rejects_missing_numeric_expected_sp_id(
+def test_scim_pair_binds_on_client_id_when_expected_sp_id_absent(
     fresh_manager, monkeypatch
 ):
+    """An absent WORKSHOP_APP_SP_ID degrades the binding instead of breaking it.
+
+    Control Tower can only resolve the numeric id after app create. When that
+    injection is missed, refusing the app's own OAuth bearer took the AI gateway
+    away from every coding agent, so the terminal could not run at all. The
+    client-id binding still holds; the weaker check is reported, not hidden.
+    """
     monkeypatch.delenv("WORKSHOP_APP_SP_ID", raising=False)
+    monkeypatch.setattr(cred.config, "databricks_host", lambda: "https://x.test")
+    monkeypatch.setattr(
+        cred.requests,
+        "get",
+        lambda url, **kwargs: (
+            _IdentityResponse(status_code=404, payload={})
+            if url.endswith("/api/2.0/current-user/me")
+            else _IdentityResponse(payload={"userName": "app-client", "id": "12345"})
+        ),
+    )
+
+    assert fresh_manager._validate("oauth-bearer") is True
+    diagnostic = fresh_manager.status()["validation_diagnostic"]
+    assert diagnostic["result"] == "matched_without_sp_id"
+    assert diagnostic["service_principal_id_unverified"] is True
+
+
+def test_user_token_falls_back_to_scim_when_current_user_me_unavailable(
+    fresh_manager, monkeypatch
+):
+    """A user token must not be judged against app-SP preconditions.
+
+    current-user/me answers 404 for an app service principal, and the app-SP
+    precondition checks used to run before the SCIM fallback — so a perfectly
+    valid vended PAT was reported as an app-identity failure and the emergency
+    credential path could never engage.
+    """
+    monkeypatch.delenv("WORKSHOP_APP_SP_ID", raising=False)
+    monkeypatch.delenv("DATABRICKS_CLIENT_ID", raising=False)
+    monkeypatch.setattr(cred, "_app_client_id", None)
+    monkeypatch.setattr(cred.config, "databricks_host", lambda: "https://x.test")
+    monkeypatch.setattr(
+        cred.requests,
+        "get",
+        lambda url, **kwargs: (
+            _IdentityResponse(status_code=404, payload={})
+            if url.endswith("/api/2.0/current-user/me")
+            else _IdentityResponse(payload={"userName": "attendee@example.com"})
+        ),
+    )
+
+    assert fresh_manager._validate("vended-pat", require_app_identity=False) is True
+    assert fresh_manager.status()["validation_diagnostic"]["result"] == "authenticated"
+
+
+def test_application_id_exact_match_binds_when_expected_sp_id_absent(
+    fresh_manager, monkeypatch
+):
+    """Same degrade-don't-brick rule on the current-user/me path.
+
+    See test_scim_pair_binds_on_client_id_when_expected_sp_id_absent — an absent
+    numeric id weakens the binding but must not deny the app its own token.
+    """
+    monkeypatch.delenv("WORKSHOP_APP_SP_ID", raising=False)
+    monkeypatch.setattr(cred.config, "databricks_host", lambda: "https://x.test")
+    monkeypatch.setattr(
+        cred.requests,
+        "get",
+        lambda *args, **kwargs: _IdentityResponse(
+            payload={"applicationId": "app-client", "id": "anything"}
+        ),
+    )
+
+    assert fresh_manager._validate("oauth-bearer") is True
+    diagnostic = fresh_manager.status()["validation_diagnostic"]
+    assert diagnostic["result"] == "matched_without_sp_id"
+    assert diagnostic["service_principal_id_unverified"] is True
+
+
+def test_application_id_exact_match_rejects_malformed_expected_sp_id(
+    fresh_manager, monkeypatch
+):
+    """A malformed value is a broken deploy, not a missing one — still fatal."""
+    monkeypatch.setenv("WORKSHOP_APP_SP_ID", "sp-123")
     monkeypatch.setattr(cred.config, "databricks_host", lambda: "https://x.test")
     monkeypatch.setattr(
         cred.requests,
@@ -374,6 +452,7 @@ def test_both_identity_endpoints_fail_with_safe_diagnostic(monkeypatch):
         "expected_application_id": "app-client",
         "observed_application_id": None,
         "expected_service_principal_id": "12345",
+        "service_principal_id_unverified": False,
         "observed_service_principal_id": None,
         "endpoints": [
             {"endpoint": "current-user/me", "status": 403, "observed_identity": {}},
