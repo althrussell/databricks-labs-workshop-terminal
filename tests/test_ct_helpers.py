@@ -25,7 +25,7 @@ def _setup(*, omnigent=False):
     return {
         "steps": {"skills": {"status": "complete"}},
         "release_manifest": {
-            "ai_dev_kit": {"match": True, "source": "prewarmed"},
+            "databricks_agent_skills": {"match": True, "source": "prewarmed"},
             "omnigent": {
                 "enabled": omnigent,
                 "match": True if omnigent else None,
@@ -52,7 +52,7 @@ def _prewarm(commit="a" * 40, checksum="b" * 64, *, omnigent=False):
                 }
                 for name in names
             },
-            "ai_dev_kit": {
+            "databricks_agent_skills": {
                 "expected_ref": "v1.2.3",
                 "actual_ref": "v1.2.3",
                 "resolved_commit": commit,
@@ -115,7 +115,7 @@ def test_verify_fails_closed_when_setup_manifest_is_mismatched():
             {
                 "steps": {"skills": {"status": "complete"}},
                 "release_manifest": {
-                    "ai_dev_kit": {
+                    "databricks_agent_skills": {
                         "match": False,
                         "source": "vendored_fallback",
                     }
@@ -237,7 +237,7 @@ def test_verify_requires_identical_release_and_prewarm_manifests():
             return Response(200, {"ready": True})
         if url.endswith("/api/admin/setup-status"):
             setup = _setup()
-            setup["release_manifest"]["ai_dev_kit"]["source"] = (
+            setup["release_manifest"]["databricks_agent_skills"]["source"] = (
                 "network" if url.startswith("https://a.") else "prewarmed"
             )
             return Response(200, setup)

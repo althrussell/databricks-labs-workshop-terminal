@@ -43,8 +43,8 @@ NODE_VERSION = os.environ.get("NODE_VERSION", "22.14.0").strip()
 CLAUDE_INSTALLER_URL = os.environ.get(
     "CLAUDE_INSTALLER_URL", "https://claude.ai/install.sh"
 )
-# Omnigent event installs are always fully offline: reviewed uv and Python
-# executables, wheelhouse, and a fully hashed transitive lock.
+# Omnigent installs from the reviewed manifest only: a checksum-verified uv
+# binary, a pinned Python 3.12 archive, and a fully hashed transitive lock.
 # Omnigent's claude/codex wrappers hard-require tmux and the Apps runtime has
 # no package manager — install a fully static musl build into the shared bin.
 TMUX_STATIC_URL = os.environ.get("TMUX_STATIC_URL", "").strip() or (
@@ -53,21 +53,35 @@ TMUX_STATIC_URL = os.environ.get("TMUX_STATIC_URL", "").strip() or (
 TMUX_STATIC_SHA256 = os.environ.get("TMUX_STATIC_SHA256", "").strip() or (
     "a23e56e9913d610c31f2893a1c9c669a73cb8bb2b8ded1180f6572bb55e52ca5"
 )
-# Skills are overlaid from ai-dev-kit at boot; the vendored copy in assets/skills
-# is the offline fallback (and carries the workflow skills that don't come from
-# ai-dev-kit). P1-21: the ref is pinnable (AI_DEV_KIT_REF) so an event runs a
-# known, reviewed skills version rather than whatever is on the branch tip at
-# boot. Default "main"; events should pin a tag or commit SHA.
-AI_DEV_KIT_REPO = os.environ.get(
-    "AI_DEV_KIT_REPO", "https://github.com/databricks-solutions/ai-dev-kit.git"
+# Databricks agent skills are overlaid from databricks-agent-skills at boot; the
+# vendored copy in assets/skills is the offline fallback (and carries the workflow
+# skills that do not come from upstream). This replaced the deprecated ai-dev-kit,
+# whose databricks-skills/ directory no longer exists upstream.
+#
+# The ref is pinned to a release tag rather than a branch, because a reviewed
+# manifest binds the exact commit and content digest: an event installs a known
+# skills version, not whatever happens to be on the tip at boot.
+SKILLS_REPO = os.environ.get(
+    "SKILLS_REPO", "https://github.com/databricks/databricks-agent-skills.git"
 )
-AI_DEV_KIT_REF = os.environ.get("AI_DEV_KIT_REF", "main").strip() or "main"
+SKILLS_REF = os.environ.get("SKILLS_REF", "v0.2.10").strip() or "v0.2.10"
+# The manifest and readiness key for the skills artifact.
+SKILLS_ARTIFACT = "databricks_agent_skills"
+# The directory inside the upstream repository that holds one subdirectory per
+# skill. Each carries SKILL.md for Claude and agents/openai.yaml for Codex.
+SKILLS_UPSTREAM_DIR = "skills"
+# Where the upstream clone and its stamp live under the shared prefix.
+SKILLS_CLONE_DIR = "databricks-agent-skills"
 _ASSETS_SKILLS = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "..", "assets", "skills")
 )
 
 _state_lock = threading.Lock()
 _state: dict[str, dict] = {}
+# A step stops here. ``degraded`` means the step produced something usable
+# without meeting its reviewed contract -- the skills vendored fallback -- so it
+# ends the boot but never satisfies readiness.
+TERMINAL_STATUSES = frozenset({"complete", "error", "degraded"})
 
 
 def validate_remote_compatibility() -> None:
@@ -94,6 +108,39 @@ def _verified_artifact(name: str) -> tuple[str, dict]:
     entry = contract.entry(name)
     staging = os.path.join(config.shared_prefix(), "artifacts")
     return contract.verified_local_path(name, staging_dir=staging), entry
+
+
+def _extracted_artifact_executable(name: str) -> tuple[str, dict]:
+    """Verify an archive artifact, extract it once, return its executable.
+
+    uv and the Python runtime are published only as archives, so the checksum
+    covers the archive and extraction is content-addressed by it: a bumped
+    version lands in a new directory and the old one is simply unused.
+    """
+    archive_path, entry = _verified_artifact(name)
+    root = os.path.join(
+        config.shared_prefix(), "artifacts", f"{name}-{entry['sha256'][:16]}"
+    )
+    executable = os.path.normpath(
+        os.path.join(root, entry["executable_relative_path"])
+    )
+    if not executable.startswith(os.path.abspath(root) + os.sep):
+        raise RuntimeError(f"{name} executable path escapes the archive root")
+    if not os.path.isfile(executable):
+        os.makedirs(os.path.dirname(root), exist_ok=True)
+        staged = tempfile.mkdtemp(prefix=f".{name}-", dir=os.path.dirname(root))
+        try:
+            shutil.unpack_archive(archive_path, staged)
+            if os.path.isdir(root):
+                shutil.rmtree(root, ignore_errors=True)
+            os.replace(staged, root)
+        except Exception:
+            shutil.rmtree(staged, ignore_errors=True)
+            raise
+        if not os.path.isfile(executable):
+            raise RuntimeError(f"{name} archive has no {entry['executable_relative_path']}")
+    os.chmod(executable, 0o755)
+    return executable, entry
 
 
 def _artifact_binary_stamp_path(name: str) -> str:
@@ -149,11 +196,7 @@ def _set(
             if status == "running"
             else (None if reset_run else previous.get("started_at"))
         )
-        completed_at = (
-            now
-            if status in {"complete", "error"}
-            else None
-        )
+        completed_at = now if status in TERMINAL_STATUSES else None
         _state[step] = {
             "status": status,
             "error": error,
@@ -229,7 +272,9 @@ def status() -> dict:
             and steps.get("tmux", {}).get("status") == "complete"
         ),
     }
-    installing = any(s.get("status") in (None, "pending", "running") for s in steps.values())
+    installing = any(
+        s.get("status") not in TERMINAL_STATUSES for s in steps.values()
+    )
     release_manifest = {}
     for name, (enabled, expected) in _release_specs().items():
         step = steps.get(name, {})
@@ -255,14 +300,14 @@ def status() -> dict:
     skills_actual = skills.get("actual_version")
     skills_source = skills.get("release_source")
     resolved_commit = skills.get("resolved_commit")
-    release_manifest["ai_dev_kit"] = {
+    release_manifest[SKILLS_ARTIFACT] = {
         "enabled": True,
-        "expected": AI_DEV_KIT_REF,
+        "expected": SKILLS_REF,
         "actual": skills_actual,
         "match": bool(
             skills.get("status") == "complete"
             and skills_source in {"network", "prewarmed"}
-            and skills_actual == AI_DEV_KIT_REF
+            and skills_actual == SKILLS_REF
             and resolved_commit
         ),
         "source": skills_source,
@@ -350,7 +395,6 @@ def _prewarm_status_unlocked() -> dict:
                     for artifact_name in (
                         "uv_binary",
                         "python_3_12_runtime",
-                        "omnigent_wheelhouse",
                         "omnigent_lock",
                     )
                 },
@@ -399,7 +443,7 @@ def _prewarm_status_unlocked() -> dict:
     stamp = _read_json(_skills_stamp_path())
     try:
         persistent_skills = _persistent_skills_install(
-            os.path.join(prefix, "ai-dev-kit"),
+            os.path.join(prefix, SKILLS_CLONE_DIR),
             os.path.join(prefix, "skills"),
         )
     except (OSError, RuntimeError, subprocess.TimeoutExpired):
@@ -409,8 +453,8 @@ def _prewarm_status_unlocked() -> dict:
     skills_reusable = persistent_skills is not None
     actual_commit = persistent_skills[0] if persistent_skills else resolved_commit
     actual_checksum = persistent_skills[1] if persistent_skills else None
-    ai_dev_kit = {
-        "expected_ref": AI_DEV_KIT_REF,
+    skills_provenance = {
+        "expected_ref": SKILLS_REF,
         "actual_ref": stamp.get("ref"),
         "resolved_commit": actual_commit,
         "expected_checksum": expected_checksum,
@@ -424,7 +468,7 @@ def _prewarm_status_unlocked() -> dict:
         "manifest": {
             "expected_binaries": sorted(binaries),
             "binaries": binaries,
-            "ai_dev_kit": ai_dev_kit,
+            SKILLS_ARTIFACT: skills_provenance,
         },
     }
 
@@ -462,7 +506,7 @@ def _file_checksum(path: os.PathLike[str] | str) -> str:
 
 
 def _skills_stamp_path() -> str:
-    return os.path.join(config.shared_prefix(), "ai-dev-kit.install.json")
+    return os.path.join(config.shared_prefix(), f"{SKILLS_CLONE_DIR}.install.json")
 
 
 def _read_json(path: str) -> dict:
@@ -517,14 +561,13 @@ def _persistent_skills_install(
     skills_dir: str,
 ) -> tuple[str, str] | None:
     """Return verified (commit, checksum), otherwise force a network refresh."""
-    artifact = _artifact_contract().entry("ai_dev_kit")
+    artifact = _artifact_contract().entry(SKILLS_ARTIFACT)
     stamp = _read_json(_skills_stamp_path())
     commit = str(stamp.get("resolved_commit") or "")
     expected_checksum = str(stamp.get("content_checksum") or "")
     if (
         stamp.get("repo") != artifact["source"]
-        or stamp.get("ref") != AI_DEV_KIT_REF
-        or stamp.get("artifact_sha256") != artifact["sha256"]
+        or stamp.get("ref") != SKILLS_REF
         or commit.lower() != str(artifact["commit"]).lower()
         or expected_checksum != artifact["content_sha256"]
         or not re.fullmatch(r"[0-9a-fA-F]{40}", commit)
@@ -540,7 +583,7 @@ def _persistent_skills_install(
     )
     if result.returncode != 0 or (result.stdout or "").strip().lower() != commit.lower():
         return None
-    upstream = os.path.join(clone_dir, "databricks-skills")
+    upstream = os.path.join(clone_dir, SKILLS_UPSTREAM_DIR)
     names = {
         name
         for name in os.listdir(upstream)
@@ -642,7 +685,10 @@ def _install_node() -> None:
 
 def _install_claude() -> None:
     installer_path, installer_artifact = _verified_artifact("claude_installer")
-    _, binary_artifact = _verified_artifact("claude_binary")
+    # Only the expected checksum is needed: the installer fetches the binary
+    # itself, and pulling a quarter-gigabyte copy here to hash it would double
+    # the claude step's boot cost for no added guarantee.
+    binary_artifact = _artifact_contract().entry("claude_binary")
     _set("claude", "running", expected_version=CLAUDE_VERSION, source="network")
     prefix = config.shared_prefix()
     claude_bin = os.path.join(prefix, "bin", "claude")
@@ -983,17 +1029,16 @@ def _omnigent_stamp_path() -> str:
 
 
 def _omnigent_install_reusable(prefix: str, entries: dict[str, dict]) -> bool:
+    """Reuse an install only when the whole supply chain still matches.
+
+    The committed lock is the integrity anchor now that there is no staged
+    wheelhouse: it pins every direct and transitive wheel by hash, so a matching
+    lock checksum plus a matching venv tree means the same bytes are installed.
+    """
     stamp = _read_json(os.path.join(prefix, "omnigent.install.json"))
     omnigent_bin = os.path.join(prefix, "bin", "omnigent")
     checks = {
-        "uv_sha256": _file_checksum(entries["uv_binary"]["source"]),
-        "python_runtime_sha256": _directory_checksum(
-            entries["python_3_12_runtime"]["source"]
-        ),
         "lock_sha256": _file_checksum(entries["omnigent_lock"]["source"]),
-        "wheelhouse_sha256": _directory_checksum(
-            entries["omnigent_wheelhouse"]["source"]
-        ),
         "binary_sha256": _file_checksum(omnigent_bin),
         "venv_sha256": _directory_checksum(
             os.path.join(prefix, "omnigent-venv")
@@ -1001,34 +1046,35 @@ def _omnigent_install_reusable(prefix: str, entries: dict[str, dict]) -> bool:
     }
     expected = {
         "uv_sha256": entries["uv_binary"]["sha256"],
-        "python_runtime_sha256": entries["python_3_12_runtime"][
-            "content_sha256"
-        ],
+        "python_runtime_sha256": entries["python_3_12_runtime"]["sha256"],
         "lock_sha256": entries["omnigent_lock"]["sha256"],
-        "wheelhouse_sha256": entries["omnigent_wheelhouse"]["content_sha256"],
     }
     return bool(
         checks["binary_sha256"]
         and checks["venv_sha256"]
-        and all(checks[key] == value for key, value in expected.items())
+        and checks["lock_sha256"] == expected["lock_sha256"]
+        and all(stamp.get(key) == value for key, value in expected.items())
         and all(stamp.get(key) == value for key, value in checks.items())
     )
 
 
 def _install_omnigent() -> None:
-    """Install Omnigent from a reviewed, fully offline uv supply chain."""
+    """Install Omnigent from the committed, fully hash-pinned lock.
+
+    Every wheel is resolved from PyPI under ``--require-hashes`` against
+    ``assets/artifacts/omnigent-<version>.lock``, so the install is reproducible
+    without anyone staging a wheelhouse for the event.
+    """
     _set("omnigent", "running", expected_version=OMNIGENT_VERSION, source="staged")
     paths: dict[str, str] = {}
     entries: dict[str, dict] = {}
     try:
-        for name in (
-            "uv_binary",
-            "python_3_12_runtime",
-            "omnigent_wheelhouse",
-            "omnigent_lock",
-        ):
-            paths[name], entries[name] = _verified_artifact(name)
-    except (OSError, RuntimeError) as error:
+        for name in ("uv_binary", "python_3_12_runtime"):
+            paths[name], entries[name] = _extracted_artifact_executable(name)
+        paths["omnigent_lock"], entries["omnigent_lock"] = _verified_artifact(
+            "omnigent_lock"
+        )
+    except (OSError, RuntimeError, shutil.ReadError) as error:
         _set(
             "omnigent",
             "error",
@@ -1053,16 +1099,10 @@ def _install_omnigent() -> None:
         )
         return
     env = _install_env()
-    env.update({
-        "UV_OFFLINE": "1",
-        "UV_NO_INDEX": "1",
-        "UV_PYTHON_DOWNLOADS": "never",
-    })
+    # The runtime is the extracted reviewed build; uv must never fetch its own.
+    env["UV_PYTHON_DOWNLOADS"] = "never"
     venv = os.path.join(prefix, "omnigent-venv")
-    python_executable = os.path.join(
-        paths["python_3_12_runtime"],
-        entries["python_3_12_runtime"]["executable_relative_path"],
-    )
+    python_executable = paths["python_3_12_runtime"]
     try:
         lock_text = open(paths["omnigent_lock"], encoding="utf-8").read()
         if f"omnigent=={OMNIGENT_VERSION}" not in lock_text:
@@ -1090,15 +1130,11 @@ def _install_omnigent() -> None:
                 "install",
                 "--python",
                 os.path.join(venv, "bin", "python"),
-                "--offline",
-                "--no-index",
-                "--find-links",
-                paths["omnigent_wheelhouse"],
                 "--require-hashes",
                 "-r",
                 paths["omnigent_lock"],
             ],
-            capture_output=True, text=True, timeout=600, env=env,
+            capture_output=True, text=True, timeout=900, env=env,
         )
         installed_bin = os.path.join(venv, "bin", "omnigent")
         if result.returncode != 0 or not os.path.exists(installed_bin):
@@ -1116,11 +1152,8 @@ def _install_omnigent() -> None:
         venv_checksum = _directory_checksum(venv)
         _write_json_atomic(stamp, {
             "uv_sha256": entries["uv_binary"]["sha256"],
-            "python_runtime_sha256": entries["python_3_12_runtime"][
-                "content_sha256"
-            ],
+            "python_runtime_sha256": entries["python_3_12_runtime"]["sha256"],
             "lock_sha256": entries["omnigent_lock"]["sha256"],
-            "wheelhouse_sha256": entries["omnigent_wheelhouse"]["content_sha256"],
             "binary_sha256": binary_checksum,
             "venv_sha256": venv_checksum,
         })
@@ -1254,28 +1287,44 @@ def _stage_vendored_skills(prefix: str) -> str:
         raise
 
 
-def _install_skills() -> None:
-    """Build the shared skills library: vendored base + latest ai-dev-kit.
+class SkillsContractError(RuntimeError):
+    """The fetched skills violate the reviewed contract, so no fallback applies.
 
-    1. Copy assets/skills (superpowers/bdd workflow skills + vendored
-       databricks skills as the offline fallback).
-    2. Shallow-clone ai-dev-kit and overlay databricks-skills/* so attendees
-       always run the absolute latest published skills.
+    A structural violation -- an empty upstream directory, a commit or content
+    digest that differs from the manifest -- means the contract itself is wrong
+    or the clone was tampered with. Serving the vendored copy there would hide
+    the defect behind a working-looking terminal, which is how the stale
+    ``databricks-skills/`` path survived a whole release. Only a transient
+    failure (network, timeout, disk) earns the fallback.
     """
-    artifact = _artifact_contract().entry("ai_dev_kit")
-    if artifact["version"] != AI_DEV_KIT_REF:
-        raise RuntimeError("ai-dev-kit manifest version does not match configured ref")
+
+
+def _install_skills() -> None:
+    """Build the shared skills library: vendored base + reviewed upstream skills.
+
+    1. Copy assets/skills (superpowers/bdd workflow skills + vendored Databricks
+       skills as the offline fallback).
+    2. Clone databricks-agent-skills at the reviewed ref and overlay ``skills/*``
+       so attendees build on the canonical, AppKit-first Databricks skills.
+
+    A successful overlay is ``complete``. A transient fetch failure serves the
+    vendored copy and reports ``degraded`` -- usable, but never ``complete``,
+    because the attendee is not running the reviewed skills.
+    """
+    artifact = _artifact_contract().entry(SKILLS_ARTIFACT)
+    if artifact["version"] != SKILLS_REF:
+        raise RuntimeError("skills manifest version does not match configured ref")
     _set(
         "skills",
         "running",
-        expected_version=AI_DEV_KIT_REF,
+        expected_version=SKILLS_REF,
         source="staged",
         clear_release=True,
     )
     prefix = config.shared_prefix()
     skills_dir = os.path.join(prefix, "skills")
     os.makedirs(prefix, exist_ok=True)
-    clone_dir = os.path.join(prefix, "ai-dev-kit")
+    clone_dir = os.path.join(prefix, SKILLS_CLONE_DIR)
     staged: str | None = None
     try:
         persistent = _persistent_skills_install(clone_dir, skills_dir)
@@ -1284,8 +1333,8 @@ def _install_skills() -> None:
             _set(
                 "skills",
                 "complete",
-                expected_version=AI_DEV_KIT_REF,
-                actual_version=AI_DEV_KIT_REF,
+                expected_version=SKILLS_REF,
+                actual_version=SKILLS_REF,
                 release_source="prewarmed",
                 resolved_commit=resolved_commit,
                 source="prewarmed",
@@ -1301,7 +1350,7 @@ def _install_skills() -> None:
         # discarded and rebuilt from the reviewed ref.
         shutil.rmtree(clone_dir, ignore_errors=True)
         result = subprocess.run(
-            ["git", "clone", "--depth", "1", "--branch", AI_DEV_KIT_REF,
+            ["git", "clone", "--depth", "1", "--branch", SKILLS_REF,
              artifact["source"], clone_dir],
             capture_output=True, text=True, timeout=300, env=_install_env(),
         )
@@ -1313,7 +1362,7 @@ def _install_skills() -> None:
                 capture_output=True, text=True, timeout=300, env=_install_env(),
             )
             result = subprocess.run(
-                ["git", "-C", clone_dir, "checkout", AI_DEV_KIT_REF],
+                ["git", "-C", clone_dir, "checkout", SKILLS_REF],
                 capture_output=True, text=True, timeout=120, env=_install_env(),
             )
         if result.returncode != 0:
@@ -1330,11 +1379,13 @@ def _install_skills() -> None:
         if resolved.returncode != 0 or not re.fullmatch(
             r"[0-9a-fA-F]{40}", resolved_commit
         ):
-            raise RuntimeError("unable to verify fetched ai-dev-kit commit")
+            raise RuntimeError("unable to verify fetched skills commit")
         if resolved_commit.lower() != str(artifact["commit"]).lower():
-            raise RuntimeError("fetched ai-dev-kit commit differs from reviewed manifest")
+            raise SkillsContractError(
+                "fetched skills commit differs from reviewed manifest"
+            )
 
-        upstream = os.path.join(clone_dir, "databricks-skills")
+        upstream = os.path.join(clone_dir, SKILLS_UPSTREAM_DIR)
         updated = 0
         if os.path.isdir(upstream):
             for name in os.listdir(upstream):
@@ -1346,7 +1397,11 @@ def _install_skills() -> None:
                 shutil.copytree(source, target)
                 updated += 1
         if not updated:
-            raise RuntimeError("fetched ai-dev-kit contains no databricks skills")
+            # The upstream layout moved (this is how the deprecated
+            # databricks-skills/ path went unnoticed). Never fall back.
+            raise SkillsContractError(
+                f"{SKILLS_UPSTREAM_DIR}/ is empty in the fetched skills repository"
+            )
         names = {
             name
             for name in os.listdir(upstream)
@@ -1354,37 +1409,50 @@ def _install_skills() -> None:
         }
         checksum = _directory_checksum(upstream, names)
         if not checksum:
-            raise RuntimeError("unable to checksum fetched ai-dev-kit skills")
+            raise SkillsContractError("unable to checksum fetched skills")
         if _directory_checksum(staged, names) != checksum:
-            raise RuntimeError("installed ai-dev-kit skills checksum mismatch")
+            raise SkillsContractError("installed skills checksum mismatch")
         if checksum != artifact["content_sha256"]:
-            raise RuntimeError("ai-dev-kit content differs from reviewed manifest")
+            raise SkillsContractError(
+                "skills content differs from reviewed manifest"
+            )
         _publish_skills_tree(staged, skills_dir)
         staged = None
         _write_json_atomic(
             _skills_stamp_path(),
             {
                 "repo": artifact["source"],
-                "ref": AI_DEV_KIT_REF,
+                "ref": SKILLS_REF,
                 "resolved_commit": resolved_commit,
                 "content_checksum": checksum,
-                "artifact_sha256": artifact["sha256"],
             },
         )
-        logger.info("skills: %d refreshed from ai-dev-kit@%s", updated, AI_DEV_KIT_REF)
+        logger.info("skills: %d refreshed from %s@%s", updated, SKILLS_REPO, SKILLS_REF)
         _set(
             "skills",
             "complete",
-            expected_version=AI_DEV_KIT_REF,
-            actual_version=AI_DEV_KIT_REF,
+            expected_version=SKILLS_REF,
+            actual_version=SKILLS_REF,
             release_source="network",
             resolved_commit=resolved_commit,
             source="network",
             expected_checksum=checksum,
             actual_checksum=checksum,
         )
+    except SkillsContractError as e:
+        logger.error("skills contract violated: %s", e)
+        if staged is not None:
+            shutil.rmtree(staged, ignore_errors=True)
+            staged = None
+        _set(
+            "skills",
+            "error",
+            str(e),
+            expected_version=SKILLS_REF,
+            source="network",
+        )
     except (subprocess.TimeoutExpired, OSError, RuntimeError) as e:
-        logger.warning("ai-dev-kit fetch failed (%s) — using vendored skills", e)
+        logger.warning("skills fetch failed (%s) — using vendored skills", e)
         if staged is not None:
             shutil.rmtree(staged, ignore_errors=True)
             staged = None
@@ -1398,16 +1466,17 @@ def _install_skills() -> None:
                     "skills",
                     "error",
                     f"vendored copy failed: {vendored_error}",
-                    expected_version=AI_DEV_KIT_REF,
+                    expected_version=SKILLS_REF,
                     release_source="vendored_fallback",
                     source="staged",
                 )
                 return
+        # Usable but not the reviewed skill set: terminal, and never `complete`.
         _set(
             "skills",
-            "complete",
+            "degraded",
             error=f"vendored fallback: {e}",
-            expected_version=AI_DEV_KIT_REF,
+            expected_version=SKILLS_REF,
             release_source="vendored_fallback",
             source="staged",
         )
@@ -1463,7 +1532,7 @@ _install_databricks_cli = _guard_installer(
     expected_version=DATABRICKS_CLI_VERSION,
 )
 _install_skills = _guard_installer(
-    "skills", _install_skills, expected_version=AI_DEV_KIT_REF
+    "skills", _install_skills, expected_version=SKILLS_REF
 )
 
 

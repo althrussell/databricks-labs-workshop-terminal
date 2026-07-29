@@ -89,12 +89,13 @@ env:
   - name: CONTENT_PACK_PATH
     value: ""
 
-  # --- Skills overlay (ai-dev-kit) ---
+  # --- Skills overlay (databricks-agent-skills) ---
   # Skills are fetched once, stamped with ref + resolved commit + content
   # checksum on the persistent volume, then verified and reused on restart.
-  # STRONGLY pin a reviewed tag or commit SHA per event so every attendee runs
-  # a known skills version rather than a moving branch tip.
-  - name: AI_DEV_KIT_REF
+  # The reviewed default ships in assets/artifacts/manifest.json; set this only
+  # to move an event to a different reviewed tag or commit SHA, never a branch
+  # tip, and only alongside a matching manifest entry.
+  - name: SKILLS_REF
     value: ""
 
   # --- Cobranding (Databricks theme when unset) ---
@@ -127,9 +128,11 @@ env:
     value: "1.8.0"
   - name: NODE_VERSION
     value: "22.14.0"
-  # REQUIRED for event readiness. CT stages or mounts a reviewed JSON contract
-  # containing source + SHA-256 for every installer/archive/package and the
-  # ai-dev-kit commit/content digest. Missing/partial manifests keep /readyz red.
+  # OPTIONAL mirror override. The reviewed contract (source + SHA-256 for every
+  # installer/archive/package, plus the skills commit/content digest) ships in
+  # the image at assets/artifacts/manifest.json, so boot needs nothing here.
+  # A path set here may only redirect `source` per artifact -- an override that
+  # changes a version or checksum is rejected, keeping the pinned set authoritative.
   - name: ARTIFACT_MANIFEST_PATH
     value: ""
 
@@ -161,9 +164,9 @@ env:
   # supervisor crash-backoff history.
   - name: OMNIGENT_HOST_STABLE_RUNTIME_S
     value: "30"
-  # Omnigent has no network fallback. ARTIFACT_MANIFEST_PATH must identify a
-  # checksum-verified uv binary, complete Python 3.12 runtime tree, complete
-  # local wheelhouse, and fully pinned --require-hashes transitive lock.
+  # Omnigent installs from the reviewed manifest only: a checksum-verified uv
+  # binary, a pinned Python 3.12 runtime archive, and the in-repo fully pinned
+  # --require-hashes transitive lock that anchors every wheel it resolves.
   - name: TMUX_STATIC_URL
     value: ""
   - name: TMUX_STATIC_SHA256

@@ -77,28 +77,26 @@ qualitatively new.
 ### 3.1 Bootstrap installers — `server/bootstrap/install.py`
 
 Both install steps are idempotent, checksum-stamped, and governed by the
-Control Tower-reviewed `ARTIFACT_MANIFEST_PATH` contract documented in
-`docs/artifact-manifest.md`.
+repo-owned artifact contract documented in `docs/artifact-manifest.md`.
 
 **`_install_tmux()`** verifies the reviewed static archive before extraction,
 then verifies and stamps the installed binary before reuse.
 
-**`_install_omnigent()`** has no network or interpreter-download path. Control
-Tower stages:
+**`_install_omnigent()`** installs only what the manifest pins:
 
-1. the exact uv executable and its SHA-256;
-2. the complete Python 3.12 runtime tree, its deterministic content SHA-256,
-   and the executable's relative path;
-3. a complete wheelhouse with deterministic directory content SHA-256; and
-4. a fully pinned direct/transitive requirements lock with SHA-256 hashes.
+1. the uv archive and its SHA-256, extracted to reach the uv executable;
+2. the Python 3.12 archive and its SHA-256, extracted to reach the interpreter;
+   and
+3. `assets/artifacts/omnigent-<version>.lock`, a fully pinned direct and
+   transitive requirements lock where every entry carries `--hash=sha256:`.
 
-Bootstrap runs the staged uv executable with `UV_OFFLINE=1`,
-`UV_NO_INDEX=1`, and `UV_PYTHON_DOWNLOADS=never`; creates the venv using the
-explicit staged Python path; and installs from the wheelhouse using
-`--require-hashes`. Existing uv/Python executables are never selected from
-`PATH`. Reuse requires the reviewed uv, complete Python runtime, wheelhouse,
-lock, complete installed venv (scripts, site-packages, dependencies), and
-Omnigent binary checksums to match the persistent stamp.
+Bootstrap runs the extracted uv with `UV_PYTHON_DOWNLOADS=never`, creates the
+venv using the explicit extracted Python path, and installs with
+`--require-hashes`, so PyPI can serve the wheels but only the reviewed bytes are
+accepted. Existing uv/Python executables are never selected from `PATH`. Reuse
+requires the reviewed uv, Python archive, lock, complete installed venv (scripts,
+site-packages, dependencies), and Omnigent binary checksums to match the
+persistent stamp.
    (= the shared `bin/` every user already symlinks).
 3. **Version stamp:** write `$PREFIX/omnigent.version` after success; on boot,
    if the stamp ≠ `OMNIGENT_VERSION`, reinstall (`--force` makes this safe).
@@ -372,10 +370,10 @@ exactly why measurement comes before code.
 Verified against the omnigent source (`~/code/agent-framework`) during
 implementation; where this design and the source disagreed, the source won:
 
-- **Offline event supply chain (updated July 2026).** Public PyPI resolution is
-  not permitted during event bootstrap. `OMNIGENT_VERSION` must match the
-  reviewed, fully hashed lock and complete staged wheelhouse; uv and Python
-  are staged and checksum-verified executables.
+- **Hash-anchored event supply chain (updated July 2026).** Unpinned PyPI
+  resolution is not permitted during event bootstrap. `OMNIGENT_VERSION` must
+  match the in-repo fully hashed lock, and uv and Python come from
+  checksum-verified archives in the manifest, never from `PATH`.
 - **tmux pin.** The v3.5a release in §3.1 does not exist; pinned v3.6b
   (`tmux.linux-amd64.stripped.gz`, sha256 `a23e56e9…` in code). The artifact
   is downloaded once, hash-verified, then decompressed (no re-fetch).

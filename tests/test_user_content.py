@@ -12,6 +12,21 @@ from .conftest import ALICE
 # fails loud if a skills refresh or instruction edit ever drops it.
 APPKIT_MANDATE = "AppKit is the required baseline for every app."
 
+# Skill names the mandate must use, and names it must never use. A mandate that
+# points an agent at a skill that no longer exists is worse than no mandate: the
+# agent finds nothing and silently improvises a Python framework instead.
+CANONICAL_APP_SKILLS = ("databricks-apps", "databricks-app-design")
+RETIRED_SKILL_NAMES = (
+    "databricks-bundles",
+    "databricks-config",
+    "databricks-genie",
+    "databricks-lakebase-autoscale",
+    "databricks-lakebase-provisioned",
+    "databricks-spark-declarative-pipelines",
+    "spark-python-data-source",
+    "7-appkit-ux",
+)
+
 
 def _provisioned_home(client, monkeypatch):
     from server import user_content
@@ -43,6 +58,40 @@ def test_appkit_mandate_in_home_memory(client, monkeypatch):
     agents_md = open(os.path.join(home, ".codex", "AGENTS.md")).read()
     assert APPKIT_MANDATE in claude_md
     assert APPKIT_MANDATE in agents_md
+
+
+def test_mandate_names_canonical_app_skills_and_no_retired_ones(client, monkeypatch):
+    home = _provisioned_home(client, monkeypatch)
+    channels = {
+        "home CLAUDE.md": os.path.join(home, ".claude", "CLAUDE.md"),
+        "home AGENTS.md": os.path.join(home, ".codex", "AGENTS.md"),
+        "project memory template": os.path.join(
+            home, ".config", "workshop", "project-memory.md"
+        ),
+    }
+    for label, path in channels.items():
+        text = open(path).read()
+        for skill in CANONICAL_APP_SKILLS:
+            assert skill in text, f"{label} does not name {skill}"
+        for retired in RETIRED_SKILL_NAMES:
+            assert retired not in text, f"{label} still names retired {retired}"
+
+
+def test_mandate_requires_the_appkit_validation_gate(client, monkeypatch):
+    """An agent that deploys without validating ships a broken app. Every memory
+    channel must carry the gate, including the project template the isolated
+    Omnigent workers see."""
+    home = _provisioned_home(client, monkeypatch)
+    for path in (
+        os.path.join(home, ".claude", "CLAUDE.md"),
+        os.path.join(home, ".codex", "AGENTS.md"),
+        os.path.join(home, ".config", "workshop", "project-memory.md"),
+    ):
+        text = open(path).read()
+        assert "databricks apps validate" in text
+        assert "tests/smoke.spec.ts" in text
+        assert "tsc --noEmit" in text
+        assert "appkit lint" in text
 
 
 def test_project_helper_installed(client, monkeypatch):
@@ -110,10 +159,32 @@ def test_subagents_and_skills_installed(client, monkeypatch):
     agents = os.listdir(os.path.join(home, ".claude", "agents"))
     assert "prd-writer.md" in agents and "implementer.md" in agents
 
-    skills_link = os.path.join(home, ".claude", "skills")
-    assert os.path.islink(skills_link)
-    assert os.path.isdir(os.path.join(skills_link, "databricks-docs"))
-    assert os.path.islink(os.path.join(home, ".agents", "skills"))
+    # Every harness reads its own directory: Claude ~/.claude/skills, Codex (and
+    # Omnigent's Codex worker, which shares CODEX_HOME) ~/.codex/skills. This is
+    # the layout `databricks aitools install` produces.
+    for relative in (".claude/skills", ".codex/skills"):
+        skill = os.path.join(home, relative, "databricks-docs")
+        assert os.path.islink(skill), relative
+        assert os.path.isfile(os.path.join(skill, "SKILL.md")), relative
+
+
+def test_a_harness_owned_skills_directory_still_receives_the_skills(
+    client, monkeypatch, tmp_path
+):
+    """A real ~/.codex/skills (harness- or attendee-created) used to shadow the
+    whole-directory symlink, leaving Codex with no Databricks skills at all."""
+    from server import user_content
+
+    home = tmp_path / "attendee"
+    own = home / ".codex" / "skills" / "my-own-skill"
+    own.mkdir(parents=True)
+    (own / "SKILL.md").write_text("mine")
+
+    user_content._link_skills(type("U", (), {"home": str(home), "email": "a@b"})())
+
+    assert (own / "SKILL.md").read_text() == "mine"  # attendee's copy survives
+    assert os.path.islink(home / ".codex" / "skills" / "databricks-docs")
+    assert os.path.islink(home / ".claude" / "skills" / "databricks-docs")
 
 
 def test_git_identity_and_sync_hook(client, monkeypatch):

@@ -12,6 +12,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from . import attendee as attendee_binding
 from . import config, obo, spend
 from .auth import require_admin
 from .content import Broadcast, ContentPack, content_service
@@ -127,7 +128,7 @@ def harvest_stats():
 @router.get("/omnigent-host-readiness")
 def omnigent_host_readiness():
     """Token-free verified host readiness for Control Tower reconciliation."""
-    return remote_host_manager.readiness(config.workshop_attendee_email())
+    return remote_host_manager.readiness(attendee_binding.resolved_email())
 
 
 @router.get("/presence")

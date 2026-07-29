@@ -1,0 +1,15 @@
+# Secret-scanner false positives, reviewed individually.
+#
+# assets/skills/ is vendored verbatim from databricks/databricks-agent-skills at
+# the tag assets/artifacts/manifest.json pins, and its content SHA-256 is
+# verified against that manifest at boot. Editing a vendored file to appease a
+# scanner would break that digest and make the offline fallback diverge from the
+# skills the terminal actually installs, so allowlisting is the only correct fix
+# for a placeholder in upstream documentation.
+
+# Documentation placeholder in the Lakebase local-development example: a
+# postgres URL whose userinfo, host, and database name are all the literal
+# words describing them. No real credential -- the surrounding prose tells the
+# reader to keep the real URL in an untracked .env and to use OAuth token
+# refresh in production.
+assets/skills/databricks-lakebase/references/connectivity.md:postgres-connection-string:85

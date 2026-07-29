@@ -16,63 +16,13 @@ REQUIRED = (
     "databricks_cli_archive_linux_x64",
     "uv_binary",
     "python_3_12_runtime",
-    "omnigent_wheelhouse",
     "omnigent_lock",
-    "ai_dev_kit",
+    "databricks_agent_skills",
 )
 
 
-def _manifest(tmp_path):
-    artifacts = {}
-    for name in REQUIRED:
-        if name in {"omnigent_wheelhouse", "python_3_12_runtime"}:
-            path = tmp_path / name
-            path.mkdir()
-            if name == "omnigent_wheelhouse":
-                relative = "omnigent-0.5.1-py3-none-any.whl"
-                (path / relative).write_bytes(b"wheel")
-                content = f"{relative}\0".encode() + b"wheel\0"
-            else:
-                relative = "bin/python3.12"
-                (path / "bin").mkdir()
-                (path / relative).write_bytes(b"python")
-                content = f"{relative}\0".encode() + b"python\0"
-            artifacts[name] = {
-                "version": "test-version",
-                "source": str(path),
-                "kind": "directory",
-                "content_sha256": hashlib.sha256(content).hexdigest(),
-            }
-            if name == "python_3_12_runtime":
-                artifacts[name]["executable_relative_path"] = relative
-            continue
-        if name == "omnigent_lock":
-            payload = b"omnigent==0.5.1 --hash=sha256:" + b"d" * 64 + b"\n"
-        else:
-            payload = f"reviewed-{name}".encode()
-        path = tmp_path / name
-        path.write_bytes(payload)
-        artifacts[name] = {
-            "version": "test-version",
-            "source": str(path),
-            "sha256": hashlib.sha256(payload).hexdigest(),
-        }
-    artifacts["node_linux_x64"]["sha256"] = (
-        "69b09dba5c8dcb05c4e4273a4340db1005abeafe3927efda2bc5b249e80437ec"
-    )
-    artifacts["tmux_linux_x64"]["sha256"] = (
-        "a23e56e9913d610c31f2893a1c9c669a73cb8bb2b8ded1180f6572bb55e52ca5"
-    )
-    artifacts["ai_dev_kit"].update({
-        "commit": "a" * 40,
-        "content_sha256": "b" * 64,
-    })
-    artifacts["codex_native_package_linux_x64"].update({
-        "executable_sha256": "c" * 64,
-    })
-    artifacts["omnigent_lock"].update({
-        "lock_sha256": artifacts["omnigent_lock"]["sha256"],
-    })
+def _override(tmp_path, artifacts):
+    """Write an override manifest carrying only the given per-artifact fields."""
     path = tmp_path / "artifact-manifest.json"
     path.write_text(json.dumps({
         "schema_version": 1,
@@ -82,64 +32,246 @@ def _manifest(tmp_path):
     return path
 
 
-def test_reviewed_artifact_manifest_requires_complete_contract(tmp_path):
+def test_default_manifest_is_the_complete_reviewed_contract():
     from server.bootstrap.artifacts import load_manifest
 
-    manifest = load_manifest(str(_manifest(tmp_path)))
+    manifest = load_manifest("")
 
     assert manifest["ok"] is True
+    assert manifest["source"] == "default"
+    assert manifest["override_path"] is None
     assert set(REQUIRED) <= set(manifest["artifacts"])
 
 
-def test_artifact_manifest_rejects_missing_or_unreviewed_entries(tmp_path):
+def test_boot_needs_no_manifest_environment_variable(monkeypatch):
+    """The outage this replaced: an empty path used to fail the whole contract."""
+    from server.bootstrap import install
+    from server.bootstrap.artifacts import status
+
+    monkeypatch.delenv("ARTIFACT_MANIFEST_PATH", raising=False)
+
+    assert status("")["ok"] is True
+    assert install._artifact_contract().source == "default"
+
+
+def test_standalone_boot_reaches_every_step_without_a_manifest_path(monkeypatch):
+    """The outage: the contract gate used to error all seven steps at once."""
+    from server.bootstrap import install
+
+    monkeypatch.delenv("ARTIFACT_MANIFEST_PATH", raising=False)
+    monkeypatch.setattr(install.config, "omnigent_enabled", lambda: True)
+    for step, installer in (
+        ("node", "_install_node"),
+        ("claude", "_install_claude"),
+        ("codex", "_install_codex"),
+        ("databricks", "_install_databricks_cli"),
+        ("skills", "_install_skills"),
+        ("tmux", "_install_tmux"),
+        ("omnigent", "_install_omnigent"),
+    ):
+        monkeypatch.setattr(
+            install, installer, lambda step=step: install._set(step, "complete")
+        )
+    real_thread = install.threading.Thread
+
+    def thread(*args, **kwargs):
+        # Only the bootstrap thread runs inline; the installer pool still needs
+        # real workers.
+        if kwargs.get("name") == "bootstrap":
+            return _Immediate(kwargs["target"])
+        return real_thread(*args, **kwargs)
+
+    monkeypatch.setattr(install.threading, "Thread", thread)
+    with install._state_lock:
+        saved = dict(install._state)
+        install._state.clear()
+    try:
+        install.run_in_background()
+        steps = install.status()["steps"]
+    finally:
+        with install._state_lock:
+            install._state.clear()
+            install._state.update(saved)
+
+    assert {
+        name: steps[name]["status"]
+        for name in (
+            "node",
+            "claude",
+            "codex",
+            "databricks",
+            "skills",
+            "tmux",
+            "omnigent",
+        )
+    } == {
+        "node": "complete",
+        "claude": "complete",
+        "codex": "complete",
+        "databricks": "complete",
+        "skills": "complete",
+        "tmux": "complete",
+        "omnigent": "complete",
+    }
+
+
+class _Immediate:
+    """Run the bootstrap body inline so the assertions see a finished boot."""
+
+    def __init__(self, target):
+        self._target = target
+
+    def start(self):
+        self._target()
+
+
+def test_every_required_artifact_carries_a_pinned_https_or_repo_source():
+    from server.bootstrap.artifacts import load_manifest
+
+    artifacts = load_manifest("")["artifacts"]
+
+    for name in REQUIRED:
+        entry = artifacts[name]
+        assert entry["version"], name
+        source = entry["source"]
+        # Either a pinned https URL or a path resolved inside the repo's own
+        # assets directory; nothing may be left for an operator to stage.
+        assert source.startswith("https://") or "assets/artifacts" in source, name
+
+
+def test_archive_artifacts_declare_the_executable_inside_them():
+    from server.bootstrap.artifacts import ARCHIVE_ARTIFACTS, load_manifest
+
+    artifacts = load_manifest("")["artifacts"]
+
+    for name in ARCHIVE_ARTIFACTS:
+        assert artifacts[name]["kind"] == "archive"
+        relative = artifacts[name]["executable_relative_path"]
+        assert relative and not relative.startswith(("/", "../"))
+
+
+def test_override_may_redirect_a_source_to_a_mirror(tmp_path):
+    from server.bootstrap.artifacts import load_manifest
+
+    mirror = "https://mirror.internal.example/node-v22.14.0-linux-x64.tar.xz"
+    path = _override(tmp_path, {"node_linux_x64": {"source": mirror}})
+
+    manifest = load_manifest(str(path))
+
+    assert manifest["source"] == "override"
+    assert manifest["override_path"] == str(path)
+    assert manifest["artifacts"]["node_linux_x64"]["source"] == mirror
+    # Everything the override did not mention still comes from the repo.
+    assert manifest["artifacts"]["node_linux_arm64"]["sha256"] == load_manifest("")[
+        "artifacts"
+    ]["node_linux_arm64"]["sha256"]
+
+
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("version", "22.13.0"),
+        ("sha256", "d" * 64),
+    ],
+)
+def test_override_cannot_downgrade_a_version_or_checksum(tmp_path, field, value):
     from server.bootstrap.artifacts import ArtifactManifestError, load_manifest
 
-    path = _manifest(tmp_path)
-    payload = json.loads(path.read_text())
-    payload["reviewed"] = False
-    payload["artifacts"].pop("claude_installer")
-    path.write_text(json.dumps(payload))
+    path = _override(tmp_path, {"node_linux_x64": {field: value}})
+
+    with pytest.raises(ArtifactManifestError, match="only change source"):
+        load_manifest(str(path))
+
+
+def test_override_cannot_introduce_an_artifact_the_repo_does_not_review(tmp_path):
+    from server.bootstrap.artifacts import ArtifactManifestError, load_manifest
+
+    path = _override(tmp_path, {"rogue_tool": {"source": "https://example/x"}})
+
+    with pytest.raises(ArtifactManifestError, match="unknown artifact"):
+        load_manifest(str(path))
+
+
+def test_override_source_must_stay_https(tmp_path):
+    from server.bootstrap.artifacts import ArtifactManifestError, load_manifest
+
+    path = _override(
+        tmp_path, {"node_linux_x64": {"source": "http://mirror.example/node.tar.xz"}}
+    )
+
+    with pytest.raises(ArtifactManifestError, match="https"):
+        load_manifest(str(path))
+
+
+def test_unreadable_or_unreviewed_override_fails_closed(tmp_path):
+    from server.bootstrap.artifacts import ArtifactManifestError, load_manifest
+
+    unreviewed = tmp_path / "unreviewed.json"
+    unreviewed.write_text(json.dumps({
+        "schema_version": 1,
+        "reviewed": False,
+        "artifacts": {},
+    }))
 
     with pytest.raises(ArtifactManifestError):
-        load_manifest(str(path))
+        load_manifest(str(unreviewed))
+    with pytest.raises(ArtifactManifestError):
+        load_manifest(str(tmp_path / "absent.json"))
 
 
-def test_omnigent_manifest_rejects_unpinned_or_unhashed_lock(tmp_path):
-    from server.bootstrap.artifacts import ArtifactManifestError, load_manifest
+def test_committed_omnigent_lock_is_fully_pinned_and_hashed():
+    from server.bootstrap.artifacts import _fully_pinned_hashed_lock, load_manifest
 
-    path = _manifest(tmp_path)
-    payload = json.loads(path.read_text())
-    lock = tmp_path / "omnigent.lock"
-    lock.write_text("omnigent==0.5.1\ntransitive-package\n")
-    payload["artifacts"]["omnigent_lock"].update({
-        "source": str(lock),
-        "sha256": hashlib.sha256(lock.read_bytes()).hexdigest(),
-        "lock_sha256": hashlib.sha256(lock.read_bytes()).hexdigest(),
-    })
-    path.write_text(json.dumps(payload))
+    lock = load_manifest("")["artifacts"]["omnigent_lock"]
 
-    with pytest.raises(ArtifactManifestError, match="fully pinned"):
-        load_manifest(str(path))
+    assert lock["lock_sha256"] == lock["sha256"]
+    assert _fully_pinned_hashed_lock(lock["source"]) is True
+    assert (
+        hashlib.sha256(open(lock["source"], "rb").read()).hexdigest()
+        == lock["sha256"]
+    )
+
+
+def test_omnigent_lock_rejects_an_unpinned_or_unhashed_requirement(tmp_path):
+    from server.bootstrap.artifacts import _fully_pinned_hashed_lock
+
+    unpinned = tmp_path / "unpinned.lock"
+    unpinned.write_text("omnigent==0.7.0\ntransitive-package\n")
+    unhashed = tmp_path / "unhashed.lock"
+    unhashed.write_text("omnigent>=0.7.0 --hash=sha256:" + "d" * 64 + "\n")
+
+    assert _fully_pinned_hashed_lock(str(unpinned)) is False
+    assert _fully_pinned_hashed_lock(str(unhashed)) is False
+
+
+def test_skills_provenance_is_a_commit_and_content_digest():
+    from server.bootstrap import install
+    from server.bootstrap.artifacts import load_manifest
+
+    kit = load_manifest("")["artifacts"]["databricks_agent_skills"]
+
+    assert kit["version"] == install.SKILLS_REF
+    assert kit["source"] == install.SKILLS_REPO
+    assert len(kit["commit"]) == 40
+    assert len(kit["content_sha256"]) == 64
 
 
 def test_staged_artifact_is_verified_before_use_and_rejects_tampering(tmp_path):
     from server.bootstrap.artifacts import ArtifactManifest, ArtifactManifestError
 
-    path = _manifest(tmp_path)
-    payload = json.loads(path.read_text())
     artifact = tmp_path / "synthetic-claude-installer"
     artifact.write_bytes(b"reviewed installer")
-    payload["artifacts"]["claude_installer"].update({
-        "source": str(artifact),
-        "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
-    })
-    path.write_text(json.dumps(payload))
+    path = _override(tmp_path, {"claude_installer": {"source": str(artifact)}})
     contract = ArtifactManifest.from_path(str(path))
-
-    assert contract.verified_local_path("claude_installer") == str(artifact)
-    artifact.write_bytes(b"tampered")
+    # The override redirected the source but not the checksum, so the reviewed
+    # digest still governs: the substituted file is refused.
     with pytest.raises(ArtifactManifestError, match="checksum"):
         contract.verified_local_path("claude_installer")
+
+    vendored = ArtifactManifest.from_path("")
+    installer = vendored.verified_local_path("claude_installer")
+
+    assert installer.endswith("claude-code-bootstrap.sh")
 
 
 def test_bootstrap_never_pipes_unverified_network_content_to_an_interpreter():

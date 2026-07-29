@@ -69,13 +69,13 @@ def test_remote_url_rejects_non_https_outside_loopback_dev(monkeypatch):
     assert config.omnigent_app_url() == "http://127.0.0.1:6767"
 
 
-def test_remote_start_requires_normalized_configured_attendee(monkeypatch):
+def test_remote_start_rejects_malformed_but_tolerates_absent_attendee(monkeypatch):
+    """An absent hint must not fail startup, or self-binding never runs."""
     from server.omnigent_remote import RemoteHostManager
 
     monkeypatch.setenv("OMNIGENT_APP_URL", REMOTE_URL)
     monkeypatch.delenv("WORKSHOP_ATTENDEE_EMAIL", raising=False)
-    with pytest.raises(ValueError, match="WORKSHOP_ATTENDEE_EMAIL"):
-        RemoteHostManager().start()
+    RemoteHostManager().start()
 
     monkeypatch.setenv("WORKSHOP_ATTENDEE_EMAIL", "not-an-email")
     with pytest.raises(ValueError, match="WORKSHOP_ATTENDEE_EMAIL"):

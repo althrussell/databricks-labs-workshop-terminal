@@ -17,7 +17,7 @@ content), see [`admin-api.md`](./admin-api.md).
 | 2 | Require healthy direct app-SP OAuth after deploy (`source=app_identity_oauth`, recent `state=rotating`) | Databricks Apps injects auto-refreshing OAuth; no token ACL/PAT mint is needed | `/readyz` stays red and coding-agent launches return **503** |
 | 3 | Make the app SP a member of **`ADMIN_GROUP`** (default `platform_admins`) | SCIM group resolution + operator gating | Operator panel/admin API denied |
 | 4 | Set **`SESSION_STATE_PATH`** to a data-volume path | Terminals survive restart as relaunchable ghosts | Blank screen + client reconnect loop after any restart |
-| 5 | **Pin `AI_DEV_KIT_REF`** to a reviewed tag/SHA per event | Skills are fetched at every boot from a branch tip otherwise | Attendees run un-reviewed skills mid-event |
+| 5 | Nothing. Leave **`SKILLS_REF`** unset | The reviewed tag, commit, and content digest ship in the repo's own `assets/artifacts/manifest.json` | Setting a ref that the manifest does not pin fails the skills install closed |
 | 6 | Ingest the **`credential.health`** event (set `CONTROL_TOWER_INGEST_URL`/`_TOKEN`, `WORKSHOP_RUN_ID`) | Catch a bad grant hours/days ahead, not at T-0 | First sign of trouble is an attendee 503 on event day |
 | 7 | *(OBO opt-in)* Enable **user authorization** + set the app's **`user_api_scopes`** (`catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql`; no `unity-catalog` scope exists), admin-grant consent, restart, set `ENABLE_OBO=true` | Agent can read data **as the attendee** (governance-faithful UC), not as the SP | `databricks --profile me` empty/401; attendee sees the SP's catalogs, not theirs |
 | 8 | *(OBO opt-in)* Reuse a matching dedicated catalog when FEVM already provisioned it; otherwise create it. Ensure labuser OWNER + `ALL PRIVILEGES` + `MANAGE`; app SP catalog-scoped `MANAGE`, `USE_CATALOG`, `CREATE_SCHEMA`; pass **`WORKSHOP_CATALOG`** and set `ENABLE_ENTITLEMENTS=true` | Works without `CREATE CATALOG` entitlement while preserving exact scoped grants | Reconciliation cannot verify/reapply grants, or the labuser/app SP cannot use created objects |
@@ -83,9 +83,15 @@ The hard checks are:
 
 1. `topology`: shared topology is off and
    `MAX_SESSIONS_GLOBAL <= MAX_SESSIONS_PER_USER`.
-2. `attendee_identity`: `WORKSHOP_ATTENDEE_EMAIL` is present and valid. The
-   attendee routes enforce an exact normalized-email match; admin service
-   principals continue to use `ADMIN_GROUP` authorization.
+2. `attendee_identity`: a valid attendee identity is bound to the instance. The
+   check reports the binding `source`: `control-tower` when Control Tower
+   injected `WORKSHOP_ATTENDEE_EMAIL`, `self-bound` when the instance bound
+   itself to its first non-operator caller, or `unbound`. Attendee routes
+   enforce an exact normalized-email match against the binding regardless of
+   source; admin service principals continue to use `ADMIN_GROUP` authorization.
+   Injecting `WORKSHOP_ATTENDEE_EMAIL` remains strongly preferred, because
+   self-binding cannot distinguish the intended attendee from whoever opens the
+   app first.
 3. `credentials`: state is `rotating`, source is `app_identity_oauth`,
    `WORKSHOP_PAT` is absent, and successful OAuth validation occurred within the
    bounded freshness window. JWT expiry is tracked when inspectable; a stale
@@ -112,10 +118,10 @@ The hard checks are:
    JWT `scope`/`scp` claim. The profile must be present and fresh, and that scope
    observation must be no older than 300 seconds. Before a token is observed—or
    after it expires/goes stale—HTTP remains 503.
-10. `release_pins`: `AI_DEV_KIT_REF` is not a branch tip; exact Claude Code,
+10. `release_pins`: `SKILLS_REF` is not a branch tip; exact Claude Code,
    Codex CLI, Omnigent, Databricks CLI, Anthropic model, and Codex model pins
    are present; and every enabled installed CLI version equals its expected
-   value. Bootstrap also resolves the fetched `AI_DEV_KIT_REF` to a commit,
+   value. Bootstrap also resolves the fetched `SKILLS_REF` to a commit,
    checksums installed content, and records source `network` or `prewarmed`.
    A vendored fallback keeps the app usable after a network failure but never
    claims the configured ref was installed and keeps readiness red.
@@ -184,7 +190,7 @@ take effect on restart with **no rebuild**. Set these per instance:
 | `SESSION_STATE_PATH` | `/app/python/source_code/data/sessions.json` | metadata-only restart recovery (item 4); raw terminal output remains in memory |
 | `WORKSHOP_ATTENDEE_EMAIL` | the attendee email assigned to this instance | fail-closed attendee identity binding; required by `/readyz` |
 | `WORKSHOP_APP_SP_ID` | numeric `service_principal_id` from app create/get | authoritative SCIM `/Me` app binding; patch the uploaded `app.yaml` after app creation and before deploy |
-| `AI_DEV_KIT_REF` | a reviewed **tag or commit SHA** | freeze skills per event (item 5) |
+| `SKILLS_REF` | leave unset | the reviewed tag ships in `assets/artifacts/manifest.json` (item 5) |
 | `CLAUDE_CODE_VERSION` | `2.1.216` release candidate | reviewed Claude Code CLI release |
 | `CODEX_CLI_VERSION` | `0.144.6` release candidate | reviewed Codex CLI release |
 | `OMNIGENT_VERSION` | `0.7.0` release candidate | reviewed Omnigent release matched to the dedicated App protocol |
@@ -389,20 +395,23 @@ can `SELECT` the table and the labuser has `CAN_MANAGE` on the app/instance
 
 ## 10. Prewarm and two-instance verification contract
 
-Prewarm each app once against its persistent data volume before event doors.
-Before deployment, CT stages every local path referenced by the reviewed
-`ARTIFACT_MANIFEST_PATH` contract. For Codex this includes separate npm
-launcher and platform-native package tarballs plus the expected installed
-native executable checksum. For Omnigent this includes the uv binary, exact
-Python 3.12 runtime tree, complete wheelhouse, and fully pinned transitive lock
-with hashes. Reuse verifies the complete installed venv and runtime tree, not
-only their launchers. No Omnigent input may be a URL; runtime uses `UV_OFFLINE=1`,
-`UV_NO_INDEX=1`, `UV_PYTHON_DOWNLOADS=never`, and `--require-hashes`.
+Prewarm each app once against its persistent data volume before event doors. CT
+stages nothing: the reviewed contract ships in the terminal image at
+`assets/artifacts/manifest.json`, pinning a source and SHA-256 for every
+artifact, including the separate Codex npm launcher and platform-native package
+tarballs plus the expected installed native executable checksum, and for Omnigent
+the uv archive, the Python 3.12 archive, and the in-repo fully pinned transitive
+lock with hashes. Reuse verifies the complete installed venv and runtime, not
+only their launchers. Omnigent runs with `UV_PYTHON_DOWNLOADS=never` and
+`--require-hashes`, so no unpinned wheel can enter the venv.
+`ARTIFACT_MANIFEST_PATH` is optional and may redirect `source` only; a manifest
+that tries to change a version or checksum is rejected, and `/readyz` reports
+whether the default or an override is in force.
 
 Bootstrap records each step's `source` (`prewarmed`, `cache`, or `staged`),
 start/completion timestamps, duration, and expected/actual
 version/ref/checksum in attendee-scoped `GET /api/setup-status` and
-admin-bearer-compatible `GET /api/admin/setup-status`. The ai-dev-kit overlay is
+admin-bearer-compatible `GET /api/admin/setup-status`. The skills overlay is
 reused only when its persistent stamp binds the configured repository + pinned
 ref to a resolved commit and both the checkout and installed skill content
 match the recorded checksum. A missing/tampered stamp, checkout, or installed
@@ -411,7 +420,7 @@ overlay forces a fresh reviewed refresh. Vendored fallback remains visible as
 
 `GET /api/admin/prewarm-status` independently re-verifies persistent on-disk
 binaries, exact versions, separate Codex launcher/native stamps, tmux checksum
-stamp, Omnigent uv/Python/wheelhouse/lock/binary stamp, and ai-dev-kit
+stamp, Omnigent uv/Python/lock/binary stamp, and skills
 ref/resolved-commit/content checksum. It does not trust the current process's
 installer state or the initial `network`/`prewarmed` source. Shared-prefix
 mutation is serialized by a cross-process file lock; skills are assembled in a
@@ -444,7 +453,7 @@ Alternatively pass `--manifest inventory.json`. Exactly two apps are required:
 The helper waits for `/readyz`, `/api/admin/setup-status`, and
 `/api/admin/prewarm-status`; requires reusable on-disk proof; and compares the
 complete canonical release and prewarm manifests across both instances,
-including identical resolved ai-dev-kit commits and checksums. Initial
+including identical resolved skills commits and checksums. Initial
 `network` versus restart `prewarmed` provenance does not create drift. It prints
 one stable JSON object and exits `0` only when both apps are ready and identical
 (`1` not ready/timeout/mismatch, `2` invalid input). It never prints bearer

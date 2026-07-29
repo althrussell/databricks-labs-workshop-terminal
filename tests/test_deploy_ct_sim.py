@@ -16,7 +16,7 @@ def _valid_argv():
     return [
         "--profile", "event-profile",
         "--attendee", "attendee@example.com",
-        "--ai-dev-kit-ref", "v1.2.3",
+        "--skills-ref", "v1.2.3",
         "--anthropic-model", "databricks-claude-sonnet-5",
         "--codex-model", "databricks-gpt-5-6-codex",
     ]
@@ -34,7 +34,7 @@ def test_uploaded_yaml_patch_sets_current_event_contract_without_mutating_repo()
         catalog="event_catalog",
         scopes="catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql",
         admin_group="event_admins",
-        ai_dev_kit_ref="v1.2.3",
+        skills_ref="v1.2.3",
         anthropic_model="databricks-claude-sonnet-5",
         codex_model="databricks-gpt-5-6-codex",
         claude_code_version="2.1.216",
@@ -130,7 +130,7 @@ def test_parser_defaults_to_no_static_pat():
     args = deploy_ct_sim._parse_args([
         "--profile", "event-profile",
         "--attendee", "attendee@example.com",
-        "--ai-dev-kit-ref", "v1.2.3",
+        "--skills-ref", "v1.2.3",
         "--anthropic-model", "databricks-claude-sonnet-5",
         "--codex-model", "databricks-gpt-5-6-codex",
     ])
@@ -228,9 +228,9 @@ def test_existing_catalog_rejects_missing_api_metadata_even_with_provenance():
         " v1.2.3",
     ],
 )
-def test_ai_dev_kit_ref_rejects_mutable_or_nonconforming_refs(ref):
+def test_skills_ref_rejects_mutable_or_nonconforming_refs(ref):
     argv = _valid_argv()
-    argv[argv.index("--ai-dev-kit-ref") + 1] = ref
+    argv[argv.index("--skills-ref") + 1] = ref
 
     with pytest.raises(SystemExit):
         deploy_ct_sim._parse_args(argv)
@@ -245,11 +245,11 @@ def test_ai_dev_kit_ref_rejects_mutable_or_nonconforming_refs(ref):
         "v1.2.3-rc.1+event.5",
     ],
 )
-def test_ai_dev_kit_ref_accepts_only_full_sha_or_strict_version_tag(ref):
+def test_skills_ref_accepts_only_full_sha_or_strict_version_tag(ref):
     argv = _valid_argv()
-    argv[argv.index("--ai-dev-kit-ref") + 1] = ref
+    argv[argv.index("--skills-ref") + 1] = ref
 
-    assert deploy_ct_sim._parse_args(argv).ai_dev_kit_ref == ref
+    assert deploy_ct_sim._parse_args(argv).skills_ref == ref
 
 
 @pytest.mark.parametrize(
@@ -336,7 +336,7 @@ def test_event_mode_rejects_disabled_required_features(flag):
         deploy_ct_sim._parse_args([
             "--profile", "event-profile",
             "--attendee", "attendee@example.com",
-            "--ai-dev-kit-ref", "v1.2.3",
+            "--skills-ref", "v1.2.3",
             "--anthropic-model", "databricks-claude-sonnet-5",
             "--codex-model", "databricks-gpt-5-6-codex",
             flag,
@@ -345,7 +345,7 @@ def test_event_mode_rejects_disabled_required_features(flag):
     args = deploy_ct_sim._parse_args([
         "--profile", "event-profile",
         "--attendee", "attendee@example.com",
-        "--ai-dev-kit-ref", "v1.2.3",
+        "--skills-ref", "v1.2.3",
         "--anthropic-model", "databricks-claude-sonnet-5",
         "--codex-model", "databricks-gpt-5-6-codex",
         "--non-event-mode",
@@ -360,7 +360,7 @@ def test_event_mode_requires_all_baseline_obo_scopes_and_allows_extras():
         deploy_ct_sim._parse_args([
             "--profile", "event-profile",
             "--attendee", "attendee@example.com",
-            "--ai-dev-kit-ref", "v1.2.3",
+            "--skills-ref", "v1.2.3",
             "--anthropic-model", "databricks-claude-sonnet-5",
             "--codex-model", "databricks-gpt-5-6-codex",
             "--scopes", missing_sql,
@@ -387,7 +387,7 @@ def test_event_mode_requires_all_baseline_obo_scopes_and_allows_extras():
 def test_profile_is_required_or_loaded_from_environment():
     base = [
         "--attendee", "attendee@example.com",
-        "--ai-dev-kit-ref", "v1.2.3",
+        "--skills-ref", "v1.2.3",
         "--anthropic-model", "databricks-claude-sonnet-5",
         "--codex-model", "databricks-gpt-5-6-codex",
     ]
@@ -890,7 +890,7 @@ def test_real_main_dry_run_never_imports_or_calls_databricks_api(monkeypatch, ca
         "--dry-run",
         "--profile", "event-profile",
         "--attendee", "attendee@example.com",
-        "--ai-dev-kit-ref", "v1.2.3",
+        "--skills-ref", "v1.2.3",
         "--anthropic-model", "databricks-claude-sonnet-5",
         "--codex-model", "databricks-gpt-5-6-codex",
     ])

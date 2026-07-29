@@ -264,9 +264,9 @@ python scripts/push_content.py presence
 | `ADMIN_GROUP` | `platform_admins` | Group that grants operator/admin access |
 | `LAB_COACH` | `true` | Append lab-coach instructions to attendee agent memory |
 | `TOPIC_DETECTION` | `true` | Terminal keyword spotting for contextual insights |
-| `AI_DEV_KIT_REPO` | github databricks-solutions/ai-dev-kit | Skills source; event use is constrained by the reviewed artifact manifest |
-| `AI_DEV_KIT_REF` | empty in `app.yaml` | Exact reviewed tag/SHA for the skills overlay; must match the manifest ref, commit, and content SHA-256 |
-| `ARTIFACT_MANIFEST_PATH` | empty | Required CT-supplied reviewed installer/archive/package contract; missing, partial, or unverifiable manifests keep `/readyz` red |
+| `SKILLS_REPO` | github databricks/databricks-agent-skills | Skills source; event use is constrained by the reviewed artifact manifest |
+| `SKILLS_REF` | empty in `app.yaml` | Exact reviewed tag/SHA for the skills overlay; must match the manifest ref, commit, and content SHA-256 |
+| `ARTIFACT_MANIFEST_PATH` | empty | Optional mirror override for the repo-owned contract in `assets/artifacts/manifest.json`; may redirect `source` only, and a version/checksum override is rejected |
 | `CLAUDE_CODE_VERSION` | `2.1.216` in `app.yaml` | Exact reviewed Claude Code CLI release candidate |
 | `CODEX_CLI_VERSION` | `0.144.6` in `app.yaml` | Exact reviewed Codex CLI release candidate |
 | `OMNIGENT_VERSION` | `0.7.0` in `app.yaml` | Exact reviewed Omnigent release candidate, matched to the dedicated App protocol |

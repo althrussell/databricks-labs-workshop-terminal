@@ -40,11 +40,12 @@ Prescriptive setup steps, including:
 workshop-init-project <project-name>
 cd ~/projects/<project-name>
 
-# 2. Scaffold the AppKit application
-databricks apps init
+# 2. Scaffold the AppKit application (state the real --features plugins used)
+databricks apps manifest
+databricks apps init --name <app-name> --features <plugin1>,<plugin2>
 
-# 3. Install backend dependencies
-pip install -r requirements.txt
+# 3. Install dependencies
+npm install
 ```
 
 Include any additional setup specific to this project (Lakebase provisioning,
@@ -54,10 +55,10 @@ Unity Catalog object creation, serving endpoint configuration).
 
 ### Section 3: Tech Stack (prescriptive — leave nothing for the agent to choose)
 
-- **Frontend:** AppKit — React + Vite + TypeScript. Scaffold with `databricks apps init`.
-  Apply UX defaults from the `databricks-apps-python` skill's `7-appkit-ux.md`.
+- **Frontend:** AppKit — Node.js + TypeScript + React. Scaffold per the
+  `databricks-apps` skill; apply the data-UI decisions from `databricks-app-design`.
   Do NOT use Streamlit, Dash, Gradio, Flask, FastAPI UI, or any Python web framework.
-- **Backend:** Python + FastAPI (or state the actual framework from the session)
+- **Backend:** AppKit Express server routes (or state the actual backend from the session)
 - **Database:** <Lakebase (managed Postgres) / Delta tables / Volume — state which and why>
 - **Deployment:** Databricks Apps. Provide the exact `app.yaml` content.
 - **Other Databricks services:** list every service used (Model Serving endpoint name,
@@ -184,11 +185,12 @@ and which must be set in `app.yaml`.
 ### Section 9: Build Sequence (do this in order to avoid dependency errors)
 
 1. Provision Unity Catalog objects first (catalog/schema/tables/volumes/grants)
-2. Provision Lakebase instance if needed (`databricks-lakebase-provisioned` skill)
-3. Implement and test backend API (unit tests + integration tests)
+2. Provision Lakebase instance if needed (`databricks-lakebase` skill)
+3. Implement and test backend routes (unit tests + integration tests)
 4. Implement frontend (component by component, starting with data display)
 5. Wire frontend to backend (API calls, auth headers, error handling)
-6. Run full test suite: `pytest tests/` and `npx tsc --noEmit`
+6. Update `tests/smoke.spec.ts` selectors to match the real UI, then run
+   `databricks apps validate` (runs `appkit lint`, `tsc --noEmit`, smoke test)
 7. Deploy: `databricks apps deploy <app-name> --source-code-path <workspace-path>`
 8. Verify the live URL serves correct content for each persona
 
@@ -196,8 +198,9 @@ and which must be set in `app.yaml`.
 
 ### Section 10: Quality Gates (must pass before build is complete)
 
-- `pytest tests/` — all tests pass, no skips
-- `npx tsc --noEmit` — zero TypeScript errors
+- `databricks apps validate` — green: `appkit lint` clean (no
+  `as unknown as <T>` double assertions), `tsc --noEmit` zero errors, and the
+  Playwright smoke test passing against the app's real selectors
 - `databricks apps list` — app shows status RUNNING
 - Manual smoke test: log in as each user persona and complete their primary workflow
 - Verify Unity Catalog data appears correctly in Catalog Explorer

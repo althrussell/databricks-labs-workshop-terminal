@@ -1,8 +1,8 @@
 """Write per-user CLI configs (claude / codex / databricks CLI).
 
-Adapted from CoDA's setup_claude.py / setup_codex.py / cli_auth.py, but
-parameterized by user HOME: each attendee gets their own config files under
-their own home directory, fed by the app's auto-refreshing OAuth bearer.
+Everything here is parameterized by user HOME: each attendee gets their own
+config files under their own home directory, fed by the app's auto-refreshing
+OAuth bearer.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ _gateway_lock = threading.Lock()
 _gateway_resolved: str | None = None  # None = never probed; "" = no gateway
 
 
-# -- gateway / model discovery (CoDA utils.py port) --
+# -- gateway / model discovery --
 
 def _probe(url: str) -> bool:
     try:

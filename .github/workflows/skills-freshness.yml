@@ -1,0 +1,115 @@
+name: Skills freshness
+
+# The vendored assets/skills tree is the offline fallback for the boot-time
+# overlay, so it must stay byte-identical to the reviewed skills release. Nothing
+# in a pull request can detect drift between the committed fallback and the
+# upstream tag, because upstream moves on its own schedule -- hence a cron.
+on:
+  schedule:
+    # Mondays 06:00 UTC, before the working week picks up an event build.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  fallback-drift:
+    name: vendored fallback matches the reviewed ref
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      # Clones the manifest's pinned commit, verifies the clone against the
+      # reviewed digest, then diffs it against assets/skills.
+      - name: Check vendored fallback
+        run: python3 scripts/refresh_vendored_skills.py --check
+      - name: Check offline provenance guards
+        run: python -m pytest tests/test_skills_provenance.py -q
+
+  artifact-manifest:
+    name: reviewed manifest matches upstream checksums
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      # Re-derives every artifact checksum from its upstream source. A failure
+      # here means either a mirror changed a published artifact or the committed
+      # manifest was hand-edited.
+      - name: Check artifact manifest
+        run: python3 scripts/build_artifact_manifest.py --check
+
+  new-release:
+    name: flag a newer skills release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compare the pinned ref against the newest upstream release
+        id: compare
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          pinned="$(python3 -c 'import json; print(json.load(open("assets/artifacts/manifest.json"))["artifacts"]["databricks_agent_skills"]["version"])')"
+          latest="$(gh release view --repo databricks/databricks-agent-skills --json tagName --jq .tagName)"
+          echo "pinned=$pinned" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          if [ "$pinned" = "$latest" ]; then
+            echo "up to date on $pinned"
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "pinned $pinned, upstream is $latest"
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          fi
+      # One open issue per upstream version: the title carries the version, so a
+      # weekly run does not reopen or duplicate a bump already being worked.
+      - name: Open a bump issue
+        if: steps.compare.outputs.stale == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PINNED: ${{ steps.compare.outputs.pinned }}
+          LATEST: ${{ steps.compare.outputs.latest }}
+        run: |
+          set -euo pipefail
+          title="Skills: bump databricks-agent-skills to ${LATEST}"
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "$title in:title" --json number --jq 'length')"
+          if [ "$existing" != "0" ]; then
+            echo "issue already open for ${LATEST}"
+            exit 0
+          fi
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$(cat <<EOF
+          The workshop pins \`${PINNED}\`; upstream released \`${LATEST}\`.
+
+          Attendees should build on the current Databricks skills, so this needs a
+          bump before the next event. Three things must move together or boot
+          fails closed — use the \`refresh-databricks-skills\` skill, which walks
+          the whole sequence:
+
+          1. \`SKILLS_REF\` in \`server/bootstrap/install.py\`
+          2. \`python3 scripts/build_artifact_manifest.py --write\`
+          3. \`python3 scripts/refresh_vendored_skills.py --write\`
+
+          Then update \`assets/skills/SKILLS_SOURCE.md\` and check the release
+          notes for renamed or dropped skills — a rename leaves the mandate files
+          in \`assets/instructions/\` pointing at a skill that no longer exists,
+          which an agent hits as silence rather than an error.
+
+          Release notes: https://github.com/databricks/databricks-agent-skills/releases/tag/${LATEST}
+          EOF
+          )"
