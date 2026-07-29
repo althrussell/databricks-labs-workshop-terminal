@@ -12,4 +12,11 @@
 # words describing them. No real credential -- the surrounding prose tells the
 # reader to keep the real URL in an untracked .env and to use OAuth token
 # refresh in production.
+#
+# Two entries for one finding, because the two hooks fingerprint differently:
+# pre-commit runs `gitleaks protect --staged` (path-scoped) and pre-push runs
+# `gitleaks detect` (commit-scoped). The commit-scoped entry is tied to the SHA
+# that introduced the file and only matters while this branch is unmerged;
+# regenerate it with `gitleaks detect --log-opts "-p -1 <sha>"` after a rebase.
 assets/skills/databricks-lakebase/references/connectivity.md:postgres-connection-string:85
+ccf4f2607053962e5b6268c30a67a7cab47db532:assets/skills/databricks-lakebase/references/connectivity.md:postgres-connection-string:85
