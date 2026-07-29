@@ -14,6 +14,7 @@ import tempfile
 import threading
 import time
 import traceback
+from datetime import datetime, timezone
 from pathlib import Path
 
 from volume_probe import probe_artifact_volume
@@ -24,9 +25,39 @@ logger = logging.getLogger("omnigent-workshop-app")
 if sys.version_info < (3, 12):
     raise RuntimeError("Omnigent 0.7.0 requires Python 3.12 or newer")
 
+# Fallback lifetime when the credential response carries no usable expiry.
 _TOKEN_TTL_SECONDS = 50 * 60
+# Renew this far ahead of the reported expiry so an in-flight connect cannot
+# present a credential that expires mid-handshake.
+_TOKEN_RENEW_MARGIN_SECONDS = 5 * 60
 _token_cache: dict[str, tuple[str, float]] = {}
 _token_cache_lock = threading.Lock()
+
+
+def _cache_ttl(expiration_time: str | None) -> float:
+    """Seconds to trust a Lakebase credential, honoring its reported expiry.
+
+    ``expiration_time`` is an optional ISO-8601 instant. A missing or malformed
+    value falls back to the fixed lifetime; a credential already inside the
+    renewal margin returns 0 so it is used once and never cached. Reading the
+    real expiry keeps a shortened credential from silently breaking every later
+    connection.
+    """
+    if not expiration_time:
+        return _TOKEN_TTL_SECONDS
+    try:
+        expires_at = datetime.fromisoformat(expiration_time.replace("Z", "+00:00"))
+    except ValueError:
+        logger.warning("Unparseable Lakebase credential expiry; using fixed TTL")
+        return _TOKEN_TTL_SECONDS
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    remaining = (
+        expires_at - datetime.now(timezone.utc)
+    ).total_seconds() - _TOKEN_RENEW_MARGIN_SECONDS
+    if remaining <= 0:
+        return 0.0
+    return min(remaining, _TOKEN_TTL_SECONDS)
 
 
 try:
@@ -82,8 +113,13 @@ try:
         )
         if credential.token is None:
             raise RuntimeError("Lakebase credential response did not include a token")
+        ttl = _cache_ttl(getattr(credential, "expiration_time", None))
         with _token_cache_lock:
-            _token_cache[endpoint] = (credential.token, now + _TOKEN_TTL_SECONDS)
+            if ttl > 0:
+                _token_cache[endpoint] = (credential.token, now + ttl)
+            else:
+                # Already inside the renewal margin: use it once, never cache it.
+                _token_cache.pop(endpoint, None)
         return credential.token
 
     @sqlalchemy.event.listens_for(sqlalchemy.engine.Engine, "do_connect")

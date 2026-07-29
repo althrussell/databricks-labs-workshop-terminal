@@ -211,12 +211,17 @@ def _principal_from_headers(headers) -> Principal:
 
 
 def _check_access(principal: Principal) -> None:
-    attendee = config.workshop_attendee_email()
-    if (
-        attendee
-        and principal.name != attendee
-        and not config.allow_shared_topology()
-    ):
+    try:
+        attendee = config.workshop_attendee_email()
+        remote = config.omnigent_remote_enabled()
+    except ValueError as exc:
+        # A misconfigured remote instance must fail closed, not surface a 500.
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    # Remote mode mirrors one attendee's OBO token under a shared Unix uid, so
+    # the configured owner is enforced even where shared topology was
+    # acknowledged for a trusted group.
+    shared_ok = config.allow_shared_topology() and not remote
+    if attendee and principal.name != attendee and not shared_ok:
         raise HTTPException(
             status_code=403,
             detail=(
@@ -245,29 +250,10 @@ def _capture_obo(principal: Principal) -> None:
         pass
 
 
-def _bind_remote_attendee(principal: Principal) -> None:
-    """Enforce single-attendee ownership before any HOME or OBO write."""
-    from . import topology
-
-    if (
-        config.omnigent_remote_enabled()
-        and principal.name != config.workshop_attendee_email()
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail="This Workshop Terminal is assigned to another attendee",
-        )
-    try:
-        topology.attendee_binding.bind(principal.name)
-    except topology.AttendeeBindingConflict as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-
-
 def get_current_user(request: Request) -> Principal:
     """FastAPI dependency: identify + authorize the attendee for any route."""
     principal = _principal_from_headers(request.headers)
     _check_access(principal)
-    _bind_remote_attendee(principal)
     _capture_obo(principal)
     return principal
 
@@ -285,7 +271,6 @@ async def get_ws_user(websocket: WebSocket) -> Principal | None:
     try:
         principal = _principal_from_headers(websocket.headers)
         _check_access(principal)
-        _bind_remote_attendee(principal)
         _capture_obo(principal)
         return principal
     except HTTPException:

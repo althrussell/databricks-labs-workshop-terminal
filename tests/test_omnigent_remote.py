@@ -27,7 +27,6 @@ def _single_attendee_topology(monkeypatch, tmp_path):
     monkeypatch.setenv("MAX_SESSIONS_PER_USER", "3")
     monkeypatch.setenv("WORKSHOP_ATTENDEE_EMAIL", "alice@example.com")
     monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
-    monkeypatch.setattr(topology, "attendee_binding", topology.AttendeeBinding())
 
 
 def _wait_for(predicate, timeout: float = 1.0) -> None:
@@ -83,25 +82,81 @@ def test_remote_start_requires_normalized_configured_attendee(monkeypatch):
         RemoteHostManager().start()
 
 
-def test_configured_attendee_survives_binding_marker_loss_and_restart(
+def test_remote_attendee_enforced_despite_shared_topology_optin(
     client, monkeypatch, tmp_path
 ):
-    from server import config, topology
+    """ALLOW_SHARED_TOPOLOGY must not open a remote instance to a second attendee."""
+    from server import config
 
     monkeypatch.setenv("OMNIGENT_APP_URL", REMOTE_URL)
     monkeypatch.setenv("WORKSHOP_ATTENDEE_EMAIL", "Alice@Example.COM")
+    monkeypatch.setenv("ALLOW_SHARED_TOPOLOGY", "true")
     monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
-    first = topology.AttendeeBinding()
-    assert first.bind("alice@example.com") == "alice@example.com"
 
-    marker, _ = first._paths()
-    marker.unlink(missing_ok=True)
-    restarted = topology.AttendeeBinding()
+    assert (
+        client.get(
+            "/api/config", headers={"X-Forwarded-Email": "alice@example.com"}
+        ).status_code
+        == 200
+    )
+    response = client.get(
+        "/api/config", headers={"X-Forwarded-Email": "bob@example.com"}
+    )
 
-    assert restarted.require_bound("alice@example.com") == "alice@example.com"
-    with pytest.raises(topology.AttendeeBindingConflict):
-        restarted.bind("bob@example.com")
-    assert not marker.exists()
+    assert response.status_code == 403
+    assert "assigned to alice@example.com" in response.json()["detail"]
+
+
+def test_misconfigured_remote_instance_fails_closed(client, monkeypatch):
+    """A malformed remote URL denies access rather than surfacing a 500."""
+    monkeypatch.setenv("OMNIGENT_APP_URL", "http://omnigent.example.com")
+
+    response = client.get(
+        "/api/config", headers={"X-Forwarded-Email": "alice@example.com"}
+    )
+
+    assert response.status_code == 403
+    assert "https" in response.json()["detail"]
+
+
+def test_only_configured_attendee_admitted_under_concurrency(
+    client, monkeypatch, tmp_path
+):
+    from server import config, obo
+    from server.users import UserManager
+
+    monkeypatch.setenv("OMNIGENT_APP_URL", REMOTE_URL)
+    monkeypatch.setenv("WORKSHOP_ATTENDEE_EMAIL", "attendee-7@example.com")
+    monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
+    users = UserManager()
+    monkeypatch.setattr("server.users.user_manager", users)
+    monkeypatch.setattr(obo, "_notify_remote_host", lambda email: None)
+
+    barrier = threading.Barrier(12)
+    outcomes: list[tuple[str, int]] = []
+    lock = threading.Lock()
+
+    def attempt(email: str) -> None:
+        barrier.wait()
+        code = client.get(
+            "/api/config", headers={"X-Forwarded-Email": email}
+        ).status_code
+        with lock:
+            outcomes.append((email, code))
+
+    threads = [
+        threading.Thread(target=attempt, args=(f"attendee-{index}@example.com",))
+        for index in range(12)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    admitted = [email for email, code in outcomes if code == 200]
+    assert admitted == ["attendee-7@example.com"]
+    assert len(outcomes) == 12
+    assert users.peek("attendee-3@example.com") is None
 
 
 def test_wrong_configured_attendee_rejected_before_home_or_obo_write(
@@ -116,7 +171,6 @@ def test_wrong_configured_attendee_rejected_before_home_or_obo_write(
     users = UserManager()
     monkeypatch.setattr("server.users.user_manager", users)
     monkeypatch.setattr(obo, "_notify_remote_host", lambda email: None)
-    monkeypatch.setattr(topology, "attendee_binding", topology.AttendeeBinding())
 
     response = client.get(
         "/api/config",
@@ -488,6 +542,63 @@ def test_one_host_process_per_attendee_under_concurrent_notifications(
     hosts.stop()
 
 
+def test_first_notify_survives_reentrant_deferred_obo_flush(monkeypatch, tmp_path):
+    """A deferred OBO flush re-enters notify(); _lock must not be held."""
+    from server import config, obo
+    from server.omnigent_remote import RemoteHostManager
+    from server.users import UserManager
+
+    monkeypatch.setenv("OMNIGENT_APP_URL", REMOTE_URL)
+    monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
+    users = UserManager()
+    monkeypatch.setattr("server.users.user_manager", users)
+    manager = obo.OboManager()
+    monkeypatch.setattr(obo, "obo_manager", manager)
+
+    hosts = RemoteHostManager(
+        user_manager=users,
+        binary_resolver=lambda: None,
+        poll_interval=0.01,
+        shutdown_timeout=0.1,
+    )
+    # _notify_remote_host resolves the module singleton at call time, so the
+    # deferred flush inside UserManager.get() re-enters *this* manager.
+    monkeypatch.setattr("server.omnigent_remote.remote_host_manager", hosts)
+
+    now = time.time()
+    written = make_jwt(now + 1800, iat=now - 10)
+    held = make_jwt(now + 3600, iat=now)
+    users.get("alice@example.com")
+    manager.capture("alice@example.com", written)
+
+    # A newer capture that has not reached disk yet: the nested
+    # UserManager.get() will take the user_ready() -> _write_user() ->
+    # _notify_remote_host() path while the outer notify() is still in flight.
+    with manager._lock:
+        record = manager._by_email["alice@example.com"]
+        record.token = held
+        record.iat, record.exp = now, now + 3600
+        record.written_token = written
+
+    hosts.start()
+    returned = threading.Event()
+
+    def first_notify():
+        try:
+            hosts.notify("alice@example.com")
+        finally:
+            returned.set()
+
+    worker = threading.Thread(target=first_notify, daemon=True)
+    worker.start()
+    assert returned.wait(timeout=10), "notify() re-acquired _lock on one thread"
+
+    # Both frames must converge on a single host and a single worker thread.
+    with hosts._lock:
+        assert list(hosts._hosts) == ["alice@example.com"]
+    hosts.stop()
+
+
 def test_distinct_attendees_use_distinct_homes(monkeypatch, tmp_path):
     from server import config
     from server.omnigent_remote import build_host_launch
@@ -714,7 +825,6 @@ def test_config_api_exposes_only_remote_url_and_sanitized_status(client, monkeyp
 
     status = client.get("/api/omnigent-host", headers=ALICE)
     assert status.status_code == 200
-    assert status.json()["instance_binding"] == "bound"
     assert status.json()["status"] in {
         "disabled",
         "waiting_for_token",
@@ -873,7 +983,6 @@ def test_second_remote_attendee_is_rejected_before_home_or_obo_write(
     users = UserManager()
     monkeypatch.setattr("server.users.user_manager", users)
     monkeypatch.setattr(obo, "_notify_remote_host", lambda email: None)
-    monkeypatch.setattr(topology, "attendee_binding", topology.AttendeeBinding())
 
     alice = {
         "X-Forwarded-Email": "alice@example.com",
@@ -904,7 +1013,6 @@ def test_remote_obo_refresh_cannot_create_or_switch_attendee_binding(
     users = UserManager()
     monkeypatch.setattr("server.users.user_manager", users)
     monkeypatch.setattr(obo, "_notify_remote_host", lambda email: None)
-    monkeypatch.setattr(topology, "attendee_binding", topology.AttendeeBinding())
 
     unbound = client.post("/api/obo/refresh", json={"email": "bob@example.com"})
     assert unbound.status_code == 403
@@ -930,7 +1038,6 @@ def test_forwarded_obo_refresh_applies_attendee_authorization(client, monkeypatc
     from server import topology
 
     monkeypatch.setenv("OMNIGENT_APP_URL", REMOTE_URL)
-    monkeypatch.setattr(topology, "attendee_binding", topology.AttendeeBinding())
     monkeypatch.setattr(
         "server.auth._check_access",
         lambda principal: (_ for _ in ()).throw(
@@ -948,7 +1055,6 @@ def test_forwarded_obo_refresh_applies_attendee_authorization(client, monkeypatc
     )
 
     assert response.status_code == 403
-    assert topology.attendee_binding.status()["status"] == "bound"
 
 
 def test_local_mode_preserves_instance_attendee_binding(
@@ -957,7 +1063,6 @@ def test_local_mode_preserves_instance_attendee_binding(
     from server import topology
 
     monkeypatch.delenv("OMNIGENT_APP_URL", raising=False)
-    monkeypatch.setattr(topology, "attendee_binding", topology.AttendeeBinding())
 
     assert (
         client.get(

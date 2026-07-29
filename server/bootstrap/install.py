@@ -45,21 +45,6 @@ CLAUDE_INSTALLER_URL = os.environ.get(
 )
 # Omnigent event installs are always fully offline: reviewed uv and Python
 # executables, wheelhouse, and a fully hashed transitive lock.
-
-
-def validate_remote_compatibility() -> None:
-    """Fail fast when remote mode cannot guarantee the 0.7.0 protocol."""
-    if not config.omnigent_app_url():
-        return
-    if not config.omnigent_enabled():
-        raise ValueError(
-            "OMNIGENT_APP_URL requires OMNIGENT_ENABLED=true"
-        )
-    if OMNIGENT_VERSION != OMNIGENT_PROTOCOL_VERSION:
-        raise ValueError(
-            "Remote Omnigent requires an exact protocol-compatible 0.7.0 "
-            f"install, got {OMNIGENT_VERSION!r}"
-        )
 # Omnigent's claude/codex wrappers hard-require tmux and the Apps runtime has
 # no package manager — install a fully static musl build into the shared bin.
 TMUX_STATIC_URL = os.environ.get("TMUX_STATIC_URL", "").strip() or (
@@ -83,6 +68,19 @@ _ASSETS_SKILLS = os.path.normpath(
 
 _state_lock = threading.Lock()
 _state: dict[str, dict] = {}
+
+
+def validate_remote_compatibility() -> None:
+    """Fail fast when remote mode cannot guarantee the 0.7.0 protocol."""
+    if not config.omnigent_app_url():
+        return
+    if not config.omnigent_enabled():
+        raise ValueError("OMNIGENT_APP_URL requires OMNIGENT_ENABLED=true")
+    if OMNIGENT_VERSION != OMNIGENT_PROTOCOL_VERSION:
+        raise ValueError(
+            "Remote Omnigent requires an exact protocol-compatible 0.7.0 "
+            f"install, got {OMNIGENT_VERSION!r}"
+        )
 
 
 def _artifact_contract() -> ArtifactManifest:

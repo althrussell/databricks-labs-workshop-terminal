@@ -312,6 +312,21 @@ def test_capture_disabled_writes_nothing(client, monkeypatch):
     assert calls == []
 
 
+def test_capture_swallows_malformed_remote_url(client, monkeypatch, enable_obo):
+    """Bookkeeping must not raise a config error into the request path."""
+    from server import obo
+    from server.users import user_manager
+
+    monkeypatch.setenv("OMNIGENT_APP_URL", "http://omnigent.example.com")
+    user_manager.get("erin@example.com")
+
+    manager = obo.OboManager()
+    manager.capture("erin@example.com", make_jwt(time.time() + 3600))
+
+    # Nothing was recorded, but the caller saw no exception.
+    assert manager.status("erin@example.com")["present"] is False
+
+
 # -- force refresh --
 
 def test_force_refresh_writes_latest_and_false_when_empty(client, monkeypatch, enable_obo):

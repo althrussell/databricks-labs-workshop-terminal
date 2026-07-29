@@ -313,7 +313,7 @@ export default function App() {
               Open Workspace
             </a>
           )}
-          {config?.omnigent_remote.enabled && config.omnigent_remote.url && (
+          {config?.omnigent_remote?.enabled && config.omnigent_remote.url && (
             <a
               href={config.omnigent_remote.url}
               target="_blank"

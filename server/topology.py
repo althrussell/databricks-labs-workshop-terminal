@@ -8,17 +8,12 @@ credential isolation and attribution.
 
 Static session-cap checks remain defense in depth, but they do not establish
 identity: several principals can use sessions sequentially or below the cap.
-When remote Omnigent is enabled, a process-local, lock-protected binding accepts
-the first authenticated attendee and rejects every different attendee before
-HOME creation or credential writes.
+When remote Omnigent is enabled, ``validate_remote_omnigent`` fails startup on
+any multi-attendee configuration, and ``auth`` rejects every principal other
+than ``WORKSHOP_ATTENDEE_EMAIL`` before HOME creation or credential writes.
 """
 
 from __future__ import annotations
-
-import fcntl
-import os
-import threading
-from pathlib import Path
 
 from . import config
 
@@ -51,109 +46,6 @@ def validate_remote_omnigent() -> None:
             "MAX_SESSIONS_GLOBAL <= MAX_SESSIONS_PER_USER and deploy one "
             "Workshop Terminal instance per attendee workspace."
         )
-
-
-class AttendeeBindingConflict(RuntimeError):
-    """A remote instance is already owned by a different attendee."""
-
-
-class AttendeeBinding:
-    """Concurrency-safe first-attendee binding for remote Omnigent."""
-
-    def __init__(self) -> None:
-        self._email: str | None = None
-        self._lock = threading.Lock()
-
-    @staticmethod
-    def _paths() -> tuple[Path, Path]:
-        root = Path(config.users_root()).parent
-        return (
-            root / ".omnigent-attendee-binding",
-            root / ".omnigent-attendee-binding.lock",
-        )
-
-    def _persisted_email(self, claim: str | None = None) -> str | None:
-        marker, lock_path = self._paths()
-        marker.parent.mkdir(parents=True, exist_ok=True)
-        with open(lock_path, "a+", encoding="utf-8") as lock_file:
-            os.chmod(lock_path, 0o600)
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-            try:
-                if marker.exists():
-                    persisted = marker.read_text(encoding="utf-8").strip().lower()
-                    if not persisted:
-                        raise AttendeeBindingConflict(
-                            "Remote Omnigent attendee binding is invalid; "
-                            "operator intervention is required."
-                        )
-                    return persisted
-                if claim is None:
-                    return None
-                fd = os.open(
-                    marker,
-                    os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-                    0o600,
-                )
-                try:
-                    os.write(fd, f"{claim}\n".encode())
-                    os.fsync(fd)
-                finally:
-                    os.close(fd)
-                os.chmod(marker, 0o600)
-                directory_fd = os.open(marker.parent, os.O_RDONLY)
-                try:
-                    os.fsync(directory_fd)
-                finally:
-                    os.close(directory_fd)
-                return claim
-            finally:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-
-    def bind(self, email: str) -> str | None:
-        """Bind to ``email`` in remote mode, or no-op when remote is disabled."""
-        if not config.omnigent_remote_enabled():
-            return None
-        normalized = (email or "").strip().lower()
-        configured = config.workshop_attendee_email()
-        with self._lock:
-            self._email = configured
-            if configured != normalized:
-                raise AttendeeBindingConflict(
-                    "Remote Omnigent instance is configured for another attendee; "
-                    "deploy one Workshop Terminal instance per attendee workspace."
-                )
-            return self._email
-
-    def require_bound(self, email: str) -> str | None:
-        """Allow a helper only after an authenticated request established ownership."""
-        if not config.omnigent_remote_enabled():
-            return None
-        normalized = (email or "").strip().lower()
-        configured = config.workshop_attendee_email()
-        with self._lock:
-            self._email = configured
-            if configured != normalized:
-                raise AttendeeBindingConflict(
-                    "Remote Omnigent instance is configured for another attendee; "
-                    "deploy one Workshop Terminal instance per attendee workspace."
-                )
-            return self._email
-
-    def status(self) -> dict[str, object]:
-        enabled = config.omnigent_remote_enabled()
-        with self._lock:
-            if enabled and self._email is None:
-                self._email = config.workshop_attendee_email()
-            bound = self._email is not None
-        return {
-            "enforced": enabled,
-            "status": "bound" if enabled and bound else (
-                "unbound" if enabled else "disabled"
-            ),
-        }
-
-
-attendee_binding = AttendeeBinding()
 
 
 def startup_warning() -> str | None:
@@ -193,9 +85,6 @@ def second_attendee_warning(distinct_attendees: int) -> str | None:
 __all__ = [
     "config_permits_multi_attendee",
     "validate_remote_omnigent",
-    "AttendeeBinding",
-    "AttendeeBindingConflict",
-    "attendee_binding",
     "startup_warning",
     "second_attendee_warning",
 ]

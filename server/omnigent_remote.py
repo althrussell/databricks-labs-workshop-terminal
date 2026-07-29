@@ -226,9 +226,19 @@ class RemoteHostManager:
             if not self._started or self._stopping:
                 return
             host = self._hosts.get(email)
-            if host is None:
-                host = _Host(self._users.get(email))
-                self._hosts[email] = host
+        if host is None:
+            # Resolving the attendee can re-enter notify() through the deferred
+            # OBO flush in UserManager.get(), so it must run with _lock released.
+            # The nested call may register the host first; re-read under the
+            # lock so both frames converge on one _Host and one worker thread.
+            user = self._users.get(email)
+            with self._lock:
+                if not self._started or self._stopping:
+                    return
+                host = self._hosts.setdefault(email, _Host(user))
+        with self._lock:
+            if not self._started or self._stopping:
+                return
             host.wake.set()
             if host.thread is None or not host.thread.is_alive():
                 host.thread = threading.Thread(

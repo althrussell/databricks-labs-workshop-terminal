@@ -145,14 +145,14 @@ class OboManager:
         raises into the request path.
         """
         email = (email or "").strip().lower()
-        remote_url = config.omnigent_app_url()
-        if (
-            not (config.obo_enabled() or remote_url)
-            or not token
-            or "@" not in email
-        ):
+        if not token or "@" not in email:
             return
         try:
+            # Read inside the guard: a malformed OMNIGENT_APP_URL raises, and
+            # bookkeeping must never turn an attendee request into a 500.
+            remote_url = config.omnigent_app_url()
+            if not (config.obo_enabled() or remote_url):
+                return
             if remote_url:
                 # Remote auth can arrive on the first authenticated request,
                 # before a terminal/session path has created the attendee HOME.

@@ -1,7 +1,5 @@
 """Topology guard (gap P1-11a)."""
 
-import threading
-
 import pytest
 
 from server import topology
@@ -82,84 +80,3 @@ def test_local_omnigent_allows_shared_topology(monkeypatch):
     monkeypatch.setenv("MAX_SESSIONS_PER_USER", "3")
 
     topology.validate_remote_omnigent()
-
-
-def test_remote_binding_rejects_a_different_attendee(monkeypatch, tmp_path):
-    monkeypatch.setenv(
-        "OMNIGENT_APP_URL",
-        "https://alice-omnigent.example.databricksapps.com",
-    )
-    monkeypatch.setenv("WORKSHOP_ATTENDEE_EMAIL", "alice@example.com")
-    monkeypatch.setattr(
-        topology.config, "users_root", lambda: str(tmp_path / "users")
-    )
-    binding = topology.AttendeeBinding()
-
-    assert binding.bind("Alice@Example.COM") == "alice@example.com"
-    assert binding.bind("alice@example.com") == "alice@example.com"
-    with pytest.raises(topology.AttendeeBindingConflict, match="configured"):
-        binding.bind("bob@example.com")
-    assert binding.status() == {"enforced": True, "status": "bound"}
-
-
-def test_remote_binding_survives_manager_restart(monkeypatch, tmp_path):
-    monkeypatch.setenv(
-        "OMNIGENT_APP_URL",
-        "https://alice-omnigent.example.databricksapps.com",
-    )
-    monkeypatch.setenv("WORKSHOP_ATTENDEE_EMAIL", "alice@example.com")
-    monkeypatch.setattr(
-        topology.config, "users_root", lambda: str(tmp_path / "users")
-    )
-
-    assert topology.AttendeeBinding().bind("alice@example.com") == "alice@example.com"
-    restarted = topology.AttendeeBinding()
-
-    assert restarted.bind("alice@example.com") == "alice@example.com"
-    with pytest.raises(topology.AttendeeBindingConflict, match="configured"):
-        restarted.bind("bob@example.com")
-    marker = tmp_path / ".omnigent-attendee-binding"
-    assert not marker.exists()
-
-
-def test_remote_binding_is_concurrency_safe(monkeypatch, tmp_path):
-    monkeypatch.setenv(
-        "OMNIGENT_APP_URL",
-        "https://alice-omnigent.example.databricksapps.com",
-    )
-    monkeypatch.setenv("WORKSHOP_ATTENDEE_EMAIL", "attendee-7@example.com")
-    monkeypatch.setattr(
-        topology.config, "users_root", lambda: str(tmp_path / "users")
-    )
-    barrier = threading.Barrier(12)
-    outcomes = []
-
-    def bind(email):
-        barrier.wait()
-        try:
-            outcomes.append(("bound", topology.AttendeeBinding().bind(email)))
-        except topology.AttendeeBindingConflict:
-            outcomes.append(("rejected", email))
-
-    threads = [
-        threading.Thread(target=bind, args=(f"attendee-{index}@example.com",))
-        for index in range(12)
-    ]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
-
-    winners = [email for outcome, email in outcomes if outcome == "bound"]
-    assert len(winners) == 1
-    assert len(outcomes) == 12
-    assert topology.AttendeeBinding().bind(winners[0]) == winners[0]
-
-
-def test_local_mode_does_not_bind_attendee(monkeypatch):
-    monkeypatch.delenv("OMNIGENT_APP_URL", raising=False)
-    binding = topology.AttendeeBinding()
-
-    assert binding.bind("alice@example.com") is None
-    assert binding.bind("bob@example.com") is None
-    assert binding.status() == {"enforced": False, "status": "disabled"}

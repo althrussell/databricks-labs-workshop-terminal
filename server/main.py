@@ -198,12 +198,7 @@ def setup_status(_: Principal = Depends(get_current_user)):
 @app.get("/api/omnigent-host")
 def omnigent_host_status(principal: Principal = Depends(get_current_user)):
     """Sanitized verified remote-host readiness for the authenticated attendee."""
-    from . import topology
-
-    return {
-        **remote_host_manager.readiness(principal.name),
-        "instance_binding": topology.attendee_binding.status()["status"],
-    }
+    return remote_host_manager.readiness(principal.name)
 
 
 class _EmailBody(BaseModel):
