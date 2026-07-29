@@ -26,6 +26,7 @@ import hmac
 import logging
 import os
 import re
+from datetime import datetime, timezone
 import secrets
 import shutil
 
@@ -220,6 +221,69 @@ def _link_skills(user: User) -> None:
     )
     for relative in HARNESS_SKILL_DIRS.values():
         _link_skill_set(source, os.path.join(user.home, relative), names)
+    _write_aitools_state(user, source, names)
+
+
+# The CLI tracks which skills it installed in its own state file, and reports
+# "no skills installed. Run 'databricks aitools install'" purely from that file
+# — it never looks at the harness directories. Because we place skills
+# ourselves (pinned + checksum-verified via the artifact manifest) rather than
+# shelling out to `aitools install`, that file did not exist, so the CLI told
+# every attendee their skills were missing while Claude and Codex were loading
+# them just fine. Writing it keeps the CLI's view consistent with reality.
+_AITOOLS_STATE_RELATIVE = os.path.join(
+    ".databricks", "aitools", "skills", ".state.json"
+)
+
+_SKILL_VERSION_RE = re.compile(
+    r"^metadata:\s*$.*?^\s+version:\s*[\"']?([^\"'\s]+)", re.MULTILINE | re.DOTALL
+)
+
+
+def _skill_version(source: str, name: str) -> str | None:
+    """Version from a skill's SKILL.md frontmatter (``metadata.version``).
+
+    A few upstream skills omit it (``databricks-dabs``); the CLI records those
+    as ``0.0.1``, which the caller mirrors.
+    """
+    try:
+        with open(os.path.join(source, name, "SKILL.md"), encoding="utf-8") as f:
+            head = f.read(4096)
+    except OSError:
+        return None
+    _, _, rest = head.partition("---")
+    frontmatter, _, _ = rest.partition("\n---")
+    match = _SKILL_VERSION_RE.search(frontmatter)
+    return match.group(1) if match else None
+
+
+def _write_aitools_state(user: User, source: str, names: list[str]) -> None:
+    from .bootstrap.install import SKILLS_REF, skills_provenance
+
+    managed = skills_provenance()
+    # No provenance yet (vendored fallback, or skills still installing) means we
+    # cannot tell upstream skills from our vendored workflow ones, and declaring
+    # the wrong set is worse than declaring none.
+    if not managed:
+        return
+    versions = {
+        name: _skill_version(source, name) or "0.0.1"
+        for name in names
+        if name in managed
+    }
+    if not versions:
+        return
+
+    path = os.path.join(user.home, _AITOOLS_STATE_RELATIVE)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    payload = {
+        "schema_version": 1,
+        "release": SKILLS_REF,
+        "last_updated": datetime.now(timezone.utc).isoformat(),
+        "skills": versions,
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
 
 
 def _link_skill_set(source: str, target: str, names: list[str]) -> None:
