@@ -20,3 +20,9 @@
 # regenerate it with `gitleaks detect --log-opts "-p -1 <sha>"` after a rebase.
 assets/skills/databricks-lakebase/references/connectivity.md:postgres-connection-string:85
 ccf4f2607053962e5b6268c30a67a7cab47db532:assets/skills/databricks-lakebase/references/connectivity.md:postgres-connection-string:85
+
+# The same placeholder in the retired databricks-lakebase-provisioned skill,
+# inside a commit that is already on main. This change deletes that file, but the
+# pre-push hook re-scans historical commits by committer, so the entry is needed
+# to push at all. Safe to drop once main no longer needs re-scanning.
+33cb8a1bb09059cf2d974a92d0efc1d2a075958c:assets/skills/databricks-lakebase-provisioned/connection-patterns.md:postgres-connection-string:197
