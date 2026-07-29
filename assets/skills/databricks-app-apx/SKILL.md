@@ -1,6 +1,6 @@
 ---
 name: databricks-app-apx
-description: "Build full-stack Databricks applications using APX framework (FastAPI + React)."
+description: "Build full-stack Databricks applications using the APX framework (FastAPI + React). Only for an explicit APX request or an existing APX repository — the default for a new Databricks App is the `databricks-apps` skill (AppKit)."
 ---
 
 # Databricks APX Application
@@ -9,10 +9,15 @@ Build full-stack Databricks applications using APX framework (FastAPI + React).
 
 ## Trigger Conditions
 
-**Invoke when user requests**:
-- "Databricks app" or "Databricks application"
-- Full-stack app for Databricks without specifying framework
-- Mentions APX framework
+**Invoke only when**:
+- The user names APX explicitly, or
+- The repository is already an APX project (see the prerequisites check below)
+
+**Do NOT invoke for a generic "build me a Databricks app" request.** The default
+for a new app is **[databricks-apps](../databricks-apps/SKILL.md)** (AppKit —
+Node.js + TypeScript + React), paired with
+[databricks-app-design](../databricks-app-design/SKILL.md) for any screen that
+displays data. Load those instead unless one of the two conditions above holds.
 
 **Do NOT invoke if user specifies**: Streamlit, Dash, Node.js, Shiny, Gradio, Flask, or other frameworks.
 
@@ -247,7 +252,9 @@ Read these files only when actively writing that type of code or debugging issue
 
 ## Related Skills
 
-- **[databricks-app-python](../databricks-app-python/SKILL.md)** - for Streamlit, Dash, Gradio, or Flask apps
-- **[databricks-asset-bundles](../databricks-asset-bundles/SKILL.md)** - deploying APX apps via DABs
+- **[databricks-apps](../databricks-apps/SKILL.md)** - AppKit (Node/TypeScript/React), the default for a new Databricks App
+- **[databricks-app-design](../databricks-app-design/SKILL.md)** - data-screen UX for AppKit apps
+- **[databricks-apps-python](../databricks-apps-python/SKILL.md)** - for Streamlit, Dash, Gradio, or Flask apps
+- **[databricks-dabs](../databricks-dabs/SKILL.md)** - deploying APX apps via DABs
 - **[databricks-python-sdk](../databricks-python-sdk/SKILL.md)** - backend SDK integration
-- **[databricks-lakebase-provisioned](../databricks-lakebase-provisioned/SKILL.md)** - adding persistent PostgreSQL state to apps
+- **[databricks-lakebase](../databricks-lakebase/SKILL.md)** - adding persistent PostgreSQL state to apps

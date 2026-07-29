@@ -56,7 +56,7 @@ operator admin panel.
   content (`TOPIC_DETECTION=false` to disable).
 - **A coached first run**: launching Claude greets the attendee
   ("agent speaks first"), a lab-coach persona adapts to technical vs business
-  attendees, event-pinned [ai-dev-kit](https://github.com/databricks-solutions/ai-dev-kit)
+  attendees, event-pinned [databricks-agent-skills](https://github.com/databricks/databricks-agent-skills)
   skills are installed only from the reviewed artifact manifest, TDD subagents
   are pre-installed, and every
   git commit auto-syncs to the attendee's Workspace home so their work
@@ -95,9 +95,9 @@ operator admin panel.
   (see the isolation note above), where the blast radius is a single disposable
   workspace. To limit the indirect prompt-injection surface, **public MCP
   servers (DeepWiki, Exa) are off by default** — opt in per event with
-  `ENABLE_PUBLIC_MCP=true` — and the ai-dev-kit skills overlay is **pinnable**
-  via `AI_DEV_KIT_REF`; event readiness requires the same reviewed ref, commit,
-  and content SHA-256 in `ARTIFACT_MANIFEST_PATH`.
+  `ENABLE_PUBLIC_MCP=true` — and the Databricks skills overlay is **pinned** via
+  `SKILLS_REF`; event readiness requires the same reviewed ref, commit, and
+  content SHA-256 that `assets/artifacts/manifest.json` declares.
 
 ## Deploying
 
@@ -125,20 +125,25 @@ serves plain terminals and shows a clear banner, but agent CLIs can't
 authenticate.
 
 For events, set `WORKSHOP_ATTENDEE_EMAIL` to the identity assigned to this
-instance; `/readyz` remains red until it is present. Also set
+instance. It is a hint, not a prerequisite: an instance with no binding claims
+the first non-admin identity to connect and persists it, since Control Tower
+provisions one disposable workspace per attendee. Every other identity is still
+refused, and `/readyz` reports where the binding came from. Also set
 `SESSION_STATE_PATH` so terminals
 survive a restart as metadata-only relaunchable ghosts; raw terminal output
 remains in memory and is never journaled (see the env table in
 [docs/admin-api.md](docs/admin-api.md)).
 
-Control Tower must also provide `ARTIFACT_MANIFEST_PATH`. The reviewed contract
-pins staged files or controlled-mirror URLs and SHA-256 values for Node (both
-linux-x64 and linux-arm64), tmux, Claude installer/binary, separate Codex npm
-launcher/native packages, Databricks CLI installer/archive, uv binary, exact
-Python 3.12 runtime tree, complete Omnigent wheelhouse/hashed lock, and the
-ai-dev-kit commit/content. Downloads are verified before execution or
-extraction; persistent reuse requires both the trusted artifact checksum and
-the installed binary checksum.
+Nothing needs to be staged for the toolchain. The reviewed contract ships in the
+image at `assets/artifacts/manifest.json`, pinning the source and SHA-256 of Node
+(linux-x64 and linux-arm64), tmux, the Claude installer/binary, the separate
+Codex npm launcher/native packages, the Databricks CLI installer/archive, the uv
+binary, the Python 3.12 archive, the Omnigent hashed lock, and the skills
+commit/content. Downloads are verified before execution or extraction, and
+persistent reuse requires both the reviewed artifact checksum and the installed
+binary checksum. `ARTIFACT_MANIFEST_PATH` is an optional override for mirrored
+events that may redirect `source` only — see
+[docs/artifact-manifest.md](docs/artifact-manifest.md).
 
 ### Via Control Tower
 

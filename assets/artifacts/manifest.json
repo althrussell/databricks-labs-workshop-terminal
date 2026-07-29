@@ -1,0 +1,81 @@
+{
+  "//": "GENERATED FILE. Run `python3 scripts/build_artifact_manifest.py --write` to regenerate. See docs/artifact-manifest.md.",
+  "artifacts": {
+    "claude_binary": {
+      "sha256": "74deca45220b8080ec75ab099bd5a5980e41a2b5879846a008fb115d436de085",
+      "source": "https://downloads.claude.ai/claude-code-releases/2.1.216/linux-x64/claude",
+      "version": "2.1.216"
+    },
+    "claude_installer": {
+      "sha256": "cde4f1702d3b1695f92b73d26888364e17bca476e17f0fd676484c951d36c125",
+      "source": "claude-code-bootstrap.sh",
+      "upstream": "https://claude.ai/install.sh",
+      "version": "2.1.216"
+    },
+    "codex_native_package_linux_x64": {
+      "executable_sha256": "a31ae9450a26216eb1e7c53102fd42123dd675974310b0e2ca3aa4cb622a2c15",
+      "sha256": "b6752eb2e8c10e6fcc96ac5c1c8ad8342cdb9a74504fb84686addf081a7d2868",
+      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.144.6-linux-x64.tgz",
+      "version": "0.144.6-linux-x64"
+    },
+    "codex_npm_launcher_package": {
+      "sha256": "779eab25aa8473583b3d1d6f9316a0ab8d0643fdfd0bfef80ce76cc8cf85e401",
+      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.144.6.tgz",
+      "version": "0.144.6"
+    },
+    "databricks_agent_skills": {
+      "commit": "3d79814688e28765db0153eddcf6ec74972c75b4",
+      "content_sha256": "43b1fde1da1c892bd023eed0fd8c677c82ba68bc727b5d39d49d6b3e43de9104",
+      "source": "https://github.com/databricks/databricks-agent-skills.git",
+      "version": "v0.2.10"
+    },
+    "databricks_cli_archive_linux_x64": {
+      "sha256": "915150a284f24376f44a2f89741319da32e6891eb4a7568199bbe0f6f3dfea02",
+      "source": "https://github.com/databricks/cli/releases/download/v1.8.0/databricks_cli_1.8.0_linux_amd64.zip",
+      "version": "1.8.0"
+    },
+    "databricks_cli_installer": {
+      "sha256": "3da4fd2b2d52f6c7e39600d359ca1b646c335cf06622fb27f6f0ef7bc76d7902",
+      "source": "databricks-cli-install.sh",
+      "upstream": "https://raw.githubusercontent.com/databricks/setup-cli/v1.8.0/install.sh",
+      "version": "1.8.0"
+    },
+    "node_linux_arm64": {
+      "sha256": "08bfbf538bad0e8cbb0269f0173cca28d705874a67a22f60b57d99dc99e30050",
+      "source": "https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-arm64.tar.xz",
+      "version": "22.14.0"
+    },
+    "node_linux_x64": {
+      "sha256": "69b09dba5c8dcb05c4e4273a4340db1005abeafe3927efda2bc5b249e80437ec",
+      "source": "https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-x64.tar.xz",
+      "version": "22.14.0"
+    },
+    "omnigent_lock": {
+      "lock_sha256": "463ec60f34a2fb6140aa9caf8697c42f672d653a1ff6ac1f6e1b5c5c67d0e6d3",
+      "sha256": "463ec60f34a2fb6140aa9caf8697c42f672d653a1ff6ac1f6e1b5c5c67d0e6d3",
+      "source": "omnigent-0.7.0.lock",
+      "version": "0.7.0"
+    },
+    "python_3_12_runtime": {
+      "executable_relative_path": "python/bin/python3.12",
+      "kind": "archive",
+      "sha256": "fd9d70e1e1ed3f6caccb4e2eefe570aa07589c8f86ddf0e87f68a96cd14272e1",
+      "source": "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.12.13+20260728-x86_64-unknown-linux-gnu-install_only.tar.gz",
+      "version": "3.12.13"
+    },
+    "tmux_linux_x64": {
+      "sha256": "a23e56e9913d610c31f2893a1c9c669a73cb8bb2b8ded1180f6572bb55e52ca5",
+      "source": "https://github.com/mjakob-gh/build-static-tmux/releases/download/v3.6b/tmux.linux-amd64.stripped.gz",
+      "version": "3.6b"
+    },
+    "uv_binary": {
+      "executable_relative_path": "uv-x86_64-unknown-linux-gnu/uv",
+      "kind": "archive",
+      "sha256": "eaf842262aa1c418d8ecc5605f02ee1ebfd369124fa48548e85f9481a47831a9",
+      "source": "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-x86_64-unknown-linux-gnu.tar.gz",
+      "version": "0.12.0"
+    }
+  },
+  "reviewed": true,
+  "schema_version": 1
+}

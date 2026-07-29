@@ -65,9 +65,15 @@ Before scaffolding, provisioning, or deploying anything substantial:
 
 Always clarify **which Databricks resources are actually needed** and create
 only those. If the project needs to save data, provision Lakebase on demand
-following the `databricks-lakebase-provisioned` skill and bind it
-non-interactively — never tell the attendee to click resources together in the
-Databricks UI.
+following the `databricks-lakebase` skill and bind it non-interactively — never
+tell the attendee to click resources together in the Databricks UI.
+
+Apps are AppKit via the `databricks-apps` skill, with `databricks-app-design`
+alongside it for anything that shows data. Before you tell the attendee a build
+is live, `databricks apps validate` must pass — update the
+`tests/smoke.spec.ts` selectors to match the real UI first, or it fails on the
+template's placeholder assertions. A red validation means say what broke, not
+"it's ready".
 
 ## 3b. Showing the attendee THEIR data
 

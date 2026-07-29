@@ -8,6 +8,10 @@ never email allowlists:
   app's own permission grants admit)
 - operator/admin access: ADMIN_GROUP (default ``platform_admins``)
 
+An instance also carries one attendee identity, resolved by ``server/attendee``
+and enforced here: every other identity is refused. An unbound instance binds
+itself to the first non-operator caller rather than refusing everyone.
+
 Group resolution uses the caller's own credential when present (bearer-token
 service principals via SCIM ``/Me``); for browser users it looks the user up
 by email via SCIM with the Control-Tower-vended workspace credential
@@ -25,6 +29,7 @@ import time
 import requests
 from fastapi import HTTPException, Request, WebSocket
 
+from . import attendee as attendee_binding
 from . import config
 
 logger = logging.getLogger(__name__)
@@ -212,7 +217,7 @@ def _principal_from_headers(headers) -> Principal:
 
 def _check_access(principal: Principal) -> None:
     try:
-        attendee = config.workshop_attendee_email()
+        attendee = attendee_binding.resolved_email()
         remote = config.omnigent_remote_enabled()
     except ValueError as exc:
         # A misconfigured remote instance must fail closed, not surface a 500.
@@ -221,6 +226,25 @@ def _check_access(principal: Principal) -> None:
     # the configured owner is enforced even where shared topology was
     # acknowledged for a trusted group.
     shared_ok = config.allow_shared_topology() and not remote
+    if not attendee and not config.local_dev() and not config.allow_shared_topology():
+        # Control Tower's injected binding is missing. Rather than lock the
+        # attendee out of a workspace provisioned solely for them, bind the
+        # instance to the first non-operator identity that arrives. Operators
+        # must not become the attendee, so they are still refused here.
+        if is_admin(principal):
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "This instance has no attendee yet and an operator identity "
+                    "cannot claim it; the attendee must open it first."
+                ),
+            )
+        try:
+            attendee = attendee_binding.bind(principal.name)
+        except ValueError:
+            # A non-email principal (e.g. a bearer-token service principal)
+            # cannot own an instance; fall through to the unbound refusal.
+            attendee = ""
     if attendee and principal.name != attendee and not shared_ok:
         raise HTTPException(
             status_code=403,
@@ -232,7 +256,10 @@ def _check_access(principal: Principal) -> None:
     if not attendee and not config.local_dev() and not config.allow_shared_topology():
         raise HTTPException(
             status_code=403,
-            detail="WORKSHOP_ATTENDEE_EMAIL is required for attendee access",
+            detail=(
+                "This workshop instance has no attendee identity and none could "
+                "be bound for this caller"
+            ),
         )
     group = config.access_group()
     if group and group not in get_groups(principal):

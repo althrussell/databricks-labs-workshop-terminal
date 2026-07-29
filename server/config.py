@@ -106,11 +106,6 @@ def allow_shared_topology() -> bool:
     }
 
 
-def workshop_attendee_email() -> str:
-    """Control-Tower-bound attendee identity for this app instance."""
-    return _env("WORKSHOP_ATTENDEE_EMAIL").lower()
-
-
 def workshop_app_sp_id() -> str:
     """Numeric SCIM ID of this Databricks App's service principal."""
     return _env("WORKSHOP_APP_SP_ID")
@@ -226,18 +221,23 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def workshop_attendee_email() -> str:
-    """Configured owner for a dedicated remote-Omnigent terminal instance."""
+    """Control Tower's attendee hint for this instance, empty when unset.
+
+    An empty value is not an error: ``server/attendee.py`` resolves the
+    effective binding, falling back to a persisted or self-bound identity.
+    """
     raw = _env("WORKSHOP_ATTENDEE_EMAIL")
     if not raw:
-        if omnigent_remote_enabled():
-            raise ValueError(
-                "WORKSHOP_ATTENDEE_EMAIL is required when OMNIGENT_APP_URL is set"
-            )
         return ""
     normalized = raw.lower()
     if not _EMAIL_RE.fullmatch(normalized):
         raise ValueError("WORKSHOP_ATTENDEE_EMAIL must be a valid email address")
     return normalized
+
+
+def valid_attendee_email(value: str) -> bool:
+    """True when ``value`` is a well-formed attendee identity."""
+    return bool(_EMAIL_RE.fullmatch(value.strip().lower()))
 
 
 def omnigent_runner_idle_timeout() -> int:
@@ -275,7 +275,7 @@ def lab_coach_enabled() -> bool:
 def auto_mode_enabled() -> bool:
     """Lab 'auto mode': agents run without permission prompts. Attendees work
     in isolated per-user HOMEs inside a disposable workshop container, so the
-    zero-prompt flow is the right default (CoDA lab-profile behaviour)."""
+    zero-prompt flow is the right default for a time-boxed lab."""
     return _env("WORKSHOP_AUTO_MODE", "true").lower() not in ("false", "0", "no", "off")
 
 

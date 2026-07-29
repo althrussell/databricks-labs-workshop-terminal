@@ -6,19 +6,25 @@ a full library of Databricks skills, and an authenticated Databricks CLI.
 ## Skills
 
 Your skills library is loaded from
-[databricks-solutions/ai-dev-kit](https://github.com/databricks-solutions/ai-dev-kit)
-(always the latest version) plus development-workflow skills from
+[databricks/databricks-agent-skills](https://github.com/databricks/databricks-agent-skills)
+at the workshop's reviewed release, plus development-workflow skills from
 [obra/superpowers](https://github.com/obra/superpowers).
 
 ### Databricks skills (highlights)
 
 | Category | Skills |
 |----------|--------|
-| AI & Agents | databricks-agent-bricks, databricks-genie, databricks-mlflow-evaluation, databricks-model-serving, databricks-vector-search |
-| Analytics | databricks-aibi-dashboards, databricks-dbsql, databricks-metric-views, databricks-unity-catalog |
-| Data Engineering | databricks-spark-declarative-pipelines, databricks-jobs, databricks-synthetic-data-gen, databricks-zerobus-ingest |
-| Development | databricks-bundles, databricks-apps-python, databricks-python-sdk, databricks-config, databricks-lakebase-provisioned |
+| Apps | databricks-apps (AppKit), databricks-app-design, databricks-lakebase |
+| AI & Agents | databricks-agent-bricks, databricks-mlflow-evaluation, databricks-model-serving, databricks-vector-search |
+| Analytics | databricks-aibi-dashboards, databricks-dbsql, databricks-metric-views, databricks-unity-catalog, databricks-data-discovery |
+| Data Engineering | databricks-pipelines, databricks-jobs, databricks-dabs, databricks-synthetic-data-gen, databricks-zerobus-ingest |
+| Development | databricks-core, databricks-python-sdk, databricks-apps-python |
 | Reference | databricks-docs, databricks-ai-functions |
+
+Use these names exactly, and treat `ls ~/.claude/skills` as the authoritative
+list. Several skill names from older Databricks skill kits were renamed or
+merged; asking for one of those gets you nothing at all, silently. If a name you
+half-remember isn't in that directory, check the directory rather than guessing.
 
 ### Development workflow skills
 
@@ -136,21 +142,51 @@ Databricks project):
 ## Building apps — always use AppKit
 
 AppKit is the required baseline for every app. For this workshop, **every app,
-dashboard, tool, or UI you build MUST use AppKit** (React + Vite + TypeScript)
-following the `databricks-apps-python` skill — scaffold it with
-`databricks apps init` and apply the CoDA UX defaults from the skill's
-`7-appkit-ux.md`. This applies no matter which agent you are (Claude, Codex, or
-Omnigent).
+dashboard, tool, or UI you build MUST use AppKit** (Node.js + TypeScript +
+React) via the **`databricks-apps`** skill — scaffold with `databricks apps
+manifest` then `databricks apps init --features <plugins>`. This applies no
+matter which agent you are (Claude, Codex, or Omnigent).
+
+Two more skills are not optional:
+
+- **`databricks-app-design`** — required whenever the app displays *any* data:
+  a KPI or overview page, a report, a chart, a table, query results, or a
+  Genie/chat assistant. It decides layout, charts, semantic color, the
+  loading/empty/error states, and how to show AI-result provenance, and maps
+  each to real AppKit components.
+- **`databricks-lakebase`** — required when the app needs to **save data**.
+  Provision it non-interactively; never tell the attendee to click resources
+  together in the Databricks UI. Apps with no saved state skip Lakebase.
 
 Do **not** reach for a Python framework (Streamlit / Dash / Gradio / Flask /
-FastAPI / Reflex). The only exception is when an attendee **explicitly and
-insistently** asks for a specific Python framework — in that case confirm
-that's really what they want, then proceed. Otherwise it is always AppKit.
+FastAPI / Reflex), and do not use `databricks-apps-python` by default — it is
+the Python-backend alternative, for when an attendee **explicitly and
+insistently** asks for one. In that case confirm that's really what they want,
+then proceed. Otherwise it is always AppKit.
 
-If the app needs to **save data**, provision Lakebase non-interactively
-following the `databricks-lakebase-provisioned` skill — never tell the user to
-click resources together in the Databricks UI. Apps with no saved state skip
-Lakebase.
+A plain "build me a dashboard" with no app-specific need is a managed AI/BI
+dashboard (`databricks-aibi-dashboards`), not an app. Offer both and let the
+attendee choose rather than defaulting to an app.
+
+### Before you call an AppKit build done
+
+An app that deploys but throws on first click is not finished. Run the AppKit
+validation gate and make it pass **before** you tell the attendee it's live:
+
+1. **Update `tests/smoke.spec.ts` selectors first.** The template asserts the
+   "Minimal Databricks App" heading and "hello world" text, which your app no
+   longer has, so validation fails until you point them at your real UI. Use
+   Playwright locators only — `getByRole`, `getByText`, `getByPlaceholder`,
+   `getByLabel`. There is no `getByLabelText` in Playwright; it throws at
+   runtime. Keep asserted queries small (`LIMIT` or an aggregate) — a result set
+   over 1 MB aborts the analytics event and every assertion then fails.
+2. **Run `databricks apps validate`.** This is the gate: it runs `appkit lint`
+   (`no-double-type-assertion` — never `as unknown as <T>`), `tsc --noEmit`, and
+   the smoke test. Before writing code against an AppKit API, check the real
+   signature with `npx @databricks/appkit docs <section>`; invented shapes fail
+   `tsc`.
+3. **Fix and re-run until it passes.** Do not report success, and do not offer
+   Promote, on a build whose validation is red — say what failed instead.
 
 ## After a build completes — always offer Promote
 

@@ -82,6 +82,7 @@ def evaluate(
     entitlement_status: Mapping[str, object],
     obo_status: Mapping[str, object],
     secret_protection_status: Mapping[str, object],
+    attendee_binding: Mapping[str, str] | None = None,
     writable_probe: Callable[[str], bool] = _path_writable,
     now: float | None = None,
 ) -> dict:
@@ -95,11 +96,21 @@ def evaluate(
         and global_cap > 0
         and global_cap <= per_user
     )
-    attendee_email = env.get("WORKSHOP_ATTENDEE_EMAIL", "").strip().lower()
+    # The effective binding, which may be self-bound rather than injected by
+    # Control Tower; the raw env var is only the hint.
+    binding = attendee_binding or {}
+    attendee_email = (
+        str(binding.get("email") or env.get("WORKSHOP_ATTENDEE_EMAIL", ""))
+        .strip()
+        .lower()
+    )
     attendee_identity_ok = (
         bool(attendee_email)
         and "@" in attendee_email
         and not any(char.isspace() for char in attendee_email)
+    )
+    attendee_binding_source = str(
+        binding.get("source") or ("control-tower" if attendee_email else "unbound")
     )
 
     has_pat = bool(env.get("WORKSHOP_PAT", "").strip())
@@ -155,6 +166,15 @@ def evaluate(
         for name in required_steps
         if not isinstance(steps.get(name), Mapping)
         or steps[name].get("status") != "complete"
+    ]
+    # A degraded step produced something usable without meeting its reviewed
+    # contract (skills served from the vendored fallback). It is not ready, and
+    # naming it separately keeps an operator from reading it as "still going".
+    degraded_installers = [
+        name
+        for name in required_steps
+        if isinstance(steps.get(name), Mapping)
+        and steps[name].get("status") == "degraded"
     ]
     artifact_manifest = installer_status.get("artifact_manifest")
     artifact_manifest = (
@@ -233,9 +253,13 @@ def evaluate(
     omnigent_pinned = bool(env.get("OMNIGENT_VERSION", "").strip())
     if not omnigent_pinned:
         missing_pins.append("OMNIGENT_VERSION")
-    kit_ref = env.get("AI_DEV_KIT_REF", "").strip()
-    if kit_ref.lower() in _BRANCH_TIPS or kit_ref.startswith("refs/heads/"):
-        missing_pins.append("AI_DEV_KIT_REF")
+    # Unset is the expected state: the reviewed tag is repo-owned. Only an
+    # explicitly configured branch tip is a missing pin.
+    skills_ref = env.get("SKILLS_REF", "").strip()
+    if skills_ref and (
+        skills_ref.lower() in _BRANCH_TIPS or skills_ref.startswith("refs/heads/")
+    ):
+        missing_pins.append("SKILLS_REF")
     raw_manifest = installer_status.get("release_manifest")
     raw_manifest = raw_manifest if isinstance(raw_manifest, Mapping) else {}
     release_manifest: dict[str, dict[str, object]] = {}
@@ -245,7 +269,7 @@ def evaluate(
         "codex": "CODEX_CLI_VERSION",
         "databricks": "DATABRICKS_CLI_VERSION",
         "omnigent": "OMNIGENT_VERSION",
-        "ai_dev_kit": "AI_DEV_KIT_REF",
+        "databricks_agent_skills": "SKILLS_REF",
     }
     for tool, env_name in env_names.items():
         entry = raw_manifest.get(tool)
@@ -256,6 +280,11 @@ def evaluate(
         expected = str(entry.get("expected") or "")
         actual = str(entry.get("actual") or "")
         configured_expected = env.get(env_name, "").strip()
+        if tool == "databricks_agent_skills" and not configured_expected:
+            # The skills ref is repo-owned in assets/artifacts/manifest.json, so
+            # an unset SKILLS_REF is the normal case, not a missing pin. Setting
+            # it still has to agree with what bootstrap installed.
+            configured_expected = expected
         match = (
             enabled
             and bool(expected)
@@ -263,7 +292,7 @@ def evaluate(
             and actual == expected
             and entry.get("match") is True
         )
-        if tool == "ai_dev_kit":
+        if tool == "databricks_agent_skills":
             match = (
                 match
                 and entry.get("source") in {"network", "prewarmed"}
@@ -276,7 +305,7 @@ def evaluate(
             "actual": actual or None,
             "match": match if enabled else None,
         }
-        if tool == "ai_dev_kit":
+        if tool == "databricks_agent_skills":
             release_manifest[tool]["source"] = entry.get("source")
             release_manifest[tool]["resolved_commit"] = entry.get(
                 "resolved_commit"
@@ -296,8 +325,9 @@ def evaluate(
             attendee_identity_ok,
             "instance is bound to one attendee identity"
             if attendee_identity_ok
-            else "WORKSHOP_ATTENDEE_EMAIL is missing or invalid",
+            else "no valid attendee identity is bound to this instance",
             configured=bool(attendee_email),
+            source=attendee_binding_source,
         ),
         "credentials": _check(
             credential_ok,
@@ -335,8 +365,13 @@ def evaluate(
             not missing_installers,
             "all enabled agents and support tools are ready"
             if not missing_installers
-            else "one or more enabled installers are incomplete",
+            else (
+                "serving a degraded fallback instead of the reviewed install"
+                if degraded_installers
+                else "one or more enabled installers are incomplete"
+            ),
             missing=missing_installers,
+            degraded=degraded_installers,
         ),
         "supply_chain": _check(
             supply_chain_ok,
@@ -345,6 +380,9 @@ def evaluate(
             else "reviewed bootstrap artifact manifest is missing or invalid",
             artifact_count=artifact_manifest.get("artifact_count"),
             error=artifact_manifest.get("error"),
+            # "default" is the repo-owned contract; "override" means an operator
+            # redirected sources at a mirror.
+            source=artifact_manifest.get("source"),
             persistent_proof_reusable=artifact_proof.get("reusable") is True,
         ),
         "session_state": _check(
@@ -406,6 +444,7 @@ def evaluate(
 
 
 def evaluate_runtime() -> dict:
+    from . import attendee
     from .bootstrap import install
     from .credentials import credential_manager, secret_protection_status
     from .entitlements import entitlement_manager
@@ -418,6 +457,7 @@ def evaluate_runtime() -> dict:
         entitlement_status=entitlement_manager.status(),
         obo_status=obo_manager.status(),
         secret_protection_status=secret_protection_status(),
+        attendee_binding=attendee.binding(),
     )
 
 

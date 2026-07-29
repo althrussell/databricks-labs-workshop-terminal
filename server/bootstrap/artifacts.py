@@ -1,4 +1,15 @@
-"""Reviewed bootstrap artifact contract and fail-closed checksum verification."""
+"""Reviewed bootstrap artifact contract and fail-closed checksum verification.
+
+The contract is owned by this repository: ``assets/artifacts/manifest.json``
+pins the version and checksum of every artifact the boot path installs, so a
+terminal deployed by any means installs the same reviewed software with no
+external staging step.
+
+``ARTIFACT_MANIFEST_PATH`` remains supported as a *narrow* override for
+air-gapped or mirrored events. It may only redirect ``source`` -- where an
+artifact is fetched from. Versions and checksums stay repo-owned, so a stale or
+hostile override cannot silently downgrade an attendee's toolchain.
+"""
 
 from __future__ import annotations
 
@@ -29,10 +40,19 @@ REQUIRED_ARTIFACTS = frozenset({
     "databricks_cli_archive_linux_x64",
     "uv_binary",
     "python_3_12_runtime",
-    "omnigent_wheelhouse",
     "omnigent_lock",
-    "ai_dev_kit",
+    "databricks_agent_skills",
 })
+# Artifacts published only as archives: verified as a file, then extracted at
+# boot to reach ``executable_relative_path``.
+ARCHIVE_ARTIFACTS = frozenset({"uv_binary", "python_3_12_runtime"})
+# Cloned rather than fetched, so provenance is a commit plus a content digest.
+_REPOSITORY_ARTIFACTS = frozenset({"databricks_agent_skills"})
+DEFAULT_MANIFEST_PATH = os.path.normpath(
+    os.path.join(
+        os.path.dirname(__file__), "..", "..", "assets", "artifacts", "manifest.json"
+    )
+)
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _COMMIT = re.compile(r"[0-9a-fA-F]{40}")
 
@@ -133,11 +153,15 @@ class ArtifactManifest:
         self.path = path
         self.payload = payload
         self.artifacts: dict[str, dict] = payload["artifacts"]
+        self.source: str = payload.get("source", "default")
 
     @classmethod
-    def from_path(cls, path: str) -> "ArtifactManifest":
-        status = load_manifest(path)
-        return cls(path, {"artifacts": status["artifacts"]})
+    def from_path(cls, path: str = "") -> "ArtifactManifest":
+        loaded = load_manifest(path)
+        return cls(
+            loaded["path"],
+            {"artifacts": loaded["artifacts"], "source": loaded["source"]},
+        )
 
     def entry(self, name: str) -> dict:
         try:
@@ -181,9 +205,7 @@ class ArtifactManifest:
         return target
 
 
-def load_manifest(path: str) -> dict:
-    if not path:
-        raise ArtifactManifestError("ARTIFACT_MANIFEST_PATH is required")
+def _read_document(path: str) -> dict:
     try:
         with open(path, encoding="utf-8") as handle:
             payload = json.load(handle)
@@ -196,61 +218,106 @@ def load_manifest(path: str) -> dict:
         or not isinstance(payload.get("artifacts"), dict)
     ):
         raise ArtifactManifestError("artifact manifest is not reviewed schema version 1")
-    artifacts = payload["artifacts"]
+    return payload
+
+
+def _resolved_artifacts(payload: dict, manifest_path: str) -> dict[str, dict]:
+    """Copy the artifacts, resolving relative sources against the manifest.
+
+    Repo-relative sources let the committed manifest reference in-repo files
+    (the Omnigent lock) without knowing the deployed install prefix.
+    """
+    base = os.path.dirname(os.path.abspath(manifest_path))
+    resolved: dict[str, dict] = {}
+    for name, entry in payload["artifacts"].items():
+        if not isinstance(entry, dict):
+            raise ArtifactManifestError(f"artifact manifest entry is invalid: {name}")
+        copied = dict(entry)
+        source = copied.get("source")
+        if isinstance(source, str) and source and not urlsplit(source).scheme:
+            if not os.path.isabs(source):
+                copied["source"] = os.path.normpath(os.path.join(base, source))
+        resolved[name] = copied
+    return resolved
+
+
+def _apply_source_overrides(
+    artifacts: dict[str, dict], overrides: dict[str, dict]
+) -> None:
+    """Overlay an override manifest, which may redirect ``source`` and nothing else."""
+    for name, override in overrides.items():
+        if name not in artifacts:
+            raise ArtifactManifestError(
+                f"artifact manifest override adds unknown artifact: {name}"
+            )
+        entry = artifacts[name]
+        for field, value in override.items():
+            if field == "source":
+                continue
+            if entry.get(field) != value:
+                raise ArtifactManifestError(
+                    f"artifact manifest override may only change source: {name}.{field}"
+                )
+        source = override.get("source")
+        if source is not None:
+            if not isinstance(source, str) or not source:
+                raise ArtifactManifestError(
+                    f"artifact manifest override source is invalid: {name}"
+                )
+            entry["source"] = source
+
+
+def _validate_entry(name: str, entry: dict) -> None:
+    if (
+        not isinstance(entry.get("version"), str)
+        or not entry["version"]
+        or not isinstance(entry.get("source"), str)
+        or not entry["source"]
+    ):
+        raise ArtifactManifestError(f"artifact manifest entry is invalid: {name}")
+    # The skills repository is a git clone rather than a fetched file; its
+    # integrity is the commit plus content digest checked in load_manifest.
+    if name not in _REPOSITORY_ARTIFACTS and not _SHA256.fullmatch(
+        str(entry.get("sha256") or "")
+    ):
+        raise ArtifactManifestError(f"artifact manifest entry is invalid: {name}")
+    scheme = urlsplit(entry["source"]).scheme
+    if scheme and scheme != "https":
+        raise ArtifactManifestError(
+            f"artifact network source must use https: {name}"
+        )
+    if name not in ARCHIVE_ARTIFACTS:
+        return
+    if entry.get("kind") != "archive":
+        raise ArtifactManifestError(f"artifact must be an archive: {name}")
+    relative = str(entry.get("executable_relative_path") or "")
+    if (
+        not relative
+        or os.path.isabs(relative)
+        or relative.startswith("../")
+        or "/../" in relative
+    ):
+        raise ArtifactManifestError(
+            f"artifact executable path is invalid: {name}"
+        )
+
+
+def load_manifest(path: str = "") -> dict:
+    """Resolve the repo-owned contract, optionally source-overridden by ``path``."""
+    default = _read_document(DEFAULT_MANIFEST_PATH)
+    artifacts = _resolved_artifacts(default, DEFAULT_MANIFEST_PATH)
+    override_path = None
+    if path:
+        override_path = os.path.abspath(path)
+        _apply_source_overrides(
+            artifacts,
+            _resolved_artifacts(_read_document(path), path),
+        )
     missing = sorted(REQUIRED_ARTIFACTS - set(artifacts))
     if missing:
         raise ArtifactManifestError("artifact manifest is incomplete")
     for name in REQUIRED_ARTIFACTS:
-        entry = artifacts[name]
-        if name in {"omnigent_wheelhouse", "python_3_12_runtime"}:
-            if (
-                not isinstance(entry, dict)
-                or not isinstance(entry.get("version"), str)
-                or not entry["version"]
-                or not isinstance(entry.get("source"), str)
-                or not entry["source"]
-                or entry.get("kind") != "directory"
-                or not _SHA256.fullmatch(str(entry.get("content_sha256") or ""))
-            ):
-                raise ArtifactManifestError(
-                    f"artifact manifest entry is invalid: {name}"
-                )
-            if name == "python_3_12_runtime":
-                relative = str(entry.get("executable_relative_path") or "")
-                executable = os.path.normpath(
-                    os.path.join(str(entry["source"]), relative)
-                )
-                if (
-                    not relative
-                    or relative.startswith("../")
-                    or not os.path.isfile(executable)
-                ):
-                    raise ArtifactManifestError(
-                        "Python runtime executable is missing"
-                    )
-            continue
-        if (
-            not isinstance(entry, dict)
-            or not isinstance(entry.get("version"), str)
-            or not entry["version"]
-            or not isinstance(entry.get("source"), str)
-            or not entry["source"]
-            or not isinstance(entry.get("sha256"), str)
-            or not _SHA256.fullmatch(entry["sha256"])
-        ):
-            raise ArtifactManifestError(f"artifact manifest entry is invalid: {name}")
-    local_only = (
-        "codex_npm_launcher_package",
-        "codex_native_package_linux_x64",
-        "uv_binary",
-        "python_3_12_runtime",
-        "omnigent_wheelhouse",
-        "omnigent_lock",
-    )
-    if any(urlsplit(str(artifacts[name]["source"])).scheme for name in local_only):
-        raise ArtifactManifestError(
-            "Codex and Omnigent event artifacts must be staged locally"
-        )
+        _validate_entry(name, artifacts[name])
     if not _SHA256.fullmatch(
         str(
             artifacts["codex_native_package_linux_x64"].get(
@@ -272,35 +339,48 @@ def load_manifest(path: str) -> dict:
         raise ArtifactManifestError("official Node linux-x64 checksum mismatch")
     if artifacts["tmux_linux_x64"]["sha256"] != TMUX_LINUX_X64_SHA256:
         raise ArtifactManifestError("reviewed tmux checksum mismatch")
-    kit = artifacts["ai_dev_kit"]
+    skills = artifacts["databricks_agent_skills"]
     if (
-        not _COMMIT.fullmatch(str(kit.get("commit") or ""))
-        or not _SHA256.fullmatch(str(kit.get("content_sha256") or ""))
+        not _COMMIT.fullmatch(str(skills.get("commit") or ""))
+        or not _SHA256.fullmatch(str(skills.get("content_sha256") or ""))
     ):
-        raise ArtifactManifestError("ai-dev-kit commit/content provenance is invalid")
+        raise ArtifactManifestError("skills commit/content provenance is invalid")
     return {
         "ok": True,
-        "path": os.path.abspath(path),
+        "path": override_path or DEFAULT_MANIFEST_PATH,
+        "source": "override" if override_path else "default",
+        "default_path": DEFAULT_MANIFEST_PATH,
+        "override_path": override_path,
         "artifacts": artifacts,
     }
 
 
-def status(path: str) -> dict:
+def status(path: str = "") -> dict:
     try:
         loaded = load_manifest(path)
     except ArtifactManifestError as error:
-        return {"ok": False, "error": str(error), "path": path or None}
+        return {
+            "ok": False,
+            "error": str(error),
+            "path": os.path.abspath(path) if path else DEFAULT_MANIFEST_PATH,
+            "source": "override" if path else "default",
+            "override_path": os.path.abspath(path) if path else None,
+        }
     return {
         "ok": True,
         "error": None,
         "path": loaded["path"],
+        "source": loaded["source"],
+        "override_path": loaded["override_path"],
         "artifact_count": len(loaded["artifacts"]),
     }
 
 
 __all__ = [
+    "ARCHIVE_ARTIFACTS",
     "ArtifactManifest",
     "ArtifactManifestError",
+    "DEFAULT_MANIFEST_PATH",
     "NODE_LINUX_X64_SHA256",
     "REQUIRED_ARTIFACTS",
     "TMUX_LINUX_X64_SHA256",

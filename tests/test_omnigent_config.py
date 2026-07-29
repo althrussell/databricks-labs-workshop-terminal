@@ -7,6 +7,7 @@ version stamp (not exists→done) is what makes the GA bump a pure env change.
 
 import json
 import os
+import shutil
 import time
 
 import pytest
@@ -237,35 +238,33 @@ def test_rotation_creates_config_when_absent(user, monkeypatch):
 
 
 def _mock_omnigent_artifacts(monkeypatch, tmp_path):
-    uv = tmp_path / "uv"
-    python_runtime = tmp_path / "python-runtime"
-    python = python_runtime / "bin/python3.12"
     lock = tmp_path / "omnigent.lock"
-    wheelhouse = tmp_path / "wheelhouse"
-    wheelhouse.mkdir(exist_ok=True)
-    uv.write_bytes(b"reviewed-uv")
-    python.parent.mkdir(parents=True)
-    python.write_bytes(b"reviewed-python")
     lock.write_text(
         f"omnigent=={install.OMNIGENT_VERSION} --hash=sha256:{'a' * 64}\n"
     )
-    (wheelhouse / "omnigent.whl").write_bytes(b"reviewed-wheel")
+    archives = {
+        "uv_binary": "uv-linux/uv",
+        "python_3_12_runtime": "python/bin/python3.12",
+    }
     entries = {
-        "uv_binary": {"source": str(uv), "sha256": install._file_checksum(uv)},
-        "python_3_12_runtime": {
-            "source": str(python_runtime),
-            "content_sha256": install._directory_checksum(python_runtime),
-            "executable_relative_path": "bin/python3.12",
-        },
         "omnigent_lock": {
             "source": str(lock),
             "sha256": install._file_checksum(lock),
         },
-        "omnigent_wheelhouse": {
-            "source": str(wheelhouse),
-            "content_sha256": install._directory_checksum(wheelhouse),
-        },
     }
+    for name, relative in archives.items():
+        staged = tmp_path / f"{name}-src"
+        (staged / relative).parent.mkdir(parents=True, exist_ok=True)
+        (staged / relative).write_bytes(name.encode())
+        archive = shutil.make_archive(
+            str(tmp_path / name), "gztar", root_dir=str(staged)
+        )
+        entries[name] = {
+            "source": archive,
+            "sha256": install._file_checksum(archive),
+            "kind": "archive",
+            "executable_relative_path": relative,
+        }
     monkeypatch.setattr(
         install,
         "_verified_artifact",
@@ -283,9 +282,8 @@ def _write_omnigent_stamp(tmp_path, entries):
     site.write_bytes(b"omnigent")
     (tmp_path / "omnigent.install.json").write_text(json.dumps({
         "uv_sha256": entries["uv_binary"]["sha256"],
-        "python_runtime_sha256": entries["python_3_12_runtime"]["content_sha256"],
+        "python_runtime_sha256": entries["python_3_12_runtime"]["sha256"],
         "lock_sha256": entries["omnigent_lock"]["sha256"],
-        "wheelhouse_sha256": entries["omnigent_wheelhouse"]["content_sha256"],
         "binary_sha256": install._file_checksum(tmp_path / "bin" / "omnigent"),
         "venv_sha256": install._directory_checksum(tmp_path / "omnigent-venv"),
     }))
@@ -350,12 +348,16 @@ def test_version_stamp_mismatch_reinstalls(monkeypatch, tmp_path):
         return FakeResult()
 
     monkeypatch.setattr(install.subprocess, "run", fake_run)
-    versions = iter(["0.4.0", install.OMNIGENT_VERSION])
-    monkeypatch.setattr(install, "_read_cli_version", lambda _: next(versions))
+    versions = ["0.4.0", install.OMNIGENT_VERSION]
+    monkeypatch.setattr(
+        install,
+        "_read_cli_version",
+        lambda _: versions.pop(0) if len(versions) > 1 else versions[0],
+    )
     install._install_omnigent()
     assert any(c[1:3] == ["pip", "install"] for c in calls)
     assert json.loads((tmp_path / "omnigent.install.json").read_text())[
-        "wheelhouse_sha256"
+        "lock_sha256"
     ]
     assert install.status()["steps"]["omnigent"]["status"] == "complete"
 

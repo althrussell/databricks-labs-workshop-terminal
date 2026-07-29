@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from . import attendee as attendee_binding
 from . import config
 from .users import User, email_slug
 
@@ -203,6 +204,9 @@ class RemoteHostManager:
 
         topology.validate_remote_omnigent()
         if config.omnigent_remote_enabled():
+            # Reject a malformed hint, but tolerate an absent one: the instance
+            # binds its attendee on the first request (see server/attendee.py),
+            # so failing startup here would prevent that from ever happening.
             config.workshop_attendee_email()
         install.validate_remote_compatibility()
         with self._lock:
@@ -275,7 +279,7 @@ class RemoteHostManager:
                 "connected": False,
                 "expected_host_id": "",
             }
-        configured = config.workshop_attendee_email()
+        configured = attendee_binding.resolved_email()
         if normalized != configured:
             raise ValueError("readiness requested for the wrong attendee")
         user = self._users.get(configured)

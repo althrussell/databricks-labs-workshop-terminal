@@ -44,7 +44,7 @@ def _setup_valid(payload: dict) -> bool:
             return False
         if entry.get("enabled", True) and entry.get("match") is not True:
             return False
-        if name == "ai_dev_kit" and entry.get("source") not in {
+        if name == "databricks_agent_skills" and entry.get("source") not in {
             "network",
             "prewarmed",
         }:
@@ -87,7 +87,7 @@ def _prewarm_valid(
         return False
     raw_expected = manifest.get("expected_binaries")
     binaries = manifest.get("binaries")
-    ai_dev_kit = manifest.get("ai_dev_kit")
+    skills_entry = manifest.get("databricks_agent_skills")
     if (
         not isinstance(raw_expected, list)
         or not all(isinstance(name, str) and name for name in raw_expected)
@@ -117,20 +117,20 @@ def _prewarm_valid(
         for entry in binaries.values()
     ):
         return False
-    if not isinstance(ai_dev_kit, dict):
+    if not isinstance(skills_entry, dict):
         return False
-    expected_checksum = str(ai_dev_kit.get("expected_checksum") or "")
-    actual_checksum = str(ai_dev_kit.get("actual_checksum") or "")
+    expected_checksum = str(skills_entry.get("expected_checksum") or "")
+    actual_checksum = str(skills_entry.get("actual_checksum") or "")
     return bool(
-        ai_dev_kit.get("expected_ref")
-        and ai_dev_kit.get("expected_ref") == ai_dev_kit.get("actual_ref")
+        skills_entry.get("expected_ref")
+        and skills_entry.get("expected_ref") == skills_entry.get("actual_ref")
         and re.fullmatch(
             r"[0-9a-fA-F]{40}",
-            str(ai_dev_kit.get("resolved_commit") or ""),
+            str(skills_entry.get("resolved_commit") or ""),
         )
         and expected_checksum == actual_checksum
         and re.fullmatch(r"[0-9a-f]{64}", actual_checksum)
-        and ai_dev_kit.get("source") == "persistent"
+        and skills_entry.get("source") == "persistent"
     )
 
 

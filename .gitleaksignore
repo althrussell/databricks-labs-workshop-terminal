@@ -1,0 +1,28 @@
+# Secret-scanner false positives, reviewed individually.
+#
+# assets/skills/ is vendored verbatim from databricks/databricks-agent-skills at
+# the tag assets/artifacts/manifest.json pins, and its content SHA-256 is
+# verified against that manifest at boot. Editing a vendored file to appease a
+# scanner would break that digest and make the offline fallback diverge from the
+# skills the terminal actually installs, so allowlisting is the only correct fix
+# for a placeholder in upstream documentation.
+
+# Documentation placeholder in the Lakebase local-development example: a
+# postgres URL whose userinfo, host, and database name are all the literal
+# words describing them. No real credential -- the surrounding prose tells the
+# reader to keep the real URL in an untracked .env and to use OAuth token
+# refresh in production.
+#
+# Two entries for one finding, because the two hooks fingerprint differently:
+# pre-commit runs `gitleaks protect --staged` (path-scoped) and pre-push runs
+# `gitleaks detect` (commit-scoped). The commit-scoped entry is tied to the SHA
+# that introduced the file and only matters while this branch is unmerged;
+# regenerate it with `gitleaks detect --log-opts "-p -1 <sha>"` after a rebase.
+assets/skills/databricks-lakebase/references/connectivity.md:postgres-connection-string:85
+ccf4f2607053962e5b6268c30a67a7cab47db532:assets/skills/databricks-lakebase/references/connectivity.md:postgres-connection-string:85
+
+# The same placeholder in the retired databricks-lakebase-provisioned skill,
+# inside a commit that is already on main. This change deletes that file, but the
+# pre-push hook re-scans historical commits by committer, so the entry is needed
+# to push at all. Safe to drop once main no longer needs re-scanning.
+33cb8a1bb09059cf2d974a92d0efc1d2a075958c:assets/skills/databricks-lakebase-provisioned/connection-patterns.md:postgres-connection-string:197

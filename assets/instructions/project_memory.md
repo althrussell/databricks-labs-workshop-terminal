@@ -12,19 +12,38 @@ into both files and committed on the first commit.
 ## Always build apps with AppKit
 
 AppKit is the required baseline for every app. Every app, dashboard, tool, or UI
-in this project MUST be built with **AppKit** (React + Vite + TypeScript)
-following the `databricks-apps-python` skill — scaffold with
-`databricks apps init` and apply the AppKit UX defaults from the skill's
-`7-appkit-ux.md`.
+in this project MUST be built with **AppKit** (Node.js + TypeScript + React) via
+the **`databricks-apps`** skill — scaffold with `databricks apps manifest` then
+`databricks apps init --features <plugins>`.
+
+Also required:
+
+- **`databricks-app-design`** whenever the app shows any data — KPI page,
+  report, chart, table, query results, or a Genie/chat assistant. It sets
+  layout, charts, semantic color, loading/empty/error states, and AI-result
+  provenance, mapped to real AppKit components.
+- **`databricks-lakebase`** when the app needs to save data. Provision it
+  non-interactively — never click resources together in the Databricks UI. Apps
+  with no saved state skip Lakebase.
 
 Do **not** reach for a Python framework (Streamlit / Dash / Gradio / Flask /
-FastAPI / Reflex). The only exception is when the user **explicitly and
+FastAPI / Reflex), and do not default to `databricks-apps-python` — that is the
+Python-backend alternative. The only exception is when the user **explicitly and
 insistently** asks for a specific Python framework — confirm that's really what
 they want, then proceed. Otherwise it is always AppKit.
 
-If the app needs to save data, provision Lakebase (Postgres) non-interactively
-via the `databricks-lakebase-provisioned` skill — never click resources together
-in the Databricks UI. Apps with no saved state skip Lakebase.
+## Validate before calling an AppKit build done
+
+1. Update `tests/smoke.spec.ts` selectors to match the real UI first — the
+   template's "Minimal Databricks App" heading and "hello world" text are gone
+   from your app, so validation fails until you do. Playwright locators only
+   (`getByRole`, `getByText`, `getByPlaceholder`, `getByLabel`); there is no
+   `getByLabelText`. Keep asserted result sets under 1 MB.
+2. Run `databricks apps validate` — it runs `appkit lint`
+   (no `as unknown as <T>` double assertions), `tsc --noEmit`, and the smoke
+   test. Confirm AppKit API signatures with
+   `npx @databricks/appkit docs <section>` before writing against them.
+3. Do not report success or offer Promote while validation is red.
 
 ## After a build completes — always offer Promote
 

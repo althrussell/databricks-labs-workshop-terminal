@@ -1243,7 +1243,7 @@ def _comparable_release_manifest(payload: dict) -> dict:
             for key in ("enabled", "expected", "actual", "match")
             if key in raw_entry
         }
-        if name == "ai_dev_kit":
+        if name == "databricks_agent_skills":
             for key in ("source", "resolved_commit", "checksum"):
                 if key in raw_entry:
                     entry[key] = raw_entry.get(key)
@@ -1281,8 +1281,8 @@ def _prewarm_release_consistent(setup_payload: dict, prewarm_payload: dict) -> b
             )
         ):
             return False
-    release_kit = release.get("ai_dev_kit")
-    prewarm_kit = manifest.get("ai_dev_kit")
+    release_kit = release.get("databricks_agent_skills")
+    prewarm_kit = manifest.get("databricks_agent_skills")
     if isinstance(release_kit, dict) and isinstance(prewarm_kit, dict):
         comparisons = (
             ("expected", "expected_ref"),

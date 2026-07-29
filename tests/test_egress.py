@@ -36,25 +36,40 @@ def test_public_mcp_opt_in_enables_servers(monkeypatch, tmp_path):
     assert set(cfg["mcpServers"]) == {"deepwiki", "exa"}
 
 
-def test_ai_dev_kit_ref_is_pinnable(monkeypatch):
+def test_skills_ref_is_pinnable(monkeypatch):
     import importlib
 
-    monkeypatch.setenv("AI_DEV_KIT_REF", "v1.2.3")
+    monkeypatch.setenv("SKILLS_REF", "v1.2.3")
     from server.bootstrap import install
 
     importlib.reload(install)
     try:
-        assert install.AI_DEV_KIT_REF == "v1.2.3"
+        assert install.SKILLS_REF == "v1.2.3"
     finally:
-        monkeypatch.delenv("AI_DEV_KIT_REF", raising=False)
+        monkeypatch.delenv("SKILLS_REF", raising=False)
         importlib.reload(install)
 
 
-def test_ai_dev_kit_ref_defaults_to_main(monkeypatch):
+def test_skills_default_is_a_reviewed_tag_not_a_branch_tip(monkeypatch):
+    """An unpinned default would install whatever landed upstream that morning."""
     import importlib
 
-    monkeypatch.delenv("AI_DEV_KIT_REF", raising=False)
+    monkeypatch.delenv("SKILLS_REF", raising=False)
+    monkeypatch.delenv("SKILLS_REPO", raising=False)
     from server.bootstrap import install
 
     importlib.reload(install)
-    assert install.AI_DEV_KIT_REF == "main"
+
+    assert install.SKILLS_REF.startswith("v")
+    assert install.SKILLS_REF != "main"
+    assert install.SKILLS_REPO.endswith("databricks-agent-skills.git")
+
+
+def test_skills_default_matches_the_reviewed_manifest():
+    from server.bootstrap import install
+    from server.bootstrap.artifacts import load_manifest
+
+    kit = load_manifest("")["artifacts"]["databricks_agent_skills"]
+
+    assert kit["version"] == install.SKILLS_REF
+    assert kit["source"] == install.SKILLS_REPO

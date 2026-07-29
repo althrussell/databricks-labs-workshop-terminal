@@ -1,7 +1,6 @@
 """Per-user workshop content: instructions, subagents, skills, git, MCP.
 
-Ported from the CoDA fork's attendee-experience work. Runs once per user (on
-their first session) after their HOME is bootstrapped:
+Runs once per user (on their first session) after their HOME is bootstrapped:
 
 - ~/.claude/CLAUDE.md       — workshop instructions (+ lab coach when enabled)
 - ~/.codex/AGENTS.md        — the same instructions adapted for Codex
@@ -10,9 +9,10 @@ their first session) after their HOME is bootstrapped:
                               only channel Omnigent's worktree-bound Codex worker
                               reads), backed by ~/.config/workshop/project-memory.md
 - ~/.claude/agents/         — TDD subagent definitions (prd-writer, implementer, ...)
-- ~/.claude/skills          — symlink to the shared skills library (latest
-                              ai-dev-kit, fetched at boot) — also linked at
-                              ~/.agents/skills where Codex discovers it
+- ~/.claude/skills          — per-skill symlinks into the shared skills library
+                              (reviewed databricks-agent-skills, fetched at boot);
+                              ~/.codex/skills gets the same set, which is where
+                              Codex and Omnigent's Codex worker discover them
 - ~/.claude.json            — onboarding skipped + MCP servers (DeepWiki, Exa)
 - ~/.gitconfig + hooks      — attendee git identity and a post-commit hook that
                               syncs ~/projects repos to the attendee's
@@ -125,7 +125,7 @@ def _write_instructions(user: User) -> None:
     with open(claude_md, "w") as f:
         f.write(text)
 
-    # Codex reads AGENTS.md; same content, swapped header (CoDA's adapt pattern).
+    # Codex reads AGENTS.md; same content, only the top header is swapped.
     agents_md = os.path.join(user.home, ".codex", "AGENTS.md")
     os.makedirs(os.path.dirname(agents_md), exist_ok=True)
     adapted = re.sub(r"^#\s+.*$", "# Codex Agent Instructions", text, count=1, flags=re.MULTILINE)
@@ -194,25 +194,52 @@ def _install_subagents(user: User) -> None:
 
 # -- skills (shared library, fetched latest at boot) --
 
+# Each harness reads its own directory, and `databricks aitools install` is the
+# reference for which: it keeps one canonical copy of the skills and symlinks
+# each skill into every detected agent's real skills directory. Claude Code
+# loads ~/.claude/skills; Codex CLI loads ~/.codex/skills, which is also the
+# CODEX_HOME configure_codex() writes, so Omnigent's Codex worker inherits it.
+HARNESS_SKILL_DIRS = {
+    "claude": os.path.join(".claude", "skills"),
+    "codex": os.path.join(".codex", "skills"),
+}
+
+
 def shared_skills_dir() -> str:
     return os.path.join(config.shared_prefix(), "skills")
 
 
 def _link_skills(user: User) -> None:
-    skills = shared_skills_dir()
-    if not os.path.isdir(skills):
-        skills = os.path.join(_ASSETS, "skills")  # boot fetch not done yet — vendored
-    # Claude discovers ~/.claude/skills; Codex discovers ~/.agents/skills.
-    for link in (
-        os.path.join(user.home, ".claude", "skills"),
-        os.path.join(user.home, ".agents", "skills"),
-    ):
-        os.makedirs(os.path.dirname(link), exist_ok=True)
+    source = shared_skills_dir()
+    if not os.path.isdir(source):
+        source = os.path.join(_ASSETS, "skills")  # boot fetch not done yet — vendored
+    names = sorted(
+        name
+        for name in os.listdir(source)
+        if os.path.isdir(os.path.join(source, name))
+    )
+    for relative in HARNESS_SKILL_DIRS.values():
+        _link_skill_set(source, os.path.join(user.home, relative), names)
+
+
+def _link_skill_set(source: str, target: str, names: list[str]) -> None:
+    """Symlink each skill into one harness directory, per-skill like the CLI.
+
+    Per-skill links rather than one directory link: a harness or the attendee
+    may put their own skill next to ours, and a whole-directory symlink would
+    either shadow that or (once the directory exists for real) leave the
+    Databricks skills unreachable.
+    """
+    if os.path.islink(target):
+        os.unlink(target)
+    os.makedirs(target, exist_ok=True)
+    for name in names:
+        link = os.path.join(target, name)
         if os.path.islink(link):
             os.unlink(link)
-        elif os.path.isdir(link):
-            continue  # user-modified real dir — leave it alone
-        os.symlink(skills, link)
+        elif os.path.exists(link):
+            continue  # the attendee's own copy wins
+        os.symlink(os.path.join(source, name), link)
 
 
 # -- ~/.claude.json (onboarding + MCP servers) --

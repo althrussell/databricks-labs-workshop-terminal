@@ -1,112 +1,15 @@
 ---
 name: databricks-apps-python
-description: "Builds Databricks applications. DEFAULT to AppKit (React + Vite + TypeScript + Lakebase) for every new app — it is the hard default, not a preference. Python frameworks (Dash, Streamlit, Gradio, Flask, FastAPI, Reflex) are opt-in ONLY when the user explicitly asks for Python or names a Python framework. Handles OAuth authorization, app resources, SQL warehouse and Lakebase connectivity, model serving, foundation model APIs, and deployment. Use when building web apps, dashboards, ML demos, or REST APIs for Databricks, or when the user mentions AppKit, Streamlit, Dash, Gradio, Flask, FastAPI, Reflex, or Databricks app."
+description: "Python backend for Databricks Apps — FastAPI (default), Flask, Dash, Streamlit, Gradio, Reflex. **Default for a new Databricks App is `databricks-apps` (AppKit — Node/TypeScript/React) — reach for it first.** Use this skill only when the user asks for a Python backend, extends an existing Python app, or the team is Python-only. Covers OAuth auth, app resources, SQL warehouse and Lakebase connectivity, foundation-model / Vector Search / model-serving APIs (via `databricks-python-sdk`), and deployment via CLI or DABs."
+compatibility: Requires databricks CLI (>= v1.0.0)
+metadata:
+  version: "0.1.0"
+parent: databricks-core
 ---
 
-# Databricks Applications
+# Databricks Applications — Python backends
 
-Build Databricks applications. **The default for ANY new app is AppKit + Lakebase** (React + Vite + TypeScript frontend, Lakebase Postgres backend). Do not reach for Streamlit/Dash/Delta unless the user explicitly opts out of AppKit. For full examples and recipes, see the **[Databricks Apps Cookbook](https://apps-cookbook.dev/)**.
-
----
-
-## AppKit + Lakebase — the DEFAULT for new apps
-
-> **HARD DEFAULT (do not deviate without explicit user opt-out).** When a user
-> asks to "build an app", "make a dashboard", "create a tool", or anything
-> similar WITHOUT naming a framework, you MUST scaffold with **AppKit**
-> (React + Vite + TypeScript) and use **Lakebase** (Postgres) for app state —
-> NOT Streamlit, NOT Dash, NOT a Delta-table-backed Python app. Streamlit and
-> the other Python frameworks are opt-in only (see
-> [Python frameworks (opt-in only)](#python-frameworks-opt-in-only)).
-
-**[AppKit](https://github.com/databricks/appkit)** is a Node.js + React SDK with a plugin architecture, built-in caching, telemetry, end-to-end type safety, and the `@databricks/appkit-ui` component library (shadcn/Radix primitives, `lucide-react` icons, charts, `DataTable`, `GenieChat`, `Sidebar`).
-
-### Why AppKit is the default
-- Modern full-stack UX out of the box (React + Vite + TypeScript), not a single-file script.
-- `@databricks/appkit-ui` ships a complete, Databricks-styled design system — every new app looks polished without the user prompting for design.
-- Lakebase (Postgres) is the right OLTP store for app state — far better UX than rendering a Delta table in Streamlit.
-- Plugin architecture (Analytics, Genie, Files, Lakebase) covers the common Databricks app needs.
-
-### Requirements (pre-checked at CoDA boot)
-- Node.js v22+
-- Databricks CLI v0.295.0+
-- A pinned, known-good AppKit version is recorded at `~/.coda/appkit-version` (see [appkit-precache](#pinned-appkit-version--offline-cache)).
-
-### Golden-path scaffold (zero prompts — never make the user click anything)
-
-**First decide whether the app needs persistence.** Many apps (read-only
-dashboards, viewers, simple tools) do NOT — those skip Lakebase entirely.
-
-**If the app does NOT need a database** (no CRUD, no saved state):
-```bash
-# Scaffold the AppKit (React + Vite + TypeScript) template, no DB resource.
-databricks apps init --name <app> --auto-approve
-```
-
-**If the app needs persistence** (CRUD records, user prefs, saved views), provision
-Lakebase on demand FIRST, then bind it non-interactively so `apps init` never
-hits the interactive "missing required resource Postgres" prompt:
-```bash
-# 1. Provision/reuse the lab's Lakebase instance (takes a few minutes the first
-#    time; reused instantly afterwards). Writes ~/.coda/lakebase.json.
-uv run python /app/python/source_code/scripts/lakebase_ensure.py
-
-# 2. Scaffold with the lakebase feature, binding the instance from step 1 via
-#    --set (non-interactive). With --auto-approve, an optional resource is only
-#    configured when its values are passed via --set — which is exactly what
-#    binds the DB without a prompt. The --set key is <plugin>.database.<field>;
-#    confirm the plugin/resource key for the template with
-#    `databricks apps init --help` (keys come from appkit.plugins.json).
-databricks apps init --name <app> --features=lakebase --auto-approve \
-  --set lakebase.database.instance_name=$(jq -r .name ~/.coda/lakebase.json) \
-  --set lakebase.database.database_name=$(jq -r .database_name ~/.coda/lakebase.json)
-```
-
-`lakebase_ensure.py` is idempotent — a second app in the same lab reuses the one
-instance. If it exits non-zero (e.g. the deploying identity lacks the
-database-create entitlement), tell the user and offer to proceed without
-persistence. This scaffolds the full project and installs dependencies. **Always read [7-appkit-ux.md](7-appkit-ux.md) immediately after scaffolding** and apply the CoDA UX defaults so the app ships with a branded shell, theming, and proper loading/empty/error states — without the user having to ask.
-
-### Deploy
-```bash
-databricks apps deploy
-```
-
-### AppKit plugins
-| Plugin | Purpose |
-|--------|---------|
-| **Lakebase** | OLTP PostgreSQL via Lakebase with OAuth token management — DEFAULT app-state store |
-| **Analytics** | SQL queries against Databricks SQL Warehouses — file-based, typed, cached |
-| **Genie** | Conversational AI/BI interface with natural language queries |
-| **Files** | Browse/upload Unity Catalog Volumes |
-
-### AI-assisted development
-```bash
-# Install agent skills for AI-powered scaffolding
-databricks experimental aitools skills install
-
-# Query AppKit docs inline
-npx @databricks/appkit docs "your question here"
-```
-
-### AppKit documentation
-- **[7-appkit-ux.md](7-appkit-ux.md)** — CoDA UX defaults + golden-path overlay (READ THIS after scaffolding)
-- **[AppKit Docs](https://databricks.github.io/appkit/docs/)** — getting started, plugins, API reference
-- **[AI-assisted development](https://databricks.github.io/appkit/docs/development/ai-assisted-development)** — guidance for code assistants
-- **[llms.txt](https://databricks.github.io/appkit/llms.txt)** — machine-readable docs for AI context
-
----
-
-## Python frameworks (opt-in only)
-
-> **Do NOT default to Streamlit or any Python framework.** Use a Python
-> framework ONLY when at least one of these is true:
-> - The user explicitly names Streamlit / Dash / Gradio / Flask / FastAPI / Reflex.
-> - The user explicitly says they want a Python app or cannot use Node/TypeScript.
-> - You are extending an existing Python app.
->
-> Otherwise, use [AppKit + Lakebase](#appkit--lakebase--the-default-for-new-apps).
-> If the request is ambiguous, default to AppKit.
+> **First, confirm this skill is the right one.** The default for new Databricks Apps is **[databricks-apps](../databricks-apps/SKILL.md)** (AppKit — Node.js + TypeScript + React SDK). Load that skill first unless the user explicitly asks for a Python backend, is extending an existing Python app, or the team is Python-only. Everything below is the Python-backend alternative.
 
 ## Critical Rules for Python apps (always follow)
 
@@ -134,14 +37,14 @@ Copy this checklist and verify each item:
 
 | Framework | Best For | app.yaml Command |
 |-----------|----------|------------------|
-| **Dash** | Production dashboards, BI tools, complex interactivity | `["python", "app.py"]` |
-| **Streamlit** | Rapid prototyping, data science apps, internal tools | `["streamlit", "run", "app.py"]` |
-| **Gradio** | ML demos, model interfaces, chat UIs | `["python", "app.py"]` |
+| **FastAPI** (default) | Any Python backend by default — async APIs, auto-generated OpenAPI docs, JSON-serving apps | `["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]` |
 | **Flask** | Custom REST APIs, lightweight apps, webhooks | `["gunicorn", "app:app", "-w", "4", "-b", "0.0.0.0:8000"]` |
-| **FastAPI** | Async APIs, auto-generated OpenAPI docs | `["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]` |
+| **Dash** | Production dashboards, BI tools, complex interactivity | `["python", "app.py"]` |
+| **Streamlit** | Rapid prototyping, data science apps, internal tools where the UI is a series of Python widgets | `["streamlit", "run", "app.py"]` |
+| **Gradio** | ML demos, model interfaces, chat UIs | `["python", "app.py"]` |
 | **Reflex** | Full-stack Python apps without JavaScript | `["reflex", "run", "--env", "prod"]` |
 
-**Default**: There is no Python default — the default for any new app is [AppKit + Lakebase](#appkit--lakebase--the-default-for-new-apps). Only once the user has explicitly opted into Python: pick **Dash** for production dashboards, **FastAPI** for APIs, **Gradio** for ML demos, **Streamlit** for quick data-science prototypes.
+**Default: FastAPI.** Reach for FastAPI unless the user explicitly asks for Streamlit-style widget prototyping (Streamlit), a heavy dashboard grid (Dash), or a Gradio-style ML demo. FastAPI pairs naturally with a JS/HTML frontend or a JSON-consuming caller — the same posture `databricks-apps` uses on the Node side.
 
 ---
 
@@ -152,30 +55,28 @@ Copy this checklist and verify each item:
 | **Runtime** | Python 3.11, Ubuntu 22.04, 2 vCPU, 6 GB RAM |
 | **Pre-installed** | Dash 2.18.1, Streamlit 1.38.0, Gradio 4.44.0, Flask 3.0.3, FastAPI 0.115.0 |
 | **Auth (app)** | Service principal via `Config()` — auto-injected `DATABRICKS_CLIENT_ID`/`DATABRICKS_CLIENT_SECRET` |
-| **Auth (user)** | `x-forwarded-access-token` header — see [1-authorization.md](1-authorization.md) |
-| **Resources** | `valueFrom` in app.yaml — see [2-app-resources.md](2-app-resources.md) |
-| **Cookbook** | https://apps-cookbook.dev/ |
-| **Docs** | https://docs.databricks.com/aws/en/dev-tools/databricks-apps/ |
+| **Auth (user)** | `x-forwarded-access-token` header — see [references/1-authorization.md](references/1-authorization.md) |
+| **Resources** | `valueFrom` in app.yaml — see [references/2-app-resources.md](references/2-app-resources.md) |
+| **SDK / Foundation Models / Vector Search / Model Serving** | Use the `databricks-python-sdk` skill — same `WorkspaceClient` and OpenAI-compatible foundation-model patterns work inside a Databricks App |
+| **Docs** | https://docs.databricks.com/dev-tools/databricks-apps/ |
 
 ---
 
 ## Detailed Guides
 
-**AppKit UX defaults**: Read [7-appkit-ux.md](7-appkit-ux.md) immediately after scaffolding any AppKit app — it defines the CoDA UX contract (branded app shell, theme provider + light/dark, mandatory loading/empty/error states, responsive layout + lucide icons) and the app-type→layout map the agent must apply with no prompting. (Keywords: AppKit, UX, app shell, theme, sidebar, layout, dashboard, CRUD, chat, form)
+**Authorization**: Use [references/1-authorization.md](references/1-authorization.md) when configuring app or user authorization — covers service principal auth, on-behalf-of user tokens, OAuth scopes, and per-framework code examples. (Keywords: OAuth, service principal, user auth, on-behalf-of, access token, scopes)
 
-**Authorization**: Use [1-authorization.md](1-authorization.md) when configuring app or user authorization — covers service principal auth, on-behalf-of user tokens, OAuth scopes, and per-framework code examples. (Keywords: OAuth, service principal, user auth, on-behalf-of, access token, scopes)
+**App resources**: Use [references/2-app-resources.md](references/2-app-resources.md) when connecting your app to Databricks resources — covers SQL warehouses, Lakebase, model serving, secrets, volumes, and the `valueFrom` pattern. (Keywords: resources, valueFrom, SQL warehouse, model serving, secrets, volumes, connections)
 
-**App resources**: Use [2-app-resources.md](2-app-resources.md) when connecting your app to Databricks resources — covers SQL warehouses, Lakebase, model serving, secrets, volumes, and the `valueFrom` pattern. (Keywords: resources, valueFrom, SQL warehouse, model serving, secrets, volumes, connections)
+**Frameworks**: See [references/3-frameworks.md](references/3-frameworks.md) for Databricks-specific patterns per framework — FastAPI (default), Flask, Dash, Streamlit, Gradio, Reflex — with auth integration and deployment commands. (Keywords: FastAPI, Flask, Dash, Streamlit, Gradio, Reflex, framework selection)
 
-**Frameworks**: See [3-frameworks.md](3-frameworks.md) for Databricks-specific patterns per framework — covers Dash, Streamlit, Gradio, Flask, FastAPI, and Reflex with auth integration, deployment commands, and Cookbook links. (Keywords: Dash, Streamlit, Gradio, Flask, FastAPI, Reflex, framework selection)
+**Deployment**: Use [references/4-deployment.md](references/4-deployment.md) when deploying your app — covers Databricks CLI, Asset Bundles (DABs), app.yaml configuration, and post-deployment verification. (Keywords: deploy, CLI, DABs, asset bundles, app.yaml, logs)
 
-**Deployment**: Use [4-deployment.md](4-deployment.md) when deploying your app — covers Databricks CLI, Asset Bundles (DABs), app.yaml configuration, and post-deployment verification. (Keywords: deploy, CLI, DABs, asset bundles, app.yaml, logs)
+**Lakebase**: Use [references/5-lakebase.md](references/5-lakebase.md) when using Lakebase (PostgreSQL) as your app's data layer — covers auto-injected env vars, psycopg2/asyncpg patterns, and when to choose Lakebase vs SQL warehouse. (Keywords: Lakebase, PostgreSQL, psycopg2, asyncpg, transactional, PGHOST)
 
-**Lakebase**: Use [5-lakebase.md](5-lakebase.md) when using Lakebase (PostgreSQL) as your app's data layer — covers auto-injected env vars, psycopg2/asyncpg patterns, and when to choose Lakebase vs SQL warehouse. (Keywords: Lakebase, PostgreSQL, psycopg2, asyncpg, transactional, PGHOST)
+**CLI commands**: Use [references/6-cli-approach.md](references/6-cli-approach.md) for managing app lifecycle via CLI — covers creating, deploying, monitoring, and deleting apps. (Keywords: CLI, create app, deploy app, app logs)
 
-**MCP tools**: Use [6-mcp-approach.md](6-mcp-approach.md) for managing app lifecycle via MCP tools — covers creating, deploying, monitoring, and deleting apps programmatically. (Keywords: MCP, create app, deploy app, app logs)
-
-**Foundation Models**: See [examples/llm_config.py](examples/llm_config.py) for calling Databricks foundation model APIs — covers OAuth M2M auth, OpenAI-compatible client wiring, and token caching. (Keywords: foundation model, LLM, OpenAI client, chat completions)
+**Foundation Models / SDK / Vector Search / Model Serving**: Use the **[databricks-python-sdk](../databricks-python-sdk/SKILL.md)** skill for the OpenAI-compatible foundation-model client, `WorkspaceClient` calls, Vector Search, and model-serving invocation — the same patterns apply inside a Databricks App. The examples in this skill's `examples/` folder (`fm-minimal-chat.py`, `fm-parallel-calls.py`, `fm-structured-outputs.py`, `llm_config.py`) show the App-side wiring only.
 
 ---
 
@@ -183,16 +84,16 @@ Copy this checklist and verify each item:
 
 1. Determine the task type:
 
-   **New app from scratch?** → Use [AppKit + Lakebase](#appkit--lakebase--the-default-for-new-apps) (`databricks apps init`), then apply [7-appkit-ux.md](7-appkit-ux.md). This is the default — only use [Python Framework Selection](#python-framework-selection) if the user explicitly opted into Python.
-   **Setting up authorization?** → Read [1-authorization.md](1-authorization.md)
-   **Connecting to data/resources?** → Read [2-app-resources.md](2-app-resources.md)
-   **Using Lakebase (PostgreSQL)?** → Read [5-lakebase.md](5-lakebase.md)
-   **Deploying to Databricks?** → Read [4-deployment.md](4-deployment.md)
-   **Using MCP tools?** → Read [6-mcp-approach.md](6-mcp-approach.md)
-   **Calling foundation model/LLM APIs?** → See [examples/llm_config.py](examples/llm_config.py)
+   **New app from scratch?** → Load **[databricks-apps](../databricks-apps/SKILL.md)** first (AppKit / Node). Only stay in this skill if the user explicitly asks for a Python backend.
+   **Python-backend confirmed?** → [Python Framework Selection](#python-framework-selection) — default to FastAPI.
+   **Setting up authorization?** → Read [references/1-authorization.md](references/1-authorization.md)
+   **Connecting to data/resources?** → Read [references/2-app-resources.md](references/2-app-resources.md)
+   **Using Lakebase (PostgreSQL)?** → Read [references/5-lakebase.md](references/5-lakebase.md)
+   **Deploying to Databricks?** → Read [references/4-deployment.md](references/4-deployment.md)
+   **Using CLI for app lifecycle?** → Read [references/6-cli-approach.md](references/6-cli-approach.md)
+   **Calling foundation model / LLM APIs, Vector Search, or model-serving endpoints?** → Load the **[databricks-python-sdk](../databricks-python-sdk/SKILL.md)** skill. This skill's `examples/` folder shows only the App-side wiring on top of those SDK patterns.
 
-2. Follow the instructions in the relevant guide
-3. For full code examples, browse https://apps-cookbook.dev/
+2. Follow the instructions in the relevant guide.
 
 ---
 
@@ -296,18 +197,16 @@ class EntityIn(BaseModel):
 
 ## Official Documentation
 
-- **[AppKit](https://databricks.github.io/appkit/docs/)** — preferred SDK for new apps (TypeScript + React)
-- **[Databricks Apps Overview](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/)** — main docs hub
-- **[Apps Cookbook](https://apps-cookbook.dev/)** — ready-to-use code snippets (Streamlit, Dash, Reflex, FastAPI)
-- **[Authorization](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/auth)** — app auth and user auth
-- **[Resources](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources)** — SQL warehouse, Lakebase, serving, secrets
-- **[app.yaml Reference](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/app-runtime)** — command and env config
-- **[System Environment](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/system-env)** — pre-installed packages, runtime details
+- **[Databricks Apps Overview](https://docs.databricks.com/dev-tools/databricks-apps/)** — main docs hub
+- **[Authorization](https://docs.databricks.com/dev-tools/databricks-apps/auth)** — app auth and user auth
+- **[Resources](https://docs.databricks.com/dev-tools/databricks-apps/resources)** — SQL warehouse, Lakebase, serving, secrets
+- **[app.yaml Reference](https://docs.databricks.com/dev-tools/databricks-apps/app-runtime)** — command and env config
+- **[System Environment](https://docs.databricks.com/dev-tools/databricks-apps/system-env)** — pre-installed packages, runtime details
 
 ## Related Skills
 
-- **[databricks-app-apx](../databricks-app-apx/SKILL.md)** - full-stack apps with FastAPI + React
-- **[databricks-bundles](../databricks-bundles/SKILL.md)** - deploying apps via DABs
-- **[databricks-python-sdk](../databricks-python-sdk/SKILL.md)** - backend SDK integration
-- **[databricks-lakebase-provisioned](../databricks-lakebase-provisioned/SKILL.md)** - adding persistent PostgreSQL state
-- **[databricks-model-serving](../databricks-model-serving/SKILL.md)** - serving ML models for app integration
+- **[databricks-apps](../databricks-apps/SKILL.md)** — the default for new Databricks Apps (AppKit / Node / TypeScript + React); load it first unless a Python backend is explicitly required
+- **[databricks-python-sdk](../databricks-python-sdk/SKILL.md)** — `WorkspaceClient`, OpenAI-compatible foundation-model client, Vector Search, model-serving invocation; the same patterns work inside a Databricks App
+- **[databricks-lakebase](../databricks-lakebase/SKILL.md)** — persistent PostgreSQL state (autoscaling managed PG with branching)
+- **[databricks-model-serving](../databricks-model-serving/SKILL.md)** — endpoint lifecycle for ML models an App calls
+- **databricks-dabs** — deploying apps via DABs

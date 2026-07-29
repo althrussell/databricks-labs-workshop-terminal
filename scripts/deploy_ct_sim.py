@@ -24,7 +24,7 @@ the secret-free mutation plan without calling workspace APIs.
 
   export DATABRICKS_CONFIG_PROFILE=labs
   python scripts/deploy_ct_sim.py --name workshop-terminal-ct \
-    --ai-dev-kit-ref v1.2.3 \
+    --skills-ref v1.2.3 \
     --anthropic-model databricks-claude-sonnet-5 \
     --codex-model databricks-gpt-5-6-codex
 
@@ -119,8 +119,8 @@ def _parse_args(argv=None, *, environ=None):
         help="Databricks CLI profile (or set DATABRICKS_CONFIG_PROFILE)",
     )
     parser.add_argument("--admin-group", default="platform_admins")
-    parser.add_argument("--ai-dev-kit-ref", required=True,
-                        help="reviewed ai-dev-kit tag or commit SHA (branch tips rejected)")
+    parser.add_argument("--skills-ref", required=True,
+                        help="reviewed databricks-agent-skills tag or commit SHA (branch tips rejected)")
     parser.add_argument("--anthropic-model", required=True,
                         help="exact reviewed Anthropic serving endpoint")
     parser.add_argument("--codex-model", required=True,
@@ -179,10 +179,10 @@ def _validate_args(parser, args, environ):
             "event OBO scopes are missing baseline values: "
             + ",".join(missing_scopes)
         )
-    ref = args.ai_dev_kit_ref
+    ref = args.skills_ref
     if not (re.fullmatch(r"[0-9A-Fa-f]{40}", ref) or VERSION_TAG_RE.fullmatch(ref)):
         parser.error(
-            "--ai-dev-kit-ref must be a full 40-hex commit SHA or strict "
+            "--skills-ref must be a full 40-hex commit SHA or strict "
             "version tag (vMAJOR.MINOR.PATCH with optional prerelease/build)"
         )
     for field in (
@@ -373,7 +373,7 @@ def _event_settings(
     catalog,
     scopes,
     admin_group,
-    ai_dev_kit_ref,
+    skills_ref,
     anthropic_model,
     codex_model,
     claude_code_version,
@@ -394,7 +394,7 @@ def _event_settings(
         "ENABLE_ENTITLEMENTS": str(enable_entitlements).lower(),
         "OBO_SCOPES": scopes if enable_obo else "",
         "ADMIN_GROUP": admin_group,
-        "AI_DEV_KIT_REF": ai_dev_kit_ref,
+        "SKILLS_REF": skills_ref,
         "ANTHROPIC_MODEL": anthropic_model,
         "CODEX_MODEL": codex_model,
         "CLAUDE_CODE_VERSION": claude_code_version,
@@ -411,7 +411,7 @@ def _event_settings_from_args(args, attendee, workshop_pat):
         catalog=args.catalog,
         scopes=args.scopes,
         admin_group=args.admin_group,
-        ai_dev_kit_ref=args.ai_dev_kit_ref,
+        skills_ref=args.skills_ref,
         anthropic_model=args.anthropic_model,
         codex_model=args.codex_model,
         claude_code_version=args.claude_code_version,

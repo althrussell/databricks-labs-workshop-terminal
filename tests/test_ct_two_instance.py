@@ -904,7 +904,7 @@ def test_known_secret_values_are_rejected_even_under_neutral_keys():
 
 def _setup_payload(*, omnigent=False):
     manifest = {
-        "ai_dev_kit": {
+        "databricks_agent_skills": {
             "match": True,
             "source": "prewarmed",
             "checksum": "b" * 64,
@@ -942,7 +942,7 @@ def _prewarm_payload(*, omnigent=False):
         "manifest": {
             "expected_binaries": sorted(binaries),
             "binaries": binaries,
-            "ai_dev_kit": {
+            "databricks_agent_skills": {
                 "expected_ref": "v1.2.3",
                 "actual_ref": "v1.2.3",
                 "resolved_commit": "a" * 40,

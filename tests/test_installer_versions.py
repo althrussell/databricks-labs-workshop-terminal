@@ -1,6 +1,7 @@
 import json
 import os
 import select
+import shutil
 import subprocess
 import sys
 import threading
@@ -10,23 +11,54 @@ import pytest
 from server.bootstrap import install
 
 
+_ARCHIVE_EXECUTABLES = {
+    "uv_binary": "uv-x86_64-unknown-linux-gnu/uv",
+    "python_3_12_runtime": "python/bin/python3.12",
+}
+
+
+def _make_archive(root, name, relative):
+    """Build a real tar.gz so the boot path's extraction runs, not a stub."""
+    staged = root / f"{name}-src"
+    executable = staged / relative
+    executable.parent.mkdir(parents=True, exist_ok=True)
+    executable.write_bytes(name.encode())
+    archive = shutil.make_archive(
+        str(root / name), "gztar", root_dir=str(staged)
+    )
+    return archive
+
+
 class _SyntheticArtifactContract:
     def __init__(self, root):
         self.root = root
+        self.source = "default"
         self._entries = {}
-        self.ai_dev_kit = {
-            "version": install.AI_DEV_KIT_REF,
-            "source": install.AI_DEV_KIT_REPO,
-            "sha256": "9" * 64,
+        self.databricks_agent_skills = {
+            "version": install.SKILLS_REF,
+            "source": install.SKILLS_REPO,
             "commit": "a" * 40,
             "content_sha256": "b" * 64,
         }
 
     def entry(self, name):
-        if name == "ai_dev_kit":
-            self.ai_dev_kit["version"] = install.AI_DEV_KIT_REF
-            self.ai_dev_kit["source"] = install.AI_DEV_KIT_REPO
-            return self.ai_dev_kit
+        if name == "databricks_agent_skills":
+            self.databricks_agent_skills["version"] = install.SKILLS_REF
+            self.databricks_agent_skills["source"] = install.SKILLS_REPO
+            return self.databricks_agent_skills
+        if name in _ARCHIVE_EXECUTABLES:
+            if name not in self._entries:
+                archive = _make_archive(
+                    self.root, name, _ARCHIVE_EXECUTABLES[name]
+                )
+                self._entries[name] = {
+                    "version": "test",
+                    "source": archive,
+                    "sha256": install._file_checksum(archive),
+                    "kind": "archive",
+                    "executable_relative_path": _ARCHIVE_EXECUTABLES[name],
+                }
+            return self._entries[name]
         if name in {
             "codex_npm_launcher_package",
             "codex_native_package_linux_x64",
@@ -51,30 +83,8 @@ class _SyntheticArtifactContract:
             }
             return self._entries[name]
         path = self.root / name
-        if name in {"omnigent_wheelhouse", "python_3_12_runtime"}:
-            path.mkdir(exist_ok=True)
-            relative = (
-                "omnigent.whl"
-                if name == "omnigent_wheelhouse"
-                else "bin/python3.12"
-            )
-            artifact = path / relative
-            artifact.parent.mkdir(parents=True, exist_ok=True)
-            if not artifact.exists():
-                artifact.write_bytes(
-                    b"wheel" if name == "omnigent_wheelhouse" else b"python"
-                )
-            entry = {
-                "version": "test",
-                "source": str(path),
-                "kind": "directory",
-                "content_sha256": install._directory_checksum(path),
-            }
-            if name == "python_3_12_runtime":
-                entry["executable_relative_path"] = relative
-            return entry
         payload = (
-            b"omnigent==0.5.1 --hash=sha256:" + b"a" * 64 + b"\n"
+            b"omnigent==0.7.0 --hash=sha256:" + b"a" * 64 + b"\n"
             if name == "omnigent_lock"
             else name.encode()
         )
@@ -184,8 +194,12 @@ def test_status_exposes_secret_free_expected_and_actual_release_manifest():
 
 
 def test_setup_steps_record_source_timing_and_verification_fields(monkeypatch):
-    times = iter([100.0, 104.25])
-    monkeypatch.setattr(install.time, "time", lambda: next(times))
+    # Only the two _set calls are timed; anything status() does afterwards must
+    # not consume the sequence, so the last value repeats.
+    times = [100.0, 104.25]
+    monkeypatch.setattr(
+        install.time, "time", lambda: times.pop(0) if len(times) > 1 else times[0]
+    )
 
     install._set(
         "claude",
@@ -233,7 +247,9 @@ def test_codex_existing_version_mismatch_forces_exact_reinstall(
     codex = prefix / "bin" / "codex"
     codex.parent.mkdir()
     codex.write_text("old")
-    versions = iter(["0.1.0", install.CODEX_VERSION])
+    # The stale version is seen once, then every later read is the reinstalled
+    # one, including the reads status() makes when it re-verifies the disk.
+    versions = ["0.1.0", install.CODEX_VERSION]
     calls = []
 
     class Result:
@@ -242,7 +258,11 @@ def test_codex_existing_version_mismatch_forces_exact_reinstall(
         stderr = ""
 
     monkeypatch.setattr(install.config, "shared_prefix", lambda: str(prefix))
-    monkeypatch.setattr(install, "_read_cli_version", lambda _: next(versions))
+    monkeypatch.setattr(
+        install,
+        "_read_cli_version",
+        lambda _: versions.pop(0) if len(versions) > 1 else versions[0],
+    )
     def fake_run(argv, **kwargs):
         calls.append(argv)
         return Result()
@@ -478,45 +498,38 @@ def test_tmux_reuses_only_checksum_verified_persistent_install(
     assert step["actual_checksum"] == checksum
 
 
-def test_omnigent_installs_from_complete_offline_supply_chain(
+def test_omnigent_installs_from_the_hash_pinned_lock_alone(
     monkeypatch, tmp_path
 ):
+    """No wheelhouse: the lock's per-wheel hashes are the integrity anchor."""
     prefix = tmp_path / "prefix"
     (prefix / "bin").mkdir(parents=True)
-    uv = tmp_path / "uv"
-    python_runtime = tmp_path / "python-runtime"
-    python = python_runtime / "bin/python3.12"
     lock = tmp_path / "omnigent.lock"
-    wheelhouse = tmp_path / "wheelhouse"
-    wheelhouse.mkdir()
-    uv.write_bytes(b"reviewed-uv")
-    python.parent.mkdir(parents=True)
-    python.write_bytes(b"reviewed-python-3.12")
-    (python_runtime / "lib/python3.12/os.py").parent.mkdir(parents=True)
-    (python_runtime / "lib/python3.12/os.py").write_bytes(b"stdlib")
     lock.write_text(
         "omnigent==0.7.0 --hash=sha256:" + "a" * 64 + "\n"
         "omnigent-client==0.7.0 --hash=sha256:" + "b" * 64 + "\n"
     )
-    (wheelhouse / "omnigent-0.7.0-py3-none-any.whl").write_bytes(b"wheel")
+    uv_archive = _make_archive(tmp_path, "uv_binary", "uv-linux/uv")
+    python_archive = _make_archive(
+        tmp_path, "python_3_12_runtime", "python/bin/python3.12"
+    )
     entries = {
         "uv_binary": {
-            "source": str(uv),
-            "sha256": install._file_checksum(uv),
+            "source": uv_archive,
+            "sha256": install._file_checksum(uv_archive),
+            "kind": "archive",
+            "executable_relative_path": "uv-linux/uv",
         },
         "python_3_12_runtime": {
-            "source": str(python_runtime),
-            "content_sha256": install._directory_checksum(python_runtime),
-            "executable_relative_path": "bin/python3.12",
+            "source": python_archive,
+            "sha256": install._file_checksum(python_archive),
+            "kind": "archive",
+            "executable_relative_path": "python/bin/python3.12",
         },
         "omnigent_lock": {
             "source": str(lock),
             "sha256": install._file_checksum(lock),
             "lock_sha256": install._file_checksum(lock),
-        },
-        "omnigent_wheelhouse": {
-            "source": str(wheelhouse),
-            "content_sha256": install._directory_checksum(wheelhouse),
         },
     }
     monkeypatch.setattr(install.config, "shared_prefix", lambda: str(prefix))
@@ -526,6 +539,8 @@ def test_omnigent_installs_from_complete_offline_supply_chain(
         lambda name: (entries[name]["source"], entries[name]),
     )
     monkeypatch.setattr(install, "_read_cli_version", lambda _path: install.OMNIGENT_VERSION)
+    uv = install._extracted_artifact_executable("uv_binary")[0]
+    python = install._extracted_artifact_executable("python_3_12_runtime")[0]
     calls = []
 
     class Result:
@@ -535,10 +550,12 @@ def test_omnigent_installs_from_complete_offline_supply_chain(
 
     def fake_run(argv, **kwargs):
         calls.append((argv, kwargs["env"]))
-        assert argv[0] == str(uv)
-        assert kwargs["env"]["UV_OFFLINE"] == "1"
-        assert kwargs["env"]["UV_NO_INDEX"] == "1"
+        assert argv[0] == uv
+        # uv may reach PyPI, but never for an interpreter and never for an
+        # unhashed wheel.
         assert kwargs["env"]["UV_PYTHON_DOWNLOADS"] == "never"
+        assert "UV_OFFLINE" not in kwargs["env"]
+        assert "UV_NO_INDEX" not in kwargs["env"]
         if argv[1] == "venv":
             venv_python = prefix / "omnigent-venv/bin/python"
             venv_python.parent.mkdir(parents=True)
@@ -562,19 +579,19 @@ def test_omnigent_installs_from_complete_offline_supply_chain(
 
     venv_call, pip_call = [call[0] for call in calls]
     assert venv_call == [
-        str(uv), "venv", "--clear", "--python", str(python),
+        uv, "venv", "--clear", "--python", python,
         str(prefix / "omnigent-venv"),
     ]
-    assert "--offline" in pip_call
-    assert "--no-index" in pip_call
     assert "--require-hashes" in pip_call
-    assert str(wheelhouse) in pip_call
+    assert "--offline" not in pip_call
+    assert "--no-index" not in pip_call
+    assert "--find-links" not in pip_call
     assert str(lock) in pip_call
     stamp = json.loads((prefix / "omnigent.install.json").read_text())
     assert stamp["uv_sha256"] == entries["uv_binary"]["sha256"]
-    assert stamp["python_runtime_sha256"] == entries["python_3_12_runtime"]["content_sha256"]
+    assert stamp["python_runtime_sha256"] == entries["python_3_12_runtime"]["sha256"]
     assert stamp["lock_sha256"] == entries["omnigent_lock"]["sha256"]
-    assert stamp["wheelhouse_sha256"] == entries["omnigent_wheelhouse"]["content_sha256"]
+    assert "wheelhouse_sha256" not in stamp
     assert stamp["venv_sha256"] == install._directory_checksum(
         prefix / "omnigent-venv"
     )
@@ -587,11 +604,21 @@ def test_omnigent_installs_from_complete_offline_supply_chain(
     site.write_bytes(original_site)
     assert install._omnigent_install_reusable(str(prefix), entries)
 
-    (python_runtime / "lib/python3.12/os.py").write_bytes(b"tampered stdlib")
+    # The lock is the anchor: edit it and the whole install stops being reusable,
+    # because a different lock can resolve to different wheels.
+    original_lock = lock.read_bytes()
+    lock.write_text("omnigent==0.7.0 --hash=sha256:" + "c" * 64 + "\n")
     assert not install._omnigent_install_reusable(str(prefix), entries)
+    lock.write_bytes(original_lock)
 
-    uv.write_bytes(b"tampered")
-    assert not install._omnigent_install_reusable(str(prefix), entries)
+    # A bumped uv or Python archive is likewise not reusable, since the stamp
+    # records which reviewed archives produced this venv.
+    for name in ("uv_binary", "python_3_12_runtime"):
+        original = entries[name]["sha256"]
+        entries[name]["sha256"] = "e" * 64
+        assert not install._omnigent_install_reusable(str(prefix), entries)
+        entries[name]["sha256"] = original
+    assert install._omnigent_install_reusable(str(prefix), entries)
 
 
 def test_omnigent_missing_staged_supply_chain_sets_installer_error(
@@ -622,7 +649,7 @@ def test_all_release_candidate_defaults_are_exact():
     assert install.OMNIGENT_VERSION == "0.7.0"
 
 
-def test_ai_dev_kit_fetch_records_exact_ref_and_resolved_commit(
+def test_skills_fetch_records_exact_ref_and_resolved_commit(
     monkeypatch, tmp_path, restore_installer_state
 ):
     prefix = tmp_path / "prefix"
@@ -638,13 +665,13 @@ def test_ai_dev_kit_fetch_records_exact_ref_and_resolved_commit(
 
     def fake_run(argv, **kwargs):
         if argv[:2] == ["git", "clone"]:
-            clone_dir = prefix / "ai-dev-kit"
-            (clone_dir / "databricks-skills" / "fetched-skill").mkdir(
+            clone_dir = prefix / install.SKILLS_CLONE_DIR
+            (clone_dir / install.SKILLS_UPSTREAM_DIR / "fetched-skill").mkdir(
                 parents=True
             )
-            restore_installer_state.ai_dev_kit["commit"] = commit
-            restore_installer_state.ai_dev_kit["content_sha256"] = (
-                install._directory_checksum(clone_dir / "databricks-skills")
+            restore_installer_state.databricks_agent_skills["commit"] = commit
+            restore_installer_state.databricks_agent_skills["content_sha256"] = (
+                install._directory_checksum(clone_dir / install.SKILLS_UPSTREAM_DIR)
             )
             return Result()
         if "rev-parse" in argv:
@@ -653,12 +680,12 @@ def test_ai_dev_kit_fetch_records_exact_ref_and_resolved_commit(
 
     monkeypatch.setattr(install.config, "shared_prefix", lambda: str(prefix))
     monkeypatch.setattr(install, "_ASSETS_SKILLS", str(vendored))
-    monkeypatch.setattr(install, "AI_DEV_KIT_REF", "v1.2.3")
+    monkeypatch.setattr(install, "SKILLS_REF", "v1.2.3")
     monkeypatch.setattr(install.subprocess, "run", fake_run)
 
     install._install_skills()
 
-    manifest = install.status()["release_manifest"]["ai_dev_kit"]
+    manifest = install.status()["release_manifest"]["databricks_agent_skills"]
     assert {
         key: manifest[key]
         for key in (
@@ -689,7 +716,7 @@ def test_ai_dev_kit_fetch_records_exact_ref_and_resolved_commit(
     } <= set(manifest)
 
 
-def test_ai_dev_kit_checksum_covers_only_copied_skill_directories(
+def test_skills_checksum_covers_only_copied_skill_directories(
     monkeypatch, tmp_path, restore_installer_state
 ):
     prefix = tmp_path / "prefix"
@@ -705,13 +732,13 @@ def test_ai_dev_kit_checksum_covers_only_copied_skill_directories(
 
     def fake_run(argv, **kwargs):
         if argv[:2] == ["git", "clone"]:
-            upstream = prefix / "ai-dev-kit" / "databricks-skills"
+            upstream = prefix / install.SKILLS_CLONE_DIR / install.SKILLS_UPSTREAM_DIR
             skill = upstream / "fetched-skill"
             skill.mkdir(parents=True)
             (skill / "SKILL.md").write_text("verified")
             (upstream / "README.md").write_text("repository metadata")
-            restore_installer_state.ai_dev_kit["commit"] = commit
-            restore_installer_state.ai_dev_kit["content_sha256"] = (
+            restore_installer_state.databricks_agent_skills["commit"] = commit
+            restore_installer_state.databricks_agent_skills["content_sha256"] = (
                 install._directory_checksum(upstream, {"fetched-skill"})
             )
             return Result()
@@ -721,23 +748,25 @@ def test_ai_dev_kit_checksum_covers_only_copied_skill_directories(
 
     monkeypatch.setattr(install.config, "shared_prefix", lambda: str(prefix))
     monkeypatch.setattr(install, "_ASSETS_SKILLS", str(vendored))
-    monkeypatch.setattr(install, "AI_DEV_KIT_REF", commit)
+    monkeypatch.setattr(install, "SKILLS_REF", commit)
     monkeypatch.setattr(install.subprocess, "run", fake_run)
 
     install._install_skills()
 
-    manifest = install.status()["release_manifest"]["ai_dev_kit"]
+    manifest = install.status()["release_manifest"]["databricks_agent_skills"]
     assert manifest["source"] == "network"
     assert (prefix / "skills" / "fetched-skill" / "SKILL.md").read_text() == "verified"
     assert manifest["checksum"] == install._directory_checksum(
-        prefix / "ai-dev-kit" / "databricks-skills",
+        prefix / install.SKILLS_CLONE_DIR / install.SKILLS_UPSTREAM_DIR,
         {"fetched-skill"},
     )
 
 
-def test_ai_dev_kit_fetch_failure_marks_vendored_fallback_not_installed_ref(
+def test_skills_fetch_failure_reports_degraded_not_complete(
     monkeypatch, tmp_path, restore_installer_state
 ):
+    """The vendored copy keeps the terminal usable, but the attendee is not
+    running the reviewed skills, so the step must never claim `complete`."""
     prefix = tmp_path / "prefix"
     vendored = tmp_path / "vendored"
     (vendored / "fallback-skill").mkdir(parents=True)
@@ -749,13 +778,21 @@ def test_ai_dev_kit_fetch_failure_marks_vendored_fallback_not_installed_ref(
 
     monkeypatch.setattr(install.config, "shared_prefix", lambda: str(prefix))
     monkeypatch.setattr(install, "_ASSETS_SKILLS", str(vendored))
-    monkeypatch.setattr(install, "AI_DEV_KIT_REF", "v1.2.3")
+    monkeypatch.setattr(install, "SKILLS_REF", "v1.2.3")
     monkeypatch.setattr(install.subprocess, "run", lambda *args, **kwargs: Result())
 
     install._install_skills()
 
-    assert install.status()["steps"]["skills"]["status"] == "complete"
-    manifest = install.status()["release_manifest"]["ai_dev_kit"]
+    status = install.status()
+    step = status["steps"]["skills"]
+    assert step["status"] == "degraded"
+    assert "vendored fallback" in step["error"]
+    # Terminal: boot is over, the UI must not keep showing a spinner.
+    assert status["installing"] is False
+    assert step["completed_at"] is not None
+    # The fallback content is actually on disk and usable.
+    assert (prefix / "skills" / "fallback-skill").is_dir()
+    manifest = status["release_manifest"]["databricks_agent_skills"]
     assert manifest["expected"] == "v1.2.3"
     assert manifest["actual"] is None
     assert manifest["match"] is False
@@ -763,12 +800,92 @@ def test_ai_dev_kit_fetch_failure_marks_vendored_fallback_not_installed_ref(
     assert manifest["resolved_commit"] is None
 
 
-def test_ai_dev_kit_valid_persistent_stamp_skips_clone(
+def test_an_empty_upstream_skills_directory_is_an_error_not_a_fallback(
+    monkeypatch, tmp_path, restore_installer_state
+):
+    """The regression that hid the deprecated databricks-skills/ path for a whole
+    release: the clone succeeded, the overlay copied nothing, and the fallback
+    made it look fine."""
+    prefix = tmp_path / "prefix"
+    vendored = tmp_path / "vendored"
+    (vendored / "fallback-skill").mkdir(parents=True)
+    commit = "c" * 40
+
+    class Result:
+        def __init__(self, returncode=0, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_run(argv, **kwargs):
+        if argv[:2] == ["git", "clone"]:
+            # Clone succeeds but carries no skills subdirectory at all.
+            (prefix / install.SKILLS_CLONE_DIR).mkdir(parents=True, exist_ok=True)
+            restore_installer_state.databricks_agent_skills["commit"] = commit
+            return Result()
+        if "rev-parse" in argv:
+            return Result(stdout=f"{commit}\n")
+        return Result()
+
+    monkeypatch.setattr(install.config, "shared_prefix", lambda: str(prefix))
+    monkeypatch.setattr(install, "_ASSETS_SKILLS", str(vendored))
+    monkeypatch.setattr(install, "SKILLS_REF", "v1.2.3")
+    monkeypatch.setattr(install.subprocess, "run", fake_run)
+
+    install._install_skills()
+
+    step = install.status()["steps"]["skills"]
+    assert step["status"] == "error"
+    assert install.SKILLS_UPSTREAM_DIR in step["error"]
+
+
+def test_skills_content_differing_from_the_manifest_is_an_error_not_a_fallback(
     monkeypatch, tmp_path, restore_installer_state
 ):
     prefix = tmp_path / "prefix"
     vendored = tmp_path / "vendored"
-    upstream = prefix / "ai-dev-kit" / "databricks-skills" / "kit-skill"
+    (vendored / "fallback-skill").mkdir(parents=True)
+    commit = "d" * 40
+
+    class Result:
+        def __init__(self, returncode=0, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_run(argv, **kwargs):
+        if argv[:2] == ["git", "clone"]:
+            skill = (
+                prefix / install.SKILLS_CLONE_DIR
+                / install.SKILLS_UPSTREAM_DIR / "fetched-skill"
+            )
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text("substituted content")
+            restore_installer_state.databricks_agent_skills["commit"] = commit
+            restore_installer_state.databricks_agent_skills["content_sha256"] = "e" * 64
+            return Result()
+        if "rev-parse" in argv:
+            return Result(stdout=f"{commit}\n")
+        return Result()
+
+    monkeypatch.setattr(install.config, "shared_prefix", lambda: str(prefix))
+    monkeypatch.setattr(install, "_ASSETS_SKILLS", str(vendored))
+    monkeypatch.setattr(install, "SKILLS_REF", "v1.2.3")
+    monkeypatch.setattr(install.subprocess, "run", fake_run)
+
+    install._install_skills()
+
+    step = install.status()["steps"]["skills"]
+    assert step["status"] == "error"
+    assert "reviewed manifest" in step["error"]
+
+
+def test_skills_valid_persistent_stamp_skips_clone(
+    monkeypatch, tmp_path, restore_installer_state
+):
+    prefix = tmp_path / "prefix"
+    vendored = tmp_path / "vendored"
+    upstream = prefix / install.SKILLS_CLONE_DIR / install.SKILLS_UPSTREAM_DIR / "kit-skill"
     installed = prefix / "skills" / "kit-skill"
     upstream.mkdir(parents=True)
     installed.mkdir(parents=True)
@@ -776,15 +893,14 @@ def test_ai_dev_kit_valid_persistent_stamp_skips_clone(
     (upstream / "SKILL.md").write_text("verified")
     (installed / "SKILL.md").write_text("verified")
     commit = "b" * 40
-    checksum = install._directory_checksum(prefix / "ai-dev-kit" / "databricks-skills")
+    checksum = install._directory_checksum(prefix / install.SKILLS_CLONE_DIR / install.SKILLS_UPSTREAM_DIR)
     stamp = {
-        "repo": install.AI_DEV_KIT_REPO,
+        "repo": install.SKILLS_REPO,
         "ref": "v2.0.0",
         "resolved_commit": commit,
         "content_checksum": checksum,
-        "artifact_sha256": restore_installer_state.ai_dev_kit["sha256"],
     }
-    (prefix / "ai-dev-kit.install.json").write_text(json.dumps(stamp))
+    (prefix / f"{install.SKILLS_CLONE_DIR}.install.json").write_text(json.dumps(stamp))
     calls = []
 
     class Result:
@@ -794,8 +910,8 @@ def test_ai_dev_kit_valid_persistent_stamp_skips_clone(
 
     monkeypatch.setattr(install.config, "shared_prefix", lambda: str(prefix))
     monkeypatch.setattr(install, "_ASSETS_SKILLS", str(vendored))
-    monkeypatch.setattr(install, "AI_DEV_KIT_REF", "v2.0.0")
-    restore_installer_state.ai_dev_kit.update({
+    monkeypatch.setattr(install, "SKILLS_REF", "v2.0.0")
+    restore_installer_state.databricks_agent_skills.update({
         "commit": commit,
         "content_sha256": checksum,
     })
@@ -808,19 +924,19 @@ def test_ai_dev_kit_valid_persistent_stamp_skips_clone(
     install._install_skills()
 
     assert not any(argv[:2] == ["git", "clone"] for argv in calls)
-    manifest = install.status()["release_manifest"]["ai_dev_kit"]
+    manifest = install.status()["release_manifest"]["databricks_agent_skills"]
     assert manifest["match"] is True
     assert manifest["source"] == "prewarmed"
     assert manifest["resolved_commit"] == commit
     assert manifest["checksum"] == checksum
 
 
-def test_ai_dev_kit_tampered_persistent_content_forces_reclone(
+def test_skills_tampered_persistent_content_forces_reclone(
     monkeypatch, tmp_path, restore_installer_state
 ):
     prefix = tmp_path / "prefix"
     vendored = tmp_path / "vendored"
-    upstream = prefix / "ai-dev-kit" / "databricks-skills" / "kit-skill"
+    upstream = prefix / install.SKILLS_CLONE_DIR / install.SKILLS_UPSTREAM_DIR / "kit-skill"
     installed = prefix / "skills" / "kit-skill"
     upstream.mkdir(parents=True)
     installed.mkdir(parents=True)
@@ -828,13 +944,12 @@ def test_ai_dev_kit_tampered_persistent_content_forces_reclone(
     (upstream / "SKILL.md").write_text("expected")
     (installed / "SKILL.md").write_text("tampered")
     commit = "c" * 40
-    checksum = install._directory_checksum(prefix / "ai-dev-kit" / "databricks-skills")
-    (prefix / "ai-dev-kit.install.json").write_text(json.dumps({
-        "repo": install.AI_DEV_KIT_REPO,
+    checksum = install._directory_checksum(prefix / install.SKILLS_CLONE_DIR / install.SKILLS_UPSTREAM_DIR)
+    (prefix / f"{install.SKILLS_CLONE_DIR}.install.json").write_text(json.dumps({
+        "repo": install.SKILLS_REPO,
         "ref": "v2.0.0",
         "resolved_commit": commit,
         "content_checksum": checksum,
-        "artifact_sha256": restore_installer_state.ai_dev_kit["sha256"],
     }))
     calls = []
 
@@ -847,20 +962,20 @@ def test_ai_dev_kit_tampered_persistent_content_forces_reclone(
     def fake_run(argv, **kwargs):
         calls.append(argv)
         if argv[:2] == ["git", "clone"]:
-            clone = prefix / "ai-dev-kit"
-            (clone / "databricks-skills" / "kit-skill").mkdir(parents=True)
-            (clone / "databricks-skills" / "kit-skill" / "SKILL.md").write_text(
+            clone = prefix / install.SKILLS_CLONE_DIR
+            (clone / install.SKILLS_UPSTREAM_DIR / "kit-skill").mkdir(parents=True)
+            (clone / install.SKILLS_UPSTREAM_DIR / "kit-skill" / "SKILL.md").write_text(
                 "fresh"
             )
-            restore_installer_state.ai_dev_kit["content_sha256"] = (
-                install._directory_checksum(clone / "databricks-skills")
+            restore_installer_state.databricks_agent_skills["content_sha256"] = (
+                install._directory_checksum(clone / install.SKILLS_UPSTREAM_DIR)
             )
         return Result(f"{commit}\n" if "rev-parse" in argv else "")
 
     monkeypatch.setattr(install.config, "shared_prefix", lambda: str(prefix))
     monkeypatch.setattr(install, "_ASSETS_SKILLS", str(vendored))
-    monkeypatch.setattr(install, "AI_DEV_KIT_REF", "v2.0.0")
-    restore_installer_state.ai_dev_kit["commit"] = commit
+    monkeypatch.setattr(install, "SKILLS_REF", "v2.0.0")
+    restore_installer_state.databricks_agent_skills["commit"] = commit
     monkeypatch.setattr(install.subprocess, "run", fake_run)
 
     install._install_skills()
@@ -901,7 +1016,7 @@ def test_prewarm_status_proves_reusable_disk_content_without_runtime_state(
         "binary_sha256": tmux_checksum,
     }))
 
-    upstream = prefix / "ai-dev-kit" / "databricks-skills" / "kit-skill"
+    upstream = prefix / install.SKILLS_CLONE_DIR / install.SKILLS_UPSTREAM_DIR / "kit-skill"
     installed = prefix / "skills" / "kit-skill"
     upstream.mkdir(parents=True)
     installed.mkdir(parents=True)
@@ -909,14 +1024,13 @@ def test_prewarm_status_proves_reusable_disk_content_without_runtime_state(
     (installed / "SKILL.md").write_text("same")
     commit = "d" * 40
     skills_checksum = install._directory_checksum(
-        prefix / "ai-dev-kit" / "databricks-skills"
+        prefix / install.SKILLS_CLONE_DIR / install.SKILLS_UPSTREAM_DIR
     )
-    (prefix / "ai-dev-kit.install.json").write_text(json.dumps({
-        "repo": install.AI_DEV_KIT_REPO,
+    (prefix / f"{install.SKILLS_CLONE_DIR}.install.json").write_text(json.dumps({
+        "repo": install.SKILLS_REPO,
         "ref": "v2.0.0",
         "resolved_commit": commit,
         "content_checksum": skills_checksum,
-        "artifact_sha256": restore_installer_state.ai_dev_kit["sha256"],
     }))
 
     class Result:
@@ -926,8 +1040,8 @@ def test_prewarm_status_proves_reusable_disk_content_without_runtime_state(
 
     monkeypatch.setattr(install.config, "shared_prefix", lambda: str(prefix))
     monkeypatch.setattr(install.config, "omnigent_enabled", lambda: True)
-    monkeypatch.setattr(install, "AI_DEV_KIT_REF", "v2.0.0")
-    restore_installer_state.ai_dev_kit.update({
+    monkeypatch.setattr(install, "SKILLS_REF", "v2.0.0")
+    restore_installer_state.databricks_agent_skills.update({
         "commit": commit,
         "content_sha256": skills_checksum,
     })
@@ -970,7 +1084,6 @@ def test_prewarm_status_proves_reusable_disk_content_without_runtime_state(
         for name in (
             "uv_binary",
             "python_3_12_runtime",
-            "omnigent_wheelhouse",
             "omnigent_lock",
         )
     }
@@ -982,9 +1095,8 @@ def test_prewarm_status_proves_reusable_disk_content_without_runtime_state(
     venv_python.write_bytes(b"python")
     (prefix / "omnigent.install.json").write_text(json.dumps({
         "uv_sha256": omnigent_entries["uv_binary"]["sha256"],
-        "python_runtime_sha256": omnigent_entries["python_3_12_runtime"]["content_sha256"],
+        "python_runtime_sha256": omnigent_entries["python_3_12_runtime"]["sha256"],
         "lock_sha256": omnigent_entries["omnigent_lock"]["sha256"],
-        "wheelhouse_sha256": omnigent_entries["omnigent_wheelhouse"]["content_sha256"],
         "binary_sha256": install._file_checksum(bin_dir / "omnigent"),
         "venv_sha256": install._directory_checksum(prefix / "omnigent-venv"),
     }))
@@ -1004,9 +1116,9 @@ def test_prewarm_status_proves_reusable_disk_content_without_runtime_state(
         for name, entry in proof["manifest"]["binaries"].items()
         if not entry["reusable"]
     ] == []
-    assert proof["manifest"]["ai_dev_kit"]["reusable"] is True
+    assert proof["manifest"]["databricks_agent_skills"]["reusable"] is True
     assert proof["reusable"] is True
-    assert proof["manifest"]["ai_dev_kit"] == {
+    assert proof["manifest"]["databricks_agent_skills"] == {
         "expected_ref": "v2.0.0",
         "actual_ref": "v2.0.0",
         "resolved_commit": commit,
@@ -1039,53 +1151,53 @@ def test_prewarm_status_proves_reusable_disk_content_without_runtime_state(
 
 def test_prewarm_status_fails_closed_for_tampered_skills(monkeypatch, tmp_path):
     prefix = tmp_path / "prefix"
-    upstream = prefix / "ai-dev-kit" / "databricks-skills" / "kit-skill"
+    upstream = prefix / install.SKILLS_CLONE_DIR / install.SKILLS_UPSTREAM_DIR / "kit-skill"
     installed = prefix / "skills" / "kit-skill"
     upstream.mkdir(parents=True)
     installed.mkdir(parents=True)
     (upstream / "SKILL.md").write_text("reviewed")
     (installed / "SKILL.md").write_text("tampered")
     checksum = install._directory_checksum(
-        prefix / "ai-dev-kit" / "databricks-skills"
+        prefix / install.SKILLS_CLONE_DIR / install.SKILLS_UPSTREAM_DIR
     )
-    (prefix / "ai-dev-kit.install.json").write_text(json.dumps({
-        "repo": install.AI_DEV_KIT_REPO,
+    (prefix / f"{install.SKILLS_CLONE_DIR}.install.json").write_text(json.dumps({
+        "repo": install.SKILLS_REPO,
         "ref": "v2.0.0",
         "resolved_commit": "e" * 40,
         "content_checksum": checksum,
     }))
     monkeypatch.setattr(install.config, "shared_prefix", lambda: str(prefix))
     monkeypatch.setattr(install.config, "omnigent_enabled", lambda: False)
-    monkeypatch.setattr(install, "AI_DEV_KIT_REF", "v2.0.0")
+    monkeypatch.setattr(install, "SKILLS_REF", "v2.0.0")
 
     proof = install.prewarm_status()
 
     assert proof["reusable"] is False
-    assert proof["manifest"]["ai_dev_kit"]["reusable"] is False
+    assert proof["manifest"]["databricks_agent_skills"]["reusable"] is False
 
 
 def test_prewarm_status_fails_closed_when_disk_verification_errors(
     monkeypatch, tmp_path
 ):
     prefix = tmp_path / "prefix"
-    upstream = prefix / "ai-dev-kit" / "databricks-skills" / "kit-skill"
+    upstream = prefix / install.SKILLS_CLONE_DIR / install.SKILLS_UPSTREAM_DIR / "kit-skill"
     installed = prefix / "skills" / "kit-skill"
     upstream.mkdir(parents=True)
     installed.mkdir(parents=True)
     (upstream / "SKILL.md").write_text("same")
     (installed / "SKILL.md").write_text("same")
     checksum = install._directory_checksum(
-        prefix / "ai-dev-kit" / "databricks-skills"
+        prefix / install.SKILLS_CLONE_DIR / install.SKILLS_UPSTREAM_DIR
     )
-    (prefix / "ai-dev-kit.install.json").write_text(json.dumps({
-        "repo": install.AI_DEV_KIT_REPO,
+    (prefix / f"{install.SKILLS_CLONE_DIR}.install.json").write_text(json.dumps({
+        "repo": install.SKILLS_REPO,
         "ref": "v2.0.0",
         "resolved_commit": "e" * 40,
         "content_checksum": checksum,
     }))
     monkeypatch.setattr(install.config, "shared_prefix", lambda: str(prefix))
     monkeypatch.setattr(install.config, "omnigent_enabled", lambda: False)
-    monkeypatch.setattr(install, "AI_DEV_KIT_REF", "v2.0.0")
+    monkeypatch.setattr(install, "SKILLS_REF", "v2.0.0")
     monkeypatch.setattr(
         install.subprocess,
         "run",
@@ -1097,7 +1209,7 @@ def test_prewarm_status_fails_closed_when_disk_verification_errors(
     proof = install.prewarm_status()
 
     assert proof["reusable"] is False
-    assert proof["manifest"]["ai_dev_kit"]["reusable"] is False
+    assert proof["manifest"]["databricks_agent_skills"]["reusable"] is False
 
 
 def test_bootstrap_file_lock_serializes_processes(monkeypatch, tmp_path):
@@ -1271,29 +1383,29 @@ def test_failed_skills_refresh_never_exposes_mixed_installed_content(
 
     def fake_run(argv, **kwargs):
         if argv[:2] == ["git", "clone"]:
-            upstream = prefix / "ai-dev-kit" / "databricks-skills" / "kit-skill"
+            upstream = prefix / install.SKILLS_CLONE_DIR / install.SKILLS_UPSTREAM_DIR / "kit-skill"
             upstream.mkdir(parents=True)
             (upstream / "SKILL.md").write_text("new")
-            restore_installer_state.ai_dev_kit.update({
+            restore_installer_state.databricks_agent_skills.update({
                 "commit": "f" * 40,
                 "content_sha256": install._directory_checksum(
-                    prefix / "ai-dev-kit" / "databricks-skills"
+                    prefix / install.SKILLS_CLONE_DIR / install.SKILLS_UPSTREAM_DIR
                 ),
             })
         return Result()
 
     def fail_new_overlay(source, target, *args, **kwargs):
-        if "databricks-skills" in str(source):
+        if install.SKILLS_UPSTREAM_DIR in str(source):
             raise OSError("copy interrupted")
         return real_copytree(source, target, *args, **kwargs)
 
     monkeypatch.setattr(install.config, "shared_prefix", lambda: str(prefix))
     monkeypatch.setattr(install, "_ASSETS_SKILLS", str(vendored))
-    monkeypatch.setattr(install, "AI_DEV_KIT_REF", "v2.0.0")
+    monkeypatch.setattr(install, "SKILLS_REF", "v2.0.0")
     monkeypatch.setattr(install.subprocess, "run", fake_run)
     monkeypatch.setattr(install.shutil, "copytree", fail_new_overlay)
 
     install._install_skills()
 
     assert (installed / "SKILL.md").read_text() == "old-complete"
-    assert install.status()["release_manifest"]["ai_dev_kit"]["match"] is False
+    assert install.status()["release_manifest"]["databricks_agent_skills"]["match"] is False

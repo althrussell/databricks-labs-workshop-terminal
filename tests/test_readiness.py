@@ -24,7 +24,7 @@ def _good_inputs(tmp_path):
         "ENABLE_OBO": "true",
         "OBO_SCOPES": EXPECTED_SCOPES,
         "OMNIGENT_ENABLED": "true",
-        "AI_DEV_KIT_REF": "v1.2.3",
+        "SKILLS_REF": "v1.2.3",
         "CLAUDE_CODE_VERSION": "2.1.216",
         "CODEX_CLI_VERSION": "0.144.6",
         "OMNIGENT_VERSION": "0.7.0",
@@ -86,7 +86,7 @@ def _good_inputs(tmp_path):
                 "omnigent": "0.7.0",
             }.items()
         } | {
-            "ai_dev_kit": {
+            "databricks_agent_skills": {
                 "enabled": True,
                 "expected": "v1.2.3",
                 "actual": "v1.2.3",
@@ -321,6 +321,21 @@ def test_installers_require_every_enabled_agent_and_support_tool(tmp_path):
     assert "databricks" in report["checks"]["installers"]["missing"]
 
 
+def test_degraded_skills_fail_readiness_and_are_named_separately(tmp_path):
+    """A vendored-fallback skills install is usable but unreviewed. It must fail
+    readiness, and it must not be reported as merely incomplete."""
+    _, _, installer, _, _, _ = _good_inputs(tmp_path)
+    installer["steps"]["skills"]["status"] = "degraded"
+
+    report = _evaluate(tmp_path, installer=installer)
+    installers = report["checks"]["installers"]
+
+    assert installers["ok"] is False
+    assert installers["degraded"] == ["skills"]
+    assert "skills" in installers["missing"]
+    assert "degraded fallback" in installers["detail"]
+
+
 def test_session_state_requires_configured_writable_path(tmp_path):
     missing = _evaluate(
         tmp_path,
@@ -436,7 +451,7 @@ def test_obo_requires_present_fresh_and_recent_observation(tmp_path):
 def test_release_pins_require_fixed_ref_cli_versions_and_models(tmp_path):
     branch_tip = _evaluate(
         tmp_path,
-        mutate_env=lambda env: env.update({"AI_DEV_KIT_REF": "main"}),
+        mutate_env=lambda env: env.update({"SKILLS_REF": "main"}),
     )
     missing = _evaluate(
         tmp_path,
@@ -444,7 +459,7 @@ def test_release_pins_require_fixed_ref_cli_versions_and_models(tmp_path):
     )
 
     assert branch_tip["checks"]["release_pins"]["ok"] is False
-    assert "AI_DEV_KIT_REF" in branch_tip["checks"]["release_pins"]["missing"]
+    assert "SKILLS_REF" in branch_tip["checks"]["release_pins"]["missing"]
     assert missing["checks"]["release_pins"]["ok"] is False
     assert "CLAUDE_CODE_VERSION" in missing["checks"]["release_pins"]["missing"]
 
@@ -497,9 +512,9 @@ def test_readyz_rejects_version_shaped_output_with_untrusted_binary_checksum(tmp
     assert report["checks"]["supply_chain"]["ok"] is False
 
 
-def test_release_pins_require_fetched_ai_dev_kit_ref_not_vendored_fallback(tmp_path):
+def test_release_pins_require_fetched_skills_ref_not_vendored_fallback(tmp_path):
     _, _, installer, _, _, _ = _good_inputs(tmp_path)
-    installer["release_manifest"]["ai_dev_kit"].update(
+    installer["release_manifest"]["databricks_agent_skills"].update(
         {
             "actual": None,
             "match": False,
@@ -511,13 +526,32 @@ def test_release_pins_require_fetched_ai_dev_kit_ref_not_vendored_fallback(tmp_p
     report = _evaluate(tmp_path, installer=installer)
 
     assert report["checks"]["release_pins"]["ok"] is False
-    assert "ai_dev_kit" in report["checks"]["release_pins"]["mismatched"]
-    assert report["release_manifest"]["ai_dev_kit"]["source"] == "vendored_fallback"
+    assert "databricks_agent_skills" in report["checks"]["release_pins"]["mismatched"]
+    assert report["release_manifest"]["databricks_agent_skills"]["source"] == "vendored_fallback"
 
 
-def test_release_pins_accept_verified_prewarmed_ai_dev_kit(tmp_path):
+def test_release_pins_accept_an_unset_skills_ref_because_the_repo_owns_it(tmp_path):
+    """CT sets no skills ref; the reviewed tag lives in the repo's manifest."""
+    unset = _evaluate(
+        tmp_path, mutate_env=lambda env: env.update({"SKILLS_REF": ""})
+    )
+    disagreeing = _evaluate(
+        tmp_path, mutate_env=lambda env: env.update({"SKILLS_REF": "v9.9.9"})
+    )
+
+    assert unset["checks"]["release_pins"]["ok"] is True
+    assert unset["release_manifest"]["databricks_agent_skills"]["expected"] == "v1.2.3"
+    # Setting it still has to agree with what bootstrap actually installed.
+    assert disagreeing["checks"]["release_pins"]["ok"] is False
+    assert (
+        "databricks_agent_skills"
+        in disagreeing["checks"]["release_pins"]["mismatched"]
+    )
+
+
+def test_release_pins_accept_verified_prewarmed_skills(tmp_path):
     _, _, installer, _, _, _ = _good_inputs(tmp_path)
-    installer["release_manifest"]["ai_dev_kit"]["source"] = "prewarmed"
+    installer["release_manifest"]["databricks_agent_skills"]["source"] = "prewarmed"
 
     report = _evaluate(tmp_path, installer=installer)
 
