@@ -47,6 +47,67 @@ def _check(ok: bool, detail: str, **extra: object) -> dict:
     return {"ok": ok, "state": "green" if ok else "red", "detail": detail, **extra}
 
 
+def _soft(ok: bool, state: str, detail: str, **extra: object) -> dict:
+    """A reported-but-not-gating check.
+
+    Soft checks are excluded from the ``ready`` verdict, so an operator whose
+    optional feature is misconfigured still gets a serving workshop. They exist
+    to make the configuration provable after the event rather than to block it.
+    """
+    return {"ok": ok, "state": state, "detail": detail, "soft": True, **extra}
+
+
+def _insight_capture(
+    env: Mapping[str, str], delivery: Mapping[str, object] | None = None
+) -> dict:
+    """What this instance collects, how it leaves, and whether any was lost.
+
+    Delivery is by collection: Control Tower reads the buffer on the harvest it
+    already makes, so unlike every other integration here there is nothing to
+    configure and nothing that can be configured wrong. Push (a token POST to CT's
+    ingest endpoint) stays reported because a deployment may still set it, but the
+    Apps proxy in front of Control Tower means it does not currently reach.
+
+    What *can* go wrong is loss: the buffer is bounded, so a collector that stops
+    collecting eventually costs events. ``dropped`` is the only honest evidence of
+    that, and it is why this check can still be red.
+    """
+    capture = _bool(env, "WORKSHOP_INSIGHT_CAPTURE", False)
+    discovery = capture and _bool(env, "DISCOVERY_ENABLED", True)
+    push_configured = all(
+        env.get(name, "").strip()
+        for name in (
+            "CONTROL_TOWER_INGEST_URL",
+            "CONTROL_TOWER_INGEST_TOKEN",
+            "WORKSHOP_RUN_ID",
+        )
+    )
+    status = dict(delivery or {})
+    mode = str(status.get("delivery") or ("push" if push_configured else "pull"))
+    collections = int(status.get("collections") or 0)
+    dropped = int(status.get("dropped") or 0)
+    pending = int(status.get("pending") or 0)
+    if not capture:
+        requested = "off"
+    elif discovery:
+        requested = "signal+discovery"
+    else:
+        requested = "signal"
+    lossless = not capture or dropped == 0
+    return {
+        "enabled": capture,
+        "discovery": discovery,
+        "delivery": mode,
+        "push_configured": push_configured,
+        "collections": collections,
+        "collected": collections > 0,
+        "pending": pending,
+        "dropped": dropped,
+        "requested": requested,
+        "effective": requested if lossless else "lossy",
+    }
+
+
 def _path_writable(path: str) -> bool:
     """Exercise journal-style atomic write/read on a disposable sibling."""
     if not path:
@@ -83,6 +144,7 @@ def evaluate(
     obo_status: Mapping[str, object],
     secret_protection_status: Mapping[str, object],
     attendee_binding: Mapping[str, str] | None = None,
+    delivery_status: Mapping[str, object] | None = None,
     writable_probe: Callable[[str], bool] = _path_writable,
     now: float | None = None,
 ) -> dict:
@@ -314,6 +376,19 @@ def evaluate(
         if enabled and not match:
             mismatched_tools.append(tool)
 
+    # Capture state rides in the release manifest because that is the block
+    # Control Tower records per run: "was insight capture on for this workshop"
+    # is asked months later, by someone reading a brief rather than a log.
+    insight = _insight_capture(env, delivery_status)
+    insight_delivering = insight["requested"] == insight["effective"]
+    release_manifest["insight_capture"] = {
+        "enabled": insight["enabled"],
+        "expected": insight["requested"],
+        "actual": insight["effective"],
+        "match": insight_delivering,
+        "delivery": insight["delivery"],
+    }
+
     checks = {
         "topology": _check(
             topology_ok,
@@ -433,8 +508,43 @@ def evaluate(
             missing=sorted(missing_pins),
             mismatched=sorted(mismatched_tools),
         ),
+        # Never a hard gate: insight capture serves the sales follow-up, not the
+        # attendee, and no attendee should lose a workshop over it.
+        "insight_capture": _soft(
+            insight_delivering,
+            (
+                "green"
+                if insight["enabled"] and insight_delivering
+                else "amber"
+                if not insight["enabled"]
+                else "red"
+            ),
+            (
+                "insight capture is off"
+                if not insight["enabled"]
+                else f"{insight['dropped']} events were dropped before Control "
+                "Tower collected them — the buffer overflowed"
+                if not insight_delivering
+                else "capturing; pushing to Control Tower"
+                if insight["delivery"] == "push"
+                else f"capturing; Control Tower has collected {insight['collections']} times"
+                if insight["collected"]
+                else "capturing; awaiting Control Tower's first collection"
+            ),
+            requested=insight["requested"],
+            effective=insight["effective"],
+            discovery=insight["discovery"],
+            delivery=insight["delivery"],
+            push_configured=insight["push_configured"],
+            collected=insight["collected"],
+            collections=insight["collections"],
+            pending=insight["pending"],
+            dropped=insight["dropped"],
+        ),
     }
-    ready = all(check["ok"] for check in checks.values())
+    ready = all(
+        check["ok"] for check in checks.values() if not check.get("soft")
+    )
     return {
         "status": "ready" if ready else "not_ready",
         "ready": ready,
@@ -448,6 +558,7 @@ def evaluate_runtime() -> dict:
     from .bootstrap import install
     from .credentials import credential_manager, secret_protection_status
     from .entitlements import entitlement_manager
+    from .event_emitter import event_emitter
     from .obo import obo_manager
 
     return evaluate(
@@ -458,6 +569,7 @@ def evaluate_runtime() -> dict:
         obo_status=obo_manager.status(),
         secret_protection_status=secret_protection_status(),
         attendee_binding=attendee.binding(),
+        delivery_status=event_emitter.delivery_status(),
     )
 
 

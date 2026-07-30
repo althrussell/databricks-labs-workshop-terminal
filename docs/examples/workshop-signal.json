@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "run_id": "3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90",
+  "workspace_id": "4217334529551234",
+  "attendee": "labuser007@example.com",
+  "type": "workshop.signal",
+  "occurred_at": "2026-07-30T09:14:02.113000+00:00",
+  "idempotency_key": "signal:3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90:labuser007@example.com:1769764800",
+  "payload": {
+    "stats_schema_version": 3,
+    "phase": "build",
+    "minutes_building": 74,
+    "agent_sessions": 3,
+    "terminal_sessions": 4,
+    "topics": ["apps", "genie", "lakebase"],
+    "code": {
+      "projects": 2,
+      "commits": 6,
+      "files": 23,
+      "lines": 812
+    },
+    "resources": {
+      "jobs": 1,
+      "pipelines": 0,
+      "apps": 1,
+      "dashboards": 0
+    },
+    "errors": 2,
+    "idle_seconds": 45,
+    "discovery_records": 1,
+    "signal": {
+      "engagement": "builder",
+      "primary_topic": "lakebase",
+      "topic_hits": {
+        "lakebase": 12,
+        "genie": 3,
+        "apps": 5
+      },
+      "products": ["apps", "genie", "lakebase"],
+      "resource_kinds": ["apps", "jobs"],
+      "shipped": true
+    }
+  }
+}

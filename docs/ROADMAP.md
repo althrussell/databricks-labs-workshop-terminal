@@ -90,7 +90,12 @@ The workshop ends; the relationship shouldn't.
 - Missions, checkpoints, validators, points, badges, teams, leaderboards,
   projector scoreboards — that's **Quest Event Mode**. The Terminal's phases
   pace *content*, never goals.
-- Lakebase or any external state — teardown stays `apps.delete`.
+- A Lakebase or database *owned by this app* — teardown stays `apps.delete`.
+  **Amended** by workshop insight capture: durable insight now lives in Control
+  Tower's existing Lakebase, reached over the ingest API. The Terminal itself
+  still owns no external state, so this constraint holds where it was load-bearing
+  — the reversal is that attendee-authored discovery answers leave the instance
+  at all. See [adr/0001-workshop-insight-capture.md](adr/0001-workshop-insight-capture.md).
 - Prompt injection as fake user messages — context goes through memory files;
   user-visible chips the attendee clicks are the only way text enters a
   terminal on their behalf.

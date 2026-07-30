@@ -58,6 +58,7 @@ def _observe_output(session, chunk: str) -> None:
         now = time.time()
         for topic in topics:
             user.topics[topic] = now
+            user.topic_hits[topic] = user.topic_hits.get(topic, 0) + 1
 
 
 def _start_control_tower_threads(
@@ -67,20 +68,26 @@ def _start_control_tower_threads(
     thread_factory=threading.Thread,
 ) -> list[threading.Thread]:
     reporter = operational.OperationalHealthReporter(emitter)
-    threads = [
-        thread_factory(
-            target=flush_loop,
-            args=(emitter, stop),
-            daemon=True,
-            name="event-emitter-flush",
-        ),
+    threads = []
+    # The flusher is push-only: with no ingest endpoint it would wake every 15s to
+    # POST at nothing. Control Tower collects the same buffer on its harvest.
+    if emitter.can_push:
+        threads.append(
+            thread_factory(
+                target=flush_loop,
+                args=(emitter, stop),
+                daemon=True,
+                name="event-emitter-flush",
+            )
+        )
+    threads.append(
         thread_factory(
             target=reporter.run,
             args=(stop,),
             daemon=True,
             name="operational-health",
-        ),
-    ]
+        )
+    )
     for thread in threads:
         thread.start()
     return threads
@@ -107,6 +114,16 @@ async def lifespan(app: FastAPI):
         from .session_store import SessionMetadataStore
 
         session_manager.configure_store(SessionMetadataStore(state_path))
+    # C6: discovery records are the one attendee-authored thing worth surviving a
+    # restart — a mid-workshop crash would otherwise lose everything the agent had
+    # learned, and attendees don't repeat themselves. No journal, no capture, no
+    # file: the path is only attached when capture is on.
+    if config.insight_capture_enabled():
+        from . import discovery
+
+        restored = discovery.discovery_store.configure_journal(discovery.journal_path())
+        if restored:
+            logger.info("discovery journal restored (%d records)", restored)
     session_manager.attach_loop(loop)
     session_manager.output_observer = _observe_output
     event_hub.attach_loop(loop)
@@ -125,15 +142,19 @@ async def lifespan(app: FastAPI):
             # SP-driven entitlement reconciler: keeps the labuser able to use the
             # resources the app SP creates (no-op unless ENABLE_ENTITLEMENTS).
             entitlement_manager.start()
-            # C3b: background flusher pushes buffered attendee events to Control
-            # Tower. Only starts when CT ingest is configured (emitter.enabled).
-            if event_emitter.enabled:
-                emitter_stop = threading.Event()
-                emitter_threads = _start_control_tower_threads(
-                    event_emitter,
-                    emitter_stop,
-                )
-                logger.info("event emitter started (run_id=%s)", event_emitter.run_id)
+            # C3b: operational health sampling always runs — Control Tower reads it
+            # off the buffer on its harvest. The push flusher only starts if CT
+            # ingest happens to be configured, which the Apps proxy makes unlikely.
+            emitter_stop = threading.Event()
+            emitter_threads = _start_control_tower_threads(
+                event_emitter,
+                emitter_stop,
+            )
+            logger.info(
+                "event emitter started (delivery=%s stream=%s)",
+                "push" if event_emitter.can_push else "pull",
+                event_emitter.stream_id,
+            )
         else:
             logger.info("LOCAL_DEV=1 — skipping CLI installers and credential rotation")
         from . import topology
@@ -260,6 +281,87 @@ def reconcile_entitlements(body: _EmailBody, request: Request):
     instead of waiting for the next sweep."""
     principal = _callback_identity(body, request)
     return entitlement_manager.reconcile(email=principal.name)
+
+
+class _DiscoveryBody(_EmailBody):
+    """One agent-elicited discovery record (contract C6).
+
+    Extra keys are permitted: the agent composes this from an instruction file and
+    will improvise a field eventually. ``server/discovery.py`` ignores what it
+    doesn't know, so a hallucinated key costs that key rather than the record —
+    and the attendee, who already said the thing, doesn't get asked twice.
+    """
+
+    model_config = {"extra": "allow"}
+
+
+@app.post("/api/discovery")
+def submit_discovery(body: _DiscoveryBody, request: Request):
+    """Record what the agent learned about the attendee's use case.
+
+    Called by the ``workshop-discovery`` helper from inside the attendee's PTY, so
+    it authenticates through the same capability path as the OBO and entitlement
+    helpers — the caller has no proxy identity headers, and the capability token
+    binds the submission to one attendee so a shared instance can't cross-attribute.
+
+    Returns ``captured: false`` rather than an error when capture is disabled: the
+    agent must not retry, and it must not tell the attendee something failed.
+    """
+    from . import discovery
+
+    principal = _callback_identity(body, request)
+    if not config.discovery_enabled():
+        return {"captured": False, "reason": "disabled"}
+    raw = body.model_dump(exclude={"email"})
+    stored = discovery.record(principal.name, raw)
+    if stored is None:
+        # Withdrawn by the attendee, or the per-attendee cap is reached. Both are
+        # deliberate refusals, not failures, and neither is the agent's business.
+        return {"captured": False, "reason": "not_stored"}
+    return {
+        "captured": True,
+        "record_id": stored.record_id,
+        "redactions": stored.redactions,
+        "records": discovery.discovery_store.count_for(principal.name),
+    }
+
+
+@app.get("/api/discovery")
+def my_discovery(principal: Principal = Depends(get_current_user)):
+    """The attendee's own records, so capture is inspectable by its subject."""
+    from . import discovery
+
+    if not config.discovery_enabled():
+        return {"enabled": False, "records": []}
+    return {
+        "enabled": True,
+        "records": [r.payload() for r in discovery.discovery_store.for_attendee(principal.name)],
+    }
+
+
+class _RedactBody(BaseModel):
+    record_id: str
+
+
+@app.post("/api/discovery/redact")
+def redact_discovery(
+    body: _RedactBody, principal: Principal = Depends(get_current_user)
+):
+    """Withdraw one of the caller's own records.
+
+    Browser-authenticated only — a PTY capability token must not be able to
+    withdraw records, or an agent could quietly erase what it captured. Scoped to
+    the caller's own attendee identity, so this cannot reach another attendee's
+    records on a shared instance.
+    """
+    from . import discovery
+
+    if not config.discovery_enabled():
+        raise HTTPException(status_code=404, detail="discovery capture is disabled")
+    removed = discovery.withdraw(principal.name, body.record_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="record not found")
+    return {"redacted": True, "record_id": body.record_id}
 
 
 @app.get("/api/agents")

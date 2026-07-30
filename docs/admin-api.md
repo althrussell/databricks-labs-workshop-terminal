@@ -214,6 +214,31 @@ them, and both no-op cleanly when the feature is disabled:
 - `POST /api/entitlements/reconcile` — runs an immediate entitlement reconcile
   for the attendee (the `workshop-grant-me` path), returning the per-resource
   grant summary.
+- `POST /api/discovery` — records one agent-elicited discovery record (the
+  `workshop-discovery` path, contract C6). Only `record_id` is meaningful as a
+  key; every other field is optional, unknown fields are ignored, and free text
+  is redacted and truncated on the way in. Returns
+  `{captured, record_id, redactions, records}`. When capture is disabled it
+  returns `{"captured": false, "reason": "disabled"}` with HTTP 200 — the agent
+  must not retry, and must not tell the attendee something failed. Authentication
+  still applies first, so an unauthenticated caller can't probe the flag.
+
+Two attendee-authenticated (browser) routes make capture inspectable by its
+subject:
+
+- `GET /api/discovery` — the caller's own records, scoped to their identity.
+- `POST /api/discovery/redact` — `{"record_id": "..."}` withdraws one of the
+  caller's own records. Browser identity only: a PTY capability token confers
+  nothing here, otherwise an agent could quietly erase what it captured.
+  Withdrawal leaves a tombstone, so re-submitting the same `record_id` cannot
+  resurrect it.
+
+Both back a panel in the attendee's own insights pane, which appears only once
+something has been captured and lists each record with a Remove control.
+Consent is arranged out of band (see `WORKSHOP_INSIGHT_CAPTURE` below), so this
+is where an attendee can actually see and revoke what was recorded about them.
+A withdrawn record stops being sent to Control Tower, but anything already
+pushed is CT's to delete — the terminal cannot reach back into Lakebase.
 
 `GET /api/omnigent-host` is authenticated and attendee-scoped. It returns only
 sanitized supervisor state (`disabled`, `waiting_for_token`, `starting`,
@@ -226,9 +251,97 @@ Harvest endpoint for Control Tower's event-impact capture: per-attendee
 build stats (`email`, `minutes_building`, `agent_sessions`,
 `terminal_sessions`, `topics`, `code` {projects, commits, files, lines}),
 one instance-level workspace resource census, and `instance`
-{phase, started_at, session_count}. Code stats are cached ~5 minutes, so
+{phase, started_at, session_count, final}. Code stats are cached ~5 minutes, so
 periodic polling is cheap. Control Tower persists snapshots into its
 Lakebase for reporting that survives workspace teardown.
+
+Every response also reports `instance.events_pending`, `instance.events_dropped`
+and `instance.event_stream_id` — the state of the buffer that
+`GET /api/admin/insight-events` serves, measured *after* any summaries this call
+generated.
+
+**`?final=true`** marks Control Tower's pre-delete pass. It is the last moment
+anything can be read off this instance, so beyond returning the usual payload it
+also, when `WORKSHOP_INSIGHT_CAPTURE` is on:
+
+- runs the model-free edge-summary backstop for any attendee the `wrap` transition
+  didn't already cover, reporting the count as `instance.summaries_emitted`;
+- drains the event emitter's buffer synchronously, reported as
+  `instance.events_flushed` (a no-op unless the optional push path is configured).
+
+Because the summaries land in the buffer as this call answers, **Control Tower must
+collect after this call, not before** — `events_pending` in the response is what it
+still owes itself a `GET /api/admin/insight-events` for. Everything left there dies
+with the app.
+
+Both are best-effort and never fail the response: teardown reads this payload for
+the durable impact record, and losing that to a summarisation bug would cost more
+than the insight it was trying to save. A failure is reported as
+`instance.summary_error`. Older terminals ignore the parameter, so Control Tower
+can send it unconditionally.
+
+`schema_version` is `3`. Each per-attendee row also carries a derived `signal`
+block — `engagement` (`observer`/`explorer`/`builder`), `primary_topic`,
+`topic_hits`, `products`, `resource_kinds`, `shipped` — reducing the counters to
+the form a post-event brief quotes. The block is **always present**, including
+when `WORKSHOP_INSIGHT_CAPTURE` is off: the flag gates transmission, not
+derivation, so an operator can inspect exactly what capture would send before
+enabling it. The census stays instance-level and is deliberately not copied into
+per-attendee rows — on a shared instance it reflects the whole cohort.
+
+Each row also carries `discovery_records`, a **count only**. The records
+themselves are collected from the event buffer, never returned through this
+operator-readable poll; the count exists so CT can tell "this attendee said
+nothing" from "we lost what they said" after the buffer overflowed.
+
+When capture *is* on, polling this endpoint also queues one `workshop.signal`
+event per attendee into the buffer. Emission rides the harvest rather than its
+own timer so the signal and the snapshot CT stores alongside it describe the same
+moment; keys are bucketed per 10 minutes so a long workshop writes a coarse time
+series instead of a row per poll.
+
+### `GET /api/admin/insight-events`
+
+Hands Control Tower the buffered attendee events. This is the **delivery path** for
+insight capture (and for the health events in
+[Credential health](#credential-health-and-alerting)): a deployed app cannot post
+to Control Tower, because every Databricks App sits behind a proxy requiring a
+Databricks identity on the request, so a token-only `POST` is rejected before it
+arrives. Collection reuses the authenticated call CT already makes to this router.
+
+| Query | Default | Meaning |
+|---|---|---|
+| `after` | `0` | CT's cursor **and its acknowledgement**: events at or below it are discarded. |
+| `stream` | `""` | The `stream_id` the cursor was issued under. |
+| `limit` | `500` | Maximum events in one response. |
+
+```json
+{
+  "schema_version": 1,
+  "stream_id": "9f2c…",
+  "events": [{"seq": 41, "event": { /* AttendeeEventIn envelope */ }}],
+  "high_water": 41,
+  "pending": 3,
+  "dropped": 0,
+  "cursor_reset": false,
+  "delivery": "pull"
+}
+```
+
+`seq` is transport state and sits *outside* the envelope, which is byte-for-byte
+the one the push path posts — with one exception: `run_id` is empty, because a
+deployed terminal is never told which run it belongs to. The collector stamps
+identity from the unit it polled; see
+[the insight contract](./workshop-insight-contract.md#transport).
+
+`after` is honoured **only** when `stream` matches the current `stream_id`.
+Sequence numbers restart with the process, so a cursor replayed across a restart
+would discard a fresh buffer unread; the mismatch is reported as
+`cursor_reset: true` and the full buffer is returned instead. Re-collection is
+harmless — ingest de-dupes on `idempotency_key`.
+
+`dropped` counts events evicted because the 5000-event buffer overflowed. It is
+the one loss no later collection recovers, so it is also surfaced in `/readyz`.
 
 ### `GET /api/admin/omnigent-host-readiness`
 Admin/SP-authenticated, token-free readiness used by Control Tower alongside
@@ -293,6 +406,9 @@ python scripts/push_content.py presence
 | `WORKSHOP_SCHEMA` | *(unset)* | Optional default schema within `WORKSHOP_CATALOG` |
 | `ENTITLEMENT_RECONCILE_INTERVAL` | `300` | Seconds between reconcile sweeps |
 | `ENTITLEMENT_TRANSFER_OWNERSHIP` | `false` | Also transfer SP-created UC catalog ownership to the labuser (grant-based usability is the default) |
+| `WORKSHOP_INSIGHT_CAPTURE` | `false` | Master switch for workshop insight capture. **The only feature that sends attendee-authored content off the instance**, so it stays off unless the operator has arranged consent in the event's registration terms. Off = the signal rollup, discovery endpoint, CLI helper, agent instructions and wrap harvest are all inert. See [`workshop-insight-contract.md`](./workshop-insight-contract.md) |
+| `DISCOVERY_ENABLED` | `true` *(within capture)* | Whether the agent-elicited discovery tier runs. Subordinate to `WORKSHOP_INSIGHT_CAPTURE` — `false` keeps the derived behavioural signal and drops the conversational capture, for events where the anonymous rollup is in scope but attendee narrative isn't |
+| `INSIGHT_SUMMARY_MODEL` | *(unset)* | Serving endpoint for the wrap-phase edge summary. Empty discovers a READY endpoint, preferring the cheap tier — summarising one session is a small job and spending Opus on it competes with the attendees' own agent budget. Pin it when the workspace's default chain is unavailable in-region |
 
 All env is read at runtime — Control Tower `env_overrides` and in-place
 `app.yaml` edits take effect on restart with no rebuild.
@@ -307,3 +423,19 @@ or freshly successful entitlement reconciler, actually observed OBO token
 scopes, and every release pin are green. A configured `OBO_SCOPES` hint alone
 never satisfies readiness. The exact create-to-ready sequence and JSON contract are in
 [`control-tower-implementation.md`](./control-tower-implementation.md#machine-enforced-readiness-contract).
+
+Readiness also carries one **soft** check, `insight_capture`, marked
+`"soft": true` and excluded from the `ready` verdict. It reports what this
+instance will collect (`requested`: `off`, `signal`, `signal+discovery`) and
+what it actually delivered (`effective`), plus the same pair as
+`expected`/`actual`/`match` under `release_manifest.insight_capture` so Control
+Tower can prove months later whether capture was on for a run.
+
+It also reports `delivery` (`pull` for any Control Tower-deployed instance),
+`push_configured`, `collections`, `pending` and `dropped`. Since delivery is by
+collection, a path always exists and configuration alone cannot prove the feature
+works — so the check is `amber` while capture is on but nothing has collected yet,
+`green` once Control Tower has collected at least once, and `red` only when
+`dropped` is non-zero, meaning the buffer overflowed and events were lost for
+good. It never returns 503 in any of those states: insight capture serves the
+sales follow-up, and no attendee should lose a workshop to it.

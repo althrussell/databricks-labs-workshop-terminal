@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "run_id": "3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90",
+  "workspace_id": "4217334529551234",
+  "attendee": "labuser007@example.com",
+  "type": "discovery.record",
+  "occurred_at": "2026-07-30T11:18:02.400000+00:00",
+  "idempotency_key": "discovery:3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90:labuser007@example.com:8d3f1c02b7e94a51:3",
+  "payload": {
+    "record_id": "8d3f1c02b7e94a51",
+    "captured_at": "2026-07-30T09:02:44.870000+00:00",
+    "revision": 3,
+    "redacted_by_attendee": true
+  }
+}

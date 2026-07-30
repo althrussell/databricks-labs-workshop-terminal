@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "run_id": "3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90",
+  "workspace_id": "4217334529551234",
+  "attendee": "labuser011@example.com",
+  "type": "workshop.signal",
+  "occurred_at": "2026-07-30T09:14:02.480000+00:00",
+  "idempotency_key": "signal:3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90:labuser011@example.com:1769764800",
+  "payload": {
+    "stats_schema_version": 3,
+    "phase": "build",
+    "minutes_building": 68,
+    "agent_sessions": 2,
+    "terminal_sessions": 2,
+    "topics": ["lakebase", "pipelines"],
+    "code": {
+      "projects": 1,
+      "commits": 0,
+      "files": 4,
+      "lines": 96
+    },
+    "resources": {
+      "jobs": 0,
+      "pipelines": 0,
+      "apps": 0,
+      "dashboards": 0
+    },
+    "errors": 9,
+    "idle_seconds": 12,
+    "discovery_records": 2,
+    "signal": {
+      "engagement": "explorer",
+      "primary_topic": "lakebase",
+      "topic_hits": {
+        "lakebase": 17,
+        "pipelines": 4
+      },
+      "products": ["lakebase", "pipelines"],
+      "resource_kinds": [],
+      "shipped": false
+    }
+  }
+}

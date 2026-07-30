@@ -59,8 +59,10 @@ operator admin panel.
   attendees, event-pinned [databricks-agent-skills](https://github.com/databricks/databricks-agent-skills)
   skills are installed only from the reviewed artifact manifest, TDD subagents
   are pre-installed, and every
-  git commit auto-syncs to the attendee's Workspace home so their work
-  survives teardown.
+  git commit auto-syncs to the attendee's Workspace home so a restart or
+  redeploy can't lose their work. That sync is not a take-home — teardown
+  deletes the workspace too — so the wrap guidance tells attendees to push to a
+  remote they own or download what matters while the event is still live.
 
 ## What operators get
 
@@ -80,10 +82,16 @@ operator admin panel.
 - **Frontend**: React + TypeScript + Vite + xterm.js. The production build is
   **committed to `static/`** because Control Tower deploys the repo
   as-cloned with no build step.
-- **Persistent metadata, not content**: no Lakebase or database is required.
-  Session lifecycle metadata can persist on the app volume for restart ghosts;
-  terminal output and attendee content are never persisted. Content/phase live
-  in memory and reset to the deployed pack on restart.
+- **Persistent metadata, not content**: no Lakebase or database is required *of
+  this app*. Session lifecycle metadata can persist on the app volume for restart
+  ghosts; terminal output is never persisted. Content/phase live in memory and
+  reset to the deployed pack on restart.
+  **Amended** for workshop insight capture: when an operator enables
+  `WORKSHOP_INSIGHT_CAPTURE` (default off), attendee-authored discovery answers
+  and a behavioural signal rollup are pushed to Control Tower, so *some* attendee
+  content now leaves the instance. Raw terminal output still never does, the app
+  still owns no database, and teardown is still `apps.delete`. See
+  [docs/adr/0001-workshop-insight-capture.md](docs/adr/0001-workshop-insight-capture.md).
 - **Security**: workspace-group based. Identity from the Apps proxy headers;
   operator access requires `ADMIN_GROUP` (default `platform_admins`)
   membership resolved via SCIM — using the caller's bearer token for service

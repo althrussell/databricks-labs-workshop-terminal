@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "run_id": "3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90",
+  "workspace_id": "4217334529551234",
+  "attendee": "labuser011@example.com",
+  "type": "discovery.record",
+  "occurred_at": "2026-07-30T09:41:10.220000+00:00",
+  "idempotency_key": "discovery:3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90:labuser011@example.com:1a7c99e4:1",
+  "payload": {
+    "record_id": "1a7c99e4",
+    "captured_at": "2026-07-30T09:41:10.220000+00:00",
+    "revision": 1,
+    "agent": "codex",
+    "confidence": "low",
+    "goal": "Get a declarative pipeline reading from their existing Kafka topics.",
+    "current_stack": ["Kafka"],
+    "blockers": [
+      "Could not get the connection to authenticate against their broker's SASL config."
+    ]
+  }
+}

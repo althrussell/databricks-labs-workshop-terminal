@@ -286,6 +286,47 @@ def topic_detection_enabled() -> bool:
     return _env("TOPIC_DETECTION", "true").lower() not in ("false", "0", "no", "off")
 
 
+def insight_capture_enabled() -> bool:
+    """Master switch for workshop insight capture (``WORKSHOP_INSIGHT_CAPTURE``).
+
+    Off by default, and deliberately so: this is the one feature that sends
+    attendee-authored content off the instance (discovery answers, artifact
+    titles), reversing the "content never leaves" property the rest of the app
+    holds. Consent is handled out-of-band in the event's registration terms, and
+    an operator who hasn't arranged that consent must get capture-off by doing
+    nothing. See ``docs/workshop-insight-contract.md``.
+
+    With this off, the signal rollup, the discovery endpoint, the CLI helper, the
+    agent instructions and the wrap-phase harvest are all inert — the attendee's
+    terminal behaves exactly as it did before the feature existed.
+    """
+    return _env_bool("WORKSHOP_INSIGHT_CAPTURE", False)
+
+
+def discovery_enabled() -> bool:
+    """Whether the *agent-elicited* discovery tier runs, within capture.
+
+    Subordinate to ``WORKSHOP_INSIGHT_CAPTURE`` on purpose. The two tiers carry
+    very different consent weight: the behavioural rollup is derived counters the
+    app already keeps, while a discovery record is the attendee describing their
+    company's plans in their own words. An operator who wants the anonymous
+    signal without the conversational capture sets ``DISCOVERY_ENABLED=false``
+    and keeps the rest.
+    """
+    return insight_capture_enabled() and _env_bool("DISCOVERY_ENABLED", True)
+
+
+def insight_summary_model() -> str:
+    """Serving endpoint for the wrap-phase edge summary (``INSIGHT_SUMMARY_MODEL``).
+
+    Empty means "discover a ready endpoint", which is the right default because
+    model availability is regional and an operator should not have to know which
+    Claude generation their workspace serves. Pinning matters when an event runs
+    on a workspace whose default chain is unavailable or expensive.
+    """
+    return _env("INSIGHT_SUMMARY_MODEL").strip()
+
+
 def enable_public_mcp() -> bool:
     """Whether to wire public MCP servers (DeepWiki, Exa) into the agent.
 

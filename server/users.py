@@ -49,6 +49,10 @@ class User:
         self._bootstrapped = False
         self.cli_ready: set[str] = set()  # agent ids with configs written
         self.topics: dict[str, float] = {}  # topic -> last seen (terminal keyword spotting)
+        # topic -> lifetime hit count. `topics` answers "did they touch it",
+        # which reads the same for a passing mention and an hour of work; the
+        # counter is what lets a brief say which one they actually went deep on.
+        self.topic_hits: dict[str, int] = {}
         self.sessions_launched: dict[str, int] = {}  # agent id -> lifetime count
         self.errors: int = 0  # P1-14: failed session launches / agent errors
         self.last_seen: float = 0.0

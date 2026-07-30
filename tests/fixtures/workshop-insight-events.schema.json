@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Workshop insight event (contract C6)",
+  "description": "One attendee insight event on the existing C3a ingest envelope. See docs/workshop-insight-contract.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "attendee", "type", "occurred_at", "payload", "idempotency_key"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "run_id": {
+      "type": "string",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})?$",
+      "description": "Control Tower run. Empty on the collect path — a deployed terminal is never told its run id, so the collector stamps it from the unit it polled. Must be a UUID on the push path, where nothing else can supply it."
+    },
+    "workspace_id": {"type": ["string", "null"]},
+    "attendee": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The POOLED lab identity, not a real email. Control Tower resolves it via the roster."
+    },
+    "type": {
+      "type": "string",
+      "enum": ["workshop.signal", "discovery.record", "insight.summary"]
+    },
+    "occurred_at": {"type": "string", "minLength": 1},
+    "idempotency_key": {"type": "string", "minLength": 1},
+    "payload": {"type": "object"}
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {"type": {"const": "workshop.signal"}}
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "idempotency_key": {"type": "string", "pattern": "^signal:.+$"},
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["stats_schema_version", "signal"],
+            "properties": {
+              "stats_schema_version": {"type": "integer", "enum": [2, 3]},
+              "phase": {"type": "string"},
+              "minutes_building": {"type": "integer"},
+              "agent_sessions": {"type": "integer"},
+              "terminal_sessions": {"type": "integer"},
+              "topics": {"type": "array", "items": {"type": "string"}},
+              "code": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "projects": {"type": "integer"},
+                  "commits": {"type": "integer"},
+                  "files": {"type": "integer"},
+                  "lines": {"type": "integer"}
+                }
+              },
+              "resources": {"type": "object"},
+              "errors": {"type": "integer"},
+              "idle_seconds": {"type": ["integer", "null"]},
+              "discovery_records": {"type": "integer"},
+              "signal": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["engagement", "products", "shipped"],
+                "properties": {
+                  "engagement": {
+                    "type": "string",
+                    "enum": ["observer", "explorer", "builder"],
+                    "description": "explorer is not a lesser category — an attendee who built nothing usually hit a wall, and the wall is the most valuable thing in a brief."
+                  },
+                  "primary_topic": {"type": ["string", "null"]},
+                  "topic_hits": {"type": "object"},
+                  "products": {"type": "array", "items": {"type": "string"}},
+                  "resource_kinds": {"type": "array", "items": {"type": "string"}},
+                  "shipped": {"type": "boolean"}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {"type": {"const": "discovery.record"}}
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "idempotency_key": {"type": "string", "pattern": "^discovery:.+$"},
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["record_id", "captured_at", "revision"],
+            "description": "Every field beyond record_id/captured_at/revision is optional. A partial record is the normal case and must be stored.",
+            "properties": {
+              "record_id": {"type": "string", "minLength": 1},
+              "captured_at": {"type": "string", "minLength": 1},
+              "revision": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Monotonic per record_id. Also the last segment of idempotency_key, so an update is a distinct event while a retried flush stays a duplicate."
+              },
+              "redacted_by_attendee": {
+                "type": "boolean",
+                "const": true,
+                "description": "Present only on a withdrawal, where every content field is blank. One-way: the record must never be revived by a later revision."
+              },
+              "agent": {"type": "string"},
+              "confidence": {
+                "type": "string",
+                "enum": ["low", "medium", "high"],
+                "description": "The agent's read of how firmly the attendee stated this. Distinguishes a customer commitment from an inference."
+              },
+              "use_case_title": {"type": "string"},
+              "use_case_summary": {"type": "string"},
+              "goal": {"type": "string"},
+              "current_stack": {"type": "array", "items": {"type": "string"}},
+              "databricks_products": {"type": "array", "items": {"type": "string"}},
+              "blockers": {"type": "array", "items": {"type": "string"}},
+              "interest_signals": {"type": "array", "items": {"type": "string"}},
+              "timeline": {"type": "string"},
+              "industry": {"type": "string"},
+              "redactions": {"type": "integer"}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {"type": {"const": "insight.summary"}}
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "idempotency_key": {"type": "string", "pattern": "^summary:.+$"},
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["summary_id", "generated_at", "generator", "headline"],
+            "properties": {
+              "summary_id": {"type": "string", "minLength": 1},
+              "generated_at": {"type": "string", "minLength": 1},
+              "generator": {
+                "type": "string",
+                "enum": ["llm", "extraction"],
+                "description": "Must be surfaced wherever a summary is shown — an extraction summary is keyword-thin and must not read like a finding."
+              },
+              "model": {"type": ["string", "null"]},
+              "phase": {"type": "string"},
+              "headline": {"type": "string"},
+              "what_they_built": {"type": "string"},
+              "use_cases": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["title"],
+                  "properties": {
+                    "title": {"type": "string"},
+                    "summary": {"type": "string"},
+                    "products": {"type": "array", "items": {"type": "string"}},
+                    "evidence": {"type": "string"}
+                  }
+                }
+              },
+              "blockers": {"type": "array", "items": {"type": "string"}},
+              "products": {"type": "array", "items": {"type": "string"}},
+              "artifacts": {
+                "type": "array",
+                "description": "Metadata only — never contents.",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["kind"],
+                  "properties": {
+                    "kind": {"type": "string"},
+                    "title": {"type": "string"},
+                    "bytes": {"type": "integer"}
+                  }
+                }
+              },
+              "prompt_count": {"type": "integer"},
+              "redactions": {"type": "integer"}
+            }
+          }
+        }
+      }
+    }
+  ]
+}

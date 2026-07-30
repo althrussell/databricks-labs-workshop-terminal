@@ -251,7 +251,7 @@ def test_control_tower_threads_are_retained_and_joined_on_shutdown():
             self.joined.append(timeout)
 
     class Emitter:
-        enabled = True
+        can_push = True
         run_id = "run"
 
     stop = __import__("threading").Event()
@@ -271,6 +271,38 @@ def test_control_tower_threads_are_retained_and_joined_on_shutdown():
     assert all(thread.joined == [0.25] for thread in threads)
 
 
+def test_health_sampling_runs_without_a_push_sink():
+    """Delivery is by collection, so the sampler has to run regardless.
+
+    The flusher is the only push-dependent thread: with no ingest endpoint it
+    would wake every 15 seconds to POST at nothing, while the health snapshots it
+    would have carried are still collected off the buffer by Control Tower.
+    """
+    from server import main
+
+    created = []
+
+    class FakeThread:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            created.append(self)
+
+        def start(self):
+            pass
+
+    class PullOnly:
+        can_push = False
+        run_id = ""
+
+    threads = main._start_control_tower_threads(
+        PullOnly(),
+        __import__("threading").Event(),
+        thread_factory=FakeThread,
+    )
+
+    assert [thread.kwargs["name"] for thread in threads] == ["operational-health"]
+
+
 def test_lifespan_joins_control_tower_threads_when_app_exits_with_error(
     monkeypatch, tmp_path
 ):
@@ -288,7 +320,7 @@ def test_lifespan_joins_control_tower_threads_when_app_exits_with_error(
     monkeypatch.setattr(
         main,
         "event_emitter",
-        type("Emitter", (), {"enabled": True, "run_id": "run"})(),
+        type("Emitter", (), {"can_push": True, "run_id": "run", "stream_id": "s"})(),
     )
     monkeypatch.setattr(
         main,

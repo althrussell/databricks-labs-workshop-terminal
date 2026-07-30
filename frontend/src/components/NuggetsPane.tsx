@@ -3,6 +3,7 @@ import { ChevronRight, ExternalLink, Lightbulb, Sparkle } from "lucide-react";
 import { renderNuggetMarkdown } from "../safeMarkdown";
 import { api, Nugget } from "../api";
 import { onAppEvent } from "../events";
+import DiscoveryNotice from "./DiscoveryNotice";
 
 interface Props {
   collapsed: boolean;
@@ -152,6 +153,7 @@ export default function NuggetsPane({ collapsed, onToggle, onCertificate, onTryP
           </article>
         ))}
       </div>
+      <DiscoveryNotice />
     </aside>
   );
 }

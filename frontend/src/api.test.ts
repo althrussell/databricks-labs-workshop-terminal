@@ -172,3 +172,65 @@ test("prior-session acknowledgement uses the owner-scoped delete API", async () 
   assert.equal(request?.input, "/api/sessions/prior/ghost%2Fid");
   assert.equal(request?.init?.method, "DELETE");
 });
+
+async function captureRequest<T>(
+  call: () => Promise<T>,
+  body: unknown
+): Promise<{ result: T; input: string; init?: RequestInit }> {
+  const originalFetch = globalThis.fetch;
+  let seen: { input: string; init?: RequestInit } | undefined;
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    seen = { input: String(input), init };
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof fetch;
+  try {
+    const result = await call();
+    return { result, input: seen!.input, init: seen!.init };
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+test("an attendee reads their own discovery records, not the whole instance's", async () => {
+  const { result, input, init } = await captureRequest(
+    () => apiModule.api.myDiscovery(),
+    { enabled: true, records: [{ record_id: "r1", captured_at: "2026-07-30T00:00:00Z" }] }
+  );
+
+  // Scoping is the server's job: the client must not pass an attendee, or a
+  // crafted request could read someone else's records on a shared instance.
+  assert.equal(input, "/api/discovery");
+  assert.equal(init?.method, undefined);
+  assert.equal(result.records[0].record_id, "r1");
+});
+
+test("withdrawal names the record so the attendee revokes exactly one statement", async () => {
+  const { result, input, init } = await captureRequest(
+    () => apiModule.api.withdrawDiscovery("rec-7"),
+    { redacted: true, record_id: "rec-7" }
+  );
+
+  assert.equal(input, "/api/discovery/redact");
+  assert.equal(init?.method, "POST");
+  assert.deepEqual(JSON.parse(String(init?.body)), { record_id: "rec-7" });
+  assert.equal(result.redacted, true);
+});
+
+test("a failed withdrawal rejects rather than reporting success", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ detail: "record not found" }), {
+      status: 404,
+      headers: { "Content-Type": "application/json" },
+    })) as typeof fetch;
+  try {
+    // The UI removes the card on resolve, so a silent resolve here would tell the
+    // attendee their statement was withdrawn while the server still holds it.
+    await assert.rejects(apiModule.api.withdrawDiscovery("missing"), /record not found/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
