@@ -168,9 +168,10 @@ Workshop Terminal App so the proxy forwards the attendee OBO bearer.
 3. Create the Databricks App so its service principal exists.
 4. Bind `postgres` and `artifact_volume`; grant the App service principal.
 5. Deploy pinned source from `deploy/omnigent-app`.
-6. On App startup, write, flush, fsync, and best-effort delete a unique probe
-   file directly inside `AP_ARTIFACT_VOLUME_PATH` as the App process/SP. Startup
-   fails if the write is not permitted.
+6. On App startup, write, read back, and delete a unique probe file inside
+   `AP_ARTIFACT_VOLUME_PATH` as the App SP, through the Files API — Databricks
+   Apps does not mount Unity Catalog volumes, so the path is unreachable from the
+   filesystem. Startup fails if the write is not permitted.
 7. Poll App deployment state, authenticated `GET /health`, and
    `GET /api/version`; require version `0.7.0`. Successful health proves the
    Volume startup invariant.
