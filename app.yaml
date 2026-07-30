@@ -83,6 +83,23 @@ env:
   - name: WORKSHOP_ATTENDEE_EMAIL
     value: ""
 
+  # --- Workshop insight capture (docs/workshop-insight-contract.md) ---
+  # Off unless the event's registration terms cover it. When on, the app records
+  # a behavioural signal, whatever use case the agent elicits, and a wrap-phase
+  # summary, then buffers them for Control Tower to collect on the harvest it
+  # already makes. Nothing here needs an outbound credential or an ingest URL:
+  # the terminal never posts to Control Tower, because the Apps proxy in front of
+  # Control Tower requires a Databricks identity the terminal cannot present.
+  - name: WORKSHOP_INSIGHT_CAPTURE
+    value: "false"
+  # Agent-elicited discovery. Defaults on with capture; set false for signal only.
+  - name: DISCOVERY_ENABLED
+    value: ""
+  # Serving endpoint for the wrap summary. Empty falls back to quoting the
+  # attendee's own words rather than inventing a narrative.
+  - name: INSIGHT_SUMMARY_MODEL
+    value: ""
+
   # --- Workshop / content steering ---
   - name: WORKSHOP_PHASE
     value: intro

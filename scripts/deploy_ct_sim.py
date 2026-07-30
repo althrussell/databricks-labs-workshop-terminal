@@ -107,6 +107,11 @@ def _parse_args(argv=None, *, environ=None):
         help="explicitly inject WORKSHOP_PAT from the environment (degraded emergency fallback)",
     )
     parser.add_argument("--no-obo", action="store_true", help="leave ENABLE_OBO off")
+    parser.add_argument(
+        "--insight-capture",
+        action="store_true",
+        help="set WORKSHOP_INSIGHT_CAPTURE=true (behavioural signal, agent discovery, wrap summary)",
+    )
     parser.add_argument("--no-entitlements", action="store_true", help="leave ENABLE_ENTITLEMENTS off")
     parser.add_argument(
         "--non-event-mode",
@@ -384,11 +389,16 @@ def _event_settings(
     workshop_pat,
     enable_obo=True,
     enable_entitlements=True,
+    insight_capture=False,
 ):
     return {
         "WORKSHOP_PAT": workshop_pat,
         "WORKSHOP_APP_SP_ID": "",
         "WORKSHOP_ATTENDEE_EMAIL": attendee,
+        # Part of the Control Tower contract (§14), so this simulation has to be
+        # able to set it. Off unless asked for, matching the real default: the
+        # decision belongs to whoever wrote the event's registration terms.
+        "WORKSHOP_INSIGHT_CAPTURE": str(insight_capture).lower(),
         "WORKSHOP_CATALOG": catalog if enable_entitlements else "",
         "ENABLE_OBO": str(enable_obo).lower(),
         "ENABLE_ENTITLEMENTS": str(enable_entitlements).lower(),
@@ -422,6 +432,7 @@ def _event_settings_from_args(args, attendee, workshop_pat):
         workshop_pat=workshop_pat,
         enable_obo=not args.no_obo,
         enable_entitlements=not args.no_entitlements,
+        insight_capture=args.insight_capture,
     )
 
 

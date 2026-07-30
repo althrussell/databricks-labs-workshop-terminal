@@ -56,6 +56,24 @@ def test_uploaded_yaml_patch_sets_current_event_contract_without_mutating_repo()
     assert APP_YAML.read_bytes() == original
 
 
+def test_every_setting_the_simulation_patches_is_declared_in_app_yaml():
+    """The patcher rewrites declared keys; it does not add them.
+
+    So a contract variable added to the simulation but never declared here fails
+    at deploy time against a real workspace, which is a slow and expensive place
+    to find out. This is the cheap version of that discovery.
+    """
+    args = deploy_ct_sim._parse_args(_valid_argv())
+    settings = deploy_ct_sim._event_settings_from_args(args, args.attendee, "")
+
+    undeclared = sorted(set(settings) - set(_env_values(APP_YAML.read_bytes())))
+
+    assert undeclared == [], (
+        f"deploy_ct_sim patches {undeclared} but app.yaml does not declare them — "
+        "add the entry, with the comment explaining what Control Tower sets it to"
+    )
+
+
 def test_uploaded_yaml_patch_preserves_comments_order_and_unrelated_bytes():
     source = b"""# leading comment
 command: [python, app.py]
