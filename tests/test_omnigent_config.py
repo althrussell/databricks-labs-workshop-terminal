@@ -84,6 +84,29 @@ def test_host_identity_matches_the_supervised_host(user, monkeypatch):
     assert document["host"] == {"host_id": expected.host_id, "name": expected.name}
 
 
+def test_config_identity_equals_the_supervised_launch_environment(user, monkeypatch):
+    """The two mechanisms must not drift: same attendee, same host.
+
+    The CLI takes the host from the config file and the supervised host takes it
+    from its launch env. If those ever disagree the terminal waits out its
+    timeout for a daemon nobody runs, which is exactly what a missing section
+    caused.
+    """
+    from server import omnigent_remote
+
+    url = "https://omni.example.databricksapps.com"
+    monkeypatch.setenv("OMNIGENT_APP_URL", url)
+    monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
+
+    cli_config.configure_omnigent(user, "tok-1")
+    _, launch_env, _ = omnigent_remote.build_host_launch(user, "/usr/bin/omnigent", url)
+
+    with open(_config_path(user)) as handle:
+        document = yaml.safe_load(handle)
+    assert document["host"]["host_id"] == launch_env["OMNIGENT_HOST_ID"]
+    assert document["host"]["name"] == launch_env["OMNIGENT_HOST_NAME"]
+
+
 def test_a_host_identity_the_cli_invented_is_corrected(user, monkeypatch):
     """An attendee whose home already has a stray identity must be repaired.
 
