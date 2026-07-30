@@ -760,7 +760,12 @@ def test_generated_tui_helper_routes_remote_and_local(monkeypatch, tmp_path):
     user.bootstrap_home()
     helper = Path(user.home) / ".local" / "bin" / "workshop-omnigent"
     text = helper.read_text()
-    assert 'exec omnigent run --server "$OMNIGENT_APP_URL" "$@"' in text
+    # ``run --server`` with no agent means "attach to that server", which fails
+    # on a fresh control plane with "No sessions found on the server". Naming the
+    # agent is what creates the session; ``polly`` is the same bundled
+    # orchestrator a bare ``omnigent`` launches, so the card behaves as before
+    # with the session state now living on the remote app.
+    assert 'exec omnigent polly --server "$OMNIGENT_APP_URL" "$@"' in text
     assert 'exec omnigent "$@"' in text
     assert "unset DATABRICKS_TOKEN DATABRICKS_CLIENT_ID" in text
     assert (

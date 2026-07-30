@@ -55,6 +55,28 @@ DEFAULT_MANIFEST_PATH = os.path.normpath(
 )
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _COMMIT = re.compile(r"[0-9a-fA-F]{40}")
+# Suffixes preserved when staging a downloaded artifact. Several consumers infer
+# an artifact's type from its name rather than its content: ``npm install`` reads
+# an extensionless path as a *directory* (ENOTDIR on its package.json), and
+# ``shutil.unpack_archive`` rejects a name it cannot map to a format. Staging to
+# a bare mkstemp name therefore broke Codex and Omnigent while leaving node and
+# claude working, because those two are unpacked with an explicit `tar -xzf`.
+# Longest-first so ``.tar.gz`` wins over ``.gz``.
+_STAGED_SUFFIXES = (
+    ".tar.gz",
+    ".tar.xz",
+    ".tar.bz2",
+    ".tar.zst",
+    ".tgz",
+    ".txz",
+    ".tbz2",
+    ".zip",
+    ".whl",
+    ".gz",
+    ".xz",
+    ".zst",
+    ".sh",
+)
 
 
 class ArtifactManifestError(RuntimeError):
@@ -178,7 +200,11 @@ class ArtifactManifest:
                 raise ArtifactManifestError("artifact network source must use https")
             directory = staging_dir or tempfile.mkdtemp(prefix="workshop-artifact-")
             os.makedirs(directory, exist_ok=True)
-            fd, target = tempfile.mkstemp(prefix=f"{name}-", dir=directory)
+            fd, target = tempfile.mkstemp(
+                prefix=f"{name}-",
+                suffix=_staged_suffix(parsed.path),
+                dir=directory,
+            )
             try:
                 with os.fdopen(fd, "wb") as output, urlopen(source, timeout=60) as response:
                     for chunk in iter(lambda: response.read(1024 * 1024), b""):
@@ -203,6 +229,19 @@ class ArtifactManifest:
         if actual != entry["sha256"]:
             raise ArtifactManifestError(f"artifact checksum mismatch: {name}")
         return target
+
+
+def _staged_suffix(url_path: str) -> str:
+    """Archive suffix to stage ``url_path`` under, or "" when unrecognised.
+
+    Allowlisted rather than echoed from the URL so a manifest override cannot
+    choose the staged filename's extension.
+    """
+    basename = url_path.rsplit("/", 1)[-1].lower()
+    for suffix in _STAGED_SUFFIXES:
+        if basename.endswith(suffix):
+            return suffix
+    return ""
 
 
 def _read_document(path: str) -> dict:

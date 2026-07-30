@@ -21,6 +21,11 @@
 assets/skills/databricks-lakebase/references/connectivity.md:postgres-connection-string:85
 ccf4f2607053962e5b6268c30a67a7cab47db532:assets/skills/databricks-lakebase/references/connectivity.md:postgres-connection-string:85
 
+# The same finding again under main's squash of #23, which re-introduced the file
+# under a new SHA. Merging main back into this branch puts that commit in the
+# push range, so the commit-scoped hook re-fingerprints it.
+96009be9b419bfc1ec05e65b67843f3285cdf42d:assets/skills/databricks-lakebase/references/connectivity.md:postgres-connection-string:85
+
 # The same placeholder in the retired databricks-lakebase-provisioned skill,
 # inside a commit that is already on main. This change deletes that file, but the
 # pre-push hook re-scans historical commits by committer, so the entry is needed

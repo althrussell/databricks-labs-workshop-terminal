@@ -96,7 +96,17 @@ class User:
                 pass
 
     def _write_omnigent_helper(self) -> None:
-        """Install the stable TUI entrypoint used by the Omnigent catalog card."""
+        """Install the stable TUI entrypoint used by the Omnigent catalog card.
+
+        ``omnigent run --server <url>`` with no agent is an ATTACH: it lists the
+        server's sessions and picks an agent from them, so on a fresh control
+        plane it exits with "No sessions found on the server". Naming an agent
+        instead gives the local-runner/remote-server topology the workshop wants
+        — harnesses run in the attendee's container, session state lives on the
+        App and shows up in its UI. ``polly`` is the bundled orchestrator a bare
+        ``omnigent`` already launches for a Claude credential, so the card keeps
+        the behavior it had before the App existed.
+        """
         path = os.path.join(self.home, ".local", "bin", "workshop-omnigent")
         content = (
             "#!/bin/sh\n"
@@ -108,7 +118,7 @@ class User:
             'omnigent-empty-databrickscfg"\n'
             "  export DATABRICKS_CONFIG_PROFILE="
             "workshop-omnigent-no-credentials\n"
-            '  exec omnigent run --server "$OMNIGENT_APP_URL" "$@"\n'
+            '  exec omnigent polly --server "$OMNIGENT_APP_URL" "$@"\n'
             "fi\n"
             'exec omnigent "$@"\n'
         )

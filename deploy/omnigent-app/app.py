@@ -136,8 +136,9 @@ try:
     CACHE_DIR = Path(tempfile.mkdtemp(prefix="omnigent_control_plane_"))
 
     # Health is meaningful only after the app's own SP identity has proven
-    # durable write access to the configured artifact Volume.
-    probe_artifact_volume(VOLUME_PATH)
+    # durable write access to the configured artifact Volume. Apps does not mount
+    # volumes, so this goes through the Files API rather than the filesystem.
+    probe_artifact_volume(VOLUME_PATH, _workspace_client)
 
     migration_engine = sqlalchemy.create_engine(
         DB_URI,

@@ -327,6 +327,7 @@ def configure_omnigent(user: User, token: str, *, write_token: bool = True) -> N
         if not isinstance(runner, dict):
             runner = document["runner"] = {}
         runner["idle_timeout_s"] = config.omnigent_runner_idle_timeout()
+        _apply_host_identity(document, user)
         providers = document.setdefault("providers", {})
         if not isinstance(providers, dict):
             providers = document["providers"] = {}
@@ -343,6 +344,28 @@ def configure_omnigent(user: User, token: str, *, write_token: bool = True) -> N
         except OSError:
             pass
         _atomic_text_write(config_path, config_yaml, 0o600)
+
+
+def _apply_host_identity(document: dict, user: User) -> None:
+    """Pin the attendee's host identity to the one the supervisor launches.
+
+    Omnigent commands read the host to launch their runner on from this file,
+    while the supervised ``omnigent host`` takes its identity from the launch
+    environment. Left unpinned the CLI invents a uuid, persists it, and then
+    waits out its timeout for a daemon nobody runs — with the attendee's real
+    host online beside it. An identity already written here is replaced, since a
+    stale one keeps pointing at that absent daemon.
+
+    Local deployments have no App to host against, so the CLI keeps owning the
+    identity exactly as before.
+    """
+    from .omnigent_remote import stable_host_identity
+
+    server_url = config.omnigent_app_url()
+    if not server_url:
+        return
+    identity = stable_host_identity(user, server_url)
+    document["host"] = {"host_id": identity.host_id, "name": identity.name}
 
 
 def _atomic_text_write(path: str, content: str, mode: int) -> None:

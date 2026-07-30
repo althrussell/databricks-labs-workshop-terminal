@@ -76,7 +76,7 @@ IDs, HTTP status, and redacted logs for every step.
       Active WebSockets may remain; reopening/reconnecting must refresh the
       token file through a fresh authenticated request.
 - [ ] Launch the Omnigent catalog card and verify the generated helper executes
-      `omnigent run --server <OMNIGENT_APP_URL>` with no second local server.
+      `omnigent polly --server <OMNIGENT_APP_URL>` with no second local server.
 - [ ] Verify supervisor shutdown sends TERM to process groups, waits within the
       Apps shutdown window, then KILLs/reaps stragglers without restart.
 - [ ] Verify authenticated `GET /v1/hosts/{expected_host_id}` reports `online`

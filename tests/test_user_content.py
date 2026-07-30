@@ -16,6 +16,9 @@ APPKIT_MANDATE = "AppKit is the required baseline for every app."
 # points an agent at a skill that no longer exists is worse than no mandate: the
 # agent finds nothing and silently improvises a Python framework instead.
 CANONICAL_APP_SKILLS = ("databricks-apps", "databricks-app-design")
+
+# Where the Databricks CLI tracks which skills it considers installed.
+_AITOOLS_STATE = os.path.join(".databricks", "aitools", "skills", ".state.json")
 RETIRED_SKILL_NAMES = (
     "databricks-bundles",
     "databricks-config",
@@ -166,6 +169,79 @@ def test_subagents_and_skills_installed(client, monkeypatch):
         skill = os.path.join(home, relative, "databricks-docs")
         assert os.path.islink(skill), relative
         assert os.path.isfile(os.path.join(skill, "SKILL.md")), relative
+
+
+def test_databricks_cli_sees_the_skills_we_installed(client, monkeypatch, tmp_path):
+    """The CLI reports skills as installed only from its own state file.
+
+    It never inspects the harness directories, so placing skills ourselves left
+    ``databricks aitools`` telling attendees "no skills installed. Run
+    'databricks aitools install'" while Claude and Codex were loading them fine.
+    """
+    from server.bootstrap import install
+
+    shared = install.config.shared_prefix()
+    upstream = ["databricks-docs", "databricks-dabs"]
+    _write_skills_stamp(shared, upstream)
+
+    home = _provisioned_home(client, monkeypatch)
+    state = json.load(open(os.path.join(home, _AITOOLS_STATE)))
+
+    assert state["schema_version"] == 1
+    assert state["release"] == install.SKILLS_REF
+    assert set(state["skills"]) == set(upstream)
+    # Versionless upstream skills are recorded as 0.0.1, matching the CLI.
+    assert state["skills"]["databricks-dabs"] == "0.0.1"
+
+
+def test_vendored_workflow_skills_are_not_declared_to_the_cli(
+    client, monkeypatch, tmp_path
+):
+    """Only upstream skills belong in the CLI's state.
+
+    The shared tree also holds our vendored workflow skills, and no name
+    pattern separates them (``databricks-app-apx`` is vendored, not upstream),
+    so the set comes from install-time provenance.
+    """
+    from server.bootstrap import install
+
+    _write_skills_stamp(install.config.shared_prefix(), ["databricks-docs"])
+
+    home = _provisioned_home(client, monkeypatch)
+    state = json.load(open(os.path.join(home, _AITOOLS_STATE)))
+
+    assert set(state["skills"]) == {"databricks-docs"}
+    assert "brainstorming" not in state["skills"]
+
+
+def test_no_aitools_state_without_upstream_provenance(client, monkeypatch):
+    """Vendored fallback: claiming an upstream release we did not install would
+    make the CLI report skills as current when they are the offline copy."""
+    from server.bootstrap import install
+    from server.users import user_manager
+
+    # The shared prefix and the attendee home both outlive a single test, so
+    # clear what a sibling left behind before asserting on a fresh provision.
+    for stale in (
+        install._skills_stamp_path(),
+        os.path.join(
+            user_manager.get("alice@example.com").home,
+            _AITOOLS_STATE,
+        ),
+    ):
+        if os.path.exists(stale):
+            os.unlink(stale)
+
+    home = _provisioned_home(client, monkeypatch)
+    assert not os.path.exists(os.path.join(home, _AITOOLS_STATE))
+
+
+def _write_skills_stamp(shared: str, names: list[str]) -> None:
+    from server.bootstrap import install
+
+    os.makedirs(shared, exist_ok=True)
+    with open(install._skills_stamp_path(), "w") as f:
+        json.dump({"upstream_skills": names}, f)
 
 
 def test_a_harness_owned_skills_directory_still_receives_the_skills(

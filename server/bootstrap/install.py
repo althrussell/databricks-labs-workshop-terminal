@@ -509,6 +509,19 @@ def _skills_stamp_path() -> str:
     return os.path.join(config.shared_prefix(), f"{SKILLS_CLONE_DIR}.install.json")
 
 
+def skills_provenance() -> frozenset[str]:
+    """Names of the skills installed from the reviewed upstream release.
+
+    Empty when the shared tree is the vendored fallback (or skills have not
+    landed yet) — callers must not assume the shared tree is all upstream.
+    """
+    stamp = _read_json(_skills_stamp_path())
+    names = stamp.get("upstream_skills")
+    if not isinstance(names, list):
+        return frozenset()
+    return frozenset(name for name in names if isinstance(name, str) and name)
+
+
 def _read_json(path: str) -> dict:
     try:
         with open(path, encoding="utf-8") as handle:
@@ -936,7 +949,10 @@ def _install_codex() -> None:
                 f"codex version mismatch: expected {CODEX_VERSION}, "
                 f"got {actual or 'unknown'}"
             )
-        logger.warning("codex install attempt %d/3 failed", attempt)
+        # Include the captured reason: without it the only record of *why*
+        # codex failed is the terminal's attendee-gated status endpoint, so an
+        # operator reading app logs saw three anonymous failures and no cause.
+        logger.warning("codex install attempt %d/3 failed: %s", attempt, error)
         time.sleep(5)
     _set(
         "codex",
@@ -1122,7 +1138,10 @@ def _install_omnigent() -> None:
             env=env,
         )
         if result.returncode != 0:
-            raise RuntimeError("offline Omnigent venv creation failed")
+            raise RuntimeError(
+                "offline Omnigent venv creation failed: "
+                + (result.stderr or result.stdout)[-500:]
+            )
         result = subprocess.run(
             [
                 paths["uv_binary"],
@@ -1167,6 +1186,10 @@ def _install_omnigent() -> None:
             actual_checksum=binary_checksum,
         )
     except (subprocess.TimeoutExpired, OSError, RuntimeError) as e:
+        # Logged as well as recorded: the status endpoint that carries this is
+        # attendee-gated, so app logs were an operator's only view and this
+        # failure left no trace in them at all.
+        logger.warning("omnigent install failed: %s", e)
         _set(
             "omnigent",
             "error",
@@ -1425,6 +1448,12 @@ def _install_skills() -> None:
                 "ref": SKILLS_REF,
                 "resolved_commit": resolved_commit,
                 "content_checksum": checksum,
+                # Which skills came from upstream, so per-user setup can declare
+                # exactly those to the Databricks CLI's aitools state. The
+                # shared tree also holds our vendored workflow skills, and no
+                # name pattern separates them reliably (``databricks-app-apx``
+                # is vendored, not upstream).
+                "upstream_skills": sorted(names),
             },
         )
         logger.info("skills: %d refreshed from %s@%s", updated, SKILLS_REPO, SKILLS_REF)

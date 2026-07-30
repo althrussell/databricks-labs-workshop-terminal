@@ -177,57 +177,99 @@ def test_wrapper_delegates_routes_to_upstream_app_factory():
     assert '@app.get("/api/version")' not in source
 
 
-def test_artifact_volume_probe_writes_fsyncs_and_cleans_up(tmp_path, monkeypatch):
+def _volume_client(*, upload_error=None, download_error=None, contents=None):
+    """A stand-in for the Files API surface the probe uses."""
+    from types import SimpleNamespace
+
+    written: dict[str, bytes] = {}
+    deleted: list[str] = []
+
+    def _upload(path, body, overwrite=False):  # noqa: ANN001, ARG001
+        if upload_error is not None:
+            raise upload_error
+        written[path] = body.read()
+
+    def _download(path):  # noqa: ANN001
+        if download_error is not None:
+            raise download_error
+        import io
+
+        payload = written[path] if contents is None else contents
+        return SimpleNamespace(contents=io.BytesIO(payload))
+
+    def _delete(path):  # noqa: ANN001
+        deleted.append(path)
+        written.pop(path, None)
+
+    return SimpleNamespace(
+        files=SimpleNamespace(upload=_upload, download=_download, delete=_delete),
+        written=written,
+        deleted=deleted,
+    )
+
+
+def test_artifact_volume_probe_writes_reads_back_and_cleans_up():
+    """Apps cannot see a volume on the filesystem, so the probe uses the Files API.
+
+    A POSIX probe fails on a perfectly good volume -- binding the resource injects
+    the /Volumes path but nothing mounts it -- which crashed the app at startup.
+    """
     probe = _load_volume_probe()
-    fsynced: list[int] = []
-    monkeypatch.setattr(probe.os, "fsync", fsynced.append)
+    client = _volume_client()
 
-    probe.probe_artifact_volume(tmp_path)
+    probe.probe_artifact_volume("/Volumes/cat/schema/vol", client)
 
-    assert fsynced
-    assert list(tmp_path.iterdir()) == []
+    assert client.written == {}, "probe file left behind"
+    assert len(client.deleted) == 1
+    assert client.deleted[0].startswith("/Volumes/cat/schema/vol/.omnigent-readiness-")
 
 
-def test_artifact_volume_probe_failure_prevents_startup(tmp_path, monkeypatch):
+def test_artifact_volume_probe_failure_prevents_startup():
     probe = _load_volume_probe()
     write_error = PermissionError("volume is read-only")
+    client = _volume_client(upload_error=write_error)
 
-    def denied(*args, **kwargs):
-        raise write_error
-
-    monkeypatch.setattr(probe.Path, "open", denied)
-    monkeypatch.setattr(
-        probe.Path,
-        "unlink",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            PermissionError("cleanup is also denied")
-        ),
-    )
     with pytest.raises(RuntimeError, match="artifact Volume is not writable") as raised:
-        probe.probe_artifact_volume(tmp_path)
+        probe.probe_artifact_volume("/Volumes/cat/schema/vol", client)
+
     assert raised.value.__cause__ is write_error
-    assert list(tmp_path.iterdir()) == []
 
 
-def test_artifact_volume_probe_unlink_failure_prevents_startup(tmp_path, monkeypatch):
+def test_artifact_volume_probe_rejects_a_write_it_cannot_read_back():
+    """A write that cannot be read back would fail later, further from the cause."""
     probe = _load_volume_probe()
-    monkeypatch.setattr(probe.os, "fsync", lambda fd: None)
+    client = _volume_client(contents=b"something else")
 
-    def denied(*args, **kwargs):
+    with pytest.raises(RuntimeError, match="different bytes"):
+        probe.probe_artifact_volume("/Volumes/cat/schema/vol", client)
+
+    assert client.deleted, "failed probe left its file behind"
+
+
+def test_artifact_volume_probe_rejects_a_path_outside_volumes():
+    probe = _load_volume_probe()
+
+    with pytest.raises(RuntimeError, match="absolute /Volumes path"):
+        probe.probe_artifact_volume("cat.schema.vol", _volume_client())
+
+def test_artifact_volume_probe_delete_failure_prevents_startup():
+    """A probe file that cannot be removed means the grant is not what we asked."""
+    probe = _load_volume_probe()
+    client = _volume_client()
+
+    def denied(path):  # noqa: ANN001, ARG001
         raise PermissionError("volume does not permit deletion")
 
-    monkeypatch.setattr(probe.Path, "unlink", denied)
+    client.files.delete = denied
 
     with pytest.raises(RuntimeError, match="artifact Volume probe cannot be removed"):
-        probe.probe_artifact_volume(tmp_path)
-
+        probe.probe_artifact_volume("/Volumes/cat/schema/vol", client)
 
 def test_wrapper_probes_artifact_volume_before_health_app_creation():
     source = (APP_DIR / "app.py").read_text()
-    assert "probe_artifact_volume(VOLUME_PATH)" in source
-    assert source.index("probe_artifact_volume(VOLUME_PATH)") < source.index(
-        "app = create_app("
-    )
+    call = "probe_artifact_volume(VOLUME_PATH, _workspace_client)"
+    assert call in source, "the probe needs the app's own identity for the Files API"
+    assert source.index(call) < source.index("app = create_app(")
 
 
 def test_app_source_snapshot_stays_below_platform_file_limit():
@@ -281,7 +323,7 @@ def test_control_tower_payload_example_matches_contract_schema():
     serialized = json.dumps(payload).lower()
     assert "client_secret" not in serialized
     assert "access_token" not in serialized
-    assert payload["contract_version"] == "1.3"
+    assert payload["contract_version"] == "1.5"
     assert payload["remote_host"]["enabled"] is True
     assert payload["remote_host"]["status"] == "waiting_for_token"
     assert set(schema["properties"]["remote_host"]["properties"]["status"]["enum"]) == (
@@ -304,7 +346,18 @@ def test_control_tower_payload_example_matches_contract_schema():
         "sha256(databricks-workshop-terminal/omnigent-host-id/v1"
         "\\0<normalized-server-url>\\0<normalized-attendee-email>)[:32]"
     )
+    # A commit is preferred, but an attendee workspace can receive the app source
+    # as a plain directory with no Git folder and therefore no head to read back.
+    # Rejecting that discarded a host that had deployed fine, so a branch is
+    # accepted as long as the payload says the revision is not immutable.
+    assert payload["deployment"]["source_ref"]
+    assert payload["deployment"]["source_ref_immutable"] is True
     assert re.fullmatch(r"[0-9a-f]{40}", payload["deployment"]["source_ref"])
+
+    degraded = json.loads(json.dumps(payload))
+    degraded["deployment"]["source_ref"] = "main"
+    degraded["deployment"]["source_ref_immutable"] = False
+    _assert_schema(degraded, schema)
 
     connected = json.loads(json.dumps(payload))
     connected["remote_host"]["enabled"] = True
@@ -409,7 +462,7 @@ def test_handoff_docs_cover_lifecycle_security_and_upstream_gap():
         assert heading in contract
     assert "815cdbef431397a59ab296e194fce026d9e79b4f" in contract
     assert "omnigent host --server <OMNIGENT_APP_URL> --non-interactive" in contract
-    assert "omnigent run --server <OMNIGENT_APP_URL>" in contract
+    assert "omnigent polly --server <OMNIGENT_APP_URL>" in contract
     assert "service principal" in contract
     assert "attendee" in contract
     assert "X-Forwarded-Email" in contract

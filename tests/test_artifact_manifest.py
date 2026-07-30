@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 
 import pytest
 
@@ -272,6 +273,64 @@ def test_staged_artifact_is_verified_before_use_and_rejects_tampering(tmp_path):
     installer = vendored.verified_local_path("claude_installer")
 
     assert installer.endswith("claude-code-bootstrap.sh")
+
+
+def test_every_staged_artifact_keeps_the_extension_its_consumer_needs():
+    """The Codex/Omnigent outage: staging dropped the source's extension.
+
+    npm reads an extensionless local path as a *directory* and fails with
+    ENOTDIR on its package.json, and ``shutil.unpack_archive`` refuses a name it
+    cannot map to a format -- so Codex and both Omnigent archives never
+    installed, while node and claude survived on an explicit ``tar -xzf``.
+    """
+    from urllib.parse import urlsplit
+
+    from server.bootstrap.artifacts import _staged_suffix, load_manifest
+
+    sources = load_manifest("")["artifacts"]
+    required = {
+        "codex_npm_launcher_package": ".tgz",
+        "codex_native_package_linux_x64": ".tgz",
+        "uv_binary": ".tar.gz",
+        "python_3_12_runtime": ".tar.gz",
+        "databricks_cli_archive_linux_x64": ".zip",
+        "node_linux_x64": ".tar.xz",
+        "node_linux_arm64": ".tar.xz",
+        "tmux_linux_x64": ".gz",
+    }
+    for name, suffix in required.items():
+        path = urlsplit(str(sources[name]["source"])).path
+        assert _staged_suffix(path) == suffix, name
+
+    # An extensionless source stays extensionless rather than inventing one.
+    assert _staged_suffix(urlsplit(str(sources["claude_binary"]["source"])).path) == ""
+
+
+def test_staged_download_lands_on_a_name_npm_accepts(tmp_path, monkeypatch):
+    """End of the chain: the file npm is handed must look like a tarball."""
+    import io
+
+    from server.bootstrap import artifacts
+
+    payload = b"not really a tarball"
+    monkeypatch.setattr(artifacts, "urlopen", lambda *a, **k: io.BytesIO(payload))
+    # Naming is what is under test; the reviewed digest is asserted by
+    # test_staged_artifact_is_verified_before_use_and_rejects_tampering.
+    monkeypatch.setattr(
+        artifacts,
+        "_checksum",
+        lambda path: artifacts.ArtifactManifest.from_path("").entry(
+            "codex_npm_launcher_package"
+        )["sha256"],
+    )
+    contract = artifacts.ArtifactManifest.from_path("")
+
+    staged = contract.verified_local_path(
+        "codex_npm_launcher_package", staging_dir=str(tmp_path)
+    )
+
+    assert staged.endswith(".tgz")
+    assert os.path.isfile(staged)
 
 
 def test_bootstrap_never_pipes_unverified_network_content_to_an_interpreter():

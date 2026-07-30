@@ -297,9 +297,18 @@ class CredentialManager:
         emergency = vended_pat()
         if emergency and self._validate_emergency_pat(emergency):
             return emergency
+        # Distinguish "nothing configured" from "configured but rejected" — the
+        # combined message sent operators hunting for a missing PAT when one was
+        # present and failing validation.
+        detail = (
+            "the emergency WORKSHOP_PAT was also rejected"
+            if emergency
+            else "no emergency WORKSHOP_PAT is set"
+        )
         raise CredentialError(
             "No workshop credential available — Databricks Apps app-identity "
-            "OAuth could not authenticate and no emergency WORKSHOP_PAT is set."
+            f"OAuth could not authenticate and {detail}."
+            + (f" Last error: {self.last_error}" if self.last_error else "")
         )
 
     def start(self) -> None:
@@ -449,14 +458,37 @@ class CredentialManager:
             self.last_error = None
             return True
 
-        if not expected:
+        # Preconditions apply to app-identity binding only. A user token
+        # (require_app_identity=False) is judged by whether the workspace
+        # accepts it, and its fallback lives below at the SCIM probe — checking
+        # app-SP preconditions here made that fallback unreachable whenever
+        # current-user/me answered anything but 200.
+        if require_app_identity and not expected:
             diagnostic["result"] = "expected_identity_missing"
             self._record_validation_failure(diagnostic)
             return False
-        if not expected_sp_id_valid:
+
+        # A *malformed* WORKSHOP_APP_SP_ID is a broken deploy: fail loudly rather
+        # than silently downgrade to a weaker binding.
+        if require_app_identity and expected_sp_id and not expected_sp_id_valid:
             diagnostic["result"] = "expected_service_principal_id_invalid"
             self._record_validation_failure(diagnostic)
             return False
+
+        # An *absent* one only strengthens the binding when present, so it cannot
+        # gate it. Control Tower can only resolve the numeric id after app
+        # create, so a terminal that refused to authenticate without it locked
+        # its own agents out of the AI gateway whenever that injection was
+        # missed. Bind on the platform-injected client id, and additionally
+        # require the numeric id whenever we actually have one.
+        unverified_sp_id = not expected_sp_id_valid
+        diagnostic["service_principal_id_unverified"] = unverified_sp_id
+
+        def _sp_id_matches(observed: str | None) -> bool:
+            return unverified_sp_id or observed == expected_sp_id
+
+        def _matched_result() -> str:
+            return "matched_without_sp_id" if unverified_sp_id else "matched"
 
         current_id = _primary_identity_value(
             current_payload, ("applicationId", "application_id")
@@ -465,8 +497,8 @@ class CredentialManager:
             current_sp_id = _primary_identity_value(current_payload, ("id",))
             diagnostic["observed_application_id"] = current_id
             diagnostic["observed_service_principal_id"] = current_sp_id
-            if current_id == expected and current_sp_id == expected_sp_id:
-                diagnostic["result"] = "matched"
+            if current_id == expected and _sp_id_matches(current_sp_id):
+                diagnostic["result"] = _matched_result()
                 self._validation_diagnostic = diagnostic
                 self.last_error = None
                 return True
@@ -495,9 +527,9 @@ class CredentialManager:
             diagnostic["observed_service_principal_id"] = scim_sp_id
             if (
                 scim_application_id == [expected]
-                and scim_sp_id == expected_sp_id
+                and _sp_id_matches(scim_sp_id)
             ):
-                diagnostic["result"] = "matched"
+                diagnostic["result"] = _matched_result()
                 self._validation_diagnostic = diagnostic
                 self.last_error = None
                 return True
@@ -507,8 +539,8 @@ class CredentialManager:
             scim_sp_id = _primary_identity_value(scim_payload, ("id",))
             diagnostic["observed_application_id"] = scim_user_name
             diagnostic["observed_service_principal_id"] = scim_sp_id
-            if scim_user_name == expected and scim_sp_id == expected_sp_id:
-                diagnostic["result"] = "matched"
+            if scim_user_name == expected and _sp_id_matches(scim_sp_id):
+                diagnostic["result"] = _matched_result()
                 self._validation_diagnostic = diagnostic
                 self.last_error = None
                 return True

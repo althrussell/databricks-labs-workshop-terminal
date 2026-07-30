@@ -108,12 +108,17 @@ expose the uvicorn port through alternate ingress.
 
 ## Health and build identity
 
-Before constructing the upstream app, the wrapper writes, flushes, fsyncs, and
-successfully deletes a unique harmless probe file directly inside
-`AP_ARTIFACT_VOLUME_PATH`. The operation runs as the App process/service
-principal and fails startup when the bound Volume is not writable or does not
-permit probe cleanup; the generated name cannot traverse outside the configured
-Volume directory.
+Before constructing the upstream app, the wrapper writes a unique harmless probe
+file inside `AP_ARTIFACT_VOLUME_PATH`, reads it back, and deletes it. The
+operation runs as the App service principal and fails startup when the bound
+Volume is not writable, does not return what was written, or does not permit
+probe cleanup; the generated name cannot traverse outside the configured Volume
+directory.
+
+The probe uses the Files API, not the filesystem. Databricks Apps does not mount
+Unity Catalog volumes: binding the resource injects the `/Volumes/...` path, but
+nothing answers that path locally, so a POSIX probe fails on a healthy Volume and
+crashes the App at startup.
 
 The wrapper then preserves upstream `GET /health`. A bare request has the
 deterministic liveness contract:

@@ -23,8 +23,13 @@ A read-only spike used `gh` against `omnigent-ai/omnigent` main at
   `omnigent host --server <OMNIGENT_APP_URL> --non-interactive`.
   `--non-interactive` suppresses browser login; it does not create credentials.
 - The terminal/REPL command is
-  `omnigent run --server <OMNIGENT_APP_URL>`. It targets the remote control
-  plane and does not start a second local Omnigent server.
+  `omnigent polly --server <OMNIGENT_APP_URL>`. It targets the remote control
+  plane and does not start a second local Omnigent server. Naming an agent is
+  what creates the session: `omnigent run --server <url>` with no agent attaches
+  to an existing one and exits with `No sessions found on the server` against a
+  fresh control plane. `polly` is the bundled orchestrator a bare `omnigent`
+  launches for a Claude credential, so the terminal keeps its prior behavior
+  while session state lives on the App.
 - `omnigent login <OMNIGENT_APP_URL>` detects Databricks Apps and runs
   `databricks auth login --host <workspace>`, an interactive browser flow.
 - Host and runner connections refresh Databricks SDK credentials when ambient
@@ -88,8 +93,15 @@ The supervisor passes these values together as `OMNIGENT_HOST_ID` and
 `OMNIGENT_HOST_TOKEN` must not be set: this is not managed-sandbox auth.
 The attendee OBO bearer remains the sole authentication and ownership proof.
 
+The same identity is persisted as the `host` section of the attendee's
+`~/.omnigent/config.yaml`, which is where the CLI reads the host to launch a
+runner on. Both agree, so a terminal command reuses the supervised host's
+daemon record for the URL rather than starting a rival daemon. Left unpinned the
+CLI invents and persists a uuid, then waits out its timeout for a daemon nobody
+runs while the attendee's real host is online beside it.
+
 The generated `workshop-omnigent` TUI helper is authoritative. With the URL it
-executes `omnigent run --server "$OMNIGENT_APP_URL"` so no second local server
+executes `omnigent polly --server "$OMNIGENT_APP_URL"` so no second local server
 starts. With an empty URL it executes bare `omnigent`, preserving the existing
 local behavior exactly.
 
@@ -168,9 +180,10 @@ Workshop Terminal App so the proxy forwards the attendee OBO bearer.
 3. Create the Databricks App so its service principal exists.
 4. Bind `postgres` and `artifact_volume`; grant the App service principal.
 5. Deploy pinned source from `deploy/omnigent-app`.
-6. On App startup, write, flush, fsync, and best-effort delete a unique probe
-   file directly inside `AP_ARTIFACT_VOLUME_PATH` as the App process/SP. Startup
-   fails if the write is not permitted.
+6. On App startup, write, read back, and delete a unique probe file inside
+   `AP_ARTIFACT_VOLUME_PATH` as the App SP, through the Files API — Databricks
+   Apps does not mount Unity Catalog volumes, so the path is unreachable from the
+   filesystem. Startup fails if the write is not permitted.
 7. Poll App deployment state, authenticated `GET /health`, and
    `GET /api/version`; require version `0.7.0`. Successful health proves the
    Volume startup invariant.
@@ -270,7 +283,7 @@ Delete in dependency order:
 5. delete the Lakebase branch/project; and
 6. remove persisted deployment/resource correlation rows.
 
-Contract version 1.3 issues no static host credential. Teardown uses the same
+Contract version 1.5 issues no static host credential. Teardown uses the same
 deterministically derived host ID for correlation and repeated cleanup;
 not-found is success, but permission failures are surfaced.
 
@@ -281,7 +294,11 @@ Control Tower returns the versioned object in
 
 - dedicated App URL, app name, deployment ID, expected server version;
 - deterministic expected host ID and its versioned derivation;
-- source repository, immutable source revision, and source subdirectory;
+- source repository, source revision with an explicit
+  `source_ref_immutable` flag, and source subdirectory. The flag is false
+  when the revision is a branch rather than a commit, which happens where the
+  workspace receives the app source as a plain directory and exposes no git
+  head to read back;
 - Lakebase/Volume identifiers required for status correlation and teardown;
 - non-secret environment values;
 - remote-host state and exact verified commands; and
