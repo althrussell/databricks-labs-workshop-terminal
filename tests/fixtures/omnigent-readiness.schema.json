@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["contract_version", "ready", "status", "app", "resources", "remote_host", "failure"],
   "properties": {
-    "contract_version": {"type": "string", "const": "1.3"},
+    "contract_version": {"type": "string", "const": "1.4"},
     "ready": {"type": "boolean"},
     "status": {"type": "string", "enum": ["provisioning", "ready", "degraded", "blocked", "failed"]},
     "app": {

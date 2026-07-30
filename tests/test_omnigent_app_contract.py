@@ -281,7 +281,7 @@ def test_control_tower_payload_example_matches_contract_schema():
     serialized = json.dumps(payload).lower()
     assert "client_secret" not in serialized
     assert "access_token" not in serialized
-    assert payload["contract_version"] == "1.3"
+    assert payload["contract_version"] == "1.4"
     assert payload["remote_host"]["enabled"] is True
     assert payload["remote_host"]["status"] == "waiting_for_token"
     assert set(schema["properties"]["remote_host"]["properties"]["status"]["enum"]) == (
@@ -304,7 +304,18 @@ def test_control_tower_payload_example_matches_contract_schema():
         "sha256(databricks-workshop-terminal/omnigent-host-id/v1"
         "\\0<normalized-server-url>\\0<normalized-attendee-email>)[:32]"
     )
+    # A commit is preferred, but an attendee workspace can receive the app source
+    # as a plain directory with no Git folder and therefore no head to read back.
+    # Rejecting that discarded a host that had deployed fine, so a branch is
+    # accepted as long as the payload says the revision is not immutable.
+    assert payload["deployment"]["source_ref"]
+    assert payload["deployment"]["source_ref_immutable"] is True
     assert re.fullmatch(r"[0-9a-f]{40}", payload["deployment"]["source_ref"])
+
+    degraded = json.loads(json.dumps(payload))
+    degraded["deployment"]["source_ref"] = "main"
+    degraded["deployment"]["source_ref_immutable"] = False
+    _assert_schema(degraded, schema)
 
     connected = json.loads(json.dumps(payload))
     connected["remote_host"]["enabled"] = True

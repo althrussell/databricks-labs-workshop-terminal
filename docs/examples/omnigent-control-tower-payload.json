@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.3",
+  "contract_version": "1.4",
   "deployment": {
     "app_name": "event-123-alice-omnigent",
     "app_url": "https://event-123-alice-omnigent.example.databricksapps.com",
@@ -7,6 +7,7 @@
     "server_version": "0.7.0",
     "source_repo": "https://github.com/althrussell/databricks-labs-workshop-terminal",
     "source_ref": "0123456789abcdef0123456789abcdef01234567",
+    "source_ref_immutable": true,
     "source_subdir": "deploy/omnigent-app"
   },
   "resources": {

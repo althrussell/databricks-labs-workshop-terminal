@@ -270,7 +270,7 @@ Delete in dependency order:
 5. delete the Lakebase branch/project; and
 6. remove persisted deployment/resource correlation rows.
 
-Contract version 1.3 issues no static host credential. Teardown uses the same
+Contract version 1.4 issues no static host credential. Teardown uses the same
 deterministically derived host ID for correlation and repeated cleanup;
 not-found is success, but permission failures are surfaced.
 
@@ -281,7 +281,11 @@ Control Tower returns the versioned object in
 
 - dedicated App URL, app name, deployment ID, expected server version;
 - deterministic expected host ID and its versioned derivation;
-- source repository, immutable source revision, and source subdirectory;
+- source repository, source revision with an explicit
+  `source_ref_immutable` flag, and source subdirectory. The flag is false
+  when the revision is a branch rather than a commit, which happens where the
+  workspace receives the app source as a plain directory and exposes no git
+  head to read back;
 - Lakebase/Volume identifiers required for status correlation and teardown;
 - non-secret environment values;
 - remote-host state and exact verified commands; and
