@@ -68,6 +68,11 @@ class _StrictRequests:
         if "changes" in json:
             assert url.endswith("/api/2.1/unity-catalog/permissions/catalog/wsh_alice")
             return self.catalog_response
+        if "owner" in json:
+            # Optional catalog-ownership transfer, which succeeds at the API
+            # without changing what a later metadata read reports here.
+            assert url.endswith("/api/2.1/unity-catalog/catalogs/wsh_alice")
+            return _Resp(200, {})
         assert url in self.patches, f"unregistered PATCH {url}"
         level = json["access_control_list"][0]["permission_level"]
         contract = self.patches[url]
@@ -565,6 +570,91 @@ def test_warehouse_owner_success_is_recorded_in_ledger(monkeypatch, enabled):
     ][0]
     assert warehouse["state"] == "handed_off"
     assert warehouse["permission_level"] == "IS_OWNER"
+
+
+def test_catalog_is_verified_by_privileges_when_ownership_stays_put(
+    monkeypatch, enabled
+):
+    """Ownership transfer is opt-in, so requiring it made every unit read red.
+
+    Real case: a Control Tower workspace where the catalog is owned by the
+    deploying principal reported `catalog owner is ..., expected attendee`
+    forever, even though the attendee held ALL_PRIVILEGES and could use it.
+    """
+    fake = _fake_with_resources()
+    host = "https://test.cloud.databricks.com"
+    fake.register_get(
+        f"{host}/api/2.1/unity-catalog/catalogs/wsh_alice",
+        {},
+        {"name": "wsh_alice", "owner": "control-tower-sp"},
+    )
+    mgr = _mgr(monkeypatch, fake)
+
+    result = mgr.reconcile("alice@example.com")
+
+    assert result["errors"] == []
+    assert mgr.status()["verified_catalog"] == "wsh_alice"
+
+
+def test_catalog_ownership_is_still_enforced_when_transfer_is_requested(
+    monkeypatch, enabled
+):
+    monkeypatch.setenv("ENTITLEMENT_TRANSFER_OWNERSHIP", "true")
+    fake = _fake_with_resources()
+    host = "https://test.cloud.databricks.com"
+    fake.register_get(
+        f"{host}/api/2.1/unity-catalog/catalogs/wsh_alice",
+        {},
+        {"name": "wsh_alice", "owner": "control-tower-sp"},
+    )
+    mgr = _mgr(monkeypatch, fake)
+
+    result = mgr.reconcile("alice@example.com")
+
+    assert any("catalog owner is control-tower-sp" in e for e in result["errors"])
+
+
+def test_builtin_resources_without_an_id_are_skipped_not_reported(
+    monkeypatch, enabled
+):
+    """Foundation-model endpoints carry no ``id`` and are nobody's to hand off.
+
+    Reporting the absent field made `entitlements` red in every workspace,
+    hiding real failures behind an error the attendee cannot act on.
+    """
+    fake = _fake_with_resources()
+    host = "https://test.cloud.databricks.com"
+    fake.register_get(
+        f"{host}/api/2.0/serving-endpoints",
+        {},
+        {"endpoints": [
+            {"name": "databricks-claude-sonnet-5"},
+            {"id": "e1", "creator": "app-sp", "creation_timestamp": 1_100_000},
+        ]},
+    )
+    mgr = _mgr(monkeypatch, fake)
+
+    result = mgr.reconcile("alice@example.com")
+
+    assert result["errors"] == []
+    # The SP-created endpoint is still handed off, so the skip is narrow.
+    assert result["non_uc"]["alice@example.com"]["serving-endpoints"] == 1
+
+
+def test_an_owned_resource_missing_its_id_is_still_reported(monkeypatch, enabled):
+    """The skip must not swallow a resource this app made and cannot address."""
+    fake = _fake_with_resources()
+    host = "https://test.cloud.databricks.com"
+    fake.register_get(
+        f"{host}/api/2.0/serving-endpoints",
+        {},
+        {"endpoints": [{"creator": "app-sp", "creation_timestamp": 1_100_000}]},
+    )
+    mgr = _mgr(monkeypatch, fake)
+
+    result = mgr.reconcile("alice@example.com")
+
+    assert any("missing id" in e for e in result["errors"])
 
 
 def test_unverifiable_warehouse_is_failed_closed_and_visible(monkeypatch, enabled):

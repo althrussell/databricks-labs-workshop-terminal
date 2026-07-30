@@ -323,7 +323,7 @@ def test_control_tower_payload_example_matches_contract_schema():
     serialized = json.dumps(payload).lower()
     assert "client_secret" not in serialized
     assert "access_token" not in serialized
-    assert payload["contract_version"] == "1.4"
+    assert payload["contract_version"] == "1.5"
     assert payload["remote_host"]["enabled"] is True
     assert payload["remote_host"]["status"] == "waiting_for_token"
     assert set(schema["properties"]["remote_host"]["properties"]["status"]["enum"]) == (
@@ -462,7 +462,7 @@ def test_handoff_docs_cover_lifecycle_security_and_upstream_gap():
         assert heading in contract
     assert "815cdbef431397a59ab296e194fce026d9e79b4f" in contract
     assert "omnigent host --server <OMNIGENT_APP_URL> --non-interactive" in contract
-    assert "omnigent run --server <OMNIGENT_APP_URL>" in contract
+    assert "omnigent polly --server <OMNIGENT_APP_URL>" in contract
     assert "service principal" in contract
     assert "attendee" in contract
     assert "X-Forwarded-Email" in contract

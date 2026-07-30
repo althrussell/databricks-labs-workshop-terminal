@@ -163,8 +163,15 @@ def _set_catalog_owner(
 
 
 def _verify_catalog_access(
-    host: str, bearer: str, catalog: str, principal: str
+    host: str, bearer: str, catalog: str, principal: str, *, require_owner: bool = False
 ) -> tuple[bool, str | None]:
+    """Prove the attendee can use ``catalog``.
+
+    ``require_owner`` mirrors ``ENTITLEMENT_TRANSFER_OWNERSHIP``: ownership only
+    matters when the deployment asked for it. Demanding it unconditionally
+    contradicted the default configuration and reported every catalog as broken
+    while the attendee's ALL_PRIVILEGES grant was in place and working.
+    """
     metadata, error = _get_json(
         f"{host}/api/2.1/unity-catalog/catalogs/{catalog}", bearer
     )
@@ -186,7 +193,7 @@ def _verify_catalog_access(
             privileges.update(
                 str(value) for value in assignment.get("privileges", [])
             )
-    if owner != principal.lower():
+    if require_owner and owner != principal.lower():
         return False, f"catalog owner is {owner or 'unset'}, expected attendee"
     if "ALL_PRIVILEGES" not in privileges:
         return False, "attendee ALL_PRIVILEGES grant not visible after patch"
@@ -214,6 +221,18 @@ def _enumerate(host: str, bearer: str, spec: ResourceSpec) -> list[dict]:
         if page_token in seen_tokens:
             raise RuntimeError("pagination returned a repeated next_page_token")
         seen_tokens.add(page_token)
+
+
+def _created_by_sp(spec: ResourceSpec, item: dict, sp_identities: set[str]) -> bool:
+    """Whether ``item`` is attributable to this app's service principal.
+
+    Specs without a creator field cannot answer, so they say yes and let the
+    later per-resource verification decide.
+    """
+    if not spec.creator_field:
+        return True
+    creator = str(_field_value(item, spec.creator_field) or "").strip().lower()
+    return bool(creator) and creator in sp_identities
 
 
 def _permission_url(host: str, spec: ResourceSpec, resource_id: str) -> str:
@@ -407,7 +426,11 @@ class EntitlementManager:
                 if not em or "@" not in em:
                     continue
                 verified, error = _verify_catalog_access(
-                    host, bearer, catalog, em
+                    host,
+                    bearer,
+                    catalog,
+                    em,
+                    require_owner=config.entitlement_transfer_ownership(),
                 )
                 if not verified:
                     errors.append(
@@ -461,7 +484,14 @@ class EntitlementManager:
             for item in items:
                 raw_id = item.get(spec.id_field)
                 if raw_id is None:
-                    errors.append(f"{spec.label}: response missing {spec.id_field}")
+                    # Built-in resources are listed alongside the app's own and
+                    # need no handoff — foundation-model serving endpoints carry
+                    # no id at all. Reporting their absent field turned the
+                    # entitlements check red in every workspace over something no
+                    # attendee could act on, so only an id we actually needed is
+                    # worth an error.
+                    if _created_by_sp(spec, item, sp_identities):
+                        errors.append(f"{spec.label}: response missing {spec.id_field}")
                     continue
                 resource_id = str(raw_id)
                 previous_level = self._handed_off_level(
@@ -566,10 +596,8 @@ class EntitlementManager:
     ) -> tuple[bool, str | None]:
         if spec.unsupported_reason:
             return False, spec.unsupported_reason
-        if spec.creator_field:
-            creator = str(_field_value(item, spec.creator_field) or "").strip().lower()
-            if not creator or creator not in sp_identities:
-                return False, None
+        if not _created_by_sp(spec, item, sp_identities):
+            return False, None
 
         if spec.requires_baseline:
             with self._lock:

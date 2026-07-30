@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.4",
+  "contract_version": "1.5",
   "deployment": {
     "app_name": "event-123-alice-omnigent",
     "app_url": "https://event-123-alice-omnigent.example.databricksapps.com",
@@ -39,7 +39,7 @@
     },
     "verified_commands": {
       "host": "omnigent host --server <OMNIGENT_APP_URL> --non-interactive",
-      "terminal": "omnigent run --server <OMNIGENT_APP_URL>"
+      "terminal": "omnigent polly --server <OMNIGENT_APP_URL>"
     }
   }
 }

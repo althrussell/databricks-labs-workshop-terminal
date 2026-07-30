@@ -23,8 +23,13 @@ A read-only spike used `gh` against `omnigent-ai/omnigent` main at
   `omnigent host --server <OMNIGENT_APP_URL> --non-interactive`.
   `--non-interactive` suppresses browser login; it does not create credentials.
 - The terminal/REPL command is
-  `omnigent run --server <OMNIGENT_APP_URL>`. It targets the remote control
-  plane and does not start a second local Omnigent server.
+  `omnigent polly --server <OMNIGENT_APP_URL>`. It targets the remote control
+  plane and does not start a second local Omnigent server. Naming an agent is
+  what creates the session: `omnigent run --server <url>` with no agent attaches
+  to an existing one and exits with `No sessions found on the server` against a
+  fresh control plane. `polly` is the bundled orchestrator a bare `omnigent`
+  launches for a Claude credential, so the terminal keeps its prior behavior
+  while session state lives on the App.
 - `omnigent login <OMNIGENT_APP_URL>` detects Databricks Apps and runs
   `databricks auth login --host <workspace>`, an interactive browser flow.
 - Host and runner connections refresh Databricks SDK credentials when ambient
@@ -89,7 +94,7 @@ The supervisor passes these values together as `OMNIGENT_HOST_ID` and
 The attendee OBO bearer remains the sole authentication and ownership proof.
 
 The generated `workshop-omnigent` TUI helper is authoritative. With the URL it
-executes `omnigent run --server "$OMNIGENT_APP_URL"` so no second local server
+executes `omnigent polly --server "$OMNIGENT_APP_URL"` so no second local server
 starts. With an empty URL it executes bare `omnigent`, preserving the existing
 local behavior exactly.
 
@@ -271,7 +276,7 @@ Delete in dependency order:
 5. delete the Lakebase branch/project; and
 6. remove persisted deployment/resource correlation rows.
 
-Contract version 1.4 issues no static host credential. Teardown uses the same
+Contract version 1.5 issues no static host credential. Teardown uses the same
 deterministically derived host ID for correlation and repeated cleanup;
 not-found is success, but permission failures are surfaced.
 

@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["contract_version", "deployment", "resources", "environment", "remote_host"],
   "properties": {
-    "contract_version": {"type": "string", "const": "1.4"},
+    "contract_version": {"type": "string", "const": "1.5"},
     "deployment": {
       "type": "object",
       "additionalProperties": false,
@@ -81,7 +81,7 @@
           "required": ["host", "terminal"],
           "properties": {
             "host": {"type": "string", "const": "omnigent host --server <OMNIGENT_APP_URL> --non-interactive"},
-            "terminal": {"type": "string", "const": "omnigent run --server <OMNIGENT_APP_URL>"}
+            "terminal": {"type": "string", "const": "omnigent polly --server <OMNIGENT_APP_URL>"}
           }
         }
       }
