@@ -93,6 +93,13 @@ The supervisor passes these values together as `OMNIGENT_HOST_ID` and
 `OMNIGENT_HOST_TOKEN` must not be set: this is not managed-sandbox auth.
 The attendee OBO bearer remains the sole authentication and ownership proof.
 
+The same identity is persisted as the `host` section of the attendee's
+`~/.omnigent/config.yaml`, which is where the CLI reads the host to launch a
+runner on. Both agree, so a terminal command reuses the supervised host's
+daemon record for the URL rather than starting a rival daemon. Left unpinned the
+CLI invents and persists a uuid, then waits out its timeout for a daemon nobody
+runs while the attendee's real host is online beside it.
+
 The generated `workshop-omnigent` TUI helper is authoritative. With the URL it
 executes `omnigent polly --server "$OMNIGENT_APP_URL"` so no second local server
 starts. With an empty URL it executes bare `omnigent`, preserving the existing

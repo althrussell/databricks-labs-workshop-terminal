@@ -62,6 +62,69 @@ def test_gateway_urls_and_auth_command(user, monkeypatch):
     assert os.path.isabs(_token_path(user))
 
 
+def test_host_identity_matches_the_supervised_host(user, monkeypatch):
+    """Every omnigent command in this home must target the host we run for it.
+
+    The CLI resolves the host to launch a runner on from this file, so without
+    the section it minted a fresh uuid and waited 30s for a daemon nobody was
+    running: "The connect daemon for host '...' did not come online within 30s."
+    """
+    from server import omnigent_remote
+
+    monkeypatch.setenv("OMNIGENT_APP_URL", "https://omni.example.databricksapps.com")
+    monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
+
+    cli_config.configure_omnigent(user, "tok-1")
+
+    with open(_config_path(user)) as handle:
+        document = yaml.safe_load(handle)
+    expected = omnigent_remote.stable_host_identity(
+        user, "https://omni.example.databricksapps.com"
+    )
+    assert document["host"] == {"host_id": expected.host_id, "name": expected.name}
+
+
+def test_a_host_identity_the_cli_invented_is_corrected(user, monkeypatch):
+    """An attendee whose home already has a stray identity must be repaired.
+
+    The CLI persists a uuid the first time it runs without this section, and it
+    keeps that stale id forever after — pointing the terminal at a host that
+    does not exist while the supervised one sits online beside it.
+    """
+    from server import omnigent_remote
+
+    monkeypatch.setenv("OMNIGENT_APP_URL", "https://omni.example.databricksapps.com")
+    monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
+    os.makedirs(os.path.dirname(_config_path(user)), exist_ok=True)
+    with open(_config_path(user), "w") as handle:
+        yaml.safe_dump(
+            {"host": {"host_id": "42565f209abe45b897ac35606216b964", "name": "stray"}},
+            handle,
+        )
+
+    cli_config.configure_omnigent(user, "tok-1")
+
+    with open(_config_path(user)) as handle:
+        document = yaml.safe_load(handle)
+    expected = omnigent_remote.stable_host_identity(
+        user, "https://omni.example.databricksapps.com"
+    )
+    assert document["host"]["host_id"] == expected.host_id
+
+
+def test_local_omnigent_keeps_its_own_host_identity(monkeypatch):
+    """With no App to host against, the CLI owns the identity as it always did."""
+    monkeypatch.delenv("OMNIGENT_APP_URL", raising=False)
+    monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
+    local_user = User("omni-local@example.com")
+    local_user.bootstrap_home()
+
+    cli_config.configure_omnigent(local_user, "tok-1")
+
+    with open(_config_path(local_user)) as handle:
+        assert "host" not in (yaml.safe_load(handle) or {})
+
+
 def test_serving_endpoints_fallback_urls(user, monkeypatch):
     monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
     cli_config.configure_omnigent(user, "tok-1")
