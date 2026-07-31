@@ -224,7 +224,7 @@ take effect on restart with **no rebuild**. Set these per instance:
 | `ENABLE_ENTITLEMENTS` | `true` *(opt-in)* | run the labuser-usability reconciler (§9) |
 | `WORKSHOP_CATALOG` | per-attendee catalog name | the catalog the agent creates UC objects in; the reconciler verifies the labuser's `ALL PRIVILEGES` on it (§9) |
 | `WORKSHOP_SCHEMA` | *(optional)* | default schema within `WORKSHOP_CATALOG` |
-| `WORKSHOP_INSIGHT_CAPTURE` | `true` *(opt-in, per event)* | turn on workshop insight capture (§14). Only set this for events whose registration terms cover it — this is the one switch that sends attendee-authored content to CT |
+| `WORKSHOP_INSIGHT_CAPTURE` | `true` *(CT fleet default; per-run opt-out)* | turn on workshop insight capture (§14). This is the one switch that sends attendee-authored content to CT, so a run whose registration terms don't cover it must opt out — see §14 |
 | `DISCOVERY_ENABLED` | `false` *(optional, within capture)* | drop the conversational discovery tier while keeping the derived behavioural signal |
 
 Model defaults can vary by event or attendee because CT applies overrides to
@@ -562,14 +562,24 @@ the operator checklist.
 
 Every other ingest event answers an operational question. These answer a
 commercial one: what is this attendee trying to build, on what stack, and what is
-stopping them. That is why the switch defaults off and why it needs a decision
-per event rather than a fleet default.
+stopping them. That is why WT defaults the switch off: a terminal that captures
+has to have somewhere for the buffer to go, and standalone it does not.
+
+Where the decision is made changed once in practice. Leaving it per-instance
+meant the first CT-provisioned workshop captured nothing at all, because nothing
+set the flag. CT now decides for the fleet it deploys
+(`CONTROL_TOWER_WORKSHOP_INSIGHT_CAPTURE`) and a single run opts out through its
+app `env_overrides`, which is the form the consent decision below should take:
+one deliberate act by whoever owns the deployment, not a flag each operator has
+to remember for each run.
 
 **Before turning it on:**
 
 1. Confirm the event's registration terms cover capture. WT shows no consent
    prompt — attendees are mid-lab and a modal there is coercive, not informed. If
-   the terms don't cover it, leave the flag unset.
+   the terms don't cover it, opt that run out
+   (`env_overrides: {"WORKSHOP_INSIGHT_CAPTURE": "false"}` on its terminal app),
+   which wins over the fleet default in both the deployment env and `app.yaml`.
 2. Import the roster (`POST /api/labs/{run_id}/roster` on CT). WT only ever knows
    the pooled `labuserNNN@` identity, so without a roster the events land in
    Lakebase attributable to nobody and there is no company to brief on. Import
