@@ -82,17 +82,72 @@ def _code_stats_uncached(user: User) -> dict:
     return {"projects": repos, "commits": commits, "files": files, "lines": lines}
 
 
-def _count(url: str, token: str, params: dict, items_key: str) -> int:
+def _list(url: str, token: str, params: dict, items_key: str) -> list[dict]:
     try:
         resp = requests.get(
             url, headers={"Authorization": f"Bearer {token}"},
             params=params, timeout=6,
         )
         if resp.status_code != 200:
-            return 0
-        return len(resp.json().get(items_key, []) or [])
-    except requests.RequestException:
-        return 0
+            return []
+        items = resp.json().get(items_key, []) or []
+        return [item for item in items if isinstance(item, dict)]
+    except (requests.RequestException, ValueError):
+        return []
+
+
+def _count(url: str, token: str, params: dict, items_key: str) -> int:
+    return len(_list(url, token, params, items_key))
+
+
+def _is_ours(app: dict) -> bool:
+    """Was this app put in the workspace by Control Tower rather than the attendee?
+
+    The census is meant to say what the attendee made, and a workshop workspace
+    always already contains this terminal — so counting the raw list credits
+    every attendee with an app before they have opened a file. That number goes
+    straight into a brief an account team reads, which makes it worse than
+    absent.
+
+    Two apps are ours. This one is identified by the service principal it runs
+    as, which the Apps runtime hands us as ``DATABRICKS_CLIENT_ID``; matching on
+    that rather than on a name means an operator renaming the app template
+    cannot quietly reintroduce the miscount. Omnigent is identified by the URL we
+    were configured to reach it on, which is the only handle we have for it.
+    """
+    ours = os.environ.get("DATABRICKS_CLIENT_ID", "").strip()
+    if ours and app.get("service_principal_client_id", "").strip() == ours:
+        return True
+    app_url = (app.get("url") or "").strip().rstrip("/")
+    if not app_url:
+        return False
+    for known in (_omnigent_url(), _own_url()):
+        if known and app_url == known.strip().rstrip("/"):
+            return True
+    return False
+
+
+def _omnigent_url() -> str:
+    """Omnigent's URL, or empty if it is unset or unusable.
+
+    A misconfigured URL must not take the census down with it: the census is
+    best-effort by design, and a stats call that raises would cost Control Tower
+    the whole harvest for one bad env var.
+    """
+    try:
+        return config.omnigent_app_url()
+    except ValueError:
+        return ""
+
+
+def _own_url() -> str:
+    """This app's own URL, when the runtime tells us.
+
+    A fallback for the case where the app's service principal is not visible in
+    the census rows — without it, a terminal whose own row lacks the SP field
+    counts itself.
+    """
+    return os.environ.get("DATABRICKS_APP_URL", "").strip()
 
 
 def _workspace_resources() -> dict:
@@ -106,10 +161,11 @@ def _workspace_resources() -> dict:
         return {}
     if not host:
         return {}
+    apps = _list(f"{host}/api/2.0/apps", token, {}, "apps")
     return {
         "jobs": _count(f"{host}/api/2.2/jobs/list", token, {"limit": 100}, "jobs"),
         "pipelines": _count(f"{host}/api/2.0/pipelines", token, {"max_results": 100}, "statuses"),
-        "apps": _count(f"{host}/api/2.0/apps", token, {}, "apps"),
+        "apps": sum(1 for app in apps if not _is_ours(app)),
         "dashboards": _count(f"{host}/api/2.0/lakeview/dashboards", token, {"page_size": 100}, "dashboards"),
     }
 
