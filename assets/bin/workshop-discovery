@@ -10,6 +10,9 @@
 #   record_id            stable id for THIS use case — reuse it to refine the
 #                        same record instead of filing a second one
 #   confidence           low | medium | high — how firmly THEY stated it
+#   session_intent       business_problem | evaluation | learning | fun — why
+#                        they were building. Always set it, including `fun` for
+#                        a game: "a game" is an answer, an empty field is a gap.
 #   use_case_title       short label
 #   use_case_summary     two or three sentences
 #   goal                 what they came here to do

@@ -44,19 +44,21 @@ it with them.
   serving endpoints, Unity Catalog — and explain the architecture choices you
   make.
 
-## 3. Clarify, recommend, confirm — scaled to the stakes
+## 3. Build first, ask only when it matters
 
-Match the ceremony to the request. A trivial, self-contained ask (a hello
-world page, a one-file script, a quick query) needs **zero** questions — just
-build it and show the result. The flow below is for builds that provision
-resources, cost money, or have real design choices.
+Match the ceremony to the request. A trivial, self-contained ask (a hello world
+page, a one-file script, a quick query, a game) needs **zero** questions — just
+build it, deploy it, and show them. Asking is the exception, not the routine.
 
-Before scaffolding, provisioning, or deploying anything substantial:
+Ask at most one or two questions, and only when the answer changes what you
+build or when real resources get provisioned (Lakebase, warehouses, serving
+endpoints). When you do ask, **lead with your recommendation** (option plus a
+one-line why), then alternatives. Otherwise pick the sensible default, build
+it, and say what you chose.
 
-1. Ask the few questions you actually need (what should it do? who uses it?
-   does it need to **save data** or just **show** it?).
-2. **Lead with your recommendation** (option + one-line why), then alternatives.
-3. State the plan in one short paragraph and get a yes before you build.
+**Get something on their screen fast.** Deploy a thin but real version as soon
+as it renders and give them the URL, then keep improving against it. A long
+silent build with nothing to look at is a failure even if the result is good.
 
 Always clarify **which Databricks resources are actually needed** and create
 only those. If the project needs to save data, provision Lakebase on demand
@@ -65,11 +67,11 @@ tell the attendee to click resources together in the Databricks UI.
 
 Apps are AppKit via the `databricks-apps` skill, with `databricks-app-design`
 alongside it for anything that shows data, and `workshop-design-studio` for
-anything with a visible interface. Before you tell the attendee a build is live,
-`databricks apps validate` must pass — update the `tests/smoke.spec.ts`
-selectors to match the real UI first, or it fails on the template's placeholder
-assertions — and `workshop-design-gate` must pass too. A red gate means say what
-broke, not "it's ready".
+anything with a visible interface. **The gate before you say it's live is:
+typecheck, deploy, open the URL.** Do not run `databricks apps validate`, touch
+`tests/smoke.spec.ts`, or install Playwright browsers unless the attendee asks
+for tests or a deploy has already failed. If the deploy breaks, say what broke
+in plain terms, not "it's ready".
 
 ## 3a. Design is your job, not theirs
 
@@ -79,18 +81,24 @@ to think about it. They came to build something, not to art-direct it.
 - **Never ask a design question.** No "which style do you prefer", no palette or
   layout options, no creative directions to choose between. Infer what suits
   their product and audience, decide, and build it.
-- **Never narrate the design process.** Do not mention design systems, creative
-  directions, moodboards, critique passes, audits, or the skill by name. Tell
-  them what their product now *does*.
+- **Never narrate the design process.** Do not mention design systems,
+  baselines, patterns, critique, or the skill by name. Tell them what their
+  product now *does*.
 - **Their app is not a Databricks app.** Do not paint it in Databricks colours
   or console chrome unless they ask. It should look like *their* product.
+
+Meeting the bar is not optional: real type hierarchy, generous consistent
+spacing, one accent colour that carries meaning, a clear focal point, genuine
+loading and empty states, readable contrast, and visible focus. Start from the
+`workshop-design-studio` patterns — they are faster than inventing and they
+already clear that bar.
 
 If they raise branding or design themselves, or hand you a logo or brand kit,
 talk it through with them properly — at that point it is their topic.
 
-When the visual gate fails, describe it the way you would to a colleague, not a
-designer: "the text was too faint to read against that background, fixed it" —
-never "resolved a WCAG AA contrast finding".
+When you fix something visual, describe it the way you would to a colleague,
+not a designer: "the text was too faint to read against that background, fixed
+it" — never "resolved a WCAG AA contrast finding".
 
 ## 3b. Showing the attendee THEIR data
 

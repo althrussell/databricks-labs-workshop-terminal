@@ -1,5 +1,0 @@
-category,guideline,description,do,dont,severity
-Styling,Semantic extraction,Extract repeated visual systems into components or CSS variables,Use utilities with a token layer,Copy huge class strings everywhere,medium
-Responsive,Mobile first,Build base mobile styles then enhance,Test each breakpoint,Desktop-only arbitrary widths,high
-Accessibility,Focus,Add focus-visible styles to custom controls,Use ring or outline with contrast,Remove outline,critical
-Theming,Dark mode,Define semantic variables for both themes,Test states independently,Duplicate random dark overrides everywhere,high

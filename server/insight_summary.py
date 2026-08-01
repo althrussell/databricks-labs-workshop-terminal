@@ -33,6 +33,7 @@ import threading
 from datetime import datetime, timezone
 
 from . import artifacts, config
+from .discovery import SESSION_INTENTS
 from .users import User
 
 logger = logging.getLogger("workshop.insight_summary")
@@ -67,6 +68,7 @@ Return ONLY a JSON object:
 {
   "headline": "one sentence an account executive can read in a pipeline review",
   "what_they_built": "two or three sentences, concrete",
+  "session_intent": "business_problem | evaluation | learning | fun",
   "use_cases": [{"title": "...", "summary": "...", "products": ["..."],
                  "evidence": "the prompt or artifact this came from"}],
   "blockers": ["what stopped them, in their terms"],
@@ -82,6 +84,15 @@ empty rather than inferring it.
 wall was. Do not describe a session as successful when the errors say otherwise.
 - Do not flatter. "Explored Lakeflow ingestion and hit a permissions wall" beats \
 "showed strong engagement with the platform".
+
+Classify "session_intent" from what they actually built:
+- "business_problem" — they described a problem their own team has.
+- "evaluation" — they compared Databricks with a tool they already run.
+- "learning" — skilling up, with no specific project behind it.
+- "fun" — a game, a toy, or a demo built for the enjoyment of building it.
+Say "fun" when it was fun. A Space Invaders session classified as a business \
+problem sends someone to chase a lead that was never there, and that costs more \
+than an empty field. If the material genuinely does not say, leave it empty.
 """
 
 
@@ -343,6 +354,10 @@ def _extraction(harvest: artifacts.Harvest, signal: dict | None) -> dict:
     return {
         "headline": _trim(headline, MAX_HEADLINE_CHARS),
         "what_they_built": _trim(" ".join(what), MAX_TEXT_CHARS),
+        # Deliberately absent. Intent is a judgement about why someone was
+        # building, and this pass makes no judgements — a keyword rule would
+        # read "game" in a prompt and file a fraud-detection session as `fun`.
+        # `generator: extraction` already tells a reader why the field is empty.
         "use_cases": use_cases,
         "blockers": _string_list(harvest.errors),
         "products": products,
@@ -408,6 +423,11 @@ def _payload(
         value = _trim(raw.get(key), MAX_TEXT_CHARS)
         if value:
             payload[key] = value
+    # Constrained like discovery's copy of the field: an unrecognised value is
+    # dropped, so absent means "not classified" rather than "classified oddly".
+    intent = _trim(raw.get("session_intent"), 32).lower()
+    if intent in SESSION_INTENTS:
+        payload["session_intent"] = intent
     if use_cases:
         payload["use_cases"] = use_cases
     for key in ("blockers", "products"):

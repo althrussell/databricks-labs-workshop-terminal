@@ -1,1 +1,0 @@
-# Good app design system

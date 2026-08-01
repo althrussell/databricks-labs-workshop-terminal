@@ -1,6 +1,0 @@
-category,guideline,description,do,dont,severity
-Architecture,Blade components,Create reusable semantic Blade components for repeated visual patterns,Keep route compositions distinct,Copy entire component markup between pages,medium
-Styling,Vite tokens,Compile selected tokens and component styles through Vite,Use semantic CSS variables or Tailwind theme aliases,Embed raw styles in every Blade file,high
-Interaction,progressive enhancement,Use Livewire or Alpine only where interaction adds value,Preserve server-rendered usability,Require JavaScript for basic content access,high
-Forms,validation,Place validation errors beside labelled fields and preserve input,Use server and client feedback consistently,Show one generic error at the top,critical
-Accessibility,server markup,Start with semantic landmarks headings tables and controls,Verify focus after Livewire updates,Replace controls with clickable divs,critical

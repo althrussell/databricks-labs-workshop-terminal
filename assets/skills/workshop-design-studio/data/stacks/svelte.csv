@@ -1,4 +1,0 @@
-category,guideline,description,do,dont,severity
-Structure,Reactivity,Use simple reactive declarations and focused components,Keep derived state clear,Complex hidden reactive chains,medium
-Accessibility,Compiler warnings,Treat accessibility warnings as real issues,Use semantic elements,Suppress warnings without reason,critical
-Motion,Built-ins,Use transitions selectively with reduced-motion alternatives,Keep motion purposeful,Animate every mount,high

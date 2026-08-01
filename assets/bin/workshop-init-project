@@ -27,12 +27,28 @@ mkdir -p "$DEST"
 cd "$DEST"
 git init -q
 
+# A stub README, always. The agent is told to keep it current (one line on what
+# the app is for, plus the live URL), and it is the attendee's take-home
+# reminder of what they built once the workspace is torn down.
+cat > README.md <<EOF
+# ${NAME}
+
+_What this is for:_ (one line — the agent fills this in as soon as it knows)
+
+_Live URL:_ (added once the app is deployed)
+EOF
+
 if [ -f "$TEMPLATE" ]; then
   cp "$TEMPLATE" AGENTS.md
   cp "$TEMPLATE" CLAUDE.md
   git add AGENTS.md CLAUDE.md
-  git commit -q -m "Workshop bootstrap: AppKit project memory (CLAUDE.md + AGENTS.md)"
 fi
+
+git add README.md
+# Tolerate a commit failure (e.g. missing git identity): the attendee still gets
+# a working project directory with the files staged, which is far better than
+# aborting project creation outright.
+git commit -q -m "Workshop bootstrap: project memory (CLAUDE.md + AGENTS.md) and README" || true
 
 # Print the path so the caller can `cd` into the new project.
 echo "$DEST"

@@ -1,5 +1,0 @@
-category,guideline,description,do,dont,severity
-Framework,Primitives,Use AppKit for supported Databricks application behaviour,Verify installed exports and props,Invent undocumented components,high
-Brand,Independence,Theme the product through supported variables and application CSS,Let customer or product brand lead unless platform-native requested,Force Databricks console styling,critical
-Integration,Auth and plugins,"Leave auth, resource plugins and server contracts to databricks-apps guidance",Preserve generated configuration,Change infrastructure during visual polish,critical
-Composition,Custom layouts,Compose AppKit primitives into product-specific layouts,"Use workbench, editorial or branded compositions",Assume AppKit means dashboard cards,high

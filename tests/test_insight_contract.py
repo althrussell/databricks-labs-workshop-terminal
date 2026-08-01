@@ -31,6 +31,7 @@ EXAMPLE_NAMES = (
     "workshop-signal-explorer.json",
     "discovery-record.json",
     "discovery-record-partial.json",
+    "discovery-record-fun.json",
     "discovery-record-withdrawn.json",
     "insight-summary.json",
     "insight-summary-extraction.json",
@@ -157,6 +158,52 @@ def test_rejects_unknown_confidence_value(schema: dict) -> None:
     event = _example("discovery-record.json")
     event["payload"]["confidence"] = "certain"
     with pytest.raises(AssertionError):
+        assert_schema(event, schema)
+
+
+def test_rejects_unknown_session_intent_value(schema: dict) -> None:
+    """Intent is the triage datum. A free-text value would let a summariser file
+    "maybe commercial?" and turn a four-way sort into a reading exercise."""
+    event = _example("discovery-record.json")
+    event["payload"]["session_intent"] = "side_project"
+    with pytest.raises(AssertionError):
+        assert_schema(event, schema)
+
+
+def test_rejects_unknown_session_intent_on_a_summary(schema: dict) -> None:
+    event = _example("insight-summary.json")
+    event["payload"]["session_intent"] = "side_project"
+    with pytest.raises(AssertionError):
+        assert_schema(event, schema)
+
+
+def test_both_events_share_one_session_intent_vocabulary(schema: dict) -> None:
+    """The two are read side by side in one brief. Divergent enums would surface
+    as a contradiction rather than a difference of opinion."""
+    from server.discovery import SESSION_INTENTS
+
+    payloads = _payload_schemas(schema)
+    discovery = payloads["discovery.record"]["properties"]["session_intent"]["enum"]
+    summary = payloads["insight.summary"]["properties"]["session_intent"]["enum"]
+
+    assert discovery == summary
+    assert set(discovery) == set(SESSION_INTENTS), "the code is the source of truth"
+
+
+@pytest.mark.parametrize("intent", ("business_problem", "evaluation", "learning", "fun"))
+def test_every_session_intent_validates_on_both_events(schema: dict, intent: str) -> None:
+    for name in ("discovery-record.json", "insight-summary.json"):
+        event = _example(name)
+        event["payload"]["session_intent"] = intent
+        assert_schema(event, schema)
+
+
+def test_session_intent_stays_optional(schema: dict) -> None:
+    """Absent means unclassified — an older Terminal build, or material that did
+    not say. Requiring it would push agents into guessing."""
+    for name in ("discovery-record.json", "insight-summary.json"):
+        event = _example(name)
+        event["payload"].pop("session_intent", None)
         assert_schema(event, schema)
 
 
@@ -318,10 +365,25 @@ def test_the_discovery_idempotency_key_carries_the_revision(schema: dict) -> Non
     for name in (
         "discovery-record.json",
         "discovery-record-partial.json",
+        "discovery-record-fun.json",
         "discovery-record-withdrawn.json",
     ):
         event = _example(name)
         assert event["idempotency_key"].endswith(f":{event['payload']['revision']}")
+
+
+def test_a_fun_build_is_recorded_rather_than_omitted() -> None:
+    """The example exists because the alternative is a silent gap. A session that
+    produces no record at all is indistinguishable from one nobody got to, so
+    somebody chases it; `session_intent: fun` closes it in one glance."""
+    payload = _example("discovery-record-fun.json")["payload"]
+
+    assert payload["session_intent"] == "fun"
+    assert payload["use_case_title"]
+    # No blockers, no interest signals, no timeline — a fun build has none, and
+    # inventing them to fill the record is the failure this guards against.
+    assert "interest_signals" not in payload
+    assert "timeline" not in payload
 
 
 def test_what_the_summariser_actually_emits_satisfies_the_schema(schema: dict) -> None:
@@ -408,10 +470,20 @@ def test_every_example_declares_a_pooled_attendee() -> None:
         assert attendee.startswith("labuser"), f"{name} uses a non-pooled attendee"
 
 
-def _signal_payload_schema(schema: dict) -> dict:
-    """The ``then`` payload schema for the workshop.signal branch."""
+def _payload_schemas(schema: dict) -> dict[str, dict]:
+    """The ``then`` payload schema for each event type, keyed by type."""
+    out: dict[str, dict] = {}
     for branch in schema["allOf"]:
         condition = branch.get("if", {}).get("properties", {}).get("type", {})
-        if condition.get("const") == "workshop.signal":
-            return branch["then"]["properties"]["payload"]
-    raise AssertionError("no workshop.signal branch in the schema")
+        event_type = condition.get("const")
+        if event_type:
+            out[event_type] = branch["then"]["properties"]["payload"]
+    return out
+
+
+def _signal_payload_schema(schema: dict) -> dict:
+    """The ``then`` payload schema for the workshop.signal branch."""
+    try:
+        return _payload_schemas(schema)["workshop.signal"]
+    except KeyError:
+        raise AssertionError("no workshop.signal branch in the schema") from None

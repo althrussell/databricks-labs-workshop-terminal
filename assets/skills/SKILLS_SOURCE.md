@@ -25,11 +25,28 @@ the one boot installs.
 ## Not vendored from upstream (preserved on refresh)
 
 - `databricks-app-apx` — Control Tower / apx-specific, fork-only
-- `workshop-design-studio` — creative direction, design system, and visual
-  quality for anything an attendee builds with a UI. Maintained here, not
-  upstream; see its `NOTICE.md` for attribution.
+- `workshop-design-studio` — the visual baseline and copy-ready AppKit patterns
+  for anything an attendee builds with a UI. Maintained here, not upstream; see
+  its `NOTICE.md` for attribution.
+- `promote` — handoff document generation, on explicit request only
 - `refresh-databricks-skills` — the refresh skill itself
-- superpowers + bdd workflow skills (`brainstorming`, `test-driven-development`, etc.)
+
+## Removed on purpose
+
+The development-workflow set (`using-superpowers`, `brainstorming`,
+`writing-plans`, `executing-plans`, `test-driven-development`,
+`subagent-driven-development`, `requesting-code-review`,
+`receiving-code-review`, `finishing-a-development-branch`,
+`using-git-worktrees`, `dispatching-parallel-agents`,
+`verification-before-completion`, `systematic-debugging`, `writing-skills`) and
+the `bdd-*` skills were deleted from this repository.
+
+They exist to slow a build down deliberately — plan first, fail a test first,
+review before merge. That is the opposite of what a workshop attendee needs in
+the minutes they have to get an idea to a live URL, and agents auto-invoked them
+mid-build. They are also absent from `FORK_ONLY` in
+`scripts/refresh_vendored_skills.py`, so a refresh deletes any copy that
+reappears.
 
 ## Retired skill names
 

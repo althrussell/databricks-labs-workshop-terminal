@@ -161,6 +161,36 @@ def test_unknown_confidence_is_not_treated_as_high():
     assert build_record("a@x.com", {"confidence": "HIGH"}).confidence == "high"
 
 
+def test_unknown_session_intent_is_dropped_rather_than_passed_through():
+    """Absent has to keep meaning "unclassified". If an improvised value survived,
+    a reader could not tell a Terminal that declined to classify from one that
+    classified badly, and the field stops being a triage sort."""
+    assert build_record("a@x.com", {"session_intent": "side_project"}).session_intent == ""
+    assert build_record("a@x.com", {"session_intent": "FUN"}).session_intent == "fun"
+    assert build_record("a@x.com", {"session_intent": " learning "}).session_intent == (
+        "learning"
+    )
+    assert build_record("a@x.com", {}).session_intent == ""
+
+
+def test_a_fun_session_is_a_record_not_an_omission():
+    """The whole point of the field: a game reaches Control Tower as an answer."""
+    record = build_record(
+        "a@x.com",
+        {"use_case_title": "Space Invaders game", "session_intent": "fun"},
+    )
+    payload = record.payload()
+
+    assert payload["session_intent"] == "fun"
+    assert payload["use_case_title"] == "Space Invaders game"
+
+
+def test_session_intent_is_omitted_from_the_payload_when_unset():
+    """Empty optional fields are omitted rather than sent as "" — on CT's side
+    "didn't classify" and "classified as nothing" must not look alike."""
+    assert "session_intent" not in build_record("a@x.com", {"goal": "learn"}).payload()
+
+
 def test_unknown_fields_are_ignored_not_fatal():
     """The agent writes this from an instruction file and will improvise."""
     record = build_record(
@@ -315,6 +345,23 @@ def test_withdrawal_survives_a_resubmission(store):
     assert store.for_attendee("a@x.com") == []
 
 
+def test_withdrawal_clears_the_session_intent_too(store):
+    """The classification is derived from what they said, so it goes with the
+    words. A tombstone reading `session_intent: business_problem` would still
+    tell an account team this attendee was a lead."""
+    store.put(
+        build_record(
+            "a@x.com",
+            {"record_id": "r1", "goal": "secret plan", "session_intent": "business_problem"},
+        )
+    )
+    tombstone = store.redact_record("a@x.com", "r1")
+
+    assert tombstone is not None
+    assert tombstone.session_intent == ""
+    assert "session_intent" not in tombstone.payload()
+
+
 def test_withdrawing_an_unknown_record_is_not_an_error(store):
     assert store.redact_record("a@x.com", "nope") is None
 
@@ -333,6 +380,7 @@ def test_journal_round_trips(tmp_path):
                 "use_case_title": "Fraud",
                 "blockers": ["no CDC"],
                 "confidence": "high",
+                "session_intent": "business_problem",
             },
         )
     )
@@ -342,6 +390,8 @@ def test_journal_round_trips(tmp_path):
     assert restored.use_case_title == "Fraud"
     assert restored.blockers == ["no CDC"]
     assert restored.confidence == "high"
+    # A restart mid-workshop must not silently downgrade a record to unclassified.
+    assert restored.session_intent == "business_problem"
 
 
 def test_journal_is_owner_only(tmp_path):

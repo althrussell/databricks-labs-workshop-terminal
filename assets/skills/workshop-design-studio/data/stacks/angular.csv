@@ -1,6 +1,0 @@
-category,guideline,description,do,dont,severity
-Architecture,standalone components,Use standalone components and route-level boundaries for focused visual features,Keep shared design primitives in a dedicated library,Create one-off component styling in every route,high
-Styling,semantic tokens,Expose the selected design system through CSS variables or Angular theming,Bind components to semantic roles,Hardcode palette values in templates,high
-States,signals and templates,Represent loading error empty and success states explicitly,Use stable skeleton dimensions and accessible status regions,Hide async states behind a spinner-only page,critical
-Performance,defer,Use @defer for heavy non-critical visual regions,Reserve layout space and provide placeholders,Defer the primary action or cause layout shift,medium
-Accessibility,CDK semantics,Use Angular CDK primitives where they improve focus and overlays,Test keyboard focus restoration,Build dialogs from generic div elements,critical

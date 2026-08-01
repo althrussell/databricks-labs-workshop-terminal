@@ -49,12 +49,33 @@ A brief that presents your inference as a customer commitment sends an account
 team into a conversation with a false premise. `low` is a useful record;
 `high` on a guess is worse than no record at all.
 
+## Say why they were building — including when it was for fun
+
+Set `session_intent` on every record:
+
+- `business_problem` — something their team actually needs to solve.
+- `evaluation` — comparing Databricks against what they have or another vendor.
+- `learning` — skilling up, no specific project behind it.
+- `fun` — a game, a toy, a demo built for the enjoyment of building it.
+
+`confidence` still applies: an intent you inferred is a `low`-confidence record,
+not a stated one.
+
+**Record the fun ones too.** A Space Invaders session is a real answer —
+`use_case_title: "Space Invaders game"`, `session_intent: fun` — and it is what
+stops someone working a game as a sales lead. A session with no record at all
+reads as a gap that somebody then has to chase.
+
+**One record per project, at least.** If they build two things, that is two
+records with two `record_id`s, even when one of them was a toy.
+
 ## How
 
 ```bash
 workshop-discovery '{
   "record_id": "fraud-scoring",
   "confidence": "high",
+  "session_intent": "business_problem",
   "use_case_title": "Real-time fraud scoring",
   "use_case_summary": "Card fraud checks run in a nightly Oracle batch; they want them at transaction time.",
   "goal": "Score transactions as they arrive instead of overnight",

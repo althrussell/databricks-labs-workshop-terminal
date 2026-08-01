@@ -84,34 +84,64 @@ def test_mandate_names_canonical_app_skills_and_no_retired_ones(client, monkeypa
             assert retired not in text, f"{label} still names retired {retired}"
 
 
-def test_mandate_requires_the_appkit_validation_gate(client, monkeypatch):
-    """An agent that deploys without validating ships a broken app. Every memory
-    channel must carry the gate, including the project template the isolated
-    Omnigent workers see."""
+_MEMORY_CHANNELS = (
+    (".claude", "CLAUDE.md"),
+    (".codex", "AGENTS.md"),
+    (".config", "workshop", "project-memory.md"),
+)
+
+
+def test_mandate_ships_on_a_live_url_not_a_browser_suite(client, monkeypatch):
+    """The ship gate is typecheck, deploy, open the URL.
+
+    It used to be `databricks apps validate`, which runs Playwright and pulls
+    Chromium onto a cold workshop box. For a standalone game with no data that
+    is minutes of download and a smoke test to rewrite, all before the attendee
+    can see anything — so the gate now stops at the cheap check that actually
+    prevents a failed deploy.
+    """
     home = _provisioned_home(client, monkeypatch)
-    for path in (
-        os.path.join(home, ".claude", "CLAUDE.md"),
-        os.path.join(home, ".codex", "AGENTS.md"),
-        os.path.join(home, ".config", "workshop", "project-memory.md"),
-    ):
-        text = open(path).read()
-        assert "databricks apps validate" in text
-        assert "tests/smoke.spec.ts" in text
+    for parts in _MEMORY_CHANNELS:
+        text = open(os.path.join(home, *parts)).read()
         assert "tsc --noEmit" in text
-        assert "appkit lint" in text
-        # An app that compiles but is unreadable or unusable on a phone is not
-        # done either, so the visual gate travels with the compile gate.
-        assert "workshop-design-gate" in text
+        assert "the URL loads" in text or "open the URL" in text
 
 
-def test_the_visual_gate_helper_is_runnable_by_the_agent(client, monkeypatch):
-    """The instructions call it as a bare command, so it has to be on PATH and
-    executable — a `command not found` here silently drops the visual gate."""
+def test_no_memory_channel_puts_playwright_on_the_critical_path(client, monkeypatch):
+    """Agents follow the written gate literally — the Space Invaders run put
+    "update smoke test selectors" and "run validate + design gate" on its todo
+    list because the instructions said to. Every channel has to carry the
+    override, or the one that does not silently restores the old behaviour."""
+    home = _provisioned_home(client, monkeypatch)
+    for parts in _MEMORY_CHANNELS:
+        text = open(os.path.join(home, *parts)).read()
+        assert "Do not" in text and "databricks apps validate" in text, (
+            "the override has to name the command it is overriding"
+        )
+        assert "workshop-design-gate" not in text
+        assert "playwright.visual.spec.ts" not in text
+
+
+def test_no_design_gate_helper_is_installed(client, monkeypatch):
+    """The blocking visual gate is gone, helper included. Leaving the binary on
+    PATH would let an agent rediscover it and reintroduce the block."""
     home = _provisioned_home(client, monkeypatch)
 
-    helper = os.path.join(home, ".local", "bin", "workshop-design-gate")
-    assert os.path.isfile(helper)
-    assert os.access(helper, os.X_OK)
+    assert not os.path.exists(
+        os.path.join(home, ".local", "bin", "workshop-design-gate")
+    )
+
+
+def test_no_tdd_subagents_are_installed(client, monkeypatch):
+    """The PRD -> failing-tests -> implement -> review chain turned "build me an
+    app" into an interview plus a test suite. The directory is still created and
+    emptied, because a HOME can outlive a deploy and a stale definition would
+    keep the old behaviour running."""
+    home = _provisioned_home(client, monkeypatch)
+    agents = os.path.join(home, ".claude", "agents")
+
+    assert os.path.isdir(agents)
+    assert [name for name in os.listdir(agents) if name.endswith(".md")] == []
 
 
 def test_project_helper_installed(client, monkeypatch):
@@ -167,6 +197,74 @@ def test_project_helper_commits_appkit_memory(client, monkeypatch, tmp_path):
     assert "CLAUDE.md" in tracked and "AGENTS.md" in tracked
 
 
+def test_project_helper_always_writes_a_readme(client, monkeypatch, tmp_path):
+    """The lead-quality backstop for a workshop that no longer auto-generates
+    documents. `artifacts` classifies any README as a `readme`-kind artifact, so
+    writing one at init means every session contributes a titled artifact and a
+    statement of purpose — including the sessions that never ask for docs.
+
+    Near-zero cost, and it doubles as the attendee's take-home reminder once the
+    workspace is torn down.
+    """
+    home = _provisioned_home(client, monkeypatch)
+    helper = os.path.join(home, ".local", "bin", "workshop-init-project")
+
+    fake_home = tmp_path / "attendee"
+    (fake_home / ".config" / "workshop").mkdir(parents=True)
+    env = {
+        "HOME": str(fake_home),
+        "PATH": os.environ["PATH"],
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_AUTHOR_NAME": "Attendee",
+        "GIT_AUTHOR_EMAIL": "attendee@example.com",
+        "GIT_COMMITTER_NAME": "Attendee",
+        "GIT_COMMITTER_EMAIL": "attendee@example.com",
+    }
+    out = subprocess.run(
+        ["bash", helper, "fraud-scoring"],
+        env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert out.returncode == 0, out.stderr
+
+    readme = fake_home / "projects" / "fraud-scoring" / "README.md"
+    assert readme.is_file(), "every project must start with a README"
+    body = readme.read_text()
+    assert "fraud-scoring" in body, "the project name is the minimum signal"
+    # The two things the agent is told to keep current.
+    assert "What this is for" in body
+    assert "Live URL" in body
+
+    tracked = subprocess.run(
+        ["git", "-C", str(readme.parent), "ls-files"],
+        env=env, capture_output=True, text=True, timeout=30,
+    ).stdout.split()
+    assert "README.md" in tracked
+
+
+def test_the_readme_survives_a_missing_git_identity(client, monkeypatch, tmp_path):
+    """Creating the project matters more than committing it. If git cannot
+    resolve an identity the helper must still leave the attendee with a usable
+    project rather than aborting under `set -e`."""
+    home = _provisioned_home(client, monkeypatch)
+    helper = os.path.join(home, ".local", "bin", "workshop-init-project")
+
+    fake_home = tmp_path / "attendee"
+    fake_home.mkdir(parents=True)
+    env = {
+        "HOME": str(fake_home),
+        "PATH": os.environ["PATH"],
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "EMAIL": "",
+    }
+    out = subprocess.run(
+        ["bash", helper, "still-works"],
+        env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert out.returncode == 0, out.stderr
+    assert (fake_home / "projects" / "still-works" / "README.md").is_file()
+    assert out.stdout.strip().endswith("projects/still-works")
+
+
 def test_coach_disabled_by_env(client, monkeypatch):
     monkeypatch.setenv("LAB_COACH", "false")
     home = _provisioned_home(client, monkeypatch)
@@ -174,10 +272,8 @@ def test_coach_disabled_by_env(client, monkeypatch):
     assert "workshop-lab-coach" not in claude_md
 
 
-def test_subagents_and_skills_installed(client, monkeypatch):
+def test_skills_installed(client, monkeypatch):
     home = _provisioned_home(client, monkeypatch)
-    agents = os.listdir(os.path.join(home, ".claude", "agents"))
-    assert "prd-writer.md" in agents and "implementer.md" in agents
 
     # Every harness reads its own directory: Claude ~/.claude/skills, Codex (and
     # Omnigent's Codex worker, which shares CODEX_HOME) ~/.codex/skills. This is

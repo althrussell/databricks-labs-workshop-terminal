@@ -5,8 +5,8 @@ The vendored tree is the offline fallback for the boot-time overlay, so it must
 be the *same* content boot would install. This clones the manifest's pinned
 commit, verifies the clone against the manifest's ``content_sha256``, and only
 then replaces the upstream-sourced skill directories -- leaving the fork-only
-skills (the apx skill, the design studio, this repo's workflow/superpowers set,
-and the refresh skill itself) untouched.
+skills (the apx skill, the design studio, promote, and the refresh skill itself)
+untouched.
 
 ``--check`` verifies the committed fallback without rewriting it, which is what
 CI runs; a drift means an operator hand-edited a vendored skill or bumped the
@@ -33,29 +33,17 @@ VENDORED_DIR = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "skills")
 )
 # Skills with no upstream counterpart. A refresh must never delete these.
+#
+# The workflow/superpowers set and the BDD skills used to live here. They were
+# removed from the workshop entirely: they push planning, test-first, and review
+# ceremony onto builds that need to reach a live URL in minutes. Keeping them out
+# of this set is deliberate -- a refresh now deletes them on sight, so a stray
+# reintroduction cannot survive.
 FORK_ONLY = frozenset({
-    "bdd-features",
-    "bdd-run",
-    "bdd-scaffold",
-    "bdd-steps",
-    "brainstorming",
     "databricks-app-apx",
-    "dispatching-parallel-agents",
-    "executing-plans",
-    "finishing-a-development-branch",
     "promote",
-    "receiving-code-review",
     "refresh-databricks-skills",
-    "requesting-code-review",
-    "subagent-driven-development",
-    "systematic-debugging",
-    "test-driven-development",
-    "using-git-worktrees",
-    "using-superpowers",
-    "verification-before-completion",
     "workshop-design-studio",
-    "writing-plans",
-    "writing-skills",
 })
 
 

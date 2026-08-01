@@ -14,6 +14,7 @@
     "phase": "wrap",
     "headline": "Prototyped a Lakebase-backed feature store to replace self-managed Postgres ahead of a Q3 Snowflake renewal.",
     "what_they_built": "Stood up a synced table from a streaming pipeline into Lakebase and a small Databricks App that reads per-account features by key, then benchmarked lookup latency against their current EC2 Postgres. Ended the session with a working read path and a Genie space over the same tables for their analysts.",
+    "session_intent": "business_problem",
     "use_cases": [
       {
         "title": "Lakebase as the online feature store for fraud scoring",
