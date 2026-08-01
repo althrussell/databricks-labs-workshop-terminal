@@ -456,6 +456,40 @@
       "pinned": true
     },
     {
+      "id": "wrap-promote-anyway",
+      "title": "Save your work before this environment goes away",
+      "markdown": "This workspace is deleted after the workshop. Ask your agent for handoff docs — architecture, security review, Jira stories, test cases and a rebuild prompt — uploaded to your Databricks Volume so you can read them today.\n\n**Didn't finish?** Ask anyway. The docs cover what you were heading towards and where it stopped, which is the version worth having when you pick it up again.",
+      "tags": [
+        "promote",
+        "wrap"
+      ],
+      "phases": [
+        "wrap"
+      ],
+      "triggers": [],
+      "cta": "Save my work →",
+      "prompt": "We're wrapping up. Generate the handoff docs for this session — architecture, security review, Jira stories, test cases and a rebuild prompt — and upload them to my Databricks Volume. If we didn't finish something, document what we were going for and where it stopped rather than leaving it out.",
+      "weight": 2,
+      "pinned": true
+    },
+    {
+      "id": "wrap-take-it-with-you",
+      "title": "Take it with you — nothing here is saved",
+      "markdown": "Everything in this environment is deleted at the end of the event: the terminal, the workspace folder your commits sync to, and the Volume your handoff docs go to. Committed is not the same as saved.\n\n**Two ways to keep it:** push the repo to a git remote you own — your agent will walk you through it — or download the files you care about from your Databricks Workspace folder while the event is still running.",
+      "tags": [
+        "wrap",
+        "promote"
+      ],
+      "phases": [
+        "wrap"
+      ],
+      "triggers": [],
+      "cta": "Help me keep it →",
+      "prompt": "I want to keep this work after the workshop. Walk me through pushing my project to a git remote I own, and tell me exactly what I should download before this environment is deleted.",
+      "weight": 3,
+      "pinned": true
+    },
+    {
       "id": "wrap-keep-going",
       "title": "Keep building after today",
       "markdown": "Everything you used today works in your own workspace — and you can have one **free, forever**: Databricks Free Edition takes two minutes to set up. Pair it with the free Customer Academy courses to keep the momentum.",
@@ -577,6 +611,18 @@
       {
         "label": "Sum up what I built",
         "prompt": "Summarize everything we built today, commit any uncommitted work, and tell me how to keep going in my own workspace."
+      },
+      {
+        "label": "Save my work",
+        "prompt": "We're wrapping up. Generate the handoff docs for this session — architecture, security review, Jira stories, test cases and a rebuild prompt — and upload them to my Databricks Volume. If we didn't finish something, document what we were going for and where it stopped."
+      },
+      {
+        "label": "Where did I get stuck?",
+        "prompt": "Walk back through this session: what was I trying to do, what worked, and what blocked me? Be specific about the errors, and tell me what I'd need to get past them in my own workspace."
+      },
+      {
+        "label": "Take my work with me",
+        "prompt": "I want to keep this work after the workshop. Walk me through pushing my project to a git remote I own, and tell me exactly what I should download before this environment is deleted."
       }
     ]
   }

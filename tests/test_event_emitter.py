@@ -10,12 +10,19 @@ def _emitter(**over) -> EventEmitter:
     return EventEmitter(**kwargs)
 
 
-def test_disabled_when_unconfigured_is_noop():
+def test_unconfigured_means_no_push_not_no_capture():
+    """The buffer is the handover point, not the HTTP call.
+
+    Control Tower collects from ``/api/admin/insight-events``, so an instance with
+    no ingest configuration still has a delivery path. Discarding at ``emit`` —
+    which is what this did while push looked like the only route — threw away every
+    event on every instance CT deploys, since CT injects none of these three.
+    """
     for missing in ("ingest_url", "ingest_token", "run_id"):
         e = _emitter(**{missing: ""})
-        assert e.enabled is False
+        assert e.can_push is False
         e.emit("session.started", "a@x.com")
-        assert e.pending() == 0
+        assert e.pending() == 1
 
 
 def test_emit_buffers_well_formed_event():

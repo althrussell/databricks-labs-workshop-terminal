@@ -18,7 +18,7 @@ content), see [`admin-api.md`](./admin-api.md).
 | 3 | Make the app SP a member of **`ADMIN_GROUP`** (default `platform_admins`) | SCIM group resolution + operator gating | Operator panel/admin API denied |
 | 4 | Set **`SESSION_STATE_PATH`** to a data-volume path | Terminals survive restart as relaunchable ghosts | Blank screen + client reconnect loop after any restart |
 | 5 | Nothing. Leave **`SKILLS_REF`** unset | The reviewed tag, commit, and content digest ship in the repo's own `assets/artifacts/manifest.json` | Setting a ref that the manifest does not pin fails the skills install closed |
-| 6 | Ingest the **`credential.health`** event (set `CONTROL_TOWER_INGEST_URL`/`_TOKEN`, `WORKSHOP_RUN_ID`) | Catch a bad grant hours/days ahead, not at T-0 | First sign of trouble is an attendee 503 on event day |
+| 6 | Collect events on every harvest (`GET /api/admin/insight-events`) and act on **`credential.health`** | Catch a bad grant hours/days ahead, not at T-0. The Apps proxy blocks a token-only push, so collection is the delivery path | First sign of trouble is an attendee 503 on event day |
 | 7 | *(OBO opt-in)* Enable **user authorization** + set the app's **`user_api_scopes`** (`catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql`; no `unity-catalog` scope exists), admin-grant consent, restart, set `ENABLE_OBO=true` | Agent can read data **as the attendee** (governance-faithful UC), not as the SP | `databricks --profile me` empty/401; attendee sees the SP's catalogs, not theirs |
 | 8 | *(OBO opt-in)* Reuse a matching dedicated catalog when FEVM already provisioned it; otherwise create it. Ensure labuser OWNER + `ALL PRIVILEGES` + `MANAGE`; app SP catalog-scoped `MANAGE`, `USE_CATALOG`, `CREATE_SCHEMA`; pass **`WORKSHOP_CATALOG`** and set `ENABLE_ENTITLEMENTS=true` | Works without `CREATE CATALOG` entitlement while preserving exact scoped grants | Reconciliation cannot verify/reapply grants, or the labuser/app SP cannot use created objects |
 | 9 | Gate admission on **`GET /readyz` returning 200** | The deep gate proves topology, credentials, installers, persistence, catalog, entitlements, OBO, and release pins together | A process can be live at `/healthz` while unsafe or incomplete for attendees |
@@ -126,6 +126,23 @@ The hard checks are:
    A vendored fallback keeps the app usable after a network failure but never
    claims the configured ref was installed and keeps readiness red.
 
+One **soft** check rides alongside them. `insight_capture` carries
+`"soft": true`, is excluded from the `ready` verdict, and reports what this
+instance collects (`requested`) versus what it can deliver (`effective`), with
+the same pair mirrored as `expected`/`actual`/`match` under
+`release_manifest.insight_capture`. Its purpose is provenance: "was insight
+capture on for this run" is a question asked long after the event, by someone
+reading an Account Manager Brief.
+
+It also reports `delivery` (always `pull` for a CT-deployed instance),
+`collections`, `pending` and `dropped`. Since delivery is by collection, a path
+always exists and configuration cannot prove the feature works — so the check is
+`amber` while capture is on but nothing has collected yet, `green` once CT has
+collected at least once, and `red` only if `dropped` is non-zero, meaning the
+buffer overflowed and events were lost for good. CT should surface `red` to the
+operator, but must never treat a soft check as an admission failure. See
+[§14](#14-workshop-insight-capture-opt-in-per-event).
+
 The report and release manifest never include token or secret values. CT should poll with bounded
 backoff during installer/reconciler startup, fail the instance on persistent
 503, and retain the per-check report as release evidence. For this phase,
@@ -198,8 +215,8 @@ take effect on restart with **no rebuild**. Set these per instance:
 | `ANTHROPIC_MODEL` / `CODEX_MODEL` | reviewed endpoint names | prevent model drift between instances |
 | `WORKSHOP_RUN_ID` | CT's run id for this attendee | event attribution on ingested events |
 | `DATABRICKS_WORKSPACE_ID` | the workspace id | event attribution |
-| `CONTROL_TOWER_INGEST_URL` | CT ingest base URL | enable real-time event push (§5) |
-| `CONTROL_TOWER_INGEST_TOKEN` | shared `X-Ingest-Token` | auth for ingest |
+| `CONTROL_TOWER_INGEST_URL` | *(optional)* CT ingest base URL | enable the additive push path (§5); unnecessary for delivery, which is by collection |
+| `CONTROL_TOWER_INGEST_TOKEN` | *(optional)* shared `X-Ingest-Token` | auth for the push path only |
 | `ADMIN_GROUP` | `platform_admins` (or your group) | operator gating |
 | `EVENT_NAME` / `BRAND_*` | per-event branding | cobranding |
 | `WORKSHOP_PAT` | **leave empty** | use direct app-identity OAuth, not a static PAT |
@@ -207,6 +224,8 @@ take effect on restart with **no rebuild**. Set these per instance:
 | `ENABLE_ENTITLEMENTS` | `true` *(opt-in)* | run the labuser-usability reconciler (§9) |
 | `WORKSHOP_CATALOG` | per-attendee catalog name | the catalog the agent creates UC objects in; the reconciler verifies the labuser's `ALL PRIVILEGES` on it (§9) |
 | `WORKSHOP_SCHEMA` | *(optional)* | default schema within `WORKSHOP_CATALOG` |
+| `WORKSHOP_INSIGHT_CAPTURE` | `true` *(CT fleet default; per-run opt-out)* | turn on workshop insight capture (§14). This is the one switch that sends attendee-authored content to CT, so a run whose registration terms don't cover it must opt out — see §14 |
+| `DISCOVERY_ENABLED` | `false` *(optional, within capture)* | drop the conversational discovery tier while keeping the derived behavioural signal |
 
 Model defaults can vary by event or attendee because CT applies overrides to
 each app instance independently. For example, set
@@ -226,13 +245,25 @@ instance. Full table in
 
 ## 5. Credential-health ingestion (early warning)
 
-When `CONTROL_TOWER_INGEST_URL` + `CONTROL_TOWER_INGEST_TOKEN` + `WORKSHOP_RUN_ID`
-are set, the app pushes events to CT. A background probe verifies the credential
-end-to-end every ~5 minutes — **through idle windows** — and emits
-`credential.health` on every state transition (and re-emits on a cadence while
-unhealthy). This is how CT catches a missing grant *before* the event.
+A background probe verifies the credential end-to-end every ~5 minutes —
+**through idle windows** — and emits `credential.health` on every state
+transition (and re-emits on a cadence while unhealthy). This is how CT catches a
+missing grant *before* the event.
 
-**Endpoint the app calls (CT must implement):**
+**These events are buffered and collected, like every other event.** The app
+always buffers regardless of configuration; CT reads the buffer on its harvest
+via `GET /api/admin/insight-events` (see
+[§14](#14-workshop-insight-capture-opt-in-per-event)). This is the delivery path
+to rely on.
+
+**The push path below requires a Databricks identity on the request.** Setting
+`CONTROL_TOWER_INGEST_URL` + `CONTROL_TOWER_INGEST_TOKEN` + `WORKSHOP_RUN_ID`
+starts a background flusher, but if CT is itself a Databricks App its proxy
+rejects a request carrying only `X-Ingest-Token` before it reaches CT's code. It
+works for a CT reachable without the Apps proxy, or for a caller that also
+presents an OAuth bearer for a principal granted `CAN USE` on the CT app. Push
+is therefore optional and additive; the envelope below is the canonical one
+either way.
 
 ```http
 POST {CONTROL_TOWER_INGEST_URL}/api/ingest/events
@@ -522,6 +553,120 @@ perform the §7 teardown, record per-resource success/failure, retry bounded
 transient failures, revoke any emergency `WORKSHOP_PAT`, and retain the final
 report with the event run. The app must never delete itself.
 
+## 14. Workshop insight capture *(opt-in, per event)*
+
+Off unless CT sets `WORKSHOP_INSIGHT_CAPTURE=true` on the instance. The full
+contract — event shapes, schema, redaction, roster CSV, brief structure — is in
+[`workshop-insight-contract.md`](./workshop-insight-contract.md); this section is
+the operator checklist.
+
+Every other ingest event answers an operational question. These answer a
+commercial one: what is this attendee trying to build, on what stack, and what is
+stopping them. That is why WT defaults the switch off: a terminal that captures
+has to have somewhere for the buffer to go, and standalone it does not.
+
+Where the decision is made changed once in practice. Leaving it per-instance
+meant the first CT-provisioned workshop captured nothing at all, because nothing
+set the flag. CT now decides for the fleet it deploys
+(`CONTROL_TOWER_WORKSHOP_INSIGHT_CAPTURE`) and a single run opts out through its
+app `env_overrides`, which is the form the consent decision below should take:
+one deliberate act by whoever owns the deployment, not a flag each operator has
+to remember for each run.
+
+**Before turning it on:**
+
+1. Confirm the event's registration terms cover capture. WT shows no consent
+   prompt — attendees are mid-lab and a modal there is coercive, not informed. If
+   the terms don't cover it, opt that run out
+   (`env_overrides: {"WORKSHOP_INSIGHT_CAPTURE": "false"}` on its terminal app),
+   which wins over the fleet default in both the deployment env and `app.yaml`.
+2. Import the roster (`POST /api/labs/{run_id}/roster` on CT). WT only ever knows
+   the pooled `labuserNNN@` identity, so without a roster the events land in
+   Lakebase attributable to nobody and there is no company to brief on. Import
+   before the event, not after: CT assigns pooled identity to roster entry as
+   instances are bound.
+3. Nothing else. Capture needs **no delivery configuration** — see below.
+
+**How CT receives it: by collecting, not by being pushed to.**
+
+```http
+GET {app_url}/api/admin/insight-events?after={seq}&stream={stream_id}
+```
+
+The Terminal buffers every event and hands the buffer over on this admin
+endpoint, authenticated exactly like `/api/admin/stats`. It does **not** post to
+CT, because it cannot: Databricks Apps sit behind a proxy that requires a
+Databricks identity on every request, so a `POST` carrying only `X-Ingest-Token`
+is rejected before it reaches CT's code. Collection reuses the workspace-scoped
+credential CT already holds for the harvest, so no new grant, token or egress
+path is needed on either side.
+
+| Type | When | Content |
+|---|---|---|
+| `workshop.signal` | with each stats poll | derived counters + engagement band; no attendee text |
+| `discovery.record` | as the agent elicits it | attendee-described use case, stack, blockers, confidence |
+| `insight.summary` | wrap-phase transition, teardown backstop | summary over harvested artifact *metadata* |
+
+**What CT must do with a collected batch:**
+
+1. **Collect after the stats call, not before** — on the `?final=true` pass the
+   Terminal generates its wrap summaries *while answering it*, so collecting first
+   leaves the most valuable events behind on the last visit the app ever gets.
+2. **Stamp identity from the polled unit.** A collected envelope has an empty
+   `run_id` and often no `workspace_id`: a deployed Terminal is never told which
+   run it belongs to. An envelope that names an `attendee` wins over the unit's
+   pooled email, because one instance can serve several.
+3. **Namespace a runless idempotency key with the run.** The Terminal's keys embed
+   `{run_id}`, which is empty here, so they collide across runs — the same pooled
+   `labuser001@` at the next event would be discarded as a duplicate of this one.
+4. **Replay the cursor.** `after` is CT's high-water mark and doubles as an
+   acknowledgement; the Terminal discards events at or below it. Present the
+   `stream_id` that came back with the batch — sequence numbers restart with the
+   process, and a cursor replayed across that boundary is refused and reset rather
+   than used to discard a fresh buffer unread. Losing the cursor is safe (ingest is
+   idempotent); getting it wrong silently is not.
+5. **Watch `dropped`.** Non-zero means the Terminal's 5000-event buffer overflowed
+   and events that existed are gone. No later collection recovers them; the fix is
+   to collect more often.
+
+`/readyz` reports capture state as a soft check, and the release manifest records
+it, so after the event CT can prove whether capture was on for a given run rather
+than inferring it from whether rows arrived. Because a delivery path now always
+exists, the check reports whether anything has *actually collected* — that is the
+only fact configuration cannot establish.
+
+**Two things CT must do for the wrap summary to exist at all:**
+
+1. **Drive the `wrap` phase transition** (`POST /api/admin/phase`). This is the
+   primary summarisation trigger, and it is the only one that gets a model call —
+   the app is warm and the attendee is present. An event that never flips to `wrap`
+   gets the thin extraction fallback at best.
+2. **Call the final harvest with `?final=true`** before deleting the app
+   (`GET /api/admin/stats?final=true`). Beyond the usual snapshot this runs the
+   model-free backstop for anyone `wrap` missed and *flushes the emitter buffer
+   synchronously*. Without it, whatever was buffered in the last 15 seconds — quite
+   possibly the whole summary set — dies with the container. The response reports
+   `instance.summaries_emitted` and `instance.events_flushed`.
+
+An `insight.summary` can legitimately arrive twice for one attendee: once from the
+extraction fallback and once from a model pass, distinguished by the `generator`
+field and by the last segment of the idempotency key. They share a `summary_id`.
+**CT must prefer `llm` over `extraction`**, not last-write-wins, or the teardown
+backstop will overwrite the better summary the wrap transition already produced.
+
+Attendees can see their own discovery records in the terminal and remove any of
+them. A removal arrives as a further `discovery.record` revision with the content
+blank and `redacted_by_attendee: true`. **CT must honour it** — exclude the record
+from every brief and export. The terminal cannot reach into Lakebase, so a
+withdrawal it delivered but CT ignored is a consent failure on CT's side.
+
+**What never leaves the instance:** raw terminal output, scrollback, file
+contents, tokens. The harvester takes titles, paths and first-lines only, and a
+redaction pass strips secret-shaped strings from discovery text before it is
+buffered. Teardown is still `apps.delete` — WT holds no durable insight store, so
+anything not pushed before deletion is gone. That is why the summary is generated
+at the **wrap phase**, with the teardown harvest only as a backstop.
+
 ## Appendix — quick reference
 
 - App SP client id: `service_principal_client_id` from `apps create` / `apps get`.
@@ -531,5 +676,8 @@ report with the event run. The app must never delete itself.
   `{service_principal_name: <client_id>, permission_level: CAN_USE}` (additive).
 - Health states: `rotating` (good) · `degraded` · `unhealthy` · `unknown`.
 - Recovery after grant: ~30s, no redeploy.
-- Ingest endpoint: `POST {INGEST_URL}/api/ingest/events`, header
-  `X-Ingest-Token`, ack with 2xx, de-dupe on `idempotency_key`.
+- Event delivery: `GET {app_url}/api/admin/insight-events?after={seq}&stream={id}`
+  on the harvest, after the stats call. De-dupe on `idempotency_key`; stamp
+  `run_id`/`workspace_id` from the polled unit and namespace a runless key with
+  the run. Push (`POST {INGEST_URL}/api/ingest/events`, `X-Ingest-Token`) is
+  additive and blocked by the Apps proxy for a deployed terminal.

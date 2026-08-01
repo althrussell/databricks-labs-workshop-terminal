@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "run_id": "3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90",
+  "workspace_id": "4217334529551234",
+  "attendee": "labuser007@example.com",
+  "type": "insight.summary",
+  "occurred_at": "2026-07-30T11:58:31.004000+00:00",
+  "idempotency_key": "summary:3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90:labuser007@example.com:llm",
+  "payload": {
+    "summary_id": "sum_a41d90c7e2b85f13",
+    "generated_at": "2026-07-30T11:58:31.004000+00:00",
+    "generator": "llm",
+    "model": "databricks-claude-haiku-4-5",
+    "phase": "wrap",
+    "headline": "Prototyped a Lakebase-backed feature store to replace self-managed Postgres ahead of a Q3 Snowflake renewal.",
+    "what_they_built": "Stood up a synced table from a streaming pipeline into Lakebase and a small Databricks App that reads per-account features by key, then benchmarked lookup latency against their current EC2 Postgres. Ended the session with a working read path and a Genie space over the same tables for their analysts.",
+    "use_cases": [
+      {
+        "title": "Lakebase as the online feature store for fraud scoring",
+        "summary": "Replace a self-managed EC2 Postgres with Lakebase, kept current by synced tables from the authorisation stream rather than a nightly dbt refresh.",
+        "products": ["lakebase", "structured-streaming", "unity-catalog"],
+        "evidence": "attendee prompt about sub-100ms feature lookups; promote/architecture.md"
+      },
+      {
+        "title": "Analyst self-service over the same feature tables",
+        "summary": "A Genie space over the feature tables so fraud analysts stop raising tickets for one-off lookups.",
+        "products": ["genie"],
+        "evidence": "topic trail; promote/jira-stories.md"
+      }
+    ],
+    "blockers": [
+      "SASL authentication against their broker config failed from the workshop workspace.",
+      "Unclear whether synced-table latency meets their sub-100ms scoring budget.",
+      "Snowflake egress cost is the stated driver, and they have no current benchmark to compare against."
+    ],
+    "products": ["apps", "genie", "lakebase", "structured-streaming", "unity-catalog"],
+    "artifacts": [
+      {"kind": "promote_doc", "title": "architecture.md", "bytes": 8140},
+      {"kind": "promote_doc", "title": "jira-stories.md", "bytes": 5322},
+      {"kind": "promote_doc", "title": "security.md", "bytes": 6011},
+      {"kind": "readme", "title": "README.md", "bytes": 1204},
+      {"kind": "commit", "title": "Add per-account feature lookup by key", "bytes": 0}
+    ],
+    "prompt_count": 47,
+    "redactions": 1
+  }
+}

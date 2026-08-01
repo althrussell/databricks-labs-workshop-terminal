@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "run_id": "3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90",
+  "workspace_id": "4217334529551234",
+  "attendee": "labuser007@example.com",
+  "type": "discovery.record",
+  "occurred_at": "2026-07-30T09:02:44.870000+00:00",
+  "idempotency_key": "discovery:3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90:labuser007@example.com:8d3f1c02b7e94a51:2",
+  "payload": {
+    "record_id": "8d3f1c02b7e94a51",
+    "captured_at": "2026-07-30T09:02:44.870000+00:00",
+    "revision": 2,
+    "agent": "claude",
+    "confidence": "high",
+    "use_case_title": "Real-time fraud scoring on the card-authorisation stream",
+    "use_case_summary": "Scores card authorisations inline and needs sub-100ms lookups of a rolling per-account feature set. Today the stream lands in Confluent, features are precomputed nightly in Snowflake, and the scoring service reads a self-managed Postgres that they operate on EC2.",
+    "goal": "Work out whether Lakebase can replace the self-managed Postgres feature store without adding a hop.",
+    "current_stack": [
+      "Confluent Kafka",
+      "Snowflake",
+      "dbt",
+      "self-managed Postgres on EC2",
+      "Airflow"
+    ],
+    "databricks_products": ["lakebase", "structured-streaming", "unity-catalog"],
+    "blockers": [
+      "Nightly feature refresh means fraud models score on stale features during the day.",
+      "Two engineers spend roughly a day a week patching and failing over the EC2 Postgres.",
+      "Snowflake egress costs make the per-account lookup pattern uneconomic at their volume."
+    ],
+    "interest_signals": [
+      "Asked directly what Lakebase costs at 40k lookups/second.",
+      "Wants to know whether synced tables can keep the feature set current from the streaming pipeline.",
+      "Said their platform team has budget approved for a feature-store replacement this year."
+    ],
+    "timeline": "wants a decision before their Snowflake renewal in Q3",
+    "industry": "financial services",
+    "redactions": 1
+  }
+}

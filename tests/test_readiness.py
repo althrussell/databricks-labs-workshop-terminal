@@ -130,7 +130,7 @@ def _good_inputs(tmp_path):
 
 def _evaluate(tmp_path, *, mutate_env=None, credential=None, installer=None,
               entitlements=None, obo=None, secret_protection=None,
-              writable=True, now=1000.0):
+              delivery=None, writable=True, now=1000.0):
     readiness = importlib.import_module("server.readiness")
     (
         env,
@@ -149,6 +149,7 @@ def _evaluate(tmp_path, *, mutate_env=None, credential=None, installer=None,
         entitlement_status=entitlements or good_entitlements,
         obo_status=obo or good_obo,
         secret_protection_status=secret_protection or good_secret_protection,
+        delivery_status=delivery,
         writable_probe=lambda _: writable,
         now=now,
     )
@@ -220,7 +221,12 @@ def test_all_hard_checks_green_is_ready(tmp_path):
 
     assert report["ready"] is True
     assert report["status"] == "ready"
-    assert set(report["checks"]) == {
+    hard = {
+        name: check
+        for name, check in report["checks"].items()
+        if not check.get("soft")
+    }
+    assert set(hard) == {
         "topology",
         "attendee_identity",
         "credentials",
@@ -234,7 +240,8 @@ def test_all_hard_checks_green_is_ready(tmp_path):
         "obo",
         "release_pins",
     }
-    assert all(check["ok"] for check in report["checks"].values())
+    assert all(check["ok"] for check in hard.values())
+    assert set(report["checks"]) - set(hard) == {"insight_capture"}
 
 
 def test_secret_protection_fails_closed_when_env_or_linux_hardening_failed(tmp_path):
@@ -617,6 +624,122 @@ def test_readyz_returns_200_only_when_every_hard_check_is_green(client, monkeypa
     response = client.get("/readyz")
     assert response.status_code == 503
     assert response.json() == red
+
+
+def _capture_env(**overrides):
+    def mutate(env):
+        env.update(
+            {
+                "WORKSHOP_INSIGHT_CAPTURE": "true",
+                "CONTROL_TOWER_INGEST_URL": "https://ct.example.com",
+                "CONTROL_TOWER_INGEST_TOKEN": "ingest-token",
+                "WORKSHOP_RUN_ID": "run-1",
+                **overrides,
+            }
+        )
+
+    return mutate
+
+
+def test_insight_capture_is_off_by_default_and_reported_as_amber(tmp_path):
+    report = _evaluate(tmp_path)
+    check = report["checks"]["insight_capture"]
+
+    assert check["state"] == "amber"
+    assert check["detail"] == "insight capture is off"
+    assert check["requested"] == "off"
+    assert check["discovery"] is False
+    assert report["release_manifest"]["insight_capture"] == {
+        "enabled": False,
+        "expected": "off",
+        "actual": "off",
+        "match": True,
+        "delivery": "pull",
+    }
+
+
+def test_insight_capture_reports_both_tiers_when_delivering(tmp_path):
+    both = _evaluate(tmp_path, mutate_env=_capture_env())
+    signal_only = _evaluate(
+        tmp_path, mutate_env=_capture_env(DISCOVERY_ENABLED="false")
+    )
+
+    assert both["checks"]["insight_capture"]["state"] == "green"
+    assert both["checks"]["insight_capture"]["discovery"] is True
+    assert both["release_manifest"]["insight_capture"]["actual"] == "signal+discovery"
+    # The behavioural rollup without the conversational tier is a supported
+    # posture, not a half-configured one.
+    assert signal_only["checks"]["insight_capture"]["state"] == "green"
+    assert signal_only["checks"]["insight_capture"]["discovery"] is False
+    assert signal_only["release_manifest"]["insight_capture"]["actual"] == "signal"
+
+
+def test_capture_without_push_configuration_is_the_normal_posture(tmp_path):
+    """Not a misconfiguration: Control Tower deploys terminals with no ingest
+    settings at all and collects the buffer on its harvest instead. Reporting this
+    as red — which it did while push looked like the only route — would have every
+    real workshop showing a red check for the feature that was working."""
+    report = _evaluate(
+        tmp_path, mutate_env=_capture_env(CONTROL_TOWER_INGEST_TOKEN="")
+    )
+    check = report["checks"]["insight_capture"]
+
+    assert check["ok"] is True
+    assert check["state"] == "green"
+    assert check["delivery"] == "pull"
+    assert check["push_configured"] is False
+    assert report["release_manifest"]["insight_capture"]["actual"] == "signal+discovery"
+
+
+def test_capture_reports_whether_anything_has_actually_collected(tmp_path):
+    """The one fact configuration can't establish.
+
+    Under pull a delivery path always exists, so "is it working" can only be
+    answered by whether Control Tower has used it. An operator checking mid-event
+    needs to tell "nobody has come for these yet" from "they are being taken".
+    """
+    fresh = _evaluate(
+        tmp_path,
+        mutate_env=_capture_env(CONTROL_TOWER_INGEST_URL=""),
+        delivery={"delivery": "pull", "collections": 0, "pending": 4, "dropped": 0},
+    )
+    collecting = _evaluate(
+        tmp_path,
+        mutate_env=_capture_env(CONTROL_TOWER_INGEST_URL=""),
+        delivery={"delivery": "pull", "collections": 7, "pending": 2, "dropped": 0},
+    )
+
+    assert "awaiting Control Tower's first collection" in fresh["checks"]["insight_capture"]["detail"]
+    assert fresh["checks"]["insight_capture"]["collected"] is False
+    assert "collected 7 times" in collecting["checks"]["insight_capture"]["detail"]
+    assert collecting["checks"]["insight_capture"]["collected"] is True
+
+
+def test_dropped_events_are_red_but_never_gate(tmp_path):
+    """Real, unrecoverable loss: the buffer is bounded, so a collector that stops
+    collecting eventually costs events no later harvest can recover. This is the
+    condition worth alarming on, and it still must not take a workshop down."""
+    report = _evaluate(
+        tmp_path,
+        mutate_env=_capture_env(),
+        delivery={"delivery": "pull", "collections": 3, "pending": 5000, "dropped": 42},
+    )
+    check = report["checks"]["insight_capture"]
+
+    assert check["ok"] is False
+    assert check["state"] == "red"
+    assert "42 events were dropped" in check["detail"]
+    # The whole point of the soft flag: a broken commercial feature must not take
+    # an attendee's workshop down with it.
+    assert report["ready"] is True
+    assert report["status"] == "ready"
+    assert report["release_manifest"]["insight_capture"] == {
+        "enabled": True,
+        "expected": "signal+discovery",
+        "actual": "lossy",
+        "match": False,
+        "delivery": "pull",
+    }
 
 
 def test_healthz_remains_liveness_only_when_readiness_is_red(client, monkeypatch):

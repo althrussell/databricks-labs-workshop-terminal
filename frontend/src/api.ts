@@ -121,6 +121,28 @@ export interface Nugget {
   nudge: boolean;
 }
 
+/** One agent-elicited discovery record, as its subject sees it.
+ *
+ * Every field but the identifiers is optional, because a record is built from
+ * whatever the attendee happened to say — see `server/discovery.py`.
+ */
+export interface DiscoveryRecord {
+  record_id: string;
+  captured_at: string;
+  agent?: string;
+  confidence?: string;
+  use_case_title?: string;
+  use_case_summary?: string;
+  goal?: string;
+  timeline?: string;
+  industry?: string;
+  current_stack?: string[];
+  databricks_products?: string[];
+  blockers?: string[];
+  interest_signals?: string[];
+  redactions?: number;
+}
+
 export interface Broadcast {
   message: string;
   level: "info" | "success" | "warning";
@@ -187,6 +209,13 @@ export const api = {
     }),
   nuggets: () =>
     request<{ phase: string; nuggets: Nugget[]; prompts: IdeaPrompt[] }>("/api/nuggets"),
+  myDiscovery: () =>
+    request<{ enabled: boolean; records: DiscoveryRecord[] }>("/api/discovery"),
+  withdrawDiscovery: (recordId: string) =>
+    request<{ redacted: boolean; record_id: string }>("/api/discovery/redact", {
+      method: "POST",
+      body: JSON.stringify({ record_id: recordId }),
+    }),
   adminState: () =>
     request<{ phase: string; phases: string[]; nugget_count: number }>("/api/admin/state"),
   adminPresence: () =>

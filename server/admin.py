@@ -7,6 +7,7 @@ for the contract.
 
 from __future__ import annotations
 
+import logging
 import time
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -23,6 +24,8 @@ from .omnigent_remote import remote_host_manager
 from .sessions import session_manager
 from .users import user_manager
 from .bootstrap import install
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", dependencies=[Depends(require_admin)])
 
@@ -99,6 +102,14 @@ def set_phase(body: PhaseBody):
         )
     content_service.set_phase(body.phase)
     event_hub.publish({"t": "phase", "phase": body.phase})
+    # C6 phase 4: wrap is the primary edge-summary trigger — the app is warm and
+    # the attendee is still here, unlike teardown. Backgrounded so a model call
+    # per attendee can't stall the operator's phase flip, and a no-op unless
+    # WORKSHOP_INSIGHT_CAPTURE is on.
+    if body.phase == "wrap":
+        from . import insight_summary
+
+        insight_summary.summarise_in_background(user_manager.all(), phase=body.phase)
     return {"status": "ok", "phase": body.phase}
 
 
@@ -110,19 +121,85 @@ def broadcast(body: Broadcast):
 
 
 @router.get("/stats")
-def harvest_stats():
+def harvest_stats(final: bool = False):
     """Harvest endpoint for Control Tower: per-attendee build stats (cached
     code stats) + one instance-level workspace census + instance meta.
-    Persisted into CT's Lakebase for durable event-impact reporting."""
+    Persisted into CT's Lakebase for durable event-impact reporting.
+
+    ``final=true`` marks Control Tower's pre-delete pass (contract C6). It is the
+    last moment anything can be read off this instance, so it doubles as the
+    backstop for the edge summary — extraction only, no model call, because
+    teardown is best-effort and may run long after the app went cold.
+    """
     from . import stats
 
-    payload = stats.gather_all(user_manager.all())
+    users = user_manager.all()
+    payload = stats.gather_all(users)
     payload["instance"] = {
         "phase": content_service.phase,
         "started_at": content_service.started_at,
         "session_count": session_manager.count_all(),
+        "final": final,
     }
+    # C6: push the derived behavioural signal on the same cadence CT polls at, so
+    # the signal and the snapshot CT stores alongside it describe the same moment.
+    # No-op unless WORKSHOP_INSIGHT_CAPTURE is on; buffered, so it can't slow the
+    # harvest or fail it.
+    stats.emit_signals(payload)
+    if final:
+        from . import event_emitter as emitter_module
+        from . import insight_summary
+
+        # Teardown reads this response for the durable impact record, so a broken
+        # summary must cost the summary only. Insight is the optional half of this
+        # payload; the stats are the half that has always been promised.
+        try:
+            # Synchronous: after this response Control Tower deletes the app, so a
+            # background thread would be killed mid-flight. Extraction is cheap and
+            # local, which is the whole reason the backstop tier is model-free.
+            payload["instance"]["summaries_emitted"] = insight_summary.summarise_all(
+                users, phase=content_service.phase, allow_llm=False
+            )
+            # The periodic flusher runs every 15s and this container has seconds
+            # left, so drain here or lose everything still buffered — including the
+            # summaries emitted on the line above.
+            payload["instance"]["events_flushed"] = emitter_module.flush_now()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("final-harvest summary failed: %s", exc)
+            payload["instance"]["summary_error"] = str(exc)[:200]
+    # Reported last so it accounts for the signals and summaries emitted above.
+    # On the ``final=true`` pass this is what Control Tower still owes itself a
+    # GET /api/admin/insight-events for: everything left here dies with the app.
+    from .event_emitter import event_emitter as buffered
+
+    payload["instance"]["events_pending"] = buffered.pending()
+    payload["instance"]["events_dropped"] = buffered.dropped
+    payload["instance"]["event_stream_id"] = buffered.stream_id
     return payload
+
+
+@router.get("/insight-events")
+def collect_insight_events(after: int = 0, stream: str = "", limit: int = 0):
+    """Hand buffered attendee events to Control Tower (contract C3b, pull).
+
+    This is the delivery path for insight capture. The push alternative — POSTing
+    to CT's ingest endpoint with a shared token — cannot work through the
+    Databricks Apps proxy, which requires a Databricks identity on every request;
+    collection reuses the authenticated call CT already makes to this router.
+
+    ``after`` is the collector's cursor and doubles as an acknowledgement: events
+    at or below it are discarded, so a collector that keeps up keeps the buffer
+    flat. It is only honoured when ``stream`` matches this process's stream id,
+    because sequence numbers restart with the process and a cursor replayed across
+    that boundary would discard a fresh buffer unread.
+    """
+    from .event_emitter import DEFAULT_COLLECT_LIMIT, event_emitter
+
+    return event_emitter.collect(
+        after=max(0, after),
+        stream=stream,
+        limit=limit if limit > 0 else DEFAULT_COLLECT_LIMIT,
+    )
 
 
 @router.get("/omnigent-host-readiness")

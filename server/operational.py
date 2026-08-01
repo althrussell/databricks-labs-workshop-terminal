@@ -216,8 +216,6 @@ class OperationalHealthReporter:
         self.interval = min(3600.0, max(10.0, float(interval)))
 
     def emit_once(self) -> bool:
-        if not self._emitter.enabled:
-            return False
         try:
             self._emitter.emit(
                 "operational.health",

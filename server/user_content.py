@@ -16,7 +16,8 @@ Runs once per user (on their first session) after their HOME is bootstrapped:
 - ~/.claude.json            — onboarding skipped + MCP servers (DeepWiki, Exa)
 - ~/.gitconfig + hooks      — attendee git identity and a post-commit hook that
                               syncs ~/projects repos to the attendee's
-                              Workspace home (work survives teardown)
+                              Workspace home (survives an app restart, not the
+                              workshop — the workspace is deleted at teardown)
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 _ASSETS = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "assets"))
 _COACH_MARKER = "<!-- workshop-lab-coach -->"
+_DISCOVERY_MARKER = "<!-- workshop-discovery -->"
 _CALLBACK_CAPABILITY = os.path.join(".config", "workshop", "callback-capability")
 
 DEFAULT_DEEPWIKI_MCP = "https://mcp.deepwiki.com/mcp"
@@ -107,14 +109,26 @@ def verify_callback_capability(email: str, supplied: str) -> bool:
 
 # -- instructions (CLAUDE.md / AGENTS.md + lab coach) --
 
+def _overlay(text: str, name: str, marker: str) -> str:
+    """Append an instruction overlay once, keyed by its marker comment."""
+    if marker in text:
+        return text
+    with open(os.path.join(_ASSETS, "instructions", name)) as f:
+        return f"{text}\n\n{f.read()}"
+
+
 def _base_instructions() -> str:
     with open(os.path.join(_ASSETS, "instructions", "CLAUDE.md")) as f:
         text = f.read()
     if config.lab_coach_enabled():
-        with open(os.path.join(_ASSETS, "instructions", "lab_coach.md")) as f:
-            coach = f.read()
-        if _COACH_MARKER not in text:
-            text = f"{text}\n\n{coach}"
+        text = _overlay(text, "lab_coach.md", _COACH_MARKER)
+    # C6: the agent is the only thing positioned to notice what an attendee is
+    # trying to build, so discovery is an instruction overlay rather than a form.
+    # Absent entirely when capture is off — instructions that told the agent to
+    # record against a disabled endpoint would just produce failed calls and a
+    # confused explanation to the attendee.
+    if config.discovery_enabled():
+        text = _overlay(text, "discovery.md", _DISCOVERY_MARKER)
     return text
 
 
@@ -168,10 +182,15 @@ def _install_cli_helpers(user: User) -> None:
     - ``workshop-grant-me``: trigger an immediate entitlement reconcile so a
       just-built non-UC resource is usable by the labuser without waiting for
       the next sweep.
+    - ``workshop-discovery``: record what the agent learned about the attendee's
+      use case (contract C6). Installed unconditionally — the endpoint answers
+      ``captured: false`` when capture is off, and a helper that exists but
+      declines is a much better failure than ``command not found`` mid-session
+      if an operator enables capture on a running instance.
     """
     local_bin = os.path.join(user.home, ".local", "bin")
     os.makedirs(local_bin, exist_ok=True)
-    for name in ("databricks-me", "workshop-grant-me"):
+    for name in ("databricks-me", "workshop-grant-me", "workshop-discovery"):
         src = os.path.join(_ASSETS, "bin", name)
         if not os.path.isfile(src):
             continue
@@ -337,7 +356,9 @@ def _write_claude_json(user: User) -> None:
 
 _POST_COMMIT = """#!/bin/bash
 # Auto-sync committed work to the attendee's Databricks Workspace home so it
-# survives workshop teardown. Only syncs repos inside ~/projects/.
+# outlives this container. It does not outlive the workshop: teardown deletes the
+# workspace too, so keeping the work means pushing it to a remote the attendee
+# owns. Only syncs repos inside ~/projects/.
 SYNC_LOG="$HOME/.sync.log"
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"

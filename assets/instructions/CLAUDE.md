@@ -115,10 +115,13 @@ Before starting any new project:
    project path, so the `cd "$(...)"` lands you inside it.
 2. **Why a helper?** Every git commit automatically syncs your work to the
    Databricks Workspace at
-   `/Workspace/Users/{your-email}/projects/{project-name}/` — so your workshop
-   work survives after this environment is torn down. The committed
-   `CLAUDE.md`/`AGENTS.md` also guarantee the AppKit baseline is followed no
-   matter which agent or harness picks up the work.
+   `/Workspace/Users/{your-email}/projects/{project-name}/`, so a terminal
+   restart or a redeploy can't lose it. That copy is **not** a take-home: this
+   whole workspace is deleted after the workshop, and the Workspace folder goes
+   with it. To keep anything, push the repo to a git remote you own or download
+   it to your own machine before you finish — see the wrap section below. The
+   committed `CLAUDE.md`/`AGENTS.md` also guarantee the AppKit baseline is
+   followed no matter which agent or harness picks up the work.
 3. **Then start building** — commit early and often.
 
 ## How to work with users — clarify, recommend, confirm
@@ -201,9 +204,51 @@ once before ending your response:
 If the attendee says yes, use the **`promote`** skill. Claude Code users can
 also type `/promote` at any time to generate docs manually.
 
+## When the workshop wraps up — run Promote regardless
+
+When the attendee signals they're wrapping up ("that's me done", "we're out of
+time", "summarise what we did"), or the workshop moves to its wrap phase, **run
+promote without asking, whether or not anything shipped.** State it in one line
+and do it — don't turn it into a question.
+
+This environment is deleted after the workshop. The wrap moment is the last
+chance to write anything down, and a "yes/no" there is how a session ends with
+nothing to take home. It applies just as much to a session that never got a
+build working: document the architecture they were heading towards and name the
+wall they hit. That document is more useful than the one for a finished demo,
+because it is the one somebody can act on afterwards.
+
+Never describe an unfinished session as complete, and never invent a deployment
+that didn't happen.
+
+**Then tell them how to actually keep it.** Nothing here is a take-home. The
+promote docs live in a Volume that is dropped with the catalog, and the
+Workspace sync lives in a workspace that is deleted with it — so "it's committed
+and synced" is not the same as "it's saved". Say that once, plainly, and give
+them the two routes that work:
+
+- **Push to a git remote they own** (best — it takes the history with it). They
+  create an empty repo on their own account, then:
+  ```bash
+  git remote add origin <their-repo-url>
+  git push -u origin main
+  ```
+  Git will prompt for a credential. Have them paste their own token at the
+  prompt, and never bake it into the remote URL or a file — that would leave it
+  committed on a machine they don't control.
+- **Download the files they care about** from the Databricks Workspace file
+  browser at `/Workspace/Users/{their-email}/projects/{project}/`, while the
+  workshop is still running. Point them at the promote docs first, then the
+  source they'd hate to retype.
+
+Offer it once and act on their answer. This is the last moment it's possible,
+but a nag at the end of a good day is still a nag.
+
 For Codex and Omnigent: follow the same promote steps inline (generate each
-doc as markdown, write to `/tmp/promote/<doc>.md`, upload with
+doc as markdown, write to `~/promote/<doc>.md`, upload with
 `databricks files upload ... /Volumes/$WORKSHOP_CATALOG/$WORKSHOP_SCHEMA/promote/<email>/<timestamp>/<doc>.md`).
+Use `~/promote`, not `/tmp/promote` — `/tmp` is shared across attendees on the
+container and cleared on restart.
 
 ## Things to remember
 

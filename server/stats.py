@@ -82,17 +82,72 @@ def _code_stats_uncached(user: User) -> dict:
     return {"projects": repos, "commits": commits, "files": files, "lines": lines}
 
 
-def _count(url: str, token: str, params: dict, items_key: str) -> int:
+def _list(url: str, token: str, params: dict, items_key: str) -> list[dict]:
     try:
         resp = requests.get(
             url, headers={"Authorization": f"Bearer {token}"},
             params=params, timeout=6,
         )
         if resp.status_code != 200:
-            return 0
-        return len(resp.json().get(items_key, []) or [])
-    except requests.RequestException:
-        return 0
+            return []
+        items = resp.json().get(items_key, []) or []
+        return [item for item in items if isinstance(item, dict)]
+    except (requests.RequestException, ValueError):
+        return []
+
+
+def _count(url: str, token: str, params: dict, items_key: str) -> int:
+    return len(_list(url, token, params, items_key))
+
+
+def _is_ours(app: dict) -> bool:
+    """Was this app put in the workspace by Control Tower rather than the attendee?
+
+    The census is meant to say what the attendee made, and a workshop workspace
+    always already contains this terminal — so counting the raw list credits
+    every attendee with an app before they have opened a file. That number goes
+    straight into a brief an account team reads, which makes it worse than
+    absent.
+
+    Two apps are ours. This one is identified by the service principal it runs
+    as, which the Apps runtime hands us as ``DATABRICKS_CLIENT_ID``; matching on
+    that rather than on a name means an operator renaming the app template
+    cannot quietly reintroduce the miscount. Omnigent is identified by the URL we
+    were configured to reach it on, which is the only handle we have for it.
+    """
+    ours = os.environ.get("DATABRICKS_CLIENT_ID", "").strip()
+    if ours and app.get("service_principal_client_id", "").strip() == ours:
+        return True
+    app_url = (app.get("url") or "").strip().rstrip("/")
+    if not app_url:
+        return False
+    for known in (_omnigent_url(), _own_url()):
+        if known and app_url == known.strip().rstrip("/"):
+            return True
+    return False
+
+
+def _omnigent_url() -> str:
+    """Omnigent's URL, or empty if it is unset or unusable.
+
+    A misconfigured URL must not take the census down with it: the census is
+    best-effort by design, and a stats call that raises would cost Control Tower
+    the whole harvest for one bad env var.
+    """
+    try:
+        return config.omnigent_app_url()
+    except ValueError:
+        return ""
+
+
+def _own_url() -> str:
+    """This app's own URL, when the runtime tells us.
+
+    A fallback for the case where the app's service principal is not visible in
+    the census rows — without it, a terminal whose own row lacks the SP field
+    counts itself.
+    """
+    return os.environ.get("DATABRICKS_APP_URL", "").strip()
 
 
 def _workspace_resources() -> dict:
@@ -106,10 +161,11 @@ def _workspace_resources() -> dict:
         return {}
     if not host:
         return {}
+    apps = _list(f"{host}/api/2.0/apps", token, {}, "apps")
     return {
         "jobs": _count(f"{host}/api/2.2/jobs/list", token, {"limit": 100}, "jobs"),
         "pipelines": _count(f"{host}/api/2.0/pipelines", token, {"max_results": 100}, "statuses"),
-        "apps": _count(f"{host}/api/2.0/apps", token, {}, "apps"),
+        "apps": sum(1 for app in apps if not _is_ours(app)),
         "dashboards": _count(f"{host}/api/2.0/lakeview/dashboards", token, {"page_size": 100}, "dashboards"),
     }
 
@@ -117,11 +173,79 @@ def _workspace_resources() -> dict:
 # P1-14: the stats payload carries a schema_version so Control Tower can
 # validate the shape and react to changes instead of silently zeroing fields.
 # Bump this whenever the payload's structure changes.
-STATS_SCHEMA_VERSION = 2
+# v3 adds the per-user `signal` rollup (contract C6).
+STATS_SCHEMA_VERSION = 3
+
+# Topics that describe where an attendee is in the lab rather than a product
+# they touched. A brief that listed "wrap" or "troubleshooting" as a product
+# interest would be actively misleading to an account team, so they're excluded
+# from `products` while still counting toward `topic_hits`.
+_NON_PRODUCT_TOPICS = frozenset({
+    "intro", "setup", "build", "wrap", "help", "troubleshooting", "error",
+    "errors", "credentials", "workshop", "terminal", "agents",
+})
 
 
-def gather_user(user: User, *, fresh: bool = True) -> dict:
-    """Per-user stats (no workspace census — that's instance-level)."""
+def _signal(user: User, code: dict, resources: dict | None) -> dict:
+    """The sales-legible reduction of one attendee's behaviour (contract C6).
+
+    Everything here is derived from counters the app already keeps — no attendee
+    text is read. Kept next to the raw fields so the derivation is reviewable
+    against them rather than reimplemented in Control Tower, where a change to
+    what `topics` means would silently change what a brief claims.
+    """
+    hits = {topic: count for topic, count in user.topic_hits.items() if count > 0}
+    shipped = bool(code.get("commits"))
+    agent_sessions = sum(
+        n for agent, n in user.sessions_launched.items() if agent != "bash"
+    )
+    if shipped:
+        engagement = "builder"
+    elif agent_sessions:
+        # Not a lesser category than builder: an attendee who worked with an
+        # agent and shipped nothing usually hit a wall, and the wall is the most
+        # useful thing a brief can carry. See docs/workshop-insight-contract.md.
+        engagement = "explorer"
+    else:
+        engagement = "observer"
+    return {
+        "engagement": engagement,
+        # Ties break alphabetically so repeated harvests of unchanged state
+        # produce an identical payload rather than a flapping primary topic.
+        "primary_topic": min(hits, key=lambda t: (-hits[t], t)) if hits else None,
+        "topic_hits": dict(sorted(hits.items())),
+        "products": sorted(set(user.topics) - _NON_PRODUCT_TOPICS),
+        "resource_kinds": sorted(
+            kind for kind, count in (resources or {}).items() if count
+        ),
+        "shipped": shipped,
+    }
+
+
+def _discovery_count(email: str) -> int:
+    """Records captured for this attendee, or 0 when discovery is off.
+
+    Surfaced on the harvest so Control Tower can reconcile: the push path is
+    fail-soft and bounded, so a CT outage that outlasts the emitter's buffer would
+    otherwise leave CT unable to tell "this attendee said nothing" from "we lost
+    what they said".
+    """
+    if not config.discovery_enabled():
+        return 0
+    from .discovery import discovery_store
+
+    return discovery_store.count_for(email)
+
+
+def gather_user(
+    user: User, *, fresh: bool = True, resources: dict | None = None
+) -> dict:
+    """Per-user stats (no workspace census — that's instance-level).
+
+    ``resources`` is the instance-level census, passed in only so the derived
+    signal can report which resource kinds are non-empty. It is not copied into
+    the per-user row, which would imply the census is per-attendee.
+    """
     now = time.time()
     minutes = int((now - user.first_seen) / 60) if user.first_seen else 0
     agent_sessions = sum(
@@ -129,25 +253,35 @@ def gather_user(user: User, *, fresh: bool = True) -> dict:
     )
     # Abandonment signal: building time accrued but no recent activity.
     idle_seconds = int(now - user.last_seen) if user.last_seen else None
+    code = _code_stats(user, fresh=fresh)
     return {
         "email": user.email,
         "minutes_building": minutes,
         "agent_sessions": agent_sessions,
         "terminal_sessions": sum(user.sessions_launched.values()),
         "topics": sorted(user.topics.keys()),
-        "code": _code_stats(user, fresh=fresh),
+        "code": code,
         # P1-14 error/abandonment telemetry.
         "errors": user.errors,
         "idle_seconds": idle_seconds,
+        # C6 behavioural rollup. Present regardless of WORKSHOP_INSIGHT_CAPTURE:
+        # it is derived from counters already in this payload and carries no
+        # attendee text, and an operator inspecting the harvest should be able to
+        # see exactly what capture would send before enabling it.
+        "signal": _signal(user, code, resources),
+        # Count only — the records themselves go to CT over the ingest path, not
+        # through a polled endpoint an operator's browser can read.
+        "discovery_records": _discovery_count(user.email),
     }
 
 
 def gather(user: User) -> dict:
     """Certificate view: this user's stats + the workspace census."""
+    resources = _workspace_resources()
     return {
         "schema_version": STATS_SCHEMA_VERSION,
-        **gather_user(user),
-        "resources": _workspace_resources(),
+        **gather_user(user, resources=resources),
+        "resources": resources,
     }
 
 
@@ -157,12 +291,76 @@ def gather_all(users: list[User]) -> dict:
     from .events import event_hub
     from .sessions import session_manager
 
+    resources = _workspace_resources()
     return {
         "schema_version": STATS_SCHEMA_VERSION,
-        "users": [gather_user(u, fresh=False) for u in users],
-        "resources": _workspace_resources(),
+        "users": [gather_user(u, fresh=False, resources=resources) for u in users],
+        "resources": resources,
         "websocket_queues": {
             **session_manager.queue_metrics(),
             "events": event_hub.metrics(),
         },
     }
+
+
+# Signal events bucket by wall-clock window so a long workshop writes a coarse
+# time series instead of one row per poll. 600s matches CT's default poll
+# interval: a bucket shorter than the poll would never de-duplicate anything.
+_SIGNAL_BUCKET_SECONDS = 600
+
+
+def signal_events(payload: dict, run_id: str) -> list[tuple[str, dict, str]]:
+    """Build the ``workshop.signal`` events for a gathered harvest payload.
+
+    Returns ``(attendee, payload, idempotency_key)`` triples. Pure — emission is
+    the caller's job — because the derivation is what needs testing against the
+    contract, and a function that also posted couldn't be tested without one.
+    """
+    instance = payload.get("instance") or {}
+    resources = payload.get("resources") or {}
+    bucket = int(time.time() // _SIGNAL_BUCKET_SECONDS) * _SIGNAL_BUCKET_SECONDS
+    events = []
+    for row in payload.get("users") or []:
+        attendee = row.get("email")
+        if not attendee:
+            continue
+        event_payload = {
+            "stats_schema_version": payload.get(
+                "schema_version", STATS_SCHEMA_VERSION
+            ),
+            "minutes_building": row.get("minutes_building", 0),
+            "agent_sessions": row.get("agent_sessions", 0),
+            "terminal_sessions": row.get("terminal_sessions", 0),
+            "topics": row.get("topics") or [],
+            "code": row.get("code") or {},
+            "resources": resources,
+            "errors": row.get("errors", 0),
+            "idle_seconds": row.get("idle_seconds"),
+            "discovery_records": row.get("discovery_records", 0),
+            "signal": row.get("signal") or {},
+        }
+        phase = instance.get("phase")
+        if phase:
+            event_payload["phase"] = phase
+        events.append(
+            (attendee, event_payload, f"signal:{run_id}:{attendee}:{bucket}")
+        )
+    return events
+
+
+def emit_signals(payload: dict, emitter=None) -> int:
+    """Emit one ``workshop.signal`` per attendee. No-op unless capture is on.
+
+    Called from the harvest path so the signal rides the same cadence Control
+    Tower already polls at — a separate timer would produce signals whose
+    counters disagree with the snapshot CT stored alongside them.
+    """
+    if not config.insight_capture_enabled():
+        return 0
+    if emitter is None:
+        from .event_emitter import event_emitter as emitter
+    count = 0
+    for attendee, event_payload, key in signal_events(payload, emitter.run_id):
+        emitter.emit("workshop.signal", attendee, event_payload, idempotency_key=key)
+        count += 1
+    return count
