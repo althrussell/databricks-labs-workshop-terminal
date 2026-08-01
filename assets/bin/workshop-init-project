@@ -80,8 +80,28 @@ if [ "$APPKIT" = "1" ] && [ ! -e "$DEST" ]; then
   # with the workshop's rules in it and the agent can retry the scaffold in
   # place — which now works, because seeding never leaves a file the scaffold
   # would refuse to overwrite... except the directory itself, so say so.
-  if ! databricks apps init --name "$NAME" --output-dir "$PROJECTS" \
-       "${PASSTHRU[@]+"${PASSTHRU[@]}"}"; then
+  # The scaffolder checks for skills installed its own way (`databricks aitools
+  # install`) and warns twice when it finds none. In this terminal that premise
+  # is false: the workshop ships a curated, trimmed skill set into ~/.claude
+  # already, and installing a second copy on top would be duplication, not a
+  # fix. A warning that fires when its own premise is false teaches everyone
+  # reading it — attendee and agent alike — to skim past warnings, so drop
+  # those two lines and leave every other line of scaffold output intact.
+  #
+  # PIPESTATUS, not the pipeline status: grep exits non-zero when it filters
+  # everything out, and that must not read as a failed scaffold. `set +e` around
+  # it because the status is inspected below rather than aborting here, and
+  # PIPESTATUS has to be read before any other command runs.
+  set +e
+  databricks apps init --name "$NAME" --output-dir "$PROJECTS" \
+    "${PASSTHRU[@]+"${PASSTHRU[@]}"}" 2>&1 \
+    | grep -vF \
+        -e "Databricks skills are not installed" \
+        -e "coding agents detected without Databricks skills"
+  SCAFFOLD_STATUS=${PIPESTATUS[0]}
+  set -e
+
+  if [ "$SCAFFOLD_STATUS" -ne 0 ]; then
     echo "workshop-init-project: AppKit scaffold failed — continuing with a" >&2
     echo "  plain project. To retry the scaffold, run it into a clean name:" >&2
     echo "    databricks apps init --name ${NAME} --output-dir ${PROJECTS}" >&2

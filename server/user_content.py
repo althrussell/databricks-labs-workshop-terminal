@@ -64,6 +64,7 @@ def provision(user: User) -> None:
         _link_skills,
         _write_claude_json,
         _write_git_setup,
+        _write_npm_setup,
     ):
         try:
             step(user)
@@ -514,6 +515,27 @@ echo "[post-commit] $(date +%H:%M:%S) syncing $REPO_ROOT -> $DEST" >> "$SYNC_LOG
 env -u DATABRICKS_CLIENT_ID -u DATABRICKS_CLIENT_SECRET -u DATABRICKS_HOST -u DATABRICKS_TOKEN \\
   nohup databricks sync "$REPO_ROOT" "$DEST" --watch=false >> "$SYNC_LOG" 2>&1 & disown
 """
+
+
+def _write_npm_setup(user: User) -> None:
+    """Quieten npm's post-install banners.
+
+    A plain `npm install papaparse` in a scaffolded AppKit app ends with
+    "48 vulnerabilities (1 low, 30 moderate, 15 high, 2 critical)". Every one of
+    those is transitive to the template's dev toolchain rather than anything the
+    attendee chose, and none is reachable from a workshop app that runs for an
+    afternoon in a workspace that gets torn down. What it does reliably is alarm
+    someone who has just typed their first npm command.
+
+    This is a deliberate trade: real advisories are suppressed along with the
+    noise. It holds because of the disposable workspace, and would not hold for
+    anything shipped from here. `npm audit` still works on demand.
+    """
+    npmrc = os.path.join(user.home, ".npmrc")
+    if os.path.exists(npmrc):
+        return
+    with open(npmrc, "w") as f:
+        f.write("audit=false\nfund=false\n")
 
 
 def _write_git_setup(user: User) -> None:
