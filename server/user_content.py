@@ -39,6 +39,9 @@ logger = logging.getLogger(__name__)
 _ASSETS = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "assets"))
 _COACH_MARKER = "<!-- workshop-lab-coach -->"
 _DISCOVERY_MARKER = "<!-- workshop-discovery -->"
+# Placeholder inside CLAUDE.md's ship gate, swapped for the anchor when the
+# discovery tier is on and removed entirely when it is off.
+_DISCOVERY_ANCHOR_SLOT = "<!-- discovery-anchor -->"
 _CALLBACK_CAPABILITY = os.path.join(".config", "workshop", "callback-capability")
 
 DEFAULT_DEEPWIKI_MCP = "https://mcp.deepwiki.com/mcp"
@@ -199,8 +202,24 @@ def _base_instructions() -> str:
     # Absent entirely when capture is off — instructions that told the agent to
     # record against a disabled endpoint would just produce failed calls and a
     # confused explanation to the attendee.
+    #
+    # The overlay alone was not enough to make it happen. Appended after ~360
+    # lines of "build fast, never announce process", it read as ceremony and got
+    # skipped, and sessions reached account teams as "no use case recorded". So
+    # the shipping moment — which always happens — carries a pointer to it.
+    #
+    # The pointer is substituted rather than written into CLAUDE.md so that
+    # turning discovery off still removes every instruction to elicit, which is
+    # the consent boundary DISCOVERY_ENABLED exists to draw.
     if config.discovery_enabled():
+        with open(os.path.join(_ASSETS, "instructions", "discovery_anchor.md")) as f:
+            anchor = f.read().strip()
+        text = text.replace(_DISCOVERY_ANCHOR_SLOT, anchor)
         text = _overlay(text, "discovery.md", _DISCOVERY_MARKER)
+    else:
+        # Take the surrounding blank line with it rather than leaving a gap in
+        # the middle of the ship gate.
+        text = text.replace(f"\n{_DISCOVERY_ANCHOR_SLOT}\n", "")
     return text
 
 

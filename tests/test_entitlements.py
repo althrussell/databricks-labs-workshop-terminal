@@ -219,6 +219,36 @@ def test_disabled_reconcile_is_noop(monkeypatch):
     assert entitlements.EntitlementManager().reconcile("a@example.com") == {"enabled": False}
 
 
+def test_no_catalog_is_a_supported_setup_not_a_failure(monkeypatch):
+    """An app with no Unity Catalog still hands off cleanly.
+
+    Control Tower only injects WORKSHOP_CATALOG when the event is configured for
+    entitlements, while the app defaults ENABLE_ENTITLEMENTS on — so "reconciler
+    running, no catalog" is the ordinary case. Live, it made `workshop-grant-me`
+    print "WORKSHOP_CATALOG is not configured" at an attendee whose app grant had
+    just succeeded, on a game that never touched UC, and turned the entitlements
+    health red for the run.
+    """
+    monkeypatch.setenv("ENABLE_ENTITLEMENTS", "true")
+    monkeypatch.delenv("WORKSHOP_CATALOG", raising=False)
+    fake = _fake_with_resources()
+    mgr = _mgr(monkeypatch, fake)
+
+    result = mgr.reconcile("alice@example.com")
+    assert result["enabled"] is True
+    assert result["errors"] == [], "an absent catalog is a configuration, not a fault"
+    assert result["catalog"] is None
+    assert mgr.status()["ok"] is True
+
+    # The point of running at all: the non-UC handoff still happens, which is
+    # what the attendee actually needs to open the app they just deployed.
+    patches = [c for c in fake.calls if c[0] == "PATCH"]
+    assert [c for c in patches if "/permissions/apps/app1" in c[1]]
+    assert not [c for c in patches if "unity-catalog" in c[1]], (
+        "and nothing is attempted against a catalog that was never named"
+    )
+
+
 def test_reconcile_grants_catalog_and_non_uc(monkeypatch, enabled):
     fake = _fake_with_resources()
     mgr = _mgr(monkeypatch, fake)

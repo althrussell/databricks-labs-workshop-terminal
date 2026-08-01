@@ -13,8 +13,13 @@ into both files and committed on the first commit.
 
 AppKit is the required baseline for every app. Every app, dashboard, tool, or UI
 in this project MUST be built with **AppKit** (Node.js + TypeScript + React) via
-the **`databricks-apps`** skill — scaffold with `databricks apps manifest` then
-`databricks apps init --features <plugins>`.
+the **`databricks-apps`** skill.
+
+Scaffold with `workshop-init-project <name> --appkit` (add
+`-- --features <plugins>` to pass AppKit flags through). Do not run
+`databricks apps init` directly: it always creates a subdirectory named after
+the app and refuses to write into an existing directory, so calling it by hand
+produces `<name>/<name>` and a manual `mv` that overwrites this file.
 
 Also required:
 
