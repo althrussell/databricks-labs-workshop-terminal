@@ -14,7 +14,7 @@ at the workshop's reviewed release, plus development-workflow skills from
 
 | Category | Skills |
 |----------|--------|
-| Apps | databricks-apps (AppKit), databricks-app-design, databricks-lakebase |
+| Apps | databricks-apps (AppKit), workshop-design-studio, databricks-app-design, databricks-lakebase |
 | AI & Agents | databricks-agent-bricks, databricks-mlflow-evaluation, databricks-model-serving, databricks-vector-search |
 | Analytics | databricks-aibi-dashboards, databricks-dbsql, databricks-metric-views, databricks-unity-catalog, databricks-data-discovery |
 | Data Engineering | databricks-pipelines, databricks-jobs, databricks-dabs, databricks-synthetic-data-gen, databricks-zerobus-ingest |
@@ -150,8 +150,12 @@ React) via the **`databricks-apps`** skill — scaffold with `databricks apps
 manifest` then `databricks apps init --features <plugins>`. This applies no
 matter which agent you are (Claude, Codex, or Omnigent).
 
-Two more skills are not optional:
+Three more skills are not optional:
 
+- **`workshop-design-studio`** — required for **anything with a visible
+  interface**, every time. It owns creative direction, the design system, and
+  visual quality, so what the attendee leaves with looks deliberately designed
+  rather than like a framework starter with the colours changed.
 - **`databricks-app-design`** — required whenever the app displays *any* data:
   a KPI or overview page, a report, a chart, a table, query results, or a
   Genie/chat assistant. It decides layout, charts, semantic color, the
@@ -160,6 +164,29 @@ Two more skills are not optional:
 - **`databricks-lakebase`** — required when the app needs to **save data**.
   Provision it non-interactively; never tell the attendee to click resources
   together in the Databricks UI. Apps with no saved state skip Lakebase.
+
+Where those three overlap, the split is: `databricks-apps` owns scaffolding,
+APIs, and deployment; `databricks-app-design` owns which component renders a
+given piece of data; `workshop-design-studio` owns composition, brand, and
+whether the result is any good to look at. On composition the design studio
+wins; on AppKit API shape the framework skills win.
+
+### Design happens silently
+
+`workshop-design-studio` runs autonomously. Attendees are not designers and
+most are not engineers — they must never be asked to make a design decision,
+and never told the machinery exists.
+
+- **Never ask a design question.** No palette, layout, or creative-direction
+  choices. Infer from what they asked for and decide the rest yourself.
+- **Never narrate the process.** Do not mention design systems, creative
+  directions, moodboards, critique passes, or the skill by name. Describe what
+  their product now *does*, not how it was designed.
+- The exception: if they raise branding or design themselves, or hand you a
+  brand kit, engage with them properly. Then it is their topic, not yours.
+
+The platform is not the brand — do not impose Databricks colours or console
+chrome on an attendee's app unless they ask for it.
 
 Do **not** reach for a Python framework (Streamlit / Dash / Gradio / Flask /
 FastAPI / Reflex), and do not use `databricks-apps-python` by default — it is
@@ -182,14 +209,25 @@ validation gate and make it pass **before** you tell the attendee it's live:
    Playwright locators only — `getByRole`, `getByText`, `getByPlaceholder`,
    `getByLabel`. There is no `getByLabelText` in Playwright; it throws at
    runtime. Keep asserted queries small (`LIMIT` or an aggregate) — a result set
-   over 1 MB aborts the analytics event and every assertion then fails.
+   over 1 MB aborts the analytics event and every assertion then fails. For a UI
+   build, also append the visual assertions from
+   `workshop-design-studio/templates/playwright.visual.spec.ts` (focus
+   visibility, reduced motion, no horizontal overflow at 375/768/1024/1440) into
+   this same file — one spec, one gate, no second Playwright config.
 2. **Run `databricks apps validate`.** This is the gate: it runs `appkit lint`
    (`no-double-type-assertion` — never `as unknown as <T>`), `tsc --noEmit`, and
    the smoke test. Before writing code against an AppKit API, check the real
    signature with `npx @databricks/appkit docs <section>`; invented shapes fail
    `tsc`.
-3. **Fix and re-run until it passes.** Do not report success, and do not offer
-   Promote, on a build whose validation is red — say what failed instead.
+3. **Run `workshop-design-gate`.** An app that compiles but looks like an
+   untouched template is not finished either. This is the visual half of the
+   gate: it blocks on missing image alt text, missing focus states, no
+   reduced-motion path, fixed-width layouts, and contrast below 4.5:1, and
+   writes the detail to `.design-studio/audit.md`.
+4. **Fix and re-run until both pass.** Do not report success, and do not offer
+   Promote, while either gate is red — say what failed instead. Report failures
+   in plain terms ("the text is too faint to read on that background"), not
+   design jargon.
 
 ## After a build completes — always offer Promote
 
@@ -220,6 +258,10 @@ because it is the one somebody can act on afterwards.
 
 Never describe an unfinished session as complete, and never invent a deployment
 that didn't happen.
+
+A red build or visual gate blocks *offering* promote after a build — it never
+blocks promote at wrap-up. Wrap-up promote is unconditional. Document what was
+built and note honestly what was still broken.
 
 **Then tell them how to actually keep it.** Nothing here is a take-home. The
 promote docs live in a Volume that is dropped with the catalog, and the

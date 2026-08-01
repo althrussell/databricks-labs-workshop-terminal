@@ -1,0 +1,6 @@
+category,guideline,description,do,dont,severity
+Performance,render budget,Set a device-pixel-ratio cap and profile geometry textures and draw calls,Load progressive quality and pause offscreen rendering,Render maximum quality on every device,critical
+Accessibility,parallel DOM,Provide an equivalent semantic DOM path for content and actions,Keep core tasks possible without canvas precision,Place all navigation and text only inside WebGL,critical
+Interaction,camera restraint,Use camera movement to clarify scale or focus,Make motion interruptible and preserve orientation,Continuously orbit the camera for decoration,high
+Assets,compressed pipeline,"Use glTF compression, modern textures, and explicit loading states",Show staged progress and failure recovery,Block the page on an unbounded 3D download,high
+Motion,reduced experience,Provide a static or low-motion composition when reduced motion is set,Disable parallax and inertia appropriately,Ignore motion preferences,critical

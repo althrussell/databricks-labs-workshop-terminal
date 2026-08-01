@@ -17,6 +17,8 @@ export interface IdeaPrompt {
   prompt: string;
 }
 
+export type Persona = "technical" | "business";
+
 export interface CredentialStatus {
   configured: boolean;
   rotating: boolean;
@@ -206,6 +208,11 @@ export const api = {
     request(`/api/sessions/${id}/type`, {
       method: "POST",
       body: JSON.stringify({ text }),
+    }),
+  setPersona: (persona: Persona) =>
+    request<{ persona: Persona }>("/api/persona", {
+      method: "POST",
+      body: JSON.stringify({ persona }),
     }),
   nuggets: () =>
     request<{ phase: string; nuggets: Nugget[]; prompts: IdeaPrompt[] }>("/api/nuggets"),

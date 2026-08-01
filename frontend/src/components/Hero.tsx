@@ -14,7 +14,7 @@ import {
   Wand2,
   Workflow,
 } from "lucide-react";
-import { api, AgentInfo, IdeaPrompt, Nugget, WorkspaceLink } from "../api";
+import { api, AgentInfo, IdeaPrompt, Nugget, Persona, WorkspaceLink } from "../api";
 import omnigentLogo from "../assets/omnigent.svg";
 
 const ICONS: Record<string, typeof Bot> = {
@@ -70,6 +70,15 @@ export default function Hero({
   const [installing, setInstalling] = useState(false);
   const [ideas, setIdeas] = useState<IdeaPrompt[]>([]);
   const [tips, setTips] = useState<Nugget[]>([]);
+  const [persona, setPersona] = useState<Persona | null>(null);
+
+  // Asked here, while they are still reading the page, so the agent never has
+  // to spend the first turn asking it. Optional on purpose: the server assumes
+  // plain language when nobody picks, which is the safer of the two guesses.
+  function choosePersona(next: Persona) {
+    setPersona(next);
+    api.setPersona(next).catch(() => setPersona(null));
+  }
 
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | null = null;
@@ -116,6 +125,28 @@ export default function Hero({
           Pick your AI coding agent. Credentials, skills, and the Databricks CLI are
           already wired up — nothing to paste, nothing to configure.
         </p>
+
+        <div className="hero-persona">
+          <span className="hero-persona-label">How should it explain things?</span>
+          <div className="hero-persona-options">
+            <button
+              className={`hero-persona-btn ${
+                persona === "business" ? "hero-persona-btn-active" : ""
+              }`}
+              onClick={() => choosePersona("business")}
+            >
+              Plain language
+            </button>
+            <button
+              className={`hero-persona-btn ${
+                persona === "technical" ? "hero-persona-btn-active" : ""
+              }`}
+              onClick={() => choosePersona("technical")}
+            >
+              I'm technical
+            </button>
+          </div>
+        </div>
 
         <div className="hero-cards">
           {/* The home screen sells the AI agents; the plain bash terminal

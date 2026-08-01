@@ -29,6 +29,14 @@ import OperatorPanel from "./components/OperatorPanel";
 import TerminalView from "./components/TerminalView";
 import { bindIdentityRefresh, onAppEvent } from "./events";
 
+// The escape hatch for an attendee facing an empty prompt. Deliberately a real
+// build request rather than a greeting: the coach is told to build immediately
+// when the first message is concrete, so this lands them on something working
+// instead of in a conversation about what they might do.
+const STARTER_PROMPT =
+  "Build me something real I can show off by the end of the session — " +
+  "pick a good example for a Databricks workshop and just go.";
+
 const LINK_ICONS: Record<string, typeof LinkIcon> = {
   "book-open": BookOpen,
   "graduation-cap": GraduationCap,
@@ -422,8 +430,17 @@ export default function App() {
             {hintSessionId && hintSessionId === activeId && (
               <div className="coach-hint">
                 <span>
-                  👋 Your coach is ready — just say <strong>hi</strong> to begin.
+                  👋 Your coach is ready — tell it what you'd like to build.
                 </span>
+                <button
+                  className="coach-hint-action"
+                  onClick={() => {
+                    setHintSessionId(null);
+                    ideaToSession(STARTER_PROMPT);
+                  }}
+                >
+                  Not sure? Start me off
+                </button>
                 <button className="icon-btn" onClick={() => setHintSessionId(null)}>
                   <X size={12} />
                 </button>

@@ -299,6 +299,27 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+/* Pushed to the right so the close button stays at the edge, while the hint
+   text keeps the left. */
+.coach-hint-action {
+  margin-left: auto;
+  padding: 4px 12px;
+  border-radius: 99px;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 45%, var(--border));
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.coach-hint-action:hover {
+  background: color-mix(in srgb, var(--brand-primary) 16%, transparent);
+  border-color: var(--brand-primary);
+}
+
 /* ---- terminal stage ---- */
 
 .terminal-stage {
@@ -621,6 +642,55 @@ body {
   flex-wrap: wrap;
   justify-content: center;
   gap: 8px;
+}
+
+/* Persona: deliberately quiet. It sits above the agent cards so it is seen
+   before launching, but it must not read as a required step — an attendee who
+   ignores it gets the sensible default and loses nothing. */
+.hero-persona {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.hero-persona-label {
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.hero-persona-options {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-panel) 80%, transparent);
+}
+
+.hero-persona-btn {
+  padding: 5px 14px;
+  border-radius: 99px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.hero-persona-btn:hover {
+  color: var(--text);
+}
+
+.hero-persona-btn-active {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: #fff;
+  font-weight: 600;
 }
 
 .hero-chip {

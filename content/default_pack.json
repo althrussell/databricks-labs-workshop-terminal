@@ -505,9 +505,9 @@
       "pinned": true
     },
     {
-      "id": "nudge-say-hi",
+      "id": "nudge-first-build",
       "title": "Your coach is waiting",
-      "markdown": "Open **Claude Code** and just say *hi* — your coach will introduce itself and guide you from there. No syntax to learn.",
+      "markdown": "Open **Claude Code** and tell it what you'd like to build — in plain words, no syntax to learn. Not sure? Ask it to pick something good and build it for you.",
       "phases": [
         "intro",
         "setup"
@@ -515,7 +515,7 @@
       "triggers": [
         "idle_3m"
       ],
-      "cta": "Say hi to begin →",
+      "cta": "Tell it what to build →",
       "weight": 10
     },
     {

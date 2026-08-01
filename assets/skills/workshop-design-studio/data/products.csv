@@ -1,0 +1,31 @@
+product,keywords,design_goal,default_mode,recommended_pattern,avoid
+B2B SaaS,saas enterprise workflow collaboration productivity,Trustworthy product-led interface with clear value proof,product-led,Product demo or workflow app,Avoid generic dashboard-first presentation
+AI Assistant,ai chatbot agent copilot generation automation,Transparent intelligent interface with visible reasoning and confidence,product-led,Conversational workspace,Avoid decorative AI gradients without product clarity
+Developer Tool,developer api cli observability infrastructure code,Precise technical interface with strong information hierarchy,product-led,Workbench or documentation-led,Avoid marketing gloss that hides technical utility
+Internal Operations,operations admin workflow approvals logistics,Efficient dense system optimised for repeated tasks,brand-led,Operations console,Avoid oversized cards and low-density layouts
+Analytics Product,analytics data intelligence metrics reporting,Insight-led product with trustworthy comparison and drill-down,product-led,Analytical overview or workbench,Avoid chart decoration and unexplained KPIs
+Fintech,finance payments banking investment billing,"High-trust, precise, calm and transparent",brand-led,Workflow or analytical product,Avoid speculative visuals and ambiguous status
+Healthcare,health medical clinic patient wellbeing,"Reassuring, accessible and human-centred",brand-led,Service or guided workflow,Avoid visual noise and alarmist colour
+Ecommerce,shop retail product catalogue checkout,"Product-forward, conversion-aware and tactile",brand-led,Editorial commerce,Avoid generic catalogue grids without product storytelling
+Luxury Brand,luxury fashion jewellery automotive hospitality,"Editorial restraint, exceptional typography and imagery",brand-led,Immersive narrative,Avoid crowded layouts and excessive UI chrome
+Creative Agency,agency studio design marketing creative,Expressive portfolio with strong art direction,brand-led,Editorial portfolio,Avoid generic SaaS components
+Portfolio,portfolio personal creator photographer artist,Distinctive personality and work-first storytelling,brand-led,Editorial portfolio,Avoid template sameness and skill-bar clichés
+Education,education learning course school children training,"Encouraging, clear and progress-oriented",product-led,Guided learning,Avoid childish styling unless audience requires it
+Event,event conference workshop festival ticketing,"Energetic, time-sensitive and community-focused",brand-led,Campaign landing,"Avoid burying date, location and registration"
+Travel,travel tourism booking destination itinerary,Immersive discovery with practical conversion,brand-led,Narrative discovery,Avoid generic stock-photo hero without useful planning
+Hospitality,hotel restaurant resort booking,Atmospheric and sensory with effortless reservation,brand-led,Editorial conversion,Avoid complex navigation and weak photography
+Real Estate,property real estate listings development,Aspirational but information-rich,brand-led,Catalogue plus detail,Avoid hiding practical facts behind lifestyle imagery
+Marketplace,marketplace peer-to-peer services directory,"Trust, discovery and comparison",product-led,Explorer/catalogue,Avoid unclear seller/buyer context
+Community,community membership social nonprofit,"Warm, participatory and story-led",brand-led,Community hub,Avoid corporate detachment
+Nonprofit,nonprofit charity cause fundraising,"Human, credible and action-focused",brand-led,Story plus conversion,Avoid guilt-heavy manipulation and fake impact data
+Consumer Utility,consumer app tracker planner productivity,"Fast, approachable and habit-forming",product-led,Utility app,Avoid overcomplicated onboarding
+Wellness,wellness fitness meditation lifestyle,"Calm, sensory and supportive",brand-led,Guided experience,Avoid medical claims and cliché gradients
+Kids Product,children kids family learning play,"Playful, safe, legible and parent-trustworthy",product-led,Interactive story or learning,Avoid over-stimulation and tiny controls
+Gaming,game gaming esports entertainment,"Immersive, energetic and identity-rich",experimental,Campaign or companion,Avoid unreadable HUD excess
+Music,music audio artist streaming festival,"Rhythmic, expressive and media-led",brand-led,Immersive editorial,Avoid generic waveform decoration
+Sports,sports team athlete fitness scores,"Dynamic, data-aware and community-driven",brand-led,Live overview or campaign,Avoid cluttered scoreboards without hierarchy
+Cybersecurity,security cyber risk compliance threat,"Authoritative, technical and calm under pressure",product-led,Investigation workbench,Avoid fear marketing and neon hacker clichés
+Climate Tech,climate sustainability energy environment,"Evidence-led, optimistic and systems-oriented",product-led,Story plus data,Avoid unsubstantiated green claims
+Scientific Tool,science research laboratory biotech engineering,"Precise, credible and exploratory",product-led,Workbench,Avoid decorative complexity that competes with evidence
+News Editorial,news media magazine publication blog,"Content-first, typographically strong and navigable",brand-led,Editorial publication,Avoid card soup and weak article hierarchy
+Public Service,government civic public service,"Accessible, plain-language and trustworthy",platform-native,Service workflow,Avoid trend-driven styling that reduces clarity

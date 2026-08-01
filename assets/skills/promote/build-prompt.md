@@ -163,6 +163,13 @@ Error state: <what the user sees if an API call fails>
 Empty state: <what the user sees if there is no data yet>
 ```
 
+If `.design-studio/` exists, open this section with the design system so a
+rebuild reproduces the same product rather than a default-styled approximation:
+the creative direction in one line, the colour roles, type choices, spacing and
+radius scale, and the signature moment from `design-system.json` and
+`MASTER.md`. State them as requirements, not suggestions — an agent given only
+component names will produce a framework starter.
+
 ---
 
 ### Section 8: Environment Variables

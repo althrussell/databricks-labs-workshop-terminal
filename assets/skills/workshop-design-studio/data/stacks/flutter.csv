@@ -1,0 +1,6 @@
+category,guideline,description,do,dont,severity
+Theme,ThemeData extensions,Map the design contract into semantic ThemeData and extensions,Keep light and dark roles aligned,Use raw Color values throughout widgets,high
+Layout,constraints,Design from constraints using LayoutBuilder and adaptive breakpoints,Recompose navigation and hierarchy by width,Use fixed pixel canvases,high
+Interaction,material semantics,Use semantic controls and minimum tap targets,Provide focus hover pressed and disabled states,Wrap GestureDetector around unlabeled containers,critical
+Motion,implicit first,Prefer implicit animation for small state changes and explicit controllers for signature moments,Dispose controllers and respect disableAnimations,Animate every rebuild,high
+Accessibility,semantics,"Test screen readers, text scale, contrast, and traversal",Use Semantics when visual controls need labels,Rely on colour or icon alone,critical
