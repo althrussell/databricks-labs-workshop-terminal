@@ -118,6 +118,11 @@
                 "enum": ["low", "medium", "high"],
                 "description": "The agent's read of how firmly the attendee stated this. Distinguishes a customer commitment from an inference."
               },
+              "session_intent": {
+                "type": "string",
+                "enum": ["business_problem", "evaluation", "learning", "fun"],
+                "description": "Why they were building. Triage datum: it is what stops a Space Invaders session being worked as a lead. Qualified by confidence, so an inferred business_problem is not a stated one. Absent means unclassified (or an older Terminal build), never 'no purpose'."
+              },
               "use_case_title": {"type": "string"},
               "use_case_summary": {"type": "string"},
               "goal": {"type": "string"},
@@ -159,6 +164,11 @@
               "phase": {"type": "string"},
               "headline": {"type": "string"},
               "what_they_built": {"type": "string"},
+              "session_intent": {
+                "type": "string",
+                "enum": ["business_problem", "evaluation", "learning", "fun"],
+                "description": "Same vocabulary as discovery.record, so the two can be read side by side in one brief. Only the llm generator sets it; extraction leaves it absent rather than guessing from keywords."
+              },
               "use_cases": {
                 "type": "array",
                 "items": {

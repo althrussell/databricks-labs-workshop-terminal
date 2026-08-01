@@ -1,15 +1,28 @@
 """Every attendee leaves with a record, shipped or not (contract C6, phase 4).
 
-Promote used to fire only after a *successful* build and only if the attendee said
-yes to an offer. That produced the exact inverse of what the workshop needs: the
-attendees who hit a wall — the ones whose blocker is the most actionable thing an
-account team could hear, and who most need notes when they pick the work up again —
-produced nothing at all, while the polished demo sessions were documented twice.
+The record and the *documents* are two different things, and conflating them is
+what these tests now guard against.
 
-These tests pin the fix across the four surfaces that have to agree, because
-nothing at runtime can enforce it: the skill an agent reads, the base instructions
-Codex and Omnigent follow, the nuggets and chips the attendee sees, and the
-harvester that has to find whatever was written.
+Promote once fired after every green build and again, unconditionally, at wrap.
+That spent minutes of a short workshop generating five enterprise documents
+nobody asked for — and the insight harvest never needed them anyway: it reads
+the attendee's verbatim prompts, the agent's own plan items, and the errors
+they hit, and takes only *titles* from documents. A five-document pack costs
+minutes to contribute the string "architecture.md".
+
+So the agent no longer volunteers documentation at all. What still guarantees a
+record for the attendee who hit a wall:
+
+- the two content-pack nuggets, which are the attendee-initiated offer and are
+  pinned below (`wrap-promote-anyway` deliberately has no trigger, so it reaches
+  the explorer who never finished a build);
+- `insight.summary`, which fires on the server at the wrap phase transition and
+  never depended on the agent running promote at all.
+
+These tests pin that across the surfaces that have to agree, because nothing at
+runtime can enforce it: the skill an agent reads, the base instructions Codex
+and Omnigent follow, the nuggets and chips the attendee sees, and the harvester
+that has to find whatever was written.
 """
 
 from __future__ import annotations
@@ -48,14 +61,32 @@ def pack() -> dict:
     return json.loads(PACK.read_text())
 
 
-# --- the trigger is no longer conditional -------------------------------------
+# --- the trigger is the attendee, and only the attendee -----------------------
 
 
-def test_the_skill_fires_at_wrap_and_not_only_after_a_build(skill: str):
-    assert "wrap phase" in skill
-    assert "without asking" in skill
-    # The gate that produced the coverage hole.
+def test_the_skill_never_fires_unprompted(skill: str):
+    """Five documents is a minutes-long detour. It is worth it when someone wants
+    the pack; it is theft from a two-hour workshop when nobody asked."""
+    assert "ONLY when the attendee explicitly asks" in skill
+    assert "Never run this unprompted" in skill
+    assert "One trigger: the attendee asked" in skill
+    # The two unconditional triggers this replaced.
+    assert "without asking" not in skill
     assert "Just say yes" not in skill
+
+
+def test_the_skill_forbids_pitching_documentation_after_a_build(skill: str):
+    """Request-only dies quietly if the agent is still allowed to ask. "Want me to
+    generate handoff docs?" is the unconditional trigger wearing a question mark."""
+    assert "Never pitch it either" in skill
+    assert "they have a button" in skill
+
+
+def test_the_skill_does_not_reintroduce_a_wrap_trigger(skill: str):
+    """The wrap phase used to fire promote on its own. That path is now owned by
+    `insight.summary` on the server, which costs the attendee nothing."""
+    assert "run at the wrap phase" not in skill
+    assert "at wrap, run" not in skill
 
 
 def test_the_skill_runs_for_a_session_that_shipped_nothing(skill: str):
@@ -76,15 +107,23 @@ def test_the_skill_names_the_blocker_rather_than_omitting_it(skill: str):
     assert "what would unblock it" in skill
 
 
-def test_the_base_instructions_carry_the_same_wrap_rule(instructions: str):
+def test_the_base_instructions_carry_the_same_request_only_rule(instructions: str):
     """Codex and Omnigent never read the skill file — this is their only copy."""
-    assert "run Promote regardless" in instructions
-    assert "whether or not anything shipped" in instructions
-    assert "never invent a deployment" in instructions
+    assert "unless the attendee asks" in instructions
+    assert "Do not pitch documentation after a build" in instructions
+    assert "When they *do* ask" in instructions
 
 
-def test_the_instructions_explain_why_it_cannot_wait_for_consent(instructions: str):
-    """Without the reason, this reads as pushiness and gets edited back out."""
+def test_the_instructions_still_route_a_request_to_the_skill(instructions: str):
+    """Request-only must not become unreachable: the ask has to land somewhere."""
+    assert "`/promote`" in instructions
+    assert "the suggestion card" in instructions
+
+
+def test_the_export_nag_keeps_its_reason(instructions: str):
+    """The one thing still volunteered at wrap is getting their code out, because
+    the workspace really does disappear. Without the reason it reads as pushiness
+    and gets edited back out."""
     assert "deleted after the workshop" in instructions
 
 

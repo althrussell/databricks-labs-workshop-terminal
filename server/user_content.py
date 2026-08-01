@@ -8,7 +8,7 @@ Runs once per user (on their first session) after their HOME is bootstrapped:
                               mandate as project-level CLAUDE.md + AGENTS.md (the
                               only channel Omnigent's worktree-bound Codex worker
                               reads), backed by ~/.config/workshop/project-memory.md
-- ~/.claude/agents/         — TDD subagent definitions (prd-writer, implementer, ...)
+- ~/.claude/agents/         — kept empty; the TDD subagent chain was removed
 - ~/.claude/skills          — per-skill symlinks into the shared skills library
                               (reviewed databricks-agent-skills, fetched at boot);
                               ~/.codex/skills gets the same set, which is where
@@ -290,11 +290,10 @@ def _install_cli_helpers(user: User) -> None:
       ``captured: false`` when capture is off, and a helper that exists but
       declines is a much better failure than ``command not found`` mid-session
       if an operator enables capture on a running instance.
-    - ``workshop-design-gate``: the visual half of the build gate (audit +
-      quality gate from the workshop-design-studio skill). A single command
-      keeps the instruction channels harness-neutral — ``assets/instructions/
-      CLAUDE.md`` is written to both ``~/.claude/CLAUDE.md`` and
-      ``~/.codex/AGENTS.md``, so it cannot name a harness-specific skills path.
+
+    There is deliberately no design-gate helper. Design quality is applied while
+    the components are written, not audited afterwards by a command the attendee
+    waits on — see ``assets/skills/workshop-design-studio``.
     """
     local_bin = os.path.join(user.home, ".local", "bin")
     os.makedirs(local_bin, exist_ok=True)
@@ -302,7 +301,6 @@ def _install_cli_helpers(user: User) -> None:
         "databricks-me",
         "workshop-grant-me",
         "workshop-discovery",
-        "workshop-design-gate",
     ):
         src = os.path.join(_ASSETS, "bin", name)
         if not os.path.isfile(src):
@@ -315,14 +313,22 @@ def _install_cli_helpers(user: User) -> None:
 # -- subagents --
 
 def _install_subagents(user: User) -> None:
-    source = os.path.join(_ASSETS, "agents")
+    """Install no subagents, and make sure none survive from an earlier build.
+
+    This used to copy a PRD -> failing-tests -> implement -> review chain into
+    every attendee's ~/.claude/agents. Claude reaches for those on any "build me
+    X", which turns a ten-minute app into an interview plus a test suite. The
+    workshop's whole proposition is idea to live URL fast, so the chain is gone.
+
+    The directory is still created (and emptied) because a HOME can outlive a
+    deploy: leaving a stale prd-writer.md behind would keep the old behaviour
+    running for exactly the attendees who already have a session open.
+    """
     target = os.path.join(user.home, ".claude", "agents")
     os.makedirs(target, exist_ok=True)
-    if not os.path.isdir(source):
-        return
-    for name in os.listdir(source):
+    for name in os.listdir(target):
         if name.endswith(".md"):
-            shutil.copy2(os.path.join(source, name), os.path.join(target, name))
+            os.remove(os.path.join(target, name))
 
 
 # -- skills (shared library, fetched latest at boot) --

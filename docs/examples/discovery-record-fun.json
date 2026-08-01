@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90",
+  "workspace_id": "4217334529551234",
+  "attendee": "labuser023@example.com",
+  "type": "discovery.record",
+  "occurred_at": "2026-07-30T10:18:05.410000+00:00",
+  "idempotency_key": "discovery:3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90:labuser023@example.com:5b2e77a1:1",
+  "payload": {
+    "record_id": "5b2e77a1",
+    "captured_at": "2026-07-30T10:18:05.410000+00:00",
+    "revision": 1,
+    "agent": "claude",
+    "confidence": "high",
+    "session_intent": "fun",
+    "use_case_title": "Space Invaders game",
+    "use_case_summary": "Built a standalone Space Invaders clone as an AppKit app to see how quickly the agent could go from an idea to a deployed URL. No data, no connection to their own systems.",
+    "goal": "See what the agent could build in an afternoon.",
+    "databricks_products": ["apps"],
+    "industry": "retail"
+  }
+}

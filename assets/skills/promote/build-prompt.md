@@ -163,12 +163,14 @@ Error state: <what the user sees if an API call fails>
 Empty state: <what the user sees if there is no data yet>
 ```
 
-If `.design-studio/` exists, open this section with the design system so a
-rebuild reproduces the same product rather than a default-styled approximation:
-the creative direction in one line, the colour roles, type choices, spacing and
-radius scale, and the signature moment from `design-system.json` and
-`MASTER.md`. State them as requirements, not suggestions — an agent given only
-component names will produce a framework starter.
+Open this section with the app's visual system so a rebuild reproduces the same
+product rather than a default-styled approximation. Read the real values out of
+the project — the theme or token file, the global stylesheet, the shell
+component — and state: the visual direction in one line, the colour roles and
+what the accent signifies, the type scale and font stacks, the spacing and
+radius rhythm, the motion treatment, and the app's one memorable moment. State
+them as requirements, not suggestions — an agent given only component names will
+produce a framework starter.
 
 ---
 

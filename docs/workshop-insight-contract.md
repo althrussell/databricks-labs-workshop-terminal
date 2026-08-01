@@ -212,6 +212,7 @@ schema that demanded completeness would push the agent into interrogating people
 | `redacted_by_attendee` | boolean | Present and `true` only on a withdrawal; every content field is then blank. |
 | `agent` | string | Which agent elicited it (`claude`/`codex`/`omnigent`). |
 | `confidence` | enum | `low` \| `medium` \| `high` — the agent's own read of how firmly the attendee stated this. |
+| `session_intent` | enum | `business_problem` \| `evaluation` \| `learning` \| `fun` — why they were building. |
 | `use_case_title` | string | Short label. |
 | `use_case_summary` | string | Two or three sentences. |
 | `goal` | string | What they came to do today. |
@@ -227,6 +228,21 @@ schema that demanded completeness would push the agent into interrogating people
 this by Q3" from "the agent inferred a timeline". A brief that presents an
 inference as a customer commitment is actively harmful to the account team that
 acts on it.
+
+`session_intent` is the triage datum. Without it a game and a fraud-scoring
+pilot arrive looking alike — both a title, a stack, and some products — and
+somebody has to read every record to tell them apart. The agent is instructed to
+emit **at least one record per project, including the fun ones**: a Space
+Invaders session recorded as `fun` is an answer, whereas the same session
+producing no record at all reads as a gap that then gets chased.
+
+The two enums compose rather than compete: `session_intent` says what kind of
+thing this was, `confidence` says how much of that came from the attendee, so an
+inferred `business_problem` cannot masquerade as a stated one.
+
+Absent means unclassified — an older Terminal build, or a session whose material
+genuinely did not say. It never means the attendee had no purpose, and synthesis
+must not read it that way.
 
 **How the agent reaches this.** `assets/bin/workshop-discovery` posts to
 `POST /api/discovery` on the local app, authenticated by the attendee's callback
@@ -269,6 +285,7 @@ with one permitted exception described below.
 | `phase` | string | Phase at generation — `wrap` normally, whatever phase the instance was left in for the teardown fallback. |
 | `headline` | string | One line. Required — a blank headline renders as a data bug rather than a quiet session, so the producer substitutes an explicit "no summary could be derived". |
 | `what_they_built` | string | Prose. |
+| `session_intent` | enum | Same vocabulary as `discovery.record`. Set by the `llm` generator only — `extraction` omits it rather than guessing from keywords. |
 | `use_cases` | object[] | `title`, `summary`, `products`, `evidence`. |
 | `blockers` | string[] | Deduped error first-lines and stated blockers. |
 | `products` | string[] | Sorted. |
@@ -383,7 +400,9 @@ any later PDF derive from it.
 1. **Header** — customer, event, date, attendee count, AE and SA owners.
 2. **Attendees** — name, title, what they built, topics explored, engagement.
 3. **Use cases discovered** — title, summary, Databricks products implicated,
-   stated timeline, confidence, evidence link.
+   stated timeline, confidence, session intent, evidence link. Records whose
+   intent is `fun` or `learning` belong in the brief but not in the pipeline
+   section: they are context on the attendee, not an opportunity.
 4. **Buying signals and blockers** — quoted from discovery records.
 5. **Recommended next actions** — concrete and assignable.
 6. **Appendix** — raw discovery records.

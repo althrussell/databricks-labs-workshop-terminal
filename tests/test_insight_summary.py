@@ -274,6 +274,66 @@ def test_extraction_reports_the_wall_rather_than_claiming_success(monkeypatch, e
     assert "hit errors" in payload["headline"]
 
 
+def test_extraction_declines_to_classify_the_session_intent(monkeypatch, emitter):
+    """Intent is a judgement about *why* someone built something, and this pass
+    makes no judgements. A keyword rule would read "game" in a prompt and file a
+    fraud-detection session as `fun`, which is worse than leaving it empty —
+    `generator: extraction` already explains the gap."""
+    _stub_harvest(monkeypatch, _harvest())
+    _no_model(monkeypatch)
+
+    payload = insight_summary.summarise_user(_User(), phase="wrap", emitter=emitter)
+
+    assert payload["generator"] == "extraction"
+    assert "session_intent" not in payload
+
+
+def test_the_model_classifies_the_session_intent(monkeypatch, emitter):
+    _stub_harvest(monkeypatch, _harvest())
+    monkeypatch.setattr(
+        insight_summary, "_ask_model",
+        lambda h, s: (
+            {"headline": "Built a Space Invaders clone.", "session_intent": "fun"},
+            "databricks-claude-haiku-4-5",
+        ),
+    )
+
+    payload = insight_summary.summarise_user(_User(), phase="wrap", emitter=emitter)
+
+    assert payload["generator"] == "llm"
+    assert payload["session_intent"] == "fun"
+
+
+def test_an_invented_session_intent_is_dropped(monkeypatch, emitter):
+    """The producer re-bounds every field rather than trusting the model, so an
+    off-schema value costs the field rather than the whole summary — the event is
+    the only copy of the session that survives teardown."""
+    _stub_harvest(monkeypatch, _harvest())
+    monkeypatch.setattr(
+        insight_summary, "_ask_model",
+        lambda h, s: (
+            {"headline": "Something happened.", "session_intent": "probably commercial"},
+            "databricks-claude-haiku-4-5",
+        ),
+    )
+
+    payload = insight_summary.summarise_user(_User(), phase="wrap", emitter=emitter)
+
+    assert "session_intent" not in payload
+    assert payload["headline"] == "Something happened."
+
+
+def test_the_summariser_is_told_to_say_when_it_was_just_fun():
+    """Without this the model reaches for a business framing, because that is
+    what "summarise for an account team" sounds like it wants."""
+    prompt = insight_summary._PROMPT
+
+    assert "session_intent" in prompt
+    for intent in ("business_problem", "evaluation", "learning", "fun"):
+        assert intent in prompt
+    assert "Say \"fun\" when it was fun" in prompt
+
+
 def test_the_generator_is_always_declared(monkeypatch, emitter):
     """Downstream renders it: an extraction summary must not read as a finding."""
     _stub_harvest(monkeypatch, _harvest())

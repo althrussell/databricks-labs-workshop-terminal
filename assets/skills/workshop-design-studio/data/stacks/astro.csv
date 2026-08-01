@@ -1,6 +1,0 @@
-category,guideline,description,do,dont,severity
-Composition,content islands,Use Astro for content-first composition and hydrate only interactive islands,Keep primary storytelling in static HTML,Hydrate every section as a React island,high
-Assets,image pipeline,Use Astro image optimisation and explicit dimensions,Art-direct responsive assets,Hotlink large remote hero images,high
-Typography,font loading,Self-host essential fonts and pre-load only critical weights,Use robust fallbacks and font-display,Import many decorative font families,medium
-Motion,progressive enhancement,Keep core narrative usable without JavaScript,Use CSS and small islands for signature motion,Make scrolling depend on client JS,high
-Accessibility,document structure,Use semantic headings landmarks and skip links,Preserve logical source order across visual compositions,Reorder content visually into a confusing reading order,critical

@@ -1325,7 +1325,7 @@ class SkillsContractError(RuntimeError):
 def _install_skills() -> None:
     """Build the shared skills library: vendored base + reviewed upstream skills.
 
-    1. Copy assets/skills (superpowers/bdd workflow skills + vendored Databricks
+    1. Copy assets/skills (the workshop's own skills + vendored Databricks
        skills as the offline fallback).
     2. Clone databricks-agent-skills at the reviewed ref and overlay ``skills/*``
        so attendees build on the canonical, AppKit-first Databricks skills.

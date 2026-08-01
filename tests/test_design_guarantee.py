@@ -1,21 +1,23 @@
 """Every attendee leaves with something that looks designed, and never knew it.
 
-Two promises hold this together, and both are enforced only by text an agent
-reads — nothing at runtime checks either one:
+Three promises hold this together, and all of them are enforced only by text an
+agent reads — nothing at runtime checks any of them any more:
 
 1. **Every UI gets the design treatment.** Not a suggestion an agent can skip
-   when it is in a hurry to make a test pass.
+   when it is in a hurry.
 2. **The attendee is never asked to participate in it.** They came to build
-   something, not to choose a colour palette. The skill generates three creative
-   directions and presents none of them; an agent that asks "which of these do
-   you prefer?" has handed a non-designer homework and stalled the session.
+   something, not to choose a colour palette.
+3. **The quality bar is concrete and always in context.** The scripted design
+   gate that used to enforce contrast, focus states, and alt text was deleted
+   along with the rest of the six-phase pipeline, because it cost minutes of a
+   short workshop before the attendee saw anything. What replaced it is a
+   written baseline in the always-loaded instructions plus a library of verified
+   AppKit patterns. If the baseline stops being specific, nothing catches it —
+   which is exactly why these assertions are worth their weight.
 
-The second promise is the fragile one. The upstream skill this was adapted from
-asks the user to select a direction, so the natural pull of the source material
-is back towards a question. These tests pin the difference across every surface
-that has to agree, because the surfaces are read by different agents: Claude
-reads the home instructions, Codex and Omnigent's worktree worker read the
-project memory, subagents read their own policy files, and only Claude Code ever
+These are pinned across every surface that has to agree, because the surfaces
+are read by different agents: Claude reads the home instructions, Codex and
+Omnigent's worktree worker read the project memory, and only Claude Code ever
 loads SKILL.md.
 """
 
@@ -26,12 +28,13 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-SKILL = ROOT / "assets" / "skills" / "workshop-design-studio" / "SKILL.md"
+SKILL_DIR = ROOT / "assets" / "skills" / "workshop-design-studio"
+SKILL = SKILL_DIR / "SKILL.md"
+PATTERNS = SKILL_DIR / "references" / "patterns"
 INSTRUCTIONS = ROOT / "assets" / "instructions" / "CLAUDE.md"
 PROJECT_MEMORY = ROOT / "assets" / "instructions" / "project_memory.md"
 LAB_COACH = ROOT / "assets" / "instructions" / "lab_coach.md"
 PROMOTE = ROOT / "assets" / "skills" / "promote" / "SKILL.md"
-GATE_HELPER = ROOT / "assets" / "bin" / "workshop-design-gate"
 
 
 def _read(path: Path) -> str:
@@ -69,17 +72,28 @@ def lab_coach() -> str:
 
 
 def test_the_skill_ships_with_everything_it_needs():
-    directory = SKILL.parent
     for relative in (
         "SKILL.md",
         "NOTICE.md",
-        "scripts/audit_project.py",
-        "scripts/quality_gate.py",
-        "scripts/generate_design_system.py",
-        "templates/quality-gate.json",
-        "references/workshop-fast-path.md",
+        "references/patterns/README.md",
+        "references/composition-and-layout.md",
+        "references/typography.md",
+        "references/colour-and-tokens.md",
+        "references/motion-and-states.md",
     ):
-        assert (directory / relative).is_file(), relative
+        assert (SKILL_DIR / relative).is_file(), relative
+
+
+def test_the_deleted_machinery_stays_deleted():
+    """The six-phase pipeline is what made design cost minutes before the
+    attendee saw anything. Re-adding a script or a persisted artifact directory
+    would quietly restore the wait this workshop exists to remove."""
+    for gone in ("scripts", "data", "templates"):
+        assert not (SKILL_DIR / gone).exists(), f"{gone}/ came back"
+
+    text = _read(SKILL)
+    for phrase in ("generate_design_system", ".design-studio", "workshop-design-gate"):
+        assert phrase not in text, phrase
 
 
 def test_the_description_fires_on_a_plain_build_request(skill: str):
@@ -109,12 +123,12 @@ def test_the_skill_stays_out_of_backend_only_work(skill: str):
 
 def test_the_skill_forbids_asking_a_design_question(skill: str):
     assert "Never ask the attendee a design question" in skill
-    assert "Generate three directions internally, present none" in skill
+    assert "present none" in skill
 
 
 def test_the_skill_forbids_narrating_its_own_process(skill: str):
-    """Naming the machinery is its own failure: an attendee who hears "creative
-    direction" and "critique pass" now believes design was the hard part, and
+    """Naming the machinery is its own failure: an attendee who hears "design
+    system" and "critique pass" now believes design was the hard part, and
     starts supervising it."""
     assert "Never narrate the process" in skill
     assert "never how it was made" in skill
@@ -140,7 +154,7 @@ def test_the_lab_coach_carries_the_same_silence_rule(lab_coach: str):
     assert "quietly amazed" in lab_coach
 
 
-def test_the_coach_translates_gate_failures_out_of_jargon(lab_coach: str):
+def test_the_coach_translates_visual_fixes_out_of_jargon(lab_coach: str):
     assert "WCAG AA contrast finding" in lab_coach, (
         "the rule needs the jargon example it is banning, or it reads as vague"
     )
@@ -203,133 +217,204 @@ def test_the_project_memory_requires_it_too(project_memory: str):
     assert "visible interface, every time" in project_memory
 
 
-@pytest.mark.parametrize("agent", ["implementer.md", "build-feature.md"])
-def test_subagents_that_write_ui_inherit_the_mandate(agent: str):
-    """Subagents do most of the actual UI writing and never read the home
-    instructions. An implementer optimising purely for green tests will happily
-    ship an unstyled component."""
-    text = _read(ROOT / "assets" / "agents" / agent)
-
-    assert "workshop-design-studio" in text
-    assert "workshop-design-gate" in text
-    assert "design question" in text
-
-
-def test_the_division_of_labour_with_the_other_app_skills_is_stated(
-    instructions: str,
-):
-    """Three skills touch the same screen. Without a stated split, the agent
-    either applies none of them or lets component choice dictate composition."""
-    assert "composition the design studio wins" in instructions
-    assert "databricks-app-design" in instructions
-
-
-# --- the gate actually blocks --------------------------------------------------
-
-
-def test_the_gate_helper_is_installed_onto_the_attendee_path():
-    """The instructions call `workshop-design-gate` as a bare command, so it has
-    to be copied into ~/.local/bin like the other helpers — and made executable
-    there, since repo file modes do not survive a checkout reliably."""
-    source = (ROOT / "server" / "user_content.py").read_text(encoding="utf-8")
-
-    assert GATE_HELPER.is_file()
-    assert '"workshop-design-gate"' in source
-    assert "os.chmod(dst, 0o755)" in source
-
-
-def test_the_gate_helper_is_harness_neutral():
-    """assets/instructions/CLAUDE.md is written verbatim to ~/.codex/AGENTS.md,
-    so a Claude-specific skills path in the instructions would be a broken
-    command for every Codex attendee. The helper resolves it instead."""
-    text = _read(GATE_HELPER)
-
-    assert ".claude/skills/workshop-design-studio" in text
-    assert ".codex/skills/workshop-design-studio" in text
-
-
-def test_the_gate_helper_fails_loudly_rather_than_silently_passing():
-    text = _read(GATE_HELPER)
-
-    assert 'exit "$status"' in text
-    assert "not finished" in text
-
-
-def test_a_missing_skill_does_not_wedge_the_build():
-    """If the skill is somehow absent, the gate must not become an impassable
-    wall between an attendee and their finished app."""
-    text = _read(GATE_HELPER)
-
-    assert "skipping the visual gate" in text
-    assert "exit 0" in text
-
-
-@pytest.mark.parametrize(
-    "path", [INSTRUCTIONS, PROJECT_MEMORY, LAB_COACH], ids=["claude", "project", "coach"]
-)
-def test_every_memory_channel_runs_the_gate_before_declaring_done(path: Path):
-    assert "workshop-design-gate" in _read(path)
+# --- the boundary between the two design skills -------------------------------
 
 
 @pytest.mark.parametrize(
     "path", [INSTRUCTIONS, PROJECT_MEMORY], ids=["claude", "project"]
 )
-def test_a_red_gate_blocks_success_and_the_promote_offer(path: Path):
+def test_the_boundary_between_the_design_skills_is_by_surface(path: Path):
+    """Two skills touch the same screen and both used to claim charts. The split
+    is now stated by surface, in the files that are always in context, so an
+    agent never has to arbitrate between two chart vocabularies mid-build."""
     text = _read(path)
 
-    assert "either gate is red" in text
-    assert "Promote" in text
+    assert "the split is by surface" in text.lower()
+    assert "databricks-app-design" in text
+    assert "chart-vocabulary conflict" in text.lower()
 
 
-def test_wrap_up_promote_survives_a_red_gate(instructions: str):
-    """The gate blocks *offering* promote after a build. It must never block the
-    wrap-up run, or a session that ended on a failing gate — the one whose notes
-    are most useful to whoever picks the work up — leaves with nothing."""
-    assert "never blocks promote at wrap-up" in instructions
-    assert "Wrap-up promote is unconditional" in instructions
+@pytest.mark.parametrize(
+    "path", [INSTRUCTIONS, PROJECT_MEMORY], ids=["claude", "project"]
+)
+def test_an_app_with_no_data_surface_uses_the_studio_alone(path: Path):
+    """Space Invaders is still a Databricks App, so it still gets the baseline —
+    but `databricks-app-design` has nothing to say about a canvas game and must
+    not fire for one."""
+    text = _read(path).lower()
+
+    assert "no data surface" in text
+    assert "design studio only" in text or "the design studio only" in text
 
 
-def test_the_visual_checks_extend_the_existing_smoke_spec(instructions: str):
-    """A second Playwright config is a second thing to keep green in a 60-minute
-    workshop, and `databricks apps validate` would not run it anyway."""
-    assert "playwright.visual.spec.ts" in instructions
-    assert "one spec, one gate" in instructions
+def test_the_skill_defers_chart_choice_rather_than_duplicating_it(skill: str):
+    """The old `data-visualisation.md` was a second, weaker chart picker. It is
+    gone; this asserts the skill hands the decision over instead of re-inventing
+    it."""
+    assert "wins outright" in skill
+    assert not (SKILL_DIR / "references" / "data-visualisation.md").exists()
 
 
-def test_the_visual_spec_template_needs_no_committed_baseline():
-    """Playwright fails a screenshot assertion the first time it runs, because
-    no baseline exists yet. Shipping one here would turn the gate red for every
-    attendee on their first validate."""
-    text = _read(SKILL.parent / "templates" / "playwright.visual.spec.ts")
+# --- the quality bar that replaced the gate -----------------------------------
 
-    assert "expect(page).toHaveScreenshot" not in text
-    assert "no baseline exists" in text
+
+@pytest.mark.parametrize(
+    "path", [INSTRUCTIONS, PROJECT_MEMORY], ids=["claude", "project"]
+)
+def test_the_visual_baseline_is_written_where_it_is_always_in_context(path: Path):
+    """"Apply good defaults" is not self-executing. An agent under tempo pressure
+    will not open a reference file, so the baseline has to be specific and it has
+    to live in the file that is always loaded."""
+    text = _read(path).lower()
+
+    for phrase in (
+        "type does the hierarchy",
+        "one accent colour, used for meaning",
+        "focal point",
+        "motion on state change",
+    ):
+        assert phrase in text, phrase
+
+
+@pytest.mark.parametrize(
+    "path", [INSTRUCTIONS, PROJECT_MEMORY], ids=["claude", "project"]
+)
+def test_accessibility_survived_the_deletion_of_the_gate(path: Path):
+    """Contrast, focus, and alt text were enforced only by the scripted gate.
+    Deleting it without moving them into the build-time defaults would have
+    silently dropped the only accessibility floor the workshop has."""
+    text = _read(path).lower()
+
+    assert "4.5:1" in text
+    assert "focus state" in text
+    assert "alt text" in text
+
+
+@pytest.mark.parametrize(
+    "path", [INSTRUCTIONS, PROJECT_MEMORY, LAB_COACH], ids=["claude", "project", "coach"]
+)
+def test_no_memory_channel_still_gates_the_url_on_a_design_script(path: Path):
+    text = _read(path)
+
+    assert "workshop-design-gate" not in text
+    assert ".design-studio" not in text
+
+
+def test_the_self_critique_replaces_the_scripted_passes(skill: str, instructions: str):
+    """One pass, in context, after the URL is already live — the judgement
+    without the ceremony. It must be explicitly *after* the deploy, or it
+    becomes another thing standing between the attendee and their app."""
+    assert "self-critique" in skill.lower()
+    assert "after the first deploy" in instructions.lower()
+    assert "not a script" in instructions.lower()
+
+
+# --- the patterns are real ----------------------------------------------------
+
+
+def test_every_promised_pattern_exists():
+    """A pattern library that is missing the pattern an agent reaches for sends
+    it back to inventing layout under time pressure, which is the failure this
+    library exists to prevent."""
+    for name in (
+        "app-shell.tsx",
+        "hero-first-run.tsx",
+        "kpi-row.tsx",
+        "chart-card.tsx",
+        "data-table.tsx",
+        "states.tsx",
+        "form.tsx",
+    ):
+        assert (PATTERNS / name).is_file(), name
+
+
+def test_the_patterns_only_import_from_the_published_appkit_package():
+    """A pattern citing a component AppKit does not ship is worse than no
+    pattern: it fails `tsc` in front of the attendee and teaches the agent a
+    component name that does not exist. Every import here is verified against
+    the published package."""
+    import re
+
+    allowed = {"react", "@databricks/appkit-ui/react", "lucide-react"}
+    offenders = []
+    for pattern in PATTERNS.glob("*.tsx"):
+        for module in re.findall(
+            r"^import[^'\"]*from\s+['\"]([^'\"]+)['\"]",
+            pattern.read_text(encoding="utf-8"),
+            re.MULTILINE,
+        ):
+            if module not in allowed:
+                offenders.append(f"{pattern.name}: {module}")
+    assert not offenders, "unexpected imports:\n" + "\n".join(offenders)
+
+
+def test_the_patterns_never_hardcode_raw_colour():
+    """Raw hex and raw Tailwind palette utilities bypass the AppKit theme and
+    break dark mode. The patterns are the thing agents copy, so a raw colour
+    here propagates into every app built from them."""
+    import re
+
+    palette = re.compile(
+        r"(#[0-9a-fA-F]{3,8}\b"
+        r"|\b(?:bg|text|border|fill|stroke|ring)-"
+        r"(?:red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|"
+        r"indigo|violet|purple|fuchsia|pink|rose|slate|gray|grey|zinc|neutral|stone)-\d{2,3})"
+    )
+    offenders = [
+        f"{pattern.name}: {match}"
+        for pattern in PATTERNS.glob("*.tsx")
+        for match in palette.findall(pattern.read_text(encoding="utf-8"))
+    ]
+    assert not offenders, "raw colour in patterns:\n" + "\n".join(
+        m if isinstance(m, str) else m[0] for m in offenders
+    )
+
+
+def test_every_pattern_keeps_a_visible_focus_path():
+    """The one accessibility rule with no downstream enforcement at all. A
+    pattern that strips the focus ring makes every app copied from it unusable
+    without a mouse."""
+    offenders = [
+        pattern.name
+        for pattern in PATTERNS.glob("*.tsx")
+        if "outline-none" in pattern.read_text(encoding="utf-8")
+        and "focus-visible:ring" not in pattern.read_text(encoding="utf-8")
+    ]
+    assert not offenders, f"focus ring removed without replacement in: {offenders}"
+
+
+def test_the_patterns_document_the_version_they_were_verified_against():
+    """"Verified" ages. The README has to say against what, so a future failure
+    reads as a version bump rather than as a broken pattern."""
+    text = _read(PATTERNS / "README.md")
+
+    assert "@databricks/appkit-ui" in text
+    assert "npx @databricks/appkit docs" in text
 
 
 # --- the design work survives the teardown ------------------------------------
 
 
 def test_promote_carries_the_design_record_into_the_handoff():
-    """The reasoning was deliberately kept out of the conversation, so these
-    files are the only record of why the app looks the way it does — and the
-    environment is deleted at the end of the workshop."""
+    """The reasoning was deliberately kept out of the conversation, and there is
+    no longer a `.design-studio/` folder holding it — so the build prompt is the
+    only place it can survive the teardown."""
     text = _read(PROMOTE)
 
-    assert ".design-studio" in text
-    assert "creative-brief.md" in text
-    assert "design-system.json" in text
+    assert "visual decisions live in the code" in text
+    assert "build-prompt.md" in text
 
 
 def test_the_rebuild_prompt_can_reproduce_the_look():
     """A build prompt listing only components rebuilds a framework starter."""
     text = _read(ROOT / "assets" / "skills" / "promote" / "build-prompt.md")
 
-    assert ".design-studio" in text
     assert "requirements, not suggestions" in text
+    assert "type scale" in text
 
 
 def test_attribution_for_the_upstream_work_is_preserved():
-    notice = _read(SKILL.parent / "NOTICE.md")
+    notice = _read(SKILL_DIR / "NOTICE.md")
 
     assert "MIT License" in notice
     assert "ui-ux-pro-max-skill" in notice

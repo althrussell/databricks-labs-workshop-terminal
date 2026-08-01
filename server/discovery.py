@@ -51,6 +51,16 @@ _LIST_FIELDS = (
 )
 _CONFIDENCE = ("low", "medium", "high")
 
+# Why the attendee was building at all. Without it, triage cannot tell a lead
+# from a Friday-afternoon game: both arrive as a record with a title and a stack.
+# `confidence` still qualifies it, so an inferred "business_problem" cannot
+# masquerade as a stated one.
+#
+# Public and shared with ``insight_summary``: the two events are read side by
+# side in one brief, so a value valid on one and not the other would surface as
+# a contradiction rather than a difference of opinion.
+SESSION_INTENTS = ("business_problem", "evaluation", "learning", "fun")
+
 # Caps. A record is a few hundred bytes of prose; these are generous for a
 # human-paced conversation and tight enough that a looping agent can't exhaust
 # memory or produce a payload CT has to truncate.
@@ -127,6 +137,7 @@ class DiscoveryRecord:
     captured_at: str
     agent: str = ""
     confidence: str = ""
+    session_intent: str = ""
     use_case_title: str = ""
     use_case_summary: str = ""
     goal: str = ""
@@ -158,7 +169,7 @@ class DiscoveryRecord:
             "captured_at": self.captured_at,
             "revision": self.revision,
         }
-        for name in ("agent", "confidence", *_TEXT_FIELDS):
+        for name in ("agent", "confidence", "session_intent", *_TEXT_FIELDS):
             value = getattr(self, name)
             if value:
                 out[name] = value
@@ -182,6 +193,7 @@ class DiscoveryRecord:
             "captured_at": self.captured_at,
             "agent": self.agent,
             "confidence": self.confidence,
+            "session_intent": self.session_intent,
             **{name: getattr(self, name) for name in _TEXT_FIELDS},
             **{name: list(getattr(self, name)) for name in _LIST_FIELDS},
             "redactions": self.redactions,
@@ -201,6 +213,7 @@ class DiscoveryRecord:
             captured_at=str(raw.get("captured_at") or _now()),
             agent=str(raw.get("agent") or ""),
             confidence=str(raw.get("confidence") or ""),
+            session_intent=str(raw.get("session_intent") or ""),
             **{name: str(raw.get(name) or "") for name in _TEXT_FIELDS},
             **{
                 name: [str(v) for v in (raw.get(name) or []) if str(v).strip()]
@@ -257,6 +270,12 @@ def build_record(attendee: str, raw: dict[str, Any]) -> DiscoveryRecord:
         # An unrecognised confidence must not read as high. Empty means unstated,
         # which downstream synthesis treats as the weakest claim.
         confidence = ""
+    session_intent = str(raw.get("session_intent") or "").strip().lower()
+    if session_intent not in SESSION_INTENTS:
+        # Empty means an older agent or one that declined to classify — not an
+        # attendee with no purpose. Triage must be able to tell those apart, so
+        # an unrecognised value is dropped rather than passed through.
+        session_intent = ""
     redactions = 0
     text: dict[str, str] = {}
     for name in _TEXT_FIELDS:
@@ -272,6 +291,7 @@ def build_record(attendee: str, raw: dict[str, Any]) -> DiscoveryRecord:
         captured_at=str(raw.get("captured_at") or "").strip() or _now(),
         agent=str(raw.get("agent") or "").strip()[:64],
         confidence=confidence,
+        session_intent=session_intent,
         redactions=redactions,
         **text,
         **lists,
@@ -345,6 +365,9 @@ class DiscoveryStore:
             for name in _LIST_FIELDS:
                 setattr(record, name, [])
             record.confidence = ""
+            # The classification is derived from what they said, so it is theirs
+            # to withdraw along with the words it came from.
+            record.session_intent = ""
             record.redacted_by_attendee = True
             record.revision += 1
         self._persist()
@@ -509,6 +532,7 @@ discovery_store = DiscoveryStore()
 
 
 __all__ = [
+    "SESSION_INTENTS",
     "DiscoveryRecord",
     "DiscoveryStore",
     "MAX_RECORDS_PER_ATTENDEE",

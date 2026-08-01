@@ -1,6 +1,6 @@
 ---
 name: promote
-description: Use when a build or deployment has completed, or when the workshop reaches its wrap phase, to generate professional handoff documents (architecture, security, Jira stories, test cases, build prompt) and upload them to the attendee's Databricks Volume.
+description: Use ONLY when the attendee explicitly asks for handoff documentation — /promote, "generate my docs", "write me an architecture doc", or tapping the workshop's docs suggestion card. Generates architecture, security, Jira stories, test cases, and a build prompt, and uploads them to the attendee's Databricks Volume. Never run this unprompted.
 argument-hint: "[brief description of what you built or explored]"
 ---
 
@@ -11,23 +11,21 @@ Databricks Volume.
 
 ## When to use
 
-Three triggers, and the first two are unconditional:
+**One trigger: the attendee asked.** `/promote`, "generate my docs", "write me an
+architecture doc", or tapping the documentation card the workshop UI already shows them.
 
-1. **A build or deployment completed.** Offer it, then run it if the attendee agrees:
+**Never run this unprompted.** Not after a successful build, not at the wrap phase, not
+because the session is ending. The attendee came to build something, and answering a
+working app with a pitch for paperwork spends the one thing the workshop is short of.
+The workshop UI already offers documentation at the moments it makes sense; that offer is
+theirs to take or ignore.
 
-   > "Your build is live! Want me to generate handoff docs — architecture, security review,
-   > Jira stories, test cases, and a build prompt — uploaded to your Databricks Volume?"
+**Never pitch it either.** Do not end a build with "want me to generate handoff docs?".
+If they want documentation they will ask, and they have a button.
 
-2. **The workshop reaches its wrap phase**, or the attendee says they're finishing up.
-   **Run it without asking, and run it whether or not anything shipped.** Say what you're
-   doing in one line; don't make it a question. The environment is deleted after the
-   workshop, so the wrap moment is the last chance to write anything down — waiting for a
-   "yes" is how a session ends with nothing to take home.
-
-3. **The attendee asks** (`/promote`, or "generate my docs").
-
-Never skip this because the session looks unimpressive. A session that ran into a wall
-produces the most useful document of the set — see "Nothing shipped" below.
+Once they *have* asked, generate the full set and do it properly. A session that ran into
+a wall produces the most useful document of the set — see "Nothing shipped" below — so an
+unimpressive-looking session is no reason to hold back on a pack they requested.
 
 ## Steps
 
@@ -92,31 +90,24 @@ did not happen. State plainly what exists and what does not. An honest "we got t
 ingest and the broker auth failed" is worth more to the attendee — and to whoever helps
 them next — than a document implying a finished system.
 
-### 2c. Collect the design record
+### 2c. Capture the design record
 
-If the project has a `.design-studio/` directory, copy it alongside the
-documents so the visual work travels with the handoff:
+The visual decisions live in the code, not in a separate design folder — theme
+tokens, the type scale, the accent colour, spacing, and the component patterns
+the app was built from. That reasoning was deliberately kept out of the
+conversation, so if `build-prompt.md` does not carry it, it is lost when the
+environment is deleted and a rebuild produces a default-styled approximation.
 
-```sh
-if [ -d .design-studio ]; then
-  mkdir -p ~/promote/design
-  cp .design-studio/MASTER.md ~/promote/design/ 2>/dev/null
-  cp .design-studio/creative-brief.md ~/promote/design/ 2>/dev/null
-  cp .design-studio/design-system.json ~/promote/design/ 2>/dev/null
-  cp .design-studio/IMPLEMENTATION.md ~/promote/design/ 2>/dev/null
-  cp .design-studio/verification.md ~/promote/design/ 2>/dev/null
-fi
-```
+Read the actual values out of the project — the theme or token file, the global
+stylesheet, the shell component — and record them concretely in
+`build-prompt.md`: the palette with its accent and what that accent signifies,
+the type scale and font stacks, the spacing rhythm, the layout structure, the
+motion treatment, and the app's one memorable moment. Reference the same
+decisions from `architecture.md`.
 
-This is the only record of *why* the product looks the way it does — the design
-reasoning was deliberately kept out of the conversation, so without these files
-it is lost when the environment is deleted. Whoever rebuilds the app needs the
-tokens and the direction, not a screenshot.
-
-Reference it from `architecture.md` and reuse its tokens in `build-prompt.md`,
-so a rebuild reproduces the same product rather than a default-styled
-approximation. Do not turn this into a design lecture for the attendee — it is
-documentation, delivered with the rest of the pack.
+Write them as requirements, not suggestions. Do not turn this into a design
+lecture for the attendee — it is documentation, delivered with the rest of the
+pack.
 
 ### 3. Resolve Volume path
 
@@ -139,12 +130,6 @@ for doc in architecture security jira-stories test-cases build-prompt; do
     || echo "✗ ${doc}.md (upload failed — check credentials)"
 done
 
-for f in "$HOME"/promote/design/*; do
-  [ -e "$f" ] || continue
-  databricks files upload "$f" "${PROMOTE_PATH}/design/$(basename "$f")" --overwrite \
-    && echo "✓ design/$(basename "$f")" \
-    || echo "✗ design/$(basename "$f") (upload failed)"
-done
 ```
 
 If the upload fails, **do not delete the local copies and do not treat the run as
@@ -171,7 +156,6 @@ Example output:
   jira-stories.md   — Product backlog with epics and stories
   test-cases.md     — Test strategy and test cases
   build-prompt.md   — Self-contained rebuild prompt
-  design/           — Design system, creative brief, verification evidence
 ```
 
 ## Notes
@@ -180,5 +164,5 @@ Example output:
   detailed personas, required sections, and formatting rules that determine output quality.
 - Generate from the actual conversation history — no generic filler, no placeholders.
 - If a file fails to upload, note the error and continue; do not abort remaining docs.
-- Run this at wrap even if you already ran it earlier after a build. Update the existing
-  documents in place; the session moved on since then.
+- If the attendee asks again later in the session, update the existing documents in place
+  rather than regenerating from scratch; the session moved on since then.

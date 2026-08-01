@@ -8,28 +8,26 @@ skills digest and is preserved across a skills refresh via `FORK_ONLY` in
 
 ## Attribution
 
-The skill's local-retrieval architecture, persistent master/page design-system
-model, design dials, explicit no-match disclosure, and multi-domain design
-workflow were informed by **UI UX Pro Max** by Next Level Builder
+Earlier versions of this skill (through 3.x) were informed by **UI UX Pro Max**
+by Next Level Builder
 (`https://github.com/nextlevelbuilder/ui-ux-pro-max-skill`, reviewed at commit
-`14ddef5c05e52d7c253b8f0129de7bcd1045ae5b`), which is MIT licensed.
+`14ddef5c05e52d7c253b8f0129de7bcd1045ae5b`), which is MIT licensed. Concepts
+studied from that project included local BM25-style retrieval over structured
+design data, multi-domain design-system generation, a persistent master/page
+override structure, explicit design dials, stack detection, zero-result
+disclosure rather than fabricated matches, and pre-delivery quality checks.
 
-Concepts studied from that project:
+Version 4.0.0 removed all of that machinery. The skill no longer generates
+design systems, retrieves from a design corpus, detects stacks, or runs audit
+and quality-gate scripts: it targets Databricks Apps built with AppKit only,
+and ships a visual baseline plus a library of verified AppKit patterns instead.
+The attribution and licence are retained because the earlier architecture
+materially influenced how this skill developed.
 
-- local BM25-style retrieval over structured design data;
-- multi-domain design-system generation;
-- persistent master/page override structure;
-- explicit design dials;
-- stack detection and stack-specific guidance;
-- zero-result disclosure rather than fabricated matches;
-- machine-readable output;
-- accessibility and pre-delivery quality checks.
-
-The scripts and curated design datasets in this directory are independently
-written for the Workshop Terminal. No claim is made that this skill is an
-official derivative, distribution, or endorsed edition of that project. The
-upstream licence is reproduced below because the project materially influenced
-the design and implementation approach.
+The prose references and the AppKit patterns in this directory are
+independently written for the Workshop Terminal. No claim is made that this
+skill is an official derivative, distribution, or endorsed edition of that
+project.
 
 ## Upstream licence
 

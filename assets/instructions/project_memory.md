@@ -19,29 +19,59 @@ the **`databricks-apps`** skill — scaffold with `databricks apps manifest` the
 Also required:
 
 - **`workshop-design-studio`** for anything with a visible interface, every
-  time. It owns creative direction, the design system, and visual quality.
+  time. It carries the visual baseline and ready-made AppKit patterns — start
+  from those rather than inventing layout from scratch.
 - **`databricks-app-design`** whenever the app shows any data — KPI page,
-  report, chart, table, query results, or a Genie/chat assistant. It sets
-  layout, charts, semantic color, loading/empty/error states, and AI-result
-  provenance, mapped to real AppKit components.
+  report, chart, table, query results, or a Genie/chat assistant. It sets chart
+  choice, semantic color, and AI-result provenance, mapped to real AppKit
+  components.
 - **`databricks-lakebase`** when the app needs to save data. Provision it
   non-interactively — never click resources together in the Databricks UI. Apps
   with no saved state skip Lakebase.
 
-Where these overlap: `databricks-apps` owns scaffolding and deployment,
-`databricks-app-design` owns which component renders a given piece of data, and
-`workshop-design-studio` owns composition, brand, and visual quality. On
-composition the design studio wins; on AppKit API shape the framework skills
-win.
+**Where they overlap, the split is by surface.** `databricks-apps` owns
+scaffolding, APIs, and deployment. **Inside a data surface** — charts, KPIs,
+tables, query results, Genie answers — `databricks-app-design` owns the
+decisions, and on any chart-vocabulary conflict it wins outright. **Everywhere
+else** — page composition, navigation, brand, typography, spacing, motion,
+empty-state character — `workshop-design-studio` owns it. An app with no data
+surface (a game, a landing page, a toy) uses the design studio only.
 
 ### Design runs silently
 
 Never ask the user a design question — no palette, layout, or creative-direction
-choices — and never narrate the process. Do not mention design systems, creative
-directions, moodboards, or critique passes; describe what the product *does*.
-Infer the brand from the product, and do not impose Databricks styling on it.
-The exception is when the user raises design or supplies a brand kit themselves,
-which makes it their topic and worth discussing properly.
+choices — and never narrate the process. Do not mention design systems or
+baselines; describe what the product *does*. Infer the brand from the product,
+and do not impose Databricks styling on it. The exception is when the user
+raises design or supplies a brand kit themselves, which makes it their topic and
+worth discussing properly.
+
+### The visual baseline — non-negotiable, applied while you build
+
+Apply this as you write components, not as a pass afterwards.
+`workshop-design-studio` has ready-made AppKit patterns for the app shell,
+first-run state, KPI row, chart card, table, empty/loading/error states, and
+forms — start from those.
+
+- **Type does the hierarchy** — a real scale with a genuinely large primary
+  heading. Never a page where everything is 14-16px.
+- **Space generously and consistently**, on one rhythm. Cramped default padding
+  is the clearest tell of an untouched template.
+- **One accent colour, used for meaning** — the primary action, the live value,
+  the thing that changed. Colour as decoration is worse than no colour.
+- **Give the page a focal point.** If everything competes equally, nothing reads.
+- **Real loading, empty, and error states** for anything asynchronous.
+- **Considered surfaces** — deliberate background, border, and elevation, not
+  stock cards on stock grey.
+- **Motion on state change**, brief and purposeful, honouring reduced motion.
+- **Accessible by construction:** contrast at least 4.5:1, visible focus states,
+  alt text on meaningful images, and layouts that survive a narrow window. There
+  is no gate that will catch these later.
+- **One memorable moment per app.**
+
+After the first deploy, take one look at your own work against that list, fix
+what is cheap, and describe the change in product terms. One pass, in context —
+no script, no browser run, no document.
 
 Do **not** reach for a Python framework (Streamlit / Dash / Gradio / Flask /
 FastAPI / Reflex), and do not default to `databricks-apps-python` — that is the
@@ -49,46 +79,43 @@ Python-backend alternative. The only exception is when the user **explicitly and
 insistently** asks for a specific Python framework — confirm that's really what
 they want, then proceed. Otherwise it is always AppKit.
 
-## Validate before calling an AppKit build done
+## Tempo — get something on their screen fast
 
-1. Update `tests/smoke.spec.ts` selectors to match the real UI first — the
-   template's "Minimal Databricks App" heading and "hello world" text are gone
-   from your app, so validation fails until you do. Playwright locators only
-   (`getByRole`, `getByText`, `getByPlaceholder`, `getByLabel`); there is no
-   `getByLabelText`. Keep asserted result sets under 1 MB. For a UI build, also
-   append the visual assertions from
-   `workshop-design-studio/templates/playwright.visual.spec.ts` (focus
-   visibility, reduced motion, no horizontal overflow) into this same file
-   rather than adding a second Playwright setup.
-2. Run `databricks apps validate` — it runs `appkit lint`
-   (no `as unknown as <T>` double assertions), `tsc --noEmit`, and the smoke
-   test. Confirm AppKit API signatures with
-   `npx @databricks/appkit docs <section>` before writing against them.
-3. Run `workshop-design-gate` — the visual half of the gate. It blocks on
-   missing alt text, missing focus states, no reduced-motion path, fixed-width
-   layouts, and contrast below 4.5:1, with detail in `.design-studio/audit.md`.
-4. Do not report success or offer Promote while either gate is red. Explain
-   what failed in plain terms, not design jargon.
+- **Show something early.** Build a thin but real version, deploy it, and hand
+  over the URL as soon as it renders. Then keep improving it. Never disappear
+  into a long build with nothing on screen.
+- **Iterate against the live URL** — change, redeploy, say what to look at.
+- **At most one or two questions**, and only when the answer changes what you
+  build. Trivial or self-contained asks get zero questions.
+- **Short todo lists**, named by outcome, only for work the attendee can see.
+- **Scaffold minimally** — only the AppKit features the app actually needs.
+- **Never announce process.** Describe what the product does.
 
-## After a build completes — always offer Promote
+## The ship gate — typecheck, deploy, open the URL
 
-When any build or deployment succeeds, make this offer exactly once:
+**Ship when the app is deployed and the URL loads.** That is the whole gate:
 
-> "Your build is live! Want me to generate handoff docs — architecture spec,
-> security review, Jira stories, test cases, and a build prompt — and upload
-> them to your Databricks Volume? Just say yes."
+1. **Typecheck and build** (`npx tsc --noEmit`, then the build). Seconds, no
+   browser. Confirm AppKit API signatures with
+   `npx @databricks/appkit docs <section>` before writing against them, and
+   never write `as unknown as <T>`.
+2. **Deploy, then open the URL once** to confirm it responds.
+3. **Hand over the URL** and keep improving against it.
 
-If the attendee agrees:
-1. Ask for a one-sentence description of what was built (if not already clear from context).
-2. Generate each document from the conversation and description:
-   - `architecture.md` — components, data flow, Databricks services used
-   - `security.md` — auth model, data access, risks, recommendations
-   - `jira_stories.md` — 4–6 sprint-ready user stories with acceptance criteria
-   - `test_cases.md` — unit, integration, and E2E test scenarios
-   - `build_prompt.md` — a single self-contained prompt to recreate the app
-3. Write each to `/tmp/promote/<doc>.md`, then upload:
-   ```sh
-   PROMOTE_PATH="/Volumes/${WORKSHOP_CATALOG}/${WORKSHOP_SCHEMA}/promote/<user-email>/$(date +%Y%m%d-%H%M%S)"
-   databricks files upload /tmp/promote/<doc>.md "${PROMOTE_PATH}/<doc>.md" --overwrite
-   ```
-4. Report the full Volume path to the attendee.
+**Do not** run `databricks apps validate`, install Playwright browsers, or
+write or update `tests/smoke.spec.ts` unless the user asks for tests or a
+deploy has already failed and you are debugging it. Never install Chromium as a
+condition of calling something done. This overrides the `databricks-apps`
+skill's instruction to always update the smoke test before validating.
+
+If something breaks, read the actual error and fix what it names. No root-cause
+ceremony, no test-first ritual.
+
+## Documents — only when they ask
+
+Never generate a document unprompted — no architecture spec, security review,
+Jira stories, test cases, or build prompt unless the user asks. Do not pitch
+documentation after a build. When they do ask, use the **`promote`** skill.
+
+Keep `README.md` current instead: one line on what the app is for, plus the
+live URL once it exists.

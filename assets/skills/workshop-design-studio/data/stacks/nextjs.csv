@@ -1,5 +1,0 @@
-category,guideline,description,do,dont,severity
-Images,Optimisation,Use next/image when appropriate and define dimensions,Reserve space and responsive sizes,Unbounded images,high
-Fonts,Loading,Use next/font or robust local fallbacks,Limit families and weights,Many blocking remote imports,medium
-Rendering,Client boundaries,Keep client components focused on interaction,Render static content on server when possible,Make whole app client-only,medium
-Navigation,Links,Use Link for internal navigation,Preserve prefetch and semantics,Use window.location for routine navigation,medium

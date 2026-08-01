@@ -1,5 +1,0 @@
-category,guideline,description,do,dont,severity
-Components,Composition,Use primitives as behaviour foundations,Restyle composition and tokens to match brand,Ship default demo composition unchanged,high
-Cards,Restraint,Use Card for modular content only,"Prefer sections, panes, tables and lists when appropriate",Wrap every block in Card,high
-Tokens,Theme,Customise semantic CSS variables,Build coherent light and dark roles,Hard-code feature colours,high
-Accessibility,Primitives,Preserve Radix semantics and focus management,Extend without removing aria behaviour,Replace with divs,critical

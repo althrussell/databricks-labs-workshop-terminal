@@ -12,6 +12,7 @@
     "revision": 2,
     "agent": "claude",
     "confidence": "high",
+    "session_intent": "business_problem",
     "use_case_title": "Real-time fraud scoring on the card-authorisation stream",
     "use_case_summary": "Scores card authorisations inline and needs sub-100ms lookups of a rolling per-account feature set. Today the stream lands in Confluent, features are precomputed nightly in Snowflake, and the scoring service reads a self-managed Postgres that they operate on EC2.",
     "goal": "Work out whether Lakebase can replace the self-managed Postgres feature store without adding a hop.",

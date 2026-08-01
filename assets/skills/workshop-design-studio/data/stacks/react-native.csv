@@ -1,6 +1,0 @@
-category,guideline,description,do,dont,severity
-Layout,adaptive mobile,"Compose for small screens, safe areas, keyboards, and orientation",Use flex layouts and test compact/large devices,Translate a desktop grid directly to mobile,high
-Interaction,touch targets,Keep touch targets at least 44x44 points with clear pressed feedback,Use Pressable with accessibility roles and hitSlop,Use tiny icon-only touch regions,critical
-Typography,dynamic type,Support text scaling and resilient wrapping,Test largest accessibility font sizes,Clamp body text to fixed heights,critical
-Motion,native performance,Use native-driven animation for meaningful transitions,Provide reduce-motion alternatives,Run heavy JS animation during scrolling,high
-Navigation,platform expectations,"Respect back behaviour, safe areas, and modal conventions",Preserve state across navigation,Invent gestures that conflict with system navigation,high

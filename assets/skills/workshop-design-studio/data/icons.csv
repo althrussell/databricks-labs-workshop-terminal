@@ -1,8 +1,0 @@
-category,examples,library,style,guidance
-Navigation,"arrow-left, chevron-right, menu, search",Lucide or existing project family,Outline,Use consistent stroke and optical size
-Actions,"plus, edit, trash, download, upload",Lucide or existing project family,Outline,Pair destructive actions with labels and confirmation
-Status,"circle-check, triangle-alert, circle-x, info",Lucide or existing project family,Outline or filled consistently,Never rely on colour alone
-Commerce,"shopping-bag, cart, heart, package",Lucide or existing project family,Outline,Use labels for critical conversion actions
-Data,"chart-line, database, table, activity",Lucide or existing project family,Outline,Avoid decorative chart icons in analytical content
-AI,"sparkles, bot, wand, brain-circuit",Lucide or existing project family,Outline,Use sparingly; do not make every action sparkle
-Media,"play, pause, volume, image, camera",Lucide or existing project family,Outline or filled controls,Ensure keyboard and accessible labels
