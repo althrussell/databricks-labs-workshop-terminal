@@ -241,6 +241,156 @@ def test_project_helper_always_writes_a_readme(client, monkeypatch, tmp_path):
     assert "README.md" in tracked
 
 
+def _attendee_env(home, tmp_path, with_template=True):
+    """An isolated HOME with the workshop template, as the helper expects."""
+    fake_home = tmp_path / "attendee"
+    (fake_home / ".config" / "workshop").mkdir(parents=True, exist_ok=True)
+    if with_template:
+        src = os.path.join(home, ".config", "workshop", "project-memory.md")
+        (fake_home / ".config" / "workshop" / "project-memory.md").write_text(
+            open(src).read()
+        )
+    return fake_home, {
+        "HOME": str(fake_home),
+        "PATH": os.environ["PATH"],
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_AUTHOR_NAME": "Attendee",
+        "GIT_AUTHOR_EMAIL": "attendee@example.com",
+        "GIT_COMMITTER_NAME": "Attendee",
+        "GIT_COMMITTER_EMAIL": "attendee@example.com",
+    }
+
+
+def test_the_helper_adopts_a_directory_a_scaffold_already_wrote(
+    client, monkeypatch, tmp_path
+):
+    """The failure this exists to prevent, reproduced.
+
+    `databricks apps init` always creates a subdirectory named after the app and
+    refuses to write into a directory that already exists. So an agent that made
+    the project first could only scaffold by nesting and then flattening with
+    `mv`, which replaced the committed CLAUDE.md — the workshop's rules — with
+    the scaffold's generic one. Live, that cost an attendee's project memory and
+    was only caught by chance.
+
+    Adopting an existing directory removes the reason to ever run that `mv`.
+    """
+    home = _provisioned_home(client, monkeypatch)
+    helper = os.path.join(home, ".local", "bin", "workshop-init-project")
+    fake_home, env = _attendee_env(home, tmp_path)
+
+    scaffolded = fake_home / "projects" / "space-invaders"
+    (scaffolded / "client").mkdir(parents=True)
+    (scaffolded / "client" / "main.tsx").write_text("render()\n")
+    (scaffolded / "CLAUDE.md").write_text("# AppKit\nUse AppKit conventions.\n")
+    (scaffolded / "README.md").write_text("# space-invaders\nBuilt with AppKit.\n")
+
+    out = subprocess.run(
+        ["bash", helper, "space-invaders"],
+        env=env, capture_output=True, text=True, timeout=60,
+    )
+    assert out.returncode == 0, out.stderr
+
+    assert not (scaffolded / "space-invaders").exists(), "must not nest"
+    assert (scaffolded / "client" / "main.tsx").is_file(), "scaffold must survive"
+
+    claude = (scaffolded / "CLAUDE.md").read_text()
+    assert APPKIT_MANDATE in claude, "the workshop rules must be present"
+    assert "Use AppKit conventions." in claude, (
+        "the scaffold's own notes are kept, not destroyed — losing them is what "
+        "made the live near-miss worth repairing by hand"
+    )
+
+    readme = (scaffolded / "README.md").read_text()
+    assert "Built with AppKit." in readme, "the scaffold's README survives"
+    assert "Live URL" in readme, "and still gains the take-home prompt"
+
+
+def test_seeding_an_adopted_project_twice_does_not_duplicate_it(
+    client, monkeypatch, tmp_path
+):
+    """Adoption has to be idempotent or a retry silently doubles the memory file."""
+    home = _provisioned_home(client, monkeypatch)
+    helper = os.path.join(home, ".local", "bin", "workshop-init-project")
+    fake_home, env = _attendee_env(home, tmp_path)
+
+    for _ in range(2):
+        out = subprocess.run(
+            ["bash", helper, "twice"],
+            env=env, capture_output=True, text=True, timeout=60,
+        )
+        assert out.returncode == 0, out.stderr
+
+    project = fake_home / "projects" / "twice"
+    assert (project / "CLAUDE.md").read_text().count(APPKIT_MANDATE) == 1
+    assert (project / "README.md").read_text().count("Live URL") == 1
+
+
+def test_a_failed_appkit_scaffold_still_leaves_a_usable_project(
+    client, monkeypatch, tmp_path
+):
+    """Same stance as the missing-git-identity case: creating the project matters
+    more than the step that failed. A network or npm failure during scaffolding
+    must not leave the attendee with nothing to build in."""
+    home = _provisioned_home(client, monkeypatch)
+    helper = os.path.join(home, ".local", "bin", "workshop-init-project")
+    fake_home, env = _attendee_env(home, tmp_path)
+
+    # A `databricks` on PATH that fails, standing in for a scaffold that cannot
+    # complete. Shadowing it keeps the test offline and deterministic.
+    shim = tmp_path / "shim"
+    shim.mkdir()
+    (shim / "databricks").write_text("#!/bin/sh\necho 'boom' >&2\nexit 1\n")
+    (shim / "databricks").chmod(0o755)
+    env = {**env, "PATH": f"{shim}:{env['PATH']}"}
+
+    out = subprocess.run(
+        ["bash", helper, "unlucky", "--appkit"],
+        env=env, capture_output=True, text=True, timeout=60,
+    )
+    assert out.returncode == 0, out.stderr
+    project = fake_home / "projects" / "unlucky"
+    assert (project / "CLAUDE.md").is_file()
+    assert APPKIT_MANDATE in (project / "CLAUDE.md").read_text()
+    assert out.stdout.strip().endswith("projects/unlucky")
+
+
+def test_the_appkit_flag_scaffolds_into_the_project_root(
+    client, monkeypatch, tmp_path
+):
+    """`--output-dir` is the parent, not the target.
+
+    Getting that backwards is precisely what produced `<name>/<name>` live, so
+    pin the invocation rather than trusting the flag name to keep its meaning.
+    """
+    home = _provisioned_home(client, monkeypatch)
+    helper = os.path.join(home, ".local", "bin", "workshop-init-project")
+    fake_home, env = _attendee_env(home, tmp_path)
+
+    shim = tmp_path / "shim"
+    shim.mkdir()
+    recorded = tmp_path / "argv"
+    (shim / "databricks").write_text(
+        f'#!/bin/sh\nprintf "%s\\n" "$@" > "{recorded}"\nexit 0\n'
+    )
+    (shim / "databricks").chmod(0o755)
+    env = {**env, "PATH": f"{shim}:{env['PATH']}"}
+
+    out = subprocess.run(
+        ["bash", helper, "pinned", "--appkit", "--", "--features", "analytics"],
+        env=env, capture_output=True, text=True, timeout=60,
+    )
+    assert out.returncode == 0, out.stderr
+
+    argv = recorded.read_text().split("\n")
+    assert argv[:2] == ["apps", "init"]
+    assert "--output-dir" in argv
+    assert argv[argv.index("--output-dir") + 1] == str(fake_home / "projects"), (
+        "the parent, so the scaffold lands at projects/<name> and never nests"
+    )
+    assert "--features" in argv and "analytics" in argv, "flags pass through"
+
+
 def test_the_readme_survives_a_missing_git_identity(client, monkeypatch, tmp_path):
     """Creating the project matters more than committing it. If git cannot
     resolve an identity the helper must still leave the attendee with a usable
@@ -446,14 +596,84 @@ def test_topic_detection_flags_user(client, monkeypatch):
     resp = client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE)
     session = session_manager.list_for("alice@example.com")[0]
 
-    assert "lakebase" in content_service.scan_topics("I'll provision Lakebase for the app")
-    _observe_output(session, "Let me set up a Lakebase postgres instance...")
+    assert "lakebase" in content_service.scan_topics(
+        "$ databricks lakebase create-database-instance workshop-db"
+    )
+    _observe_output(session, "$ psql -h inst.database.cloud.databricks.com -c '\\dt'")
     user = user_manager.get("alice@example.com")
     assert "lakebase" in user.topics
 
     nuggets = client.get("/api/nuggets", headers=ALICE).json()["nuggets"]
     matched = [n for n in nuggets if n["matched_topic"] == "lakebase"]
     assert matched and matched[0]["id"] == "topic-lakebase"
+
+
+def test_talking_about_a_product_is_not_using_it(client, monkeypatch):
+    """A topic is not cosmetic — it becomes `products` on the insight payload.
+
+    An attendee built a Space Invaders clone: no data, no persistence, nothing
+    beyond an app. The brief that reached an account team said they had touched
+    Genie and Lakebase, because the agent *said the words* while explaining it
+    was skipping both, and because the skills it loaded quote those commands as
+    examples. Every claim below was made about someone who did none of it.
+    """
+    from server.content import content_service
+
+    monkeypatch.setenv("WORKSHOP_PAT", "dapi-test-token")
+
+    declined = (
+        "This app has zero data and zero persistence, so I skipped the Data "
+        "Access Decision Gate and the Lakebase question entirely. No Genie "
+        "space is needed either, and there is no Unity Catalog object to make."
+    )
+    assert content_service.scan_topics(declined) == set(), (
+        "prose that declines a product must not report it as used"
+    )
+
+    offered = "You could add a Genie space later, or a Lakebase database."
+    assert content_service.scan_topics(offered) == set()
+
+    listing = "databricks-genie  databricks-lakebase  databricks-apps"
+    assert content_service.scan_topics(listing) == set(), (
+        "a directory listing of skill names is not activity"
+    )
+
+
+def test_quoted_commands_in_documentation_are_not_activity(client, monkeypatch):
+    """The `databricks-apps` skill is loaded on every single app build, and it
+    quotes both `--features lakebase` and `databricks genie list-spaces` as
+    reference. Printing a skill is how an agent reads; it is not how an attendee
+    builds. Backticks are the tell, and they never appear in real command output.
+    """
+    from server.content import content_service
+
+    monkeypatch.setenv("WORKSHOP_PAT", "dapi-test-token")
+
+    doc = (
+        "## Project Structure (after `databricks apps init --features lakebase`)\n"
+        "3. If creating, run `databricks genie create-space` to make the space.\n"
+        "```bash\ndatabricks jobs create --json @job.json\n```\n"
+    )
+    assert content_service.scan_topics(doc) == set()
+
+    # The same commands, actually run, must still register.
+    assert content_service.scan_topics(
+        "$ databricks apps init --features lakebase"
+    ) == {"lakebase"}
+    assert content_service.scan_topics("$ databricks genie create-space") == {"genie"}
+
+
+def test_shipping_an_app_is_still_detected(client, monkeypatch):
+    """The guard against over-correcting. Precision that loses the one product
+    every attendee actually uses would make the brief useless in the other
+    direction."""
+    from server.content import content_service
+
+    monkeypatch.setenv("WORKSHOP_PAT", "dapi-test-token")
+    live = "Deployment complete — live at https://space-invaders.aws.databricksapps.com"
+    assert "apps" in content_service.scan_topics(live)
+    assert "build-complete" in content_service.scan_topics(live)
+    assert "apps" in content_service.scan_topics("$ databricks bundle deploy -t dev")
 
 
 def test_topic_detection_opt_out(client, monkeypatch):
@@ -467,5 +687,7 @@ def test_topic_detection_opt_out(client, monkeypatch):
     session = session_manager.list_for("alice@example.com")[0]
     user = user_manager.get("alice@example.com")
     user.topics.clear()
-    _observe_output(session, "lakebase lakebase lakebase")
+    # Text that would definitely register with detection on, so the assertion
+    # tests the opt-out rather than the sample happening not to match.
+    _observe_output(session, "$ databricks lakebase create-database-instance db1")
     assert user.topics == {}

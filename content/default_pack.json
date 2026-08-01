@@ -70,51 +70,62 @@
   },
   "topics": {
     "lakebase": [
-      "lakebase",
-      "postgresql"
+      "databricks lakebase",
+      "features lakebase",
+      "database-instances",
+      "psql"
     ],
     "unity-catalog": [
-      "unity catalog"
+      "databricks catalogs create",
+      "databricks schemas create",
+      "create catalog",
+      "create schema",
+      "unity-catalog/permissions"
     ],
     "genie": [
-      "genie"
+      "databricks genie",
+      "genie_space_id",
+      "genie/spaces"
     ],
     "pipelines": [
-      "lakeflow",
-      "declarative pipeline",
-      "delta live tables",
-      "streaming table",
-      "materialized view",
-      "auto loader"
+      "databricks pipelines",
+      "create streaming table",
+      "create materialized view",
+      "cloudfiles",
+      "lakeflow declarative"
     ],
     "vector-search": [
-      "vector search",
-      "vector index",
-      "embeddings"
+      "databricks vector-search",
+      "vector_search",
+      "create_delta_sync_index"
     ],
     "mlflow": [
-      "mlflow"
+      "import mlflow",
+      "mlflow.log",
+      "mlflow.start_run",
+      "databricks mlflow"
     ],
     "serving": [
-      "model serving",
-      "serving endpoint",
-      "foundation model"
+      "serving-endpoints",
+      "databricks serving",
+      "query_endpoint"
     ],
     "apps": [
-      "databricks apps",
-      "appkit",
-      "streamlit",
-      "gradio"
+      "apps deploy",
+      "bundle deploy",
+      "appkit.plugins.json",
+      "databricksapps.com"
     ],
     "dashboards": [
-      "lakeview",
-      "ai/bi dashboard",
-      "aibi dashboard"
+      "databricks lakeview",
+      "lakeview/dashboards",
+      "create dashboard"
     ],
     "jobs": [
-      "databricks job",
-      "lakeflow job",
-      "scheduled job"
+      "databricks jobs create",
+      "databricks jobs run",
+      "jobs/runs",
+      "create job"
     ],
     "build-complete": [
       "successfully deployed",

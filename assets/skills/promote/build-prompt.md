@@ -36,15 +36,12 @@ Tell the agent:
 Prescriptive setup steps, including:
 
 ```bash
-# 1. Initialise the project
-workshop-init-project <project-name>
-cd ~/projects/<project-name>
+# 1. Create the project and scaffold AppKit into it in one step
+#    (state the real --features plugins used; omit the `-- --features ...`
+#    tail if the app used none)
+cd "$(workshop-init-project <project-name> --appkit -- --features <plugin1>,<plugin2>)"
 
-# 2. Scaffold the AppKit application (state the real --features plugins used)
-databricks apps manifest
-databricks apps init --name <app-name> --features <plugin1>,<plugin2>
-
-# 3. Install dependencies
+# 2. Install dependencies
 npm install
 ```
 

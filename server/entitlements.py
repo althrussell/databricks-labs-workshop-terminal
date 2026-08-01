@@ -408,7 +408,18 @@ class EntitlementManager:
         errors: list[str] = []
         catalog = config.workshop_catalog()
         if not catalog:
-            errors.append("WORKSHOP_CATALOG is not configured")
+            # Not an error: an event can run entitlements on without handing out
+            # a per-attendee catalog, and plenty of builds never touch Unity
+            # Catalog at all (a game, a landing page). Control Tower only injects
+            # WORKSHOP_CATALOG when the app is configured for entitlements, while
+            # the app defaults ENABLE_ENTITLEMENTS on — so this combination is
+            # the normal case, not a misconfiguration.
+            #
+            # Reporting it turned the entitlements check red and made
+            # `workshop-grant-me` print a catalog complaint at an attendee whose
+            # app grant had just succeeded, over something they could not act on.
+            # Same reasoning as the missing-id case in _handoff_resources below.
+            logger.debug("no WORKSHOP_CATALOG set — skipping the catalog grant")
         else:
             for em in emails:
                 if not em or "@" not in em:

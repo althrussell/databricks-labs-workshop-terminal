@@ -32,6 +32,26 @@ _TOPIC_PREFIX = "topic:"
 _IDLE_RE = re.compile(r"^idle_(\d+)m$")
 TOPIC_TTL_SECONDS = 600  # a spotted topic stays "live" for 10 minutes
 
+# Markdown code spans and fences, stripped before topic matching.
+#
+# Backticks are the one reliable tell that the terminal is *displaying
+# documentation* rather than running something. Skills and instructions are full
+# of lines like "scaffold with `--features lakebase`" or "`databricks genie
+# list-spaces`" — reference material, printed when an agent loads a skill. The
+# `databricks-apps` skill is loaded on every single app build and mentions both
+# Genie and Lakebase that way, so without this every attendee who built anything
+# was recorded as having touched both. That reached a customer-facing brief.
+#
+# Real activity never looks like this: a command the agent actually runs, and the
+# output it produces, carry no backticks.
+_FENCED = re.compile(r"```.*?```", re.S)
+_INLINE_CODE = re.compile(r"`[^`\n]*`")
+
+
+def strip_documentation_markup(text: str) -> str:
+    """Remove markdown code spans/fences so quoted commands aren't read as use."""
+    return _INLINE_CODE.sub(" ", _FENCED.sub(" ", text))
+
 
 class NuggetLink(BaseModel):
     url: str
@@ -122,9 +142,18 @@ class ContentService:
 
     def scan_topics(self, text: str) -> set[str]:
         """Topics whose keywords appear in a terminal output chunk. Only the
-        topic names leave this function — the text is never stored."""
+        topic names leave this function — the text is never stored.
+
+        Documentation markup is stripped first, and the keywords themselves are
+        command-shaped rather than product nouns, because a topic here is not
+        cosmetic: it drives the contextual panel *and* the `products` list on the
+        insight payload an account team reads. Matching the word "lakebase"
+        anywhere on screen meant an attendee who explicitly declined to use it
+        was reported as having done so.
+        """
         with self._lock:
             patterns = self._topic_regex
+        text = strip_documentation_markup(text)
         return {topic for topic, regex in patterns.items() if regex.search(text)}
 
     def _load_initial_pack(self) -> ContentPack:

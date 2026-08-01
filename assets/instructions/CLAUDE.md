@@ -102,15 +102,32 @@ So that everything you build is automatically usable by the attendee:
 
 Before starting any new project:
 
-1. **Always create the project with `workshop-init-project` first:**
+1. **Create the project and scaffold it in one command:**
    ```bash
-   cd "$(workshop-init-project my-project)"
+   cd "$(workshop-init-project my-app --appkit)"
    ```
-   This makes `~/projects/my-project`, runs `git init`, and commits the
-   workshop's AppKit project memory as both `CLAUDE.md` and `AGENTS.md` so the
-   rules travel with the repo into every agent and sub-agent (including
-   Omnigent's workers running in isolated worktrees). The command prints the
-   project path, so the `cd "$(...)"` lands you inside it.
+   Pass AppKit flags through after `--`:
+   ```bash
+   cd "$(workshop-init-project my-app --appkit -- --features analytics)"
+   ```
+   Drop `--appkit` for something that isn't an app (a script, a notes repo).
+
+   This makes `~/projects/my-app`, scaffolds AppKit **into that directory**,
+   runs `git init`, and commits the workshop's project memory as both
+   `CLAUDE.md` and `AGENTS.md` so the rules travel with the repo into every
+   agent and sub-agent (including Omnigent's workers running in isolated
+   worktrees). The command prints the project path, so `cd "$(...)"` lands you
+   inside it.
+
+   **Never run `databricks apps init` yourself.** It always creates a
+   subdirectory named after the app, and it refuses to write into a directory
+   that already exists — so scaffolding by hand leaves you with
+   `my-app/my-app` and no way out except `mv my-app/* .`, which silently
+   replaces the project's `CLAUDE.md` with the scaffold's generic one and
+   takes the workshop's rules with it. The helper passes `--output-dir` so the
+   scaffold lands in the project root directly, and it never overwrites a file
+   it did not write. This overrides the `databricks-apps` skill's scaffolding
+   step.
 2. **Why a helper?** Every git commit automatically syncs your work to the
    Databricks Workspace at
    `/Workspace/Users/{your-email}/projects/{project-name}/`, so a terminal
@@ -162,9 +179,10 @@ shortest path from what they asked for to a URL they can open.
 
 AppKit is the required baseline for every app. For this workshop, **every app,
 dashboard, tool, or UI you build MUST use AppKit** (Node.js + TypeScript +
-React) via the **`databricks-apps`** skill — scaffold with `databricks apps
-manifest` then `databricks apps init --features <plugins>`. This applies no
-matter which agent you are (Claude, Codex, or Omnigent).
+React) via the **`databricks-apps`** skill — scaffolded for you by
+`workshop-init-project --appkit` (see Project setup above; do not call
+`databricks apps init` directly). This applies no matter which agent you are
+(Claude, Codex, or Omnigent).
 
 Three more skills are not optional:
 
@@ -262,8 +280,17 @@ attendee choose rather than defaulting to an app.
    against an AppKit API, check the real signature with
    `npx @databricks/appkit docs <section>` — invented shapes fail `tsc`. Never
    write `as unknown as <T>`.
-2. **Deploy, then open the URL once** to confirm it responds.
+2. **Deploy, then open the URL once** to confirm it responds. A first deploy
+   starts cold app compute and routinely runs past a foreground command
+   timeout, so don't block on it — start it in the background and poll:
+   ```bash
+   databricks apps get <app-name> -o json | jq -r '.compute_status.state'
+   ```
+   Wait for `ACTIVE`. A timeout on the deploy command is not a failed deploy;
+   check the state before assuming anything is wrong or retrying.
 3. **Give the attendee the URL** and keep improving against it.
+
+<!-- discovery-anchor -->
 
 **Do not** run `databricks apps validate`, install Playwright browsers, or
 write or update `tests/smoke.spec.ts` — unless the attendee asks for tests, or
