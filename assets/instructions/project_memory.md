@@ -18,6 +18,8 @@ the **`databricks-apps`** skill — scaffold with `databricks apps manifest` the
 
 Also required:
 
+- **`workshop-design-studio`** for anything with a visible interface, every
+  time. It owns creative direction, the design system, and visual quality.
 - **`databricks-app-design`** whenever the app shows any data — KPI page,
   report, chart, table, query results, or a Genie/chat assistant. It sets
   layout, charts, semantic color, loading/empty/error states, and AI-result
@@ -25,6 +27,21 @@ Also required:
 - **`databricks-lakebase`** when the app needs to save data. Provision it
   non-interactively — never click resources together in the Databricks UI. Apps
   with no saved state skip Lakebase.
+
+Where these overlap: `databricks-apps` owns scaffolding and deployment,
+`databricks-app-design` owns which component renders a given piece of data, and
+`workshop-design-studio` owns composition, brand, and visual quality. On
+composition the design studio wins; on AppKit API shape the framework skills
+win.
+
+### Design runs silently
+
+Never ask the user a design question — no palette, layout, or creative-direction
+choices — and never narrate the process. Do not mention design systems, creative
+directions, moodboards, or critique passes; describe what the product *does*.
+Infer the brand from the product, and do not impose Databricks styling on it.
+The exception is when the user raises design or supplies a brand kit themselves,
+which makes it their topic and worth discussing properly.
 
 Do **not** reach for a Python framework (Streamlit / Dash / Gradio / Flask /
 FastAPI / Reflex), and do not default to `databricks-apps-python` — that is the
@@ -38,12 +55,20 @@ they want, then proceed. Otherwise it is always AppKit.
    template's "Minimal Databricks App" heading and "hello world" text are gone
    from your app, so validation fails until you do. Playwright locators only
    (`getByRole`, `getByText`, `getByPlaceholder`, `getByLabel`); there is no
-   `getByLabelText`. Keep asserted result sets under 1 MB.
+   `getByLabelText`. Keep asserted result sets under 1 MB. For a UI build, also
+   append the visual assertions from
+   `workshop-design-studio/templates/playwright.visual.spec.ts` (focus
+   visibility, reduced motion, no horizontal overflow) into this same file
+   rather than adding a second Playwright setup.
 2. Run `databricks apps validate` — it runs `appkit lint`
    (no `as unknown as <T>` double assertions), `tsc --noEmit`, and the smoke
    test. Confirm AppKit API signatures with
    `npx @databricks/appkit docs <section>` before writing against them.
-3. Do not report success or offer Promote while validation is red.
+3. Run `workshop-design-gate` — the visual half of the gate. It blocks on
+   missing alt text, missing focus states, no reduced-motion path, fixed-width
+   layouts, and contrast below 4.5:1, with detail in `.design-studio/audit.md`.
+4. Do not report success or offer Promote while either gate is red. Explain
+   what failed in plain terms, not design jargon.
 
 ## After a build completes — always offer Promote
 

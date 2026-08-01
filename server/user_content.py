@@ -53,6 +53,7 @@ def provision(user: User) -> None:
         return
     for step in (
         _write_callback_capability,
+        _write_persona,
         _write_instructions,
         _install_project_helper,
         _install_cli_helpers,
@@ -107,6 +108,77 @@ def verify_callback_capability(email: str, supplied: str) -> bool:
     return bool(expected) and hmac.compare_digest(expected, supplied)
 
 
+# -- persona (technical vs business) --
+
+# The coach adapts its whole vocabulary to this, so it used to be the agent's
+# first job: read ~/.workshop/persona, and if it was empty, ask. That question
+# cost an attendee a full round trip -- file read, an interactive prompt, their
+# answer, a file write -- before anything they came here for started happening,
+# and it landed on someone who had just been told to type "hi" and had no idea
+# why the machine wanted to know.
+#
+# The web UI can ask it for free while they are still reading the landing page,
+# so the file is seeded before the first token and the agent never has to.
+PERSONAS = ("technical", "business")
+
+# Someone who did not pick is far likelier to be non-technical -- the engineers
+# are the ones who notice a toggle and set it. Guessing business is also the
+# cheaper error: jargon aimed at someone who does not want it loses them, while
+# plain language aimed at an engineer is merely brief.
+DEFAULT_PERSONA = "business"
+
+_PERSONA_RELATIVE = os.path.join(".workshop", "persona")
+_PERSONA_MARKER = "<!-- workshop-persona -->"
+
+
+def persona_path(user: User) -> str:
+    return os.path.join(user.home, _PERSONA_RELATIVE)
+
+
+def read_persona(user: User) -> str | None:
+    """The attendee's stored persona, or None when they never chose one."""
+    try:
+        with open(persona_path(user)) as f:
+            value = f.read().strip().lower()
+    except OSError:
+        return None
+    return value if value in PERSONAS else None
+
+
+def _write_persona(user: User) -> None:
+    """Seed the persona file so the agent never has to ask for it.
+
+    Only writes the default when nothing is set, so a choice made on the
+    landing page survives provisioning regardless of which happened first.
+    """
+    if read_persona(user) is not None:
+        return
+    _store_persona(user, DEFAULT_PERSONA)
+
+
+def _store_persona(user: User, persona: str) -> None:
+    path = persona_path(user)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(f"{persona}\n")
+
+
+def set_persona(user: User, persona: str) -> str:
+    """Record a persona chosen in the web UI and refresh the instructions.
+
+    Rewriting the instructions matters: the persona is inlined into them, and
+    the attendee can pick it either before their first session (nothing written
+    yet) or after (already written with the default). Without the rewrite, the
+    second case would leave the agent reading a stale line.
+    """
+    persona = persona.strip().lower()
+    if persona not in PERSONAS:
+        raise ValueError(f"unknown persona {persona!r}")
+    _store_persona(user, persona)
+    _write_instructions(user)
+    return persona
+
+
 # -- instructions (CLAUDE.md / AGENTS.md + lab coach) --
 
 def _overlay(text: str, name: str, marker: str) -> str:
@@ -132,8 +204,39 @@ def _base_instructions() -> str:
     return text
 
 
+def _persona_overlay(user: User) -> str:
+    """The attendee's persona, stated in the instructions themselves.
+
+    Inlined rather than left in a file for the agent to go and read: a file read
+    is a tool call, and on the first turn that call is the difference between an
+    agent that starts building and one that starts doing admin. The agent is
+    told the answer before it is asked the question.
+    """
+    persona = read_persona(user) or DEFAULT_PERSONA
+    if persona == "technical":
+        described = (
+            "**technical** — they write code or know the Databricks components. "
+            "Use real names (AppKit, Lakebase, SQL warehouse, Unity Catalog) and "
+            "explain the architecture choices you make."
+        )
+    else:
+        described = (
+            "**business-oriented** — they care about the outcome, not the "
+            "plumbing. Talk about what their product does for them, and keep "
+            "Databricks component names out of it unless they ask."
+        )
+    return (
+        f"{_PERSONA_MARKER}\n"
+        "## Who you are working with\n\n"
+        f"This attendee is {described}\n\n"
+        "This is already settled — never ask them whether they are technical or "
+        "business, and never read it from a file. If the conversation shows the "
+        "guess was wrong, just adjust how you talk and carry on.\n"
+    )
+
+
 def _write_instructions(user: User) -> None:
-    text = _base_instructions()
+    text = f"{_base_instructions()}\n\n{_persona_overlay(user)}"
 
     claude_md = os.path.join(user.home, ".claude", "CLAUDE.md")
     os.makedirs(os.path.dirname(claude_md), exist_ok=True)
@@ -187,10 +290,20 @@ def _install_cli_helpers(user: User) -> None:
       ``captured: false`` when capture is off, and a helper that exists but
       declines is a much better failure than ``command not found`` mid-session
       if an operator enables capture on a running instance.
+    - ``workshop-design-gate``: the visual half of the build gate (audit +
+      quality gate from the workshop-design-studio skill). A single command
+      keeps the instruction channels harness-neutral — ``assets/instructions/
+      CLAUDE.md`` is written to both ``~/.claude/CLAUDE.md`` and
+      ``~/.codex/AGENTS.md``, so it cannot name a harness-specific skills path.
     """
     local_bin = os.path.join(user.home, ".local", "bin")
     os.makedirs(local_bin, exist_ok=True)
-    for name in ("databricks-me", "workshop-grant-me", "workshop-discovery"):
+    for name in (
+        "databricks-me",
+        "workshop-grant-me",
+        "workshop-discovery",
+        "workshop-design-gate",
+    ):
         src = os.path.join(_ASSETS, "bin", name)
         if not os.path.isfile(src):
             continue

@@ -1,0 +1,6 @@
+category,guideline,description,do,dont,severity
+Layout,SwiftUI adaptive,"Use size classes, ViewThatFits, and flexible layouts",Test Dynamic Type and landscape,Assume one iPhone size,high
+Theme,environment tokens,Expose semantic colours typography and spacing through environment values,Use asset catalog colour variants,Hardcode RGB values in view bodies,high
+Interaction,native controls,Prefer Button NavigationStack and accessible native controls,Use contentShape for adequate hit targets,Use onTapGesture as a substitute for every control,critical
+Motion,reduce motion,Query accessibilityReduceMotion and provide simpler transitions,Use matched geometry only for meaningful continuity,Make essential navigation depend on animation,critical
+Accessibility,labels and rotor,Provide labels values hints and logical heading structure,Test VoiceOver order and Dynamic Type,Hide labels to achieve a visual effect,critical

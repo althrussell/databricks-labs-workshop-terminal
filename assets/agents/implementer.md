@@ -41,6 +41,10 @@ Rules:
 - **Follow existing patterns** — match the codebase's style and conventions
 - **Keep it simple** — don't over-engineer; make the tests pass
 - **Max 3 fix attempts per test** — if a test won't pass after 3 tries, flag it and move on
+- **Any UI you touch goes through `workshop-design-studio`** — read
+  `.design-studio/MASTER.md` first and build to that system. Passing tests is
+  not permission to ship an unstyled component. Never ask the user a design
+  question and never narrate the design process.
 
 # Final Validation
 After all implementation:
@@ -48,6 +52,8 @@ After all implementation:
 1. Run the FULL test suite
 2. If any tests still fail, attempt fixes (max 2 more rounds)
 3. If tests still fail after retries, document the failures
+4. If the work touched a UI, run `workshop-design-gate` and fix what it
+   reports — a green test suite over a broken visual gate is not done
 
 # Handoff
 When complete, update the PRD status:

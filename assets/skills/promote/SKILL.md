@@ -92,6 +92,32 @@ did not happen. State plainly what exists and what does not. An honest "we got t
 ingest and the broker auth failed" is worth more to the attendee — and to whoever helps
 them next — than a document implying a finished system.
 
+### 2c. Collect the design record
+
+If the project has a `.design-studio/` directory, copy it alongside the
+documents so the visual work travels with the handoff:
+
+```sh
+if [ -d .design-studio ]; then
+  mkdir -p ~/promote/design
+  cp .design-studio/MASTER.md ~/promote/design/ 2>/dev/null
+  cp .design-studio/creative-brief.md ~/promote/design/ 2>/dev/null
+  cp .design-studio/design-system.json ~/promote/design/ 2>/dev/null
+  cp .design-studio/IMPLEMENTATION.md ~/promote/design/ 2>/dev/null
+  cp .design-studio/verification.md ~/promote/design/ 2>/dev/null
+fi
+```
+
+This is the only record of *why* the product looks the way it does — the design
+reasoning was deliberately kept out of the conversation, so without these files
+it is lost when the environment is deleted. Whoever rebuilds the app needs the
+tokens and the direction, not a screenshot.
+
+Reference it from `architecture.md` and reuse its tokens in `build-prompt.md`,
+so a rebuild reproduces the same product rather than a default-styled
+approximation. Do not turn this into a design lecture for the attendee — it is
+documentation, delivered with the rest of the pack.
+
 ### 3. Resolve Volume path
 
 ```sh
@@ -111,6 +137,13 @@ for doc in architecture security jira-stories test-cases build-prompt; do
   databricks files upload "$HOME/promote/${doc}.md" "${PROMOTE_PATH}/${doc}.md" --overwrite \
     && echo "✓ ${doc}.md" \
     || echo "✗ ${doc}.md (upload failed — check credentials)"
+done
+
+for f in "$HOME"/promote/design/*; do
+  [ -e "$f" ] || continue
+  databricks files upload "$f" "${PROMOTE_PATH}/design/$(basename "$f")" --overwrite \
+    && echo "✓ design/$(basename "$f")" \
+    || echo "✗ design/$(basename "$f") (upload failed)"
 done
 ```
 
@@ -138,6 +171,7 @@ Example output:
   jira-stories.md   — Product backlog with epics and stories
   test-cases.md     — Test strategy and test cases
   build-prompt.md   — Self-contained rebuild prompt
+  design/           — Design system, creative brief, verification evidence
 ```
 
 ## Notes

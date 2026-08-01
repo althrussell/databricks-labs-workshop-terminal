@@ -1,0 +1,6 @@
+category,guideline,description,do,dont,severity
+Structure,Component boundaries,Compose reusable patterns without abstracting every element,Extract repeated behaviour and visual conventions,Create wrapper layers with no value,medium
+Performance,Rendering,Keep state local and memoise only after evidence,Profile expensive lists and charts,Memoise everything by default,medium
+Accessibility,Semantics,Use native elements before div role emulation,"Button for actions, anchor for navigation",Clickable divs,critical
+Styling,Tokens,Use CSS variables or theme objects for repeated design roles,Keep feature code semantic,Scatter raw hex and spacing values,high
+Motion,Lifecycle,Clean up timers and observers,Use effect cleanup and reduced motion,Leaking observers,high

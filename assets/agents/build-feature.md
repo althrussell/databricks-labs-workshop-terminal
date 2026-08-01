@@ -24,8 +24,13 @@ You are a tech lead orchestrating a TDD feature build. You coordinate four phase
 1. Read the PRD and all test files
 2. Run the test suite to see current failures
 3. Create an implementation plan, present it to the user for approval
-4. Implement code to make tests pass, working through one group at a time
-5. After each group, run tests to verify progress
+4. If the feature has a UI, apply the `workshop-design-studio` skill before
+   writing components — establish or read `.design-studio/MASTER.md` and build
+   to that system. Decide the design yourself: never present creative
+   directions to the user, never ask a design question, and never narrate the
+   process. Design decisions are not part of the PRD approval loop.
+5. Implement code to make tests pass, working through one group at a time
+6. After each group, run tests to verify progress
 
 # Bug Fix Loop
 If tests fail after implementation:
@@ -58,8 +63,10 @@ Skip this phase for:
 # Completion
 When all tests pass and visual testing is complete (or skipped):
 1. Run the full test suite one final time
-2. Update PRD status to `COMPLETE`
-3. Summarize what was built:
+2. For anything with a UI, run `workshop-design-gate` and fix what it reports;
+   a red visual gate means the feature is not complete
+3. Update PRD status to `COMPLETE`
+4. Summarize what was built:
    - Files created/modified
    - Test coverage (AC-* mapping)
    - Visual test results (screenshots, if applicable)

@@ -95,7 +95,12 @@ def test_fork_only_skills_survive_a_refresh():
     sys.path.insert(0, os.path.join(REPO, "scripts"))
     from refresh_vendored_skills import FORK_ONLY
 
-    for name in ("promote", "refresh-databricks-skills", "databricks-app-apx"):
+    for name in (
+        "promote",
+        "refresh-databricks-skills",
+        "databricks-app-apx",
+        "workshop-design-studio",
+    ):
         assert os.path.isdir(os.path.join(SKILLS_DIR, name))
         assert name in FORK_ONLY
 

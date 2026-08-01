@@ -1,0 +1,4 @@
+category,guideline,description,do,dont,severity
+Structure,Composition API,Keep state and visual concerns explicit,Use composables for repeated behaviour,Hide simple UI behind over-abstraction,medium
+Accessibility,Templates,Use semantic template elements and labelled controls,Preserve focus and keyboard behaviour,Click handlers on generic spans,critical
+Styling,Scoped CSS,Use shared tokens outside isolated component styles,Keep brand roles consistent,Duplicate theme values in every component,high

@@ -5,8 +5,8 @@ The vendored tree is the offline fallback for the boot-time overlay, so it must
 be the *same* content boot would install. This clones the manifest's pinned
 commit, verifies the clone against the manifest's ``content_sha256``, and only
 then replaces the upstream-sourced skill directories -- leaving the fork-only
-skills (the apx skill, this repo's workflow/superpowers set, and the refresh
-skill itself) untouched.
+skills (the apx skill, the design studio, this repo's workflow/superpowers set,
+and the refresh skill itself) untouched.
 
 ``--check`` verifies the committed fallback without rewriting it, which is what
 CI runs; a drift means an operator hand-edited a vendored skill or bumped the
@@ -53,6 +53,7 @@ FORK_ONLY = frozenset({
     "using-git-worktrees",
     "using-superpowers",
     "verification-before-completion",
+    "workshop-design-studio",
     "writing-plans",
     "writing-skills",
 })

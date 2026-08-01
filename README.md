@@ -54,9 +54,10 @@ operator admin panel.
   Lakebase and a "spotted in your session" Lakebase card appears with the
   value prop and docs link. Only topic flags are recorded, never terminal
   content (`TOPIC_DETECTION=false` to disable).
-- **A coached first run**: launching Claude greets the attendee
-  ("agent speaks first"), a lab-coach persona adapts to technical vs business
-  attendees, event-pinned [databricks-agent-skills](https://github.com/databricks/databricks-agent-skills)
+- **A coached first run**: attendees say how they want things explained before
+  they launch, so the coach adapts to technical vs business from its very first
+  reply instead of spending a turn asking; anything they build gets a real
+  design pass they never have to think about; event-pinned [databricks-agent-skills](https://github.com/databricks/databricks-agent-skills)
   skills are installed only from the reviewed artifact manifest, TDD subagents
   are pre-installed, and every
   git commit auto-syncs to the attendee's Workspace home so a restart or

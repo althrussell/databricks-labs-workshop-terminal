@@ -1,0 +1,10 @@
+{
+  "palette": {
+    "background": "#F7F6F2",
+    "surface": "#FFFFFF",
+    "foreground": "#171717",
+    "primary": "#315EFB",
+    "accent": "#E85D3F",
+    "muted": "#5D5D5D"
+  }
+}

@@ -1,0 +1,39 @@
+category,issue,keywords,description,do,dont,severity
+Accessibility,focus-visible,interactive web,Every interactive control needs visible keyboard focus,Use :focus-visible with sufficient contrast,Remove outlines without replacement,critical
+Accessibility,colour-only-status,status charts badges,"Status must use text, icon, shape, or pattern in addition to colour",Pair colour with labels or icons,Use red/green alone,critical
+Accessibility,image-alt,images media,Meaningful images require useful alt text,Describe purpose; use empty alt for decorative,Repeat filenames or omit alt,critical
+Accessibility,icon-label,icon buttons,Icon-only controls need accessible names,Use aria-label or visible text,Unlabelled icon buttons,critical
+Accessibility,reduced-motion,animation,Respect reduced-motion preference,Disable or simplify non-essential motion,Force parallax or loops,critical
+Layout,responsive-overflow,all web,No unintended horizontal overflow,Test 375/768/1024/1440,Rely on desktop shrink,high
+Layout,reading-measure,content editorial,Keep long text to readable measure,Use max-inline-size around 55-75ch,Full-width paragraphs on desktop,medium
+Layout,primary-hierarchy,all ui,Primary task or message should be evident in five seconds,"Use scale, position and contrast intentionally",Give every section equal weight,high
+Layout,card-wall,apps dashboards,Cards are not a default composition system,"Use continuous panes, rows, tables or editorial sections when appropriate",Wrap every section in identical cards,high
+Brand,style-consistency,all ui,One coherent visual direction,Define tokens and component conventions,"Mix unrelated radii, shadows and icon styles",high
+Brand,real-content,all ui,Use credible content and microcopy,Write product-specific labels and examples,Lorem ipsum and generic placeholder labels,high
+Interaction,feedback,controls,Actions require immediate feedback,"Use pressed, busy, success and error states",No visible response,high
+Interaction,disabled-state,controls forms,Disabled controls must look and behave disabled,Use native disabled semantics and explanation when needed,Clickable-looking dead controls,medium
+Interaction,target-size,touch responsive,Interactive targets need adequate hit areas,Use approximately 44px targets for touch contexts,Tiny icons with no hit area,high
+Motion,timing,animation,Keep common motion concise,Use 150-300ms for common transitions,Slow decorative one-second UI transitions,medium
+Motion,purpose,animation,Motion should explain change or create one deliberate moment,"Animate state, hierarchy or spatial movement",Animate everything because it looks modern,high
+Performance,image-loading,images,Optimise images and reserve space,"Use responsive dimensions, modern formats and lazy loading",Huge unbounded images causing layout shift,high
+Performance,font-loading,typography,Use fallbacks and avoid blocking the experience,Use system fallbacks and preload only when justified,Many remote font weights,medium
+Performance,dependency-discipline,implementation,Do not add heavy dependencies for one effect,Prefer CSS or existing libraries,Install animation or UI frameworks casually,medium
+Forms,visible-labels,forms,Fields require visible labels,Use label elements and helper text,Placeholder-only labels,critical
+Forms,inline-errors,forms,Place actionable error messages near fields,Explain what happened and how to fix it,Generic error at page top only,high
+Forms,preserve-input,forms,Do not discard input after validation failure,Retain values and focus first error,Reset entire form,high
+States,loading,data network,Show meaningful loading state,Use skeleton or progress appropriate to expected content,Blank screens or frozen buttons,high
+States,empty,data list,Empty states should explain and offer next action,Use context-specific copy and action,Show an empty table with no guidance,medium
+States,error,network actions,Errors need recovery,Explain scope and provide retry or fallback,Silent failure,critical
+Navigation,orientation,multi-page app,Users need clear location and predictable back behaviour,"Use active state, breadcrumbs or titles as appropriate",Ambiguous navigation labels,high
+Navigation,depth,complex app,Progressively disclose complexity,Use contextual detail and command palettes,Put every feature in primary navigation,medium
+Content,message-title,landing analytics,Headings should communicate the point,Write outcome or insight-led titles,Generic titles such as Overview or Welcome,medium
+Content,microcopy,all ui,Microcopy should match brand and reduce uncertainty,Use specific action labels and consequences,"Submit, Click here, Something went wrong",medium
+Visual,icon-family,all ui,Use one consistent icon family and style,Standardise size and stroke,"Mix emoji, filled and outline icons randomly",high
+Visual,depth-model,all ui,Use a coherent surface and elevation system,Define surface ladder and overlay elevation,Every element has a different shadow,high
+Visual,gradient-purpose,brand marketing,Gradients need a defined role,"Use for atmosphere, hierarchy or brand fields",Scatter unrelated gradients across components,medium
+Visual,dark-mode,themes,Dark mode needs independent contrast and depth tuning,"Test text, borders, surfaces and states separately",Invert colours mechanically,high
+Data,chart-question,charts,Choose chart by analytical question,"Use trend, comparison, distribution or relationship logic",Add donut or gauge for decoration,high
+Data,source-freshness,analytics ai,Show source and freshness where trust matters,"Expose timestamp, source or confidence",Show unexplained metrics,high
+AI,transparency,agent ai,Show generated or tool-driven process when relevant,"Expose sources, tool states and limitations",Present uncertain output as authoritative,high
+Responsive,navigation-adaptation,mobile web,Navigation must transform intentionally,"Use drawer, condensed nav or priority links",Squeeze desktop nav into tiny width,high
+Responsive,content-priority,mobile web,Mobile order must reflect task priority,Reorder and collapse support content,Preserve desktop order blindly,high

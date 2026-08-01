@@ -1,0 +1,17 @@
+:root {
+  --bg: #f7f6f2;
+  --surface: #ffffff;
+  --fg: #171717;
+  --muted: #5d5d5d;
+  --focus: #315efb;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); }
+.page { max-width: 72rem; margin: 0 auto; padding: 2rem; }
+button:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+@media (max-width: 48rem) { .page { padding: 1rem; } }
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+button { transition: transform 180ms ease-out; }
+button:hover { transform: translateY(-1px); }

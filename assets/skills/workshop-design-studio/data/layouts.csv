@@ -1,0 +1,17 @@
+name,keywords,structure,best_for,responsive,notes
+Editorial Split,editorial luxury portfolio product,Asymmetric split between narrative and visual media,Hero or detail,Stack visual after summary on mobile,Strong when content and imagery both matter
+Immersive Chapters,story travel climate campaign,Full-viewport or full-bleed narrative chapters,Landing,Collapse to shorter sections and reduce motion,Use for genuine storytelling
+Dense Workbench,operations investigation technical,"Navigation, dominant workspace and contextual inspector",Application,Collapse inspector to drawer,Supports deep focused work
+Command Centre,dashboard realtime operations,"High-signal status, timeline and actionable lists",Application,Prioritise alerts and single-column actions,Avoid vanity metrics
+Editorial Grid,news magazine portfolio,Varied scale modular editorial grid,Landing/listing,Reorder by reading priority,Strong content hierarchy
+Product Theatre,ecommerce automotive hardware,Large product visual with progressive specification reveal,Landing/detail,Prioritise product and primary action,Use rich local assets
+Conversion Narrative,saas service event,"Problem, proof, product, trust, action",Landing,Keep primary CTA persistent but not intrusive,Real proof only
+Catalogue Explorer,marketplace ecommerce directory,Filterable visual catalogue with strong detail transition,Application,Filters become sheet/drawer,Optimise discovery and comparison
+Guided Journey,education onboarding form healthcare,Progressive sequence with context and reassurance,Workflow,One focused step per screen,Preserve progress and recovery
+Conversational Canvas,ai assistant agent chat,Conversation plus artefact or tool workspace,Application,Toggle between conversation and output,Show sources and execution states
+Gallery Narrative,portfolio art photography,Large work previews with minimal navigation,Portfolio,Single-column gallery with caption rhythm,Let the work dominate
+Comparative Decision,finance pricing procurement analytics,Side-by-side comparison with direct recommendation,Application/landing,Stack options with sticky labels,Use consistent measures
+Spatial Map,architecture lineage systems workflow,Node/relationship canvas with contextual detail,Application,Provide list fallback and focused navigation,Needs keyboard and zoom support
+Utility Shell,consumer utility productivity,"Compact nav, focused task, recent history",Application,Bottom or condensed navigation,Optimise repeat use
+Brand Manifesto,brand campaign culture,"Statement typography, values and selected proof",Landing,Preserve hierarchy and trim decoration,Needs strong copy
+Repository Detail,docs developer catalog,Tree/list navigation plus rich detail view,Application,Drawer navigation and readable detail,Great for technical products

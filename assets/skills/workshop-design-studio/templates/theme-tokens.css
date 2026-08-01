@@ -1,0 +1,78 @@
+/*
+  Workshop Design Studio semantic-token starter.
+  Replace the example values with the selected art direction.
+  Components should consume semantic roles, not raw palette names.
+*/
+:root {
+  color-scheme: light;
+
+  --ds-bg: oklch(98% 0.01 250);
+  --ds-surface: oklch(100% 0 0);
+  --ds-surface-raised: oklch(99% 0.005 250);
+  --ds-fg: oklch(20% 0.025 255);
+  --ds-fg-muted: oklch(48% 0.025 255);
+  --ds-border: oklch(88% 0.015 250);
+  --ds-primary: oklch(55% 0.18 255);
+  --ds-primary-fg: oklch(99% 0 0);
+  --ds-accent: oklch(72% 0.16 65);
+  --ds-success: oklch(58% 0.14 150);
+  --ds-warning: oklch(68% 0.16 75);
+  --ds-danger: oklch(58% 0.21 25);
+  --ds-focus: oklch(65% 0.17 250);
+
+  --ds-radius-sm: 0.375rem;
+  --ds-radius-md: 0.75rem;
+  --ds-radius-lg: 1.25rem;
+  --ds-shadow-1: 0 1px 2px rgb(15 23 42 / 0.06);
+  --ds-shadow-2: 0 12px 32px rgb(15 23 42 / 0.12);
+
+  --ds-space-1: 0.25rem;
+  --ds-space-2: 0.5rem;
+  --ds-space-3: 0.75rem;
+  --ds-space-4: 1rem;
+  --ds-space-6: 1.5rem;
+  --ds-space-8: 2rem;
+  --ds-space-12: 3rem;
+  --ds-space-16: 4rem;
+
+  --ds-duration-fast: 120ms;
+  --ds-duration-normal: 220ms;
+  --ds-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-theme="dark"],
+.dark {
+  color-scheme: dark;
+
+  --ds-bg: oklch(15% 0.02 255);
+  --ds-surface: oklch(20% 0.025 255);
+  --ds-surface-raised: oklch(25% 0.03 255);
+  --ds-fg: oklch(94% 0.01 250);
+  --ds-fg-muted: oklch(70% 0.02 250);
+  --ds-border: oklch(34% 0.025 255);
+  --ds-primary: oklch(72% 0.15 250);
+  --ds-primary-fg: oklch(16% 0.02 255);
+  --ds-accent: oklch(78% 0.14 65);
+  --ds-success: oklch(70% 0.14 150);
+  --ds-warning: oklch(78% 0.14 75);
+  --ds-danger: oklch(72% 0.19 25);
+  --ds-focus: oklch(78% 0.14 250);
+  --ds-shadow-1: 0 1px 2px rgb(0 0 0 / 0.25);
+  --ds-shadow-2: 0 18px 50px rgb(0 0 0 / 0.45);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ds-focus);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,13 @@
+question,keywords,primary,alternatives,use_when,avoid,accessibility
+Trend over time,time series trend change,Line chart,Area chart for cumulative volume,Compare direction and rate across time,Too many unrelated series,Label units and provide data table
+Category comparison,compare categories ranking,Horizontal bar,Dot plot,Compare values across named categories,Pie with many slices,Sort meaningfully and start at zero when magnitude matters
+Part to whole,composition share proportion,Stacked bar,Pie or donut for two to five simple parts,Show contribution to total,Dozens of tiny segments,Provide direct labels and totals
+Distribution,distribution spread histogram,Histogram,Box plot or violin,"Show shape, spread and outliers",Line chart connecting bins,Explain sample and binning
+Relationship,correlation relationship variables,Scatter plot,Bubble plot with careful encoding,Explore association and outliers,Dual-axis line chart,Show units and trend only when justified
+Flow,flow journey transfer,Sankey,Funnel for ordered stage loss,Show paths and volume movement,Sankey when sequence is not the question,Offer tabular path summary
+Geography,location region map,Choropleth or symbol map,Ranked bar if geography is incidental,Show spatial pattern,Map because region names exist,Use accessible legend and table fallback
+Schedule,timeline gantt project,Timeline or Gantt,Milestone list,"Show sequence, overlap and dependencies",Dense Gantt for simple dates,Provide text dates and status
+Matrix,two dimensions heatmap,Heatmap,Table with conditional formatting,Scan patterns across a matrix,Rainbow scales,Use perceptually ordered palette and labels
+Single progress,progress target completion,Progress bar,Bullet chart,Show completion against target,Gauge unless spatial metaphor matters,Include exact value and target
+Financial variance,actual plan prior variance,Waterfall,Variance bar table,Explain drivers of change,Decorative pie chart,Use consistent signs and scenario labels
+Network,relationships graph topology,Node-link diagram,Adjacency matrix,Explore connections and clusters,Hairball with hundreds of nodes,Provide filtering and list alternative

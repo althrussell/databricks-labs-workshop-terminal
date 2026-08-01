@@ -364,6 +364,30 @@ def redact_discovery(
     return {"redacted": True, "record_id": body.record_id}
 
 
+class _PersonaBody(BaseModel):
+    persona: str
+
+
+@app.post("/api/persona")
+def set_persona(body: _PersonaBody, principal: Principal = Depends(get_current_user)):
+    """Record whether the attendee is technical or business-oriented.
+
+    Asked on the landing page rather than by the agent on the first turn. The
+    agent needs the answer to pitch everything it says, but making it ask cost a
+    full round trip before the attendee saw anything happen — and it is a
+    strange first question to be asked by a machine you have just met.
+    """
+    from . import user_content
+    from .users import user_manager
+
+    user = user_manager.get(principal.name)
+    try:
+        persona = user_content.set_persona(user, body.persona)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="unknown persona") from None
+    return {"persona": persona}
+
+
 @app.get("/api/agents")
 def list_agents(_: Principal = Depends(get_current_user)):
     ready = install.status()["ready"]

@@ -25,6 +25,9 @@ the one boot installs.
 ## Not vendored from upstream (preserved on refresh)
 
 - `databricks-app-apx` — Control Tower / apx-specific, fork-only
+- `workshop-design-studio` — creative direction, design system, and visual
+  quality for anything an attendee builds with a UI. Maintained here, not
+  upstream; see its `NOTICE.md` for attribution.
 - `refresh-databricks-skills` — the refresh skill itself
 - superpowers + bdd workflow skills (`brainstorming`, `test-driven-development`, etc.)
 

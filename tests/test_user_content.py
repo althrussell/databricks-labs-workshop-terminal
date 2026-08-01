@@ -15,7 +15,11 @@ APPKIT_MANDATE = "AppKit is the required baseline for every app."
 # Skill names the mandate must use, and names it must never use. A mandate that
 # points an agent at a skill that no longer exists is worse than no mandate: the
 # agent finds nothing and silently improvises a Python framework instead.
-CANONICAL_APP_SKILLS = ("databricks-apps", "databricks-app-design")
+CANONICAL_APP_SKILLS = (
+    "databricks-apps",
+    "databricks-app-design",
+    "workshop-design-studio",
+)
 
 # Where the Databricks CLI tracks which skills it considers installed.
 _AITOOLS_STATE = os.path.join(".databricks", "aitools", "skills", ".state.json")
@@ -95,6 +99,19 @@ def test_mandate_requires_the_appkit_validation_gate(client, monkeypatch):
         assert "tests/smoke.spec.ts" in text
         assert "tsc --noEmit" in text
         assert "appkit lint" in text
+        # An app that compiles but is unreadable or unusable on a phone is not
+        # done either, so the visual gate travels with the compile gate.
+        assert "workshop-design-gate" in text
+
+
+def test_the_visual_gate_helper_is_runnable_by_the_agent(client, monkeypatch):
+    """The instructions call it as a bare command, so it has to be on PATH and
+    executable — a `command not found` here silently drops the visual gate."""
+    home = _provisioned_home(client, monkeypatch)
+
+    helper = os.path.join(home, ".local", "bin", "workshop-design-gate")
+    assert os.path.isfile(helper)
+    assert os.access(helper, os.X_OK)
 
 
 def test_project_helper_installed(client, monkeypatch):
