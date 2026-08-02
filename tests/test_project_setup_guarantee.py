@@ -97,3 +97,94 @@ def test_the_deploy_step_does_not_expect_to_block():
     assert "ACTIVE" in body, "and a stated condition to wait for"
     lowered = body.lower()
     assert "timeout on the deploy command is not a failed deploy" in lowered
+
+
+def test_the_helper_drops_a_warning_whose_premise_is_false():
+    """The scaffolder warns that Databricks skills are not installed and tells
+    you to run `databricks aitools install`. In this terminal that is wrong —
+    a curated, trimmed skill set is already linked into ~/.claude and was used
+    successfully throughout the session that reported this. A warning that
+    fires against its own false premise teaches people to skim past warnings,
+    which is worse than not printing it.
+    """
+    helper = (ROOT / "assets" / "bin" / "workshop-init-project").read_text()
+    assert "Databricks skills are not installed" in helper
+    assert "coding agents detected without Databricks skills" in helper
+    assert "grep -vF" in helper, "filtered by exact text, not a broad pattern"
+    assert "PIPESTATUS" in helper, (
+        "and the scaffold's own exit status must survive the pipe, or a real "
+        "failure reads as success"
+    )
+
+
+def test_npm_is_configured_not_to_alarm_the_attendee(tmp_path):
+    """`npm install <anything>` in a scaffolded app ends with a count of
+    vulnerabilities including criticals, all transitive to the template's dev
+    toolchain. It is the first thing a non-technical attendee sees after their
+    first npm command."""
+    import inspect
+    from types import SimpleNamespace
+
+    from server import user_content
+
+    user = SimpleNamespace(home=str(tmp_path), email="alice@example.com")
+    user_content._write_npm_setup(user)
+    npmrc = (tmp_path / ".npmrc").read_text()
+    assert "audit=false" in npmrc
+    assert "fund=false" in npmrc
+    assert "_write_npm_setup" in inspect.getsource(user_content.provision), (
+        "the step has to actually run during provisioning"
+    )
+
+
+def test_an_npmrc_the_attendee_already_has_is_not_overwritten(tmp_path):
+    """Provisioning is idempotent and runs on every session start. Their own
+    registry or auth settings outrank our noise suppression."""
+    from types import SimpleNamespace
+
+    from server import user_content
+
+    (tmp_path / ".npmrc").write_text("registry=https://npm.internal.example\n")
+    user_content._write_npm_setup(SimpleNamespace(home=str(tmp_path), email="a@b.c"))
+    assert (tmp_path / ".npmrc").read_text() == "registry=https://npm.internal.example\n"
+
+
+def test_no_surface_tells_an_agent_to_run_jq():
+    """`jq` is not installed in the terminal.
+
+    A live session lost a deploy cycle to it: the agent built a
+    `--source-code-path` out of `$(... | jq -r .userName)`, got
+    `jq: command not found` bundled with an unrelated "app does not exist"
+    error, and had to abandon the whole command. The poll command shipped in
+    these instructions had the same dependency, so we were the ones teaching
+    the habit.
+    """
+    for path in AGENT_FACING:
+        for line in _read(path).splitlines():
+            stripped = line.strip().lstrip("$#- ").strip()
+            if stripped.startswith(("databricks ", "npx ", "npm ")) and "jq" in stripped:
+                pytest.fail(
+                    f"{path.name} pipes a command through jq, which is not "
+                    f"installed: {stripped!r} — parse JSON with python3 -c"
+                )
+    body = _read(INSTRUCTIONS).lower()
+    assert "not installed" in body and "jq" in body, (
+        "and say so once, or an agent reaches for it out of habit"
+    )
+
+
+def test_the_deploy_command_is_named():
+    """Naming only the *step* left the agent to invent the command.
+
+    It guessed a hand-built `--source-code-path` form, which failed, and it
+    rated that the single thing in the session a non-technical attendee could
+    not have recovered from — the fix being a different command rather than a
+    patch to the one they had. The bare `bundle deploy` path is worth warning
+    about too: it uploads the code and leaves the app stopped with no URL,
+    which looks like success until someone opens the link.
+    """
+    body = _read(INSTRUCTIONS)
+    assert "databricks apps deploy" in body, "the ship gate must name the command"
+    lowered = " ".join(body.split()).lower()
+    assert "bundle deploy" in lowered, "and warn off the one that silently no-ops"
+    assert "source-code-path" in lowered, "and off the form the agent invented"

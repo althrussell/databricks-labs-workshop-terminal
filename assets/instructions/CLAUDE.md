@@ -51,6 +51,14 @@ databricks jobs list
 databricks clusters list
 ```
 
+`jq` is **not installed**. Parse JSON with `python3 -c` instead — reaching for
+`jq` out of habit costs a round trip on `command not found`:
+
+```bash
+databricks apps get <app-name> -o json \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["url"])'
+```
+
 ## Two identities — build as the workshop, read data as YOU
 
 There are two databricks CLI profiles, and they are NOT interchangeable:
@@ -280,14 +288,21 @@ attendee choose rather than defaulting to an app.
    against an AppKit API, check the real signature with
    `npx @databricks/appkit docs <section>` — invented shapes fail `tsc`. Never
    write `as unknown as <T>`.
-2. **Deploy, then open the URL once** to confirm it responds. A first deploy
-   starts cold app compute and routinely runs past a foreground command
-   timeout, so don't block on it — start it in the background and poll:
+2. **Deploy with `databricks apps deploy -t <target>`** (`default` unless the
+   project says otherwise), then open the URL once to confirm it responds.
+   Use that command — not a hand-built `--source-code-path`, and not a bare
+   `databricks bundle deploy`, which uploads the code but leaves the app
+   stopped with no URL.
+
+   A first deploy starts cold app compute and takes minutes, well past a
+   foreground command timeout, so run it in the background and poll:
    ```bash
-   databricks apps get <app-name> -o json | jq -r '.compute_status.state'
+   databricks apps get <app-name> -o json \
+     | python3 -c 'import json,sys; print(json.load(sys.stdin)["compute_status"]["state"])'
    ```
    Wait for `ACTIVE`. A timeout on the deploy command is not a failed deploy;
-   check the state before assuming anything is wrong or retrying.
+   check the state before assuming anything is wrong or retrying. Repeated
+   `App is starting...` lines are the normal shape of a cold start, not a hang.
 3. **Give the attendee the URL** and keep improving against it.
 
 <!-- discovery-anchor -->
