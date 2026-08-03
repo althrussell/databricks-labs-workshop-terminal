@@ -242,6 +242,14 @@ def _validate_args(parser, args, environ):
         parser.error("--attendee is required for --dry-run/--validate")
 
 
+# Spelled out rather than imported from server.models, because this script runs
+# as `python scripts/deploy_ct_sim.py` — sys.path[0] is scripts/, so the server
+# package is not importable, and an operator would meet that as a traceback at
+# the moment they tried to deploy. test_deploy_ct_sim asserts this list matches
+# server.models.PROFILES, which is the check that keeps the copy honest.
+MODEL_PROFILES = ("balanced", "economy", "frontier")
+
+
 def _validate_model_profile(parser, value):
     """Reject a profile name this release does not implement.
 
@@ -255,14 +263,10 @@ def _validate_model_profile(parser, value):
     value = (value or "").strip().lower()
     if not value:
         return
-    # Imported here rather than at module scope: this script is run against a
-    # checkout, and a missing server package should not stop --help working.
-    from server import models
-
-    if value not in models.PROFILES:
+    if value not in MODEL_PROFILES:
         parser.error(
             "--model-profile must be one of: "
-            + ", ".join(sorted(models.PROFILES))
+            + ", ".join(MODEL_PROFILES)
             + " (or empty for the default)"
         )
 

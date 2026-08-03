@@ -27,6 +27,16 @@ def _no_ambient_pins(monkeypatch):
 ROLES = ("driver", "frontier", "standard", "fast", "codex", "insight")
 
 
+def test_no_chain_lists_the_same_model_twice():
+    """A repeat is harmless to resolve() and a sign someone built a chain by
+    prepending to another one, which is how a role ends up with a rung that can
+    never be reached."""
+    for name, profile in models.PROFILES.items():
+        for role in ROLES:
+            chain = getattr(profile, role)
+            assert len(chain) == len(set(chain)), f"{name}.{role}: {chain}"
+
+
 def test_every_profile_fills_every_role():
     """A profile missing a role would resolve to an AttributeError at the moment
     an attendee signs in, in whichever config writer got there first."""

@@ -92,7 +92,9 @@ _INSIGHT = (
 # At $0.15/$0.60 per million tokens this is roughly a sixth of Haiku, which is
 # the whole point of the economy profile: the summary is the one LLM call an
 # event makes on its own behalf rather than an attendee's.
-_INSIGHT_CHEAP = ("databricks-gpt-oss-120b",) + _INSIGHT
+_INSIGHT_CHEAP = ("databricks-gpt-oss-120b",) + tuple(
+    m for m in _INSIGHT if m != "databricks-gpt-oss-120b"
+)
 
 
 @dataclass(frozen=True)

@@ -10,6 +10,7 @@ from scripts import deploy_ct_sim
 
 
 APP_YAML = Path(__file__).parents[1] / "app.yaml"
+SCRIPT = Path(__file__).parents[1] / "scripts" / "deploy_ct_sim.py"
 
 
 def _valid_argv():
@@ -431,6 +432,31 @@ def test_model_names_reject_floating_or_non_endpoint_values(flag, value):
 
     with pytest.raises(SystemExit):
         deploy_ct_sim._parse_args(argv)
+
+
+def test_the_scripts_profile_list_matches_the_terminals():
+    """The script cannot import server.models — it runs as a file, so sys.path[0]
+    is scripts/ and an operator would meet the ImportError as a traceback at
+    deploy time. This is the check that keeps the spelled-out copy honest."""
+    from server import models
+
+    assert set(deploy_ct_sim.MODEL_PROFILES) == set(models.PROFILES)
+
+
+def test_the_script_runs_as_a_file_not_only_under_pytest():
+    """Regression: validation that reached into the server package passed every
+    test and failed the first time anyone ran the script."""
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--help"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "--model-profile" in result.stdout
 
 
 def test_an_unset_model_profile_is_the_reviewed_default():
