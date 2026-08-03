@@ -173,8 +173,9 @@ PROFILES: dict[str, Profile] = {
 DEFAULT_PROFILE = "balanced"
 
 # The env pin per role. ANTHROPIC_MODEL and CODEX_MODEL are the two an operator
-# already knows and /readyz already requires; the rest are addressable only
-# through the profile.
+# already knows by name; the rest are addressable only through the profile. All
+# three are optional — /readyz reports which are set and requires none, because
+# naming a posture is the supported way to configure an event.
 _PINS = {
     "driver": "ANTHROPIC_MODEL",
     "frontier": "",

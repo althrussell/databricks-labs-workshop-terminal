@@ -317,17 +317,26 @@ def evaluate(
         else models.DEFAULT_PROFILE
     )
 
-    pin_names = (
+    # What must be pinned is the code an attendee runs, so every binary boot
+    # installs belongs here. Model names deliberately do not: an endpoint is a
+    # service that changes under a deployment whether or not its name is written
+    # down, and requiring one contradicts the profile — WORKSHOP_MODEL_PROFILE
+    # exists so an event names a cost posture and lets role chains pick the
+    # endpoint. A required ANTHROPIC_MODEL would put a copy of a chain head in
+    # every event's deployment, to go stale there, which is the drift
+    # server/models.py was written to end. Pins are still reported below.
+    pin_names = [
         "CLAUDE_CODE_VERSION",
         "CODEX_CLI_VERSION",
         "DATABRICKS_CLI_VERSION",
-        "ANTHROPIC_MODEL",
-        "CODEX_MODEL",
-    )
+        "NODE_VERSION",
+    ]
+    omnigent_enabled = _bool(env, "OMNIGENT_ENABLED", True)
+    if omnigent_enabled:
+        # Both are Omnigent's: pi is installed only for it, and an unpinned
+        # harness version is the same reproducibility hole as an unpinned CLI.
+        pin_names += ["OMNIGENT_VERSION", "PI_CLI_VERSION"]
     missing_pins = [name for name in pin_names if not env.get(name, "").strip()]
-    omnigent_pinned = bool(env.get("OMNIGENT_VERSION", "").strip())
-    if not omnigent_pinned:
-        missing_pins.append("OMNIGENT_VERSION")
     # Unset is the expected state: the reviewed tag is repo-owned. Only an
     # explicitly configured branch tip is a missing pin.
     skills_ref = env.get("SKILLS_REF", "").strip()
@@ -586,6 +595,15 @@ def evaluate(
             ),
             profile=active_profile,
             requested=requested_profile,
+            # Reported rather than required (see the pin_names note above), and
+            # worth reporting because a pin and a profile can disagree: a pinned
+            # Opus driver under the economy profile is legal, deliberate for a
+            # pool of paid attendees, and otherwise invisible.
+            pins={
+                name: value
+                for name in ("ANTHROPIC_MODEL", "CODEX_MODEL", "INSIGHT_SUMMARY_MODEL")
+                if (value := env.get(name, "").strip())
+            },
         ),
         # Never a hard gate: insight capture serves the sales follow-up, not the
         # attendee, and no attendee should lose a workshop over it.

@@ -119,15 +119,39 @@ The hard checks are:
    observation must be no older than 300 seconds. Before a token is observed—or
    after it expires/goes stale—HTTP remains 503.
 10. `release_pins`: `SKILLS_REF` is not a branch tip; exact Claude Code,
-   Codex CLI, Omnigent, Databricks CLI, Anthropic model, and Codex model pins
-   are present; and every enabled installed CLI version equals its expected
-   value. Bootstrap also resolves the fetched `SKILLS_REF` to a commit,
-   checksums installed content, and records source `network` or `prewarmed`.
-   A vendored fallback keeps the app usable after a network failure but never
-   claims the configured ref was installed and keeps readiness red.
+   Codex CLI, Databricks CLI, and Node version pins are present, plus Omnigent
+   and Pi CLI when Omnigent is enabled; and every enabled installed CLI version
+   equals its expected value. Bootstrap also resolves the fetched `SKILLS_REF`
+   to a commit, checksums installed content, and records source `network` or
+   `prewarmed`. A vendored fallback keeps the app usable after a network failure
+   but never claims the configured ref was installed and keeps readiness red.
 
-One **soft** check rides alongside them. `insight_capture` carries
-`"soft": true`, is excluded from the `ready` verdict, and reports what this
+   Model names are not release pins. `WORKSHOP_MODEL_PROFILE` names an event's
+   cost posture and role chains resolve it against the endpoints a workspace
+   actually serves, so `ANTHROPIC_MODEL` and `CODEX_MODEL` are optional
+   overrides. Requiring one would copy a chain head into every deployment to go
+   stale there. The soft `model_profile` check reports the active profile and
+   any pins that are set.
+
+Three **soft** checks ride alongside them, each carrying `"soft": true` and each
+excluded from the `ready` verdict. CT should surface a soft `red` to the
+operator, but must never treat any of them as an admission failure.
+
+`model_gateway` reports how the AI Gateway resolved. Amber means no gateway, or
+one in a shape Omnigent does not route through: every CLI then falls back to
+`<host>/serving-endpoints`, which serves every model an attendee needs, so this
+is never a reason to fail an instance. What the fallback costs is governance —
+gateway policy, usage tracking and rate limits — which is why it is reported at
+all. Setting `DATABRICKS_GATEWAY_HOST` to `https://<workspace-host>/ai-gateway`
+turns it green.
+
+`model_profile` reports the active `WORKSHOP_MODEL_PROFILE` and any model pins
+that are set. Amber means the deployment asked for a profile name this release
+does not know, so the default is in force — the one case where what an operator
+asked for and what they got differ.
+
+`insight_capture`
+reports what this
 instance collects (`requested`) versus what it can deliver (`effective`), with
 the same pair mirrored as `expected`/`actual`/`match` under
 `release_manifest.insight_capture`. Its purpose is provenance: "was insight
@@ -139,8 +163,7 @@ It also reports `delivery` (always `pull` for a CT-deployed instance),
 always exists and configuration cannot prove the feature works — so the check is
 `amber` while capture is on but nothing has collected yet, `green` once CT has
 collected at least once, and `red` only if `dropped` is non-zero, meaning the
-buffer overflowed and events were lost for good. CT should surface `red` to the
-operator, but must never treat a soft check as an admission failure. See
+buffer overflowed and events were lost for good. See
 [§14](#14-workshop-insight-capture-opt-in-per-event).
 
 The report and release manifest never include token or secret values. CT should poll with bounded
