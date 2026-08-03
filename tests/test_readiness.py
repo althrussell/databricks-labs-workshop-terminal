@@ -130,7 +130,7 @@ def _good_inputs(tmp_path):
 
 def _evaluate(tmp_path, *, mutate_env=None, credential=None, installer=None,
               entitlements=None, obo=None, secret_protection=None,
-              delivery=None, writable=True, now=1000.0):
+              delivery=None, gateway=None, writable=True, now=1000.0):
     readiness = importlib.import_module("server.readiness")
     (
         env,
@@ -150,6 +150,7 @@ def _evaluate(tmp_path, *, mutate_env=None, credential=None, installer=None,
         obo_status=obo or good_obo,
         secret_protection_status=secret_protection or good_secret_protection,
         delivery_status=delivery,
+        gateway_status=gateway,
         writable_probe=lambda _: writable,
         now=now,
     )
@@ -241,7 +242,59 @@ def test_all_hard_checks_green_is_ready(tmp_path):
         "release_pins",
     }
     assert all(check["ok"] for check in hard.values())
-    assert set(report["checks"]) - set(hard) == {"insight_capture"}
+    assert set(report["checks"]) - set(hard) == {"insight_capture", "model_gateway"}
+
+
+def test_absent_gateway_is_reported_amber_and_never_blocks_the_workshop(tmp_path):
+    """The serving-endpoints fallback still serves Claude and Codex, so an
+    unresolved gateway must not cost an attendee their workshop. It is reported
+    amber because the one thing it silently costs — Pi's gateway-only models —
+    appears in no log."""
+    report = _evaluate(tmp_path, gateway={"resolved": False, "source": "unresolved"})
+
+    assert report["ready"] is True
+    check = report["checks"]["model_gateway"]
+    assert check["soft"] is True
+    assert check["state"] == "amber"
+    # Naming the levers is the point: an operator reading /readyz should not
+    # have to grep the source to learn which variable to set.
+    assert "DATABRICKS_GATEWAY_HOST" in check["detail"]
+    assert "DATABRICKS_WORKSPACE_ID" in check["detail"]
+
+
+def test_gateway_resolved_in_a_shape_omnigent_ignores_is_still_amber(tmp_path):
+    """Resolving a URL is not the same as resolving one Omnigent will route
+    through. A URL lacking both the ai-gateway DNS label and the /ai-gateway
+    path leaves Pi's gateway-only models unavailable, so green would be a lie."""
+    report = _evaluate(
+        tmp_path,
+        gateway={
+            "resolved": True,
+            "source": "explicit",
+            "omnigent_gateway_form": False,
+        },
+    )
+
+    check = report["checks"]["model_gateway"]
+    assert check["state"] == "amber"
+    assert check["ok"] is False
+    assert report["ready"] is True
+
+
+def test_gateway_resolved_in_omnigent_form_is_green(tmp_path):
+    report = _evaluate(
+        tmp_path,
+        gateway={
+            "resolved": True,
+            "source": "explicit",
+            "omnigent_gateway_form": True,
+        },
+    )
+
+    check = report["checks"]["model_gateway"]
+    assert check["state"] == "green"
+    assert check["ok"] is True
+    assert check["source"] == "explicit"
 
 
 def test_secret_protection_fails_closed_when_env_or_linux_hardening_failed(tmp_path):

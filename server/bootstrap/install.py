@@ -16,6 +16,7 @@ import platform
 import re
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import threading
 import time
@@ -39,7 +40,18 @@ CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.144.6").strip()
 DATABRICKS_CLI_VERSION = os.environ.get("DATABRICKS_CLI_VERSION", "1.8.0").strip()
 OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "0.7.0").strip()
 OMNIGENT_PROTOCOL_VERSION = "0.7.0"
-NODE_VERSION = os.environ.get("NODE_VERSION", "22.14.0").strip()
+# Node 24 is the active LTS line; Node 22 is maintenance-only. Pi additionally
+# declares ``engines.node >= 22.19.0``, so the old 22.14.0 pin could not have
+# run it at all.
+NODE_VERSION = os.environ.get("NODE_VERSION", "24.18.1").strip()
+# Pi is Omnigent's any-gateway-model harness: unlike claude-sdk and
+# codex-native, whose family guards reject a foreign model id, pi will drive
+# whatever the gateway serves. That makes it the only way to put GLM, Luna or
+# Qwen behind a Polly brain, and it gives those models a real terminal an
+# attendee can take over. Omnigent's own floor is 0.79.0, for the
+# non-interactive ``--approve`` flag (``onboarding/harness_install.py``).
+PI_VERSION = os.environ.get("PI_CLI_VERSION", "0.83.0").strip()
+PI_MIN_VERSION = "0.79.0"
 CLAUDE_INSTALLER_URL = os.environ.get(
     "CLAUDE_INSTALLER_URL", "https://claude.ai/install.sh"
 )
@@ -252,6 +264,9 @@ def _release_specs() -> dict[str, tuple[bool, str]]:
         "claude": (True, CLAUDE_VERSION),
         "codex": (True, CODEX_VERSION),
         "databricks": (True, DATABRICKS_CLI_VERSION),
+        # Pi is only reachable as an Omnigent harness, so it follows Omnigent's
+        # enablement rather than being installed unconditionally.
+        "pi": (config.omnigent_enabled(), PI_VERSION),
         "omnigent": (config.omnigent_enabled(), OMNIGENT_VERSION),
     }
 
@@ -265,6 +280,10 @@ def status() -> dict:
         "bash": True,
         "claude": steps.get("claude", {}).get("status") == "complete",
         "codex": steps.get("codex", {}).get("status") == "complete",
+        # Reported so an operator can see the harness landed, but deliberately
+        # not folded into ``omnigent`` below: a missing pi costs an attendee the
+        # cheap-model Polly variants, not the whole meta-harness.
+        "pi": steps.get("pi", {}).get("status") == "complete",
         # Both the meta-harness and tmux (its terminal backend) must land
         # before any omnigent session type is launchable.
         "omnigent": (
@@ -358,6 +377,7 @@ def _prewarm_status_unlocked() -> dict:
     }
     if config.omnigent_enabled():
         expected_versions["omnigent"] = OMNIGENT_VERSION
+        expected_versions["pi"] = PI_VERSION
 
     binaries: dict[str, dict] = {}
     artifact_names = {
@@ -369,6 +389,7 @@ def _prewarm_status_unlocked() -> dict:
         "claude": "claude_installer",
         "codex": "codex_npm_launcher_package",
         "databricks": "databricks_cli_archive_linux_x64",
+        "pi": "pi_npm_package",
         "omnigent": "uv_binary",
     }
     for name, expected in expected_versions.items():
@@ -386,6 +407,10 @@ def _prewarm_status_unlocked() -> dict:
                 prefix,
                 contract.entry("codex_npm_launcher_package"),
                 contract.entry("codex_native_package_linux_x64"),
+            )
+        if name == "pi" and contract:
+            artifact_ok = _pi_install_reusable(
+                prefix, contract.entry("pi_npm_package")
             )
         if name == "omnigent" and contract:
             artifact_ok = _omnigent_install_reusable(
@@ -959,6 +984,167 @@ def _install_codex() -> None:
         "error",
         error,
         expected_version=CODEX_VERSION,
+        actual_version=actual,
+    )
+
+
+_PI_PACKAGE = "@earendil-works/pi-coding-agent"
+
+
+def _pi_package_root(prefix: str) -> str:
+    return os.path.join(prefix, "lib", "node_modules", *_PI_PACKAGE.split("/"))
+
+
+def _validate_pi_tarball(path: str, version: str) -> None:
+    """Confirm the verified tarball is the pinned Pi and is fully hash-pinned.
+
+    Pi is a pure-JS package with a large dependency tree, so unlike Codex it
+    cannot be installed from one offline tarball. What makes that safe is
+    ``npm-shrinkwrap.json``: Pi publishes it *inside* the tarball, pinning every
+    transitive package to an exact version and ``integrity`` hash. Since the
+    tarball itself is SHA-256 verified against the reviewed manifest, the
+    shrinkwrap it carries is covered by that same checksum -- so the resolve npm
+    performs is pinned end to end rather than floating on ``latest``.
+    """
+    with tarfile.open(path) as archive:
+        try:
+            manifest = archive.extractfile("package/package.json")
+            shrinkwrap = archive.extractfile("package/npm-shrinkwrap.json")
+            if manifest is None or shrinkwrap is None:
+                raise KeyError("package/npm-shrinkwrap.json")
+            declared = json.loads(manifest.read())
+            locked = json.loads(shrinkwrap.read())
+        except (KeyError, ValueError) as error:
+            raise RuntimeError(f"Pi tarball layout is invalid: {error}") from error
+    if declared.get("name") != _PI_PACKAGE or declared.get("version") != version:
+        raise RuntimeError(
+            f"Pi tarball is {declared.get('name')}@{declared.get('version')}, "
+            f"expected {_PI_PACKAGE}@{version}"
+        )
+    packages = locked.get("packages")
+    if not isinstance(packages, dict) or not packages:
+        raise RuntimeError("Pi tarball carries no npm-shrinkwrap package set")
+    floating = sorted(
+        name
+        for name, entry in packages.items()
+        if name
+        and isinstance(entry, dict)
+        and entry.get("resolved")
+        and not entry.get("integrity")
+    )
+    # Pi's three first-party siblings (pi-agent-core, pi-ai, pi-tui) ship
+    # version-pinned but without an integrity hash. They are recorded rather
+    # than rejected, so the gap is visible in logs instead of implied by a
+    # blanket "fully pinned" claim.
+    if floating:
+        logger.info(
+            "pi: %d shrinkwrap entries are version-pinned without integrity: %s",
+            len(floating),
+            ", ".join(floating),
+        )
+
+
+def _pi_install_reusable(prefix: str, artifact: dict) -> bool:
+    launcher = os.path.join(prefix, "bin", "pi")
+    stamp = _read_json(os.path.join(prefix, "pi.install.json"))
+    tree = os.path.normpath(
+        os.path.join(prefix, str(stamp.get("tree_relative_path") or ""))
+    )
+    if not tree.startswith(os.path.abspath(prefix) + os.sep):
+        return False
+    launcher_checksum = _file_checksum(launcher)
+    tree_checksum = _directory_checksum(tree)
+    return bool(
+        launcher_checksum
+        and tree_checksum
+        and stamp.get("package_sha256") == artifact["sha256"]
+        and stamp.get("launcher_sha256") == launcher_checksum
+        and stamp.get("tree_sha256") == tree_checksum
+    )
+
+
+def _install_pi() -> None:
+    """Install the Pi CLI from the reviewed npm tarball.
+
+    Unlike Codex this install is *not* ``--offline``: Pi's dependency tree is
+    fetched from the registry, pinned by the ``npm-shrinkwrap.json`` inside the
+    checksum-verified tarball. ``--ignore-scripts`` is Pi's own documented
+    install form and keeps third-party lifecycle scripts out of boot.
+    """
+    package_path, artifact = _verified_artifact("pi_npm_package")
+    _validate_pi_tarball(package_path, PI_VERSION)
+    _set("pi", "running", expected_version=PI_VERSION, source="network")
+    prefix = config.shared_prefix()
+    pi_bin = os.path.join(prefix, "bin", "pi")
+    actual = _read_cli_version(pi_bin) if os.path.exists(pi_bin) else None
+    if actual == PI_VERSION and _pi_install_reusable(prefix, artifact):
+        _set(
+            "pi",
+            "complete",
+            expected_version=PI_VERSION,
+            actual_version=actual,
+            source="prewarmed",
+        )
+        return
+    env = _install_env()
+    npm = os.path.join(prefix, "bin", "npm")
+    if not os.path.exists(npm):
+        npm = "npm"
+    error = "pi install did not run"
+    for attempt in range(1, 4):
+        try:
+            result = subprocess.run(
+                [
+                    npm,
+                    "install",
+                    "-g",
+                    "--ignore-scripts",
+                    "--no-audit",
+                    "--no-fund",
+                    f"--prefix={prefix}",
+                    package_path,
+                ],
+                capture_output=True, text=True, timeout=600, env=env,
+            )
+        except (subprocess.TimeoutExpired, OSError) as e:
+            error = str(e)
+        else:
+            error = (result.stderr or result.stdout)[-500:]
+            if result.returncode == 0 and os.path.exists(pi_bin):
+                actual = _read_cli_version(pi_bin)
+                if actual == PI_VERSION:
+                    launcher_checksum = _file_checksum(pi_bin)
+                    tree = _pi_package_root(prefix)
+                    _write_json_atomic(
+                        os.path.join(prefix, "pi.install.json"),
+                        {
+                            "package_sha256": artifact["sha256"],
+                            "launcher_sha256": launcher_checksum,
+                            "tree_sha256": _directory_checksum(tree),
+                            "tree_relative_path": os.path.relpath(tree, prefix),
+                        },
+                    )
+                    _set(
+                        "pi",
+                        "complete",
+                        expected_version=PI_VERSION,
+                        actual_version=actual,
+                        source="staged",
+                        expected_checksum=artifact["sha256"],
+                        actual_checksum=launcher_checksum,
+                    )
+                    return
+                error = (
+                    f"pi version mismatch: expected {PI_VERSION}, "
+                    f"got {actual or 'unknown'}"
+                )
+        logger.warning("pi install attempt %d/3 failed: %s", attempt, error)
+        time.sleep(5)
+    _set(
+        "pi",
+        "error",
+        error,
+        expected_version=PI_VERSION,
         actual_version=actual,
     )
 
@@ -1551,6 +1737,7 @@ _install_claude = _guard_installer(
 _install_codex = _guard_installer(
     "codex", _install_codex, expected_version=CODEX_VERSION
 )
+_install_pi = _guard_installer("pi", _install_pi, expected_version=PI_VERSION)
 _install_tmux = _guard_installer("tmux", _install_tmux)
 _install_omnigent = _guard_installer(
     "omnigent", _install_omnigent, expected_version=OMNIGENT_VERSION
@@ -1582,7 +1769,7 @@ def run_in_background() -> None:
     omnigent = config.omnigent_enabled()
     steps = ["node", "claude", "codex", "databricks", "skills"]
     if omnigent:
-        steps += ["tmux", "omnigent"]
+        steps += ["tmux", "omnigent", "pi"]
     for step in steps:
         _set(step, "pending")
 
@@ -1601,9 +1788,11 @@ def run_in_background() -> None:
         with _state_lock:
             node_ready = _state.get("node", {}).get("status") == "complete"
         if not node_ready:
-            # Without node, codex can't install; claude's installer is
+            # Without node, codex and pi can't install; claude's installer is
             # self-contained, so still try it. tmux/omnigent don't need node.
             _set("codex", "error", "skipped: node install failed")
+            if omnigent:
+                _set("pi", "error", "skipped: node install failed")
             tasks = [
                 ("claude", _install_claude),
                 ("databricks", _install_databricks_cli),
@@ -1626,8 +1815,9 @@ def run_in_background() -> None:
             tasks.extend([
                 ("tmux", _install_tmux),
                 ("omnigent", _install_omnigent),
+                ("pi", _install_pi),
             ])
-        _run_parallel_installers(tasks, max_workers=6)
+        _run_parallel_installers(tasks, max_workers=7)
 
     def orchestrate():
         with _install_file_lock(exclusive=True):

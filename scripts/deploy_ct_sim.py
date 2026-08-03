@@ -41,6 +41,7 @@ import os
 import re
 import sys
 import time
+from urllib.parse import urlparse
 
 import requests
 import yaml
@@ -54,7 +55,8 @@ EXACT_DEFAULTS = {
     "codex_cli_version": "0.144.6",
     "databricks_cli_version": "1.8.0",
     "omnigent_version": "0.7.0",
-    "node_version": "22.14.0",
+    "node_version": "24.18.1",
+    "pi_cli_version": "0.83.0",
 }
 SEMVER_PATTERN = (
     r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
@@ -135,6 +137,16 @@ def _parse_args(argv=None, *, environ=None):
     parser.add_argument("--databricks-cli-version", default=EXACT_DEFAULTS["databricks_cli_version"])
     parser.add_argument("--omnigent-version", default=EXACT_DEFAULTS["omnigent_version"])
     parser.add_argument("--node-version", default=EXACT_DEFAULTS["node_version"])
+    parser.add_argument("--pi-cli-version", default=EXACT_DEFAULTS["pi_cli_version"])
+    parser.add_argument(
+        "--gateway-host",
+        default="",
+        help="DATABRICKS_GATEWAY_HOST for the AI Gateway. Prefer the "
+             "workspace-hosted form https://<workspace>.cloud.databricks.com/ai-gateway. "
+             "Required for Pi's gateway-only models (GLM, Qwen, Kimi, inkling): on "
+             "AWS the workspace id cannot be derived from a dbc- hostname, so "
+             "nothing is auto-constructed and those models are unavailable.",
+    )
     parser.add_argument("--dry-run", "--validate", dest="dry_run", action="store_true",
                         help="print a secret-free settings/grant plan without API mutations")
     args = parser.parse_args(argv)
@@ -196,6 +208,7 @@ def _validate_args(parser, args, environ):
         "databricks_cli_version",
         "omnigent_version",
         "node_version",
+        "pi_cli_version",
     ):
         value = getattr(args, field)
         if not SEMVER_RE.fullmatch(value):
@@ -214,8 +227,53 @@ def _validate_args(parser, args, environ):
                 f"--{field.replace('_', '-')} must be an explicit non-floating "
                 "model endpoint name"
             )
+    _validate_gateway_host(parser, args.gateway_host)
     if args.dry_run and not args.attendee.strip():
         parser.error("--attendee is required for --dry-run/--validate")
+
+
+# Mirrors the trusted-suffix allowlist Omnigent gates on before it will route a
+# base URL as the AI Gateway, so a typo is caught here rather than becoming a
+# workshop where GLM silently never appears.
+GATEWAY_TRUSTED_SUFFIXES = (
+    ".cloud.databricks.com",
+    ".azuredatabricks.net",
+    ".gcp.databricks.com",
+)
+
+
+def _validate_gateway_host(parser, value):
+    """Reject a gateway host Omnigent would decline to route.
+
+    Empty is allowed and means "not set": Workshop Terminal then falls back to
+    ``<host>/serving-endpoints``, which still serves Claude and Codex, and
+    reports the degradation as the soft ``model_gateway`` readiness check.
+
+    The workspace-hosted form (``https://<workspace>.cloud.databricks.com/ai-gateway``)
+    is preferred over a dedicated ``ai-gateway`` subdomain: on the subdomain form
+    Omnigent cannot infer the workspace hostname and falls back to resolving
+    ``~/.databrickscfg``, and if that fails it drops the openai-completions
+    provider that GLM routes through.
+    """
+    value = (value or "").strip()
+    if not value:
+        return
+    parsed = urlparse(value)
+    hostname = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or not hostname:
+        parser.error("--gateway-host must be an https URL")
+    if not any(hostname.endswith(suffix) for suffix in GATEWAY_TRUSTED_SUFFIXES):
+        parser.error(
+            "--gateway-host must be a Databricks-owned host ending in one of: "
+            + ", ".join(GATEWAY_TRUSTED_SUFFIXES)
+        )
+    labels = hostname.split(".")
+    path = (parsed.path or "").rstrip("/")
+    if "ai-gateway" not in labels and not path.endswith("/ai-gateway"):
+        parser.error(
+            "--gateway-host must either carry an 'ai-gateway' DNS label or end "
+            "in the /ai-gateway path, or Omnigent will not route it as the gateway"
+        )
 
 
 def main(argv=None, *, environ=None) -> int:
@@ -386,6 +444,8 @@ def _event_settings(
     databricks_cli_version,
     omnigent_version,
     node_version,
+    pi_cli_version,
+    gateway_host,
     workshop_pat,
     enable_obo=True,
     enable_entitlements=True,
@@ -412,6 +472,12 @@ def _event_settings(
         "DATABRICKS_CLI_VERSION": databricks_cli_version,
         "OMNIGENT_VERSION": omnigent_version,
         "NODE_VERSION": node_version,
+        "PI_CLI_VERSION": pi_cli_version,
+        # Empty is a supported state, not a hole: without it every CLI falls back
+        # to <host>/serving-endpoints and the workshop still runs on Claude and
+        # Codex. What it costs is Pi's gateway-only models, which is exactly what
+        # the model-set variants need, so a real event should set it.
+        "DATABRICKS_GATEWAY_HOST": gateway_host,
     }
 
 
@@ -429,6 +495,8 @@ def _event_settings_from_args(args, attendee, workshop_pat):
         databricks_cli_version=args.databricks_cli_version,
         omnigent_version=args.omnigent_version,
         node_version=args.node_version,
+        pi_cli_version=args.pi_cli_version,
+        gateway_host=args.gateway_host.strip(),
         workshop_pat=workshop_pat,
         enable_obo=not args.no_obo,
         enable_entitlements=not args.no_entitlements,
