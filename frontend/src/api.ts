@@ -50,6 +50,7 @@ export interface AppConfig {
   broadcast: Broadcast | null;
   limits: { max_sessions_per_user: number };
   credential: CredentialStatus;
+  help: HelpState;
   omnigent_remote: {
     enabled: boolean;
     url: string;
@@ -149,6 +150,13 @@ export interface Broadcast {
   message: string;
   level: "info" | "success" | "warning";
   ttl_s: number;
+  clear_help?: boolean;
+}
+
+export interface HelpState {
+  raised: boolean;
+  note?: string | null;
+  raised_at?: number | null;
 }
 
 export interface PresenceUser {
@@ -235,6 +243,16 @@ export const api = {
     request("/api/admin/broadcast", {
       method: "POST",
       body: JSON.stringify({ message, level, ttl_s }),
+    }),
+  raiseHelp: (note?: string) =>
+    request<{ raised: boolean; pushed: boolean; note?: string | null }>(
+      "/api/help/raise",
+      { method: "POST", body: JSON.stringify({ note: note ?? "" }) },
+    ),
+  lowerHelp: () =>
+    request<{ raised: boolean; pushed: boolean }>("/api/help/lower", {
+      method: "POST",
+      body: "{}",
     }),
 };
 

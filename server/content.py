@@ -119,6 +119,7 @@ class Broadcast(BaseModel):
     message: str
     level: str = "info"  # info | success | warning
     ttl_s: int = 300
+    clear_help: bool = False
 
 
 class ContentService:

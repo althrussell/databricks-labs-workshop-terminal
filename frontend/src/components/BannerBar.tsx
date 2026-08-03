@@ -15,7 +15,15 @@ export default function BannerBar({ initial }: { initial: Broadcast | null }) {
   useEffect(() => {
     const off = onAppEvent((event) => {
       if (event.t === "broadcast") {
-        setBanner({ message: event.message, level: event.level as Broadcast["level"], ttl_s: event.ttl_s });
+        if (event.clear_help && !event.message.trim()) {
+          setBanner(null);
+          return;
+        }
+        setBanner({
+          message: event.message,
+          level: event.level as Broadcast["level"],
+          ttl_s: event.ttl_s,
+        });
       }
     });
     return off;

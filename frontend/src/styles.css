@@ -148,6 +148,52 @@ body {
   white-space: nowrap;
 }
 
+.raise-hand-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.raise-hand-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.raise-hand-btn:hover:not(:disabled) {
+  border-color: var(--brand-primary);
+  color: var(--brand-primary);
+}
+
+.raise-hand-btn.raise-hand-active {
+  border-color: var(--warning);
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+
+.raise-hand-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.raise-hand-note input {
+  width: 220px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text);
+  font-size: 13px;
+}
+
 /* ---- banners ---- */
 
 .banner {

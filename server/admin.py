@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from . import attendee as attendee_binding
-from . import config, obo, spend
+from . import config, help as help_module, obo, spend
 from .auth import require_admin
 from .content import Broadcast, ContentPack, content_service
 from .credentials import credential_manager
@@ -120,7 +120,12 @@ def set_phase(body: PhaseBody):
 
 @router.post("/broadcast")
 def broadcast(body: Broadcast):
-    content_service.set_broadcast(body)
+    if body.clear_help:
+        from . import help as help_module
+
+        help_module.clear_hand()
+    if body.message.strip() or not body.clear_help:
+        content_service.set_broadcast(body)
     event_hub.publish({"t": "broadcast", **body.model_dump()})
     return {"status": "ok"}
 
@@ -263,4 +268,5 @@ def presence():
         "session_count": session_manager.count_all(),
         "credential": credential_manager.status(),
         "entitlements": entitlement_manager.status(),
+        **help_module.presence_fields(),
     }

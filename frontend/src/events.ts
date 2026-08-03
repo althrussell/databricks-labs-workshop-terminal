@@ -3,7 +3,13 @@
 
 export type AppEvent =
   | { t: "phase"; phase: string }
-  | { t: "broadcast"; message: string; level: string; ttl_s: number }
+  | {
+      t: "broadcast";
+      message: string;
+      level: string;
+      ttl_s: number;
+      clear_help?: boolean;
+    }
   | { t: "content_updated" }
   | { t: "obo_refresh" }
   | { t: "reconnected" }

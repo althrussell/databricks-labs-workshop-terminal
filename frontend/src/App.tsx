@@ -26,6 +26,7 @@ import Hero from "./components/Hero";
 import LaunchBar from "./components/LaunchBar";
 import NuggetsPane from "./components/NuggetsPane";
 import OperatorPanel from "./components/OperatorPanel";
+import RaiseHandButton from "./components/RaiseHandButton";
 import TerminalView from "./components/TerminalView";
 import { bindIdentityRefresh, onAppEvent } from "./events";
 
@@ -337,6 +338,7 @@ export default function App() {
             <Award size={14} />
             Certificate
           </button>
+          <RaiseHandButton initial={config?.help ?? null} />
           {shellLinks
             .filter((link) => link.highlight)
             .map((link) => {
