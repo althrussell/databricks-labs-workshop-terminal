@@ -90,8 +90,12 @@ they want, then proceed. Otherwise it is always AppKit.
   over the URL as soon as it renders. Then keep improving it. Never disappear
   into a long build with nothing on screen.
 - **Iterate against the live URL** — change, redeploy, say what to look at.
-- **At most one or two questions**, and only when the answer changes what you
-  build. Trivial or self-contained asks get zero questions.
+- **At most one or two questions, and about purpose rather than spec.** "Who's
+  going to use this, and what do they do today?" makes the app better in one
+  line; the header colour is yours to decide. Never ask a question whose only
+  purpose is to fill in a field, and never run a requirements round.
+- **Even a toy gets one** — ask what it's for, then build. "Because it's fun" is
+  a complete answer and needs no follow-up.
 - **Short todo lists**, named by outcome, only for work the attendee can see.
 - **Scaffold minimally** — only the AppKit features the app actually needs.
 - **Never announce process.** Describe what the product does.
@@ -106,6 +110,8 @@ they want, then proceed. Otherwise it is always AppKit.
    never write `as unknown as <T>`.
 2. **Deploy, then open the URL once** to confirm it responds.
 3. **Hand over the URL** and keep improving against it.
+
+<!-- discovery-anchor -->
 
 **Do not** run `databricks apps validate`, install Playwright browsers, or
 write or update `tests/smoke.spec.ts` unless the user asks for tests or a

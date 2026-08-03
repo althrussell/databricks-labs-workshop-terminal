@@ -317,7 +317,7 @@ def discovery_enabled() -> bool:
 
 
 def insight_summary_model() -> str:
-    """Serving endpoint for the wrap-phase edge summary (``INSIGHT_SUMMARY_MODEL``).
+    """Serving endpoint for the edge summary (``INSIGHT_SUMMARY_MODEL``).
 
     Empty means "discover a ready endpoint", which is the right default because
     model availability is regional and an operator should not have to know which
@@ -325,6 +325,21 @@ def insight_summary_model() -> str:
     on a workspace whose default chain is unavailable or expensive.
     """
     return _env("INSIGHT_SUMMARY_MODEL").strip()
+
+
+def insight_summary_min_interval_seconds() -> int:
+    """Floor between edge summaries for one attendee
+    (``INSIGHT_SUMMARY_MIN_INTERVAL_MINUTES``).
+
+    The summary regenerates off the harvest Control Tower already makes rather
+    than waiting for a phase an operator may never flip. That harvest runs every
+    ~10 minutes, so without a floor a long session would spend a model call per
+    poll per attendee. Twenty minutes keeps a brief current to within one
+    content phase while costing at most every second harvest.
+
+    Zero disables the floor, which is for tests rather than events.
+    """
+    return max(0, _env_int("INSIGHT_SUMMARY_MIN_INTERVAL_MINUTES", 20)) * 60
 
 
 def enable_public_mcp() -> bool:

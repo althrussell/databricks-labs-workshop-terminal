@@ -1,4 +1,4 @@
-"""Edge summarisation at wrap, with a model-free backstop (contract C6, tier 3).
+"""Rolling edge summarisation, with a model-free backstop (contract C6, tier 3).
 
 Three things decide whether this feature is trustworthy rather than merely
 present, and they get the weight here:
@@ -10,8 +10,10 @@ present, and they get the weight here:
 2. **The model failing costs nothing.** Every model path degrades to keyword
    extraction, and the resulting summary declares itself as such, because an
    extraction summary read as a finding is worse than no summary.
-3. **Exactly once per attendee**, with the one permitted exception: an extraction
-   summary may be upgraded by a model one, never the reverse.
+3. **Supersession is ordered, not last-write-wins.** The summary is regenerated as
+   a session progresses, bounded by an interval floor and a material fingerprint,
+   and every copy carries a monotonic revision on one stable ``summary_id``. An
+   extraction summary may be upgraded by a model one, never the reverse.
 """
 
 from __future__ import annotations
@@ -85,6 +87,18 @@ def _no_model(monkeypatch, reason: str = "endpoint down"):
     monkeypatch.setattr(insight_summary, "_ask_model", fail)
 
 
+def _no_interval(monkeypatch):
+    """Make the attendee due again immediately.
+
+    Rolling summaries are bounded by a wall-clock floor, so a test about what
+    happens on the *next* pass has to get past it — otherwise it is testing the
+    interval it did not mean to exercise.
+    """
+    monkeypatch.setattr(
+        insight_summary.config, "insight_summary_min_interval_seconds", lambda: 0
+    )
+
+
 def _emitted(emitter: EventEmitter) -> list[dict]:
     sent: list[dict] = []
     emitter.drain(lambda ev: sent.append(ev) or True)
@@ -119,7 +133,7 @@ def test_a_model_summary_is_emitted_as_an_insight_summary_event(monkeypatch, emi
     [event] = _emitted(emitter)
     assert event["type"] == "insight.summary"
     assert event["attendee"] == "labuser001@x.com"
-    assert event["idempotency_key"] == f"summary:{RUN_ID}:labuser001@x.com:llm"
+    assert event["idempotency_key"] == f"summary:{RUN_ID}:labuser001@x.com:llm:1"
 
 
 def test_artifacts_travel_as_metadata_and_excerpts_do_not(monkeypatch, emitter):
@@ -345,10 +359,10 @@ def test_the_generator_is_always_declared(monkeypatch, emitter):
     assert payload["model"] is None
 
 
-# --- run-once semantics -------------------------------------------------------
+# --- supersession semantics ---------------------------------------------------
 
 
-def test_a_second_wrap_does_not_resummarise(monkeypatch, emitter):
+def test_a_second_pass_within_the_interval_does_not_resummarise(monkeypatch, emitter):
     _stub_harvest(monkeypatch, _harvest())
     _stub_model(monkeypatch, {"headline": "First pass."})
 
@@ -358,6 +372,66 @@ def test_a_second_wrap_does_not_resummarise(monkeypatch, emitter):
     assert first is not None
     assert second is None
     assert len(_emitted(emitter)) == 1
+
+
+def test_an_unchanged_session_is_not_resummarised_once_the_interval_elapses(
+    monkeypatch, emitter
+):
+    """The interval says "you may look again"; the fingerprint decides whether
+    there is anything new to say. Without the second gate, a quiet attendee would
+    accumulate identical summaries at rising revisions all afternoon."""
+    _stub_harvest(monkeypatch, _harvest())
+    _stub_model(monkeypatch, {"headline": "First pass."})
+    _no_interval(monkeypatch)
+
+    assert insight_summary.summarise_user(_User(), phase="wrap", emitter=emitter)
+    assert insight_summary.summarise_user(_User(), phase="wrap", emitter=emitter) is None
+    assert len(_emitted(emitter)) == 1
+
+
+def test_a_moved_session_is_resummarised_at_the_next_revision(monkeypatch, emitter):
+    harvest = _harvest()
+    _stub_harvest(monkeypatch, harvest)
+    _stub_model(monkeypatch, {"headline": "First pass."})
+    _no_interval(monkeypatch)
+
+    first = insight_summary.summarise_user(_User(), phase="build", emitter=emitter)
+    harvest.prompts.append("now add a leaderboard")
+    harvest.prompt_count += 6
+    second = insight_summary.summarise_user(_User(), phase="wrap", emitter=emitter)
+
+    assert (first["revision"], second["revision"]) == (1, 2)
+    # One session, so one id: Control Tower supersedes rather than accumulates.
+    assert first["summary_id"] == second["summary_id"]
+    keys = [e["idempotency_key"] for e in _emitted(emitter)]
+    assert keys == [
+        f"summary:{RUN_ID}:labuser001@x.com:llm:1",
+        f"summary:{RUN_ID}:labuser001@x.com:llm:2",
+    ]
+
+
+def test_a_forced_pass_ignores_the_interval_but_not_the_fingerprint(
+    monkeypatch, emitter
+):
+    """Wrap and teardown force a pass, because at the end of a session there is no
+    later chance. Forcing past the fingerprint as well would mean every teardown
+    re-emitted a summary identical to the one already sent."""
+    harvest = _harvest()
+    _stub_harvest(monkeypatch, harvest)
+    _stub_model(monkeypatch, {"headline": "First pass."})
+
+    assert insight_summary.summarise_user(_User(), phase="build", emitter=emitter)
+    unchanged = insight_summary.summarise_user(
+        _User(), phase="wrap", force=True, emitter=emitter
+    )
+    harvest.prompts.append("one more thing")
+    harvest.prompt_count += 3
+    moved = insight_summary.summarise_user(
+        _User(), phase="wrap", force=True, emitter=emitter
+    )
+
+    assert unchanged is None
+    assert moved is not None
 
 
 def test_the_backstop_does_not_downgrade_a_model_summary(monkeypatch, emitter):
@@ -375,31 +449,136 @@ def test_the_backstop_does_not_downgrade_a_model_summary(monkeypatch, emitter):
 
 
 def test_a_thin_summary_can_be_upgraded_when_the_model_recovers(monkeypatch, emitter):
-    """Wrap with the endpoint down settles for extraction; a re-run should not be
-    stuck with that, and the two carry different keys so CT can prefer the model."""
+    """A pass with the endpoint down settles for extraction; the next due pass must
+    not be stuck with that, and the two carry different keys so CT can prefer the
+    model.
+
+    The upgrade waits for the next due pass rather than happening immediately,
+    which is what stops an endpoint that is down all day from being re-tried on
+    every harvest. On identical material it still goes through: the point of the
+    upgrade is the better prose, not new facts.
+    """
     _stub_harvest(monkeypatch, _harvest())
     _no_model(monkeypatch)
-    insight_summary.summarise_user(_User(), phase="wrap", emitter=emitter)
+    insight_summary.summarise_user(_User(), phase="build", emitter=emitter)
 
     _stub_model(monkeypatch, {"headline": "Now with a model."})
+    _no_interval(monkeypatch)
     upgraded = insight_summary.summarise_user(_User(), phase="wrap", emitter=emitter)
 
     assert upgraded["generator"] == "llm"
     keys = [e["idempotency_key"] for e in _emitted(emitter)]
     assert keys == [
-        f"summary:{RUN_ID}:labuser001@x.com:extraction",
-        f"summary:{RUN_ID}:labuser001@x.com:llm",
+        f"summary:{RUN_ID}:labuser001@x.com:extraction:1",
+        f"summary:{RUN_ID}:labuser001@x.com:llm:2",
     ]
+
+
+def test_the_upgrade_is_not_retried_on_every_pass_while_the_endpoint_is_down(
+    monkeypatch, emitter
+):
+    """An endpoint that stays down would otherwise cost a directory walk and a
+    failed model call per attendee per harvest, for the whole workshop."""
+    _stub_harvest(monkeypatch, _harvest())
+    _no_model(monkeypatch)
+
+    assert insight_summary.summarise_user(_User(), phase="build", emitter=emitter)
+    assert (
+        insight_summary.summarise_user(_User(), phase="build", emitter=emitter) is None
+    )
+    assert len(_emitted(emitter)) == 1
 
 
 def test_the_summary_id_is_stable_so_a_regeneration_supersedes(monkeypatch, emitter):
     _stub_harvest(monkeypatch, _harvest())
     _no_model(monkeypatch)
-    first = insight_summary.summarise_user(_User(), phase="wrap", emitter=emitter)
+    first = insight_summary.summarise_user(_User(), phase="build", emitter=emitter)
     _stub_model(monkeypatch, {"headline": "Upgraded."})
+    _no_interval(monkeypatch)
     second = insight_summary.summarise_user(_User(), phase="wrap", emitter=emitter)
 
     assert first["summary_id"] == second["summary_id"]
+
+
+def test_a_forced_pass_does_not_overlap_one_already_in_flight(monkeypatch, emitter):
+    """The interval keeps ordinary passes apart; a forced one ignores it by design.
+
+    So the wrap flip, or the synchronous teardown backstop, can start while a
+    backgrounded pass is still inside its model call. Both would read the same
+    next revision and emit against the same idempotency key, and Control Tower
+    would discard one of two summaries we had already paid the model for.
+    """
+    _stub_harvest(monkeypatch, _harvest())
+    reentrant: list[dict | None] = []
+
+    def model_then_force(harvest, signal):
+        # Stands in for the operator flipping to wrap while this call is waiting.
+        reentrant.append(
+            insight_summary.summarise_user(
+                _User(), phase="wrap", force=True, emitter=emitter
+            )
+        )
+        return {"headline": "Built something."}, "databricks-claude-haiku-4-5"
+
+    monkeypatch.setattr(insight_summary, "_ask_model", model_then_force)
+    payload = insight_summary.summarise_user(
+        _User(), phase="build", emitter=emitter
+    )
+
+    assert reentrant == [None], "the overlapping pass must decline, not duplicate"
+    assert payload["revision"] == 1
+    events = _emitted(emitter)
+    assert len(events) == 1
+    assert events[0]["idempotency_key"].endswith(":llm:1")
+
+
+def test_the_claim_is_released_even_when_the_pass_fails(monkeypatch, emitter):
+    """A claim leaked on the error path would silence an attendee for the rest of
+    the workshop — the failure mode this whole change exists to remove."""
+    _stub_harvest(monkeypatch, _harvest())
+
+    def boom(harvest, signal):
+        raise RuntimeError("serving blew up in a way we did not anticipate")
+
+    monkeypatch.setattr(insight_summary, "_ask_model", boom)
+    insight_summary.summarise_user(_User(), phase="build", emitter=emitter)
+    _no_interval(monkeypatch)
+    _stub_model(monkeypatch, {"headline": "Recovered."})
+
+    assert insight_summary.summarise_user(_User(), phase="wrap", emitter=emitter)
+
+
+def test_concurrent_passes_emit_one_summary(monkeypatch, emitter):
+    """The same invariant under real threads, since that is how it actually arises:
+    ``summarise_in_background`` runs off the request thread and teardown does not."""
+    import threading
+
+    _stub_harvest(monkeypatch, _harvest())
+    inside, release = threading.Event(), threading.Event()
+
+    def slow(harvest, signal):
+        inside.set()
+        release.wait(timeout=5)
+        return {"headline": "Built something."}, "databricks-claude-haiku-4-5"
+
+    monkeypatch.setattr(insight_summary, "_ask_model", slow)
+    results: list[dict | None] = []
+    first = threading.Thread(
+        target=lambda: results.append(
+            insight_summary.summarise_user(_User(), phase="build", emitter=emitter)
+        )
+    )
+    first.start()
+    assert inside.wait(timeout=5), "the first pass never reached the model"
+    second = insight_summary.summarise_user(
+        _User(), phase="wrap", force=True, emitter=emitter
+    )
+    release.set()
+    first.join(timeout=5)
+
+    assert second is None
+    assert results == [results[0]] and results[0] is not None
+    assert len(_emitted(emitter)) == 1
 
 
 def test_two_attendees_get_two_summaries(monkeypatch, emitter):

@@ -151,17 +151,25 @@
           "payload": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["summary_id", "generated_at", "generator", "headline"],
+            "required": ["summary_id", "generated_at", "generator", "headline", "revision"],
             "properties": {
               "summary_id": {"type": "string", "minLength": 1},
               "generated_at": {"type": "string", "minLength": 1},
+              "revision": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Monotonic per attendee, bumped on each regeneration. Also the last segment of idempotency_key, so a rewritten summary is a distinct event while a retried flush stays a duplicate. The producer's counter is in memory, so a restarted instance numbers from 1 again — a consumer must let a newer generated_at override the revision floor."
+              },
               "generator": {
                 "type": "string",
                 "enum": ["llm", "extraction"],
                 "description": "Must be surfaced wherever a summary is shown — an extraction summary is keyword-thin and must not read like a finding."
               },
               "model": {"type": ["string", "null"]},
-              "phase": {"type": "string"},
+              "phase": {
+                "type": "string",
+                "description": "Content phase at generation — any of intro/setup/build/wrap, or whatever the instance was left in for the teardown fallback. The summary rolls continuously, so an early phase means the run was young, not that a trigger was missed."
+              },
               "headline": {"type": "string"},
               "what_they_built": {"type": "string"},
               "session_intent": {

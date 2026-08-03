@@ -414,26 +414,35 @@ def test_what_the_summariser_actually_emits_satisfies_the_schema(schema: dict) -
             harvest,
             run_id="3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90",
             email="labuser007@example.com",
-            phase="wrap",
+            phase="build",
             generator=generator,
             model=model,
+            revision=3,
         )
         event = _example("insight-summary.json")
         event["payload"] = payload
         event["idempotency_key"] = (
-            f"summary:{event['run_id']}:{event['attendee']}:{generator}"
+            f"summary:{event['run_id']}:{event['attendee']}:{generator}:3"
         )
         assert_schema(event, schema)
 
 
-def test_the_summary_idempotency_key_carries_the_generator() -> None:
-    """An extraction summary must be supersedable by a model one, so the two
-    cannot share a key — CT would drop the better of the pair as a duplicate."""
+def test_the_summary_idempotency_key_carries_the_generator_and_revision() -> None:
+    """Two things share this key, for two different reasons.
+
+    The generator, because an extraction summary must be supersedable by a model
+    one and a shared key would have CT drop the better of the pair as a duplicate.
+    The revision, because the summary now rolls — without it, every regeneration
+    after the first is silently discarded as a re-flush of the first.
+    """
     doc = CONTRACT_DOC.read_text()
-    assert "summary:{run_id}:{attendee}:{generator}" in doc
+    assert "summary:{run_id}:{attendee}:{generator}:{revision}" in doc
     for name in ("insight-summary.json", "insight-summary-extraction.json"):
         event = _example(name)
-        assert event["idempotency_key"].endswith(f":{event['payload']['generator']}")
+        payload = event["payload"]
+        assert event["idempotency_key"].endswith(
+            f":{payload['generator']}:{payload['revision']}"
+        )
 
 
 def test_the_summary_id_does_not_vary_with_the_generator() -> None:

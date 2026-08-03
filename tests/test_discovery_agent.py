@@ -18,6 +18,9 @@ from .conftest import ALICE
 _ASSETS = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "assets"))
 HELPER = os.path.join(_ASSETS, "bin", "workshop-discovery")
 OVERLAY = os.path.join(_ASSETS, "instructions", "discovery.md")
+PROJECT_OVERLAY = os.path.join(_ASSETS, "instructions", "project_discovery.md")
+INIT_PROJECT = os.path.join(_ASSETS, "bin", "workshop-init-project")
+PROJECT_MEMORY = os.path.join(".config", "workshop", "project-memory.md")
 
 
 def _provisioned_home(client, monkeypatch):
@@ -87,6 +90,111 @@ def test_overlay_is_appended_once(client, monkeypatch):
     home = _provisioned_home(client, monkeypatch)
     claude_md = open(os.path.join(home, ".claude", "CLAUDE.md")).read()
     assert claude_md.count("<!-- workshop-discovery -->") == 1
+
+
+# --- The project-memory channel (the one Omnigent's workers can see) ----------
+#
+# This is the gap that let a whole run ship with zero discovery records. Home
+# instructions reach Claude, Codex and Omnigent's polly brain, but polly delegates
+# coding to a Codex sub-agent running in a git worktree under an isolated
+# CODEX_HOME, so the home file is invisible to the agent doing the work. The only
+# channel that survives is a committed, project-level AGENTS.md — seeded from the
+# project-memory template, which carried no discovery content at all.
+
+
+def test_project_memory_carries_the_mandate_when_capture_is_on(client, monkeypatch):
+    monkeypatch.setenv("WORKSHOP_INSIGHT_CAPTURE", "true")
+    home = _provisioned_home(client, monkeypatch)
+    text = open(os.path.join(home, PROJECT_MEMORY)).read()
+    assert "workshop-discovery" in text
+
+
+def test_project_memory_is_clean_when_capture_is_off(client, monkeypatch):
+    monkeypatch.delenv("WORKSHOP_INSIGHT_CAPTURE", raising=False)
+    home = _provisioned_home(client, monkeypatch)
+    text = open(os.path.join(home, PROJECT_MEMORY)).read()
+    assert "workshop-discovery" not in text
+    # And no orphaned substitution slot where the anchor would have gone.
+    assert "discovery-anchor" not in text
+
+
+def test_project_memory_is_clean_when_only_discovery_is_off(client, monkeypatch):
+    """The same consent boundary as the home file. This template is committed into
+    the attendee's git history, so leaving an instruction to elicit in it would
+    outlive the setting that was supposed to turn eliciting off."""
+    monkeypatch.setenv("WORKSHOP_INSIGHT_CAPTURE", "true")
+    monkeypatch.setenv("DISCOVERY_ENABLED", "false")
+    home = _provisioned_home(client, monkeypatch)
+    text = open(os.path.join(home, PROJECT_MEMORY)).read()
+    assert "workshop-discovery" not in text
+    assert "discovery-anchor" not in text
+
+
+def test_project_memory_keeps_the_build_mandate_alongside_discovery(client, monkeypatch):
+    """The overlay appends; it must not displace what the template is for."""
+    monkeypatch.setenv("WORKSHOP_INSIGHT_CAPTURE", "true")
+    home = _provisioned_home(client, monkeypatch)
+    text = open(os.path.join(home, PROJECT_MEMORY)).read()
+    assert "<!-- workshop-project-memory -->" in text, "the init helper keys off this"
+    assert "The ship gate" in text
+    assert text.count("<!-- workshop-discovery -->") == 1
+
+
+def test_the_project_overlay_is_self_contained():
+    """A sub-agent in a worktree has no home file to be pointed at, so this copy
+    has to carry the helper name, the fields and the intent vocabulary inline."""
+    text = open(PROJECT_OVERLAY).read()
+    assert "workshop-discovery" in text
+    assert "record_id" in text
+    for intent in ("business_problem", "evaluation", "learning", "fun"):
+        assert intent in text, intent
+    for level in ("`high`", "`medium`", "`low`"):
+        assert level in text, level
+    # The anti-interrogation boundary travels with it — the point of a second
+    # copy is reach, not a laxer set of rules.
+    assert "never a detour" in text
+    assert "fill a field" in text
+    assert "Tell me if you'd rather I didn't" in text
+
+
+def test_the_project_overlay_says_a_fun_build_is_recordable():
+    """The session that started this: a Space Invaders game, built with an agent
+    that had every reason to think there was nothing worth recording."""
+    text = open(PROJECT_OVERLAY).read()
+    assert "fun is a complete answer" in text.lower()
+
+
+def test_the_committed_agents_md_carries_the_mandate(client, monkeypatch, tmp_path):
+    """End to end through the helper that actually writes the file. AGENTS.md is
+    the channel; a mandate in the template that never reaches a worktree is the
+    same as no mandate."""
+    monkeypatch.setenv("WORKSHOP_INSIGHT_CAPTURE", "true")
+    home = _provisioned_home(client, monkeypatch)
+    env = {
+        "HOME": home,
+        "PATH": os.environ["PATH"],
+        # A committed file is the requirement, so give git an identity to commit
+        # with rather than relying on the machine running the tests having one.
+        "GIT_AUTHOR_NAME": "Workshop",
+        "GIT_AUTHOR_EMAIL": "workshop@example.com",
+        "GIT_COMMITTER_NAME": "Workshop",
+        "GIT_COMMITTER_EMAIL": "workshop@example.com",
+    }
+    out = subprocess.run(
+        ["bash", INIT_PROJECT, "space-invaders"],
+        env=env, capture_output=True, text=True, timeout=60,
+    )
+    assert out.returncode == 0, out.stderr
+
+    project = out.stdout.strip()
+    for name in ("AGENTS.md", "CLAUDE.md"):
+        assert "workshop-discovery" in open(os.path.join(project, name)).read(), name
+    tracked = subprocess.run(
+        ["git", "ls-files"], cwd=project, env=env, capture_output=True, text=True,
+    ).stdout.split()
+    # Tracked, not merely present: only a committed file propagates into the
+    # worktree Omnigent's sub-agent runs in.
+    assert "AGENTS.md" in tracked
 
 
 # --- The instruction text is load-bearing ------------------------------------

@@ -1,14 +1,22 @@
-"""When the edge summary runs: wrap primary, final harvest backstop (contract C6).
+"""When the edge summary runs: every harvest, bounded (contract C6).
 
 The trigger design is the load-bearing part of phase 4, because the inputs are
-destroyed by teardown. These tests pin the two properties that decide whether a
-run produces anything at all:
+destroyed by teardown. Summaries used to run only at the ``wrap`` phase flip,
+which meant a run whose operator never touched the phase control — the normal
+case — reached teardown having captured counters and nothing else. These tests
+pin the properties that decide whether a run produces anything at all:
 
-- wrap summarises without blocking the operator's phase flip, which happens in
-  front of a live room;
-- the ``final=true`` harvest summarises *and flushes synchronously*, because
-  Control Tower deletes the app moments after that response and the periodic
-  flusher runs on a 15-second timer.
+- an ordinary harvest rolls the summary forward, so nothing depends on an
+  operator action;
+- two gates bound what that costs: an interval floor per attendee and a material
+  fingerprint, so Control Tower polling all day does not mean a model call per
+  poll;
+- wrap and teardown force a pass past the interval, because at the end of a
+  session there is no later chance;
+- neither trigger blocks its caller — wrap happens in front of a live room, and
+  the ``final=true`` harvest additionally flushes synchronously, because CT
+  deletes the app moments after that response and the periodic flusher runs on a
+  15-second timer.
 """
 
 from __future__ import annotations
@@ -36,11 +44,12 @@ def recorded(monkeypatch):
 
     calls: list[dict] = []
 
-    def fake_all(users, *, phase, allow_llm, emitter=None):
+    def fake_all(users, *, phase, allow_llm, force=False, emitter=None):
         calls.append({
             "attendees": sorted(u.email for u in users),
             "phase": phase,
             "allow_llm": allow_llm,
+            "force": force,
         })
         return len(users)
 
@@ -55,7 +64,21 @@ def _seen(client):
     user_manager.get("alice@example.com")
 
 
-# --- wrap: the primary trigger ------------------------------------------------
+def _mark_everyone_summarised(generator: str = "llm") -> None:
+    """Stamp every registered attendee as just summarised.
+
+    Every attendee, not just alice: the pre-check that decides whether to spawn a
+    pass asks whether *anyone* is due, so one attendee left over from another test
+    would make an interval test pass for the wrong reason.
+    """
+    from server import insight_summary
+    from server.users import user_manager
+
+    for user in user_manager.all():
+        insight_summary.stamps.mark(user.email, generator, "fp-1")
+
+
+# --- wrap: still a trigger, now a forcing one ---------------------------------
 
 
 def test_wrap_triggers_the_edge_summary(client, as_admin, capture_on, recorded):
@@ -67,19 +90,22 @@ def test_wrap_triggers_the_edge_summary(client, as_admin, capture_on, recorded):
     [call] = recorded
     assert "alice@example.com" in call["attendees"]
     assert call["phase"] == "wrap"
-    # Wrap is the trigger that gets a model: the app is warm and the attendee is
-    # still in the room to be told what was captured.
+    # Wrap is still the best trigger: the app is warm and the attendee is still in
+    # the room to be told what was captured.
     assert call["allow_llm"] is True
 
 
-def test_earlier_phases_do_not_summarise(client, as_admin, capture_on, recorded):
-    """Mid-workshop the session isn't over, and the model call is not free."""
+def test_wrap_forces_a_pass_past_the_interval(client, as_admin, capture_on, recorded):
+    """An operator flipping to wrap is asking for the current picture, not the one
+    from up to twenty minutes ago."""
     _seen(client)
-    for phase in ("intro", "setup", "build"):
-        client.post("/api/admin/phase", json={"phase": phase}, headers=ADMIN)
+    _mark_everyone_summarised()
+
+    client.post("/api/admin/phase", json={"phase": "wrap"}, headers=ADMIN)
 
     _join_summary_threads()
-    assert recorded == []
+    [call] = recorded
+    assert call["force"] is True
 
 
 def test_wrap_does_not_summarise_when_capture_is_off(client, as_admin, recorded, monkeypatch):
@@ -101,7 +127,7 @@ def test_the_phase_flip_does_not_wait_on_the_model(client, as_admin, capture_on,
     released = threading.Event()
     entered = threading.Event()
 
-    def slow(users, *, phase, allow_llm, emitter=None):
+    def slow(users, *, phase, allow_llm, force=False, emitter=None):
         entered.set()
         released.wait(timeout=5)
         return 0
@@ -150,14 +176,183 @@ def test_the_final_harvest_summarises_without_a_model(
     assert call["allow_llm"] is False
 
 
-def test_an_ordinary_harvest_does_not_summarise(client, as_admin, capture_on, recorded):
-    """Control Tower polls this endpoint all day; summarising per poll would burn
-    the run-once stamp long before the attendee finished working."""
+# --- the ordinary harvest: the trigger that does not need an operator ----------
+
+
+def test_an_ordinary_harvest_summarises_when_due(
+    client, as_admin, capture_on, recorded
+):
+    """The whole point of rolling the summary: a run whose operator never touches
+    the phase control still produces briefs that describe the session."""
     _seen(client)
+    client.post("/api/admin/phase", json={"phase": "build"}, headers=ADMIN)
+    recorded.clear()
+
+    body = client.get("/api/admin/stats", headers=ADMIN).json()
+
+    assert body["instance"]["final"] is False
+    assert body["instance"]["summary_pass_started"] is True
+    _join_summary_threads()
+    [call] = recorded
+    assert "alice@example.com" in call["attendees"]
+    # The live phase, so the payload says how far the run had got rather than
+    # claiming a wrap that never happened.
+    assert call["phase"] == "build"
+    assert call["allow_llm"] is True
+    # Not forced: the interval floor is what keeps a fleet-wide poll cheap.
+    assert call["force"] is False
+
+
+def test_an_ordinary_harvest_does_not_summarise_before_the_interval_elapses(
+    client, as_admin, capture_on, recorded
+):
+    """Control Tower polls this endpoint every few minutes all day. Without the
+    floor, every poll would walk each attendee's home and call a model."""
+    from server import insight_summary
+
+    _seen(client)
+    _mark_everyone_summarised()
+
+    body = client.get("/api/admin/stats", headers=ADMIN).json()
+
+    assert insight_summary.stamps.revision_for("alice@example.com") == 1
+    assert body["instance"]["summary_pass_started"] is False
+    _join_summary_threads()
+    assert recorded == [], "a thread was spawned for an attendee that was not due"
+
+
+def test_an_elapsed_interval_makes_an_attendee_due_again(
+    client, as_admin, capture_on, recorded, monkeypatch
+):
+    from server import config
+
+    _seen(client)
+    _mark_everyone_summarised()
+    monkeypatch.setattr(config, "insight_summary_min_interval_seconds", lambda: 0)
+
+    body = client.get("/api/admin/stats", headers=ADMIN).json()
+
+    assert body["instance"]["summary_pass_started"] is True
+    _join_summary_threads()
+    assert recorded, "the interval elapsed and nothing was summarised"
+
+
+def test_an_ordinary_harvest_does_not_summarise_when_capture_is_off(
+    client, as_admin, recorded, monkeypatch
+):
+    monkeypatch.setenv("WORKSHOP_INSIGHT_CAPTURE", "false")
+    _seen(client)
+
+    body = client.get("/api/admin/stats", headers=ADMIN).json()
+
+    _join_summary_threads()
+    assert recorded == []
+    assert "summary_pass_started" in body["instance"]
+    assert body["instance"]["summary_pass_started"] is False
+
+
+def test_an_ordinary_harvest_still_returns_stats_if_summarising_breaks(
+    client, as_admin, capture_on, monkeypatch
+):
+    """CT stores this response as the durable snapshot. Insight is the optional
+    half of the payload; the counters are the half that has always been promised."""
+    from server import insight_summary
+
+    monkeypatch.setattr(
+        insight_summary, "summarise_in_background",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    _seen(client)
+
     resp = client.get("/api/admin/stats", headers=ADMIN)
 
-    assert resp.json()["instance"]["final"] is False
-    assert recorded == []
+    assert resp.status_code == 200
+    assert resp.json()["users"]
+
+
+# --- the fingerprint gate: unchanged material costs no model call -------------
+
+
+def test_unchanged_material_does_not_call_the_model(capture_on, monkeypatch):
+    """The interval says "you may look again"; the fingerprint says "there is
+    something new to say". Without the second gate a quiet attendee would
+    accumulate identical summaries at rising revisions all afternoon."""
+    from server import artifacts, insight_summary
+    from server.users import user_manager
+
+    user = user_manager.get("alice@example.com")
+    harvest = artifacts.Harvest(
+        prompts=["build me space invaders"],
+        artifacts=[artifacts.Artifact(kind="readme", title="README.md", bytes=512)],
+        prompt_count=4,
+    )
+    monkeypatch.setattr(artifacts, "harvest_user", lambda *a, **k: harvest)
+    monkeypatch.setattr(insight_summary.config, "insight_summary_min_interval_seconds", lambda: 0)
+
+    asked: list[int] = []
+
+    def fake_model(harvest, signal):
+        asked.append(1)
+        return {"headline": "Built Space Invaders."}, "test-endpoint"
+
+    monkeypatch.setattr(insight_summary, "_ask_model", fake_model)
+    emitter = _RecordingEmitter()
+
+    first = insight_summary.summarise_user(user, phase="build", emitter=emitter)
+    second = insight_summary.summarise_user(user, phase="build", emitter=emitter)
+
+    assert first is not None
+    assert second is None, "an unchanged session was summarised twice"
+    assert len(asked) == 1
+    assert len(emitter.events) == 1
+
+
+def test_new_material_rolls_the_summary_forward(capture_on, monkeypatch):
+    """A revision per regeneration, in the payload and the key — without it
+    Control Tower would discard every refresh after the first as a duplicate."""
+    from server import artifacts, insight_summary
+    from server.users import user_manager
+
+    user = user_manager.get("alice@example.com")
+    harvest = artifacts.Harvest(prompts=["build me space invaders"], prompt_count=4)
+    monkeypatch.setattr(artifacts, "harvest_user", lambda *a, **k: harvest)
+    monkeypatch.setattr(insight_summary.config, "insight_summary_min_interval_seconds", lambda: 0)
+    monkeypatch.setattr(
+        insight_summary, "_ask_model",
+        lambda h, s: ({"headline": "Built Space Invaders."}, "test-endpoint"),
+    )
+    emitter = _RecordingEmitter()
+
+    insight_summary.summarise_user(user, phase="build", emitter=emitter)
+    # The attendee kept working: a new prompt and a shipped artifact.
+    harvest.prompts.append("add a high score table")
+    harvest.prompt_count = 9
+    harvest.artifacts.append(
+        artifacts.Artifact(kind="readme", title="README.md", bytes=512)
+    )
+    insight_summary.summarise_user(user, phase="wrap", emitter=emitter)
+
+    first, second = emitter.events
+    assert [e["payload"]["revision"] for e in emitter.events] == [1, 2]
+    # One session, so one summary_id — CT supersedes rather than accumulates.
+    assert first["payload"]["summary_id"] == second["payload"]["summary_id"]
+    assert first["idempotency_key"] != second["idempotency_key"]
+    assert second["idempotency_key"].endswith(":llm:2")
+
+
+class _RecordingEmitter:
+    run_id = "3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90"
+
+    def __init__(self) -> None:
+        self.events: list[dict] = []
+
+    def emit(self, type_, attendee, payload, *, idempotency_key=""):
+        self.events.append({
+            "type": type_,
+            "attendee": attendee,
+            "payload": payload,
+            "idempotency_key": idempotency_key,
+        })
 
 
 def test_the_final_harvest_flushes_the_buffer_before_the_app_is_deleted(

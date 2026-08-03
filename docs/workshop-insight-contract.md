@@ -35,8 +35,8 @@ Captured:
   code, workspace resource census. Already gathered by `server/stats.py`.
 - **Elicited discovery** — what the attendee wants, in their own words, given
   knowingly to an agent that told them why it was asking.
-- **Edge summary at wrap** — a summary derived from the attendee's prompts and
-  the artifacts the agent wrote for them.
+- **Edge summary** — a summary derived from the attendee's prompts and the
+  artifacts the agent wrote for them, regenerated as their session progresses.
 
 Never captured, by construction:
 
@@ -55,7 +55,8 @@ which is worse than no data because it is confidently wrong about a customer.
 | Setting | Default | Effect |
 |---|---|---|
 | `WORKSHOP_INSIGHT_CAPTURE` | `false` | Master switch. Off means no signal, no discovery, no summary, and no instruction overlay. |
-| `DISCOVERY_ENABLED` | `true` | Sub-flag. Behavioural signal only when off — no agent-elicited questions. |
+| `DISCOVERY_ENABLED` | `true` | Sub-flag. Behavioural signal only when off — no agent-elicited questions, in the home instructions *and* the committed project-level ones. |
+| `INSIGHT_SUMMARY_MIN_INTERVAL_MINUTES` | `20` | Floor between edge summaries for one attendee. Not a consent control — capture is already on if this matters. |
 
 `WORKSHOP_INSIGHT_CAPTURE` is the only switch that matters. Capture needs no
 delivery configuration at all — see [Transport](#transport) — so an instance
@@ -270,19 +271,33 @@ since the terminal cannot reach back into it. A record that is only blanked
 locally leaves the attendee looking at an empty pane while the brief still quotes
 them, which is worse than never offering the control.
 
-### `insight.summary` — edge summary at wrap
+### `insight.summary` — rolling edge summary
 
-One per attendee, at the `wrap` phase transition, with a non-LLM fallback at the
-teardown `final=true` harvest. Stamped and idempotent: exactly once per attendee,
-with one permitted exception described below.
+**One per attendee, regenerated as their session progresses.** The producer runs it
+off every non-final `GET /api/admin/stats` harvest, so a run whose operator never
+touches the phase control still delivers summaries. `wrap` and the teardown
+`final=true` harvest remain triggers, but they now *force* a pass rather than being
+the only ones.
+
+Two gates bound the cost, and a consumer should expect both to show:
+
+- an interval floor per attendee (`INSIGHT_SUMMARY_MIN_INTERVAL_MINUTES`,
+  default 20), bypassed by the forcing triggers;
+- a **material fingerprint** over the summariser's input, never bypassed. An
+  attendee who has not moved since their last summary produces no new event, so
+  quiet attendees stop appearing rather than accumulating identical revisions.
+
+The teardown pass keeps the non-LLM fallback: it can run hours after the app went
+cold, and a model call there fails silently into nothing.
 
 | Field | Type | Notes |
 |---|---|---|
 | `summary_id` | string | Stable per attendee per run, so a regenerated summary supersedes rather than adds. |
+| `revision` | integer | Starts at 1, bumped on each regeneration for that attendee. Last segment of `idempotency_key`. |
 | `generated_at` | RFC 3339 | |
 | `generator` | enum | `llm` \| `extraction`. |
 | `model` | string \| null | Serving endpoint used, when `generator` is `llm`. |
-| `phase` | string | Phase at generation — `wrap` normally, whatever phase the instance was left in for the teardown fallback. |
+| `phase` | string | Content phase at generation — any of `intro`/`setup`/`build`/`wrap`, or whatever the instance was left in for the teardown fallback. An early phase means the run was young, not that anything was skipped. |
 | `headline` | string | One line. Required — a blank headline renders as a data bug rather than a quiet session, so the producer substitutes an explicit "no summary could be derived". |
 | `what_they_built` | string | Prose. |
 | `session_intent` | enum | Same vocabulary as `discovery.record`. Set by the `llm` generator only — `extraction` omits it rather than guessing from keywords. |
@@ -299,13 +314,20 @@ quoted verbatim, with no paraphrase offered — while an `llm` one is prose.
 Rendering them identically would let a reader mistake the fallback's silence for a
 finding.
 
-**The one permitted repeat.** An `extraction` summary may later be superseded by
-an `llm` one for the same attendee; the reverse must never happen. This exists
-because the wrap trigger settles for extraction when the serving endpoint is
-unreachable, and an operator re-running wrap after it recovers should not be stuck
-with the thin version. The two carry different idempotency keys, so both reach
-Control Tower, and **CT must prefer `llm` on the same `summary_id`** rather than
-last-write-wins.
+**Supersession has two rules, and a consumer needs both.**
+
+*Revision.* The highest revision for a `summary_id` wins. A lower one is a late
+flush from the producer's retry buffer, and applying it would regress a brief to an
+earlier state of the session. The producer's revision counter is in memory, so a
+restarted instance numbers from 1 again — a consumer must therefore let a newer
+`generated_at` override the revision floor, or a restart would silence that
+attendee for the rest of the workshop.
+
+*Generator.* An `extraction` summary may be superseded by an `llm` one for the same
+attendee; the reverse must never happen, at any revision. A rolling summary settles
+for extraction whenever the serving endpoint is unreachable, and the thin version
+must not be what an account team is left with once it recovers. On a shared
+`summary_id`, **CT must prefer `llm`** rather than take the last write.
 
 ### Health events (pre-existing, now actually accepted)
 
@@ -324,7 +346,7 @@ whether repeated harvests accumulate or supersede:
 |---|---|---|
 | `workshop.signal` | `signal:{run_id}:{attendee}:{bucket}` | One row per time bucket per attendee. Bounded growth; latest wins in reporting. |
 | `discovery.record` | `discovery:{run_id}:{attendee}:{record_id}:{revision}` | One row per revision; the projection keeps the highest. |
-| `insight.summary` | `summary:{run_id}:{attendee}:{generator}` | At most one per generator per attendee. `llm` supersedes `extraction` on the shared `summary_id`; never the reverse. |
+| `insight.summary` | `summary:{run_id}:{attendee}:{generator}:{revision}` | One row per revision per generator; the projection keeps the highest revision, and `llm` supersedes `extraction` on the shared `summary_id` regardless of revision. Without `{revision}` every regeneration after the first would be discarded as a duplicate. |
 
 On the collect path `{run_id}` is empty, so these shapes collapse to
 `signal::labuser001@…:{bucket}` and friends. Because

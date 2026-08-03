@@ -120,9 +120,13 @@ def test_the_main_instructions_anchor_the_discovery_call(monkeypatch):
         "the shipping moment must point at the call, or the appended discovery "
         "section is the only thing asking for it and it gets read as ceremony"
     )
-    assert "fun is a real answer" in gate, (
+    assert "`fun` is a complete answer" in gate, (
         "a game must be recorded as a game — an unrecorded session is what got "
         "read as an unqualified opportunity"
+    )
+    assert "always" in gate, (
+        "the call has to be unconditional: an agent left to judge whether it "
+        "learned enough decides it didn't, which is how a whole run recorded nothing"
     )
     assert "must never delay showing them the app" in gate, (
         "the anchor cannot become a fourth ship-gate step"
