@@ -1125,19 +1125,28 @@ def test_skills_tampered_persistent_content_forces_reclone(
     assert install.status()["steps"]["skills"]["source"] == "network"
 
 
-def test_prewarm_status_proves_reusable_disk_content_without_runtime_state(
-    monkeypatch, tmp_path, restore_installer_state
+def _lay_down_prewarmed_prefix(
+    monkeypatch, tmp_path, restore_installer_state, *, omit=()
 ):
+    """Write the disk content a prewarmed image is supposed to carry.
+
+    :param omit: Binaries to leave off the image, to prove what their absence
+        does — and does not — cost the proof.
+    """
     prefix = tmp_path / "prefix"
     bin_dir = prefix / "bin"
     bin_dir.mkdir(parents=True)
     expected_versions = {
-        "node": install.NODE_VERSION,
-        "claude": install.CLAUDE_VERSION,
-        "codex": install.CODEX_VERSION,
-        "databricks": install.DATABRICKS_CLI_VERSION,
-        "pi": install.PI_VERSION,
-        "omnigent": install.OMNIGENT_VERSION,
+        name: version
+        for name, version in {
+            "node": install.NODE_VERSION,
+            "claude": install.CLAUDE_VERSION,
+            "codex": install.CODEX_VERSION,
+            "databricks": install.DATABRICKS_CLI_VERSION,
+            "pi": install.PI_VERSION,
+            "omnigent": install.OMNIGENT_VERSION,
+        }.items()
+        if name not in omit
     }
     for name in (*expected_versions, "tmux"):
         (bin_dir / name).write_bytes(f"{name}-binary".encode())
@@ -1220,16 +1229,19 @@ def test_prewarm_status_proves_reusable_disk_content_without_runtime_state(
         "launcher_tree_relative_path": os.path.relpath(launcher_root, prefix),
         "native_tree_relative_path": os.path.relpath(alias_root, prefix),
     }))
-    pi_root = prefix / "lib/node_modules/@earendil-works/pi-coding-agent"
-    (pi_root / "node_modules/chalk").mkdir(parents=True)
-    (pi_root / "package.json").write_bytes(b"pi")
-    (pi_root / "node_modules/chalk/index.js").write_bytes(b"dependency")
-    (prefix / "pi.install.json").write_text(json.dumps({
-        "package_sha256": restore_installer_state.entry("pi_npm_package")["sha256"],
-        "launcher_sha256": install._file_checksum(bin_dir / "pi"),
-        "tree_sha256": install._directory_checksum(pi_root),
-        "tree_relative_path": os.path.relpath(pi_root, prefix),
-    }))
+    if "pi" not in omit:
+        pi_root = prefix / "lib/node_modules/@earendil-works/pi-coding-agent"
+        (pi_root / "node_modules/chalk").mkdir(parents=True)
+        (pi_root / "package.json").write_bytes(b"pi")
+        (pi_root / "node_modules/chalk/index.js").write_bytes(b"dependency")
+        (prefix / "pi.install.json").write_text(json.dumps({
+            "package_sha256": restore_installer_state.entry("pi_npm_package")[
+                "sha256"
+            ],
+            "launcher_sha256": install._file_checksum(bin_dir / "pi"),
+            "tree_sha256": install._directory_checksum(pi_root),
+            "tree_relative_path": os.path.relpath(pi_root, prefix),
+        }))
     omnigent_entries = {
         name: restore_installer_state.entry(name)
         for name in (
@@ -1259,6 +1271,15 @@ def test_prewarm_status_proves_reusable_disk_content_without_runtime_state(
     monkeypatch.setattr(install.subprocess, "run", lambda *args, **kwargs: Result())
     with install._state_lock:
         install._state["skills"] = {"status": "error", "source": "network"}
+    return commit, skills_checksum
+
+
+def test_prewarm_status_proves_reusable_disk_content_without_runtime_state(
+    monkeypatch, tmp_path, restore_installer_state
+):
+    commit, skills_checksum = _lay_down_prewarmed_prefix(
+        monkeypatch, tmp_path, restore_installer_state
+    )
 
     proof = install.prewarm_status()
 
@@ -1299,6 +1320,45 @@ def test_prewarm_status_proves_reusable_disk_content_without_runtime_state(
         and entry["actual_checksum"]
         for entry in proof["manifest"]["binaries"].values()
     )
+
+
+def test_a_missing_pi_is_reported_without_failing_the_whole_terminal(
+    monkeypatch, tmp_path, restore_installer_state
+):
+    """``reusable`` hard-gates /readyz through the ``supply_chain`` check, so what
+    it includes decides what is fatal. Pi is deliberately not: it is absent from
+    ``required_steps`` and from the ``omnigent`` ready bit because an attendee
+    without it loses the gateway-only Polly variants, not the workshop. It still
+    has to be *reported*, or a prewarm that quietly stopped shipping pi would look
+    identical to one that ships it."""
+    _lay_down_prewarmed_prefix(
+        monkeypatch, tmp_path, restore_installer_state, omit=("pi",)
+    )
+
+    proof = install.prewarm_status()
+
+    assert proof["manifest"]["binaries"]["pi"]["reusable"] is False
+    assert proof["manifest"]["binaries"]["pi"]["actual"] is None
+    assert proof["reusable"] is True
+    # Everything else still vetoes, so the exemption is pi's alone and not a hole
+    # the aggregate now has for any binary.
+    assert install.ADVISORY_BINARIES == frozenset({"pi"})
+
+
+def test_a_missing_codex_still_fails_the_prewarm_proof(
+    monkeypatch, tmp_path, restore_installer_state
+):
+    """The counterpart to pi's exemption: a binary every session needs must still
+    take the proof down, or `supply_chain` would be green on an image that cannot
+    run a workshop."""
+    _lay_down_prewarmed_prefix(
+        monkeypatch, tmp_path, restore_installer_state, omit=("codex",)
+    )
+
+    proof = install.prewarm_status()
+
+    assert proof["manifest"]["binaries"]["codex"]["reusable"] is False
+    assert proof["reusable"] is False
 
 
 def test_prewarm_status_fails_closed_for_tampered_skills(monkeypatch, tmp_path):

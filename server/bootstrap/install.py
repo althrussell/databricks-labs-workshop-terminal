@@ -52,6 +52,14 @@ NODE_VERSION = os.environ.get("NODE_VERSION", "24.18.1").strip()
 # non-interactive ``--approve`` flag (``onboarding/harness_install.py``).
 PI_VERSION = os.environ.get("PI_CLI_VERSION", "0.83.0").strip()
 PI_MIN_VERSION = "0.79.0"
+# Binaries the prewarm proof inspects and reports, but does not let veto the
+# aggregate. ``reusable`` hard-gates /readyz through the ``supply_chain`` check,
+# and a harness we deliberately keep out of ``required_steps`` and out of the
+# ``omnigent`` ready bit must not become fatal by that back door: an attendee
+# without pi loses the gateway-only Polly variants, not the workshop. The per
+# binary entry still says so, so a prewarm that silently stopped shipping pi is
+# visible rather than implied.
+ADVISORY_BINARIES = frozenset({"pi"})
 CLAUDE_INSTALLER_URL = os.environ.get(
     "CLAUDE_INSTALLER_URL", "https://claude.ai/install.sh"
 )
@@ -487,7 +495,14 @@ def _prewarm_status_unlocked() -> dict:
         "source": "persistent",
         "reusable": skills_reusable,
     }
-    reusable = all(entry["reusable"] for entry in binaries.values()) and skills_reusable
+    reusable = (
+        all(
+            entry["reusable"]
+            for name, entry in binaries.items()
+            if name not in ADVISORY_BINARIES
+        )
+        and skills_reusable
+    )
     return {
         "reusable": reusable,
         "manifest": {

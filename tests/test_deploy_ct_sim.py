@@ -130,6 +130,18 @@ def test_a_plain_http_gateway_host_is_rejected():
     _gateway_error("http://dbc-af3ed11d-d267.cloud.databricks.com/ai-gateway")
 
 
+def test_a_gateway_host_carrying_a_provider_suffix_is_rejected():
+    """The terminal appends the provider itself — /anthropic for Claude, /codex/v1
+    for the OpenAI-completions models GLM routes through. Handed a host that
+    already carries one, it would build .../anthropic/anthropic and route nowhere.
+    The subdomain form is the trap: it satisfies the ai-gateway label check while
+    carrying the suffix, so the label check alone cannot catch it."""
+    _gateway_error("https://1234567890.ai-gateway.cloud.databricks.com/anthropic")
+    _gateway_error(
+        "https://dbc-af3ed11d-d267.cloud.databricks.com/ai-gateway/anthropic"
+    )
+
+
 def test_the_pi_cli_version_reaches_the_deployment_env():
     """It sits in EXACT_DEFAULTS, but a default that is never patched into the
     app's env leaves the installer pinning whatever the image happened to ship."""

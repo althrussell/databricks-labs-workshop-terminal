@@ -269,7 +269,17 @@ def _validate_gateway_host(parser, value):
         )
     labels = hostname.split(".")
     path = (parsed.path or "").rstrip("/")
-    if "ai-gateway" not in labels and not path.endswith("/ai-gateway"):
+    # Strict about the path because the terminal appends the provider suffix
+    # itself (/anthropic for Claude, /codex/v1 for the OpenAI-completions models
+    # GLM routes through). A host handed over with one already attached yields a
+    # double-suffixed base URL that resolves to nothing, and the DNS-label form
+    # would otherwise sail past the label check carrying it.
+    if path not in ("", "/ai-gateway"):
+        parser.error(
+            "--gateway-host must be the gateway root, not a provider URL: the "
+            "terminal appends /anthropic and /codex/v1 itself"
+        )
+    if "ai-gateway" not in labels and path != "/ai-gateway":
         parser.error(
             "--gateway-host must either carry an 'ai-gateway' DNS label or end "
             "in the /ai-gateway path, or Omnigent will not route it as the gateway"
