@@ -5,13 +5,14 @@
   "attendee": "labuser011@example.com",
   "type": "insight.summary",
   "occurred_at": "2026-07-31T02:15:09.771000+00:00",
-  "idempotency_key": "summary:3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90:labuser011@example.com:extraction",
+  "idempotency_key": "summary:3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90:labuser011@example.com:extraction:1",
   "payload": {
     "summary_id": "sum_5c9a1f77b0d34e62",
+    "revision": 1,
     "generated_at": "2026-07-31T02:15:09.771000+00:00",
     "generator": "extraction",
     "model": null,
-    "phase": "wrap",
+    "phase": "build",
     "headline": "Explorer session: lakebase, pipelines; hit errors",
     "what_they_built": "Agent plan: Create a Lakeflow pipeline from the orders topic; Touched: bash databricks pipelines create --json @pipeline.json",
     "use_cases": [

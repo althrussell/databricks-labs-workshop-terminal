@@ -7,20 +7,32 @@ Control Tower is not an optimisation — the inputs are destroyed by teardown
 (``drop_catalog`` takes the promote docs, ``delete_workspace`` takes the repos),
 so an instance that shuts down without summarising has nothing left to summarise.
 
-**Two triggers, deliberately asymmetric.**
+**The summary rolls; it does not wait for a phase.** It regenerates off the
+harvest Control Tower already makes, so a run whose operator never flips the
+phase — the normal case, since most operators don't know the control exists —
+still reaches an account team with something. Wrap and teardown remain triggers,
+but they are now *forcing* moments rather than the only ones.
 
-*Wrap* is the primary: the operator drives it, the app is warm, the attendee is
-still present, and the certificate moment already lives there. It gets the model
-call. *The final teardown harvest* is the backstop, and it gets keyword
-extraction only — teardown can run hours later via scheduled cleanup, is
-explicitly best-effort, and an LLM call there would fail silently into nothing.
-The two are distinguished on the wire by ``generator``, because an extraction
-summary is keyword-thin and must never be read as a finding.
+Two gates keep that affordable, and both matter:
 
-**Exactly once per attendee**, stamped in memory. An LLM summary is never
-downgraded by a later extraction pass; an extraction summary *can* be upgraded
-if the model becomes reachable, since the two carry different idempotency keys
-and Control Tower prefers ``llm``.
+- an **interval** floor (``INSIGHT_SUMMARY_MIN_INTERVAL_MINUTES``), checked
+  before the home is walked;
+- a **material fingerprint**, checked after the harvest and before the model
+  call, so an attendee who has done nothing since the last summary costs a
+  directory walk rather than a model call.
+
+*Wrap* still gets the model. *The final teardown harvest* is the backstop and
+gets keyword extraction only — teardown can run hours later via scheduled
+cleanup, is explicitly best-effort, and an LLM call there would fail silently
+into nothing. The two are distinguished on the wire by ``generator``, because an
+extraction summary is keyword-thin and must never be read as a finding.
+
+Each emission carries a **revision**, and it is part of the idempotency key.
+Without it Control Tower would de-dupe every regeneration after the first
+against the key it already held, and the rolling summary would be a rolling
+summary that only ever arrived once. An LLM summary is still never downgraded by
+a later extraction pass; an extraction summary *can* be upgraded once the model
+becomes reachable.
 """
 
 from __future__ import annotations
@@ -30,6 +42,8 @@ import json
 import logging
 import re
 import threading
+import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from . import artifacts, config
@@ -96,40 +110,119 @@ than an empty field. If the material genuinely does not say, leave it empty.
 """
 
 
-class _Stamps:
-    """Which attendees have already been summarised, and how.
+@dataclass
+class _Stamp:
+    """What was last emitted for one attendee, and when it was last attempted."""
 
-    In memory on purpose. A restart losing the stamp costs one duplicate
-    generation whose event carries the same idempotency key, so Control Tower
-    discards it — whereas a stamp persisted to the volume would be one more thing
-    to reconcile at teardown for no benefit.
+    generator: str = ""
+    # Material fingerprint of the last *emitted* summary. Compared after the
+    # harvest to decide whether there is anything new to say.
+    fingerprint: str = ""
+    # How many summaries have been emitted for this attendee. The next emission
+    # is ``revision + 1``.
+    revision: int = 0
+    # Monotonic clock at the last *attempt*, not the last emission. Resetting it
+    # on an unchanged pass is what stops an idle attendee being re-harvested on
+    # every poll for the rest of the workshop.
+    attempted_at: float = 0.0
+
+
+class _Stamps:
+    """Which attendees have been summarised, how, when, and against what material.
+
+    In memory on purpose. A restart loses the stamps, which costs one extra
+    generation per attendee — Control Tower resolves that on ``summary_id``,
+    preferring the newer revision — whereas persisting to the volume would be one
+    more thing to reconcile at teardown for no benefit.
     """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._done: dict[str, str] = {}
+        self._stamps: dict[str, _Stamp] = {}
 
-    def should_run(self, email: str, *, generator: str) -> bool:
+    def may_emit(self, email: str, *, generator: str) -> bool:
+        """Whether this generator is allowed to write over what is stored.
+
+        An extraction pass never overwrites a model summary; the reverse is an
+        upgrade and is allowed, because a rolling summary may have settled for
+        extraction while the endpoint was unreachable.
+
+        Separate from the interval, and deliberately so: the fallback inside a
+        single pass re-checks this after the model has failed, and re-checking the
+        interval there would reject every fallback — the attempt was stamped
+        moments earlier by the pass doing the asking.
+        """
         with self._lock:
-            existing = self._done.get(email)
-        if existing is None:
+            stamp = self._stamps.get(email)
+        if stamp is None:
             return True
-        # An extraction pass never overwrites a model summary; the reverse is an
-        # upgrade and is allowed, because wrap runs before the model may have
-        # recovered and the thin summary is what we settled for.
-        return existing == "extraction" and generator == "llm"
+        return not (stamp.generator == "llm" and generator != "llm")
 
-    def mark(self, email: str, generator: str) -> None:
+    def should_run(self, email: str, *, generator: str, force: bool = False) -> bool:
+        """The cheap gate, checked before the home is walked.
+
+        ``force`` is for wrap and teardown: the interval exists to bound cost
+        during a session, and at the end of one there is no later chance.
+        """
+        if not self.may_emit(email, generator=generator):
+            return False
         with self._lock:
-            self._done[email] = generator
+            stamp = self._stamps.get(email)
+        if stamp is None or force:
+            return True
+        interval = config.insight_summary_min_interval_seconds()
+        return (time.monotonic() - stamp.attempted_at) >= interval
+
+    def changed(self, email: str, fingerprint: str, *, generator: str) -> bool:
+        """Whether there is new material worth spending a model call on.
+
+        An extraction-to-``llm`` upgrade counts as changed even on identical
+        material: the point of the upgrade is the better prose, not new facts.
+        """
+        with self._lock:
+            stamp = self._stamps.get(email)
+        if stamp is None or not stamp.fingerprint:
+            return True
+        if stamp.generator == "extraction" and generator == "llm":
+            return True
+        return stamp.fingerprint != fingerprint
+
+    def note_attempt(self, email: str) -> None:
+        """Record that the home was walked, whether or not anything was emitted.
+
+        The interval gate reads this rather than the last emission, so a session
+        that has gone quiet is not re-harvested on every harvest.
+        """
+        with self._lock:
+            stamp = self._stamps.setdefault(email, _Stamp())
+            stamp.attempted_at = time.monotonic()
+
+    def next_revision(self, email: str) -> int:
+        with self._lock:
+            stamp = self._stamps.get(email)
+            return (stamp.revision if stamp else 0) + 1
+
+    def mark(self, email: str, generator: str, fingerprint: str = "") -> None:
+        with self._lock:
+            stamp = self._stamps.setdefault(email, _Stamp())
+            stamp.generator = generator
+            stamp.fingerprint = fingerprint
+            stamp.revision += 1
+            stamp.attempted_at = time.monotonic()
 
     def generator_for(self, email: str) -> str | None:
         with self._lock:
-            return self._done.get(email)
+            stamp = self._stamps.get(email)
+            return stamp.generator or None if stamp else None
+
+    def revision_for(self, email: str) -> int:
+        with self._lock:
+            stamp = self._stamps.get(email)
+            return stamp.revision if stamp else 0
 
     def clear(self) -> None:
         with self._lock:
-            self._done.clear()
+            self._stamps.clear()
 
 
 stamps = _Stamps()
@@ -143,6 +236,43 @@ def _summary_id(run_id: str, email: str) -> str:
     """Stable per attendee, so a regenerated summary supersedes rather than adds."""
     digest = hashlib.sha256(f"{run_id}:{email}".encode()).hexdigest()
     return f"sum_{digest[:16]}"
+
+
+def _fingerprint(harvest: artifacts.Harvest, signal: dict | None) -> str:
+    """A cheap hash of "has this session moved since we last described it".
+
+    Fingerprints the *summariser's own input* rather than activity in general,
+    because that is the question worth asking: if neither the harvest nor the
+    signal handed to the model has changed, the summary it writes would say the
+    same thing, so regenerating spends a model call to restate a stored answer.
+
+    Built from counters and titles rather than the prose, so it stays stable
+    across two harvests of an unchanged home. Commits already arrive as harvested
+    artifacts, so code movement is covered without reaching for the stats payload.
+    """
+    signal = signal or {}
+    parts: list[object] = [
+        harvest.prompt_count,
+        len(harvest.prompts),
+        len(harvest.plans),
+        len(harvest.tool_targets),
+        len(harvest.errors),
+        len(harvest.artifacts),
+        sum(artifact.bytes for artifact in harvest.artifacts),
+        len(harvest.documents),
+        # The newest error and artifact, so a session that swaps one failure for
+        # another registers as movement even at unchanged counts.
+        harvest.errors[-1] if harvest.errors else "",
+        harvest.artifacts[-1].title if harvest.artifacts else "",
+        # The signal fields the prompt is given. Engagement crossing from
+        # explorer to builder changes the summary even on identical prompts.
+        signal.get("engagement", ""),
+        signal.get("shipped", ""),
+        sorted(signal.get("products") or []),
+        sorted((signal.get("topic_hits") or {}).items()),
+    ]
+    digest = hashlib.sha256("|".join(str(part) for part in parts).encode())
+    return digest.hexdigest()[:16]
 
 
 def _trim(text: object, limit: int) -> str:
@@ -377,6 +507,7 @@ def _payload(
     phase: str,
     generator: str,
     model: str | None,
+    revision: int = 1,
 ) -> dict:
     """Shape a raw summary into the contract's ``insight.summary`` payload.
 
@@ -411,6 +542,10 @@ def _payload(
         "generator": generator,
         "model": model,
         "phase": phase,
+        # Monotonic per attendee. Control Tower must ignore a revision lower than
+        # the one it holds: the retry buffer can flush out of order, and a rolling
+        # summary that took the last arrival would regress to an older session.
+        "revision": revision,
         # The one required content field. An empty headline would render as a
         # blank row in a brief, which reads as a data bug rather than a quiet
         # session, so the fallback text says which it is.
@@ -447,14 +582,19 @@ def summarise_user(
     signal: dict | None = None,
     allow_llm: bool = True,
     single_attendee: bool = True,
+    force: bool = False,
     emitter=None,
 ) -> dict | None:
     """Harvest, summarise and emit one attendee's session. Never raises.
 
-    Returns the emitted payload, or ``None`` when there was nothing to say, the
-    attendee was already summarised, or capture is off. ``None`` is a normal
-    outcome and not an error: an attendee who opened the landing page and left
-    has no session to describe, and inventing one would be worse than the gap.
+    Returns the emitted payload, or ``None`` when there was nothing to say,
+    nothing has changed since the last summary, the interval has not elapsed, or
+    capture is off. ``None`` is the common outcome on a rolling schedule and is
+    never an error: an attendee who opened the landing page and left has no
+    session to describe, and inventing one would be worse than the gap.
+
+    ``force`` skips the interval floor, for wrap and teardown — the floor bounds
+    cost during a session, and at the end of one there is no later chance.
     """
     if not config.insight_capture_enabled():
         return None
@@ -462,7 +602,7 @@ def summarise_user(
         from .event_emitter import event_emitter as emitter
 
     intended = "llm" if allow_llm else "extraction"
-    if not stamps.should_run(user.email, generator=intended):
+    if not stamps.should_run(user.email, generator=intended, force=force):
         return None
 
     try:
@@ -470,9 +610,15 @@ def summarise_user(
     except Exception as exc:  # noqa: BLE001 — harvest is already fail-soft
         logger.warning("harvest failed for %s: %s", user.email, exc)
         return None
+    # Recorded whatever happens next, so an attendee who has gone quiet costs one
+    # directory walk per interval rather than one per harvest.
+    stamps.note_attempt(user.email)
     if harvest.is_empty():
-        # Stamped so the teardown backstop doesn't re-walk an empty home.
-        stamps.mark(user.email, intended)
+        return None
+
+    fingerprint = _fingerprint(harvest, signal)
+    if not stamps.changed(user.email, fingerprint, generator=intended):
+        logger.debug("edge summary unchanged for %s; skipping", user.email)
         return None
 
     generator, model, raw = "extraction", None, None
@@ -485,39 +631,54 @@ def summarise_user(
         except Exception as exc:  # noqa: BLE001 — a summary is never worth a 500
             logger.warning("edge summary model call failed: %s", exc)
     if raw is None:
-        if not stamps.should_run(user.email, generator="extraction"):
+        # The model was meant to answer and didn't. Falling back is only correct
+        # while it wouldn't downgrade a model summary already sent — the interval
+        # is not re-checked here, because this pass stamped its own attempt above.
+        if not stamps.may_emit(user.email, generator="extraction"):
             return None
         raw = _extraction(harvest, signal)
 
+    revision = stamps.next_revision(user.email)
     payload = _payload(
         raw, harvest,
         run_id=emitter.run_id, email=user.email, phase=phase,
-        generator=generator, model=model,
+        generator=generator, model=model, revision=revision,
     )
     emitter.emit(
         "insight.summary",
         user.email,
         payload,
-        # Generator is part of the key so an extraction summary can later be
-        # superseded by a model one; a retried flush of either stays a duplicate.
-        idempotency_key=f"summary:{emitter.run_id}:{user.email}:{generator}",
+        # The revision is what makes a regenerated summary a new logical event.
+        # Without it Control Tower would de-dupe every refresh after the first
+        # against the key it already held. Generator stays in the key so an
+        # extraction summary can still be superseded by a model one, and a
+        # retried flush of either remains a duplicate.
+        idempotency_key=(
+            f"summary:{emitter.run_id}:{user.email}:{generator}:{revision}"
+        ),
     )
-    stamps.mark(user.email, generator)
+    stamps.mark(user.email, generator, fingerprint)
     logger.info(
-        "edge summary emitted for %s (generator=%s, prompts=%d, artifacts=%d)",
-        user.email, generator, harvest.prompt_count, len(harvest.artifacts),
+        "edge summary emitted for %s (generator=%s, revision=%d, prompts=%d, "
+        "artifacts=%d)",
+        user.email, generator, revision, harvest.prompt_count,
+        len(harvest.artifacts),
     )
     return payload
 
 
 def summarise_all(
-    users: list[User], *, phase: str, allow_llm: bool, emitter=None
+    users: list[User], *, phase: str, allow_llm: bool, force: bool = False,
+    emitter=None,
 ) -> int:
     """Summarise every attendee on this instance. Returns how many were emitted.
 
     The behavioural signal is gathered once per user and handed to the summariser
     so the narrative and the counters describe the same session — deriving
     engagement twice is how the two ends of a brief come to disagree.
+
+    On the rolling schedule most calls emit nothing, because most attendees have
+    not moved since the last pass. Zero is the expected return, not a failure.
     """
     from . import stats
 
@@ -537,30 +698,42 @@ def summarise_all(
             signal = None
         if summarise_user(
             user, phase=phase, signal=signal, allow_llm=allow_llm,
-            single_attendee=single, emitter=emitter,
+            single_attendee=single, force=force, emitter=emitter,
         ):
             emitted += 1
     return emitted
 
 
-def summarise_in_background(users: list[User], *, phase: str) -> threading.Thread | None:
-    """Run the wrap summarisation off the request thread.
+def summarise_in_background(
+    users: list[User], *, phase: str, force: bool = False
+) -> threading.Thread | None:
+    """Run summarisation off the request thread.
 
-    ``POST /api/admin/phase`` is a foreground operator action in front of a live
-    room, and this does a model call per attendee. Blocking the phase flip on it
-    would stall the projector.
+    Both callers need this. ``POST /api/admin/phase`` is a foreground operator
+    action in front of a live room, and ``GET /api/admin/stats`` is Control
+    Tower's harvest, whose latency decides how long a fleet-wide poll takes.
+    Neither can afford a model call per attendee inline.
+
+    Returns ``None`` when there is nothing to do, so a caller can report whether
+    a pass was even started without waiting for it to finish.
     """
     if not config.insight_capture_enabled():
         return None
     snapshot = list(users)
     if not snapshot:
         return None
+    # Cheap pre-check on the caller's thread: if no attendee is due, don't pay for
+    # a thread per harvest for the whole workshop.
+    if not force and not any(
+        stamps.should_run(user.email, generator="llm") for user in snapshot
+    ):
+        return None
 
     def run() -> None:
         try:
-            summarise_all(snapshot, phase=phase, allow_llm=True)
+            summarise_all(snapshot, phase=phase, allow_llm=True, force=force)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("wrap summarisation failed: %s", exc)
+            logger.warning("summarisation failed: %s", exc)
 
     thread = threading.Thread(target=run, name="insight-summary", daemon=True)
     thread.start()

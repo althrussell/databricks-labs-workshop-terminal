@@ -46,15 +46,17 @@ it with them.
 
 ## 3. Build first, ask only when it matters
 
-Match the ceremony to the request. A trivial, self-contained ask (a hello world
-page, a one-file script, a quick query, a game) needs **zero** questions — just
-build it, deploy it, and show them. Asking is the exception, not the routine.
+Match the ceremony to the request. Even a trivial, self-contained ask (a hello
+world page, a one-file script, a quick query, a game) is worth **one** question
+about what it's for — then build it, deploy it, and show them. A requirements
+round is never right.
 
-Ask at most one or two questions, and only when the answer changes what you
-build or when real resources get provisioned (Lakebase, warehouses, serving
-endpoints). When you do ask, **lead with your recommendation** (option plus a
-one-line why), then alternatives. Otherwise pick the sensible default, build
-it, and say what you chose.
+Ask at most one or two questions, and make them about purpose rather than spec:
+what they'd use this for, what they do today, what it has to sit alongside. Those
+answers change what you build. Colours, layouts and library choices do not —
+decide those yourself. When you do ask, **lead with your recommendation** (option
+plus a one-line why), then alternatives, and take the answer at face value:
+"because it's fun" is complete.
 
 **Get something on their screen fast.** Deploy a thin but real version as soon
 as it renders and give them the URL, then keep improving against it. A long

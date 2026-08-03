@@ -5,9 +5,10 @@
   "attendee": "labuser007@example.com",
   "type": "insight.summary",
   "occurred_at": "2026-07-30T11:58:31.004000+00:00",
-  "idempotency_key": "summary:3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90:labuser007@example.com:llm",
+  "idempotency_key": "summary:3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90:labuser007@example.com:llm:4",
   "payload": {
     "summary_id": "sum_a41d90c7e2b85f13",
+    "revision": 4,
     "generated_at": "2026-07-30T11:58:31.004000+00:00",
     "generator": "llm",
     "model": "databricks-claude-haiku-4-5",

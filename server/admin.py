@@ -102,14 +102,19 @@ def set_phase(body: PhaseBody):
         )
     content_service.set_phase(body.phase)
     event_hub.publish({"t": "phase", "phase": body.phase})
-    # C6 phase 4: wrap is the primary edge-summary trigger — the app is warm and
-    # the attendee is still here, unlike teardown. Backgrounded so a model call
-    # per attendee can't stall the operator's phase flip, and a no-op unless
-    # WORKSHOP_INSIGHT_CAPTURE is on.
+    # C6 phase 4: wrap is no longer the only edge-summary trigger — the harvest
+    # rolls one continuously — but it is still the best one, because the app is
+    # warm and the attendee is still here to have just finished something.
+    # ``force`` bypasses the interval floor: an operator flipping to wrap is
+    # asking for the current picture, not the one from up to twenty minutes ago.
+    # Backgrounded so a model call per attendee can't stall the phase flip, and a
+    # no-op unless WORKSHOP_INSIGHT_CAPTURE is on.
     if body.phase == "wrap":
         from . import insight_summary
 
-        insight_summary.summarise_in_background(user_manager.all(), phase=body.phase)
+        insight_summary.summarise_in_background(
+            user_manager.all(), phase=body.phase, force=True
+        )
     return {"status": "ok", "phase": body.phase}
 
 
@@ -130,6 +135,11 @@ def harvest_stats(final: bool = False):
     last moment anything can be read off this instance, so it doubles as the
     backstop for the edge summary — extraction only, no model call, because
     teardown is best-effort and may run long after the app went cold.
+
+    An ordinary harvest also refreshes the edge summary, in the background. That
+    is what makes insight independent of the workshop phase: an operator who never
+    flips to wrap — the normal case — still gets briefs that describe the session,
+    rather than a run that reaches teardown having captured nothing but counters.
     """
     from . import stats
 
@@ -146,6 +156,26 @@ def harvest_stats(final: bool = False):
     # No-op unless WORKSHOP_INSIGHT_CAPTURE is on; buffered, so it can't slow the
     # harvest or fail it.
     stats.emit_signals(payload)
+    if not final:
+        from . import insight_summary
+
+        # Backgrounded: this is Control Tower's fleet-wide poll, and a model call
+        # per attendee on the response path would turn a fast harvest into a slow
+        # one. The interval and fingerprint gates inside decide whether anything
+        # actually runs, so calling this every harvest is cheap when nothing moved.
+        #
+        # Guarded for the same reason the final pass is: CT stores this response as
+        # the durable snapshot, and insight is the optional half of it. A harvest
+        # that 500s over a summary bug would cost the counters too, on every poll.
+        try:
+            started = insight_summary.summarise_in_background(
+                users, phase=content_service.phase
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("rolling summary pass failed to start: %s", exc)
+            started = None
+            payload["instance"]["summary_error"] = str(exc)[:200]
+        payload["instance"]["summary_pass_started"] = started is not None
     if final:
         from . import event_emitter as emitter_module
         from . import insight_summary
@@ -157,8 +187,13 @@ def harvest_stats(final: bool = False):
             # Synchronous: after this response Control Tower deletes the app, so a
             # background thread would be killed mid-flight. Extraction is cheap and
             # local, which is the whole reason the backstop tier is model-free.
+            #
+            # ``force`` bypasses the interval floor but not the fingerprint gate.
+            # A session that ends minutes after its last rolling summary must still
+            # get its final state recorded, while an attendee who has not moved
+            # since is left alone rather than re-emitted at a higher revision.
             payload["instance"]["summaries_emitted"] = insight_summary.summarise_all(
-                users, phase=content_service.phase, allow_llm=False
+                users, phase=content_service.phase, allow_llm=False, force=True
             )
             # The periodic flusher runs every 15s and this container has seconds
             # left, so drain here or lose everything still buffered — including the

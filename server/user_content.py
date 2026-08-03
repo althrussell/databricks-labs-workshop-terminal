@@ -273,6 +273,28 @@ def _write_instructions(user: User) -> None:
 
 # -- project memory (project-level CLAUDE.md / AGENTS.md via a bootstrap helper) --
 
+def _project_memory() -> str:
+    """The project-memory template, with the discovery mandate folded in.
+
+    Substituted rather than shipped in the template for the same reason as the
+    home instructions: turning discovery off must remove every instruction to
+    elicit, which is the consent boundary DISCOVERY_ENABLED exists to draw.
+
+    The overlay here is a *separate, self-contained* file rather than the home
+    ``discovery.md``. This copy is read by sub-agents that cannot see the home
+    file, so it cannot refer to it — it has to carry the helper name, the fields
+    and the intent values inline.
+    """
+    with open(os.path.join(_ASSETS, "instructions", "project_memory.md")) as f:
+        text = f.read()
+    if not config.discovery_enabled():
+        return text.replace(f"\n{_DISCOVERY_ANCHOR_SLOT}\n", "")
+    with open(os.path.join(_ASSETS, "instructions", "discovery_anchor.md")) as f:
+        anchor = f.read().strip()
+    text = text.replace(_DISCOVERY_ANCHOR_SLOT, anchor)
+    return _overlay(text, "project_discovery.md", _DISCOVERY_MARKER)
+
+
 def _install_project_helper(user: User) -> None:
     """Install the project bootstrap helper + its project-memory template.
 
@@ -282,11 +304,15 @@ def _install_project_helper(user: User) -> None:
     only channel that survives that is a *committed, project-level* AGENTS.md,
     which `workshop-init-project` writes (and commits) into every new project so
     it propagates into worktrees. Defense-in-depth for the other agents too.
+
+    That makes this the only instruction channel to the agent that does the work
+    in an Omnigent session, which is why the discovery mandate has to be here and
+    not only in the home file.
     """
-    template_src = os.path.join(_ASSETS, "instructions", "project_memory.md")
     template_dst = os.path.join(user.home, ".config", "workshop", "project-memory.md")
     os.makedirs(os.path.dirname(template_dst), exist_ok=True)
-    shutil.copy2(template_src, template_dst)
+    with open(template_dst, "w") as f:
+        f.write(_project_memory())
 
     helper_src = os.path.join(_ASSETS, "bin", "workshop-init-project")
     local_bin = os.path.join(user.home, ".local", "bin")
