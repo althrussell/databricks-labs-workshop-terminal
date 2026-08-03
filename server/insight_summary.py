@@ -46,22 +46,12 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from . import artifacts, config
+from . import artifacts, config, models
 from .discovery import SESSION_INTENTS
 from .users import User
 
 logger = logging.getLogger("workshop.insight_summary")
 
-# Newest-first. Summarising a day of prompts is a small, well-bounded job, so the
-# cheap tier is the correct default — spending Opus here buys nothing an account
-# team would notice and competes with the attendees' own agent budget.
-_MODEL_CHAIN = (
-    "databricks-claude-haiku-4-5",
-    "databricks-claude-sonnet-5",
-    "databricks-claude-sonnet-4-6",
-    "databricks-gpt-oss-120b",
-    "databricks-meta-llama-3-3-70b-instruct",
-)
 _MODEL_TIMEOUT = 45
 _MAX_TOKENS = 1400
 
@@ -330,11 +320,18 @@ def _ready_endpoints(token: str) -> set[str]:
 
 
 def _pick_model(token: str) -> str:
+    """The summariser's endpoint, from the ``insight`` role in server/models.py.
+
+    Unlike the CLI writers this raises rather than guessing when nothing in the
+    chain is READY, because there is a good non-LLM answer available: the
+    extraction generator quotes the attendee's own words. A summary invented by
+    an endpoint we could not confirm exists is worse than that.
+    """
     pinned = config.insight_summary_model()
     if pinned:
         return pinned
     available = _ready_endpoints(token)
-    for name in _MODEL_CHAIN:
+    for name in models.chain("insight"):
         if name in available:
             return name
     raise ModelUnavailable("no summarisation endpoint is READY in this workspace")

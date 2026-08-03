@@ -177,9 +177,63 @@ def test_model_defaults_pick_from_available(user, monkeypatch):
     with open(_config_path(user)) as f:
         text = f.read()
     # Only opus-4-7 available → the sonnet-first chain degrades all the way
-    # through to it; codex default unaffected.
+    # through to it.
     assert "default: databricks-claude-opus-4-7" in text
-    assert "default: databricks-gpt-5-5" in text
+    # No GPT endpoint is READY here, so Codex falls to the head of its chain
+    # unverified rather than to a hardcoded name. Discovery this narrow means
+    # either a region a long way behind or a failed API call, and the newest
+    # model we know of is the better guess in both cases.
+    assert "default: databricks-gpt-5-6-terra" in text
+
+
+def test_the_economy_profile_reaches_the_generated_config(user, monkeypatch):
+    """The profile is only worth having if it is what the CLIs actually read.
+    Economy is the load-bearing case: it caps Claude's Opus slot at Sonnet and
+    moves Codex to the cheap GPT tier."""
+    monkeypatch.setenv("WORKSHOP_MODEL_PROFILE", "economy")
+    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
+    monkeypatch.delenv("CODEX_MODEL", raising=False)
+    monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
+    monkeypatch.setattr(
+        cli_config, "_discover_serving_endpoints",
+        lambda token: {
+            "databricks-claude-sonnet-5",
+            "databricks-claude-opus-5",
+            "databricks-gpt-5-6-luna",
+            "databricks-gpt-5-6-terra",
+        },
+    )
+    cli_config.configure_omnigent(user, "tok-1")
+    cli_config.configure_claude(user, "tok-1")
+    with open(_config_path(user)) as f:
+        omnigent = f.read()
+    with open(os.path.join(user.home, ".claude", "settings.json")) as f:
+        claude = json.load(f)["env"]
+
+    assert "default: databricks-claude-sonnet-5" in omnigent
+    assert "default: databricks-gpt-5-6-luna" in omnigent
+    # Opus is READY and still not reachable: that is the ceiling, not a default.
+    assert claude["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "databricks-claude-sonnet-5"
+    assert "databricks-claude-opus-5" not in omnigent
+
+
+def test_configure_all_discovers_endpoints_once_for_all_three_configs(
+    user, monkeypatch
+):
+    """A room signing in at once should not multiply one workspace question by
+    the number of CLIs an attendee gets."""
+    calls = []
+
+    def _count(token):
+        calls.append(token)
+        return {"databricks-claude-sonnet-5", "databricks-gpt-5-6-terra"}
+
+    monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
+    monkeypatch.setattr(cli_config, "_discover_serving_endpoints", _count)
+    cli_config.configure_all(user, "tok-1")
+
+    assert len(calls) == 1
+    assert user.cli_ready >= {"claude", "codex", "omnigent"}
 
 
 def test_default_claude_model_is_sonnet_5(user, monkeypatch):

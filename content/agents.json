@@ -29,7 +29,7 @@
   {
     "id": "omnigent-frontier",
     "label": "Polly Frontier",
-    "description": "Strongest and most expensive: Opus 5 orchestrating, Opus and GPT-5.6 Terra workers. Run the same task you gave Polly Economy and compare cost, tokens, and quality.",
+    "description": "Strongest and most expensive: Opus 5 orchestrating, Opus and GPT-5.6 Sol workers. Run the same task you gave Polly Economy and compare cost, tokens, and quality.",
     "icon": "omnigent",
     "command": "workshop-omnigent polly-frontier",
     "requires": ["omnigent"],

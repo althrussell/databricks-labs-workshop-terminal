@@ -132,6 +132,14 @@ def _parse_args(argv=None, *, environ=None):
                         help="exact reviewed Anthropic serving endpoint")
     parser.add_argument("--codex-model", required=True,
                         help="exact reviewed Codex serving endpoint")
+    parser.add_argument(
+        "--model-profile",
+        default="",
+        help="WORKSHOP_MODEL_PROFILE: the event's cost posture. Empty means "
+             "balanced, which is what every event ran before this existed. "
+             "'economy' caps Claude's Opus slot at Sonnet for a large free "
+             "event; 'frontier' promotes the everyday driver to Opus.",
+    )
     parser.add_argument("--claude-code-version", default=EXACT_DEFAULTS["claude_code_version"])
     parser.add_argument("--codex-cli-version", default=EXACT_DEFAULTS["codex_cli_version"])
     parser.add_argument("--databricks-cli-version", default=EXACT_DEFAULTS["databricks_cli_version"])
@@ -228,14 +236,40 @@ def _validate_args(parser, args, environ):
                 f"--{field.replace('_', '-')} must be an explicit non-floating "
                 "model endpoint name"
             )
+    _validate_model_profile(parser, args.model_profile)
     _validate_gateway_host(parser, args.gateway_host)
     if args.dry_run and not args.attendee.strip():
         parser.error("--attendee is required for --dry-run/--validate")
 
 
+def _validate_model_profile(parser, value):
+    """Reject a profile name this release does not implement.
+
+    The terminal deliberately falls back to ``balanced`` on an unknown name so a
+    typo cannot stop a workshop, and reports the substitution as an amber
+    readiness check. That is the right behaviour at runtime and the wrong one
+    here: a deploy is where someone is still watching, so an event asking for a
+    posture we cannot supply should fail loudly rather than run at a cost the
+    operator did not choose.
+    """
+    value = (value or "").strip().lower()
+    if not value:
+        return
+    # Imported here rather than at module scope: this script is run against a
+    # checkout, and a missing server package should not stop --help working.
+    from server import models
+
+    if value not in models.PROFILES:
+        parser.error(
+            "--model-profile must be one of: "
+            + ", ".join(sorted(models.PROFILES))
+            + " (or empty for the default)"
+        )
+
+
 # Mirrors the trusted-suffix allowlist Omnigent gates on before it will route a
-# base URL as the AI Gateway, so a typo is caught here rather than becoming a
-# workshop where GLM silently never appears.
+# base URL as the AI Gateway, so a typo is caught here rather than becoming an
+# event that quietly spends outside gateway policy and usage tracking.
 GATEWAY_TRUSTED_SUFFIXES = (
     ".cloud.databricks.com",
     ".azuredatabricks.net",
@@ -247,14 +281,15 @@ def _validate_gateway_host(parser, value):
     """Reject a gateway host Omnigent would decline to route.
 
     Empty is allowed and means "not set": Workshop Terminal then falls back to
-    ``<host>/serving-endpoints``, which still serves Claude and Codex, and
-    reports the degradation as the soft ``model_gateway`` readiness check.
+    ``<host>/serving-endpoints``, which serves every model an attendee needs but
+    bypasses gateway policy, usage tracking and rate limits. That degradation is
+    reported as the soft ``model_gateway`` readiness check.
 
     The workspace-hosted form (``https://<workspace>.cloud.databricks.com/ai-gateway``)
     is preferred over a dedicated ``ai-gateway`` subdomain: on the subdomain form
     Omnigent cannot infer the workspace hostname and falls back to resolving
     ``~/.databrickscfg``, and if that fails it drops the openai-completions
-    provider that GLM routes through.
+    provider the chat-completions-only models need.
     """
     value = (value or "").strip()
     if not value:
@@ -450,6 +485,7 @@ def _event_settings(
     skills_ref,
     anthropic_model,
     codex_model,
+    model_profile,
     claude_code_version,
     codex_cli_version,
     databricks_cli_version,
@@ -478,6 +514,10 @@ def _event_settings(
         "SKILLS_REF": skills_ref,
         "ANTHROPIC_MODEL": anthropic_model,
         "CODEX_MODEL": codex_model,
+        # Empty is the reviewed default rather than an omission: it selects the
+        # posture every event ran before profiles existed, and the two pins above
+        # still override the roles they name.
+        "WORKSHOP_MODEL_PROFILE": model_profile,
         "CLAUDE_CODE_VERSION": claude_code_version,
         "CODEX_CLI_VERSION": codex_cli_version,
         "DATABRICKS_CLI_VERSION": databricks_cli_version,
@@ -501,6 +541,7 @@ def _event_settings_from_args(args, attendee, workshop_pat):
         skills_ref=args.skills_ref,
         anthropic_model=args.anthropic_model,
         codex_model=args.codex_model,
+        model_profile=args.model_profile.strip().lower(),
         claude_code_version=args.claude_code_version,
         codex_cli_version=args.codex_cli_version,
         databricks_cli_version=args.databricks_cli_version,

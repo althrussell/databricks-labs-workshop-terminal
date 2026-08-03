@@ -154,9 +154,25 @@ env:
   # .databrickscfg dependency described above. Prefer DATABRICKS_GATEWAY_HOST.
   - name: DATABRICKS_WORKSPACE_ID
     value: ""
-  # Default Claude model is Sonnet 5 (fast, capable, cheaper than Opus). Set
-  # this to pin a different model per event, e.g. databricks-claude-opus-4-8
-  # for a premium-tier workshop. Opus stays reachable via /model regardless.
+  # An event's cost posture, in one word. Empty means "balanced", which is what
+  # every event ran before this knob existed: a Sonnet 5 driver with Opus still
+  # reachable via /model, and Codex on the balanced GPT tier.
+  #
+  #   economy   Caps the ceiling rather than suggesting one — Claude's Opus slot
+  #             resolves to Sonnet, so /model opus costs a fifth of Opus output.
+  #             Codex drops to the cheap GPT tier and the wrap summary to
+  #             gpt-oss-120b. For a large free event.
+  #   balanced  The default. Sonnet driver, Opus reachable, Codex balanced.
+  #   frontier  Opus as the everyday driver, Codex on the flagship GPT tier. For
+  #             a small paid engagement where attention costs more than tokens.
+  #
+  # Roles and their chains live in server/models.py; /readyz reports which
+  # profile is in force and goes amber on a name this release does not know.
+  - name: WORKSHOP_MODEL_PROFILE
+    value: ""
+  # Pins override the profile for the two roles an operator addresses directly.
+  # Each leads its role's chain rather than replacing it, so a model this region
+  # does not serve degrades to the best one it does rather than failing.
   - name: ANTHROPIC_MODEL
     value: ""
   - name: CODEX_MODEL

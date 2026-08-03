@@ -37,6 +37,7 @@ def test_uploaded_yaml_patch_sets_current_event_contract_without_mutating_repo()
         skills_ref="v1.2.3",
         anthropic_model="databricks-claude-sonnet-5",
         codex_model="databricks-gpt-5-6-codex",
+        model_profile="economy",
         claude_code_version="2.1.216",
         codex_cli_version="0.144.6",
         databricks_cli_version="1.8.0",
@@ -430,6 +431,36 @@ def test_model_names_reject_floating_or_non_endpoint_values(flag, value):
 
     with pytest.raises(SystemExit):
         deploy_ct_sim._parse_args(argv)
+
+
+def test_an_unset_model_profile_is_the_reviewed_default():
+    """Empty means `balanced`, the posture every event ran before this knob."""
+    args = deploy_ct_sim._parse_args(_valid_argv())
+    assert args.model_profile == ""
+
+
+@pytest.mark.parametrize("value", ["economy", "balanced", "frontier", " Economy "])
+def test_known_model_profiles_are_accepted(value):
+    args = deploy_ct_sim._parse_args(_valid_argv() + ["--model-profile", value])
+    assert args.model_profile == value
+
+
+@pytest.mark.parametrize("value", ["cheep", "cheapest", "opus", "econony"])
+def test_an_unknown_model_profile_fails_the_deploy(value):
+    """The terminal falls back to `balanced` on a name it does not know, so this
+    typo would otherwise become an event running at a cost nobody chose. A deploy
+    is the last moment someone is watching, so it fails here instead."""
+    with pytest.raises(SystemExit):
+        deploy_ct_sim._parse_args(_valid_argv() + ["--model-profile", value])
+
+
+def test_the_model_profile_reaches_the_env_lowercased():
+    settings = deploy_ct_sim._event_settings_from_args(
+        deploy_ct_sim._parse_args(_valid_argv() + ["--model-profile", " Frontier "]),
+        "attendee@example.com",
+        "",
+    )
+    assert settings["WORKSHOP_MODEL_PROFILE"] == "frontier"
 
 
 @pytest.mark.parametrize("flag", ["--no-obo", "--no-entitlements"])
