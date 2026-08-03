@@ -110,13 +110,20 @@ def _is_omnigent_gateway_form(url: str) -> bool:
 def gateway_status() -> dict:
     """How the AI Gateway resolved, and what an unresolved one costs.
 
-    Reported, never gating: with no gateway every config falls back to
-    ``<host>/serving-endpoints``, which still serves Claude and Codex — so a
-    workshop runs. What it silently costs is Omnigent's Pi harness, whose
-    multi-model routing sends gateway-only models (GLM, Qwen, Kimi, inkling) to
-    the Responses surface under their ``system.ai.*`` alias *only* when it
-    recognises the base URL as an AI Gateway. On the fallback those models are
-    simply unavailable, with nothing in the logs to say why.
+    Reported, never gating, and the cost is narrower than it looks. With no
+    gateway every config falls back to ``<host>/serving-endpoints``, which
+    serves every model an attendee needs: Claude at
+    ``/serving-endpoints/anthropic/v1/messages``, the newer GPT models at
+    ``/serving-endpoints/responses``, and the chat-completions-only models
+    (GLM and friends) at ``/serving-endpoints/chat/completions``. Omnigent's Pi
+    harness routes per model across exactly those surfaces, deriving the
+    ``/ai-gateway/codex/v1`` Responses path from the workspace host itself, so
+    it does not need this variable to reach any particular model.
+
+    What the fallback costs is governance: the gateway is where an event's
+    traffic meets gateway policy, usage tracking and rate limits, and
+    serving-endpoints bypasses all three. Worth reporting so an operator can
+    fix the deployment; never worth blocking a workshop.
 
     Auto-construction cannot rescue this on AWS: the workspace id is read from
     ``DATABRICKS_WORKSPACE_ID`` or, failing that, an ``adb-<digits>`` hostname —

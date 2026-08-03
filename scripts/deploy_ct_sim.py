@@ -143,9 +143,10 @@ def _parse_args(argv=None, *, environ=None):
         default="",
         help="DATABRICKS_GATEWAY_HOST for the AI Gateway. Prefer the "
              "workspace-hosted form https://<workspace>.cloud.databricks.com/ai-gateway. "
-             "Required for Pi's gateway-only models (GLM, Qwen, Kimi, inkling): on "
+             "Set it to put the event's traffic through the governed gateway: on "
              "AWS the workspace id cannot be derived from a dbc- hostname, so "
-             "nothing is auto-constructed and those models are unavailable.",
+             "nothing is auto-constructed and every CLI silently uses the "
+             "serving-endpoints fallback instead.",
     )
     parser.add_argument("--dry-run", "--validate", dest="dry_run", action="store_true",
                         help="print a secret-free settings/grant plan without API mutations")
@@ -484,9 +485,9 @@ def _event_settings(
         "NODE_VERSION": node_version,
         "PI_CLI_VERSION": pi_cli_version,
         # Empty is a supported state, not a hole: without it every CLI falls back
-        # to <host>/serving-endpoints and the workshop still runs on Claude and
-        # Codex. What it costs is Pi's gateway-only models, which is exactly what
-        # the model-set variants need, so a real event should set it.
+        # to <host>/serving-endpoints, which serves every model the model-set
+        # variants use. What it costs is gateway policy, usage tracking and rate
+        # limits, so a real event should still set it.
         "DATABRICKS_GATEWAY_HOST": gateway_host,
     }
 

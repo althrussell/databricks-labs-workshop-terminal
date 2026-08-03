@@ -1,11 +1,11 @@
 """AI Gateway resolution — and the AWS asymmetry that makes it a CT dependency.
 
 Without a gateway every CLI falls back to ``<host>/serving-endpoints``, which
-still serves Claude and Codex. That is why the gap here is easy to miss: the
-workshop runs. What it costs is Omnigent's Pi harness, which routes
-gateway-only models (GLM, Qwen, Kimi, inkling) to their Responses surface only
-when it recognises the base URL as an AI Gateway — so on the fallback those
-models are quietly unavailable.
+serves every model an attendee needs — Claude, the GPT Responses models, and the
+chat-completions-only models like GLM all answer there. That is exactly why the
+gap is easy to miss: the workshop runs. What the fallback costs is governance,
+since gateway policy, usage tracking and rate limits only apply on the gateway
+path.
 
 These tests pin the asymmetry that forces the deployment to inject the value:
 auto-construction reads the workspace id from DATABRICKS_WORKSPACE_ID or an

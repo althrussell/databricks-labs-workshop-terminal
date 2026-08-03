@@ -83,9 +83,9 @@ def _gateway_error(value):
 
 
 def test_the_gateway_host_is_optional_because_its_absence_is_a_degradation_not_a_break():
-    """Without it every CLI falls back to <host>/serving-endpoints and the
-    workshop still runs on Claude and Codex. What it costs is Pi's gateway-only
-    models, which Workshop Terminal reports as a soft readiness check."""
+    """Without it every CLI falls back to <host>/serving-endpoints, which serves
+    every model the workshop uses. What it costs is gateway policy, usage tracking
+    and rate limits, which Workshop Terminal reports as a soft readiness check."""
     args = deploy_ct_sim._parse_args(_valid_argv())
     settings = deploy_ct_sim._event_settings_from_args(args, args.attendee, "")
 
@@ -114,9 +114,9 @@ def test_a_dedicated_ai_gateway_subdomain_is_also_accepted():
 
 
 def test_a_gateway_host_that_omnigent_would_ignore_is_rejected():
-    """A workspace root with no ai-gateway label or path is the failure that costs
-    a workshop its gateway-only models while every log stays clean, so it has to
-    fail here instead."""
+    """A workspace root with no ai-gateway label or path is not a gateway at all:
+    setting it looks like governed routing while every request quietly leaves the
+    gateway path. Every log stays clean, so it has to fail here instead."""
     _gateway_error("https://dbc-af3ed11d-d267.cloud.databricks.com")
 
 

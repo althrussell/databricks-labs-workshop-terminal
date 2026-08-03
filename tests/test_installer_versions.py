@@ -1328,7 +1328,7 @@ def test_a_missing_pi_is_reported_without_failing_the_whole_terminal(
     """``reusable`` hard-gates /readyz through the ``supply_chain`` check, so what
     it includes decides what is fatal. Pi is deliberately not: it is absent from
     ``required_steps`` and from the ``omnigent`` ready bit because an attendee
-    without it loses the gateway-only Polly variants, not the workshop. It still
+    without it loses the cheap-model Polly variants, not the workshop. It still
     has to be *reported*, or a prewarm that quietly stopped shipping pi would look
     identical to one that ships it."""
     _lay_down_prewarmed_prefix(

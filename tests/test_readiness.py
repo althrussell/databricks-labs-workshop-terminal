@@ -246,10 +246,10 @@ def test_all_hard_checks_green_is_ready(tmp_path):
 
 
 def test_absent_gateway_is_reported_amber_and_never_blocks_the_workshop(tmp_path):
-    """The serving-endpoints fallback still serves Claude and Codex, so an
-    unresolved gateway must not cost an attendee their workshop. It is reported
-    amber because the one thing it silently costs — Pi's gateway-only models —
-    appears in no log."""
+    """The serving-endpoints fallback serves every model an attendee needs, so an
+    unresolved gateway must not cost anyone their workshop. It is reported amber
+    because what the fallback does cost — gateway policy, usage tracking and rate
+    limits — appears in no log."""
     report = _evaluate(tmp_path, gateway={"resolved": False, "source": "unresolved"})
 
     assert report["ready"] is True
@@ -264,8 +264,9 @@ def test_absent_gateway_is_reported_amber_and_never_blocks_the_workshop(tmp_path
 
 def test_gateway_resolved_in_a_shape_omnigent_ignores_is_still_amber(tmp_path):
     """Resolving a URL is not the same as resolving one Omnigent will route
-    through. A URL lacking both the ai-gateway DNS label and the /ai-gateway
-    path leaves Pi's gateway-only models unavailable, so green would be a lie."""
+    through. A URL lacking both the ai-gateway DNS label and the /ai-gateway path
+    leaves Omnigent deriving its own paths from the workspace host, so the
+    configured value buys nothing and green would be a lie."""
     report = _evaluate(
         tmp_path,
         gateway={

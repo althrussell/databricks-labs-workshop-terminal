@@ -44,19 +44,21 @@ OMNIGENT_PROTOCOL_VERSION = "0.7.0"
 # declares ``engines.node >= 22.19.0``, so the old 22.14.0 pin could not have
 # run it at all.
 NODE_VERSION = os.environ.get("NODE_VERSION", "24.18.1").strip()
-# Pi is Omnigent's any-gateway-model harness: unlike claude-sdk and
-# codex-native, whose family guards reject a foreign model id, pi will drive
-# whatever the gateway serves. That makes it the only way to put GLM, Luna or
-# Qwen behind a Polly brain, and it gives those models a real terminal an
-# attendee can take over. Omnigent's own floor is 0.79.0, for the
-# non-interactive ``--approve`` flag (``onboarding/harness_install.py``).
+# Pi is Omnigent's any-model harness. claude-sdk speaks only the Anthropic wire
+# API and codex-native only the Responses API, so each rejects everything
+# outside its family; pi instead picks a wire per model — Anthropic Messages for
+# Claude, Responses for the newer GPT models, chat/completions for models like
+# GLM that support nothing else. That makes it the only way to put GLM or Luna
+# behind a Polly brain, and it gives those models a real terminal an attendee can
+# take over. Omnigent's own floor is 0.79.0, for the non-interactive
+# ``--approve`` flag (``onboarding/harness_install.py``).
 PI_VERSION = os.environ.get("PI_CLI_VERSION", "0.83.0").strip()
 PI_MIN_VERSION = "0.79.0"
 # Binaries the prewarm proof inspects and reports, but does not let veto the
 # aggregate. ``reusable`` hard-gates /readyz through the ``supply_chain`` check,
 # and a harness we deliberately keep out of ``required_steps`` and out of the
 # ``omnigent`` ready bit must not become fatal by that back door: an attendee
-# without pi loses the gateway-only Polly variants, not the workshop. The per
+# without pi loses the cheap-model Polly variants, not the workshop. The per
 # binary entry still says so, so a prewarm that silently stopped shipping pi is
 # visible rather than implied.
 ADVISORY_BINARIES = frozenset({"pi"})

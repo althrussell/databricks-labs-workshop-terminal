@@ -510,11 +510,19 @@ def evaluate(
             missing=sorted(missing_pins),
             mismatched=sorted(mismatched_tools),
         ),
-        # Never a hard gate: without a gateway every CLI falls back to
-        # <host>/serving-endpoints and Claude/Codex still serve, so the workshop
-        # runs. Amber rather than green because the fallback silently costs
-        # Omnigent's Pi harness its gateway-only models (GLM, Qwen, Kimi,
-        # inkling) — the one failure here that no log reports.
+        # Never a hard gate, and deliberately not red: the fallback works. With
+        # no gateway resolved every CLI is configured against
+        # <host>/serving-endpoints, which serves everything an attendee needs —
+        # Claude on /serving-endpoints/anthropic/v1/messages, the newer GPT
+        # models on /serving-endpoints/responses, GLM and friends on
+        # /serving-endpoints/chat/completions (all verified against a live
+        # workspace). So a workshop runs either way.
+        #
+        # What the fallback costs is governance, not capability: the AI Gateway
+        # is where an event's traffic is subject to gateway policy, usage
+        # tracking and rate limits, and serving-endpoints bypasses all of it.
+        # Amber says "running, but outside the governed path" — worth a
+        # deployment fix, never worth failing an attendee over.
         "model_gateway": _soft(
             gateway_status.get("resolved") is True
             and gateway_status.get("omnigent_gateway_form") is True,
@@ -529,12 +537,14 @@ def evaluate(
                 if gateway_status.get("resolved")
                 and gateway_status.get("omnigent_gateway_form")
                 else "AI Gateway resolved, but not in a form Omnigent treats as "
-                "the gateway — Pi's gateway-only models stay unavailable"
+                "the gateway, so Omnigent derives its own paths from the "
+                "workspace host instead"
                 if gateway_status.get("resolved")
-                else "no AI Gateway: serving-endpoints fallback serves Claude and "
-                "Codex, but Pi's gateway-only models (GLM, Qwen, Kimi, inkling) "
-                "are unavailable. Set DATABRICKS_GATEWAY_HOST (or "
-                "DATABRICKS_WORKSPACE_ID) in the deployment"
+                else "no AI Gateway: models still serve via the "
+                "serving-endpoints fallback, but this event's traffic bypasses "
+                "gateway policy, usage tracking and rate limits. Set "
+                "DATABRICKS_GATEWAY_HOST (or DATABRICKS_WORKSPACE_ID) in the "
+                "deployment"
             ),
             **{
                 key: gateway_status.get(key)

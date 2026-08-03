@@ -126,15 +126,18 @@ env:
     value: ""
 
   # --- Model gateway / CLI defaults ---
-  # MUST be injected by Control Tower on AWS. Left empty, the gateway is
+  # Injected by Control Tower per workspace. Left empty, the gateway is
   # auto-constructed from the workspace id, which is read from
   # DATABRICKS_WORKSPACE_ID or an `adb-<digits>` hostname — Azure's shape. An
   # AWS `dbc-...` workspace matches neither, so no candidate URL is ever built
-  # and every CLI falls back to <host>/serving-endpoints. That fallback still
-  # serves Claude and Codex, so a workshop runs; what it silently costs is
-  # Omnigent's Pi harness, which routes gateway-only models (GLM, Qwen, Kimi,
-  # inkling) to their Responses surface ONLY when it recognises an AI Gateway
-  # URL. /readyz reports this as the soft `model_gateway` check.
+  # and every CLI falls back to <host>/serving-endpoints.
+  #
+  # That fallback serves every model an attendee needs (Claude, the GPT
+  # Responses models, and the chat-completions-only models like GLM all answer
+  # there), so a workshop runs without this. What it costs is governance: the
+  # gateway is where an event's traffic meets gateway policy, usage tracking and
+  # rate limits. /readyz reports the difference as the soft `model_gateway`
+  # check — amber, not red.
   # PREFER the workspace-hosted form:
   #   https://<workspace>.cloud.databricks.com/ai-gateway
   # Omnigent accepts a dedicated `ai-gateway` DNS-label host too, but that shape
