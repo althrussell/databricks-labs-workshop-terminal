@@ -117,13 +117,33 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
     assert (
         env["OMNIGENT_BUILD_SHA"]["value"] == "35519fb04743f66b30cac8a40695d5d72fa163ea"
     )
-    assert set(env) == {
+    # The App's env surface is an allowlist so that widening it is a deliberate,
+    # reviewed act. Beyond the required bindings the only additions permitted are
+    # the workshop's Polly model-set knobs, which are model endpoint names and a
+    # feature switch — never a credential. Matching the namespace rather than
+    # enumerating each pin keeps this from needing an edit per tier while still
+    # failing on anything outside it.
+    required = {
         "AP_LAKEBASE_ENDPOINT",
         "AP_ARTIFACT_VOLUME_PATH",
         "OMNIGENT_AUTH_PROVIDER",
         "OMNIGENT_BUILD_VERSION",
         "OMNIGENT_BUILD_SHA",
     }
+    assert required <= set(env)
+    unexpected = sorted(
+        name
+        for name in set(env) - required
+        if name != "WORKSHOP_POLLY_VARIANTS" and not name.startswith("POLLY_")
+    )
+    assert unexpected == [], (
+        f"deploy/omnigent-app/app.yaml declares {unexpected}, which is outside the "
+        "App's allowed env surface"
+    )
+    # A model pin ships empty: the default lives in polly_variants.TIERS, and a
+    # non-empty value here would be a second, silently-winning source of truth.
+    for name in set(env) - required - {"WORKSHOP_POLLY_VARIANTS"}:
+        assert env[name].get("value", "") == "", f"{name} must ship empty"
     assert not {
         "DATABRICKS_TOKEN",
         "DATABRICKS_CLIENT_SECRET",

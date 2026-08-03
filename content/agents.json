@@ -9,13 +9,40 @@
     "order": 1
   },
   {
+    "id": "omnigent-economy",
+    "label": "Polly Economy",
+    "description": "Cheapest model set: GPT-5.6 Luna orchestrating, GLM-5.2 workers, no Claude spend. Build here first, then compare the session cost against Polly Frontier.",
+    "icon": "omnigent",
+    "command": "workshop-omnigent polly-economy",
+    "requires": ["omnigent"],
+    "order": 2
+  },
+  {
+    "id": "omnigent-balanced",
+    "label": "Polly Balanced",
+    "description": "Sonnet 5 orchestrating, GPT-5.6 Terra workers. A sensible default when you want the work done rather than the comparison.",
+    "icon": "omnigent",
+    "command": "workshop-omnigent polly-balanced",
+    "requires": ["omnigent"],
+    "order": 3
+  },
+  {
+    "id": "omnigent-frontier",
+    "label": "Polly Frontier",
+    "description": "Strongest and most expensive: Opus 5 orchestrating, Opus and GPT-5.6 Terra workers. Run the same task you gave Polly Economy and compare cost, tokens, and quality.",
+    "icon": "omnigent",
+    "command": "workshop-omnigent polly-frontier",
+    "requires": ["omnigent"],
+    "order": 4
+  },
+  {
     "id": "claude",
     "label": "Claude Code",
     "description": "Anthropic's agentic coding CLI, wired to Databricks model serving.",
     "icon": "sparkles",
     "command": "claude",
     "requires": ["claude"],
-    "order": 2
+    "order": 5
   },
   {
     "id": "codex",
@@ -24,7 +51,7 @@
     "icon": "bot",
     "command": "codex",
     "requires": ["codex"],
-    "order": 3
+    "order": 6
   },
   {
     "id": "bash",

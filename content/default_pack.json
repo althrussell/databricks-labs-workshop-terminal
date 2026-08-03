@@ -178,6 +178,36 @@
       "weight": 8
     },
     {
+      "id": "omnigent-model-sets",
+      "title": "Three Pollys, three price tags",
+      "markdown": "**Polly Economy**, **Polly Balanced** and **Polly Frontier** are the same orchestrator with different models underneath. Economy runs GPT-5.6 Luna with GLM-5.2 workers and touches no Claude at all; Frontier runs Opus 5. Same prompt, same worktrees, same cross-review — only the models change. Pick one and note which you used.",
+      "phases": [
+        "build"
+      ],
+      "triggers": [
+        "omnigent_active",
+        "omnigent-economy_active",
+        "omnigent-balanced_active",
+        "omnigent-frontier_active"
+      ],
+      "weight": 8
+    },
+    {
+      "id": "omnigent-cost-compare",
+      "title": "Try it: what did that actually cost?",
+      "markdown": "Build something small on **Polly Economy**, then open the Omnigent app and read the session's token usage and per-model breakdown. Now launch **Polly Frontier** and give it *the exact same prompt*. Compare three things: total tokens, how many turns each needed, and whether the cheaper output actually needed fixing.\n\nCompare **tokens** rather than dollars. The newest models — including the ones Economy runs — have no published price in the catalog yet, so Omnigent honestly reports tokens with no cost figure instead of inventing a zero. Where a price exists you get both.",
+      "phases": [
+        "build",
+        "wrap"
+      ],
+      "triggers": [
+        "omnigent-economy_active",
+        "omnigent-balanced_active",
+        "omnigent-frontier_active"
+      ],
+      "weight": 7
+    },
+    {
       "id": "unity-catalog-naming",
       "title": "Unity Catalog: three-level naming",
       "markdown": "Everything you create lives at `catalog.schema.object`. Ask your agent to put workshop tables in your assigned schema — governance, lineage and permissions come for free.",
@@ -616,6 +646,10 @@
       {
         "label": "Ship it as an app",
         "prompt": "Turn what we have built into a small Databricks App with a clean UI."
+      },
+      {
+        "label": "Compare model costs",
+        "prompt": "Pick one small, self-contained task from what we're building — something a single sub-agent can finish and open a PR for. State the task back to me in one sentence so I can reuse it word for word, then do it. When you're done, report how many sub-agents you dispatched, which model each one ran, and how many turns each took. Don't change any worker's model: I want to see what this tier costs as configured."
       }
     ],
     "wrap": [

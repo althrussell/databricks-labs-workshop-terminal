@@ -11,3 +11,43 @@ env:
     value: "0.7.0"
   - name: OMNIGENT_BUILD_SHA
     value: "35519fb04743f66b30cac8a40695d5d72fa163ea"
+  # Workshop Polly variants — the selectable model sets attendees compare.
+  # "false" leaves stock polly as the only agent.
+  - name: WORKSHOP_POLLY_VARIANTS
+    value: "true"
+  # Every model pin is overridable so a renamed or withdrawn serving endpoint is
+  # a values change, not a release. Empty means "use the built-in default" (see
+  # polly_variants.TIERS). Naming convention:
+  #   POLLY_<TIER>_BRAIN_MODEL / _BRAIN_HARNESS
+  #   POLLY_<TIER>_WORKER_<WORKER>_MODEL
+  # e.g. POLLY_ECONOMY_WORKER_PI_MODEL, POLLY_FRONTIER_BRAIN_MODEL.
+  #
+  # The economy brain is the one pin worth knowing about: claude-sdk speaks the
+  # Anthropic wire API and cannot drive a GPT model, so that tier's brain runs
+  # on the pi harness instead. If it misbehaves, POLLY_ECONOMY_BRAIN_HARNESS and
+  # POLLY_ECONOMY_BRAIN_MODEL together fall back to a Claude brain without a
+  # code change.
+  - name: POLLY_ECONOMY_BRAIN_MODEL
+    value: ""
+  - name: POLLY_ECONOMY_BRAIN_HARNESS
+    value: ""
+  - name: POLLY_ECONOMY_WORKER_CODEX_MODEL
+    value: ""
+  - name: POLLY_ECONOMY_WORKER_PI_MODEL
+    value: ""
+  - name: POLLY_BALANCED_BRAIN_MODEL
+    value: ""
+  - name: POLLY_BALANCED_WORKER_CLAUDE_CODE_MODEL
+    value: ""
+  - name: POLLY_BALANCED_WORKER_CODEX_MODEL
+    value: ""
+  - name: POLLY_BALANCED_WORKER_PI_MODEL
+    value: ""
+  - name: POLLY_FRONTIER_BRAIN_MODEL
+    value: ""
+  - name: POLLY_FRONTIER_WORKER_CLAUDE_CODE_MODEL
+    value: ""
+  - name: POLLY_FRONTIER_WORKER_CODEX_MODEL
+    value: ""
+  - name: POLLY_FRONTIER_WORKER_PI_MODEL
+    value: ""

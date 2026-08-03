@@ -760,12 +760,6 @@ def test_generated_tui_helper_routes_remote_and_local(monkeypatch, tmp_path):
     user.bootstrap_home()
     helper = Path(user.home) / ".local" / "bin" / "workshop-omnigent"
     text = helper.read_text()
-    # ``run --server`` with no agent means "attach to that server", which fails
-    # on a fresh control plane with "No sessions found on the server". Naming the
-    # agent is what creates the session; ``polly`` is the same bundled
-    # orchestrator a bare ``omnigent`` launches, so the card behaves as before
-    # with the session state now living on the remote app.
-    assert 'exec omnigent polly --server "$OMNIGENT_APP_URL" "$@"' in text
     assert 'exec omnigent "$@"' in text
     assert "unset DATABRICKS_TOKEN DATABRICKS_CLIENT_ID" in text
     assert (
@@ -774,6 +768,81 @@ def test_generated_tui_helper_routes_remote_and_local(monkeypatch, tmp_path):
     )
     assert "DATABRICKS_CONFIG_PROFILE=workshop-omnigent-no-credentials" in text
     assert helper.stat().st_mode & 0o111
+
+
+def _run_tui_helper(tmp_path, monkeypatch, argv, *, app_url):
+    """Execute the generated helper with a stub ``omnigent`` that echoes argv.
+
+    Running it beats string-matching: the agent-selection branch has edge cases
+    (a flag must not be read as an agent name, the local branch must stay a bare
+    passthrough) that a substring assertion cannot distinguish.
+    """
+    import subprocess
+
+    from server import config
+    from server.users import User
+
+    monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
+    user = User("argv-probe@example.com")
+    user.bootstrap_home()
+    stub_dir = tmp_path / "stub"
+    stub_dir.mkdir(exist_ok=True)
+    stub = stub_dir / "omnigent"
+    stub.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+    stub.chmod(0o755)
+    completed = subprocess.run(
+        ["/bin/sh", str(Path(user.home) / ".local" / "bin" / "workshop-omnigent"), *argv],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": f"{stub_dir}:/usr/bin:/bin",
+            "HOME": user.home,
+            "OMNIGENT_APP_URL": app_url,
+        },
+        check=True,
+    )
+    return completed.stdout.split()
+
+
+def test_tui_helper_defaults_to_polly_so_the_existing_card_is_unchanged(
+    monkeypatch, tmp_path
+):
+    """``run --server`` with no agent is an ATTACH, which on a fresh control
+    plane exits "No sessions found on the server". Naming an agent is what
+    creates the session, and polly is the same orchestrator a bare ``omnigent``
+    launches — so a card passing no argument must behave exactly as before."""
+    argv = _run_tui_helper(tmp_path, monkeypatch, [], app_url="https://app.example.com")
+
+    assert argv == ["polly", "--server", "https://app.example.com"]
+
+
+def test_tui_helper_takes_an_agent_name_so_variants_get_their_own_cards(
+    monkeypatch, tmp_path
+):
+    """This is what lets each model-set variant be a separate launch card
+    instead of requiring the attendee to type a CLI invocation."""
+    argv = _run_tui_helper(
+        tmp_path, monkeypatch, ["polly-economy"], app_url="https://app.example.com"
+    )
+
+    assert argv == ["polly-economy", "--server", "https://app.example.com"]
+
+
+def test_tui_helper_does_not_mistake_a_flag_for_an_agent_name(monkeypatch, tmp_path):
+    """Otherwise ``workshop-omnigent --version`` would resolve the flag as an
+    agent and fail instead of reaching the CLI."""
+    argv = _run_tui_helper(
+        tmp_path, monkeypatch, ["--version"], app_url="https://app.example.com"
+    )
+
+    assert argv == ["polly", "--server", "https://app.example.com", "--version"]
+
+
+def test_tui_helper_local_mode_stays_a_bare_passthrough(monkeypatch, tmp_path):
+    """The Control Tower contract pins bare ``omnigent`` for an empty URL, so the
+    local branch must be reached before any positional is consumed."""
+    assert _run_tui_helper(tmp_path, monkeypatch, [], app_url="") == []
+    assert _run_tui_helper(tmp_path, monkeypatch, ["codex"], app_url="") == ["codex"]
 
 
 def test_concurrent_first_requests_bootstrap_home_once(monkeypatch, tmp_path):
