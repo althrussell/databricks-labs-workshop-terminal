@@ -29,8 +29,8 @@ def _good_inputs(tmp_path):
         "CODEX_CLI_VERSION": "0.144.6",
         "OMNIGENT_VERSION": "0.7.0",
         "DATABRICKS_CLI_VERSION": "1.8.0",
-        "ANTHROPIC_MODEL": "databricks-claude-sonnet-5",
-        "CODEX_MODEL": "databricks-gpt-5-5",
+        "NODE_VERSION": "24.18.1",
+        "PI_CLI_VERSION": "0.83.0",
     }
     credential = {
         "configured": True,
@@ -83,6 +83,8 @@ def _good_inputs(tmp_path):
                 "claude": "2.1.216",
                 "codex": "0.144.6",
                 "databricks": "1.8.0",
+                "node": "24.18.1",
+                "pi": "0.83.0",
                 "omnigent": "0.7.0",
             }.items()
         } | {
@@ -527,6 +529,83 @@ def test_release_pins_require_fixed_ref_cli_versions_and_models(tmp_path):
     assert "SKILLS_REF" in branch_tip["checks"]["release_pins"]["missing"]
     assert missing["checks"]["release_pins"]["ok"] is False
     assert "CLAUDE_CODE_VERSION" in missing["checks"]["release_pins"]["missing"]
+
+
+def test_every_binary_boot_installs_has_to_be_pinned(tmp_path):
+    """Node and pi count as release inputs, same as the CLIs they run.
+
+    Node arrived as a pin nobody checked, and pi shipped later on the same
+    footing: an event could deploy with either unset, install whatever the
+    installer defaulted to that week, and pass readiness. The versions attendees
+    run are the reproducibility claim, so the check has to cover all of them.
+    """
+    for name in ("NODE_VERSION", "PI_CLI_VERSION"):
+        report = _evaluate(
+            tmp_path, mutate_env=lambda env, n=name: env.update({n: ""})
+        )
+        pins = report["checks"]["release_pins"]
+        assert pins["ok"] is False, name
+        assert name in pins["missing"], name
+
+
+def test_a_raised_pin_without_a_reinstall_is_a_mismatch_not_a_green(tmp_path):
+    """A pin is a claim about the running terminal, so it needs a witness.
+
+    Raising a version in the deployment does not reinstall anything: the binary
+    on disk stays where it was. Without pairing each pin against the installed
+    version, /readyz would report the new number while attendees ran the old one.
+    """
+    for env_name, tool in (("NODE_VERSION", "node"), ("PI_CLI_VERSION", "pi")):
+        report = _evaluate(
+            tmp_path,
+            mutate_env=lambda env, n=env_name: env.update({n: "99.99.99"}),
+        )
+        pins = report["checks"]["release_pins"]
+        assert pins["ok"] is False, tool
+        assert tool in pins["mismatched"], tool
+        assert report["release_manifest"][tool]["match"] is False, tool
+
+
+def test_pi_is_only_a_required_pin_when_omnigent_is_on(tmp_path):
+    """Pi is installed for Omnigent alone, so it is a pin for Omnigent alone."""
+    report = _evaluate(
+        tmp_path,
+        mutate_env=lambda env: env.update(
+            {"OMNIGENT_ENABLED": "false", "PI_CLI_VERSION": "", "OMNIGENT_VERSION": ""}
+        ),
+    )
+
+    missing = report["checks"]["release_pins"]["missing"]
+    assert "PI_CLI_VERSION" not in missing
+    assert "OMNIGENT_VERSION" not in missing
+
+
+def test_a_model_pin_is_reported_but_never_required(tmp_path):
+    """An event that names a cost posture instead of a model is fully configured.
+
+    Requiring ANTHROPIC_MODEL would put a copy of a chain head into every
+    deployment to go stale there, which is the drift server/models.py removed.
+    What an operator does need is to see whether a pin is in play, because a
+    pin and a profile can disagree on purpose.
+    """
+    unpinned = _evaluate(
+        tmp_path,
+        mutate_env=lambda env: env.update({"ANTHROPIC_MODEL": "", "CODEX_MODEL": ""}),
+    )
+    pinned = _evaluate(
+        tmp_path,
+        mutate_env=lambda env: env.update(
+            {"WORKSHOP_MODEL_PROFILE": "economy", "ANTHROPIC_MODEL": "custom-endpoint"}
+        ),
+    )
+
+    assert unpinned["checks"]["release_pins"]["ok"] is True
+    assert unpinned["checks"]["model_profile"]["pins"] == {}
+    assert pinned["checks"]["model_profile"]["profile"] == "economy"
+    assert pinned["checks"]["model_profile"]["pins"] == {
+        "ANTHROPIC_MODEL": "custom-endpoint"
+    }
+    assert pinned["checks"]["model_profile"]["ok"] is True
 
 
 def test_release_pins_require_installed_versions_to_match(tmp_path):
