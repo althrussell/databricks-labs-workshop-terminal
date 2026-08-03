@@ -108,23 +108,39 @@ class User:
         instead gives the local-runner/remote-server topology the workshop wants
         — harnesses run in the attendee's container, session state lives on the
         App and shows up in its UI. ``polly`` is the bundled orchestrator a bare
-        ``omnigent`` already launches for a Claude credential, so the card keeps
-        the behavior it had before the App existed.
+        ``omnigent`` already launches for a Claude credential, so a card that
+        passes no agent keeps the behavior it had before the App existed.
+
+        An optional first positional selects a different agent, which is how the
+        workshop's model-set variants (``polly-economy`` / ``polly-balanced`` /
+        ``polly-frontier``) get their own catalog cards. It is only treated as an
+        agent when it does not look like a flag, so ``workshop-omnigent --help``
+        still reaches the CLI rather than being read as an agent name.
+
+        The local branch is handled first and stays byte-for-byte
+        ``exec omnigent "$@"``. The Control Tower contract pins that behaviour
+        for an empty URL, and consuming a positional before that branch would
+        change it.
         """
         path = os.path.join(self.home, ".local", "bin", "workshop-omnigent")
         content = (
             "#!/bin/sh\n"
             "set -eu\n"
-            'if [ -n "${OMNIGENT_APP_URL:-}" ]; then\n'
-            "  unset DATABRICKS_TOKEN DATABRICKS_CLIENT_ID "
-            "DATABRICKS_CLIENT_SECRET DATABRICKS_HOST\n"
-            '  export DATABRICKS_CONFIG_FILE="$HOME/.config/workshop/'
-            'omnigent-empty-databrickscfg"\n'
-            "  export DATABRICKS_CONFIG_PROFILE="
-            "workshop-omnigent-no-credentials\n"
-            '  exec omnigent polly --server "$OMNIGENT_APP_URL" "$@"\n'
+            'if [ -z "${OMNIGENT_APP_URL:-}" ]; then\n'
+            '  exec omnigent "$@"\n'
             "fi\n"
-            'exec omnigent "$@"\n'
+            "unset DATABRICKS_TOKEN DATABRICKS_CLIENT_ID "
+            "DATABRICKS_CLIENT_SECRET DATABRICKS_HOST\n"
+            'export DATABRICKS_CONFIG_FILE="$HOME/.config/workshop/'
+            'omnigent-empty-databrickscfg"\n'
+            "export DATABRICKS_CONFIG_PROFILE="
+            "workshop-omnigent-no-credentials\n"
+            "AGENT=polly\n"
+            'case "${1:-}" in\n'
+            "  ''|-*) ;;\n"
+            '  *) AGENT="$1"; shift ;;\n'
+            "esac\n"
+            'exec omnigent "$AGENT" --server "$OMNIGENT_APP_URL" "$@"\n'
         )
         try:
             with open(path) as existing:

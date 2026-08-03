@@ -60,6 +60,46 @@ def _cache_ttl(expiration_time: str | None) -> float:
     return min(remaining, _TOKEN_TTL_SECONDS)
 
 
+def _register_polly_variants(agent_store, artifact_store, agent_cache) -> None:
+    """Register the workshop's model-set Polly variants as template agents.
+
+    Registration is what puts a variant in the App's new-session picker: the
+    picker lists ``kind=template`` rows, and only startup registration creates
+    them. Stock ``polly`` is untouched and remains the default.
+
+    Deliberately fail-soft. App health gates the whole attendee deployment, and
+    a bad model pin or an upstream bundle move must degrade the workshop to
+    "stock polly only" rather than take the control plane down with it.
+
+    This reuses Omnigent's own private ``_preregister_agent`` rather than
+    reimplementing it. That function's idempotency is load-bearing in ways worth
+    inheriting instead of paraphrasing: it reuses an existing row's ``agent_id``
+    (a delete/recreate would cascade through the tasks FK and break
+    ``--continue``), only rewrites ``bundle_location`` when the content hash
+    actually changed so restarts are no-ops, and swaps the agent cache's
+    extracted bundle in lockstep so the next request cannot serve a stale spec.
+    The coupling to a private symbol is acceptable only because this deployment
+    pins Omnigent to exactly 0.7.0; the guard below is what keeps a future
+    upgrade from turning a moved symbol into a failed boot.
+    """
+    if os.environ.get("WORKSHOP_POLLY_VARIANTS", "true").strip().lower() != "true":
+        logger.info("Polly variants disabled; stock polly remains the only agent")
+        return
+    try:
+        from omnigent.cli import _preregister_agent
+
+        import polly_variants
+
+        with tempfile.TemporaryDirectory(prefix="polly_variants_") as tmp:
+            for bundle in polly_variants.build(Path(tmp)):
+                _preregister_agent(bundle, agent_store, artifact_store, agent_cache)
+    except Exception:  # noqa: BLE001 — a variant must never fail App startup
+        logger.warning(
+            "Polly variant registration failed; stock polly still available:\n%s",
+            traceback.format_exc(),
+        )
+
+
 try:
     import sqlalchemy
     import uvicorn
@@ -173,6 +213,8 @@ try:
         comment_store=comment_store,
         policy_store=policy_store,
     )
+
+    _register_polly_variants(agent_store, artifact_store, agent_cache)
 
     # Safe only behind the Databricks Apps proxy, which strips client-supplied
     # identity headers and injects the authenticated workspace identity.

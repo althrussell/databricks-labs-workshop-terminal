@@ -476,9 +476,21 @@ def test_catalog_gates_omnigent_entries(client, monkeypatch):
     assert agents["omnigent"]["ready"] is False
     assert agents["claude"]["ready"] is True
     assert agents["codex"]["ready"] is True
-    # One button per agent: Omnigent leads, then the direct CLIs.
+    # The model-set variants are the same CLI under a different agent name, so
+    # they must gate on that same key rather than appearing launchable early.
+    for variant in ("omnigent-economy", "omnigent-balanced", "omnigent-frontier"):
+        assert agents[variant]["ready"] is False
+    # One button per agent: the Omnigent family leads, then the direct CLIs.
     ordered = [a["id"] for a in sorted(agents.values(), key=lambda a: a["order"])]
-    assert ordered == ["omnigent", "claude", "codex", "bash"]
+    assert ordered == [
+        "omnigent",
+        "omnigent-economy",
+        "omnigent-balanced",
+        "omnigent-frontier",
+        "claude",
+        "codex",
+        "bash",
+    ]
 
 
 def test_feature_flag_off_hides_omnigent_everywhere(client, monkeypatch):
