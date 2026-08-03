@@ -25,6 +25,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tarfile
@@ -44,6 +45,7 @@ CLI_RELEASE = (
     f"v{install.DATABRICKS_CLI_VERSION}"
 )
 NPM_REGISTRY = "https://registry.npmjs.org/@openai/codex"
+PI_NPM_REGISTRY = "https://registry.npmjs.org/@earendil-works/pi-coding-agent"
 UV_VERSION = "0.12.0"
 PYTHON_RELEASE = "20260728"
 PYTHON_VERSION = "3.12.13"
@@ -88,17 +90,21 @@ def _verified(url: str, expected: str, label: str) -> str:
     return actual
 
 
-def _codex_entry(
-    packument: dict, version: str, executable: str | None
+def _npm_entry(
+    registry: str,
+    packument: dict,
+    version: str,
+    basename: str,
+    executable: str | None = None,
 ) -> dict:
-    """Checksum a Codex tarball, cross-checked against npm's own attestation.
+    """Checksum an npm tarball, cross-checked against npm's own attestation.
 
     npm publishes ``dist.integrity`` (SHA-512) for every version. Verifying the
     download against it means a compromised or stale mirror cannot slip different
     bytes past this script, which is the only reason a mirror is usable at all.
     """
     dist = packument["versions"][version]["dist"]
-    url = f"{NPM_REGISTRY}/-/codex-{version}.tgz"
+    url = f"{registry}/-/{basename}-{version}.tgz"
     checksum, path = _download_sha256(url)
     try:
         algorithm, encoded = str(dist["integrity"]).split("-", 1)
@@ -121,6 +127,37 @@ def _codex_entry(
     return entry
 
 
+def _assert_pi_node_floor(packument: dict) -> None:
+    """Fail when the pinned Node cannot run the pinned Pi.
+
+    Pi declares ``engines.node``, and it has moved: 0.79.0 raised the floor to
+    22.19.0, which the previously pinned Node 22.14.0 did not meet. npm only
+    *warns* on EBADENGINE, so without this check a Pi bump would install
+    cleanly at boot and then fail in front of an attendee.
+    """
+    version = install.PI_VERSION
+    try:
+        release = packument["versions"][version]
+    except KeyError:
+        raise SystemExit(f"pi {version} is not published on npm") from None
+    if version < install.PI_MIN_VERSION:
+        raise SystemExit(
+            f"pi {version} is below Omnigent's {install.PI_MIN_VERSION} floor"
+        )
+    required = str((release.get("engines") or {}).get("node") or "").strip()
+    floor = required.lstrip(">=v ").split(" ")[0].split("||")[0].strip()
+    if not floor:
+        return
+    parse = lambda value: tuple(  # noqa: E731 - local, single use
+        int(part) for part in re.findall(r"\d+", value)[:3]
+    )
+    if parse(install.NODE_VERSION) < parse(floor):
+        raise SystemExit(
+            f"pi {version} requires node {required}, but NODE_VERSION is "
+            f"{install.NODE_VERSION}"
+        )
+
+
 def build() -> dict:
     node_sums = _fetch_text(f"{NODE_DIST}/SHASUMS256.txt")
     cli_sums = _fetch_text(
@@ -131,6 +168,8 @@ def build() -> dict:
     )
     claude_linux = claude_manifest["platforms"]["linux-x64"]["checksum"]
     codex_packument = json.loads(_fetch_text(NPM_REGISTRY))
+    pi_packument = json.loads(_fetch_text(PI_NPM_REGISTRY))
+    _assert_pi_node_floor(pi_packument)
 
     node_x64 = f"node-v{install.NODE_VERSION}-linux-x64.tar.xz"
     node_arm64 = f"node-v{install.NODE_VERSION}-linux-arm64.tar.xz"
@@ -171,13 +210,18 @@ def build() -> dict:
             ),
             "sha256": claude_linux,
         },
-        "codex_npm_launcher_package": _codex_entry(
-            codex_packument, install.CODEX_VERSION, None
+        "codex_npm_launcher_package": _npm_entry(
+            NPM_REGISTRY, codex_packument, install.CODEX_VERSION, "codex"
         ),
-        "codex_native_package_linux_x64": _codex_entry(
+        "codex_native_package_linux_x64": _npm_entry(
+            NPM_REGISTRY,
             codex_packument,
             f"{install.CODEX_VERSION}-linux-x64",
+            "codex",
             CODEX_NATIVE_EXECUTABLE,
+        ),
+        "pi_npm_package": _npm_entry(
+            PI_NPM_REGISTRY, pi_packument, install.PI_VERSION, "pi-coding-agent"
         ),
         "databricks_cli_installer": {
             "version": install.DATABRICKS_CLI_VERSION,

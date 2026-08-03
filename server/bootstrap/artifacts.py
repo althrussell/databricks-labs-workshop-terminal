@@ -23,7 +23,7 @@ from urllib.request import urlopen
 
 
 NODE_LINUX_X64_SHA256 = (
-    "69b09dba5c8dcb05c4e4273a4340db1005abeafe3927efda2bc5b249e80437ec"
+    "d6c664df3f3f61458e8c277585571328522d705166723a7c7823a9253a4d15a0"
 )
 TMUX_LINUX_X64_SHA256 = (
     "a23e56e9913d610c31f2893a1c9c669a73cb8bb2b8ded1180f6572bb55e52ca5"
@@ -36,6 +36,7 @@ REQUIRED_ARTIFACTS = frozenset({
     "claude_binary",
     "codex_npm_launcher_package",
     "codex_native_package_linux_x64",
+    "pi_npm_package",
     "databricks_cli_installer",
     "databricks_cli_archive_linux_x64",
     "uv_binary",

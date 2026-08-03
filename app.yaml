@@ -126,7 +126,33 @@ env:
     value: ""
 
   # --- Model gateway / CLI defaults ---
+  # Injected by Control Tower per workspace. Left empty, the gateway is
+  # auto-constructed from the workspace id, which is read from
+  # DATABRICKS_WORKSPACE_ID or an `adb-<digits>` hostname — Azure's shape. An
+  # AWS `dbc-...` workspace matches neither, so no candidate URL is ever built
+  # and every CLI falls back to <host>/serving-endpoints.
+  #
+  # That fallback serves every model an attendee needs (Claude, the GPT
+  # Responses models, and the chat-completions-only models like GLM all answer
+  # there), so a workshop runs without this. What it costs is governance: the
+  # gateway is where an event's traffic meets gateway policy, usage tracking and
+  # rate limits. /readyz reports the difference as the soft `model_gateway`
+  # check — amber, not red.
+  # PREFER the workspace-hosted form:
+  #   https://<workspace>.cloud.databricks.com/ai-gateway
+  # Omnigent accepts a dedicated `ai-gateway` DNS-label host too, but that shape
+  # is materially more fragile here: for a dedicated subdomain it cannot infer
+  # the workspace hostname (stripping `ai-gateway.` gives an NXDOMAIN), so it
+  # falls back to resolving ~/.databrickscfg DEFAULT. If that resolution fails,
+  # Pi lists no models AND the openai-completions provider is dropped entirely —
+  # which is precisely the provider GLM routes through. The workspace-hosted
+  # form has no such dependency: the gateway hostname IS the workspace hostname.
   - name: DATABRICKS_GATEWAY_HOST
+    value: ""
+  # Fallback lever only. This auto-constructs the DEDICATED-SUBDOMAIN form
+  # (https://<id>.ai-gateway.cloud.databricks.com), so it inherits the
+  # .databrickscfg dependency described above. Prefer DATABRICKS_GATEWAY_HOST.
+  - name: DATABRICKS_WORKSPACE_ID
     value: ""
   # Default Claude model is Sonnet 5 (fast, capable, cheaper than Opus). Set
   # this to pin a different model per event, e.g. databricks-claude-opus-4-8
@@ -143,8 +169,14 @@ env:
     value: "0.144.6"
   - name: DATABRICKS_CLI_VERSION
     value: "1.8.0"
+  # Node 24 is the active LTS line. It is also a floor, not just a preference:
+  # Pi requires node >= 22.19.0.
   - name: NODE_VERSION
-    value: "22.14.0"
+    value: "24.18.1"
+  # Pi is Omnigent's any-gateway-model harness — the only one that will drive
+  # GLM / Luna / Qwen as a Polly brain or worker.
+  - name: PI_CLI_VERSION
+    value: "0.83.0"
   # OPTIONAL mirror override. The reviewed contract (source + SHA-256 for every
   # installer/archive/package, plus the skills commit/content digest) ships in
   # the image at assets/artifacts/manifest.json, so boot needs nothing here.

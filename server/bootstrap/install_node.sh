@@ -1,10 +1,10 @@
 #!/bin/bash
-# Install a pinned Node 22 LTS into the shared prefix when the runtime's
+# Install a pinned Node 24 LTS into the shared prefix when the runtime's
 # node is missing or older than NODE_MIN_MAJOR. Idempotent.
 #
 #   $1                 install prefix (e.g. /app/python/source_code/data/shared)
 #   NODE_VERSION       exact version to install (default pinned below)
-#   NODE_MIN_MAJOR     minimum acceptable major already on PATH (default 22)
+#   NODE_MIN_MAJOR     minimum acceptable major already on PATH (default 24)
 #   NODE_DIST_MIRROR   replacement for https://nodejs.org/dist (same path tail)
 
 set -euo pipefail
@@ -12,8 +12,8 @@ set -euo pipefail
 INSTALL_DIR="${1:?usage: install_node.sh <prefix>}"
 mkdir -p "$INSTALL_DIR/bin"
 
-NODE_MIN_MAJOR="${NODE_MIN_MAJOR:-22}"
-NODE_VERSION="${NODE_VERSION:-22.14.0}"
+NODE_MIN_MAJOR="${NODE_MIN_MAJOR:-24}"
+NODE_VERSION="${NODE_VERSION:-24.18.1}"
 NODE_DIST_MIRROR="${NODE_DIST_MIRROR:-https://nodejs.org/dist}"
 NODE_DIST_MIRROR="${NODE_DIST_MIRROR%/}"
 NODE_ARCHIVE_PATH="${NODE_ARCHIVE_PATH:-}"

@@ -393,6 +393,146 @@ def test_codex_installs_both_staged_packages_and_verifies_vendor_native_binary(
     )
 
 
+def _make_pi_tarball(
+    directory,
+    *,
+    version=None,
+    shrinkwrap=True,
+    name="@earendil-works/pi-coding-agent",
+):
+    """A minimal published Pi tarball: package.json plus its shrinkwrap."""
+    import tarfile
+
+    version = version or install.PI_VERSION
+    staging = directory / f"pi-stage-{version}-{shrinkwrap}"
+    package = staging / "package"
+    package.mkdir(parents=True)
+    (package / "package.json").write_text(
+        json.dumps({"name": name, "version": version, "bin": {"pi": "dist/cli.js"}})
+    )
+    if shrinkwrap:
+        (package / "npm-shrinkwrap.json").write_text(
+            json.dumps({
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {"name": name, "version": version},
+                    "node_modules/chalk": {
+                        "version": "5.6.2",
+                        "resolved": "https://registry.npmjs.org/chalk/-/chalk-5.6.2.tgz",
+                        "integrity": "sha512-" + "a" * 86 + "==",
+                    },
+                    # Pi's first-party siblings publish without integrity; the
+                    # installer must log rather than reject them.
+                    "node_modules/@earendil-works/pi-ai": {
+                        "version": version,
+                        "resolved": (
+                            "https://registry.npmjs.org/@earendil-works/pi-ai"
+                            f"/-/pi-ai-{version}.tgz"
+                        ),
+                    },
+                },
+            })
+        )
+    tarball = directory / f"pi-coding-agent-{version}-{shrinkwrap}.tgz"
+    with tarfile.open(tarball, "w:gz") as archive:
+        archive.add(package, arcname="package")
+    return tarball
+
+
+def test_pi_installs_from_the_reviewed_tarball_and_stamps_its_whole_tree(
+    monkeypatch, tmp_path
+):
+    prefix = tmp_path / "prefix"
+    (prefix / "bin").mkdir(parents=True)
+    tarball = _make_pi_tarball(tmp_path)
+    entry = {"source": str(tarball), "sha256": install._file_checksum(tarball)}
+    monkeypatch.setattr(install.config, "shared_prefix", lambda: str(prefix))
+    monkeypatch.setattr(
+        install, "_verified_artifact", lambda _name: (str(tarball), entry)
+    )
+    monkeypatch.setattr(
+        install, "_read_cli_version", lambda _path: install.PI_VERSION
+    )
+    calls = []
+
+    class Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(argv, **_kwargs):
+        calls.append(argv)
+        (prefix / "bin" / "pi").write_bytes(b"pi-launcher")
+        root = prefix / "lib/node_modules/@earendil-works/pi-coding-agent"
+        (root / "node_modules/chalk").mkdir(parents=True)
+        (root / "package.json").write_bytes(b"pi-metadata")
+        (root / "node_modules/chalk/index.js").write_bytes(b"dependency")
+        return Result()
+
+    monkeypatch.setattr(install.subprocess, "run", fake_run)
+
+    install._install_pi()
+
+    npm_call = next(call for call in calls if "install" in call)
+    assert "--ignore-scripts" in npm_call
+    assert str(tarball) in npm_call
+    # Pi's dependency tree is fetched from the registry under the tarball's own
+    # shrinkwrap, so an --offline install could never resolve.
+    assert "--offline" not in npm_call
+    assert install.status()["steps"]["pi"]["status"] == "complete"
+    assert install.status()["ready"]["pi"] is True
+
+    root = prefix / "lib/node_modules/@earendil-works/pi-coding-agent"
+    stamp = json.loads((prefix / "pi.install.json").read_text())
+    assert stamp["package_sha256"] == entry["sha256"]
+    assert stamp["launcher_sha256"] == install._file_checksum(prefix / "bin/pi")
+    assert stamp["tree_sha256"] == install._directory_checksum(root)
+    assert install._pi_install_reusable(str(prefix), entry)
+
+    # A tampered dependency inside the tree invalidates reuse, so a poisoned
+    # node_modules cannot survive a restart as "prewarmed".
+    (root / "node_modules/chalk/index.js").write_bytes(b"poisoned")
+    assert not install._pi_install_reusable(str(prefix), entry)
+
+
+def test_pi_rejects_a_tarball_that_is_not_the_pinned_version(monkeypatch, tmp_path):
+    prefix = tmp_path / "prefix"
+    (prefix / "bin").mkdir(parents=True)
+    tarball = _make_pi_tarball(tmp_path, version="0.1.0")
+    monkeypatch.setattr(install.config, "shared_prefix", lambda: str(prefix))
+    monkeypatch.setattr(
+        install,
+        "_verified_artifact",
+        lambda _name: (
+            str(tarball),
+            {"source": str(tarball), "sha256": install._file_checksum(tarball)},
+        ),
+    )
+
+    def fail(*_args, **_kwargs):
+        raise AssertionError("npm must not run for an unpinned tarball")
+
+    monkeypatch.setattr(install.subprocess, "run", fail)
+
+    with pytest.raises(RuntimeError, match="expected"):
+        install._validate_pi_tarball(str(tarball), install.PI_VERSION)
+
+
+def test_pi_rejects_a_tarball_with_no_shrinkwrap(monkeypatch, tmp_path):
+    """No shrinkwrap means the dependency resolve would float, so refuse it."""
+    tarball = _make_pi_tarball(tmp_path, shrinkwrap=False)
+
+    with pytest.raises(RuntimeError, match="layout is invalid"):
+        install._validate_pi_tarball(str(tarball), install.PI_VERSION)
+
+
+def test_pi_is_gated_on_omnigent_being_enabled(monkeypatch):
+    monkeypatch.setattr(install.config, "omnigent_enabled", lambda: False)
+    assert install._release_specs()["pi"] == (False, install.PI_VERSION)
+    monkeypatch.setattr(install.config, "omnigent_enabled", lambda: True)
+    assert install._release_specs()["pi"] == (True, install.PI_VERSION)
+
+
 def test_codex_prewarm_rejects_launcher_and_native_sidecar_tampering(
     monkeypatch, tmp_path
 ):
@@ -985,18 +1125,28 @@ def test_skills_tampered_persistent_content_forces_reclone(
     assert install.status()["steps"]["skills"]["source"] == "network"
 
 
-def test_prewarm_status_proves_reusable_disk_content_without_runtime_state(
-    monkeypatch, tmp_path, restore_installer_state
+def _lay_down_prewarmed_prefix(
+    monkeypatch, tmp_path, restore_installer_state, *, omit=()
 ):
+    """Write the disk content a prewarmed image is supposed to carry.
+
+    :param omit: Binaries to leave off the image, to prove what their absence
+        does — and does not — cost the proof.
+    """
     prefix = tmp_path / "prefix"
     bin_dir = prefix / "bin"
     bin_dir.mkdir(parents=True)
     expected_versions = {
-        "node": install.NODE_VERSION,
-        "claude": install.CLAUDE_VERSION,
-        "codex": install.CODEX_VERSION,
-        "databricks": install.DATABRICKS_CLI_VERSION,
-        "omnigent": install.OMNIGENT_VERSION,
+        name: version
+        for name, version in {
+            "node": install.NODE_VERSION,
+            "claude": install.CLAUDE_VERSION,
+            "codex": install.CODEX_VERSION,
+            "databricks": install.DATABRICKS_CLI_VERSION,
+            "pi": install.PI_VERSION,
+            "omnigent": install.OMNIGENT_VERSION,
+        }.items()
+        if name not in omit
     }
     for name in (*expected_versions, "tmux"):
         (bin_dir / name).write_bytes(f"{name}-binary".encode())
@@ -1079,6 +1229,19 @@ def test_prewarm_status_proves_reusable_disk_content_without_runtime_state(
         "launcher_tree_relative_path": os.path.relpath(launcher_root, prefix),
         "native_tree_relative_path": os.path.relpath(alias_root, prefix),
     }))
+    if "pi" not in omit:
+        pi_root = prefix / "lib/node_modules/@earendil-works/pi-coding-agent"
+        (pi_root / "node_modules/chalk").mkdir(parents=True)
+        (pi_root / "package.json").write_bytes(b"pi")
+        (pi_root / "node_modules/chalk/index.js").write_bytes(b"dependency")
+        (prefix / "pi.install.json").write_text(json.dumps({
+            "package_sha256": restore_installer_state.entry("pi_npm_package")[
+                "sha256"
+            ],
+            "launcher_sha256": install._file_checksum(bin_dir / "pi"),
+            "tree_sha256": install._directory_checksum(pi_root),
+            "tree_relative_path": os.path.relpath(pi_root, prefix),
+        }))
     omnigent_entries = {
         name: restore_installer_state.entry(name)
         for name in (
@@ -1108,6 +1271,15 @@ def test_prewarm_status_proves_reusable_disk_content_without_runtime_state(
     monkeypatch.setattr(install.subprocess, "run", lambda *args, **kwargs: Result())
     with install._state_lock:
         install._state["skills"] = {"status": "error", "source": "network"}
+    return commit, skills_checksum
+
+
+def test_prewarm_status_proves_reusable_disk_content_without_runtime_state(
+    monkeypatch, tmp_path, restore_installer_state
+):
+    commit, skills_checksum = _lay_down_prewarmed_prefix(
+        monkeypatch, tmp_path, restore_installer_state
+    )
 
     proof = install.prewarm_status()
 
@@ -1133,6 +1305,7 @@ def test_prewarm_status_proves_reusable_disk_content_without_runtime_state(
         "databricks",
         "node",
         "omnigent",
+        "pi",
         "tmux",
     ]
     assert all(
@@ -1147,6 +1320,45 @@ def test_prewarm_status_proves_reusable_disk_content_without_runtime_state(
         and entry["actual_checksum"]
         for entry in proof["manifest"]["binaries"].values()
     )
+
+
+def test_a_missing_pi_is_reported_without_failing_the_whole_terminal(
+    monkeypatch, tmp_path, restore_installer_state
+):
+    """``reusable`` hard-gates /readyz through the ``supply_chain`` check, so what
+    it includes decides what is fatal. Pi is deliberately not: it is absent from
+    ``required_steps`` and from the ``omnigent`` ready bit because an attendee
+    without it loses the cheap-model Polly variants, not the workshop. It still
+    has to be *reported*, or a prewarm that quietly stopped shipping pi would look
+    identical to one that ships it."""
+    _lay_down_prewarmed_prefix(
+        monkeypatch, tmp_path, restore_installer_state, omit=("pi",)
+    )
+
+    proof = install.prewarm_status()
+
+    assert proof["manifest"]["binaries"]["pi"]["reusable"] is False
+    assert proof["manifest"]["binaries"]["pi"]["actual"] is None
+    assert proof["reusable"] is True
+    # Everything else still vetoes, so the exemption is pi's alone and not a hole
+    # the aggregate now has for any binary.
+    assert install.ADVISORY_BINARIES == frozenset({"pi"})
+
+
+def test_a_missing_codex_still_fails_the_prewarm_proof(
+    monkeypatch, tmp_path, restore_installer_state
+):
+    """The counterpart to pi's exemption: a binary every session needs must still
+    take the proof down, or `supply_chain` would be green on an image that cannot
+    run a workshop."""
+    _lay_down_prewarmed_prefix(
+        monkeypatch, tmp_path, restore_installer_state, omit=("codex",)
+    )
+
+    proof = install.prewarm_status()
+
+    assert proof["manifest"]["binaries"]["codex"]["reusable"] is False
+    assert proof["reusable"] is False
 
 
 def test_prewarm_status_fails_closed_for_tampered_skills(monkeypatch, tmp_path):

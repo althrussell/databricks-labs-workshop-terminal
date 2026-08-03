@@ -41,7 +41,9 @@ def test_uploaded_yaml_patch_sets_current_event_contract_without_mutating_repo()
         codex_cli_version="0.144.6",
         databricks_cli_version="1.8.0",
         omnigent_version="0.7.0",
-        node_version="22.14.0",
+        node_version="24.18.1",
+        pi_cli_version="0.83.0",
+        gateway_host="https://dbc-af3ed11d-d267.cloud.databricks.com/ai-gateway",
         workshop_pat="",
     )
 
@@ -72,6 +74,88 @@ def test_every_setting_the_simulation_patches_is_declared_in_app_yaml():
         f"deploy_ct_sim patches {undeclared} but app.yaml does not declare them — "
         "add the entry, with the comment explaining what Control Tower sets it to"
     )
+
+
+def _gateway_error(value):
+    """Return the parser error for a --gateway-host value, or None if accepted."""
+    with pytest.raises(SystemExit):
+        deploy_ct_sim._parse_args(_valid_argv() + ["--gateway-host", value])
+
+
+def test_the_gateway_host_is_optional_because_its_absence_is_a_degradation_not_a_break():
+    """Without it every CLI falls back to <host>/serving-endpoints, which serves
+    every model the workshop uses. What it costs is gateway policy, usage tracking
+    and rate limits, which Workshop Terminal reports as a soft readiness check."""
+    args = deploy_ct_sim._parse_args(_valid_argv())
+    settings = deploy_ct_sim._event_settings_from_args(args, args.attendee, "")
+
+    assert settings["DATABRICKS_GATEWAY_HOST"] == ""
+
+
+def test_the_workspace_hosted_gateway_form_is_accepted():
+    """The preferred shape: the gateway hostname IS the workspace hostname, so
+    Omnigent never has to fall back to resolving ~/.databrickscfg."""
+    args = deploy_ct_sim._parse_args(
+        _valid_argv()
+        + ["--gateway-host", "https://dbc-af3ed11d-d267.cloud.databricks.com/ai-gateway"]
+    )
+    settings = deploy_ct_sim._event_settings_from_args(args, args.attendee, "")
+
+    assert settings["DATABRICKS_GATEWAY_HOST"].endswith("/ai-gateway")
+
+
+def test_a_dedicated_ai_gateway_subdomain_is_also_accepted():
+    """Omnigent routes it, so refusing it here would be stricter than upstream —
+    it is just the more fragile of the two shapes."""
+    deploy_ct_sim._parse_args(
+        _valid_argv()
+        + ["--gateway-host", "https://1234567890.ai-gateway.cloud.databricks.com"]
+    )
+
+
+def test_a_gateway_host_that_omnigent_would_ignore_is_rejected():
+    """A workspace root with no ai-gateway label or path is not a gateway at all:
+    setting it looks like governed routing while every request quietly leaves the
+    gateway path. Every log stays clean, so it has to fail here instead."""
+    _gateway_error("https://dbc-af3ed11d-d267.cloud.databricks.com")
+
+
+def test_a_non_databricks_gateway_host_is_rejected():
+    """Omnigent gates on a trusted host suffix before it will route a base URL as
+    the gateway, and the attendee bearer would otherwise be pointed off-platform."""
+    _gateway_error("https://evil.example.com/ai-gateway")
+
+
+def test_a_plain_http_gateway_host_is_rejected():
+    _gateway_error("http://dbc-af3ed11d-d267.cloud.databricks.com/ai-gateway")
+
+
+def test_a_gateway_host_carrying_a_provider_suffix_is_rejected():
+    """The terminal appends the provider itself — /anthropic for Claude, /codex/v1
+    for the OpenAI-completions models GLM routes through. Handed a host that
+    already carries one, it would build .../anthropic/anthropic and route nowhere.
+    The subdomain form is the trap: it satisfies the ai-gateway label check while
+    carrying the suffix, so the label check alone cannot catch it."""
+    _gateway_error("https://1234567890.ai-gateway.cloud.databricks.com/anthropic")
+    _gateway_error(
+        "https://dbc-af3ed11d-d267.cloud.databricks.com/ai-gateway/anthropic"
+    )
+
+
+def test_the_pi_cli_version_reaches_the_deployment_env():
+    """It sits in EXACT_DEFAULTS, but a default that is never patched into the
+    app's env leaves the installer pinning whatever the image happened to ship."""
+    args = deploy_ct_sim._parse_args(_valid_argv())
+    settings = deploy_ct_sim._event_settings_from_args(args, args.attendee, "")
+
+    assert settings["PI_CLI_VERSION"] == deploy_ct_sim.EXACT_DEFAULTS["pi_cli_version"]
+
+
+def test_a_floating_pi_cli_version_is_rejected():
+    """Every other CLI pin is validated as an exact semver; an unvalidated one
+    would let a workshop drift onto an untested Pi mid-event."""
+    with pytest.raises(SystemExit):
+        deploy_ct_sim._parse_args(_valid_argv() + ["--pi-cli-version", "latest"])
 
 
 def test_uploaded_yaml_patch_preserves_comments_order_and_unrelated_bytes():

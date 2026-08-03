@@ -14,6 +14,7 @@ import os
 import re
 import tempfile
 import threading
+from urllib.parse import urlparse
 
 import requests
 import yaml
@@ -69,6 +70,93 @@ def gateway_host() -> str:
             logger.info("AI Gateway not reachable at %s — using serving-endpoints", candidate)
         _gateway_resolved = ""
         return ""
+
+
+# Mirrors ``omnigent/pi_native_credentials.py::_is_databricks_ai_gateway_url``
+# (verified against the deployed 0.7.0 wheel). Omnigent routes a base URL as the
+# AI Gateway only when it is https, its hostname ends in a trusted
+# Databricks-owned suffix, AND either the hostname carries an ``ai-gateway`` DNS
+# label or the path starts with ``/ai-gateway/``. All three conditions are
+# reproduced deliberately: a mirror that is merely close reports green for URLs
+# Omnigent silently declines to route, which is the exact failure this check
+# exists to catch.
+_AI_GATEWAY_LABEL = "ai-gateway"
+_TRUSTED_HOST_SUFFIXES = (
+    ".cloud.databricks.com",
+    ".azuredatabricks.net",
+    ".gcp.databricks.com",
+)
+
+
+def _is_omnigent_gateway_form(url: str) -> bool:
+    parsed = urlparse(url or "")
+    if parsed.scheme != "https":
+        return False
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        return False
+    # Anchored on the leading dot, so a look-alike ending in
+    # `.cloud.databricks.com.evil.test` is rejected rather than trusted.
+    if not any(hostname.endswith(suffix) for suffix in _TRUSTED_HOST_SUFFIXES):
+        return False
+    if _AI_GATEWAY_LABEL in hostname.split("."):
+        return True
+    # The trailing slash is load-bearing upstream: a bare `/ai-gateway` root does
+    # NOT satisfy this, which is why the check below evaluates the derived base
+    # URL rather than the configured root.
+    return (parsed.path or "").startswith("/" + _AI_GATEWAY_LABEL + "/")
+
+
+def gateway_status() -> dict:
+    """How the AI Gateway resolved, and what an unresolved one costs.
+
+    Reported, never gating, and the cost is narrower than it looks. With no
+    gateway every config falls back to ``<host>/serving-endpoints``, which
+    serves every model an attendee needs: Claude at
+    ``/serving-endpoints/anthropic/v1/messages``, the newer GPT models at
+    ``/serving-endpoints/responses``, and the chat-completions-only models
+    (GLM and friends) at ``/serving-endpoints/chat/completions``. Omnigent's Pi
+    harness routes per model across exactly those surfaces, deriving the
+    ``/ai-gateway/codex/v1`` Responses path from the workspace host itself, so
+    it does not need this variable to reach any particular model.
+
+    What the fallback costs is governance: the gateway is where an event's
+    traffic meets gateway policy, usage tracking and rate limits, and
+    serving-endpoints bypasses all three. Worth reporting so an operator can
+    fix the deployment; never worth blocking a workshop.
+
+    Auto-construction cannot rescue this on AWS: the workspace id is read from
+    ``DATABRICKS_WORKSPACE_ID`` or, failing that, an ``adb-<digits>`` hostname —
+    which is Azure's shape. An AWS ``dbc-...`` workspace matches neither, so the
+    candidate URL is never even built, let alone probed. Those two variables are
+    therefore the deployment's only levers, and naming them here is what lets an
+    operator fix it before an attendee finds it.
+    """
+    resolved = gateway_host()
+    # Judge the URL Omnigent is actually handed, not the configured root. With
+    # the workspace-hosted shape the root is `<host>/ai-gateway`, whose path
+    # lacks the trailing slash upstream requires — so validating the root would
+    # report amber for a deployment that works. `<root>/anthropic` is the value
+    # configure_omnigent writes, and the surface Pi speaks natively.
+    anthropic_base = f"{resolved}/anthropic" if resolved else ""
+    explicit = bool(os.environ.get("DATABRICKS_GATEWAY_HOST", "").strip())
+    workspace_id = bool(os.environ.get("DATABRICKS_WORKSPACE_ID", "").strip())
+    host = os.environ.get("DATABRICKS_HOST", "")
+    derivable = bool(re.match(r"(?:https?://)?adb-(\d+)\.", host or ""))
+    if resolved:
+        source = "explicit" if explicit else "constructed"
+    else:
+        source = "unresolved"
+    return {
+        "resolved": bool(resolved),
+        "source": source,
+        # Present so an operator can see WHICH lever is missing rather than
+        # only that the gateway is absent.
+        "gateway_host_set": explicit,
+        "workspace_id_set": workspace_id,
+        "workspace_id_derivable": derivable,
+        "omnigent_gateway_form": _is_omnigent_gateway_form(anthropic_base),
+    }
 
 
 def _discover_serving_endpoints(token: str) -> set[str]:

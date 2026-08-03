@@ -53,16 +53,23 @@ def test_backend_ci_runs_full_suite_and_reproduces_requirements_lock():
 
 
 def test_frontend_ci_matches_deployed_node_pin():
+    """CI must build the frontend on the Node attendees actually get.
+
+    Derived from the installer pin rather than restated, so bumping
+    ``NODE_VERSION`` can never leave CI testing a different major.
+    """
+    from server.bootstrap import install
+
     workflow = _workflow()
     setup = next(
         step
         for step in workflow["jobs"]["frontend"]["steps"]
         if step.get("uses", "").startswith("actions/setup-node@")
     )
-    assert setup["with"]["node-version"] == "22.14.0"
+    assert setup["with"]["node-version"] == install.NODE_VERSION
 
 
-def test_frontend_tests_use_an_explicit_typescript_runtime_on_node_22():
+def test_frontend_tests_use_an_explicit_typescript_runtime():
     package = yaml.safe_load((ROOT / "frontend" / "package.json").read_text())
     test_command = package["scripts"]["test"]
 

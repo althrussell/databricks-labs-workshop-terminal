@@ -145,11 +145,13 @@ def evaluate(
     secret_protection_status: Mapping[str, object],
     attendee_binding: Mapping[str, str] | None = None,
     delivery_status: Mapping[str, object] | None = None,
+    gateway_status: Mapping[str, object] | None = None,
     writable_probe: Callable[[str], bool] = _path_writable,
     now: float | None = None,
 ) -> dict:
     """Return the complete, secret-free readiness report."""
     current_time = time.time() if now is None else now
+    gateway_status = gateway_status or {}
     per_user = _int(env, "MAX_SESSIONS_PER_USER", 3)
     global_cap = _int(env, "MAX_SESSIONS_GLOBAL", 30)
     topology_ok = (
@@ -508,6 +510,53 @@ def evaluate(
             missing=sorted(missing_pins),
             mismatched=sorted(mismatched_tools),
         ),
+        # Never a hard gate, and deliberately not red: the fallback works. With
+        # no gateway resolved every CLI is configured against
+        # <host>/serving-endpoints, which serves everything an attendee needs —
+        # Claude on /serving-endpoints/anthropic/v1/messages, the newer GPT
+        # models on /serving-endpoints/responses, GLM and friends on
+        # /serving-endpoints/chat/completions (all verified against a live
+        # workspace). So a workshop runs either way.
+        #
+        # What the fallback costs is governance, not capability: the AI Gateway
+        # is where an event's traffic is subject to gateway policy, usage
+        # tracking and rate limits, and serving-endpoints bypasses all of it.
+        # Amber says "running, but outside the governed path" — worth a
+        # deployment fix, never worth failing an attendee over.
+        "model_gateway": _soft(
+            gateway_status.get("resolved") is True
+            and gateway_status.get("omnigent_gateway_form") is True,
+            (
+                "green"
+                if gateway_status.get("resolved")
+                and gateway_status.get("omnigent_gateway_form")
+                else "amber"
+            ),
+            (
+                "AI Gateway resolved in the form Omnigent recognises"
+                if gateway_status.get("resolved")
+                and gateway_status.get("omnigent_gateway_form")
+                else "AI Gateway resolved, but not in a form Omnigent treats as "
+                "the gateway, so Omnigent derives its own paths from the "
+                "workspace host instead"
+                if gateway_status.get("resolved")
+                else "no AI Gateway: models still serve via the "
+                "serving-endpoints fallback, but this event's traffic bypasses "
+                "gateway policy, usage tracking and rate limits. Set "
+                "DATABRICKS_GATEWAY_HOST (or DATABRICKS_WORKSPACE_ID) in the "
+                "deployment"
+            ),
+            **{
+                key: gateway_status.get(key)
+                for key in (
+                    "source",
+                    "gateway_host_set",
+                    "workspace_id_set",
+                    "workspace_id_derivable",
+                    "omnigent_gateway_form",
+                )
+            },
+        ),
         # Never a hard gate: insight capture serves the sales follow-up, not the
         # attendee, and no attendee should lose a workshop over it.
         "insight_capture": _soft(
@@ -556,6 +605,7 @@ def evaluate(
 def evaluate_runtime() -> dict:
     from . import attendee
     from .bootstrap import install
+    from .cli_config import gateway_status
     from .credentials import credential_manager, secret_protection_status
     from .entitlements import entitlement_manager
     from .event_emitter import event_emitter
@@ -563,6 +613,7 @@ def evaluate_runtime() -> dict:
 
     return evaluate(
         env=os.environ,
+        gateway_status=gateway_status(),
         credential_status=credential_manager.status(),
         installer_status=install.status(),
         entitlement_status=entitlement_manager.status(),
