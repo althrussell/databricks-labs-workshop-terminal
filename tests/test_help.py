@@ -124,3 +124,60 @@ def test_operator_broadcast_clear_help(client, as_admin):
     assert resp.status_code == 200
     cfg = client.get("/api/config", headers={"X-Forwarded-Email": "alice@example.com"}).json()
     assert cfg["help"]["raised"] is False
+
+
+def test_attendee_follow_up_message(client, ct_env, monkeypatch):
+    mock_resp = MagicMock(status_code=200, text="ok")
+    mock_resp.json.return_value = {
+        "message_id": "m1",
+        "help_request_id": "h1",
+        "body": "still stuck",
+    }
+    mock_post = MagicMock(return_value=mock_resp)
+    monkeypatch.setattr(help_module.requests, "post", mock_post)
+    monkeypatch.setattr(help_module, "app_identity_bearer", lambda: "oauth-bearer")
+
+    client.post(
+        "/api/help/raise",
+        json={"note": "first"},
+        headers={"X-Forwarded-Email": "alice@example.com"},
+    )
+    mock_post.reset_mock()
+    follow = client.post(
+        "/api/help/messages",
+        json={"body": "still stuck"},
+        headers={"X-Forwarded-Email": "alice@example.com"},
+    )
+    assert follow.status_code == 200, follow.text
+    assert follow.json()["message"]["body"] == "still stuck"
+    assert follow.json()["pushed"] is True
+    assert mock_post.call_args[0][0] == "https://ct.example/api/help/messages"
+
+    thread = client.get(
+        "/api/help/thread", headers={"X-Forwarded-Email": "alice@example.com"}
+    )
+    assert thread.status_code == 200
+    assert len(thread.json()["messages"]) >= 2
+
+
+def test_admin_help_message_ingest(client, as_admin):
+    resp = client.post(
+        "/api/admin/help/message",
+        json={
+            "message_id": "op-1",
+            "help_request_id": "hr-1",
+            "sender_role": "operator",
+            "sender": "op@x.com",
+            "body": "try restarting the warehouse",
+            "show_banner": False,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    thread = client.get(
+        "/api/help/thread", headers={"X-Forwarded-Email": "alice@example.com"}
+    )
+    assert thread.status_code == 200
+    msgs = thread.json()["messages"]
+    assert len(msgs) == 1
+    assert msgs[0]["body"] == "try restarting the warehouse"
+    assert msgs[0]["sender_role"] == "operator"

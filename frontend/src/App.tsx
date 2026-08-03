@@ -6,6 +6,7 @@ import {
   GraduationCap,
   House,
   Link as LinkIcon,
+  MessageSquare,
   Rocket,
   ShieldCheck,
   SquareTerminal,
@@ -27,6 +28,7 @@ import LaunchBar from "./components/LaunchBar";
 import NuggetsPane from "./components/NuggetsPane";
 import OperatorPanel from "./components/OperatorPanel";
 import RaiseHandButton from "./components/RaiseHandButton";
+import HelpChatPanel from "./components/HelpChatPanel";
 import TerminalView from "./components/TerminalView";
 import { bindIdentityRefresh, onAppEvent } from "./events";
 
@@ -59,6 +61,8 @@ export default function App() {
   const [error, setError] = useState("");
   const [connectionLost, setConnectionLost] = useState(false);
   const [nuggetsCollapsed, setNuggetsCollapsed] = useState(false);
+  const [helpChatOpen, setHelpChatOpen] = useState(false);
+  const [helpUnread, setHelpUnread] = useState(0);
   const [view, setView] = useState<"home" | "terminals" | "operator">(
     location.pathname.startsWith("/operator") ? "operator" : "home"
   );
@@ -111,6 +115,10 @@ export default function App() {
       onAppEvent((event) => {
         if (event.t === "connection_lost") setConnectionLost(true);
         if (event.t === "reconnected") setConnectionLost(false);
+        if (event.t === "help_message" && event.sender_role === "operator") {
+          setHelpUnread((n) => n + 1);
+          setHelpChatOpen(true);
+        }
       }),
     []
   );
@@ -339,6 +347,16 @@ export default function App() {
             Certificate
           </button>
           <RaiseHandButton initial={config?.help ?? null} />
+          <button
+            type="button"
+            className="help-chat-toggle"
+            onClick={() => setHelpChatOpen(true)}
+            title="Ask operators"
+          >
+            <MessageSquare size={14} />
+            Help
+            {helpUnread > 0 ? <span className="help-chat-badge">{helpUnread}</span> : null}
+          </button>
           {shellLinks
             .filter((link) => link.highlight)
             .map((link) => {
@@ -355,6 +373,13 @@ export default function App() {
       </header>
 
       <BannerBar initial={config?.broadcast ?? null} />
+      <HelpChatPanel
+        open={helpChatOpen}
+        onClose={() => setHelpChatOpen(false)}
+        onOpen={() => setHelpChatOpen(true)}
+        unread={helpUnread}
+        onClearUnread={() => setHelpUnread(0)}
+      />
       {connectionLost && (
         <div className="banner banner-warning">
           <span>

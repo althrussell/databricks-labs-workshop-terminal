@@ -130,6 +130,28 @@ def broadcast(body: Broadcast):
     return {"status": "ok"}
 
 
+class HelpMessageIn(BaseModel):
+    message_id: str | None = None
+    help_request_id: str | None = None
+    sender_role: str = "operator"
+    sender: str = ""
+    body: str
+    created_at: str | None = None
+    show_banner: bool = True
+
+
+@router.post("/help/message")
+def help_message(body: HelpMessageIn):
+    """Control Tower fan-out: deliver one help-thread message to this unit."""
+    from . import help as help_module
+
+    try:
+        stored = help_module.ingest_operator_message(body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"status": "ok", "message": stored}
+
+
 @router.get("/stats")
 def harvest_stats(final: bool = False):
     """Harvest endpoint for Control Tower: per-attendee build stats (cached

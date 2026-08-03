@@ -216,6 +216,10 @@ class HelpRaiseBody(BaseModel):
     note: str | None = None
 
 
+class HelpMessageBody(BaseModel):
+    body: str
+
+
 @app.post("/api/help/raise")
 def help_raise(body: HelpRaiseBody, _: Principal = Depends(get_current_user)):
     return help_module.raise_hand(body.note)
@@ -224,6 +228,21 @@ def help_raise(body: HelpRaiseBody, _: Principal = Depends(get_current_user)):
 @app.post("/api/help/lower")
 def help_lower(_: Principal = Depends(get_current_user)):
     return help_module.lower_hand()
+
+
+@app.post("/api/help/messages")
+def help_post_message(
+    body: HelpMessageBody, principal: Principal = Depends(get_current_user)
+):
+    try:
+        return help_module.post_attendee_message(body.body, sender=principal.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/help/thread")
+def help_thread(_: Principal = Depends(get_current_user)):
+    return help_module.thread_snapshot()
 
 
 @app.get("/api/setup-status")

@@ -157,6 +157,25 @@ export interface HelpState {
   raised: boolean;
   note?: string | null;
   raised_at?: number | null;
+  message_count?: number;
+  help_request_id?: string | null;
+}
+
+export interface HelpMessage {
+  message_id: string;
+  help_request_id?: string | null;
+  sender_role: "attendee" | "operator" | string;
+  sender?: string;
+  body: string;
+  created_at: string;
+  show_banner?: boolean;
+}
+
+export interface HelpThread {
+  raised: boolean;
+  note?: string | null;
+  help_request_id?: string | null;
+  messages: HelpMessage[];
 }
 
 export interface PresenceUser {
@@ -254,6 +273,12 @@ export const api = {
       method: "POST",
       body: "{}",
     }),
+  helpThread: () => request<HelpThread>("/api/help/thread"),
+  postHelpMessage: (body: string) =>
+    request<{ message: HelpMessage; pushed: boolean; raised: boolean }>(
+      "/api/help/messages",
+      { method: "POST", body: JSON.stringify({ body }) },
+    ),
 };
 
 export { ApiError };

@@ -10,6 +10,16 @@ export type AppEvent =
       ttl_s: number;
       clear_help?: boolean;
     }
+  | {
+      t: "help_message";
+      message_id: string;
+      help_request_id?: string | null;
+      sender_role: string;
+      sender?: string;
+      body: string;
+      created_at: string;
+      show_banner?: boolean;
+    }
   | { t: "content_updated" }
   | { t: "obo_refresh" }
   | { t: "reconnected" }
@@ -36,6 +46,12 @@ function parseServerEvent(data: string): AppEvent | null {
         typeof value.message === "string"
         && typeof value.level === "string"
         && typeof value.ttl_s === "number"
+      ) ? value as AppEvent : null;
+    case "help_message":
+      return (
+        typeof value.message_id === "string"
+        && typeof value.body === "string"
+        && typeof value.sender_role === "string"
       ) ? value as AppEvent : null;
     case "content_updated":
     case "obo_refresh":
