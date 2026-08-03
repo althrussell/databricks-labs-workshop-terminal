@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 import requests
 import yaml
 
-from . import config
+from . import config, models
 from .users import User
 
 logger = logging.getLogger(__name__)
@@ -180,16 +180,15 @@ def _discover_serving_endpoints(token: str) -> set[str]:
         return set()
 
 
-def _pick(preferred: list[str], available: set[str], fallback: str) -> str:
-    for model in preferred:
-        if model in available:
-            return model
-    return fallback
-
-
 # -- per-user config writers --
 
-def configure_claude(user: User, token: str, *, write_token: bool = True) -> None:
+def configure_claude(
+    user: User,
+    token: str,
+    *,
+    write_token: bool = True,
+    available: set[str] | None = None,
+) -> None:
     claude_dir = os.path.join(user.home, ".claude")
     os.makedirs(claude_dir, exist_ok=True)
 
@@ -206,34 +205,19 @@ def configure_claude(user: User, token: str, *, write_token: bool = True) -> Non
         else f"{config.databricks_host()}/serving-endpoints/anthropic"
     )
 
-    available = _discover_serving_endpoints(token)
-    # Newest-first degradation chains; ANTHROPIC_MODEL env pins per event
-    # (e.g. databricks-claude-fable-5 for premium-tier workshops).
-    opus_chain = [
-        "databricks-claude-opus-4-8",
-        "databricks-claude-opus-4-7",
-        "databricks-claude-opus-4-6",
-    ]
-    sonnet_chain = [
-        "databricks-claude-sonnet-5",
-        "databricks-claude-sonnet-4-6",
-        "databricks-claude-sonnet-4-5",
-    ]
-    requested = os.environ.get("ANTHROPIC_MODEL", "").strip()
-    # Default to Sonnet 5 (fast, capable, cheaper than Opus) — the right
-    # everyday driver for workshops; ANTHROPIC_MODEL pins Opus per event.
-    default_chain = ([requested] if requested else []) + sonnet_chain + opus_chain
+    # Which endpoint fills each of Claude Code's three model slots is a policy
+    # question, answered once in server/models.py for every CLI an event runs.
+    if available is None:
+        available = _discover_serving_endpoints(token)
     settings_path = os.path.join(claude_dir, "settings.json")
     settings = _read_json(settings_path)
     env = settings.setdefault("env", {})
     env.update({
         "ANTHROPIC_BASE_URL": base_url,
-        "ANTHROPIC_MODEL": _pick(default_chain, available, requested or sonnet_chain[0]),
-        "ANTHROPIC_DEFAULT_OPUS_MODEL": _pick(opus_chain, available, opus_chain[0]),
-        "ANTHROPIC_DEFAULT_SONNET_MODEL": _pick(
-            sonnet_chain, available, sonnet_chain[0]),
-        "ANTHROPIC_DEFAULT_HAIKU_MODEL": _pick(
-            ["databricks-claude-haiku-4-5"], available, "databricks-claude-haiku-4-5"),
+        "ANTHROPIC_MODEL": models.resolve("driver", available),
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": models.resolve("frontier", available),
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": models.resolve("standard", available),
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": models.resolve("fast", available),
         "ANTHROPIC_CUSTOM_HEADERS": "x-databricks-use-coding-agent-mode: true",
         "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
         # The CLI install is shared across attendees — never self-update.
@@ -268,7 +252,13 @@ def configure_claude(user: User, token: str, *, write_token: bool = True) -> Non
     _write_json(claude_json_path, claude_json)
 
 
-def configure_codex(user: User, token: str, *, write_token: bool = True) -> None:
+def configure_codex(
+    user: User,
+    token: str,
+    *,
+    write_token: bool = True,
+    available: set[str] | None = None,
+) -> None:
     codex_dir = os.path.join(user.home, ".codex")
     os.makedirs(codex_dir, exist_ok=True)
 
@@ -283,7 +273,12 @@ def configure_codex(user: User, token: str, *, write_token: bool = True) -> None
         f"{gateway}/openai/v1" if gateway
         else f"{config.databricks_host()}/serving-endpoints"
     )
-    model = os.environ.get("CODEX_MODEL", "").strip() or "databricks-gpt-5-5"
+    # Codex used to take CODEX_MODEL or a hardcoded default with no regard for
+    # what the workspace actually serves, which is how it ended up pinned to an
+    # endpoint two generations old. It degrades like Claude does now.
+    if available is None:
+        available = _discover_serving_endpoints(token)
+    model = models.resolve("codex", available)
 
     auto_mode = ""
     if config.auto_mode_enabled():
@@ -337,7 +332,13 @@ def _write_gateway_token_locked(user: User, token: str) -> None:
     _atomic_write_text(path, f"{token}\n")
 
 
-def configure_omnigent(user: User, token: str, *, write_token: bool = True) -> None:
+def configure_omnigent(
+    user: User,
+    token: str,
+    *,
+    write_token: bool = True,
+    available: set[str] | None = None,
+) -> None:
     """Write ~/.omnigent/config.yaml: one gateway provider, both model families.
 
     The provider's auth_command reads the rotating token file, so this YAML is
@@ -359,24 +360,13 @@ def configure_omnigent(user: User, token: str, *, write_token: bool = True) -> N
         else f"{config.databricks_host()}/serving-endpoints"
     )
 
-    # Same selection chains as configure_claude / configure_codex — one source
-    # of truth for which models an event runs. Default to Sonnet 5; the
-    # ANTHROPIC_MODEL env pins Opus (or another model) per event.
-    available = _discover_serving_endpoints(token)
-    sonnet_chain = [
-        "databricks-claude-sonnet-5",
-        "databricks-claude-sonnet-4-6",
-        "databricks-claude-sonnet-4-5",
-    ]
-    opus_chain = [
-        "databricks-claude-opus-4-8",
-        "databricks-claude-opus-4-7",
-        "databricks-claude-opus-4-6",
-    ]
-    requested = os.environ.get("ANTHROPIC_MODEL", "").strip()
-    claude_chain = ([requested] if requested else []) + sonnet_chain + opus_chain
-    claude_model = _pick(claude_chain, available, requested or sonnet_chain[0])
-    codex_model = os.environ.get("CODEX_MODEL", "").strip() or "databricks-gpt-5-5"
+    # The same roles the CLIs resolve, so `omnigent claude` and `claude` agree
+    # about what an event runs. These chains were a copy of configure_claude's
+    # under a comment claiming they were one source of truth; now they are.
+    if available is None:
+        available = _discover_serving_endpoints(token)
+    claude_model = models.resolve("driver", available)
+    codex_model = models.resolve("codex", available)
 
     # auth_command uses the absolute token path: omnigent re-runs it inside
     # tmux sessions whose $HOME handling we don't control.
@@ -549,13 +539,17 @@ def configure_all(user: User, token: str) -> None:
     # initial configure is forbidden from rolling them back afterward.
     with user.lock:
         revision = _next_credential_revision_locked(user)
-    configure_claude(user, token, write_token=False)
-    configure_codex(user, token, write_token=False)
+    # One discovery round-trip for every config this attendee gets. All three
+    # writers resolve the same roles against the same workspace, and a room
+    # signing in at once should not multiply that by the number of CLIs.
+    available = _discover_serving_endpoints(token)
+    configure_claude(user, token, write_token=False, available=available)
+    configure_codex(user, token, write_token=False, available=available)
     user.cli_ready.update({"claude", "codex", "databricks"})
-    # Omnigent is feature-flagged off by default — don't write a config (or
-    # spend an endpoint-discovery round-trip) for a session type we don't offer.
+    # Omnigent is feature-flagged off by default — don't write a config for a
+    # session type we don't offer.
     if config.omnigent_enabled():
-        configure_omnigent(user, token, write_token=False)
+        configure_omnigent(user, token, write_token=False, available=available)
         user.cli_ready.add("omnigent")
     with user.lock:
         _commit_core_credentials_locked(user, token, revision)

@@ -242,7 +242,11 @@ def test_all_hard_checks_green_is_ready(tmp_path):
         "release_pins",
     }
     assert all(check["ok"] for check in hard.values())
-    assert set(report["checks"]) - set(hard) == {"insight_capture", "model_gateway"}
+    assert set(report["checks"]) - set(hard) == {
+        "insight_capture",
+        "model_gateway",
+        "model_profile",
+    }
 
 
 def test_absent_gateway_is_reported_amber_and_never_blocks_the_workshop(tmp_path):

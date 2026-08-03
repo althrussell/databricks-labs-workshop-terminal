@@ -13,6 +13,8 @@ import re
 import tempfile
 import time
 
+from . import models
+
 
 EXPECTED_OBO_SCOPES = frozenset(
     {
@@ -306,6 +308,15 @@ def evaluate(
         and obo_recent
     )
 
+    # An unset profile is the expected state and means `balanced`; a set-but-
+    # unknown one is an operator asking for something this release cannot give.
+    requested_profile = env.get("WORKSHOP_MODEL_PROFILE", "").strip().lower()
+    profile_known = not requested_profile or requested_profile in models.PROFILES
+    active_profile = (
+        requested_profile if profile_known and requested_profile
+        else models.DEFAULT_PROFILE
+    )
+
     pin_names = (
         "CLAUDE_CODE_VERSION",
         "CODEX_CLI_VERSION",
@@ -556,6 +567,25 @@ def evaluate(
                     "omnigent_gateway_form",
                 )
             },
+        ),
+        # Reported so an operator can see which cost posture an event is running
+        # without reading the deployment, and amber on a name we don't know
+        # because that is the one case where what an operator asked for and what
+        # they got differ. Not a hard gate: the value it falls back to is the one
+        # every event ran before profiles existed, so a typo here degrades to the
+        # old behaviour rather than to a broken one.
+        "model_profile": _soft(
+            profile_known,
+            "green" if profile_known else "amber",
+            (
+                f"model profile {active_profile}"
+                if profile_known
+                else f"WORKSHOP_MODEL_PROFILE={requested_profile!r} is not a "
+                f"profile this release knows, so {active_profile} is in force. "
+                f"Valid: {', '.join(sorted(models.PROFILES))}"
+            ),
+            profile=active_profile,
+            requested=requested_profile,
         ),
         # Never a hard gate: insight capture serves the sales follow-up, not the
         # attendee, and no attendee should lose a workshop over it.

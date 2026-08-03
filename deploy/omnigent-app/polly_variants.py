@@ -111,16 +111,20 @@ TIERS: tuple[Tier, ...] = (
     Tier(
         name="polly-frontier",
         headline=(
-            "Opus 5 orchestrating, Opus and GPT-5.6 Terra workers. The "
-            "strongest and most expensive set — set reasoning effort to high "
-            "in the session to push it further."
+            "Opus 5 orchestrating, Opus and GPT-5.6 Sol workers. The strongest "
+            "and most expensive set — set reasoning effort to high in the "
+            "session to push it further."
         ),
         brain_harness="claude-sdk",
         brain_model="databricks-claude-opus-5",
+        # Sol rather than Terra, which is where balanced sits: the GPT-5.6 tiers
+        # are capability names, Sol being the flagship, and a tier whose whole
+        # purpose is to be the expensive end of the comparison should take the
+        # flagship on both vendors rather than the mid-tier on one.
         workers={
             _CLAUDE: "databricks-claude-opus-5",
-            _CODEX: "databricks-gpt-5-6-terra",
-            _PI: "databricks-gpt-5-6-terra",
+            _CODEX: "databricks-gpt-5-6-sol",
+            _PI: "databricks-gpt-5-6-sol",
         },
     ),
 )

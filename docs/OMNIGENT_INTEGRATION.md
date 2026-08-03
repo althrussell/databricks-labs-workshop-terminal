@@ -134,13 +134,13 @@ providers:
       base_url: https://<ws-id>.ai-gateway.cloud.databricks.com/anthropic
       auth_command: cat /app/python/source_code/data/users/<slug>/.config/workshop/gateway-token
       models:
-        default: databricks-claude-opus-4-8     # _pick() over the same chain as configure_claude
+        default: databricks-claude-sonnet-5     # the `driver` role (server/models.py)
     openai:
       base_url: https://<ws-id>.ai-gateway.cloud.databricks.com/openai/v1
       wire_api: responses
       auth_command: cat /app/python/source_code/data/users/<slug>/.config/workshop/gateway-token
       models:
-        default: databricks-gpt-5-5             # CODEX_MODEL env or default
+        default: databricks-gpt-5-6-terra       # the `codex` role
 ```
 
 Schema notes (verified against omnigent `onboarding/provider_config.py`):
@@ -162,8 +162,10 @@ Schema notes (verified against omnigent `onboarding/provider_config.py`):
   `{databricks_host()}/serving-endpoints/anthropic` and
   `{databricks_host()}/serving-endpoints` — mirroring `configure_claude` /
   `configure_codex` exactly.
-- Model defaults reuse the existing `_discover_serving_endpoints()` +
-  `_pick()` chains verbatim — one source of truth for model selection.
+- Model defaults resolve the same named roles the Claude and Codex writers use,
+  from `server/models.py`: `driver` for the Anthropic family, `codex` for the
+  OpenAI one. That module is the single source of truth for model selection, and
+  `WORKSHOP_MODEL_PROFILE` shifts every role together for an event.
 
 `config.yaml` is written idempotently on every `configure_all` (same as the
 claude/codex configs); its content is deterministic for a given deployment,
