@@ -139,6 +139,27 @@ class _Stamps:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._stamps: dict[str, _Stamp] = {}
+        self._in_flight: set[str] = set()
+
+    def claim(self, email: str) -> bool:
+        """Take this attendee for the duration of one pass, or decline.
+
+        The interval keeps ordinary passes from overlapping, but a forced one —
+        the wrap flip, or the synchronous teardown backstop — ignores the interval
+        by design and can start while a backgrounded pass is still inside its
+        model call. Both would then read the same revision and emit against the
+        same idempotency key, so one of the two summaries is discarded by Control
+        Tower after being paid for.
+        """
+        with self._lock:
+            if email in self._in_flight:
+                return False
+            self._in_flight.add(email)
+            return True
+
+    def release(self, email: str) -> None:
+        with self._lock:
+            self._in_flight.discard(email)
 
     def may_emit(self, email: str, *, generator: str) -> bool:
         """Whether this generator is allowed to write over what is stored.
@@ -223,6 +244,7 @@ class _Stamps:
     def clear(self) -> None:
         with self._lock:
             self._stamps.clear()
+            self._in_flight.clear()
 
 
 stamps = _Stamps()
@@ -604,7 +626,32 @@ def summarise_user(
     intended = "llm" if allow_llm else "extraction"
     if not stamps.should_run(user.email, generator=intended, force=force):
         return None
+    # One pass per attendee at a time. A forced pass bypasses the interval, so it
+    # can arrive while a backgrounded one is still waiting on the model; without
+    # this both would emit at the same revision and Control Tower would keep one.
+    if not stamps.claim(user.email):
+        logger.debug("edge summary already in flight for %s; skipping", user.email)
+        return None
+    try:
+        return _summarise_claimed(
+            user, phase=phase, signal=signal, allow_llm=allow_llm,
+            single_attendee=single_attendee, intended=intended, emitter=emitter,
+        )
+    finally:
+        stamps.release(user.email)
 
+
+def _summarise_claimed(
+    user: User,
+    *,
+    phase: str,
+    signal: dict | None,
+    allow_llm: bool,
+    single_attendee: bool,
+    intended: str,
+    emitter,
+) -> dict | None:
+    """The body of one pass, with this attendee already claimed. Never raises."""
     try:
         harvest = artifacts.harvest_user(user, single_attendee=single_attendee)
     except Exception as exc:  # noqa: BLE001 — harvest is already fail-soft

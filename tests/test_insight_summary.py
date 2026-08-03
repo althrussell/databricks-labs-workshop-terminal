@@ -500,6 +500,87 @@ def test_the_summary_id_is_stable_so_a_regeneration_supersedes(monkeypatch, emit
     assert first["summary_id"] == second["summary_id"]
 
 
+def test_a_forced_pass_does_not_overlap_one_already_in_flight(monkeypatch, emitter):
+    """The interval keeps ordinary passes apart; a forced one ignores it by design.
+
+    So the wrap flip, or the synchronous teardown backstop, can start while a
+    backgrounded pass is still inside its model call. Both would read the same
+    next revision and emit against the same idempotency key, and Control Tower
+    would discard one of two summaries we had already paid the model for.
+    """
+    _stub_harvest(monkeypatch, _harvest())
+    reentrant: list[dict | None] = []
+
+    def model_then_force(harvest, signal):
+        # Stands in for the operator flipping to wrap while this call is waiting.
+        reentrant.append(
+            insight_summary.summarise_user(
+                _User(), phase="wrap", force=True, emitter=emitter
+            )
+        )
+        return {"headline": "Built something."}, "databricks-claude-haiku-4-5"
+
+    monkeypatch.setattr(insight_summary, "_ask_model", model_then_force)
+    payload = insight_summary.summarise_user(
+        _User(), phase="build", emitter=emitter
+    )
+
+    assert reentrant == [None], "the overlapping pass must decline, not duplicate"
+    assert payload["revision"] == 1
+    events = _emitted(emitter)
+    assert len(events) == 1
+    assert events[0]["idempotency_key"].endswith(":llm:1")
+
+
+def test_the_claim_is_released_even_when_the_pass_fails(monkeypatch, emitter):
+    """A claim leaked on the error path would silence an attendee for the rest of
+    the workshop — the failure mode this whole change exists to remove."""
+    _stub_harvest(monkeypatch, _harvest())
+
+    def boom(harvest, signal):
+        raise RuntimeError("serving blew up in a way we did not anticipate")
+
+    monkeypatch.setattr(insight_summary, "_ask_model", boom)
+    insight_summary.summarise_user(_User(), phase="build", emitter=emitter)
+    _no_interval(monkeypatch)
+    _stub_model(monkeypatch, {"headline": "Recovered."})
+
+    assert insight_summary.summarise_user(_User(), phase="wrap", emitter=emitter)
+
+
+def test_concurrent_passes_emit_one_summary(monkeypatch, emitter):
+    """The same invariant under real threads, since that is how it actually arises:
+    ``summarise_in_background`` runs off the request thread and teardown does not."""
+    import threading
+
+    _stub_harvest(monkeypatch, _harvest())
+    inside, release = threading.Event(), threading.Event()
+
+    def slow(harvest, signal):
+        inside.set()
+        release.wait(timeout=5)
+        return {"headline": "Built something."}, "databricks-claude-haiku-4-5"
+
+    monkeypatch.setattr(insight_summary, "_ask_model", slow)
+    results: list[dict | None] = []
+    first = threading.Thread(
+        target=lambda: results.append(
+            insight_summary.summarise_user(_User(), phase="build", emitter=emitter)
+        )
+    )
+    first.start()
+    assert inside.wait(timeout=5), "the first pass never reached the model"
+    second = insight_summary.summarise_user(
+        _User(), phase="wrap", force=True, emitter=emitter
+    )
+    release.set()
+    first.join(timeout=5)
+
+    assert second is None
+    assert results == [results[0]] and results[0] is not None
+    assert len(_emitted(emitter)) == 1
+
+
 def test_two_attendees_get_two_summaries(monkeypatch, emitter):
     _stub_harvest(monkeypatch, _harvest())
     _stub_model(monkeypatch, {"headline": "Built something."})
