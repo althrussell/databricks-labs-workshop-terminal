@@ -83,6 +83,8 @@ def _good_inputs(tmp_path):
                 "claude": "2.1.216",
                 "codex": "0.144.6",
                 "databricks": "1.8.0",
+                "node": "24.18.1",
+                "pi": "0.83.0",
                 "omnigent": "0.7.0",
             }.items()
         } | {
@@ -544,6 +546,24 @@ def test_every_binary_boot_installs_has_to_be_pinned(tmp_path):
         pins = report["checks"]["release_pins"]
         assert pins["ok"] is False, name
         assert name in pins["missing"], name
+
+
+def test_a_raised_pin_without_a_reinstall_is_a_mismatch_not_a_green(tmp_path):
+    """A pin is a claim about the running terminal, so it needs a witness.
+
+    Raising a version in the deployment does not reinstall anything: the binary
+    on disk stays where it was. Without pairing each pin against the installed
+    version, /readyz would report the new number while attendees ran the old one.
+    """
+    for env_name, tool in (("NODE_VERSION", "node"), ("PI_CLI_VERSION", "pi")):
+        report = _evaluate(
+            tmp_path,
+            mutate_env=lambda env, n=env_name: env.update({n: "99.99.99"}),
+        )
+        pins = report["checks"]["release_pins"]
+        assert pins["ok"] is False, tool
+        assert tool in pins["mismatched"], tool
+        assert report["release_manifest"][tool]["match"] is False, tool
 
 
 def test_pi_is_only_a_required_pin_when_omnigent_is_on(tmp_path):

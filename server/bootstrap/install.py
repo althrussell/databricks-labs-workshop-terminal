@@ -274,6 +274,11 @@ def _release_specs() -> dict[str, tuple[bool, str]]:
         "claude": (True, CLAUDE_VERSION),
         "codex": (True, CODEX_VERSION),
         "databricks": (True, DATABRICKS_CLI_VERSION),
+        # Node is a release input like the CLIs, not just their prerequisite:
+        # it is the runtime two of them execute in, and /readyz cannot call
+        # NODE_VERSION a fact about the running terminal without an installed
+        # version to hold it against.
+        "node": (True, NODE_VERSION),
         # Pi is only reachable as an Omnigent harness, so it follows Omnigent's
         # enablement rather than being installed unconditionally.
         "pi": (config.omnigent_enabled(), PI_VERSION),

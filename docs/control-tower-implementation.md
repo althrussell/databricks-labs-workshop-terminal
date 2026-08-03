@@ -120,8 +120,10 @@ The hard checks are:
    after it expires/goes stale—HTTP remains 503.
 10. `release_pins`: `SKILLS_REF` is not a branch tip; exact Claude Code,
    Codex CLI, Databricks CLI, and Node version pins are present, plus Omnigent
-   and Pi CLI when Omnigent is enabled; and every enabled installed CLI version
-   equals its expected value. Bootstrap also resolves the fetched `SKILLS_REF`
+   and Pi CLI when Omnigent is enabled; and each of those pins equals the version
+   bootstrap actually installed. Both halves are needed — raising a pin does not
+   reinstall anything, so a pin alone would report a version no attendee is
+   running. Bootstrap also resolves the fetched `SKILLS_REF`
    to a commit, checksums installed content, and records source `network` or
    `prewarmed`. A vendored fallback keeps the app usable after a network failure
    but never claims the configured ref was installed and keeps readiness red.

@@ -348,17 +348,25 @@ def evaluate(
     raw_manifest = raw_manifest if isinstance(raw_manifest, Mapping) else {}
     release_manifest: dict[str, dict[str, object]] = {}
     mismatched_tools: list[str] = []
+    # Every required pin appears here too. A pin proves nothing on its own: an
+    # operator can raise NODE_VERSION without a reinstall, and the terminal would
+    # keep running the version already on disk while readiness reported the new
+    # number. Pairing each pin with what bootstrap actually installed is what
+    # makes the pin a claim about the running system.
     env_names = {
         "claude": "CLAUDE_CODE_VERSION",
         "codex": "CODEX_CLI_VERSION",
         "databricks": "DATABRICKS_CLI_VERSION",
+        "node": "NODE_VERSION",
+        "pi": "PI_CLI_VERSION",
         "omnigent": "OMNIGENT_VERSION",
         "databricks_agent_skills": "SKILLS_REF",
     }
+    omnigent_tools = {"omnigent", "pi"}
     for tool, env_name in env_names.items():
         entry = raw_manifest.get(tool)
         entry = entry if isinstance(entry, Mapping) else {}
-        enabled = bool(entry.get("enabled", tool != "omnigent" or _bool(
+        enabled = bool(entry.get("enabled", tool not in omnigent_tools or _bool(
             env, "OMNIGENT_ENABLED", True
         )))
         expected = str(entry.get("expected") or "")
