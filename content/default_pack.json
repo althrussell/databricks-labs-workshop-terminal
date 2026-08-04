@@ -180,7 +180,7 @@
     {
       "id": "omnigent-model-sets",
       "title": "Three Pollys, three price tags",
-      "markdown": "**Polly Economy**, **Polly Balanced** and **Polly Frontier** are the same orchestrator with different models underneath. Economy runs GPT-5.6 Luna with GLM-5.2 workers and touches no Claude at all; Frontier runs Opus 5. Same prompt, same worktrees, same cross-review — only the models change. Pick one and note which you used.",
+      "markdown": "**Polly Economy**, **Polly Balanced** and **Polly Frontier** are the same orchestrator with different models underneath. Economy's workers are GPT-5.6 Luna and GLM-5.2; Frontier's are Opus 5 and GPT-5.6 Sol. Every tier keeps three different vendors on its workers so a diff is always reviewed by someone who did not write it. Same prompt, same worktrees, same cross-review — only the models change. Pick one and note which you used.",
       "phases": [
         "build"
       ],
