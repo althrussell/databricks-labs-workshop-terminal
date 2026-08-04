@@ -252,6 +252,10 @@ def evaluate(
         artifact_manifest.get("ok") is True
         and artifact_proof.get("reusable") is True
     )
+    # Reported, never gated on: falling back to the internet is checksum-verified
+    # and therefore safe, just slow. It fails an event, not a readiness probe.
+    mirror = installer_status.get("toolchain_mirror")
+    mirror = mirror if isinstance(mirror, Mapping) else {}
 
     state_path = env.get("SESSION_STATE_PATH", "").strip()
     state_writable = bool(state_path and writable_probe(state_path))
@@ -489,6 +493,13 @@ def evaluate(
             # redirected sources at a mirror.
             source=artifact_manifest.get("source"),
             persistent_proof_reusable=artifact_proof.get("reusable") is True,
+            toolchain_mirror_configured=mirror.get("configured") is True,
+            toolchain_mirror_path=mirror.get("path") or None,
+            # True when a mirror was configured and artifacts still came over
+            # the internet -- the silent degradation, surfaced.
+            toolchain_mirror_bypassed=mirror.get("bypassed") is True,
+            toolchain_mirror_served=mirror.get("served"),
+            toolchain_mirror_error=mirror.get("error"),
         ),
         "session_state": _check(
             state_writable,

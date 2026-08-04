@@ -200,6 +200,20 @@ env:
   # changes a version or checksum is rejected, keeping the pinned set authoritative.
   - name: ARTIFACT_MANIFEST_PATH
     value: ""
+  # OPTIONAL artifact mirror. When Control Tower stages the pinned toolchain
+  # into a UC Volume (scripts/ct_mirror.py stage) and patches the path in here,
+  # boot fetches each artifact through the Files API keyed by its manifest
+  # sha256 instead of the public internet. Empty = download from source, which
+  # is the default and needs no volume. Apps do not mount volumes, so this is an
+  # API address, not a readable directory. Blobs are content-addressed, so a
+  # version bump the volume has not been re-staged for simply misses and falls
+  # back; the checksum gate is identical on both paths.
+  - name: WORKSHOP_TOOLCHAIN_MIRROR_PATH
+    value: ""
+  # Fail an artifact install outright when the mirror cannot serve it, instead
+  # of reaching the internet. For air-gapped events only.
+  - name: WORKSHOP_TOOLCHAIN_MIRROR_STRICT
+    value: "false"
 
   # --- Omnigent (agent meta-harness) ---
   # Feature flag, default ON: installs the reviewed Omnigent 0.7.0 artifact

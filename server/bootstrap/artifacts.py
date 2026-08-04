@@ -18,6 +18,7 @@ import json
 import os
 import re
 import tempfile
+from typing import NamedTuple
 from urllib.parse import urlsplit
 from urllib.request import urlopen
 
@@ -171,6 +172,19 @@ def _fully_pinned_hashed_lock(path: str) -> bool:
     )
 
 
+class ArtifactFetch(NamedTuple):
+    """A verified artifact and where its bytes actually came from.
+
+    ``source`` is one of ``volume`` (the mirror), ``network`` (the manifest's
+    https source), ``cached`` (a staged copy from an earlier boot) or ``local``
+    (an in-repo file or directory). Reported through setup-status so a mirror
+    that is configured but not being used cannot go unnoticed until event day.
+    """
+
+    path: str
+    source: str
+
+
 class ArtifactManifest:
     def __init__(self, path: str, payload: dict):
         self.path = path
@@ -192,44 +206,128 @@ class ArtifactManifest:
         except KeyError as error:
             raise ArtifactManifestError(f"artifact manifest missing {name}") from error
 
-    def verified_local_path(self, name: str, *, staging_dir: str | None = None) -> str:
+    def verified_local_path(
+        self, name: str, *, staging_dir: str | None = None, mirror=None
+    ) -> str:
+        return self.fetch(name, staging_dir=staging_dir, mirror=mirror).path
+
+    def fetch(
+        self,
+        name: str,
+        *,
+        staging_dir: str | None = None,
+        mirror=None,
+        allow_network: bool = True,
+    ) -> "ArtifactFetch":
+        """Materialize ``name`` locally, verified against the pinned checksum.
+
+        When ``mirror`` is supplied the content-addressed UC Volume copy is tried
+        first and the manifest ``source`` is the fallback. The checksum gate is
+        the same on both paths and the expected digest is repo-owned, which is
+        what makes falling back to the internet exactly as safe as the mirror --
+        the worst a mis-staged or tampered volume can do is cost a slow boot.
+
+        ``allow_network=False`` makes the mirror the only acceptable answer, for
+        callers whose fallback is something other than this download.
+        """
         entry = self.entry(name)
+        if entry.get("kind") == "directory":
+            return ArtifactFetch(self._verified_directory(name, entry), "local")
+
         source = str(entry["source"])
         parsed = urlsplit(source)
-        if parsed.scheme in {"http", "https"}:
-            if parsed.scheme != "https":
-                raise ArtifactManifestError("artifact network source must use https")
-            directory = staging_dir or tempfile.mkdtemp(prefix="workshop-artifact-")
-            os.makedirs(directory, exist_ok=True)
-            fd, target = tempfile.mkstemp(
-                prefix=f"{name}-",
-                suffix=_staged_suffix(parsed.path),
-                dir=directory,
-            )
-            try:
-                with os.fdopen(fd, "wb") as output, urlopen(source, timeout=60) as response:
-                    for chunk in iter(lambda: response.read(1024 * 1024), b""):
-                        output.write(chunk)
-            except Exception:
-                if os.path.exists(target):
-                    os.unlink(target)
-                raise
-        else:
-            target = source
-        if entry.get("kind") == "directory":
-            if not os.path.isdir(target):
-                raise ArtifactManifestError(
-                    f"artifact directory is unavailable: {name}"
-                )
-            if directory_checksum(target) != entry["content_sha256"]:
+        if parsed.scheme not in {"http", "https"}:
+            if not os.path.isfile(source):
+                raise ArtifactManifestError(f"artifact source is unavailable: {name}")
+            if _checksum(source) != entry["sha256"]:
                 raise ArtifactManifestError(f"artifact checksum mismatch: {name}")
-            return target
-        if not os.path.isfile(target):
-            raise ArtifactManifestError(f"artifact source is unavailable: {name}")
-        actual = _checksum(target)
-        if actual != entry["sha256"]:
+            return ArtifactFetch(source, "local")
+        if parsed.scheme != "https":
+            raise ArtifactManifestError("artifact network source must use https")
+
+        directory = staging_dir or tempfile.mkdtemp(prefix="workshop-artifact-")
+        os.makedirs(directory, exist_ok=True)
+        suffix = _staged_suffix(parsed.path)
+        # Content-addressed, so a restart or a prewarmed volume reuses the staged
+        # copy instead of re-downloading it, and this directory holds one file
+        # per pin rather than growing by a whole toolchain on every boot.
+        staged = os.path.join(directory, f"{name}-{entry['sha256'][:16]}{suffix}")
+        if os.path.isfile(staged) and _checksum(staged) == entry["sha256"]:
+            return ArtifactFetch(staged, "cached")
+
+        if mirror is not None:
+            if self._stage(
+                name,
+                entry,
+                directory,
+                suffix,
+                staged,
+                lambda temp: mirror.fetch(entry["sha256"], temp),
+            ):
+                return ArtifactFetch(staged, "volume")
+            if mirror.strict or not allow_network:
+                raise ArtifactManifestError(
+                    f"artifact is not available from the toolchain mirror: {name}"
+                    f" ({mirror.last_error or 'miss'})"
+                )
+        elif not allow_network:
+            raise ArtifactManifestError(
+                f"artifact requires the toolchain mirror, which is not configured: {name}"
+            )
+
+        if not self._stage(
+            name,
+            entry,
+            directory,
+            suffix,
+            staged,
+            lambda temp: _download_https(source, temp),
+        ):
+            raise ArtifactManifestError(f"artifact checksum mismatch: {name}")
+        return ArtifactFetch(staged, "network")
+
+    def _verified_directory(self, name: str, entry: dict) -> str:
+        target = str(entry["source"])
+        if not os.path.isdir(target):
+            raise ArtifactManifestError(f"artifact directory is unavailable: {name}")
+        if directory_checksum(target) != entry["content_sha256"]:
             raise ArtifactManifestError(f"artifact checksum mismatch: {name}")
         return target
+
+    def _stage(
+        self,
+        name: str,
+        entry: dict,
+        directory: str,
+        suffix: str,
+        staged: str,
+        writer,
+    ) -> bool:
+        """Fill a temp file via ``writer``, verify it, then publish it atomically.
+
+        Verifying before the rename is what lets a corrupt mirror blob fall
+        through to the network without ever leaving bad bytes under the
+        content-addressed name a later boot would reuse.
+        """
+        fd, temp = tempfile.mkstemp(prefix=f".{name}-", suffix=suffix, dir=directory)
+        os.close(fd)
+        try:
+            if not writer(temp):
+                return False
+            if _checksum(temp) != entry["sha256"]:
+                return False
+            os.replace(temp, staged)
+            return True
+        finally:
+            if os.path.exists(temp):
+                os.unlink(temp)
+
+
+def _download_https(source: str, destination: str) -> bool:
+    with open(destination, "wb") as output, urlopen(source, timeout=60) as response:
+        for chunk in iter(lambda: response.read(1024 * 1024), b""):
+            output.write(chunk)
+    return True
 
 
 def _staged_suffix(url_path: str) -> str:
@@ -418,6 +516,7 @@ def status(path: str = "") -> dict:
 
 __all__ = [
     "ARCHIVE_ARTIFACTS",
+    "ArtifactFetch",
     "ArtifactManifest",
     "ArtifactManifestError",
     "DEFAULT_MANIFEST_PATH",

@@ -121,6 +121,47 @@ def workshop_app_sp_id() -> str:
     return _env("WORKSHOP_APP_SP_ID")
 
 
+def toolchain_mirror_raw() -> str:
+    """``WORKSHOP_TOOLCHAIN_MIRROR_PATH`` exactly as Control Tower set it.
+
+    Kept separate from the validated accessor so status reporting can tell
+    "no mirror configured" apart from "a mirror was configured and rejected" —
+    the two look identical once a bad path has been normalised to empty, and
+    the second is the failure this feature exists to make visible.
+    """
+    return _env("WORKSHOP_TOOLCHAIN_MIRROR_PATH")
+
+
+def toolchain_mirror_path() -> str:
+    """UC Volume holding the pinned toolchain, or "" to download from source.
+
+    Control Tower stages every manifest artifact into this volume keyed by its
+    sha256 and patches the path in at deploy; empty keeps the internet path, so
+    the mirror is entirely optional. Databricks Apps does not mount volumes into
+    the container, so this is a Files API address rather than a readable
+    directory — validated to the same absolute ``/Volumes/<catalog>/<schema>/
+    <volume>`` shape ``probe_artifact_volume`` requires.
+    """
+    path = toolchain_mirror_raw().rstrip("/")
+    if not path.startswith("/Volumes/"):
+        return ""
+    # ['', 'Volumes', catalog, schema, volume] — anything shorter cannot name a
+    # volume, and a prefix like /Volumes/main would send every fetch to a 404.
+    if len(path.split("/")) < 5 or not all(path.split("/")[2:5]):
+        return ""
+    return path
+
+
+def toolchain_mirror_strict() -> bool:
+    """Whether a mirror miss fails the install instead of reaching the internet.
+
+    Off by default, so a half-staged volume costs a slow boot rather than a
+    broken one. On for air-gapped events, where reaching the internet is itself
+    the failure and falling back silently defeats the point.
+    """
+    return _env_bool("WORKSHOP_TOOLCHAIN_MIRROR_STRICT", False)
+
+
 def session_idle_timeout() -> int:
     # 8 hours: long enough to survive a lunch break / closed laptop lid without
     # reaping the attendee's PTY out from under a returning session (the old

@@ -1,5 +1,27 @@
 #!/usr/bin/env python3
-"""Read-only two-instance prewarm gate for an external Control Tower."""
+"""Read-only two-instance prewarm gate for an external Control Tower.
+
+Layer three of the pre-flight an operator runs before a workshop. The three
+answer different questions and none of them substitutes for another:
+
+1. **Is the volume right?** ``ct_mirror.py verify --volume ... --reader-group ...``
+   Every manifest artifact is staged at its checksum, sizes match what was
+   staged, and the reader group holds READ_VOLUME. Seconds; no artifact bytes
+   move. This is what Control Tower's Validate button calls.
+
+2. **Is one app using it?** Deploy a single canary and read
+   ``/api/admin/setup-status``. ``toolchain_mirror.served`` counts artifacts that
+   came off the volume and ``from_network`` names the ones that did not.
+
+3. **Is the fleet using it?** ``ct_verify.py --require-mirror``. Layers 1 and 2
+   can both pass while most of the fleet still downloads from the internet --
+   the reader group propagates per principal, so a late-minted app SP can miss
+   a grant every earlier app already had.
+
+Layer 3 exists because a bypassed mirror is invisible without it. The app is
+healthy, every checksum matches, the artifacts are byte-identical, and the only
+symptom is that boot is slow again on the morning of the event.
+"""
 
 from __future__ import annotations
 
@@ -134,6 +156,66 @@ def _prewarm_valid(
     )
 
 
+def mirror_summary(payload: dict) -> dict:
+    """Condense an app's ``toolchain_mirror`` block into the operator's answer.
+
+    Summarised unconditionally, even when the mirror is not being enforced,
+    because "configured but bypassed" is the failure this whole feature guards
+    against and it is otherwise completely silent: the app is healthy, every
+    checksum matches, and the only symptom is that boot took the slow path.
+    """
+    mirror = payload.get("toolchain_mirror")
+    if not isinstance(mirror, dict):
+        # An older release that predates the mirror. Not a failure on its own --
+        # only --require-mirror turns the absence of proof into a blocker.
+        return {
+            "reported": False,
+            "configured": False,
+            "served": 0,
+            "bypassed": False,
+            "from_network": [],
+            "error": None,
+        }
+    from_network = mirror.get("from_network")
+    return {
+        "reported": True,
+        "configured": mirror.get("configured") is True,
+        "path": mirror.get("path") or None,
+        "strict": mirror.get("strict") is True,
+        "served": int(mirror.get("served") or 0),
+        "bypassed": mirror.get("bypassed") is True,
+        "from_network": sorted(from_network) if isinstance(from_network, list) else [],
+        "error": mirror.get("error"),
+    }
+
+
+def _mirror_valid(summary: dict) -> bool:
+    """Whether this app avoided the internet for its toolchain.
+
+    Deliberately not "served at least one artifact". ``served`` counts volume
+    fetches in this process, and an app redeployed onto its existing shared
+    prefix installs entirely from prewarmed binaries without fetching anything
+    at all -- a legitimate and common outcome that took nothing from the
+    internet, and the fastest boot available. Requiring a positive count would
+    fail exactly the instances that need the mirror least, and it would fail
+    them by exhausting the poll timeout first, since no later poll can raise a
+    count of zero for artifacts nobody is going to fetch.
+
+    What this can attest to is narrower than it looks: nothing came from the
+    internet *on this boot*. A cache populated by an earlier bypassed boot is
+    indistinguishable from one populated off the volume. That is why ``served``
+    stays in the report even though it no longer gates -- an operator who needs
+    positive proof that the volume was read wants a cold instance and a non-zero
+    count, not a green tick.
+    """
+    return bool(
+        summary["reported"]
+        and summary["configured"]
+        and not summary["bypassed"]
+        and not summary["error"]
+    )
+
+
 def verify_apps(
     apps: list[dict],
     *,
@@ -143,8 +225,15 @@ def verify_apps(
     sleep: Callable[[float], None] = time.sleep,
     monotonic: Callable[[], float] = time.monotonic,
     allow_local_http: bool = False,
+    require_mirror: bool = False,
 ) -> dict:
-    """Wait until exactly two apps pass both readiness and setup verification."""
+    """Wait until exactly two apps pass both readiness and setup verification.
+
+    ``require_mirror`` additionally demands that every artifact came from the UC
+    Volume. Opt-in rather than implied by a configured mirror, because the
+    fallback to the internet is a deliberate and supported outcome everywhere
+    except an event that has decided otherwise.
+    """
     if len(apps) != 2:
         raise ValueError("prewarm verification requires exactly two apps")
     normalized = normalize_apps(
@@ -160,6 +249,7 @@ def verify_apps(
             "readyz_status": None,
             "setup_status": None,
             "prewarm_status": None,
+            "toolchain_mirror": None,
             "_release_manifest": None,
             "_prewarm_manifest": None,
         }
@@ -214,7 +304,13 @@ def verify_apps(
                     break
                 prewarm_payload = _safe_json(prewarm_response)
                 result["prewarm_status"] = int(prewarm_response.status_code)
-                result["ready"] = (
+                summary = mirror_summary(setup_payload)
+                result["toolchain_mirror"] = summary
+                # Tracked apart from the mirror gate so the loop can stop as soon
+                # as the app itself is healthy. Once bootstrap has finished the
+                # mirror verdict cannot change, and polling on a combined flag
+                # would spend the whole timeout re-asking a settled question.
+                core_ready = (
                     ready_ok
                     and setup_response.status_code == 200
                     and _setup_valid(setup_payload)
@@ -243,20 +339,26 @@ def verify_apps(
                         ),
                     )
                 )
+                result["_core_ready"] = core_ready
+                result["ready"] = core_ready and (
+                    not require_mirror or _mirror_valid(summary)
+                )
                 result["_release_manifest"] = _canonical_release_manifest(
                     setup_payload
                 )
                 result["_prewarm_manifest"] = prewarm_payload.get("manifest")
             except requests.RequestException:
+                result["_core_ready"] = False
                 result["ready"] = False
         if expired:
             break
-        if all(result["ready"] for result in results.values()):
+        if all(result.get("_core_ready") for result in results.values()):
             break
         remaining = deadline - monotonic()
         if remaining <= 0:
             break
         sleep(min(max(0, float(poll_interval)), remaining))
+    core_ready = all(result.get("_core_ready") for result in results.values())
     individually_ready = all(result["ready"] for result in results.values())
     release_manifests = [result["_release_manifest"] for result in results.values()]
     prewarm_manifests = [result["_prewarm_manifest"] for result in results.values()]
@@ -268,19 +370,31 @@ def verify_apps(
     ready = individually_ready and manifests_match
     for result in results.values():
         result.pop("_release_manifest", None)
+        result.pop("_core_ready", None)
         result.pop("_prewarm_manifest", None)
         if not manifests_match:
             result["ready"] = False
-    status = (
-        "ready"
-        if ready
-        else ("manifest_mismatch" if individually_ready else "not_ready")
-    )
+    if ready:
+        status = "ready"
+    elif individually_ready:
+        status = "manifest_mismatch"
+    elif core_ready and require_mirror:
+        # Only once the apps themselves are healthy, because the remedy is
+        # completely different and pointing at the wrong one is expensive: this
+        # says nothing is wrong with the app, the volume is short or unreadable,
+        # and the fix is a resync or a grant rather than a redeploy. An app still
+        # mid-bootstrap has not yet earned that diagnosis -- it is simply not
+        # ready, and saying otherwise sends an operator to rebuild a volume that
+        # was fine.
+        status = "mirror_bypassed"
+    else:
+        status = "not_ready"
     return {
         "schema_version": 1,
         "operation": "prewarm_verify",
         "status": status,
         "exit_code": 0 if ready else 1,
+        "require_mirror": bool(require_mirror),
         "apps": [results[app["name"]] for app in normalized],
     }
 
@@ -316,6 +430,13 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=300)
     parser.add_argument("--poll-interval", type=float, default=5)
     parser.add_argument("--allow-local-http", action="store_true")
+    parser.add_argument(
+        "--require-mirror",
+        action="store_true",
+        help="fail unless every artifact was served from the UC Volume mirror. "
+             "The fleet-wide half of pre-flight: ct_mirror.py verify proves the "
+             "volume is correct, this proves the apps are actually reading it.",
+    )
     args = parser.parse_args()
     try:
         report = verify_apps(
@@ -323,6 +444,7 @@ def main() -> int:
             timeout=args.timeout,
             poll_interval=args.poll_interval,
             allow_local_http=args.allow_local_http,
+            require_mirror=args.require_mirror,
         )
     except (OSError, ValueError, json.JSONDecodeError) as error:
         report = {
@@ -331,6 +453,7 @@ def main() -> int:
             "status": "invalid_input",
             "exit_code": 2,
             "error": str(error),
+            "require_mirror": bool(args.require_mirror),
             "apps": [],
         }
     print(json.dumps(report, sort_keys=True, separators=(",", ":")))

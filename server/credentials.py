@@ -140,6 +140,17 @@ def initialize_app_identity(
         return client
 
 
+def workspace_client():
+    """The one OAuth M2M client ``initialize_app_identity`` built, or ``None``.
+
+    Callers inside the app must use this rather than constructing an ambient
+    ``WorkspaceClient``: initialization scrubs the client secret from the
+    environment, so a client built afterwards has nothing left to authenticate
+    with. ``None`` before initialization and in local dev.
+    """
+    return _workspace_client
+
+
 def secret_protection_status() -> dict:
     return dict(_secret_protection)
 

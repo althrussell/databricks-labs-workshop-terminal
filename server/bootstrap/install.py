@@ -25,6 +25,7 @@ from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 
 from .. import config
+from . import mirror as toolchain_mirror
 from .artifacts import (
     ArtifactManifest,
     ArtifactManifestError,
@@ -125,11 +126,77 @@ def _artifact_contract() -> ArtifactManifest:
     )
 
 
+_mirror_lock = threading.Lock()
+_mirror = None
+_mirror_resolved = False
+# Where each artifact's bytes actually came from this boot, keyed by manifest
+# name. A mirror that is configured but silently unused is the failure this
+# whole feature exists to prevent, and it is invisible without this.
+_artifact_sources: dict[str, str] = {}
+
+
+def _toolchain_mirror():
+    """The mirror for this boot, resolved once and shared by every step."""
+    global _mirror, _mirror_resolved
+    with _mirror_lock:
+        if not _mirror_resolved:
+            # In strict mode this raises rather than returning None, so a
+            # misconfigured air-gapped deploy fails every step loudly instead of
+            # quietly reaching the internet.
+            _mirror = toolchain_mirror.from_environment()
+            _mirror_resolved = True
+        return _mirror
+
+
+def artifact_sources() -> dict[str, str]:
+    with _state_lock:
+        return dict(_artifact_sources)
+
+
+def _install_source(default: str, *artifact_names: str) -> str:
+    """``volume`` when the mirror served every artifact a step needed.
+
+    Anything less stays on the default, because "mostly from the mirror" still
+    means an attendee waited on the internet.
+    """
+    with _state_lock:
+        sources = [_artifact_sources.get(name) for name in artifact_names]
+    if artifact_names and all(source == "volume" for source in sources):
+        return "volume"
+    return default
+
+
 def _verified_artifact(name: str) -> tuple[str, dict]:
     contract = _artifact_contract()
     entry = contract.entry(name)
     staging = os.path.join(config.shared_prefix(), "artifacts")
-    return contract.verified_local_path(name, staging_dir=staging), entry
+    fetched = contract.fetch(name, staging_dir=staging, mirror=_toolchain_mirror())
+    with _state_lock:
+        _artifact_sources[name] = fetched.source
+    return fetched.path, entry
+
+
+def _mirrored_artifact(name: str) -> str | None:
+    """Verified artifact from the mirror only, or ``None``. Never the network.
+
+    For artifacts whose fallback is something other than downloading this file,
+    where reaching the internet here would duplicate rather than replace work.
+    """
+    client = _toolchain_mirror()
+    if client is None:
+        return None
+    contract = _artifact_contract()
+    staging = os.path.join(config.shared_prefix(), "artifacts")
+    try:
+        fetched = contract.fetch(
+            name, staging_dir=staging, mirror=client, allow_network=False
+        )
+    except (ArtifactManifestError, OSError) as error:
+        logger.info("toolchain mirror cannot serve %s: %s", name, error)
+        return None
+    with _state_lock:
+        _artifact_sources[name] = fetched.source
+    return fetched.path
 
 
 def _extracted_artifact_executable(name: str) -> tuple[str, dict]:
@@ -386,6 +453,7 @@ def status(*, include_proof: bool = False) -> dict:
         "installing": installing,
         "release_manifest": release_manifest,
         "artifact_manifest": artifact_status,
+        "toolchain_mirror": toolchain_mirror_status(),
     }
     # Absent rather than reported unproven: a caller that did not ask for the
     # disk check must not be able to read the answer as "not reusable".
@@ -544,7 +612,39 @@ def _prewarm_status_unlocked() -> dict:
             "binaries": binaries,
             SKILLS_ARTIFACT: skills_provenance,
         },
+        "toolchain_mirror": toolchain_mirror_status(),
     }
+
+
+def toolchain_mirror_status() -> dict:
+    """Whether the artifact mirror is configured, and what it actually served.
+
+    ``bypassed`` is the field that matters operationally. A configured mirror
+    that still let artifacts come over the internet is behaviourally correct and
+    completely silent -- you notice on event day, because boot is slow again --
+    so it is called out rather than left to be inferred from the counts.
+    """
+    report = toolchain_mirror.configuration_status()
+    sources = artifact_sources()
+    counts: dict[str, int] = {}
+    for source in sources.values():
+        counts[source] = counts.get(source, 0) + 1
+    from_network = sorted(
+        name for name, source in sources.items() if source == "network"
+    )
+    with _mirror_lock:
+        client = _mirror
+    report.update(
+        {
+            "artifact_sources": sources,
+            "fetch_counts": counts,
+            "from_network": from_network,
+            "served": counts.get("volume", 0),
+            "bypassed": bool(report["configured"] and from_network),
+            "fetch": client.status() if client is not None else None,
+        }
+    )
+    return report
 
 
 def _parse_version(output: str) -> str | None:
@@ -746,7 +846,7 @@ def _install_node() -> None:
     )
     if result.returncode == 0:
         actual = _read_cli_version(node_path)
-        source = "staged"
+        source = _install_source("staged", artifact_name)
         if actual != NODE_VERSION:
             _set(
                 "node",
@@ -771,11 +871,9 @@ def _install_node() -> None:
 
 
 def _install_claude() -> None:
-    installer_path, installer_artifact = _verified_artifact("claude_installer")
-    # Only the expected checksum is needed: the installer fetches the binary
-    # itself, and pulling a quarter-gigabyte copy here to hash it would double
-    # the claude step's boot cost for no added guarantee.
-    binary_artifact = _artifact_contract().entry("claude_binary")
+    contract = _artifact_contract()
+    installer_artifact = contract.entry("claude_installer")
+    binary_artifact = contract.entry("claude_binary")
     _set("claude", "running", expected_version=CLAUDE_VERSION, source="network")
     prefix = config.shared_prefix()
     claude_bin = os.path.join(prefix, "bin", "claude")
@@ -793,49 +891,43 @@ def _install_claude() -> None:
             source="prewarmed",
         )
         return
-    env = _install_env()
     # The installer targets $HOME/.local — point HOME at the shared prefix's
     # parent so the binary lands in the shared tree, then link it into bin/.
     staging = os.path.join(prefix, "claude-home")
-    os.makedirs(staging, exist_ok=True)
-    env["HOME"] = staging
+    installed = os.path.join(staging, ".local", "bin", "claude")
     try:
-        with open(installer_path, "rb") as installer:
-            result = subprocess.run(
-                _claude_install_argv(),
-                stdin=installer,
-                capture_output=True,
-                text=True,
-                timeout=300,
-                env=env,
-            )
-        installed = os.path.join(staging, ".local", "bin", "claude")
-        if result.returncode == 0 and os.path.exists(installed):
-            os.makedirs(os.path.dirname(claude_bin), exist_ok=True)
-            if os.path.lexists(claude_bin):
-                os.unlink(claude_bin)
-            os.symlink(installed, claude_bin)
-            actual = _read_cli_version(claude_bin)
-            if actual != CLAUDE_VERSION:
-                raise RuntimeError(
-                    f"claude version mismatch: expected {CLAUDE_VERSION}, got {actual or 'unknown'}"
-                )
-            if _file_checksum(installed) != binary_artifact["sha256"]:
-                raise RuntimeError("claude installed binary checksum mismatch")
-            checksum = _write_artifact_binary_stamp(
-                "claude", installer_artifact, installed
-            )
-            _set(
-                "claude",
-                "complete",
-                expected_version=CLAUDE_VERSION,
-                actual_version=actual,
-                source="staged",
-                expected_checksum=binary_artifact["sha256"],
-                actual_checksum=checksum,
-            )
+        mirrored = _mirrored_artifact("claude_binary")
+        if mirrored is not None:
+            os.makedirs(os.path.dirname(installed), exist_ok=True)
+            shutil.copyfile(mirrored, installed)
+            os.chmod(installed, 0o755)
+            source = "volume"
         else:
-            raise RuntimeError((result.stderr or result.stdout)[-500:])
+            _run_claude_installer(staging, installed)
+            source = "staged"
+        os.makedirs(os.path.dirname(claude_bin), exist_ok=True)
+        if os.path.lexists(claude_bin):
+            os.unlink(claude_bin)
+        os.symlink(installed, claude_bin)
+        actual = _read_cli_version(claude_bin)
+        if actual != CLAUDE_VERSION:
+            raise RuntimeError(
+                f"claude version mismatch: expected {CLAUDE_VERSION}, got {actual or 'unknown'}"
+            )
+        if _file_checksum(installed) != binary_artifact["sha256"]:
+            raise RuntimeError("claude installed binary checksum mismatch")
+        checksum = _write_artifact_binary_stamp(
+            "claude", installer_artifact, installed
+        )
+        _set(
+            "claude",
+            "complete",
+            expected_version=CLAUDE_VERSION,
+            actual_version=actual,
+            source=source,
+            expected_checksum=binary_artifact["sha256"],
+            actual_checksum=checksum,
+        )
     except (subprocess.TimeoutExpired, OSError, RuntimeError) as e:
         _set(
             "claude",
@@ -844,6 +936,33 @@ def _install_claude() -> None:
             expected_version=CLAUDE_VERSION,
             actual_version=actual,
         )
+
+
+def _run_claude_installer(staging: str, installed: str) -> None:
+    """Fetch and install claude the way upstream intends, over the internet.
+
+    The fallback whenever the mirror cannot serve ``claude_binary``. Only the
+    binary's expected checksum is used here: the installer fetches those bytes
+    itself, so pulling a second quarter-gigabyte copy to hash would double this
+    step's cost for no added guarantee. From a workspace-local mirror that
+    trade-off inverts, which is why the caller prefers it -- one verified copy
+    replaces the download entirely, and it is the largest artifact in the boot.
+    """
+    installer_path, _ = _verified_artifact("claude_installer")
+    os.makedirs(staging, exist_ok=True)
+    env = _install_env()
+    env["HOME"] = staging
+    with open(installer_path, "rb") as installer:
+        result = subprocess.run(
+            _claude_install_argv(),
+            stdin=installer,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            env=env,
+        )
+    if result.returncode != 0 or not os.path.exists(installed):
+        raise RuntimeError((result.stderr or result.stdout)[-500:])
 
 
 def _find_codex_native_binary(prefix: str) -> str | None:
@@ -1014,7 +1133,11 @@ def _install_codex() -> None:
                     "complete",
                     expected_version=CODEX_VERSION,
                     actual_version=actual,
-                    source="staged",
+                    source=_install_source(
+                        "staged",
+                        "codex_npm_launcher_package",
+                        "codex_native_package_linux_x64",
+                    ),
                     expected_checksum=native_artifact["executable_sha256"],
                     actual_checksum=native_checksum,
                 )
@@ -1178,7 +1301,7 @@ def _install_pi() -> None:
                         "complete",
                         expected_version=PI_VERSION,
                         actual_version=actual,
-                        source="staged",
+                        source=_install_source("staged", "pi_npm_package"),
                         expected_checksum=artifact["sha256"],
                         actual_checksum=launcher_checksum,
                     )
@@ -1263,7 +1386,7 @@ def _install_tmux() -> None:
         _set(
             "tmux",
             "complete",
-            source="staged",
+            source=_install_source("staged", "tmux_linux_x64"),
             expected_checksum=artifact["sha256"],
             actual_checksum=binary_checksum,
         )
@@ -1416,7 +1539,9 @@ def _install_omnigent() -> None:
             "complete",
             expected_version=OMNIGENT_VERSION,
             actual_version=actual,
-            source="staged",
+            # The wheelhouse is still fetched from PyPI, so the mirror only
+            # covers this step's uv and Python runtime archives.
+            source=_install_source("staged", "uv_binary", "python_3_12_runtime"),
             expected_checksum=entries["omnigent_lock"]["sha256"],
             actual_checksum=binary_checksum,
         )
@@ -1493,7 +1618,9 @@ def _install_databricks_cli() -> None:
                 "complete",
                 expected_version=DATABRICKS_CLI_VERSION,
                 actual_version=actual,
-                source="staged",
+                source=_install_source(
+                    "staged", "databricks_cli_archive_linux_x64"
+                ),
                 expected_checksum=archive_artifact["sha256"],
                 actual_checksum=checksum,
             )
@@ -1830,43 +1957,59 @@ def run_in_background() -> None:
             for step in steps:
                 _set(step, "error", str(error))
             return
-        try:
-            _install_node()
-        except Exception as error:  # noqa: BLE001 - monkeypatched/custom wrapper
-            _set("node", "error", str(error))
-        with _state_lock:
-            node_ready = _state.get("node", {}).get("status") == "complete"
-        if not node_ready:
-            # Without node, codex and pi can't install; claude's installer is
-            # self-contained, so still try it. tmux/omnigent don't need node.
-            _set("codex", "error", "skipped: node install failed")
-            if omnigent:
-                _set("pi", "error", "skipped: node install failed")
-            tasks = [
-                ("claude", _install_claude),
-                ("databricks", _install_databricks_cli),
-                ("skills", _install_skills),
-            ]
-            if omnigent:
-                tasks.extend([
-                    ("tmux", _install_tmux),
-                    ("omnigent", _install_omnigent),
-                ])
-            _run_parallel_installers(tasks, max_workers=5)
-            return
-        tasks = [
+        def install_node() -> bool:
+            try:
+                _install_node()
+            except Exception as error:  # noqa: BLE001 - monkeypatched/custom wrapper
+                _set("node", "error", str(error))
+            with _state_lock:
+                return _state.get("node", {}).get("status") == "complete"
+
+        def after_node(step: str, operation):
+            """Run ``operation`` once node lands, or record it as skipped."""
+            def run() -> None:
+                if not node_future.result():
+                    _set(step, "error", "skipped: node install failed")
+                    return
+                operation()
+
+            return run
+
+        # Only codex and pi need node. Installing it to completion first left
+        # claude, omnigent, databricks, skills and tmux idle through its
+        # download and xz extract, for no dependency reason -- so everything is
+        # submitted at once and just those two wait on the node future.
+        independent = [
             ("claude", _install_claude),
-            ("codex", _install_codex),
             ("databricks", _install_databricks_cli),
             ("skills", _install_skills),
         ]
+        dependent = [("codex", _install_codex)]
         if omnigent:
-            tasks.extend([
+            independent.extend([
                 ("tmux", _install_tmux),
                 ("omnigent", _install_omnigent),
-                ("pi", _install_pi),
             ])
-        _run_parallel_installers(tasks, max_workers=7)
+            dependent.append(("pi", _install_pi))
+
+        # Every task gets its own worker: the node-gated ones block inside the
+        # pool, so a smaller pool could deadlock waiting on a node install that
+        # has nowhere left to run.
+        workers = 1 + len(independent) + len(dependent)
+        with ThreadPoolExecutor(
+            max_workers=workers, thread_name_prefix="bootstrap-install"
+        ) as pool:
+            node_future = pool.submit(install_node)
+            futures = {node_future: "node"}
+            for step, operation in independent:
+                futures[pool.submit(operation)] = step
+            for step, operation in dependent:
+                futures[pool.submit(after_node(step, operation))] = step
+            for future, step in futures.items():
+                try:
+                    future.result()
+                except Exception as error:  # noqa: BLE001 - consume every future
+                    _set(step, "error", str(error))
 
     def orchestrate():
         with _install_file_lock(exclusive=True):

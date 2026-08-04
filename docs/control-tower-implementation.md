@@ -251,6 +251,8 @@ take effect on restart with **no rebuild**. Set these per instance:
 | `WORKSHOP_SCHEMA` | *(optional)* | default schema within `WORKSHOP_CATALOG` |
 | `WORKSHOP_INSIGHT_CAPTURE` | `true` *(CT fleet default; per-run opt-out)* | turn on workshop insight capture (§14). This is the one switch that sends attendee-authored content to CT, so a run whose registration terms don't cover it must opt out — see §14 |
 | `DISCOVERY_ENABLED` | `false` *(optional, within capture)* | drop the conversational discovery tier while keeping the derived behavioural signal |
+| `WORKSHOP_TOOLCHAIN_MIRROR_PATH` | *(optional)* `/Volumes/<catalog>/<schema>/<volume>` | serve the pinned toolchain from a staged UC Volume instead of the public internet (§15). Empty = download from source, which needs no volume and is the default |
+| `WORKSHOP_TOOLCHAIN_MIRROR_STRICT` | `false` | fail an artifact the mirror cannot serve instead of falling back to the internet. Air-gapped events only |
 
 Model defaults can vary by event or attendee because CT applies overrides to
 each app instance independently. For example, set
@@ -691,6 +693,107 @@ redaction pass strips secret-shaped strings from discovery text before it is
 buffered. Teardown is still `apps.delete` — WT holds no durable insight store, so
 anything not pushed before deletion is gone. That is why the summary is generated
 at the **wrap phase**, with the teardown harvest only as a backstop.
+
+## 15. Toolchain mirror *(opt-in, per event)*
+
+A fresh app instance installs ~430 MiB of pinned toolchain from the public
+internet before `/readyz` goes green. On event morning many instances do that at
+once against the same few hosts. Staging the pinned artifacts into one UC Volume
+moves that to workspace-local storage.
+
+**Optional and off by default.** With `WORKSHOP_TOOLCHAIN_MIRROR_PATH` empty, a
+terminal boots exactly as it always has. Nothing below is required to run an
+event.
+
+### What CT owns
+
+WT owns the artifact contract and ships the stager; CT owns provisioning,
+authorisation and orchestration.
+
+1. **Provision once per workspace:** a volume (any catalog/schema) and a reader
+   group holding `READ_VOLUME` on it plus `USE_CATALOG` / `USE_SCHEMA` on the
+   parents.
+
+   Issuing those grants requires `MANAGE` on each securable, which CT holds only
+   where it is the owner. It owns a volume and schema it created itself, so those
+   two are self-service; it will never own a shared parent catalog such as `main`,
+   so `USE_CATALOG` there is a one-time admin grant. Make it to the *group*, not
+   to CT — the group is stable, so the grant is made once and never revisited,
+   whereas granting CT `MANAGE` on the catalog hands a provisioning service
+   authority over every schema in it. If the volume was created by hand before CT
+   was pointed at it, transfer the schema and volume to CT's service principal, or
+   the remaining two grants need an admin every time as well.
+2. **Stage before deploying:** run `scripts/ct_mirror.py stage --volume ...` from
+   the WT checkout being deployed, as the deployer SP.
+3. **Add the app SP to the reader group**, then deploy. Do not grant the SP
+   directly — it is minted seconds before deploy and the bootstrap thread starts
+   almost immediately after the container comes up, so an ungropagated per-SP
+   grant is indistinguishable from a missing one.
+4. **Patch `WORKSHOP_TOOLCHAIN_MIRROR_PATH`** into the uploaded `app.yaml`
+   alongside `WORKSHOP_APP_SP_ID`.
+
+Ordering matters: staging and the grant must both be settled before deploy, or
+the app misses, silently downloads from the internet, and the only symptom is a
+slow boot.
+
+`scripts/deploy_ct_sim.py --toolchain-mirror ... --toolchain-mirror-group ...`
+performs this whole sequence and is the reference implementation.
+
+### Operator buttons
+
+Both call `scripts/ct_mirror.py`, which prints one JSON object and exits `0`
+success / `1` drift or failure / `2` invalid input.
+
+| Button | Command | Notes |
+|---|---|---|
+| **Validate** | `ct_mirror.py verify --volume ... --reader-group ...` | Confirms the volume can serve this release and the group can read it. ~6s; downloads no artifact bytes. Render `status`, `missing`, `corrupt`, `grants`, `staged_from_commit`. |
+| **Force resync** | `ct_mirror.py resync --volume ... [--prune]` | Re-fetches and rewrites every blob. For a blob suspected corrupt, or after a WT release bumped pins. |
+
+`verify` reports `staged_from_commit` against `expected_from_commit`, so a
+failure reads as "three artifacts behind, staged from `abc123`" rather than a
+bare pass/fail. `index_complete: false` means a previous stage was partial.
+Artifacts named in `unsized` are present but had no recorded size to check
+against — they pass, because boot re-hashes everything regardless, but a green
+Validate should not be read as more than it is.
+
+Validate fails on a missing reader grant even when every blob is staged, and
+says so rather than reporting a blob count: staging and authorisation fail
+independently, and only the grant is symptomless until event morning, when every
+attendee quietly falls back to the internet. A grant fault is not fixed by the
+staging buttons, so it must not be reported as something staging could fix.
+
+### Pre-flight before a workshop
+
+Three checks, three different questions:
+
+1. `ct_mirror.py verify` — is the volume right?
+2. A canary app's `/api/admin/setup-status` — is one app using it?
+   `toolchain_mirror.served` counts volume hits, `from_network` names misses.
+3. `ct_verify.py --require-mirror` — is the *fleet* using it?
+
+Layer 3 is not redundant. Group membership propagates per principal, so 1 and 2
+can both pass while a late-minted app SP misses a grant every earlier app has.
+A bypassed mirror is invisible otherwise: the app is healthy, every checksum
+matches, the bytes are identical. `ct_verify.py` reports `mirror_bypassed`
+distinctly from `not_ready` because the remedy is a resync or a grant, not a
+redeploy — but only once the apps are otherwise healthy, since an app still
+installing has served nothing yet and looks the same as a bypass.
+
+Layer 3 proves "nothing came from the internet on this boot", not "the volume was
+read". An app reusing its existing shared prefix fetches nothing and passes
+without touching the mirror. For positive proof that the volume is readable, use
+layer 2 on a cold instance and require a non-zero `served`.
+
+### Safety
+
+Blobs are keyed by the manifest's own sha256, and the checksum gate at boot is
+identical on the mirror and internet paths. So a release that bumps a pin simply
+misses on a volume nobody re-staged — no stale-file case, no need to coordinate
+WT releases with a re-stage — and a corrupt or tampered blob costs a fallback
+rather than a bad install. Full detail in
+[`artifact-manifest.md`](./artifact-manifest.md#toolchain-mirror).
+
+---
 
 ## Appendix — quick reference
 
