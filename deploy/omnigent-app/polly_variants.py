@@ -76,6 +76,17 @@ class Tier:
 # is why the economy tier drops the Claude worker entirely rather than pinning
 # it to a cheap Claude — it keeps economy's spend genuinely off the Claude
 # endpoints while codex + pi still supply two vendors for cross-review.
+#
+# Non-Claude pins are spelled `system.ai.<model>`, not `databricks-<model>`.
+# Both reach the same endpoint, but pi is the constraint: it picks a surface by
+# looking the id up in the per-surface model lists omnigent builds from the
+# workspace, and those are spelled `system.ai.*`. A `databricks-` pin matches
+# none of them and falls through to pi's primary provider — the gateway's
+# Anthropic surface — which refuses a non-Claude model outright ("API type
+# 'anthropic/v1/messages' is not supported by ..."). That is what silently sent
+# every balanced dispatch to the Claude worker. The spelling also survives the
+# pi slot flipping to the codex harness, which accepts either. Claude pins keep
+# the `databricks-` form: the Anthropic surface is where they belong anyway.
 TIERS: tuple[Tier, ...] = (
     Tier(
         name="polly-economy",
@@ -88,10 +99,10 @@ TIERS: tuple[Tier, ...] = (
         # economy brain runs on pi, the one harness that reaches any gateway
         # model. Overridable because it is the least-proven choice here.
         brain_harness="pi",
-        brain_model="databricks-gpt-5-6-luna",
+        brain_model="system.ai.gpt-5-6-luna",
         workers={
-            _CODEX: "databricks-gpt-5-6-luna",
-            _PI: "databricks-glm-5-2",
+            _CODEX: "system.ai.gpt-5-6-luna",
+            _PI: "system.ai.glm-5-2",
         },
     ),
     Tier(
@@ -104,8 +115,8 @@ TIERS: tuple[Tier, ...] = (
         brain_model="databricks-claude-sonnet-5",
         workers={
             _CLAUDE: "databricks-claude-sonnet-5",
-            _CODEX: "databricks-gpt-5-6-terra",
-            _PI: "databricks-gpt-5-6-terra",
+            _CODEX: "system.ai.gpt-5-6-terra",
+            _PI: "system.ai.gpt-5-6-terra",
         },
     ),
     Tier(
@@ -123,8 +134,8 @@ TIERS: tuple[Tier, ...] = (
         # flagship on both vendors rather than the mid-tier on one.
         workers={
             _CLAUDE: "databricks-claude-opus-5",
-            _CODEX: "databricks-gpt-5-6-sol",
-            _PI: "databricks-gpt-5-6-sol",
+            _CODEX: "system.ai.gpt-5-6-sol",
+            _PI: "system.ai.gpt-5-6-sol",
         },
     ),
 )

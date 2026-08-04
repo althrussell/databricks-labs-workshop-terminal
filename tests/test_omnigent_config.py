@@ -53,13 +53,88 @@ def test_gateway_urls_and_auth_command(user, monkeypatch):
     with open(_config_path(user)) as f:
         text = f.read()
     assert "base_url: https://123.ai-gateway.cloud.databricks.com/anthropic" in text
-    assert "base_url: https://123.ai-gateway.cloud.databricks.com/openai/v1" in text
+    assert "base_url: https://123.ai-gateway.cloud.databricks.com/codex/v1" in text
     assert "wire_api: responses" in text
     assert "kind: gateway" in text
-    assert "default: true" in text
     # auth_command must carry the absolute per-user token path.
     assert f"auth_command: cat {_token_path(user)}" in text
     assert os.path.isabs(_token_path(user))
+
+
+def test_codex_and_pi_resolve_through_a_databricks_aware_provider(user, monkeypatch):
+    """Omnigent must see a Databricks AI Gateway, not an anonymous proxy.
+
+    Read as a plain `gateway`, omnigent sends Codex and Pi down its
+    vendor-direct path, which strips the `databricks-` prefix off model ids —
+    the workspace serves `databricks-claude-opus-4-8` and Pi asked for
+    `claude-opus-4-8`, so every message 404'd. Codex fell over on the same
+    misread, reporting itself unlaunchable because it found no Databricks
+    provider and no `auth.json` behind it.
+    """
+    monkeypatch.setattr(
+        cli_config, "gateway_host", lambda: "https://ws.cloud.databricks.com/ai-gateway"
+    )
+    cli_config.configure_omnigent(user, "tok-1")
+    providers = yaml.safe_load(open(_config_path(user)))["providers"]
+
+    pinned = providers["databricks-codex"]
+    assert pinned["kind"] == "cli-config"
+    assert pinned["cli"] == "codex"
+    # Names the [model_providers.X] table configure_codex writes.
+    assert pinned["model_provider"] == "databricks"
+    assert pinned["default"] == ["openai", "pi"]
+    # Exactly one provider owns each surface, or omnigent rejects the config.
+    assert providers["databricks-gateway"]["default"] == ["anthropic"]
+
+
+def test_codex_base_url_is_the_spelling_omnigent_can_rewrite(user, monkeypatch):
+    """The gateway serves Responses at /openai/v1 and /codex/v1 alike; omnigent
+    only parses the second. It derives Pi's Anthropic base by swapping a
+    trailing `/codex/v1` for `/anthropic`, so an `/openai/v1` base would leave
+    Pi pointed at `/openai/v1/anthropic`, which routes nowhere."""
+    monkeypatch.setattr(
+        cli_config, "gateway_host", lambda: "https://ws.cloud.databricks.com/ai-gateway"
+    )
+    cli_config.configure_codex(user, "tok-1")
+    toml = open(os.path.join(user.home, ".codex", "config.toml")).read()
+
+    assert 'base_url = "https://ws.cloud.databricks.com/ai-gateway/codex/v1"' in toml
+    # And the omnigent entry must name this same table, or the pin dangles.
+    cli_config.configure_omnigent(user, "tok-1")
+    providers = yaml.safe_load(open(_config_path(user)))["providers"]
+    assert providers["databricks-codex"]["model_provider"] == "databricks"
+    assert "[model_providers.databricks]" in toml
+
+
+def test_without_a_gateway_the_single_provider_still_owns_every_surface(
+    user, monkeypatch
+):
+    """Recognition is by URL: the serving-endpoints fallback has no
+    `/ai-gateway/` path, so pinning it would only swap one silent failure for
+    another."""
+    monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
+    cli_config.configure_omnigent(user, "tok-1")
+    providers = yaml.safe_load(open(_config_path(user)))["providers"]
+
+    assert "databricks-codex" not in providers
+    assert providers["databricks-gateway"]["default"] is True
+
+
+def test_a_pinned_provider_is_dropped_when_the_gateway_goes_away(user, monkeypatch):
+    """Left behind, it would default the openai and pi surfaces to a codex
+    table that no longer names a gateway."""
+    monkeypatch.setattr(
+        cli_config, "gateway_host", lambda: "https://ws.cloud.databricks.com/ai-gateway"
+    )
+    cli_config.configure_omnigent(user, "tok-1")
+    assert "databricks-codex" in yaml.safe_load(open(_config_path(user)))["providers"]
+
+    monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
+    cli_config.configure_omnigent(user, "tok-1")
+    providers = yaml.safe_load(open(_config_path(user)))["providers"]
+
+    assert "databricks-codex" not in providers
+    assert providers["databricks-gateway"]["default"] is True
 
 
 def test_host_identity_matches_the_supervised_host(user, monkeypatch):

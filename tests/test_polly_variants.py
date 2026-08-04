@@ -186,8 +186,26 @@ def test_worker_models_are_pinned_per_tier(tmp_path, stock):
     economy_pi = _worker(tmp_path, "polly-economy", "pi")
     frontier_claude = _worker(tmp_path, "polly-frontier", "claude_code")
 
-    assert economy_pi["executor"]["model"] == "databricks-glm-5-2"
+    assert economy_pi["executor"]["model"] == "system.ai.glm-5-2"
     assert frontier_claude["executor"]["model"] == "databricks-claude-opus-5"
+
+
+def test_non_claude_pins_use_the_id_form_pi_can_route(tmp_path, stock):
+    """Pi picks a surface by finding the id in the model lists omnigent builds
+    from the workspace, and those are spelled `system.ai.*`. A `databricks-`
+    pin matches none of them and falls back to pi's Anthropic provider, which
+    refuses a non-Claude model — so balanced quietly ran every dispatch on the
+    Claude worker instead of the GPT one it advertises."""
+    _build(tmp_path, stock)
+
+    for tier in polly_variants.TIERS:
+        for worker, model in tier.workers.items():
+            if worker == polly_variants._CLAUDE:
+                assert model.startswith("databricks-"), (worker, model)
+            else:
+                assert model.startswith("system.ai."), (tier.name, worker, model)
+        if tier.brain_harness == "pi" and tier.brain_model:
+            assert tier.brain_model.startswith("system.ai."), tier.name
 
 
 def test_the_prompt_override_is_appended_not_substituted(tmp_path, stock):
