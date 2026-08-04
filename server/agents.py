@@ -45,10 +45,8 @@ def load_catalog() -> list[dict]:
     # disabled, drop it everywhere at once — no card, no launch — regardless of
     # which catalog source (default or AGENT_CATALOG_PATH) declared it.
     #
-    # Gate on the required binary rather than the literal id: the model-set
-    # variants (polly-economy and friends) are separate cards that all shell out
-    # to the same omnigent CLI, and an id-only check would leave them on screen
-    # as launchable buttons that cannot start.
+    # Gate on the required binary rather than the literal id so any future
+    # omnigent-backed catalog cards disappear together when the feature is off.
     if not config.omnigent_enabled():
         agents = [
             a
