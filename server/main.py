@@ -424,7 +424,7 @@ def set_persona(body: _PersonaBody, principal: Principal = Depends(get_current_u
 
 @app.get("/api/agents")
 def list_agents(_: Principal = Depends(get_current_user)):
-    ready = install.status()["ready"]
+    ready = install.ready()
     catalog = []
     for agent in agents.load_catalog():
         requires = agent.get("requires", [])
@@ -492,7 +492,7 @@ def create_session(body: CreateSessionBody, principal: Principal = Depends(get_c
         raise HTTPException(status_code=e.status, detail=e.message)
 
     requires = agent.get("requires", [])
-    ready = install.status()["ready"]
+    ready = install.ready()
     missing = [r for r in requires if not ready.get(r, False)]
     if missing:
         raise HTTPException(status_code=409, detail=f"{agent['label']} is still installing — try again in a moment")

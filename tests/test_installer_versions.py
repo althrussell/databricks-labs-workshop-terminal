@@ -1274,6 +1274,45 @@ def _lay_down_prewarmed_prefix(
     return commit, skills_checksum
 
 
+def test_attendee_readiness_never_verifies_the_install_tree(
+    monkeypatch, restore_installer_state
+):
+    """The card list, session creation and the host supervisor all poll this.
+
+    Verifying the tree means hashing every binary plus the whole Omnigent venv,
+    and it is slowest during the boot install those callers are waiting on, so
+    a regression here shows up as attendees staring at a greyed-out card.
+    """
+
+    def fail(*args, **kwargs):
+        raise AssertionError("readiness path must not touch disk verification")
+
+    monkeypatch.setattr(install, "_prewarm_status_unlocked", fail)
+    with install._state_lock:
+        install._state["omnigent"] = {"status": "complete"}
+        install._state["tmux"] = {"status": "complete"}
+
+    assert install.ready()["omnigent"] is True
+    # status() feeds the operator-facing endpoints and must stay cheap too;
+    # the proof is opt-in for the deep readiness probe alone.
+    assert "artifact_proof" not in install.status()
+
+
+def test_deep_readiness_probe_still_gets_the_disk_proof(
+    monkeypatch, restore_installer_state
+):
+    monkeypatch.setattr(
+        install, "_prewarm_status_unlocked", lambda: {"reusable": True, "manifest": {}}
+    )
+    monkeypatch.setattr(
+        install, "_artifact_contract", lambda: None, raising=False
+    )
+
+    proof = install.status(include_proof=True)["artifact_proof"]
+
+    assert proof["reusable"] in (True, False)
+
+
 def test_prewarm_status_proves_reusable_disk_content_without_runtime_state(
     monkeypatch, tmp_path, restore_installer_state
 ):
