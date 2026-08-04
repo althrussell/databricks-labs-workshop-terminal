@@ -190,12 +190,28 @@ def mirror_summary(payload: dict) -> dict:
 
 
 def _mirror_valid(summary: dict) -> bool:
-    """Whether every artifact this app installed actually came off the volume."""
+    """Whether this app avoided the internet for its toolchain.
+
+    Deliberately not "served at least one artifact". ``served`` counts volume
+    fetches in this process, and an app redeployed onto its existing shared
+    prefix installs entirely from prewarmed binaries without fetching anything
+    at all -- a legitimate and common outcome that took nothing from the
+    internet, and the fastest boot available. Requiring a positive count would
+    fail exactly the instances that need the mirror least, and it would fail
+    them by exhausting the poll timeout first, since no later poll can raise a
+    count of zero for artifacts nobody is going to fetch.
+
+    What this can attest to is narrower than it looks: nothing came from the
+    internet *on this boot*. A cache populated by an earlier bypassed boot is
+    indistinguishable from one populated off the volume. That is why ``served``
+    stays in the report even though it no longer gates -- an operator who needs
+    positive proof that the volume was read wants a cold instance and a non-zero
+    count, not a green tick.
+    """
     return bool(
         summary["reported"]
         and summary["configured"]
         and not summary["bypassed"]
-        and summary["served"] > 0
         and not summary["error"]
     )
 
@@ -290,9 +306,12 @@ def verify_apps(
                 result["prewarm_status"] = int(prewarm_response.status_code)
                 summary = mirror_summary(setup_payload)
                 result["toolchain_mirror"] = summary
-                result["ready"] = (
-                    (not require_mirror or _mirror_valid(summary))
-                    and ready_ok
+                # Tracked apart from the mirror gate so the loop can stop as soon
+                # as the app itself is healthy. Once bootstrap has finished the
+                # mirror verdict cannot change, and polling on a combined flag
+                # would spend the whole timeout re-asking a settled question.
+                core_ready = (
+                    ready_ok
                     and setup_response.status_code == 200
                     and _setup_valid(setup_payload)
                     and prewarm_response.status_code == 200
@@ -320,20 +339,26 @@ def verify_apps(
                         ),
                     )
                 )
+                result["_core_ready"] = core_ready
+                result["ready"] = core_ready and (
+                    not require_mirror or _mirror_valid(summary)
+                )
                 result["_release_manifest"] = _canonical_release_manifest(
                     setup_payload
                 )
                 result["_prewarm_manifest"] = prewarm_payload.get("manifest")
             except requests.RequestException:
+                result["_core_ready"] = False
                 result["ready"] = False
         if expired:
             break
-        if all(result["ready"] for result in results.values()):
+        if all(result.get("_core_ready") for result in results.values()):
             break
         remaining = deadline - monotonic()
         if remaining <= 0:
             break
         sleep(min(max(0, float(poll_interval)), remaining))
+    core_ready = all(result.get("_core_ready") for result in results.values())
     individually_ready = all(result["ready"] for result in results.values())
     release_manifests = [result["_release_manifest"] for result in results.values()]
     prewarm_manifests = [result["_prewarm_manifest"] for result in results.values()]
@@ -345,6 +370,7 @@ def verify_apps(
     ready = individually_ready and manifests_match
     for result in results.values():
         result.pop("_release_manifest", None)
+        result.pop("_core_ready", None)
         result.pop("_prewarm_manifest", None)
         if not manifests_match:
             result["ready"] = False
@@ -352,14 +378,14 @@ def verify_apps(
         status = "ready"
     elif individually_ready:
         status = "manifest_mismatch"
-    elif require_mirror and any(
-        not _mirror_valid(result["toolchain_mirror"])
-        for result in results.values()
-        if isinstance(result["toolchain_mirror"], dict)
-    ):
-        # Named separately because the remedy is completely different: nothing is
-        # wrong with the app, the volume is short or unreadable, and the fix is a
-        # resync rather than a redeploy.
+    elif core_ready and require_mirror:
+        # Only once the apps themselves are healthy, because the remedy is
+        # completely different and pointing at the wrong one is expensive: this
+        # says nothing is wrong with the app, the volume is short or unreadable,
+        # and the fix is a resync or a grant rather than a redeploy. An app still
+        # mid-bootstrap has not yet earned that diagnosis -- it is simply not
+        # ready, and saying otherwise sends an operator to rebuild a volume that
+        # was fine.
         status = "mirror_bypassed"
     else:
         status = "not_ready"

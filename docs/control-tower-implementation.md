@@ -776,7 +776,13 @@ can both pass while a late-minted app SP misses a grant every earlier app has.
 A bypassed mirror is invisible otherwise: the app is healthy, every checksum
 matches, the bytes are identical. `ct_verify.py` reports `mirror_bypassed`
 distinctly from `not_ready` because the remedy is a resync or a grant, not a
-redeploy.
+redeploy — but only once the apps are otherwise healthy, since an app still
+installing has served nothing yet and looks the same as a bypass.
+
+Layer 3 proves "nothing came from the internet on this boot", not "the volume was
+read". An app reusing its existing shared prefix fetches nothing and passes
+without touching the mirror. For positive proof that the volume is readable, use
+layer 2 on a cold instance and require a non-zero `served`.
 
 ### Safety
 

@@ -185,6 +185,74 @@ def test_a_mirror_bypass_is_distinguished_from_an_app_that_is_simply_not_ready()
     assert unready["status"] == "not_ready"
 
 
+def test_require_mirror_passes_an_app_that_had_nothing_left_to_fetch():
+    """An app redeployed onto its existing shared prefix installs entirely from
+    prewarmed binaries and fetches nothing, so it serves zero artifacts off the
+    volume while taking zero from the internet. Demanding a positive count would
+    fail the instances that needed the mirror least -- and fail them slowly, by
+    exhausting the poll timeout waiting for a count that nobody will raise."""
+    report = _verify_with_mirror(_mirror(served=0))
+
+    assert report["status"] == "ready"
+    assert report["exit_code"] == 0
+
+
+def test_an_app_still_booting_is_not_ready_rather_than_bypassed():
+    """Mid-bootstrap nothing has been served yet, which looks identical to a
+    bypass. Calling it one sends the operator to rebuild a volume that was fine,
+    when all they had to do was wait."""
+
+    def still_booting(url, **kwargs):
+        if url.endswith("/readyz"):
+            return Response(503, {"ready": False})
+        if url.endswith("/api/admin/prewarm-status"):
+            return Response(200, _prewarm())
+        return Response(200, dict(_setup(), toolchain_mirror=_mirror(served=0)))
+
+    report = ct_verify.verify_apps(
+        _apps(),
+        get=still_booting,
+        timeout=10,
+        poll_interval=0,
+        sleep=lambda _: None,
+        monotonic=_advancing_clock(),
+        require_mirror=True,
+    )
+
+    assert report["status"] == "not_ready"
+
+
+def test_a_settled_bypass_does_not_burn_the_whole_timeout():
+    """The mirror verdict is final once bootstrap finishes, so continuing to poll
+    re-asks a settled question and delays the answer by the full timeout."""
+    polls = {"count": 0}
+
+    def get(url, **kwargs):
+        if url.endswith("/readyz"):
+            polls["count"] += 1
+            return Response(200, {"ready": True})
+        if url.endswith("/api/admin/prewarm-status"):
+            return Response(200, _prewarm())
+        return Response(
+            200,
+            dict(_setup(), toolchain_mirror=_mirror(from_network=["node_linux_x64"])),
+        )
+
+    report = ct_verify.verify_apps(
+        _apps(),
+        get=get,
+        timeout=10_000,
+        poll_interval=0,
+        sleep=lambda _: None,
+        monotonic=_advancing_clock(),
+        require_mirror=True,
+    )
+
+    assert report["status"] == "mirror_bypassed"
+    # Two apps, one pass each -- not one pass per second until the deadline.
+    assert polls["count"] == 2
+
+
 def test_mirror_state_is_not_folded_into_cross_instance_manifest_matching():
     """One app prewarmed and another served from the volume is a legitimate
     fleet, so provenance must not make two healthy apps look divergent."""

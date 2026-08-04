@@ -211,7 +211,18 @@ Layer 3 exists because a bypassed mirror is otherwise invisible. The app is
 healthy, every checksum matches, the installed bytes are identical, and the only
 symptom is that boot is slow again on the morning of the event. `ct_verify.py`
 reports `mirror_bypassed` distinctly from `not_ready` because the remedy differs:
-a resync or a grant, not a redeploy.
+a resync or a grant, not a redeploy. It only reaches that verdict once the apps
+are otherwise healthy — mid-bootstrap an app has served nothing yet and looks
+identical to a bypass, and sending an operator to rebuild a volume that was fine
+is worse than telling them to wait.
+
+What layer 3 attests to is narrower than "the fleet is using the volume": it is
+"nothing came from the internet on this boot". An app redeployed onto its
+existing shared prefix installs from prewarmed binaries and fetches nothing at
+all, which passes — correctly, since it took nothing from the internet — but
+proves nothing about the volume, and a cache filled by an earlier bypassed boot
+is indistinguishable from one filled off the volume. For positive proof, use
+layer 2 on a genuinely cold instance and check that `served` is non-zero.
 
 Mirror provenance is deliberately **not** part of the cross-instance manifest
 comparison. One app serving from the volume while another reuses a prewarmed
