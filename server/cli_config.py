@@ -252,6 +252,30 @@ def configure_claude(
     _write_json(claude_json_path, claude_json)
 
 
+# The `[model_providers.X]` id in ~/.codex/config.toml. Omnigent's config
+# points at this table by id, so the two files have to agree on the name.
+_CODEX_MODEL_PROVIDER = "databricks"
+_CODEX_PROVIDER_DISPLAY_NAME = "Databricks Model Serving"
+
+
+def _codex_base_url() -> str:
+    """The gateway's OpenAI Responses surface, spelled the way Omnigent parses.
+
+    The gateway serves Responses under both `/ai-gateway/openai/v1` and
+    `/ai-gateway/codex/v1`. Omnigent only understands the second: it derives
+    Pi's Anthropic base by swapping a trailing `/codex/v1` for `/anthropic`, so
+    an `/openai/v1` base yields `/openai/v1/anthropic`, which routes nowhere.
+
+    Without a gateway there is no AI Gateway path to name and we fall back to
+    serving-endpoints, which Omnigent will not recognise as Databricks — see
+    configure_omnigent.
+    """
+    gateway = gateway_host()
+    if gateway:
+        return f"{gateway}/codex/v1"
+    return f"{config.databricks_host()}/serving-endpoints"
+
+
 def configure_codex(
     user: User,
     token: str,
@@ -268,11 +292,7 @@ def configure_codex(
     if write_token:
         _write_gateway_token(user, token)
 
-    gateway = gateway_host()
-    base_url = (
-        f"{gateway}/openai/v1" if gateway
-        else f"{config.databricks_host()}/serving-endpoints"
-    )
+    base_url = _codex_base_url()
     # Codex used to take CODEX_MODEL or a hardcoded default with no regard for
     # what the workspace actually serves, which is how it ended up pinned to an
     # endpoint two generations old. It degrades like Claude does now.
@@ -298,16 +318,16 @@ def configure_codex(
     config_toml = (
         "# Databricks Model Serving configuration (generated — do not edit)\n"
         f'model = "{model}"\n'
-        'model_provider = "databricks"\n'
+        f'model_provider = "{_CODEX_MODEL_PROVIDER}"\n'
         'web_search = "disabled"\n'
         f"{auto_mode}"
         "\n"
-        "[model_providers.databricks]\n"
-        'name = "Databricks Model Serving"\n'
+        f"[model_providers.{_CODEX_MODEL_PROVIDER}]\n"
+        f'name = "{_CODEX_PROVIDER_DISPLAY_NAME}"\n'
         f'base_url = "{base_url}"\n'
         'wire_api = "responses"\n'
         "\n"
-        "[model_providers.databricks.auth]\n"
+        f"[model_providers.{_CODEX_MODEL_PROVIDER}.auth]\n"
         'command = "cat"\n'
         f'args = ["{token_path}"]\n'
         "timeout_ms = 5000\n"
@@ -339,13 +359,19 @@ def configure_omnigent(
     write_token: bool = True,
     available: set[str] | None = None,
 ) -> None:
-    """Write ~/.omnigent/config.yaml: one gateway provider, both model families.
+    """Write ~/.omnigent/config.yaml: a default provider per model surface.
 
-    The provider's auth_command reads the rotating token file, so this YAML is
+    Two entries, because omnigent reads the Claude surface differently from the
+    Codex and Pi ones. `databricks-gateway` declares the Anthropic family
+    inline; `databricks` points at the codex config table, which is what marks
+    the endpoint as a Databricks AI Gateway rather than an anonymous proxy (see
+    the note beside cli_config_provider below).
+
+    Both auth_commands read the rotating token file, so this YAML is
     deterministic for a deployment and NEVER rewritten on rotation — only the
-    token file is (see update_tokens). `default: true` routes bare `omnigent`,
-    `omnigent claude`, and `omnigent codex` through it with no selection, and
-    a present default provider bypasses omnigent's first-run wizard entirely.
+    token file is (see update_tokens). Between them the entries default every
+    surface, which routes bare `omnigent`, `omnigent claude`, and
+    `omnigent codex` with no selection and bypasses the first-run wizard.
     """
     if write_token:
         _write_gateway_token(user, token)
@@ -355,10 +381,7 @@ def configure_omnigent(
         f"{gateway}/anthropic" if gateway
         else f"{config.databricks_host()}/serving-endpoints/anthropic"
     )
-    openai_base = (
-        f"{gateway}/openai/v1" if gateway
-        else f"{config.databricks_host()}/serving-endpoints"
-    )
+    openai_base = _codex_base_url()
 
     # The same roles the CLIs resolve, so `omnigent claude` and `claude` agree
     # about what an event runs. These chains were a copy of configure_claude's
@@ -371,9 +394,13 @@ def configure_omnigent(
     # auth_command uses the absolute token path: omnigent re-runs it inside
     # tmux sessions whose $HOME handling we don't control.
     auth_command = f"cat {_gateway_token_path(user)}"
+    # Omnigent recognises a Databricks AI Gateway by its URL, and the
+    # serving-endpoints fallback carries no `/ai-gateway/` path to recognise.
+    # There the single gateway entry keeps owning every surface, as before.
+    databricks_aware = bool(gateway)
     generated_provider = {
         "kind": "gateway",
-        "default": True,
+        "default": ["anthropic"] if databricks_aware else True,
         "anthropic": {
             "base_url": anthropic_base,
             "auth_command": auth_command,
@@ -386,6 +413,27 @@ def configure_omnigent(
             "models": {"default": codex_model},
         },
     }
+    # A `gateway` provider is, to omnigent, an anonymous OpenAI/Anthropic-shaped
+    # proxy, so it resolves the Codex and Pi harnesses down the vendor-direct
+    # path. That path assumes vendor-native model ids and strips the
+    # `databricks-` prefix, which is why Pi asked the gateway for
+    # `claude-opus-4-8` and got "does not exist" — the endpoint is only served
+    # as `databricks-claude-opus-4-8`. The same misread makes Codex declare
+    # itself unlaunchable: seeing no Databricks provider to route through, it
+    # falls back to a `~/.codex/auth.json` that a workshop never writes.
+    #
+    # Pinning the codex config table instead identifies the provider as a
+    # Databricks AI Gateway, which keeps model ids intact and lets omnigent
+    # enumerate the workspace's live model list rather than one default. The
+    # gateway entry stays for the Claude surface, narrowed to `anthropic` so
+    # exactly one provider owns each surface.
+    cli_config_provider = {
+        "kind": "cli-config",
+        "cli": "codex",
+        "model_provider": _CODEX_MODEL_PROVIDER,
+        "display_name": _CODEX_PROVIDER_DISPLAY_NAME,
+        "default": ["openai", "pi"],
+    } if databricks_aware else None
     omnigent_dir = os.path.join(user.home, ".omnigent")
     os.makedirs(omnigent_dir, exist_ok=True)
     config_path = os.path.join(omnigent_dir, "config.yaml")
@@ -410,6 +458,10 @@ def configure_omnigent(
         if not isinstance(providers, dict):
             providers = document["providers"] = {}
         providers["databricks-gateway"] = generated_provider
+        if cli_config_provider is not None:
+            providers[_CODEX_MODEL_PROVIDER] = cli_config_provider
+        else:
+            providers.pop(_CODEX_MODEL_PROVIDER, None)
         config_yaml = (
             "# Generated settings are merged by Workshop Terminal.\n"
             + yaml.safe_dump(document, sort_keys=False)
