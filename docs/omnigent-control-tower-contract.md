@@ -22,14 +22,19 @@ A read-only spike used `gh` against `omnigent-ai/omnigent` main at
 - The remote foreground host command is
   `omnigent host --server <OMNIGENT_APP_URL> --non-interactive`.
   `--non-interactive` suppresses browser login; it does not create credentials.
-- The terminal/REPL command is
-  `omnigent polly --server <OMNIGENT_APP_URL>`. It targets the remote control
-  plane and does not start a second local Omnigent server. Naming an agent is
-  what creates the session: `omnigent run --server <url>` with no agent attaches
-  to an existing one and exits with `No sessions found on the server` against a
-  fresh control plane. `polly` is the bundled orchestrator a bare `omnigent`
-  launches for a Claude credential, so the terminal keeps its prior behavior
-  while session state lives on the App.
+- The terminal/REPL command is `omnigent run --server <OMNIGENT_APP_URL>` when
+  the attendee already has a joinable session, and
+  `omnigent polly --server <OMNIGENT_APP_URL>` when they do not. Either targets
+  the remote control plane and does not start a second local Omnigent server.
+  The two forms are not interchangeable: with no agent, `run --server` is a thin
+  client that joins a session the server already holds, which is what makes a
+  conversation opened in the App's UI the same conversation the terminal shows;
+  naming an agent instead CREATES a session under the local-runner/remote-server
+  topology. The attach cannot be used unconditionally because it exits
+  `No sessions found on the server` against a fresh control plane, which is
+  every attendee's first launch, so the helper probes first (see below). `polly`
+  is the bundled orchestrator a bare `omnigent` launches for a Claude
+  credential, so the create path matches the terminal's pre-App behavior.
 - `omnigent login <OMNIGENT_APP_URL>` detects Databricks Apps and runs
   `databricks auth login --host <workspace>`, an interactive browser flow.
 - Host and runner connections refresh Databricks SDK credentials when ambient
@@ -100,10 +105,31 @@ daemon record for the URL rather than starting a rival daemon. Left unpinned the
 CLI invents and persists a uuid, then waits out its timeout for a daemon nobody
 runs while the attendee's real host is online beside it.
 
-The generated `workshop-omnigent` TUI helper is authoritative. With the URL it
-executes `omnigent polly --server "$OMNIGENT_APP_URL"` so no second local server
-starts. With an empty URL it executes bare `omnigent`, preserving the existing
-local behavior exactly.
+The generated `workshop-omnigent` TUI helper is authoritative. With the URL and
+no arguments it executes `omnigent run --server "$OMNIGENT_APP_URL"` when the
+attendee has a joinable session and `omnigent polly --server "$OMNIGENT_APP_URL"`
+when they do not; either way no second local server starts. Any argument
+suppresses the probe: a first positional that does not look like a flag is taken
+as the agent to create a session with, so a model-set variant can have its own
+catalog card. With an empty URL it executes bare `omnigent`, preserving the
+existing local behavior exactly.
+
+The verdict comes from the generated `workshop-omnigent-live-sessions` probe,
+which reads the attendee's own mirrored bearer and asks the App
+`GET /v1/sessions`, reporting success when any returned session is neither
+archived nor `failed`. It asks as the attendee because the App scopes sessions to
+the bearer's owner. `failed` is excluded because restarting Workshop Terminal
+fails every session it hosted a runner for, so after any redeploy the attendee's
+whole history reads `failed` and a picker over it would offer only dead
+conversations; the exclusion is a denylist so an unrecognized status still counts
+as joinable.
+Every failure — no mirrored token, an expired one, an unreachable App, or a
+missing probe — is reported as "nothing to join", so the card degrades to
+creating a session rather than to an error. Deciding by lookup rather than by
+running the attach and treating a non-zero exit as an empty control plane is
+deliberate: that exit code cannot distinguish a fresh control plane from an
+attendee quitting a session they had deliberately joined, and would fork a new
+session on every such exit.
 
 Remote startup fails closed unless Omnigent is enabled and the effective CLI
 install is exactly protocol-compatible 0.7.0. Local mode retains install-spec
