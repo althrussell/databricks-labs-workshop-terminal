@@ -156,26 +156,32 @@ def test_every_tier_keeps_two_vendors_so_cross_review_still_works(tmp_path, stoc
         assert len(config["tools"]["agents"]) >= 2
 
 
-def test_economy_spends_nothing_on_claude(tmp_path, stock):
-    """The cheap tier's point is a genuinely different cost profile. A Claude
-    worker would put Claude spend back in, and claude-native cannot run a GPT or
-    GLM pin instead, so the slot is dropped rather than repriced."""
+def test_economy_spends_nothing_on_claude_workers(tmp_path, stock):
+    """The cheap tier's point is a genuinely different cost profile, and the
+    workers are where a tier's spend lands. A Claude worker would put that spend
+    back in, and claude-native cannot run a GPT or GLM pin instead, so the slot
+    is dropped rather than repriced. The brain is exempt: it dispatches rather
+    than writing code, so it is a small slice of the tokens."""
     built = _build(tmp_path, stock)
     economy = built["polly-economy"]
 
     assert "claude_code" not in economy["tools"]["agents"]
-    assert "claude" not in economy["executor"]["model"]
     for worker in economy["tools"]["agents"]:
         assert "claude" not in _worker(tmp_path, "polly-economy", worker)["executor"]["model"]
 
 
-def test_economy_brain_avoids_the_anthropic_wire_api(tmp_path, stock):
-    """claude-sdk speaks Anthropic Messages, so it cannot drive the GPT model
-    this tier's brain is meant to run. Pinning the model without also moving the
-    harness would fail at resolve time."""
+def test_every_brain_runs_on_the_harness_the_stock_prompt_was_written_for(
+    tmp_path, stock
+):
+    """Economy used to orchestrate on pi, and that brain re-sent titles whose
+    turn was still launching — the transcript filled with already-running errors
+    while no work progressed. The stock prompt holds its dispatch protocol on
+    claude-sdk, which is where the two tiers that never span already sat."""
     built = _build(tmp_path, stock)
 
-    assert built["polly-economy"]["executor"]["config"]["harness"] == "pi"
+    for name, config in built.items():
+        assert config["executor"]["config"]["harness"] == "claude-sdk", name
+        assert "claude" in config["executor"]["model"], name
 
 
 def test_worker_models_are_pinned_per_tier(tmp_path, stock):
@@ -204,8 +210,18 @@ def test_non_claude_pins_use_the_id_form_pi_can_route(tmp_path, stock):
                 assert model.startswith("databricks-"), (worker, model)
             else:
                 assert model.startswith("system.ai."), (tier.name, worker, model)
-        if tier.brain_harness == "pi" and tier.brain_model:
-            assert tier.brain_model.startswith("system.ai."), tier.name
+
+
+def test_no_tier_pins_two_workers_to_the_same_model(tmp_path, stock):
+    """Balanced and frontier used to run codex and pi on the same model, which
+    spent a roster slot on a duplicate and left the session's per-model cost
+    table ambiguous: two entries, one model name, no way for an attendee
+    clicking into a sub-agent to tell which slot produced the diff."""
+    _build(tmp_path, stock)
+
+    for tier in polly_variants.TIERS:
+        models = list(tier.workers.values())
+        assert len(set(models)) == len(models), (tier.name, models)
 
 
 def test_the_prompt_override_is_appended_not_substituted(tmp_path, stock):
@@ -272,21 +288,23 @@ def test_model_pins_are_env_overridable(tmp_path, stock):
     )
 
 
-def test_the_economy_brain_can_be_reverted_to_a_claude_brain(tmp_path, stock):
-    """The pi brain is the least-proven choice here, so the escape hatch that
-    makes it reversible without a code change is worth pinning."""
+def test_the_economy_brain_can_be_moved_back_off_claude(tmp_path, stock):
+    """A tier headlined on cheapness may yet want its orchestrator off Claude
+    too. That takes moving the harness with the model, because claude-sdk speaks
+    Anthropic Messages and cannot drive a GPT pin, so the escape hatch is only
+    useful if both knobs work together — which is what this pins."""
     built = _build(
         tmp_path,
         stock,
         env={
-            "POLLY_ECONOMY_BRAIN_HARNESS": "claude-sdk",
-            "POLLY_ECONOMY_BRAIN_MODEL": "databricks-claude-haiku-4-5",
+            "POLLY_ECONOMY_BRAIN_HARNESS": "pi",
+            "POLLY_ECONOMY_BRAIN_MODEL": "system.ai.gpt-5-6-luna",
         },
     )
     economy = built["polly-economy"]
 
-    assert economy["executor"]["config"]["harness"] == "claude-sdk"
-    assert economy["executor"]["model"] == "databricks-claude-haiku-4-5"
+    assert economy["executor"]["config"]["harness"] == "pi"
+    assert economy["executor"]["model"] == "system.ai.gpt-5-6-luna"
 
 
 def test_rebuilding_is_idempotent(tmp_path, stock):
@@ -332,3 +350,25 @@ def test_every_pin_has_a_declared_env_knob(tmp_path, stock):
         for worker in tier.workers:
             key = polly_variants._env_key(tier.name, f"WORKER_{worker.upper()}_MODEL")
             assert key in declared, f"{key} missing from deploy/omnigent-app/app.yaml"
+
+
+def test_the_override_claims_only_the_roster_and_the_pins(tmp_path, stock):
+    """An unscoped override discounts the stock dispatch protocol.
+
+    The appended block once said it overrode "anything above it", which is also
+    where the stock prompt explains that a worker's result arrives through the
+    inbox rather than from the send. A brain that discounts that re-sends a
+    title whose turn is still running, is refused every time, and spins there —
+    economy's weaker brain did exactly that in front of attendees. We only mean
+    to fix which workers exist and what they run.
+    """
+    built = _build(tmp_path, stock)
+
+    for name, config in built.items():
+        prompt = config["prompt"]
+        assert "OVERRIDES anything above it" not in prompt, name
+        assert "roster and the model" in prompt.lower(), name
+        # The dispatch contract the spin violated, restated where the brain
+        # cannot read the override as licence to ignore it.
+        assert "sys_session_send" in prompt, name
+        assert "inbox" in prompt, name

@@ -22,11 +22,10 @@ env:
   #   POLLY_<TIER>_WORKER_<WORKER>_MODEL
   # e.g. POLLY_ECONOMY_WORKER_PI_MODEL, POLLY_FRONTIER_BRAIN_MODEL.
   #
-  # The economy brain is the one pin worth knowing about: claude-sdk speaks the
-  # Anthropic wire API and cannot drive a GPT model, so that tier's brain runs
-  # on the pi harness instead. If it misbehaves, POLLY_ECONOMY_BRAIN_HARNESS and
-  # POLLY_ECONOMY_BRAIN_MODEL together fall back to a Claude brain without a
-  # code change.
+  # Every brain runs Claude on claude-sdk, which is the harness the stock polly
+  # prompt was written against. Moving one to a GPT or GLM brain means setting
+  # POLLY_<TIER>_BRAIN_HARNESS as well as _BRAIN_MODEL: claude-sdk speaks the
+  # Anthropic wire API, so a non-Claude model pin alone fails at resolve time.
   - name: POLLY_ECONOMY_BRAIN_MODEL
     value: ""
   - name: POLLY_ECONOMY_BRAIN_HARNESS

@@ -74,8 +74,16 @@ class Tier:
 # The Claude workers can only be pinned to Claude models: claude-native speaks
 # the Anthropic wire API, so a GPT or GLM pin on that slot cannot resolve. That
 # is why the economy tier drops the Claude worker entirely rather than pinning
-# it to a cheap Claude — it keeps economy's spend genuinely off the Claude
-# endpoints while codex + pi still supply two vendors for cross-review.
+# it to a cheap Claude — the workers are where a tier's spend actually lands,
+# so keeping them off the Claude endpoints is what makes the comparison real,
+# and codex + pi still supply two vendors for cross-review.
+#
+# Each tier gives its three worker slots three different vendors. Balanced and
+# frontier used to pin codex and pi to the same model, which cost them a vendor
+# and made the session's per-model cost table unreadable: two roster entries
+# reporting the same model name, so an attendee clicking into a sub-agent could
+# not tell which slot they were looking at. The tier rungs are the Claude and
+# GPT chains; the pi slot is the third vendor throughout.
 #
 # Non-Claude pins are spelled `system.ai.<model>`, not `databricks-<model>`.
 # Both reach the same endpoint, but pi is the constraint: it picks a surface by
@@ -91,15 +99,21 @@ TIERS: tuple[Tier, ...] = (
     Tier(
         name="polly-economy",
         headline=(
-            "Cheapest model set: GPT-5.6 Luna orchestrating, GLM-5.2 and Luna "
-            "workers. No Claude spend. Start here, then compare against "
+            "Cheapest model set: GLM-5.2 and GPT-5.6 Luna workers, orchestrated "
+            "by Haiku. No Claude worker spend. Start here, then compare against "
             "polly-frontier."
         ),
-        # claude-sdk cannot drive a GPT model (Anthropic wire API), so the
-        # economy brain runs on pi, the one harness that reaches any gateway
-        # model. Overridable because it is the least-proven choice here.
-        brain_harness="pi",
-        brain_model="system.ai.gpt-5-6-luna",
+        # The brain dispatches and reviews rather than writing code, so it is a
+        # small slice of a tier's tokens and Haiku keeps it a small slice of the
+        # cost too. It runs on claude-sdk, not pi, for the same reason balanced
+        # and frontier do: the stock polly prompt was written against claude-sdk
+        # and holds its dispatch protocol there, whereas the pi brain this tier
+        # used to run re-sent titles that were still in flight and filled the
+        # attendee's transcript with already-running errors. Reaching a GPT
+        # brain again means moving the harness too, which is why the pair is
+        # overridable together.
+        brain_harness="claude-sdk",
+        brain_model="databricks-claude-haiku-4-5",
         workers={
             _CODEX: "system.ai.gpt-5-6-luna",
             _PI: "system.ai.glm-5-2",
@@ -108,23 +122,24 @@ TIERS: tuple[Tier, ...] = (
     Tier(
         name="polly-balanced",
         headline=(
-            "Sonnet 5 orchestrating, GPT-5.6 Terra workers, Sonnet available "
-            "for cross-vendor review. A sensible default for real work."
+            "Sonnet 5 orchestrating, with Sonnet, GPT-5.6 Terra and GLM-5.2 "
+            "workers to compare and review each other. A sensible default for "
+            "real work."
         ),
         brain_harness="claude-sdk",
         brain_model="databricks-claude-sonnet-5",
         workers={
             _CLAUDE: "databricks-claude-sonnet-5",
             _CODEX: "system.ai.gpt-5-6-terra",
-            _PI: "system.ai.gpt-5-6-terra",
+            _PI: "system.ai.glm-5-2",
         },
     ),
     Tier(
         name="polly-frontier",
         headline=(
-            "Opus 5 orchestrating, Opus and GPT-5.6 Sol workers. The strongest "
-            "and most expensive set — set reasoning effort to high in the "
-            "session to push it further."
+            "Opus 5 orchestrating, with Opus, GPT-5.6 Sol and GLM-5.2 workers. "
+            "The strongest and most expensive set — set reasoning effort to "
+            "high in the session to push it further."
         ),
         brain_harness="claude-sdk",
         brain_model="databricks-claude-opus-5",
@@ -132,10 +147,16 @@ TIERS: tuple[Tier, ...] = (
         # are capability names, Sol being the flagship, and a tier whose whole
         # purpose is to be the expensive end of the comparison should take the
         # flagship on both vendors rather than the mid-tier on one.
+        #
+        # GLM on the third slot is the weakest pin in this tier, and it is here
+        # for coverage rather than strength: a frontier reviewer that shares a
+        # vendor with the implementer is the one thing this tier cannot afford,
+        # and GLM-5.2 is the strongest third vendor we have confirmed served.
+        # Re-pin it the moment a stronger one lands.
         workers={
             _CLAUDE: "databricks-claude-opus-5",
             _CODEX: "system.ai.gpt-5-6-sol",
-            _PI: "system.ai.gpt-5-6-sol",
+            _PI: "system.ai.glm-5-2",
         },
     ),
 )
@@ -187,6 +208,15 @@ def _roster_override(tier: Tier) -> str:
     so the brain has to be told plainly which names exist. Appending wins over
     editing: the stock prose keeps arriving from upstream untouched, and this
     block is the entire diff a reader has to hold in their head.
+
+    The override is scoped to the roster and the model pins for a reason. It
+    used to claim it overrode "anything above it", which is everything the
+    stock prompt says about dispatching — including the rule that a worker's
+    result arrives through the inbox rather than from the send. A brain that
+    discounts that re-sends the same title while its first turn is still
+    running, is refused every time, and spins there; the weakest brain in the
+    set (economy's) is the one that did. We only ever meant to fix which
+    workers exist and what they run, so that is all this claims.
     """
     roster = "\n".join(
         f"  - `{worker}` — runs `{model}`." for worker, model in tier.workers.items()
@@ -199,7 +229,9 @@ def _roster_override(tier: Tier) -> str:
 
   ---
 
-  WORKSHOP MODEL POLICY — this section OVERRIDES anything above it.
+  WORKSHOP MODEL POLICY — this section overrides the ROSTER and the MODEL
+  pins above it, and nothing else. Every other rule in this prompt still
+  applies in full, in particular the dispatch and inbox protocol.
 
   You are `{tier.name}`, a fixed-model-set variant of polly used in a workshop
   where attendees compare what different models cost for the same task. Your
@@ -218,6 +250,12 @@ def _roster_override(tier: Tier) -> str:
 
   Cross-vendor review still applies: a diff is reviewed by a DIFFERENT worker
   than the one that wrote it.
+
+  Dispatch stays asynchronous, exactly as described above: `sys_session_send`
+  returns a launching handle, NOT the worker's answer, which arrives later in
+  your inbox. Re-sending a title whose turn is still launching or running is
+  rejected outright. So a re-send in place of a wait makes no progress and
+  fills the attendee's transcript with errors — dispatch once, then wait.
 """
 
 
