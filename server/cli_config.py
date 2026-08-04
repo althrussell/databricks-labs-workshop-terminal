@@ -257,6 +257,13 @@ def configure_claude(
 _CODEX_MODEL_PROVIDER = "databricks"
 _CODEX_PROVIDER_DISPLAY_NAME = "Databricks Model Serving"
 
+# What we key our entry under in ~/.omnigent/config.yaml. A separate name from
+# the codex table id above, and prefixed like `databricks-gateway`, because we
+# delete this key when it no longer applies: an unnamespaced `databricks` is
+# exactly what a hand-written `kind: databricks` provider would be called, and
+# we merge into a file whose other entries are not ours to remove.
+_OMNIGENT_CODEX_PROVIDER = "databricks-codex"
+
 
 def _codex_base_url() -> str:
     """The gateway's OpenAI Responses surface, spelled the way Omnigent parses.
@@ -363,9 +370,9 @@ def configure_omnigent(
 
     Two entries, because omnigent reads the Claude surface differently from the
     Codex and Pi ones. `databricks-gateway` declares the Anthropic family
-    inline; `databricks` points at the codex config table, which is what marks
-    the endpoint as a Databricks AI Gateway rather than an anonymous proxy (see
-    the note beside cli_config_provider below).
+    inline; `databricks-codex` points at the codex config table, which is what
+    marks the endpoint as a Databricks AI Gateway rather than an anonymous
+    proxy (see the note beside cli_config_provider below).
 
     Both auth_commands read the rotating token file, so this YAML is
     deterministic for a deployment and NEVER rewritten on rotation — only the
@@ -459,9 +466,9 @@ def configure_omnigent(
             providers = document["providers"] = {}
         providers["databricks-gateway"] = generated_provider
         if cli_config_provider is not None:
-            providers[_CODEX_MODEL_PROVIDER] = cli_config_provider
+            providers[_OMNIGENT_CODEX_PROVIDER] = cli_config_provider
         else:
-            providers.pop(_CODEX_MODEL_PROVIDER, None)
+            providers.pop(_OMNIGENT_CODEX_PROVIDER, None)
         config_yaml = (
             "# Generated settings are merged by Workshop Terminal.\n"
             + yaml.safe_dump(document, sort_keys=False)

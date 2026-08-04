@@ -77,7 +77,7 @@ def test_codex_and_pi_resolve_through_a_databricks_aware_provider(user, monkeypa
     cli_config.configure_omnigent(user, "tok-1")
     providers = yaml.safe_load(open(_config_path(user)))["providers"]
 
-    pinned = providers["databricks"]
+    pinned = providers["databricks-codex"]
     assert pinned["kind"] == "cli-config"
     assert pinned["cli"] == "codex"
     # Names the [model_providers.X] table configure_codex writes.
@@ -99,10 +99,11 @@ def test_codex_base_url_is_the_spelling_omnigent_can_rewrite(user, monkeypatch):
     toml = open(os.path.join(user.home, ".codex", "config.toml")).read()
 
     assert 'base_url = "https://ws.cloud.databricks.com/ai-gateway/codex/v1"' in toml
-    swapped = "https://ws.cloud.databricks.com/ai-gateway/codex/v1".removesuffix(
-        "/codex/v1"
-    ) + "/anthropic"
-    assert swapped == "https://ws.cloud.databricks.com/ai-gateway/anthropic"
+    # And the omnigent entry must name this same table, or the pin dangles.
+    cli_config.configure_omnigent(user, "tok-1")
+    providers = yaml.safe_load(open(_config_path(user)))["providers"]
+    assert providers["databricks-codex"]["model_provider"] == "databricks"
+    assert "[model_providers.databricks]" in toml
 
 
 def test_without_a_gateway_the_single_provider_still_owns_every_surface(
@@ -115,7 +116,7 @@ def test_without_a_gateway_the_single_provider_still_owns_every_surface(
     cli_config.configure_omnigent(user, "tok-1")
     providers = yaml.safe_load(open(_config_path(user)))["providers"]
 
-    assert "databricks" not in providers
+    assert "databricks-codex" not in providers
     assert providers["databricks-gateway"]["default"] is True
 
 
@@ -126,13 +127,13 @@ def test_a_pinned_provider_is_dropped_when_the_gateway_goes_away(user, monkeypat
         cli_config, "gateway_host", lambda: "https://ws.cloud.databricks.com/ai-gateway"
     )
     cli_config.configure_omnigent(user, "tok-1")
-    assert "databricks" in yaml.safe_load(open(_config_path(user)))["providers"]
+    assert "databricks-codex" in yaml.safe_load(open(_config_path(user)))["providers"]
 
     monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
     cli_config.configure_omnigent(user, "tok-1")
     providers = yaml.safe_load(open(_config_path(user)))["providers"]
 
-    assert "databricks" not in providers
+    assert "databricks-codex" not in providers
     assert providers["databricks-gateway"]["default"] is True
 
 
