@@ -163,7 +163,9 @@ class User:
 
         The probe fails closed to creating: a missing token, an unreachable
         server, or no probe at all lands on the previous always-create behavior
-        rather than on an error.
+        rather than on an error. Its stderr is discarded so that a probe which
+        cannot execute at all degrades silently instead of printing shell
+        diagnostics into the attendee's terminal.
 
         Any argument suppresses the probe. An optional first positional selects
         a different agent, which is how a model-set variant (``polly-economy``
@@ -195,7 +197,8 @@ class User:
             "export DATABRICKS_CONFIG_PROFILE="
             "workshop-omnigent-no-credentials\n"
             'if [ "$#" -eq 0 ] && '
-            '"$HOME/.local/bin/workshop-omnigent-live-sessions"; then\n'
+            '"$HOME/.local/bin/workshop-omnigent-live-sessions" '
+            "2>/dev/null; then\n"
             '  exec omnigent run --server "$OMNIGENT_APP_URL"\n'
             "fi\n"
             "AGENT=polly\n"

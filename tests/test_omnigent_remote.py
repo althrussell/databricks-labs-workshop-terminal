@@ -869,6 +869,7 @@ def test_tui_helper_creates_polly_when_the_probe_is_missing(monkeypatch, tmp_pat
         "--server",
         "https://app.example.com",
     ]
+    assert completed.stderr == ""
 
 
 def test_tui_helper_takes_an_agent_name_so_variants_get_their_own_cards(
