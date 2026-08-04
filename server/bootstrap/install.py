@@ -286,12 +286,8 @@ def _release_specs() -> dict[str, tuple[bool, str]]:
     }
 
 
-def status() -> dict:
-    from .artifacts import status as artifact_manifest_status
-
-    with _state_lock:
-        steps = dict(_state)
-    ready = {
+def _ready_from(steps: dict) -> dict:
+    return {
         "bash": True,
         "claude": steps.get("claude", {}).get("status") == "complete",
         "codex": steps.get("codex", {}).get("status") == "complete",
@@ -306,6 +302,34 @@ def status() -> dict:
             and steps.get("tmux", {}).get("status") == "complete"
         ),
     }
+
+
+def ready() -> dict:
+    """The launchability bits on their own, read from memory.
+
+    Callers on an attendee's critical path — the card list, session creation,
+    the remote-host supervisor — only ever need these. Routing them through
+    ``status`` made every card poll re-hash the whole install tree from disk,
+    which is at its slowest during the boot install those polls are waiting on.
+    """
+    with _state_lock:
+        steps = dict(_state)
+    return _ready_from(steps)
+
+
+def status(*, include_proof: bool = False) -> dict:
+    """Full installer state.
+
+    ``include_proof`` re-verifies the installed tree from disk (hashing every
+    binary and the Omnigent venv), which costs seconds and is only meaningful
+    to the deep readiness probe. It stays off by default so that the endpoints
+    attendees poll cannot pay for it.
+    """
+    from .artifacts import status as artifact_manifest_status
+
+    with _state_lock:
+        steps = dict(_state)
+    ready = _ready_from(steps)
     installing = any(
         s.get("status") not in TERMINAL_STATUSES for s in steps.values()
     )
@@ -356,19 +380,22 @@ def status() -> dict:
     artifact_status = artifact_manifest_status(
         os.environ.get("ARTIFACT_MANIFEST_PATH", "").strip()
     )
-    artifact_proof = (
-        _prewarm_status_unlocked()
-        if artifact_status.get("ok") is True
-        else {"reusable": False, "manifest": {}}
-    )
-    return {
+    payload = {
         "steps": steps,
         "ready": ready,
         "installing": installing,
         "release_manifest": release_manifest,
         "artifact_manifest": artifact_status,
-        "artifact_proof": artifact_proof,
     }
+    # Absent rather than reported unproven: a caller that did not ask for the
+    # disk check must not be able to read the answer as "not reusable".
+    if include_proof:
+        payload["artifact_proof"] = (
+            _prewarm_status_unlocked()
+            if artifact_status.get("ok") is True
+            else {"reusable": False, "manifest": {}}
+        )
+    return payload
 
 
 def prewarm_status() -> dict:

@@ -387,7 +387,7 @@ class RemoteHostManager:
     def _resolve_binary(self) -> str | None:
         from .bootstrap import install
 
-        if not install.status()["ready"].get("omnigent", False):
+        if not install.ready().get("omnigent", False):
             return None
         candidate = os.path.join(config.shared_prefix(), "bin", "omnigent")
         found = candidate if os.path.isfile(candidate) else shutil.which("omnigent")

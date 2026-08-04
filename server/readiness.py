@@ -671,7 +671,7 @@ def evaluate_runtime() -> dict:
         env=os.environ,
         gateway_status=gateway_status(),
         credential_status=credential_manager.status(),
-        installer_status=install.status(),
+        installer_status=install.status(include_proof=True),
         entitlement_status=entitlement_manager.status(),
         obo_status=obo_manager.status(),
         secret_protection_status=secret_protection_status(),

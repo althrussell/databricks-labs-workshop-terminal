@@ -515,14 +515,10 @@ def test_omnigent_ready_needs_both_tmux_and_omnigent():
 def test_catalog_gates_omnigent_entries(client, monkeypatch):
     from server.bootstrap import install as install_mod
 
-    def fake_status():
-        return {
-            "steps": {},
-            "ready": {"bash": True, "claude": True, "codex": True, "omnigent": False},
-            "installing": True,
-        }
+    def fake_ready():
+        return {"bash": True, "claude": True, "codex": True, "omnigent": False}
 
-    monkeypatch.setattr(install_mod, "status", fake_status)
+    monkeypatch.setattr(install_mod, "ready", fake_ready)
     agents = {
         a["id"]: a for a in client.get("/api/agents", headers={"X-Forwarded-Email": "a@b.co"}).json()["agents"]
     }
