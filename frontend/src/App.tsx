@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Award,
   BookOpen,
@@ -63,6 +63,8 @@ export default function App() {
   const [nuggetsCollapsed, setNuggetsCollapsed] = useState(false);
   const [helpChatOpen, setHelpChatOpen] = useState(false);
   const [helpUnread, setHelpUnread] = useState(0);
+  const [helpRaised, setHelpRaised] = useState(false);
+  const helpChatOpenRef = useRef(false);
   const [view, setView] = useState<"home" | "terminals" | "operator">(
     location.pathname.startsWith("/operator") ? "operator" : "home"
   );
@@ -110,14 +112,24 @@ export default function App() {
     };
   }, [refreshAgents, refreshIdentity]);
 
+  useEffect(() => {
+    helpChatOpenRef.current = helpChatOpen;
+  }, [helpChatOpen]);
+
+  useEffect(() => {
+    if (config?.help) setHelpRaised(config.help.raised);
+  }, [config?.help]);
+
   useEffect(
     () =>
       onAppEvent((event) => {
         if (event.t === "connection_lost") setConnectionLost(true);
         if (event.t === "reconnected") setConnectionLost(false);
+        if (event.t === "help_state") setHelpRaised(event.raised);
+        if (event.t === "broadcast" && event.clear_help) setHelpRaised(false);
         if (event.t === "help_message" && event.sender_role === "operator") {
-          setHelpUnread((n) => n + 1);
-          setHelpChatOpen(true);
+          // Keep the panel closed; bump unread + let BannerBar notify.
+          if (!helpChatOpenRef.current) setHelpUnread((n) => n + 1);
         }
       }),
     []
@@ -346,7 +358,11 @@ export default function App() {
             <Award size={14} />
             Certificate
           </button>
-          <RaiseHandButton initial={config?.help ?? null} />
+          <RaiseHandButton
+            initial={config?.help ?? null}
+            raised={helpRaised}
+            onRaisedChange={setHelpRaised}
+          />
           <button
             type="button"
             className="help-chat-toggle"
@@ -372,13 +388,14 @@ export default function App() {
         <div className="header-user">{config?.user.email}</div>
       </header>
 
-      <BannerBar initial={config?.broadcast ?? null} />
+      <BannerBar initial={config?.broadcast ?? null} suppressHelp={helpChatOpen} />
       <HelpChatPanel
         open={helpChatOpen}
         onClose={() => setHelpChatOpen(false)}
-        onOpen={() => setHelpChatOpen(true)}
         unread={helpUnread}
         onClearUnread={() => setHelpUnread(0)}
+        raised={helpRaised}
+        onRaisedChange={setHelpRaised}
       />
       {connectionLost && (
         <div className="banner banner-warning">

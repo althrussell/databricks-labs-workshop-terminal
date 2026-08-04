@@ -5,28 +5,41 @@ import { onAppEvent } from "../events";
 
 const NOTE_MAX = 280;
 
-export default function RaiseHandButton({ initial }: { initial: HelpState | null }) {
-  const [raised, setRaised] = useState(initial?.raised ?? false);
+export default function RaiseHandButton({
+  initial,
+  raised,
+  onRaisedChange,
+}: {
+  initial: HelpState | null;
+  raised: boolean;
+  onRaisedChange: (raised: boolean) => void;
+}) {
   const [noteOpen, setNoteOpen] = useState(false);
   const [note, setNote] = useState(initial?.note ?? "");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (initial) {
-      setRaised(initial.raised);
-      setNote(initial.note ?? "");
-    }
+    if (initial?.note != null) setNote(initial.note);
   }, [initial]);
 
   useEffect(() => {
     return onAppEvent((event) => {
       if (event.t === "broadcast" && event.clear_help) {
-        setRaised(false);
+        onRaisedChange(false);
         setNote("");
         setNoteOpen(false);
       }
+      if (event.t === "help_state") {
+        onRaisedChange(event.raised);
+        if (!event.raised) {
+          setNote("");
+          setNoteOpen(false);
+        } else if (event.note) {
+          setNote(event.note);
+        }
+      }
     });
-  }, []);
+  }, [onRaisedChange]);
 
   const toggle = async () => {
     if (busy) return;
@@ -34,19 +47,19 @@ export default function RaiseHandButton({ initial }: { initial: HelpState | null
     try {
       if (raised) {
         const result = await api.lowerHelp();
-        setRaised(result.raised);
+        onRaisedChange(result.raised);
         setNote("");
         setNoteOpen(false);
       } else if (noteOpen && note.trim()) {
         const result = await api.raiseHelp(note.trim());
-        setRaised(result.raised);
+        onRaisedChange(result.raised);
         setNote(result.note ?? note.trim());
         setNoteOpen(false);
       } else if (!noteOpen) {
         setNoteOpen(true);
       } else {
         const result = await api.raiseHelp();
-        setRaised(result.raised);
+        onRaisedChange(result.raised);
         setNoteOpen(false);
       }
     } catch {

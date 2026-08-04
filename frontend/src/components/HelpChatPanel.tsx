@@ -6,27 +6,28 @@ import { onAppEvent } from "../events";
 export default function HelpChatPanel({
   open,
   onClose,
-  onOpen,
   unread,
   onClearUnread,
+  raised,
+  onRaisedChange,
 }: {
   open: boolean;
   onClose: () => void;
-  onOpen: () => void;
   unread: number;
   onClearUnread: () => void;
+  raised: boolean;
+  onRaisedChange: (raised: boolean) => void;
 }) {
   const [messages, setMessages] = useState<HelpMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  const [raised, setRaised] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   const refresh = async () => {
     try {
       const thread = await api.helpThread();
       setMessages(thread.messages ?? []);
-      setRaised(thread.raised);
+      onRaisedChange(thread.raised);
     } catch {
       /* fail-soft */
     }
@@ -56,15 +57,15 @@ export default function HelpChatPanel({
             },
           ];
         });
-        if (event.sender_role === "operator" && !open) {
-          onOpen();
-        }
       }
       if (event.t === "broadcast" && event.clear_help) {
-        setRaised(false);
+        onRaisedChange(false);
+      }
+      if (event.t === "help_state") {
+        onRaisedChange(event.raised);
       }
     });
-  }, [open, onOpen]);
+  }, [onRaisedChange]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -77,7 +78,7 @@ export default function HelpChatPanel({
     try {
       const result = await api.postHelpMessage(text);
       setDraft("");
-      setRaised(result.raised);
+      onRaisedChange(result.raised);
       setMessages((prev) => {
         if (prev.some((m) => m.message_id === result.message.message_id)) return prev;
         return [...prev, result.message];

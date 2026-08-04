@@ -168,19 +168,43 @@ Shows a banner on every connected attendee screen for `ttl_s` seconds.
 Levels: `info`, `success`, `warning`.
 
 Optional `clear_help: true` clears the attendee's locally raised hand (used when
-Control Tower resolves a help request). An empty `message` with `clear_help` only
-clears the hand without showing a banner.
+Control Tower resolves a help request). Chat history is retained after resolve.
+An empty `message` with `clear_help` only clears the hand without showing a banner.
 
-### Attendee help (`POST /api/help/raise` · `POST /api/help/lower`)
+### `POST /api/admin/help/message`
 
-Authenticated attendees raise or lower a hand for operator help. Local state
-updates immediately; when `CONTROL_TOWER_URL`, `WORKSHOP_RUN_ID`, and
-`WORKSHOP_UNIT_ID` are set the app also POSTs to Control Tower's
-`/api/help/raise|lower` using the app service-principal OAuth bearer (fail-soft
-when misconfigured). Optional note on raise, max 280 characters.
+Control Tower fan-out: deliver one help-thread message into this unit's local
+buffer and push it over `/ws/events` as `help_message`.
 
-`GET /api/config` includes a `help` block `{raised, note, raised_at}` for the
-header control.
+```json
+{
+  "message_id": "uuid-or-opaque-id",
+  "help_request_id": "uuid",
+  "sender_role": "operator",
+  "sender": "operator@example.com",
+  "body": "Try restarting the warehouse",
+  "created_at": "2026-08-04T01:02:03Z",
+  "show_banner": true
+}
+```
+
+When `show_banner` is true (default) and `sender_role` is `operator`, the server
+also emits a `broadcast` with `source: "help"` so attendees with the Help panel
+closed see a toast. The attendee UI suppresses that banner while the panel is
+open.
+
+### Attendee help (`POST /api/help/raise` · `POST /api/help/lower` · `POST /api/help/messages` · `GET /api/help/thread`)
+
+Authenticated attendees raise or lower a hand for operator help, post follow-up
+messages, and fetch the local thread mirror. Local state updates immediately;
+when `CONTROL_TOWER_URL`, `WORKSHOP_RUN_ID`, and `WORKSHOP_UNIT_ID` are set the
+app also POSTs to Control Tower's `/api/help/raise|lower|messages` using the
+app service-principal OAuth bearer (fail-soft when misconfigured). Optional note
+on raise, max 280 characters; message bodies max 2000 characters.
+
+`GET /api/config` includes a `help` block
+`{raised, note, raised_at, message_count, help_request_id}` for the header
+control.
 
 ### `GET /api/admin/presence`
 Per-attendee status: online (active in the last 60 s), first/last seen,

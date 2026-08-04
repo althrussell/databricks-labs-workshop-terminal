@@ -5,7 +5,14 @@ import { onAppEvent } from "../events";
 
 const ICONS = { info: Info, success: CheckCircle2, warning: AlertTriangle };
 
-export default function BannerBar({ initial }: { initial: Broadcast | null }) {
+export default function BannerBar({
+  initial,
+  suppressHelp,
+}: {
+  initial: Broadcast | null;
+  /** When true, skip operator-help reply banners (panel already open). */
+  suppressHelp?: boolean;
+}) {
   const [banner, setBanner] = useState<Broadcast | null>(initial);
 
   useEffect(() => {
@@ -19,6 +26,9 @@ export default function BannerBar({ initial }: { initial: Broadcast | null }) {
           setBanner(null);
           return;
         }
+        if (suppressHelp && event.source === "help") {
+          return;
+        }
         setBanner({
           message: event.message,
           level: event.level as Broadcast["level"],
@@ -27,7 +37,7 @@ export default function BannerBar({ initial }: { initial: Broadcast | null }) {
       }
     });
     return off;
-  }, []);
+  }, [suppressHelp]);
 
   useEffect(() => {
     if (!banner) return;

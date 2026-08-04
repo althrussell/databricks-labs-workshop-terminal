@@ -77,6 +77,7 @@ def raise_hand(note: str | None = None) -> dict[str, Any]:
                 }
             )
     pushed = _push_control_tower("raise", note_clean)
+    event_hub.publish({"t": "help_state", "raised": True, "note": note_clean})
     return {"raised": True, "pushed": pushed, "note": note_clean}
 
 
@@ -88,16 +89,25 @@ def lower_hand() -> dict[str, Any]:
         _note = ""
         _raised_at = 0.0
     pushed = _push_control_tower("lower", None) if had_open else False
+    event_hub.publish({"t": "help_state", "raised": False})
     return {"raised": False, "pushed": pushed}
 
 
 def clear_hand() -> None:
-    """Clear local raised state (operator resolve); does not push to CT."""
+    """Clear local raised state (operator resolve); keep chat history."""
     with _lock:
-        global _open, _note, _raised_at, _messages, _help_request_id
+        global _open, _note, _raised_at
         _open = False
         _note = ""
         _raised_at = 0.0
+    event_hub.publish({"t": "help_state", "raised": False})
+
+
+def reset_for_tests() -> None:
+    """Wipe raised state and message buffer (test fixture only)."""
+    clear_hand()
+    with _lock:
+        global _messages, _help_request_id
         _messages = []
         _help_request_id = None
 
@@ -127,6 +137,7 @@ def post_attendee_message(body: str, *, sender: str = "") -> dict[str, Any]:
         # is unavailable on an older Control Tower.
         _push_control_tower("raise", text[:280])
     event_hub.publish({"t": "help_message", **local, "show_banner": False})
+    event_hub.publish({"t": "help_state", "raised": True})
     return {"message": local, "pushed": pushed, "raised": True}
 
 
@@ -155,7 +166,8 @@ def ingest_operator_message(payload: dict[str, Any]) -> dict[str, Any]:
     show_banner = bool(payload.get("show_banner", True))
     event_hub.publish({"t": "help_message", **local, "show_banner": show_banner})
     if show_banner and local["sender_role"] == "operator":
-        # Light banner so attendees notice when the panel is closed.
+        # Banner for attendees who still have the help panel closed.
+        # Frontend suppresses this when the panel is already open.
         event_hub.publish(
             {
                 "t": "broadcast",
@@ -163,6 +175,7 @@ def ingest_operator_message(payload: dict[str, Any]) -> dict[str, Any]:
                 "level": "info",
                 "ttl_s": 120,
                 "clear_help": False,
+                "source": "help",
             }
         )
     return local

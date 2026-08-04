@@ -11,9 +11,31 @@ from server import config, help as help_module
 
 @pytest.fixture(autouse=True)
 def _reset_help_state():
-    help_module.clear_hand()
+    help_module.reset_for_tests()
     yield
-    help_module.clear_hand()
+    help_module.reset_for_tests()
+
+
+def test_clear_hand_keeps_message_history(client, as_admin):
+    client.post(
+        "/api/admin/help/message",
+        json={
+            "message_id": "keep-1",
+            "sender_role": "operator",
+            "body": "still visible after resolve",
+            "show_banner": False,
+        },
+    )
+    client.post(
+        "/api/admin/broadcast",
+        json={"message": "", "level": "info", "ttl_s": 1, "clear_help": True},
+    )
+    thread = client.get(
+        "/api/help/thread", headers={"X-Forwarded-Email": "alice@example.com"}
+    ).json()
+    assert thread["raised"] is False
+    assert len(thread["messages"]) == 1
+    assert thread["messages"][0]["body"] == "still visible after resolve"
 
 
 @pytest.fixture
