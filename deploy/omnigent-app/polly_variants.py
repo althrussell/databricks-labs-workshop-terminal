@@ -187,6 +187,15 @@ def _roster_override(tier: Tier) -> str:
     so the brain has to be told plainly which names exist. Appending wins over
     editing: the stock prose keeps arriving from upstream untouched, and this
     block is the entire diff a reader has to hold in their head.
+
+    The override is scoped to the roster and the model pins for a reason. It
+    used to claim it overrode "anything above it", which is everything the
+    stock prompt says about dispatching — including the rule that a worker's
+    result arrives through the inbox rather than from the send. A brain that
+    discounts that re-sends the same title while its first turn is still
+    running, is refused every time, and spins there; the weakest brain in the
+    set (economy's) is the one that did. We only ever meant to fix which
+    workers exist and what they run, so that is all this claims.
     """
     roster = "\n".join(
         f"  - `{worker}` — runs `{model}`." for worker, model in tier.workers.items()
@@ -199,7 +208,9 @@ def _roster_override(tier: Tier) -> str:
 
   ---
 
-  WORKSHOP MODEL POLICY — this section OVERRIDES anything above it.
+  WORKSHOP MODEL POLICY — this section overrides the ROSTER and the MODEL
+  pins above it, and nothing else. Every other rule in this prompt still
+  applies in full, in particular the dispatch and inbox protocol.
 
   You are `{tier.name}`, a fixed-model-set variant of polly used in a workshop
   where attendees compare what different models cost for the same task. Your
@@ -218,6 +229,12 @@ def _roster_override(tier: Tier) -> str:
 
   Cross-vendor review still applies: a diff is reviewed by a DIFFERENT worker
   than the one that wrote it.
+
+  Dispatch stays asynchronous, exactly as described above: `sys_session_send`
+  returns a launching handle, NOT the worker's answer, which arrives later in
+  your inbox. Re-sending a title whose turn is still launching or running is
+  rejected outright. So a re-send in place of a wait makes no progress and
+  fills the attendee's transcript with errors — dispatch once, then wait.
 """
 
 

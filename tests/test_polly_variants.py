@@ -332,3 +332,25 @@ def test_every_pin_has_a_declared_env_knob(tmp_path, stock):
         for worker in tier.workers:
             key = polly_variants._env_key(tier.name, f"WORKER_{worker.upper()}_MODEL")
             assert key in declared, f"{key} missing from deploy/omnigent-app/app.yaml"
+
+
+def test_the_override_claims_only_the_roster_and_the_pins(tmp_path, stock):
+    """An unscoped override discounts the stock dispatch protocol.
+
+    The appended block once said it overrode "anything above it", which is also
+    where the stock prompt explains that a worker's result arrives through the
+    inbox rather than from the send. A brain that discounts that re-sends a
+    title whose turn is still running, is refused every time, and spins there —
+    economy's weaker brain did exactly that in front of attendees. We only mean
+    to fix which workers exist and what they run.
+    """
+    built = _build(tmp_path, stock)
+
+    for name, config in built.items():
+        prompt = config["prompt"]
+        assert "OVERRIDES anything above it" not in prompt, name
+        assert "roster and the model" in prompt.lower(), name
+        # The dispatch contract the spin violated, restated where the brain
+        # cannot read the override as licence to ignore it.
+        assert "sys_session_send" in prompt, name
+        assert "inbox" in prompt, name
