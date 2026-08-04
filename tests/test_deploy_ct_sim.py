@@ -1058,6 +1058,209 @@ def test_real_main_dry_run_never_imports_or_calls_databricks_api(monkeypatch, ca
     assert json.loads(capsys.readouterr().out)["mutates_workspace"] is False
 
 
+# -- toolchain mirror -------------------------------------------------------
+
+
+def test_no_mirror_flags_keeps_the_mirror_env_empty_so_boot_uses_the_internet():
+    args = deploy_ct_sim._parse_args(_valid_argv())
+    settings = deploy_ct_sim._event_settings_from_args(args, "a@example.com", "")
+
+    assert settings["WORKSHOP_TOOLCHAIN_MIRROR_PATH"] == ""
+    assert settings["WORKSHOP_TOOLCHAIN_MIRROR_STRICT"] == "false"
+
+
+def test_the_mirror_env_names_are_the_ones_app_yaml_actually_ships():
+    """_patch_app_yaml refuses a setting app.yaml has no block for, so this is
+    what stops the two halves of the contract drifting apart silently."""
+    args = deploy_ct_sim._parse_args(
+        _valid_argv()
+        + [
+            "--toolchain-mirror", "/Volumes/main/central/toolchain",
+            "--toolchain-mirror-group", "wt_toolchain_readers",
+            "--toolchain-mirror-strict",
+        ]
+    )
+    settings = deploy_ct_sim._event_settings_from_args(args, "a@example.com", "")
+
+    patched = deploy_ct_sim._patch_app_yaml(APP_YAML.read_bytes(), settings)
+    values = _env_values(patched)
+
+    assert values["WORKSHOP_TOOLCHAIN_MIRROR_PATH"] == "/Volumes/main/central/toolchain"
+    assert values["WORKSHOP_TOOLCHAIN_MIRROR_STRICT"] == "true"
+
+
+def test_strict_cannot_be_left_on_without_a_mirror_to_be_strict_about():
+    """Strict with no mirror would fail every artifact at boot."""
+    args = deploy_ct_sim._parse_args(_valid_argv())
+    args.toolchain_mirror = ""
+    args.toolchain_mirror_strict = True
+    settings = deploy_ct_sim._event_settings_from_args(args, "a@example.com", "")
+
+    assert settings["WORKSHOP_TOOLCHAIN_MIRROR_STRICT"] == "false"
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        ["--toolchain-mirror", "/Volumes/main", "--toolchain-mirror-group", "g"],
+        ["--toolchain-mirror", "main.central.toolchain", "--toolchain-mirror-group", "g"],
+        ["--toolchain-mirror", "/Volumes/main//toolchain", "--toolchain-mirror-group", "g"],
+    ],
+)
+def test_a_mirror_path_that_cannot_name_a_volume_is_rejected_at_parse(extra):
+    with pytest.raises(SystemExit):
+        deploy_ct_sim._parse_args(_valid_argv() + extra)
+
+
+def test_a_mirror_without_a_reader_group_is_rejected():
+    """Nothing would be able to read it, so it would silently do nothing."""
+    with pytest.raises(SystemExit):
+        deploy_ct_sim._parse_args(
+            _valid_argv() + ["--toolchain-mirror", "/Volumes/main/central/toolchain"]
+        )
+
+
+@pytest.mark.parametrize(
+    "orphan",
+    [["--toolchain-mirror-group", "g"], ["--toolchain-mirror-strict"]],
+)
+def test_mirror_options_without_a_mirror_are_rejected_rather_than_ignored(orphan):
+    """Both mean the operator believes a mirror is configured when none is."""
+    with pytest.raises(SystemExit):
+        deploy_ct_sim._parse_args(_valid_argv() + orphan)
+
+
+def test_the_dry_run_plan_says_so_when_no_mirror_is_configured():
+    """Silence would read the same as a mirror that was meant to be staged."""
+    plan = deploy_ct_sim._mirror_plan("", "", False, False)
+
+    assert plan == {"enabled": False, "boot_source": "internet"}
+
+
+def test_the_dry_run_plan_spells_out_every_grant_before_anything_is_mutated():
+    plan = deploy_ct_sim._mirror_plan(
+        "/Volumes/main/central/toolchain", "wt_readers", False, False
+    )
+
+    assert plan["enabled"] is True
+    assert plan["boot_source"] == "volume_then_internet"
+    assert plan["sql"] == [
+        "CREATE SCHEMA IF NOT EXISTS main.central",
+        "CREATE VOLUME IF NOT EXISTS main.central.toolchain",
+        "GRANT USE CATALOG ON CATALOG main TO `wt_readers`",
+        "GRANT USE SCHEMA ON SCHEMA main.central TO `wt_readers`",
+        "GRANT READ VOLUME ON VOLUME main.central.toolchain TO `wt_readers`",
+    ]
+
+
+def test_strict_mode_is_reported_as_leaving_no_fallback():
+    plan = deploy_ct_sim._mirror_plan(
+        "/Volumes/main/central/toolchain", "wt_readers", True, False
+    )
+
+    assert plan["boot_source"] == "volume_only"
+
+
+def test_a_degraded_mirror_does_not_fail_a_run_that_can_still_reach_the_internet():
+    """A slow boot is not an event blocker; treating it as one would ground a
+    workshop over a performance optimisation."""
+    source = SCRIPT.read_text()
+
+    assert "or not args.toolchain_mirror_strict" in source
+    assert "and mirror_ok" in source
+
+
+def test_the_mirror_is_provisioned_before_the_app_is_deployed():
+    """Bootstrap starts seconds after the container does. A grant that lands
+    afterwards is indistinguishable from a missing one."""
+    source = SCRIPT.read_text()
+
+    assert source.index("_provision_mirror(") < source.index("deploy_and_wait")
+
+
+class _FakeDirectory:
+    """One SCIM directory, workspace or account, with a single group."""
+
+    def __init__(self, group_name=None, sp_app_id="app-client-id"):
+        self.patched = []
+        members = []
+
+        def list_groups(**kwargs):
+            wanted = f'displayName eq "{group_name}"'
+            return (
+                [SimpleNamespace(id="g1")]
+                if group_name and kwargs.get("filter") == wanted
+                else []
+            )
+
+        def patch(**kwargs):
+            self.patched.append(kwargs)
+
+        self.groups = SimpleNamespace(
+            list=list_groups,
+            get=lambda _id: SimpleNamespace(id="g1", members=members),
+            patch=lambda **kwargs: patch(**kwargs),
+        )
+        self.service_principals = SimpleNamespace(
+            list=lambda **kwargs: (
+                [SimpleNamespace(id="4242")]
+                if kwargs.get("filter") == f'applicationId eq "{sp_app_id}"'
+                else []
+            )
+        )
+        self.config = SimpleNamespace(
+            account_id="acct-1", host="https://dbc-x.cloud.databricks.com"
+        )
+
+
+def test_the_reader_group_is_found_in_the_account_directory(monkeypatch):
+    """Control Tower creates the reader group through the account directory, so it
+    does not appear in workspace SCIM -- a workspace typically lists only ``users``
+    and ``admins``. Searching only there finds nothing and silently reports the app
+    SP as unaddable, which costs the mirror and shows up as an unexplained slow
+    boot rather than an error."""
+    workspace = _FakeDirectory(group_name=None)
+    account = _FakeDirectory(group_name="workshop_toolchain_readers")
+    monkeypatch.setattr(deploy_ct_sim, "_account_directory", lambda _w: account)
+
+    joined = deploy_ct_sim._add_sp_to_group(
+        workspace, "workshop_toolchain_readers", "app-client-id"
+    )
+
+    assert joined is True
+    assert account.patched and not workspace.patched
+
+
+def test_a_workspace_group_still_wins_without_touching_the_account(monkeypatch):
+    """A hand-rolled setup may put the group in workspace SCIM. Reaching for
+    account credentials that a deployer may not hold would break that case."""
+    workspace = _FakeDirectory(group_name="workshop_toolchain_readers")
+
+    def explode(_w):
+        raise AssertionError("account directory consulted unnecessarily")
+
+    monkeypatch.setattr(deploy_ct_sim, "_account_directory", explode)
+
+    assert deploy_ct_sim._add_sp_to_group(
+        workspace, "workshop_toolchain_readers", "app-client-id"
+    )
+    assert workspace.patched
+
+
+def test_no_account_access_is_reported_not_raised(monkeypatch):
+    """A deployer without account credentials still gets a working deploy, just an
+    unaccelerated one."""
+    workspace = _FakeDirectory(group_name=None)
+    monkeypatch.setattr(deploy_ct_sim, "_account_directory", lambda _w: None)
+
+    assert (
+        deploy_ct_sim._add_sp_to_group(
+            workspace, "workshop_toolchain_readers", "app-client-id"
+        )
+        is False
+    )
+
+
 def test_admin_group_resolution_failure_is_fatal():
     workspace = SimpleNamespace(
         groups=SimpleNamespace(list=lambda **kwargs: []),

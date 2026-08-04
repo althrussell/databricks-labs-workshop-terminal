@@ -1,5 +1,27 @@
 #!/usr/bin/env python3
-"""Read-only two-instance prewarm gate for an external Control Tower."""
+"""Read-only two-instance prewarm gate for an external Control Tower.
+
+Layer three of the pre-flight an operator runs before a workshop. The three
+answer different questions and none of them substitutes for another:
+
+1. **Is the volume right?** ``ct_mirror.py verify --volume ... --reader-group ...``
+   Every manifest artifact is staged at its checksum, sizes match what was
+   staged, and the reader group holds READ_VOLUME. Seconds; no artifact bytes
+   move. This is what Control Tower's Validate button calls.
+
+2. **Is one app using it?** Deploy a single canary and read
+   ``/api/admin/setup-status``. ``toolchain_mirror.served`` counts artifacts that
+   came off the volume and ``from_network`` names the ones that did not.
+
+3. **Is the fleet using it?** ``ct_verify.py --require-mirror``. Layers 1 and 2
+   can both pass while most of the fleet still downloads from the internet --
+   the reader group propagates per principal, so a late-minted app SP can miss
+   a grant every earlier app already had.
+
+Layer 3 exists because a bypassed mirror is invisible without it. The app is
+healthy, every checksum matches, the artifacts are byte-identical, and the only
+symptom is that boot is slow again on the morning of the event.
+"""
 
 from __future__ import annotations
 
@@ -134,6 +156,50 @@ def _prewarm_valid(
     )
 
 
+def mirror_summary(payload: dict) -> dict:
+    """Condense an app's ``toolchain_mirror`` block into the operator's answer.
+
+    Summarised unconditionally, even when the mirror is not being enforced,
+    because "configured but bypassed" is the failure this whole feature guards
+    against and it is otherwise completely silent: the app is healthy, every
+    checksum matches, and the only symptom is that boot took the slow path.
+    """
+    mirror = payload.get("toolchain_mirror")
+    if not isinstance(mirror, dict):
+        # An older release that predates the mirror. Not a failure on its own --
+        # only --require-mirror turns the absence of proof into a blocker.
+        return {
+            "reported": False,
+            "configured": False,
+            "served": 0,
+            "bypassed": False,
+            "from_network": [],
+            "error": None,
+        }
+    from_network = mirror.get("from_network")
+    return {
+        "reported": True,
+        "configured": mirror.get("configured") is True,
+        "path": mirror.get("path") or None,
+        "strict": mirror.get("strict") is True,
+        "served": int(mirror.get("served") or 0),
+        "bypassed": mirror.get("bypassed") is True,
+        "from_network": sorted(from_network) if isinstance(from_network, list) else [],
+        "error": mirror.get("error"),
+    }
+
+
+def _mirror_valid(summary: dict) -> bool:
+    """Whether every artifact this app installed actually came off the volume."""
+    return bool(
+        summary["reported"]
+        and summary["configured"]
+        and not summary["bypassed"]
+        and summary["served"] > 0
+        and not summary["error"]
+    )
+
+
 def verify_apps(
     apps: list[dict],
     *,
@@ -143,8 +209,15 @@ def verify_apps(
     sleep: Callable[[float], None] = time.sleep,
     monotonic: Callable[[], float] = time.monotonic,
     allow_local_http: bool = False,
+    require_mirror: bool = False,
 ) -> dict:
-    """Wait until exactly two apps pass both readiness and setup verification."""
+    """Wait until exactly two apps pass both readiness and setup verification.
+
+    ``require_mirror`` additionally demands that every artifact came from the UC
+    Volume. Opt-in rather than implied by a configured mirror, because the
+    fallback to the internet is a deliberate and supported outcome everywhere
+    except an event that has decided otherwise.
+    """
     if len(apps) != 2:
         raise ValueError("prewarm verification requires exactly two apps")
     normalized = normalize_apps(
@@ -160,6 +233,7 @@ def verify_apps(
             "readyz_status": None,
             "setup_status": None,
             "prewarm_status": None,
+            "toolchain_mirror": None,
             "_release_manifest": None,
             "_prewarm_manifest": None,
         }
@@ -214,8 +288,11 @@ def verify_apps(
                     break
                 prewarm_payload = _safe_json(prewarm_response)
                 result["prewarm_status"] = int(prewarm_response.status_code)
+                summary = mirror_summary(setup_payload)
+                result["toolchain_mirror"] = summary
                 result["ready"] = (
-                    ready_ok
+                    (not require_mirror or _mirror_valid(summary))
+                    and ready_ok
                     and setup_response.status_code == 200
                     and _setup_valid(setup_payload)
                     and prewarm_response.status_code == 200
@@ -271,16 +348,27 @@ def verify_apps(
         result.pop("_prewarm_manifest", None)
         if not manifests_match:
             result["ready"] = False
-    status = (
-        "ready"
-        if ready
-        else ("manifest_mismatch" if individually_ready else "not_ready")
-    )
+    if ready:
+        status = "ready"
+    elif individually_ready:
+        status = "manifest_mismatch"
+    elif require_mirror and any(
+        not _mirror_valid(result["toolchain_mirror"])
+        for result in results.values()
+        if isinstance(result["toolchain_mirror"], dict)
+    ):
+        # Named separately because the remedy is completely different: nothing is
+        # wrong with the app, the volume is short or unreadable, and the fix is a
+        # resync rather than a redeploy.
+        status = "mirror_bypassed"
+    else:
+        status = "not_ready"
     return {
         "schema_version": 1,
         "operation": "prewarm_verify",
         "status": status,
         "exit_code": 0 if ready else 1,
+        "require_mirror": bool(require_mirror),
         "apps": [results[app["name"]] for app in normalized],
     }
 
@@ -316,6 +404,13 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=300)
     parser.add_argument("--poll-interval", type=float, default=5)
     parser.add_argument("--allow-local-http", action="store_true")
+    parser.add_argument(
+        "--require-mirror",
+        action="store_true",
+        help="fail unless every artifact was served from the UC Volume mirror. "
+             "The fleet-wide half of pre-flight: ct_mirror.py verify proves the "
+             "volume is correct, this proves the apps are actually reading it.",
+    )
     args = parser.parse_args()
     try:
         report = verify_apps(
@@ -323,6 +418,7 @@ def main() -> int:
             timeout=args.timeout,
             poll_interval=args.poll_interval,
             allow_local_http=args.allow_local_http,
+            require_mirror=args.require_mirror,
         )
     except (OSError, ValueError, json.JSONDecodeError) as error:
         report = {
@@ -331,6 +427,7 @@ def main() -> int:
             "status": "invalid_input",
             "exit_code": 2,
             "error": str(error),
+            "require_mirror": bool(args.require_mirror),
             "apps": [],
         }
     print(json.dumps(report, sort_keys=True, separators=(",", ":")))

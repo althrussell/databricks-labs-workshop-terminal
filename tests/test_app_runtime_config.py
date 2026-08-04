@@ -79,6 +79,40 @@ def test_requirements_is_a_fully_pinned_resolver_output():
                for line in resolved)
 
 
+def test_the_documented_mirror_env_names_are_the_ones_app_yaml_ships():
+    """Control Tower implements against the doc, so a rename that lands in one
+    and not the other produces an event where the mirror is silently ignored."""
+    config = yaml.safe_load((ROOT / "app.yaml").read_text())
+    shipped = {item["name"] for item in config["env"]}
+    contract = (ROOT / "docs" / "control-tower-implementation.md").read_text()
+    manifest_doc = (ROOT / "docs" / "artifact-manifest.md").read_text()
+
+    for name in ("WORKSHOP_TOOLCHAIN_MIRROR_PATH", "WORKSHOP_TOOLCHAIN_MIRROR_STRICT"):
+        assert name in shipped
+        assert name in contract
+        assert name in manifest_doc
+
+
+def test_the_mirror_is_documented_as_optional_in_both_places():
+    """An operator who reads either doc must come away knowing an event that
+    stages nothing still works."""
+    for doc in ("control-tower-implementation.md", "artifact-manifest.md"):
+        text = " ".join((ROOT / "docs" / doc).read_text().split())
+        assert "optional" in text.lower()
+        assert "off by default" in text.lower()
+
+
+def test_the_docs_keep_the_grant_a_group_grant():
+    """A per-SP grant races the bootstrap thread. The reasoning has to survive
+    in the doc, or the next implementer will simplify it away."""
+    contract = " ".join(
+        (ROOT / "docs" / "control-tower-implementation.md").read_text().split()
+    )
+
+    assert "Do not grant the SP directly" in contract
+    assert "reader group" in contract
+
+
 def test_control_tower_catalog_contract_is_catalog_scoped_least_privilege():
     contract = (ROOT / "docs" / "control-tower-implementation.md").read_text()
     normalized = " ".join(contract.split())

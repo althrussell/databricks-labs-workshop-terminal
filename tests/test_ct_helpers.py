@@ -65,6 +65,132 @@ def _prewarm(commit="a" * 40, checksum="b" * 64, *, omnigent=False):
     }
 
 
+def _mirror(*, configured=True, served=6, from_network=(), error=None):
+    return {
+        "configured": configured,
+        "path": "/Volumes/main/central/toolchain" if configured else "",
+        "strict": False,
+        "served": served,
+        "bypassed": bool(configured and from_network),
+        "from_network": list(from_network),
+        "error": error,
+    }
+
+
+def _advancing_clock():
+    """A clock that moves, so a case that never goes green still terminates."""
+    ticks = iter(range(0, 10_000))
+    return lambda: float(next(ticks))
+
+
+def _verify_with_mirror(mirror, *, require_mirror=True):
+    def get(url, **kwargs):
+        if url.endswith("/readyz"):
+            return Response(200, {"ready": True})
+        if url.endswith("/api/admin/prewarm-status"):
+            return Response(200, _prewarm())
+        payload = dict(_setup())
+        if mirror is not None:
+            payload["toolchain_mirror"] = mirror
+        return Response(200, payload)
+
+    return ct_verify.verify_apps(
+        _apps(),
+        get=get,
+        timeout=10,
+        poll_interval=0,
+        sleep=lambda _: None,
+        monotonic=_advancing_clock(),
+        require_mirror=require_mirror,
+    )
+
+
+def test_the_mirror_is_reported_even_when_it_is_not_being_enforced():
+    """A bypassed mirror is otherwise invisible: the app is healthy, every
+    checksum matches, and the only symptom is that boot got slow again."""
+    report = _verify_with_mirror(
+        _mirror(served=4, from_network=["codex_npm_launcher_package"]),
+        require_mirror=False,
+    )
+
+    assert report["exit_code"] == 0
+    assert report["require_mirror"] is False
+    summary = report["apps"][0]["toolchain_mirror"]
+    assert summary["bypassed"] is True
+    assert summary["from_network"] == ["codex_npm_launcher_package"]
+
+
+def test_require_mirror_fails_an_otherwise_healthy_app_that_used_the_internet():
+    report = _verify_with_mirror(
+        _mirror(served=4, from_network=["pi_npm_package"])
+    )
+
+    assert report["exit_code"] == 1
+    assert report["status"] == "mirror_bypassed"
+
+
+def test_require_mirror_passes_when_every_artifact_came_off_the_volume():
+    report = _verify_with_mirror(_mirror())
+
+    assert report["exit_code"] == 0
+    assert report["status"] == "ready"
+
+
+def test_require_mirror_rejects_an_app_that_has_no_mirror_configured():
+    """Otherwise an event that forgot to set the path would sail through."""
+    report = _verify_with_mirror(_mirror(configured=False, served=0))
+
+    assert report["exit_code"] == 1
+    assert report["status"] == "mirror_bypassed"
+
+
+def test_require_mirror_rejects_a_release_too_old_to_report_provenance():
+    """No evidence is not the same as evidence of success."""
+    report = _verify_with_mirror(None)
+
+    assert report["exit_code"] == 1
+    assert report["apps"][0]["toolchain_mirror"]["reported"] is False
+
+
+def test_require_mirror_rejects_a_configured_but_rejected_path():
+    report = _verify_with_mirror(
+        _mirror(served=0, error="path is not an absolute /Volumes/... address")
+    )
+
+    assert report["exit_code"] == 1
+
+
+def test_a_mirror_bypass_is_distinguished_from_an_app_that_is_simply_not_ready():
+    """The remedies differ: one is a resync, the other a redeploy."""
+    bypassed = _verify_with_mirror(_mirror(from_network=["node_linux_x64"]))
+
+    def not_ready(url, **kwargs):
+        if url.endswith("/readyz"):
+            return Response(503, {"ready": False})
+        if url.endswith("/api/admin/prewarm-status"):
+            return Response(200, _prewarm())
+        return Response(200, dict(_setup(), toolchain_mirror=_mirror()))
+
+    unready = ct_verify.verify_apps(
+        _apps(),
+        get=not_ready,
+        timeout=10,
+        poll_interval=0,
+        sleep=lambda _: None,
+        monotonic=_advancing_clock(),
+        require_mirror=True,
+    )
+
+    assert bypassed["status"] == "mirror_bypassed"
+    assert unready["status"] == "not_ready"
+
+
+def test_mirror_state_is_not_folded_into_cross_instance_manifest_matching():
+    """One app prewarmed and another served from the volume is a legitimate
+    fleet, so provenance must not make two healthy apps look divergent."""
+    assert "source" in ct_verify._VOLATILE_RELEASE_FIELDS
+
+
 def test_verify_waits_for_two_apps_and_returns_sorted_deterministic_report():
     calls = {}
 

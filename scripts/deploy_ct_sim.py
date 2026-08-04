@@ -156,6 +156,34 @@ def _parse_args(argv=None, *, environ=None):
              "nothing is auto-constructed and every CLI silently uses the "
              "serving-endpoints fallback instead.",
     )
+    parser.add_argument(
+        "--toolchain-mirror",
+        default="",
+        help="OPTIONAL /Volumes/<catalog>/<schema>/<volume> holding the staged "
+             "toolchain. Set it to reproduce the event-day path where boot pulls "
+             "artifacts from workspace-local storage instead of the internet. "
+             "Empty leaves the mirror off, which is the default everywhere.",
+    )
+    parser.add_argument(
+        "--toolchain-mirror-group",
+        default="",
+        help="group granted READ_VOLUME on the mirror and joined by the app SP. "
+             "Group-based rather than per-SP because a grant issued to an SP "
+             "minted seconds earlier races the bootstrap thread that needs it.",
+    )
+    parser.add_argument(
+        "--toolchain-mirror-strict",
+        action="store_true",
+        help="fail an artifact outright when the mirror cannot serve it. Only "
+             "for rehearsing an air-gapped event, where reaching the internet is "
+             "itself the failure.",
+    )
+    parser.add_argument(
+        "--skip-mirror-stage",
+        action="store_true",
+        help="assume the mirror is already staged and only verify it. For "
+             "repeat runs against a volume that has not changed.",
+    )
     parser.add_argument("--dry-run", "--validate", dest="dry_run", action="store_true",
                         help="print a secret-free settings/grant plan without API mutations")
     args = parser.parse_args(argv)
@@ -204,6 +232,30 @@ def _validate_args(parser, args, environ):
         parser.error(
             "event OBO scopes are missing baseline values: "
             + ",".join(missing_scopes)
+        )
+    args.toolchain_mirror = args.toolchain_mirror.strip().rstrip("/")
+    args.toolchain_mirror_group = args.toolchain_mirror_group.strip()
+    if args.toolchain_mirror:
+        parts = args.toolchain_mirror.split("/")
+        if (
+            not args.toolchain_mirror.startswith("/Volumes/")
+            or len(parts) != 5
+            or not all(parts[2:5])
+        ):
+            parser.error(
+                "--toolchain-mirror must be an absolute "
+                "/Volumes/<catalog>/<schema>/<volume> path"
+            )
+        if not args.toolchain_mirror_group:
+            parser.error("--toolchain-mirror requires --toolchain-mirror-group")
+    elif args.toolchain_mirror_group or args.toolchain_mirror_strict:
+        # Strict without a mirror would fail every artifact, and a reader group
+        # without one grants access to nothing. Both mean the operator believes a
+        # mirror is configured when none is, which is the exact confusion the
+        # feature's reporting exists to prevent.
+        parser.error(
+            "--toolchain-mirror-group/--toolchain-mirror-strict require "
+            "--toolchain-mirror"
         )
     ref = args.skills_ref
     if not (re.fullmatch(r"[0-9A-Fa-f]{40}", ref) or VERSION_TAG_RE.fullmatch(ref)):
@@ -344,6 +396,10 @@ def main(argv=None, *, environ=None) -> int:
             profile=args.profile,
             emergency_pat=args.with_emergency_pat,
             catalog_provenance=_catalog_provenance_from_args(args),
+            toolchain_mirror=args.toolchain_mirror,
+            toolchain_mirror_group=args.toolchain_mirror_group,
+            toolchain_mirror_strict=args.toolchain_mirror_strict,
+            skip_mirror_stage=args.skip_mirror_stage,
         ))
         return 0
 
@@ -427,6 +483,20 @@ def main(argv=None, *, environ=None) -> int:
             provenance=_catalog_provenance_from_args(args),
         )
 
+    # --- 4b. stage and authorise the toolchain mirror, if the event uses one ---
+    # Ahead of the deploy on purpose: bootstrap begins seconds after the container
+    # starts, and a mirror that is not yet readable simply misses, sending the app
+    # to the internet for ~430 MiB with nothing in the logs to explain the delay.
+    mirror_status = None
+    if args.toolchain_mirror:
+        mirror_status = _provision_mirror(
+            w,
+            args.toolchain_mirror,
+            args.toolchain_mirror_group,
+            sp_id,
+            stage=not args.skip_mirror_stage,
+        )
+
     # --- 5. deploy, then prove the runtime acquired direct OAuth ---
     _log("deploy", "deploying source bundle ...")
     deployment = w.apps.deploy_and_wait(
@@ -466,10 +536,23 @@ def main(argv=None, *, environ=None) -> int:
     )
     _print_summary(args, me, attendee, app, sp_id, enable_obo, enable_ent,
                    bool(workshop_pat), applied_scopes, direct_oauth_ok,
-                   catalog_ok, group_status)
+                   catalog_ok, group_status, mirror_status)
+    # A degraded mirror is normally a slow boot, not a broken one, so it does not
+    # fail the run. Under strict it is the opposite: an artifact the volume cannot
+    # serve is an install error rather than a fallback, so an unready mirror is a
+    # genuine event blocker and has to be reported as one.
+    mirror_ok = (
+        mirror_status is None
+        or not args.toolchain_mirror_strict
+        or all(
+            mirror_status[key]
+            for key in ("staged", "granted", "sp_in_group", "verified")
+        )
+    )
     assumptions_ok = (
         direct_oauth_ok
         and catalog_ok
+        and mirror_ok
         and group_status["app_sp_member"]
         and group_status["deployer_member"]
         and (not enable_obo or _applied_scopes_include(scopes, applied_scopes))
@@ -501,6 +584,8 @@ def _event_settings(
     enable_obo=True,
     enable_entitlements=True,
     insight_capture=False,
+    toolchain_mirror="",
+    toolchain_mirror_strict=False,
 ):
     return {
         "WORKSHOP_PAT": workshop_pat,
@@ -533,6 +618,13 @@ def _event_settings(
         # variants use. What it costs is gateway policy, usage tracking and rate
         # limits, so a real event should still set it.
         "DATABRICKS_GATEWAY_HOST": gateway_host,
+        # Empty is the reviewed default: the mirror is a speed optimisation, and
+        # an event that does not stage one boots exactly as it always has, from
+        # the internet, against the same repo-owned checksums.
+        "WORKSHOP_TOOLCHAIN_MIRROR_PATH": toolchain_mirror,
+        "WORKSHOP_TOOLCHAIN_MIRROR_STRICT": str(
+            bool(toolchain_mirror) and toolchain_mirror_strict
+        ).lower(),
     }
 
 
@@ -557,6 +649,8 @@ def _event_settings_from_args(args, attendee, workshop_pat):
         enable_obo=not args.no_obo,
         enable_entitlements=not args.no_entitlements,
         insight_capture=args.insight_capture,
+        toolchain_mirror=args.toolchain_mirror,
+        toolchain_mirror_strict=args.toolchain_mirror_strict,
     )
 
 
@@ -775,6 +869,10 @@ def _dry_run_plan(
     profile,
     emergency_pat,
     catalog_provenance=None,
+    toolchain_mirror="",
+    toolchain_mirror_group="",
+    toolchain_mirror_strict=False,
+    skip_mirror_stage=False,
 ):
     safe_settings = dict(settings)
     safe_settings["WORKSHOP_APP_SP_ID"] = "<resolved-after-app-create>"
@@ -799,6 +897,49 @@ def _dry_run_plan(
         "catalog_sql": _catalog_sql_plan(catalog, attendee, "<app-service-principal-client-id>"),
         "catalog_existing_provenance": catalog_provenance,
         "workspace_grants": [],
+        "toolchain_mirror_plan": _mirror_plan(
+            toolchain_mirror,
+            toolchain_mirror_group,
+            toolchain_mirror_strict,
+            skip_mirror_stage,
+        ),
+    }
+
+
+def _mirror_plan(volume_path, group_name, strict, skip_stage):
+    """The mirror side of the plan, spelled out before anything is mutated.
+
+    Present even when disabled: "enabled: false" is the difference between an
+    event that chose the internet and one that meant to stage a volume and
+    silently did not, and only the first should ever pass a pre-flight read.
+    """
+    if not volume_path:
+        return {"enabled": False, "boot_source": "internet"}
+    catalog, schema, volume = volume_path.split("/")[2:5]
+    full_name = f"{catalog}.{schema}.{volume}"
+    return {
+        "enabled": True,
+        "volume": volume_path,
+        "reader_group": group_name,
+        "strict": strict,
+        "boot_source": "volume_only" if strict else "volume_then_internet",
+        "stage": "skipped_by_operator" if skip_stage else "stage_then_verify",
+        "sql": [
+            f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}",
+            f"CREATE VOLUME IF NOT EXISTS {full_name}",
+            f"GRANT USE CATALOG ON CATALOG {catalog} TO `{group_name}`",
+            f"GRANT USE SCHEMA ON SCHEMA {catalog}.{schema} TO `{group_name}`",
+            f"GRANT READ VOLUME ON VOLUME {full_name} TO `{group_name}`",
+        ],
+        "group_membership": {
+            "group": group_name,
+            "member": "<app-service-principal-client-id>",
+            "why": (
+                "granted to a group rather than the SP directly: an SP minted "
+                "seconds before deploy races the bootstrap thread that needs it"
+            ),
+        },
+        "ordering": "staged, granted and verified before the app is deployed",
     }
 
 
@@ -886,6 +1027,181 @@ def _configure_admin_group(w, group_name, sp_id, me_record):
         "app_sp_member": True,
         "deployer_member": deployer_member,
     }
+
+
+def _provision_mirror(w, volume_path, group_name, sp_id, *, stage=True):
+    """Stand up the toolchain mirror the way Control Tower does, then prove it.
+
+    Ordering is the whole point: staging and the reader grant both have to be
+    settled *before* the app deploys, because the bootstrap thread starts within
+    seconds of the container coming up and a mirror that is not ready yet is
+    indistinguishable from one that does not exist -- the app quietly downloads
+    from the internet and the operator sees a slow boot with no explanation.
+
+    Reported rather than raised on failure. A broken mirror is a performance
+    regression, not a correctness one, so it must not take an otherwise healthy
+    event deploy down with it.
+    """
+    # Imported two ways because this file is reached two ways: run as
+    # `python scripts/deploy_ct_sim.py`, sys.path[0] is scripts/ and the sibling
+    # is a top-level module; imported by the tests, the repo root is on the path
+    # and it is scripts.ct_mirror. Failing either way would surface as a
+    # traceback mid-deploy, which is the worst possible moment to find out.
+    try:
+        from scripts import ct_mirror
+    except ImportError:
+        import ct_mirror
+
+    report = {
+        "path": volume_path,
+        "group": group_name,
+        "staged": False,
+        "granted": False,
+        "sp_in_group": False,
+        "verified": False,
+        "detail": "",
+    }
+    try:
+        _, catalog, schema, volume = ct_mirror.parse_volume(volume_path)
+        full_name = f"{catalog}.{schema}.{volume}"
+        wh = _pick_warehouse(w)
+        if not wh:
+            report["detail"] = "no warehouse available to create the volume or grant"
+            _log("mirror", f"WARN {report['detail']}")
+            return report
+
+        _sql(w, wh, f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
+        _sql(w, wh, f"CREATE VOLUME IF NOT EXISTS {full_name}")
+
+        if stage:
+            _log("mirror", f"staging manifest artifacts into {volume_path} ...")
+            staged = ct_mirror.stage(
+                w, volume_path, progress=lambda message: _log("mirror", message)
+            )
+            report["staged"] = staged["status"] == "staged"
+            if not report["staged"]:
+                names = ", ".join(f["artifact"] for f in staged["failures"])
+                report["detail"] = f"staging failed for: {names}"
+                _log("mirror", f"WARN {report['detail']}")
+            else:
+                _log(
+                    "mirror",
+                    f"staged {staged['uploaded']} new, {staged['skipped']} already present",
+                )
+        else:
+            report["staged"] = True
+            _log("mirror", "skipping stage at operator request; verifying only")
+
+        # READ_VOLUME alone is not enough: Unity Catalog needs the traversal
+        # privileges on both parents before the volume grant means anything.
+        for statement in (
+            f"GRANT USE CATALOG ON CATALOG {catalog} TO `{group_name}`",
+            f"GRANT USE SCHEMA ON SCHEMA {catalog}.{schema} TO `{group_name}`",
+            f"GRANT READ VOLUME ON VOLUME {full_name} TO `{group_name}`",
+        ):
+            _sql(w, wh, statement)
+        report["granted"] = True
+        _log("mirror", f"{group_name} holds READ VOLUME on {full_name}")
+
+        report["sp_in_group"] = _add_sp_to_group(w, group_name, sp_id)
+        if not report["sp_in_group"]:
+            report["detail"] = f"app SP could not be added to {group_name}"
+            _log("mirror", f"WARN {report['detail']}")
+
+        verified = ct_mirror.verify(w, volume_path, reader_group=group_name)
+        report["verified"] = verified["exit_code"] == 0
+        if not report["verified"]:
+            report["detail"] = (
+                f"verify reported {verified['status']}; missing="
+                f"{verified.get('missing')} corrupt={verified.get('corrupt')}"
+            )
+            _log("mirror", f"WARN {report['detail']}")
+        else:
+            _log("mirror", f"verified: {verified['artifact_count']} artifacts current")
+    except Exception as error:  # noqa: BLE001 - never fail the deploy over a mirror
+        report["detail"] = f"{type(error).__name__}: {error}"
+        _log("mirror", f"WARN mirror provisioning incomplete: {report['detail']}")
+    return report
+
+
+def _account_directory(w):
+    """An account-scoped client for the same account, or ``None``.
+
+    The mirror's reader group is normally created by Control Tower through the
+    account directory, so it does not appear in workspace SCIM at all -- a
+    workspace typically lists only ``users``, ``admins`` and any local clones.
+    Looking there alone silently finds nothing and reports the app SP as
+    unaddable, which costs the mirror rather than failing loudly.
+    """
+    account_id = str(getattr(w.config, "account_id", "") or "").strip()
+    if not account_id:
+        return None
+    host = str(getattr(w.config, "host", "") or "")
+    if "azuredatabricks.net" in host:
+        accounts_host = "https://accounts.azuredatabricks.net"
+    elif "gcp.databricks.com" in host:
+        accounts_host = "https://accounts.gcp.databricks.com"
+    else:
+        accounts_host = "https://accounts.cloud.databricks.com"
+    try:
+        from databricks.sdk import AccountClient
+
+        return AccountClient(host=accounts_host, account_id=account_id)
+    except Exception:  # noqa: BLE001 - no account access is a miss, not a failure
+        return None
+
+
+def _join_group(client, group_name, sp_id):
+    """Add the SP to ``group_name`` in one directory; ``False`` if not found there."""
+    from databricks.sdk.service import iam
+
+    groups = list(
+        client.groups.list(filter=f'displayName eq "{_scim_literal(group_name)}"')
+    )
+    if len(groups) != 1:
+        return False
+    group = client.groups.get(groups[0].id)
+    principals = list(
+        client.service_principals.list(
+            filter=f'applicationId eq "{_scim_literal(sp_id)}"'
+        )
+    )
+    if len(principals) != 1:
+        return False
+    member_id = str(principals[0].id)
+    existing = {
+        str(getattr(member, "value", ""))
+        for member in (getattr(group, "members", None) or [])
+    }
+    if member_id in existing:
+        return True
+    client.groups.patch(
+        id=group.id,
+        operations=[
+            iam.Patch(op=iam.PatchOp.ADD, value={"members": [{"value": member_id}]})
+        ],
+        schemas=[iam.PatchSchema.URN_IETF_PARAMS_SCIM_API_MESSAGES_2_0_PATCH_OP],
+    )
+    return True
+
+
+def _add_sp_to_group(w, group_name, sp_id):
+    """Put the app SP in the mirror's reader group; ``False`` if it could not be.
+
+    Tries the workspace directory first, then the account one. Which directory
+    holds the group depends on who created it -- Control Tower makes an account
+    group, a hand-rolled setup often makes a workspace group -- and the caller
+    has no way to know, so both are searched rather than guessed at.
+    """
+    if _join_group(w, group_name, sp_id):
+        return True
+    account = _account_directory(w)
+    if account is None:
+        return False
+    try:
+        return _join_group(account, group_name, sp_id)
+    except Exception:  # noqa: BLE001 - never fail a deploy over the mirror
+        return False
 
 
 def _pick_warehouse(w):
@@ -1175,6 +1491,7 @@ def _print_summary(
     direct_oauth_ok,
     catalog_ok,
     group_status,
+    mirror_status=None,
 ):
     print("\n" + "=" * 72)
     print("CT-SIM DEPLOYMENT SUMMARY")
@@ -1195,6 +1512,22 @@ def _print_summary(
     print(f"  ADMIN_GROUP     : {group_status['name']}")
     print(f"    app SP member : {group_status['app_sp_member']}")
     print(f"    deployer member: {group_status['deployer_member']}")
+    if mirror_status is None:
+        print("  toolchain mirror: off (artifacts download from the internet)")
+    else:
+        ready = all(
+            mirror_status[key]
+            for key in ("staged", "granted", "sp_in_group", "verified")
+        )
+        print(f"  toolchain mirror: {'READY' if ready else 'INCOMPLETE'}")
+        print(f"    volume        : {mirror_status['path']}")
+        print(f"    reader group  : {mirror_status['group']}")
+        print(f"    staged/verified: {mirror_status['staged']}/{mirror_status['verified']}")
+        print(f"    app SP in group: {mirror_status['sp_in_group']}")
+        if mirror_status["detail"]:
+            print(f"    detail        : {mirror_status['detail']}")
+        if not ready:
+            print("    -> boot will fall back to the internet for anything unstaged")
     print("\nAcceptance checks (open the app URL in a browser first to mint an OBO token):")
     print(f"  curl -s {app.url}/api/config -H 'Authorization: Bearer <admin>' | jq '.credential,.obo,.entitlements'")
     print("  In a terminal session:")
