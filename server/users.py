@@ -29,6 +29,48 @@ _SHELL_ENV_ALLOWLIST_PREFIXES = ("LC_",)
 
 _topology_log = logging.getLogger("workshop.topology")
 
+# Decides whether the Omnigent card joins an existing conversation or starts a
+# new one. It reads the attendee's own mirrored bearer and asks the App, because
+# the alternative — running the attach and treating a non-zero exit as "nothing
+# to join" — cannot tell an empty control plane from a Ctrl-C out of a session
+# the attendee had deliberately joined, and would silently fork a new session on
+# every such exit. Every failure is "no joinable session", so an expired token or
+# an unreachable App degrades to the create path instead of to an error.
+#
+# ``failed`` is excluded rather than every status but a known-good allowlist:
+# restarting this app fails every session it was running runners for, so after
+# any redeploy an attendee's whole history reads ``failed`` and a picker over it
+# would offer nothing but corpses. Excluding by denylist keeps a status we have
+# not seen yet joinable, which is the right default for "they have a live
+# conversation". Deliberately resuming a failed one is what ``omnigent resume``
+# is for.
+_LIVE_SESSIONS_PROBE = '''#!/usr/bin/env python3
+"""Exit 0 when this attendee already has a session worth joining."""
+
+import json
+import os
+import sys
+import urllib.request
+
+url = os.environ.get("OMNIGENT_APP_URL", "").strip().rstrip("/")
+if not url:
+    sys.exit(1)
+try:
+    with open(os.path.join(os.path.expanduser("~"), ".omnigent", "auth_tokens.json")) as f:
+        token = json.load(f)[url]["token"]
+    request = urllib.request.Request(
+        url + "/v1/sessions", headers={"Authorization": "Bearer " + token}
+    )
+    with urllib.request.urlopen(request, timeout=5) as response:
+        sessions = json.load(response).get("data") or []
+except Exception:
+    sys.exit(1)
+joinable = [
+    s for s in sessions if not s.get("archived") and s.get("status") != "failed"
+]
+sys.exit(0 if joinable else 1)
+'''
+
 
 def email_slug(email: str) -> str:
     """Stable, filesystem-safe slug: local part + short hash of the full email."""
@@ -102,26 +144,43 @@ class User:
     def _write_omnigent_helper(self) -> None:
         """Install the stable TUI entrypoint used by the Omnigent catalog card.
 
-        ``omnigent run --server <url>`` with no agent is an ATTACH: it lists the
-        server's sessions and picks an agent from them, so on a fresh control
-        plane it exits with "No sessions found on the server". Naming an agent
-        instead gives the local-runner/remote-server topology the workshop wants
-        — harnesses run in the attendee's container, session state lives on the
-        App and shows up in its UI. ``polly`` is the bundled orchestrator a bare
-        ``omnigent`` already launches for a Claude credential, so a card that
-        passes no agent keeps the behavior it had before the App existed.
+        The two ``--server`` forms mean opposite things. ``omnigent run --server
+        <url>`` with no agent is a thin client: it lists the sessions the server
+        already holds and joins one, which is what makes a conversation started
+        in the App's UI the same conversation the terminal shows. Naming an
+        agent instead is what CREATES a session, in the local-runner/remote-
+        server topology — harnesses run in the attendee's container, session
+        state lives on the App.
 
-        An optional first positional selects a different agent, which is how the
-        workshop's model-set variants (``polly-economy`` / ``polly-balanced`` /
-        ``polly-frontier``) get their own catalog cards. It is only treated as an
-        agent when it does not look like a flag, so ``workshop-omnigent --help``
-        still reaches the CLI rather than being read as an agent name.
+        The card wants the joining form, but it cannot use it unconditionally:
+        against a fresh control plane the attach exits "No sessions found on the
+        server", which is every attendee's first launch of the workshop. So an
+        argument-free invocation probes for a joinable session first and only
+        creates one when the attendee has none. ``polly`` is the bundled
+        orchestrator a bare ``omnigent`` already launches for a Claude
+        credential, so that create path is the behavior the card had before the
+        App existed.
+
+        The probe fails closed to creating: a missing token, an unreachable
+        server, or no probe at all lands on the previous always-create behavior
+        rather than on an error.
+
+        Any argument suppresses the probe. An optional first positional selects
+        a different agent, which is how a model-set variant (``polly-economy``
+        and friends) can get its own catalog card; it is only read as an agent
+        when it does not look like a flag, so ``workshop-omnigent --help`` still
+        reaches the CLI. Flags reach the create path because a human typing them
+        is driving the CLI directly, not asking to resume a conversation.
 
         The local branch is handled first and stays byte-for-byte
         ``exec omnigent "$@"``. The Control Tower contract pins that behaviour
         for an empty URL, and consuming a positional before that branch would
         change it.
         """
+        probe = os.path.join(
+            self.home, ".local", "bin", "workshop-omnigent-live-sessions"
+        )
+        self._write_generated(probe, _LIVE_SESSIONS_PROBE)
         path = os.path.join(self.home, ".local", "bin", "workshop-omnigent")
         content = (
             "#!/bin/sh\n"
@@ -135,6 +194,10 @@ class User:
             'omnigent-empty-databrickscfg"\n'
             "export DATABRICKS_CONFIG_PROFILE="
             "workshop-omnigent-no-credentials\n"
+            'if [ "$#" -eq 0 ] && '
+            '"$HOME/.local/bin/workshop-omnigent-live-sessions"; then\n'
+            '  exec omnigent run --server "$OMNIGENT_APP_URL"\n'
+            "fi\n"
             "AGENT=polly\n"
             'case "${1:-}" in\n'
             "  ''|-*) ;;\n"
@@ -142,6 +205,10 @@ class User:
             "esac\n"
             'exec omnigent "$AGENT" --server "$OMNIGENT_APP_URL" "$@"\n'
         )
+        self._write_generated(path, content)
+
+    @staticmethod
+    def _write_generated(path: str, content: str) -> None:
         try:
             with open(path) as existing:
                 if existing.read() == content:

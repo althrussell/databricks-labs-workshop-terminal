@@ -770,12 +770,16 @@ def test_generated_tui_helper_routes_remote_and_local(monkeypatch, tmp_path):
     assert helper.stat().st_mode & 0o111
 
 
-def _run_tui_helper(tmp_path, monkeypatch, argv, *, app_url):
+def _run_tui_helper(tmp_path, monkeypatch, argv, *, app_url, live_sessions=False):
     """Execute the generated helper with a stub ``omnigent`` that echoes argv.
 
     Running it beats string-matching: the agent-selection branch has edge cases
     (a flag must not be read as an agent name, the local branch must stay a bare
     passthrough) that a substring assertion cannot distinguish.
+
+    ``live_sessions`` replaces the generated probe with a fixed verdict so these
+    cases exercise the helper's branch rather than the App lookup, which
+    ``test_live_sessions_probe_*`` covers against a real server.
     """
     import subprocess
 
@@ -785,6 +789,9 @@ def _run_tui_helper(tmp_path, monkeypatch, argv, *, app_url):
     monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
     user = User("argv-probe@example.com")
     user.bootstrap_home()
+    probe = Path(user.home) / ".local" / "bin" / "workshop-omnigent-live-sessions"
+    probe.write_text(f"#!/bin/sh\nexit {0 if live_sessions else 1}\n")
+    probe.chmod(0o755)
     stub_dir = tmp_path / "stub"
     stub_dir.mkdir(exist_ok=True)
     stub = stub_dir / "omnigent"
@@ -804,16 +811,64 @@ def _run_tui_helper(tmp_path, monkeypatch, argv, *, app_url):
     return completed.stdout.split()
 
 
-def test_tui_helper_defaults_to_polly_so_the_existing_card_is_unchanged(
+def test_tui_helper_joins_an_existing_session_so_both_tools_show_one_conversation(
     monkeypatch, tmp_path
 ):
-    """``run --server`` with no agent is an ATTACH, which on a fresh control
-    plane exits "No sessions found on the server". Naming an agent is what
+    """The whole point of the card: a conversation started in the App's UI and
+    the terminal must be the SAME conversation. ``run --server`` with no agent
+    is the thin client that joins one; naming an agent would fork a new one."""
+    argv = _run_tui_helper(
+        tmp_path,
+        monkeypatch,
+        [],
+        app_url="https://app.example.com",
+        live_sessions=True,
+    )
+
+    assert argv == ["run", "--server", "https://app.example.com"]
+
+
+def test_tui_helper_creates_polly_when_there_is_nothing_to_join(monkeypatch, tmp_path):
+    """Every attendee's first launch meets a fresh control plane, where the
+    attach exits "No sessions found on the server". Naming an agent is what
     creates the session, and polly is the same orchestrator a bare ``omnigent``
-    launches — so a card passing no argument must behave exactly as before."""
+    launches — so that path must stay exactly as it was."""
     argv = _run_tui_helper(tmp_path, monkeypatch, [], app_url="https://app.example.com")
 
     assert argv == ["polly", "--server", "https://app.example.com"]
+
+
+def test_tui_helper_creates_polly_when_the_probe_is_missing(monkeypatch, tmp_path):
+    """The probe is an optimization, not a dependency: losing it costs session
+    sharing,     but must never cost the attendee a working card."""
+    from server import config
+    from server.users import User
+
+    monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
+    user = User("argv-probe@example.com")
+    user.bootstrap_home()
+    (Path(user.home) / ".local" / "bin" / "workshop-omnigent-live-sessions").unlink()
+    stub_dir = tmp_path / "stub"
+    stub_dir.mkdir(exist_ok=True)
+    (stub_dir / "omnigent").write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+    (stub_dir / "omnigent").chmod(0o755)
+    completed = subprocess.run(
+        ["/bin/sh", str(Path(user.home) / ".local" / "bin" / "workshop-omnigent")],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": f"{stub_dir}:/usr/bin:/bin",
+            "HOME": user.home,
+            "OMNIGENT_APP_URL": "https://app.example.com",
+        },
+        check=True,
+    )
+
+    assert completed.stdout.split() == [
+        "polly",
+        "--server",
+        "https://app.example.com",
+    ]
 
 
 def test_tui_helper_takes_an_agent_name_so_variants_get_their_own_cards(
@@ -843,6 +898,153 @@ def test_tui_helper_local_mode_stays_a_bare_passthrough(monkeypatch, tmp_path):
     local branch must be reached before any positional is consumed."""
     assert _run_tui_helper(tmp_path, monkeypatch, [], app_url="") == []
     assert _run_tui_helper(tmp_path, monkeypatch, ["codex"], app_url="") == ["codex"]
+
+
+def _run_live_sessions_probe(tmp_path, monkeypatch, *, sessions, write_token=True):
+    """Run the generated probe against a real server standing in for the App."""
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from server import config
+    from server.users import User
+
+    monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
+    user = User("session-probe@example.com")
+    user.bootstrap_home()
+    seen = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            seen["path"] = self.path
+            seen["authorization"] = self.headers.get("Authorization")
+            body = json.dumps({"object": "list", "data": sessions}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):  # keep pytest output readable
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    url = f"http://127.0.0.1:{server.server_port}"
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        if write_token:
+            (Path(user.home) / ".omnigent" / "auth_tokens.json").write_text(
+                json.dumps({url: {"token": "mirrored-bearer"}})
+            )
+        completed = subprocess.run(
+            [str(Path(user.home) / ".local" / "bin" / "workshop-omnigent-live-sessions")],
+            capture_output=True,
+            text=True,
+            env={"PATH": "/usr/bin:/bin", "HOME": user.home, "OMNIGENT_APP_URL": url},
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+    return completed.returncode, seen
+
+
+def test_live_sessions_probe_reports_a_joinable_session_as_the_attendee(
+    monkeypatch, tmp_path
+):
+    """It must ask as the attendee, not as the app service principal: the App
+    scopes sessions to the bearer's owner, so an SP bearer would answer about
+    the wrong person's conversations."""
+    code, seen = _run_live_sessions_probe(
+        tmp_path,
+        monkeypatch,
+        sessions=[{"id": "abc", "archived": False, "status": "idle"}],
+    )
+
+    assert code == 0
+    assert seen["path"] == "/v1/sessions"
+    assert seen["authorization"] == "Bearer mirrored-bearer"
+
+
+def test_live_sessions_probe_ignores_archived_sessions(monkeypatch, tmp_path):
+    """An archived conversation is not something to drop an attendee back into,
+    so a history of them still has to launch a fresh agent."""
+    code, _ = _run_live_sessions_probe(
+        tmp_path,
+        monkeypatch,
+        sessions=[{"id": "abc", "archived": True, "status": "idle"}],
+    )
+
+    assert code == 1
+
+
+def test_live_sessions_probe_ignores_failed_sessions(monkeypatch, tmp_path):
+    """Restarting this app fails every session it hosted a runner for, so after
+    a redeploy the attendee's whole history reads failed. Offering a picker over
+    only those would be strictly worse than launching a fresh agent."""
+    code, _ = _run_live_sessions_probe(
+        tmp_path,
+        monkeypatch,
+        sessions=[
+            {"id": "abc", "archived": False, "status": "failed"},
+            {"id": "def", "archived": False, "status": "failed"},
+        ],
+    )
+
+    assert code == 1
+
+
+def test_live_sessions_probe_joins_a_live_session_beside_failed_history(
+    monkeypatch, tmp_path
+):
+    """One good conversation is enough — a pile of dead ones beside it must not
+    argue the attendee back into a brand-new session."""
+    code, _ = _run_live_sessions_probe(
+        tmp_path,
+        monkeypatch,
+        sessions=[
+            {"id": "abc", "archived": False, "status": "failed"},
+            {"id": "def", "archived": False, "status": "idle"},
+        ],
+    )
+
+    assert code == 0
+
+
+def test_live_sessions_probe_treats_an_unrecognized_status_as_joinable(
+    monkeypatch, tmp_path
+):
+    """The denylist is the point: a status this probe has never seen still means
+    the attendee has a conversation, and guessing otherwise forks a new one."""
+    code, _ = _run_live_sessions_probe(
+        tmp_path,
+        monkeypatch,
+        sessions=[{"id": "abc", "archived": False, "status": "busy"}],
+    )
+
+    assert code == 0
+
+
+def test_live_sessions_probe_reports_nothing_to_join_on_a_fresh_control_plane(
+    monkeypatch, tmp_path
+):
+    code, _ = _run_live_sessions_probe(tmp_path, monkeypatch, sessions=[])
+
+    assert code == 1
+
+
+def test_live_sessions_probe_fails_closed_without_a_mirrored_token(
+    monkeypatch, tmp_path
+):
+    """No token means no authenticated answer, so it must not guess — and must
+    not reach the App unauthenticated either."""
+    code, seen = _run_live_sessions_probe(
+        tmp_path,
+        monkeypatch,
+        sessions=[{"id": "abc", "archived": False, "status": "idle"}],
+        write_token=False,
+    )
+
+    assert code == 1
+    assert seen == {}
 
 
 def test_concurrent_first_requests_bootstrap_home_once(monkeypatch, tmp_path):
