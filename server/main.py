@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import agents, config, obo, operational, readiness, spend, user_content
+from . import agents, config, help as help_module, obo, operational, readiness, spend, user_content
 from .admin import router as admin_router
 from .auth import Principal, get_current_user, is_admin
 from .bootstrap import install
@@ -208,7 +208,41 @@ def get_config(principal: Principal = Depends(get_current_user)):
             "url": config.omnigent_app_url(),
         },
         "entitlements": entitlement_manager.status(),
+        "help": help_module.snapshot(),
     }
+
+
+class HelpRaiseBody(BaseModel):
+    note: str | None = None
+
+
+class HelpMessageBody(BaseModel):
+    body: str
+
+
+@app.post("/api/help/raise")
+def help_raise(body: HelpRaiseBody, _: Principal = Depends(get_current_user)):
+    return help_module.raise_hand(body.note)
+
+
+@app.post("/api/help/lower")
+def help_lower(_: Principal = Depends(get_current_user)):
+    return help_module.lower_hand()
+
+
+@app.post("/api/help/messages")
+def help_post_message(
+    body: HelpMessageBody, principal: Principal = Depends(get_current_user)
+):
+    try:
+        return help_module.post_attendee_message(body.body, sender=principal.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/help/thread")
+def help_thread(_: Principal = Depends(get_current_user)):
+    return help_module.thread_snapshot()
 
 
 @app.get("/api/setup-status")

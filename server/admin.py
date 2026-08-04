@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from . import attendee as attendee_binding
-from . import config, obo, spend
+from . import config, help as help_module, obo, spend
 from .auth import require_admin
 from .content import Broadcast, ContentPack, content_service
 from .credentials import credential_manager
@@ -120,9 +120,36 @@ def set_phase(body: PhaseBody):
 
 @router.post("/broadcast")
 def broadcast(body: Broadcast):
-    content_service.set_broadcast(body)
+    if body.clear_help:
+        from . import help as help_module
+
+        help_module.clear_hand()
+    if body.message.strip() or not body.clear_help:
+        content_service.set_broadcast(body)
     event_hub.publish({"t": "broadcast", **body.model_dump()})
     return {"status": "ok"}
+
+
+class HelpMessageIn(BaseModel):
+    message_id: str | None = None
+    help_request_id: str | None = None
+    sender_role: str = "operator"
+    sender: str = ""
+    body: str
+    created_at: str | None = None
+    show_banner: bool = True
+
+
+@router.post("/help/message")
+def help_message(body: HelpMessageIn):
+    """Control Tower fan-out: deliver one help-thread message to this unit."""
+    from . import help as help_module
+
+    try:
+        stored = help_module.ingest_operator_message(body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"status": "ok", "message": stored}
 
 
 @router.get("/stats")
@@ -263,4 +290,5 @@ def presence():
         "session_count": session_manager.count_all(),
         "credential": credential_manager.status(),
         "entitlements": entitlement_manager.status(),
+        **help_module.presence_fields(),
     }

@@ -39,6 +39,11 @@ def ensure_https(url: str) -> str:
     return url
 
 
+def control_tower_url() -> str:
+    """Control Tower app base URL for app→app operator APIs (help raise/lower)."""
+    return ensure_https(_env("CONTROL_TOWER_URL")).rstrip("/")
+
+
 def control_tower_ingest_url() -> str:
     """Control Tower's event-ingest base URL (contract C3b). Empty disables emit."""
     return _env("CONTROL_TOWER_INGEST_URL")
@@ -52,6 +57,11 @@ def control_tower_ingest_token() -> str:
 def workshop_run_id() -> str:
     """CT lab run id this terminal belongs to (injected at deploy)."""
     return _env("WORKSHOP_RUN_ID")
+
+
+def workshop_unit_id() -> str:
+    """CT lab unit id for this attendee instance (injected at deploy)."""
+    return _env("WORKSHOP_UNIT_ID")
 
 
 def workspace_id() -> str:

@@ -3,7 +3,25 @@
 
 export type AppEvent =
   | { t: "phase"; phase: string }
-  | { t: "broadcast"; message: string; level: string; ttl_s: number }
+  | {
+      t: "broadcast";
+      message: string;
+      level: string;
+      ttl_s: number;
+      clear_help?: boolean;
+      source?: string;
+    }
+  | {
+      t: "help_message";
+      message_id: string;
+      help_request_id?: string | null;
+      sender_role: string;
+      sender?: string;
+      body: string;
+      created_at: string;
+      show_banner?: boolean;
+    }
+  | { t: "help_state"; raised: boolean; note?: string | null }
   | { t: "content_updated" }
   | { t: "obo_refresh" }
   | { t: "reconnected" }
@@ -31,6 +49,14 @@ function parseServerEvent(data: string): AppEvent | null {
         && typeof value.level === "string"
         && typeof value.ttl_s === "number"
       ) ? value as AppEvent : null;
+    case "help_message":
+      return (
+        typeof value.message_id === "string"
+        && typeof value.body === "string"
+        && typeof value.sender_role === "string"
+      ) ? value as AppEvent : null;
+    case "help_state":
+      return typeof value.raised === "boolean" ? value as AppEvent : null;
     case "content_updated":
     case "obo_refresh":
     case "pong":

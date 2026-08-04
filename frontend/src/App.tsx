@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Award,
   BookOpen,
@@ -6,6 +6,7 @@ import {
   GraduationCap,
   House,
   Link as LinkIcon,
+  MessageSquare,
   Rocket,
   ShieldCheck,
   SquareTerminal,
@@ -26,6 +27,8 @@ import Hero from "./components/Hero";
 import LaunchBar from "./components/LaunchBar";
 import NuggetsPane from "./components/NuggetsPane";
 import OperatorPanel from "./components/OperatorPanel";
+import RaiseHandButton from "./components/RaiseHandButton";
+import HelpChatPanel from "./components/HelpChatPanel";
 import TerminalView from "./components/TerminalView";
 import { bindIdentityRefresh, onAppEvent } from "./events";
 
@@ -58,6 +61,10 @@ export default function App() {
   const [error, setError] = useState("");
   const [connectionLost, setConnectionLost] = useState(false);
   const [nuggetsCollapsed, setNuggetsCollapsed] = useState(false);
+  const [helpChatOpen, setHelpChatOpen] = useState(false);
+  const [helpUnread, setHelpUnread] = useState(0);
+  const [helpRaised, setHelpRaised] = useState(false);
+  const helpChatOpenRef = useRef(false);
   const [view, setView] = useState<"home" | "terminals" | "operator">(
     location.pathname.startsWith("/operator") ? "operator" : "home"
   );
@@ -105,11 +112,25 @@ export default function App() {
     };
   }, [refreshAgents, refreshIdentity]);
 
+  useEffect(() => {
+    helpChatOpenRef.current = helpChatOpen;
+  }, [helpChatOpen]);
+
+  useEffect(() => {
+    if (config?.help) setHelpRaised(config.help.raised);
+  }, [config?.help]);
+
   useEffect(
     () =>
       onAppEvent((event) => {
         if (event.t === "connection_lost") setConnectionLost(true);
         if (event.t === "reconnected") setConnectionLost(false);
+        if (event.t === "help_state") setHelpRaised(event.raised);
+        if (event.t === "broadcast" && event.clear_help) setHelpRaised(false);
+        if (event.t === "help_message" && event.sender_role === "operator") {
+          // Keep the panel closed; bump unread + let BannerBar notify.
+          if (!helpChatOpenRef.current) setHelpUnread((n) => n + 1);
+        }
       }),
     []
   );
@@ -337,6 +358,21 @@ export default function App() {
             <Award size={14} />
             Certificate
           </button>
+          <RaiseHandButton
+            initial={config?.help ?? null}
+            raised={helpRaised}
+            onRaisedChange={setHelpRaised}
+          />
+          <button
+            type="button"
+            className="help-chat-toggle"
+            onClick={() => setHelpChatOpen(true)}
+            title="Ask operators"
+          >
+            <MessageSquare size={14} />
+            Help
+            {helpUnread > 0 ? <span className="help-chat-badge">{helpUnread}</span> : null}
+          </button>
           {shellLinks
             .filter((link) => link.highlight)
             .map((link) => {
@@ -352,7 +388,15 @@ export default function App() {
         <div className="header-user">{config?.user.email}</div>
       </header>
 
-      <BannerBar initial={config?.broadcast ?? null} />
+      <BannerBar initial={config?.broadcast ?? null} suppressHelp={helpChatOpen} />
+      <HelpChatPanel
+        open={helpChatOpen}
+        onClose={() => setHelpChatOpen(false)}
+        unread={helpUnread}
+        onClearUnread={() => setHelpUnread(0)}
+        raised={helpRaised}
+        onRaisedChange={setHelpRaised}
+      />
       {connectionLost && (
         <div className="banner banner-warning">
           <span>

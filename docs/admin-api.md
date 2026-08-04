@@ -167,11 +167,58 @@ refresh their nugget pane immediately (`/ws/events` push).
 Shows a banner on every connected attendee screen for `ttl_s` seconds.
 Levels: `info`, `success`, `warning`.
 
+Optional `clear_help: true` clears the attendee's locally raised hand (used when
+Control Tower resolves a help request). Chat history is retained after resolve.
+An empty `message` with `clear_help` only clears the hand without showing a banner.
+
+### `POST /api/admin/help/message`
+
+Control Tower fan-out: deliver one help-thread message into this unit's local
+buffer and push it over `/ws/events` as `help_message`.
+
+```json
+{
+  "message_id": "uuid-or-opaque-id",
+  "help_request_id": "uuid",
+  "sender_role": "operator",
+  "sender": "operator@example.com",
+  "body": "Try restarting the warehouse",
+  "created_at": "2026-08-04T01:02:03Z",
+  "show_banner": true
+}
+```
+
+When `show_banner` is true (default) and `sender_role` is `operator`, the server
+also emits a `broadcast` with `source: "help"` so attendees with the Help panel
+closed see a toast. The attendee UI suppresses that banner while the panel is
+open.
+
+### Attendee help (`POST /api/help/raise` · `POST /api/help/lower` · `POST /api/help/messages` · `GET /api/help/thread`)
+
+Authenticated attendees raise or lower a hand for operator help, post follow-up
+messages, and fetch the local thread mirror. Local state updates immediately;
+when `CONTROL_TOWER_URL`, `WORKSHOP_RUN_ID`, and `WORKSHOP_UNIT_ID` are set the
+app also POSTs to Control Tower's `/api/help/raise|lower|messages` using the
+app service-principal OAuth bearer (fail-soft when misconfigured). Optional note
+on raise, max 280 characters; message bodies max 2000 characters.
+
+`GET /api/config` includes a `help` block
+`{raised, note, raised_at, message_count, help_request_id}` for the header
+control.
+
 ### `GET /api/admin/presence`
 Per-attendee status: online (active in the last 60 s), first/last seen,
 credential health, open sessions (agent, created, last activity), and per
 attendee `obo` (OBO/`me`-profile freshness — see below). The top level also
-carries `credential` and `entitlements` status blocks.
+carries `credential`, `entitlements`, and help-queue fields for Control Tower
+presence reconcile:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `help_raised` | bool | Attendee has raised a hand |
+| `help_open` | bool | Alias of `help_raised` |
+| `help_note` | string \| null | Optional note (≤280 chars) |
+| `help_raised_at` | number \| null | Unix timestamp when raised |
 
 ### OBO + entitlements status (operator pre-flight)
 
@@ -407,6 +454,9 @@ python scripts/push_content.py presence
 | `ENTITLEMENT_RECONCILE_INTERVAL` | `300` | Seconds between reconcile sweeps |
 | `ENTITLEMENT_TRANSFER_OWNERSHIP` | `false` | Also transfer SP-created UC catalog ownership to the labuser (grant-based usability is the default) |
 | `WORKSHOP_INSIGHT_CAPTURE` | `false` | Master switch for workshop insight capture. **The only feature that sends attendee-authored content off the instance**, so it stays off unless the operator has arranged consent in the event's registration terms. Off = the signal rollup, discovery endpoint, CLI helper, agent instructions and wrap harvest are all inert. See [`workshop-insight-contract.md`](./workshop-insight-contract.md) |
+| `CONTROL_TOWER_URL` | *(unset)* | Control Tower app base URL for app→app help raise/lower push |
+| `WORKSHOP_RUN_ID` | *(unset)* | CT lab run id (required with `WORKSHOP_UNIT_ID` for help push) |
+| `WORKSHOP_UNIT_ID` | *(unset)* | CT lab unit id for this attendee instance (required with `WORKSHOP_RUN_ID` for help push) |
 | `DISCOVERY_ENABLED` | `true` *(within capture)* | Whether the agent-elicited discovery tier runs. Subordinate to `WORKSHOP_INSIGHT_CAPTURE` — `false` keeps the derived behavioural signal and drops the conversational capture, for events where the anonymous rollup is in scope but attendee narrative isn't |
 | `INSIGHT_SUMMARY_MODEL` | *(unset)* | Serving endpoint for the wrap-phase edge summary. Empty discovers a READY endpoint, preferring the cheap tier — summarising one session is a small job and spending Opus on it competes with the attendees' own agent budget. Pin it when the workspace's default chain is unavailable in-region |
 
