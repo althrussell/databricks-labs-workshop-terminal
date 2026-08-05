@@ -360,8 +360,120 @@ body {
   border-left: 3px solid var(--warning);
 }
 
+.banner-error {
+  border-left: 3px solid var(--brand-primary);
+}
+
 .banner .icon-btn {
   margin-left: auto;
+}
+
+/* ---- toasts ----
+   Messages addressed to this attendee. Stacked bottom-right, clear of the
+   header and of the help panel, so a reply is noticeable without covering the
+   terminal the attendee is working in. */
+
+.toast-host {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(380px, calc(100vw - 40px));
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid #3b82f6;
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  animation: toast-in 160ms ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}
+
+.toast-success {
+  border-left-color: var(--success);
+}
+
+.toast-warning {
+  border-left-color: var(--warning);
+}
+
+.toast-error {
+  border-left-color: var(--brand-primary);
+}
+
+/* A lock or suspension is not something to glance past. */
+.toast-critical {
+  border-left-color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 12%, var(--bg-panel));
+}
+
+.toast-icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--text-dim);
+}
+
+.toast-content {
+  min-width: 0;
+  flex: 1;
+}
+
+.toast-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.toast-body {
+  margin-top: 3px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.toast-action {
+  margin-top: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--brand-primary);
+  cursor: pointer;
+}
+
+.toast-action:hover {
+  text-decoration: underline;
+}
+
+.toast-dismiss {
+  flex: none;
 }
 
 /* ---- layout ---- */

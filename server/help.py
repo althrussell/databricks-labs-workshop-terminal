@@ -136,13 +136,25 @@ def post_attendee_message(body: str, *, sender: str = "") -> dict[str, Any]:
         # Fall back to raise so CT still opens a queue row when message API
         # is unavailable on an older Control Tower.
         _push_control_tower("raise", text[:280])
-    event_hub.publish({"t": "help_message", **local, "show_banner": False})
+    # The attendee typed this, so they have already seen it — no toast, no ack.
+    event_hub.publish(
+        {"t": "help_message", **local, "surface": "none", "request_ack": False}
+    )
     event_hub.publish({"t": "help_state", "raised": True})
     return {"message": local, "pushed": pushed, "raised": True}
 
 
 def ingest_operator_message(payload: dict[str, Any]) -> dict[str, Any]:
-    """CT fan-out: durable operator (or synced) message into local buffer."""
+    """CT fan-out: durable operator (or synced) message into local buffer.
+
+    Publishes exactly one event. This used to publish two — a real
+    ``help_message`` plus a synthetic ``broadcast`` that hijacked the banner so
+    an attendee with the help panel closed would notice a reply. That produced
+    the worst of both surfaces: the banner has one slot, so a second reply
+    silently overwrote the first, and a single ``ttl_s`` dismissed a direct
+    answer on the same clock as a pacing announcement. Replies are toasts now,
+    which stack and wait, and the banner is left to persistent state.
+    """
     body = (payload.get("body") or "").strip()
     if not body:
         raise ValueError("body required")
@@ -163,22 +175,37 @@ def ingest_operator_message(payload: dict[str, Any]) -> dict[str, Any]:
         if any(m.get("message_id") == local["message_id"] for m in _messages):
             return local
         _append_local(local)
-    show_banner = bool(payload.get("show_banner", True))
-    event_hub.publish({"t": "help_message", **local, "show_banner": show_banner})
-    if show_banner and local["sender_role"] == "operator":
-        # Banner for attendees who still have the help panel closed.
-        # Frontend suppresses this when the panel is already open.
-        event_hub.publish(
-            {
-                "t": "broadcast",
-                "message": local["body"],
-                "level": "info",
-                "ttl_s": 120,
-                "clear_help": False,
-                "source": "help",
-            }
-        )
+    event_hub.publish(
+        {
+            "t": "help_message",
+            **local,
+            # A direct answer to a raised hand must not disappear on a timer.
+            "surface": payload.get("surface") or "toast",
+            "durability": payload.get("durability") or "sticky",
+            "request_ack": bool(payload.get("request_ack", True)),
+        }
+    )
     return local
+
+
+def acknowledge_message(message_id: str) -> bool:
+    """Tell Control Tower the attendee actually saw this message.
+
+    Delivered is not read. Without this the operator cannot distinguish an
+    answer that landed and was acted on from one sitting unseen behind a
+    full-screen terminal, which is exactly the case where the right next action
+    is to walk over rather than type again.
+    """
+    mid = (message_id or "").strip()
+    if not mid:
+        return False
+    base = config.control_tower_url()
+    run_id = config.workshop_run_id()
+    unit_id = config.workshop_unit_id()
+    if not base or not run_id or not unit_id:
+        return False
+    url = f"{base.rstrip('/')}/api/help/messages/{mid}/seen"
+    return _ct_post(url, {"run_id": run_id, "unit_id": unit_id})
 
 
 def replace_thread_from_ct(messages: list[dict[str, Any]], *, help_request_id: str | None) -> None:

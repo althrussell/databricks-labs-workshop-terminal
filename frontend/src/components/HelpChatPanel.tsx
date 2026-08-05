@@ -58,9 +58,6 @@ export default function HelpChatPanel({
           ];
         });
       }
-      if (event.t === "broadcast" && event.clear_help) {
-        onRaisedChange(false);
-      }
       if (event.t === "help_state") {
         onRaisedChange(event.raised);
       }

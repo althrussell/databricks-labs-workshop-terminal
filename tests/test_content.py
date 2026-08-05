@@ -64,7 +64,13 @@ def test_unknown_phase_422(client, as_admin):
     assert resp.status_code == 422
 
 
-def test_broadcast_reaches_config_and_events(client, as_admin):
+def test_broadcast_reaches_events_without_being_retained(client, as_admin):
+    """A default broadcast is a toast: it fires once and is not replayed.
+
+    Retaining every notice meant an attendee who reloaded an hour later got
+    "5 minutes left" again. Only a pinned banner describes a condition worth
+    surviving a reload; see the banner test below.
+    """
     with client.websocket_connect("/ws/events", headers=ALICE) as ws:
         resp = client.post(
             "/api/admin/broadcast",
@@ -76,9 +82,36 @@ def test_broadcast_reaches_config_and_events(client, as_admin):
 
         msg = json.loads(ws.receive_text())
         assert msg["t"] == "broadcast" and msg["message"] == "Break time"
+        assert msg["surface"] == "toast"
 
     cfg = client.get("/api/config", headers=ALICE).json()
-    assert cfg["broadcast"]["message"] == "Break time"
+    assert cfg["broadcast"] is None
+
+
+def test_pinned_banner_survives_reload_and_can_be_cleared(client, as_admin):
+    resp = client.post(
+        "/api/admin/broadcast",
+        json={
+            "message": "Wi-Fi: guest / labs2026",
+            "level": "info",
+            "ttl_s": 600,
+            "surface": "banner",
+            "durability": "sticky",
+        },
+        headers=ADMIN,
+    )
+    assert resp.status_code == 200
+    cfg = client.get("/api/config", headers=ALICE).json()
+    assert cfg["broadcast"]["message"] == "Wi-Fi: guest / labs2026"
+
+    cleared = client.post(
+        "/api/admin/broadcast",
+        json={"message": "", "clear": True},
+        headers=ADMIN,
+    )
+    assert cleared.status_code == 200
+    cfg = client.get("/api/config", headers=ALICE).json()
+    assert cfg["broadcast"] is None
 
 
 def test_shell_config_served_to_attendees(client, as_admin):

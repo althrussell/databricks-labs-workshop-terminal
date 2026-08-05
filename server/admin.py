@@ -120,11 +120,16 @@ def set_phase(body: PhaseBody):
 
 @router.post("/broadcast")
 def broadcast(body: Broadcast):
-    if body.clear_help:
-        from . import help as help_module
+    """Push a notice to this instance.
 
-        help_module.clear_hand()
-    if body.message.strip() or not body.clear_help:
+    Only banners are retained server-side, because only a banner needs to
+    survive a page reload. A toast is a message that has been shown.
+    """
+    if body.clear:
+        content_service.clear_broadcast()
+        event_hub.publish({"t": "broadcast", **body.model_dump()})
+        return {"status": "ok", "cleared": True}
+    if body.surface == "banner":
         content_service.set_broadcast(body)
     event_hub.publish({"t": "broadcast", **body.model_dump()})
     return {"status": "ok"}
@@ -137,7 +142,12 @@ class HelpMessageIn(BaseModel):
     sender: str = ""
     body: str
     created_at: str | None = None
-    show_banner: bool = True
+    # Where and how long this shows. Control Tower decides; see its
+    # ``notifications.py`` for the shared contract.
+    surface: str = "toast"
+    durability: str = "sticky"
+    ttl_s: int | None = None
+    request_ack: bool = True
 
 
 @router.post("/help/message")
@@ -150,6 +160,24 @@ def help_message(body: HelpMessageIn):
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"status": "ok", "message": stored}
+
+
+class HelpClearIn(BaseModel):
+    help_request_id: str | None = None
+
+
+@router.post("/help/clear")
+def help_clear(body: HelpClearIn = HelpClearIn()):
+    """Control Tower resolved the request: lower this attendee's hand.
+
+    A first-class action. Control Tower previously achieved this by sending an
+    empty broadcast with ``ttl_s=1`` and a ``clear_help`` flag, which meant the
+    banner contract carried a side effect that had nothing to do with banners.
+    """
+    from . import help as help_module
+
+    help_module.clear_hand()
+    return {"status": "ok", "help_request_id": body.help_request_id}
 
 
 @router.get("/stats")

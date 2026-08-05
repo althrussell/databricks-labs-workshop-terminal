@@ -29,6 +29,7 @@ import NuggetsPane from "./components/NuggetsPane";
 import OperatorPanel from "./components/OperatorPanel";
 import RaiseHandButton from "./components/RaiseHandButton";
 import HelpChatPanel from "./components/HelpChatPanel";
+import ToastHost from "./components/ToastHost";
 import TerminalView from "./components/TerminalView";
 import { bindIdentityRefresh, onAppEvent } from "./events";
 
@@ -126,9 +127,9 @@ export default function App() {
         if (event.t === "connection_lost") setConnectionLost(true);
         if (event.t === "reconnected") setConnectionLost(false);
         if (event.t === "help_state") setHelpRaised(event.raised);
-        if (event.t === "broadcast" && event.clear_help) setHelpRaised(false);
         if (event.t === "help_message" && event.sender_role === "operator") {
-          // Keep the panel closed; bump unread + let BannerBar notify.
+          // The toast does the noticing; this keeps the durable inbox honest so
+          // a dismissed or missed toast is still recoverable from the panel.
           if (!helpChatOpenRef.current) setHelpUnread((n) => n + 1);
         }
       }),
@@ -388,7 +389,8 @@ export default function App() {
         <div className="header-user">{config?.user.email}</div>
       </header>
 
-      <BannerBar initial={config?.broadcast ?? null} suppressHelp={helpChatOpen} />
+      <BannerBar initial={config?.broadcast ?? null} />
+      <ToastHost onOpenHelp={() => setHelpChatOpen(true)} />
       <HelpChatPanel
         open={helpChatOpen}
         onClose={() => setHelpChatOpen(false)}

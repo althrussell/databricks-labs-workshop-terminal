@@ -245,6 +245,20 @@ def help_thread(_: Principal = Depends(get_current_user)):
     return help_module.thread_snapshot()
 
 
+class HelpAckBody(BaseModel):
+    message_id: str
+
+
+@app.post("/api/help/ack")
+def help_ack(body: HelpAckBody, _: Principal = Depends(get_current_user)):
+    """The attendee saw an operator message — forward the receipt upstream.
+
+    Attendee-facing rather than on the admin router: the browser calling this is
+    the attendee's, and they are not an operator.
+    """
+    return {"acked": help_module.acknowledge_message(body.message_id)}
+
+
 @app.get("/api/setup-status")
 def setup_status(_: Principal = Depends(get_current_user)):
     return install.status()

@@ -24,11 +24,6 @@ export default function RaiseHandButton({
 
   useEffect(() => {
     return onAppEvent((event) => {
-      if (event.t === "broadcast" && event.clear_help) {
-        onRaisedChange(false);
-        setNote("");
-        setNoteOpen(false);
-      }
       if (event.t === "help_state") {
         onRaisedChange(event.raised);
         if (!event.raised) {

@@ -116,10 +116,24 @@ class ContentPack(BaseModel):
 
 
 class Broadcast(BaseModel):
+    """An operator message pushed to this instance.
+
+    ``surface`` decides where it lands and is set by Control Tower, not guessed
+    here. ``banner`` pins persistent room state that survives a page reload
+    because the condition survives it — a lunch time, a phase, a standing
+    notice. ``toast`` is a discrete message that stacks and clears.
+
+    ``durability`` applies to toasts: ``transient`` auto-dismisses, ``sticky``
+    waits for the attendee, ``critical`` is a lock or suspension.
+    """
+
     message: str
-    level: str = "info"  # info | success | warning
+    level: str = "info"  # info | success | warning | error
     ttl_s: int = 300
-    clear_help: bool = False
+    surface: str = "toast"  # toast | banner
+    durability: str = "transient"  # transient | sticky | critical
+    # Clears a pinned banner without sending anything.
+    clear: bool = False
 
 
 class ContentService:
@@ -187,10 +201,25 @@ class ContentService:
         return [c.model_dump() for c in chips]
 
     def active_broadcast(self) -> Broadcast | None:
+        """The pinned notice, if one is standing.
+
+        Only banners are retained: a toast is a message to a person and has
+        already been shown, so replaying it on the next page load would resurrect
+        an announcement the attendee dealt with an hour ago.
+        """
         with self._lock:
-            if self._broadcast and time.time() - self._broadcast_at < self._broadcast.ttl_s:
+            if (
+                self._broadcast
+                and self._broadcast.surface == "banner"
+                and time.time() - self._broadcast_at < self._broadcast.ttl_s
+            ):
                 return self._broadcast
             return None
+
+    def clear_broadcast(self) -> None:
+        with self._lock:
+            self._broadcast = None
+            self._broadcast_at = 0.0
 
     def nuggets_for(self, active_triggers: set[str], live_topics: set[str] | None = None,
                     idle_minutes: float = 0.0, limit: int = 8) -> list[dict]:
