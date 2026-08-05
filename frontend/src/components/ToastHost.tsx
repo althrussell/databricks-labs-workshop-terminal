@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Info, MessageSquare, X } from "lucide-react";
 import { api } from "../api";
+import { onAppEvent } from "../events";
 import {
-  NotificationDurability,
-  onAppEvent,
-} from "../events";
+  Toast,
+  ToastLevel,
+  TRANSIENT_MS,
+  pushToast,
+  transientTtlMs,
+} from "../toasts";
 
 /** Stacking toast host for messages addressed to this attendee.
  *
@@ -28,23 +32,6 @@ const ICONS = {
   error: AlertTriangle,
 } as const;
 
-const MAX_VISIBLE = 4;
-const TRANSIENT_MS = 8000;
-
-type ToastLevel = keyof typeof ICONS;
-
-interface Toast {
-  id: string;
-  level: ToastLevel;
-  durability: NotificationDurability;
-  title: string;
-  body: string;
-  /** Set when Control Tower asked for a read receipt. */
-  ackMessageId?: string;
-  /** Operator replies deep-link into the conversation. */
-  openHelp?: boolean;
-}
-
 function level(value: string | undefined): ToastLevel {
   return value && value in ICONS ? (value as ToastLevel) : "info";
 }
@@ -61,17 +48,7 @@ export default function ToastHost({
   const acked = useRef<Set<string>>(new Set());
 
   const push = useCallback((toast: Toast) => {
-    setToasts((prev) => {
-      if (prev.some((t) => t.id === toast.id)) return prev;
-      // Oldest transient goes first so a critical toast is never pushed out by
-      // the pacing announcement that arrived after it.
-      const next = [...prev, toast];
-      if (next.length <= MAX_VISIBLE) return next;
-      const droppable = next.findIndex((t) => t.durability === "transient");
-      return droppable === -1
-        ? next.slice(next.length - MAX_VISIBLE)
-        : next.filter((_, i) => i !== droppable);
-    });
+    setToasts((prev) => pushToast(prev, toast));
   }, []);
 
   const dismiss = useCallback((id: string) => {
@@ -108,6 +85,10 @@ export default function ToastHost({
             durability: event.durability ?? "transient",
             title: "Workshop update",
             body: event.message,
+            // The operator chose how long this should stand. A pacing notice
+            // sent with five minutes on it should not vanish in eight seconds
+            // because the default happened to be shorter.
+            ttlMs: transientTtlMs(event.ttl_s),
           });
         }
       }),
@@ -121,7 +102,12 @@ export default function ToastHost({
           key={toast.id}
           toast={toast}
           acked={acked.current}
-          onDismiss={() => dismiss(toast.id)}
+          // Passed by reference rather than wrapped in a closure: an inline
+          // arrow would be a new value on every render of this component, and
+          // the card's auto-dismiss effect depends on it. Websocket traffic
+          // re-renders this often enough that the timer would be cleared and
+          // restarted forever, so transient toasts would never leave.
+          onDismiss={dismiss}
           onOpenHelp={onOpenHelp}
         />
       ))}
@@ -137,10 +123,11 @@ function ToastCard({
 }: {
   toast: Toast;
   acked: Set<string>;
-  onDismiss: () => void;
+  onDismiss: (id: string) => void;
   onOpenHelp?: () => void;
 }) {
   const Icon = toast.openHelp ? MessageSquare : ICONS[toast.level];
+  const close = useCallback(() => onDismiss(toast.id), [onDismiss, toast.id]);
 
   // Rendering is the moment the attendee could have seen it, so that is when the
   // receipt is sent. Failure is silent: an operator seeing "delivered, not seen"
@@ -154,9 +141,9 @@ function ToastCard({
 
   useEffect(() => {
     if (toast.durability !== "transient") return;
-    const timer = setTimeout(onDismiss, TRANSIENT_MS);
+    const timer = setTimeout(close, toast.ttlMs ?? TRANSIENT_MS);
     return () => clearTimeout(timer);
-  }, [toast.durability, onDismiss]);
+  }, [toast.durability, toast.ttlMs, close]);
 
   return (
     <div
@@ -176,7 +163,7 @@ function ToastCard({
       <button
         type="button"
         className="icon-btn toast-dismiss"
-        onClick={onDismiss}
+        onClick={close}
         aria-label="Dismiss notification"
       >
         <X size={14} />

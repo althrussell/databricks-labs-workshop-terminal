@@ -383,6 +383,12 @@ body {
   gap: 10px;
   width: min(380px, calc(100vw - 40px));
   pointer-events: none;
+  /* Sticky toasts are never evicted to make room, so an attendee who leaves
+     several replies unread can build a taller stack than fits. Scroll it rather
+     than let it run off the top of the screen. */
+  max-height: min(70vh, 640px);
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .toast {
