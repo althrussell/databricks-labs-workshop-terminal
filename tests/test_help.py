@@ -35,6 +35,31 @@ def test_clear_hand_keeps_message_history(client, as_admin):
     assert thread["messages"][0]["body"] == "still visible after resolve"
 
 
+def test_resolving_from_control_tower_lowers_the_hand_in_the_ui(
+    client, as_admin, monkeypatch
+):
+    """The clear endpoint must announce itself, not just mutate server state.
+
+    Operator replies moved to toasts, which meant dropping the ``clear_help``
+    broadcast the frontend used to listen for. Lowering the hand now rests
+    entirely on this ``help_state`` event, so if it ever stops being published
+    the attendee is left with a raised hand nobody is coming for.
+    """
+    from server.events import event_hub
+
+    published: list[dict] = []
+    monkeypatch.setattr(event_hub, "publish", published.append)
+
+    assert client.post("/api/admin/help/clear").status_code == 200
+
+    lowered = [
+        e
+        for e in published
+        if e.get("t") == "help_state" and e.get("raised") is False
+    ]
+    assert lowered, f"no help_state(raised=False) published: {published}"
+
+
 @pytest.fixture
 def ct_env(monkeypatch):
     monkeypatch.setenv("CONTROL_TOWER_URL", "https://ct.example")
