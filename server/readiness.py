@@ -148,12 +148,20 @@ def evaluate(
     attendee_binding: Mapping[str, str] | None = None,
     delivery_status: Mapping[str, object] | None = None,
     gateway_status: Mapping[str, object] | None = None,
+    workspace_sync: Mapping[str, object] | None = None,
     writable_probe: Callable[[str], bool] = _path_writable,
     now: float | None = None,
 ) -> dict:
     """Return the complete, secret-free readiness report."""
     current_time = time.time() if now is None else now
     gateway_status = gateway_status or {}
+    sync = {
+        "state": "never",
+        "at": None,
+        "exit": None,
+        "detail": "",
+        **(workspace_sync or {}),
+    }
     per_user = _int(env, "MAX_SESSIONS_PER_USER", 3)
     global_cap = _int(env, "MAX_SESSIONS_GLOBAL", 30)
     topology_ok = (
@@ -657,6 +665,30 @@ def evaluate(
             pending=insight["pending"],
             dropped=insight["dropped"],
         ),
+        # Soft because the container's copy under DATA_ROOT is not lost when
+        # this fails -- what is lost is the attendee's ability to reach their
+        # work from outside the terminal. Refusing to serve would cost them the
+        # workshop to protect a copy. Reported at all because this failed on
+        # every commit of a live event while announcing it nowhere but a log
+        # file in a container nobody can open.
+        "workspace_sync": _soft(
+            sync["state"] != "failed",
+            "green" if sync["state"] == "ok" else "amber"
+            if sync["state"] == "never"
+            else "red",
+            (
+                "committed work is syncing to the attendee's Workspace home"
+                if sync["state"] == "ok"
+                else "no commits yet, so nothing has been synced"
+                if sync["state"] == "never"
+                else "committed work is NOT reaching the attendee's Workspace "
+                f"home (databricks sync exited {sync['exit']}) — it exists only "
+                "inside the terminal"
+            ),
+            state_detail=sync["detail"],
+            last_attempt_at=sync["at"],
+            exit_code=sync["exit"],
+        ),
     }
     ready = all(
         check["ok"] for check in checks.values() if not check.get("soft")
@@ -667,6 +699,25 @@ def evaluate(
         "checks": checks,
         "release_manifest": release_manifest,
     }
+
+
+def _bound_workspace_sync() -> dict | None:
+    """The bound attendee's last sync outcome, or None if the instance is unbound.
+
+    One app serves one attendee, so the instance-level report can speak for that
+    attendee. Read straight off disk rather than through the user registry: the
+    registry is process-local and empty until the attendee's next request, while
+    the record survives on ``DATA_ROOT``, so going through it would paper over a
+    recorded failure with "nothing committed yet" for the whole window after a
+    restart. Creates nothing -- a readiness probe has no business provisioning
+    anyone.
+    """
+    from . import attendee, user_content
+
+    email = attendee.resolved_email()
+    if not email:
+        return None
+    return user_content.workspace_sync_status_for_email(email)
 
 
 def evaluate_runtime() -> dict:
@@ -688,6 +739,7 @@ def evaluate_runtime() -> dict:
         secret_protection_status=secret_protection_status(),
         attendee_binding=attendee.binding(),
         delivery_status=event_emitter.delivery_status(),
+        workspace_sync=_bound_workspace_sync(),
     )
 
 

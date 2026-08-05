@@ -32,7 +32,7 @@ import secrets
 import shutil
 
 from . import config
-from .users import User
+from .users import User, email_slug
 
 logger = logging.getLogger(__name__)
 
@@ -520,11 +520,16 @@ def _write_claude_json(user: User) -> None:
 # -- git identity + workspace-sync hook --
 
 _POST_COMMIT = """#!/bin/bash
-# Auto-sync committed work to the attendee's Databricks Workspace home so it
-# outlives this container. It does not outlive the workshop: teardown deletes the
-# workspace too, so keeping the work means pushing it to a remote the attendee
-# owns. Only syncs repos inside ~/projects/.
+# Auto-sync committed work to the attendee's Databricks Workspace home, where
+# they can open it in the workspace UI, use it from a notebook or job, and still
+# reach it once this app is gone. The container's own copy lives on DATA_ROOT
+# and is not the thing at risk here.
+#
+# It does not outlive the workshop either way: teardown deletes the workspace
+# too, so keeping the work means pushing it to a remote the attendee owns.
+# Only syncs repos inside ~/projects/.
 SYNC_LOG="$HOME/.sync.log"
+STATUS="{status_path}"
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
 [ -z "$REPO_ROOT" ] && exit 0
@@ -535,11 +540,32 @@ esac
 
 DEST="/Workspace/Users/{email}/projects/$(basename "$REPO_ROOT")"
 echo "[post-commit] $(date +%H:%M:%S) syncing $REPO_ROOT -> $DEST" >> "$SYNC_LOG"
+mkdir -p "$(dirname "$STATUS")" 2>/dev/null
 
+# Still backgrounded -- a commit must never block on the network -- but the
+# outcome is now recorded. This hook is the only route an attendee's work has
+# out of the container, and for a long time it could fail on every single
+# commit while reporting that to nobody.
+#
 # databricks sync respects .gitignore and never uploads .git. Strip app SP
 # creds so the CLI authenticates from ~/.databrickscfg.
-env -u DATABRICKS_CLIENT_ID -u DATABRICKS_CLIENT_SECRET -u DATABRICKS_HOST -u DATABRICKS_TOKEN \\
-  nohup databricks sync "$REPO_ROOT" "$DEST" --watch=false >> "$SYNC_LOG" 2>&1 & disown
+(
+  env -u DATABRICKS_CLIENT_ID -u DATABRICKS_CLIENT_SECRET -u DATABRICKS_HOST -u DATABRICKS_TOKEN \\
+    nohup databricks sync "$REPO_ROOT" "$DEST" --watch=false >> "$SYNC_LOG" 2>&1
+  code=$?
+  detail=""
+  if [ "$code" -ne 0 ]; then
+    # Control characters go first so the record stays one line per field
+    # whatever the CLI printed, and the reader never has to unescape anything.
+    detail="$(tail -n 20 "$SYNC_LOG" | grep -v '^\\[post-commit\\]' \\
+      | tr -d '\\000-\\037' | tail -c 240)"
+  fi
+  {
+    printf 'at=%s\\n' "$(date +%s)"
+    printf 'exit=%s\\n' "$code"
+    printf 'detail=%s\\n' "$detail"
+  } > "$STATUS.tmp" 2>/dev/null && mv -f "$STATUS.tmp" "$STATUS" 2>/dev/null
+) > /dev/null 2>&1 & disown
 """
 
 
@@ -564,6 +590,74 @@ def _write_npm_setup(user: User) -> None:
         f.write("audit=false\nfund=false\n")
 
 
+def workspace_sync_status_path(user: User) -> str:
+    return os.path.join(user.home, ".workshop", "workspace-sync")
+
+
+def workspace_sync_status_for_email(email: str) -> dict:
+    """The sync record for an attendee who may not be in the registry.
+
+    The registry is process-local, so after a restart it is empty until the
+    attendee's next request -- while the record itself is on ``DATA_ROOT`` and
+    outlived the container. Reading it through the registry would report the
+    reassuring "nothing committed yet" over the top of a recorded failure, in
+    the one window where an operator is most likely to be looking.
+
+    A home path is a pure function of the email, so this needs no user object
+    and creates nothing.
+    """
+    home = os.path.join(config.users_root(), email_slug(email))
+    return _read_workspace_sync(os.path.join(home, ".workshop", "workspace-sync"))
+
+
+def workspace_sync_status(user: User) -> dict:
+    return _read_workspace_sync(workspace_sync_status_path(user))
+
+
+def _read_workspace_sync(path: str) -> dict:
+    """What the last post-commit sync did, for operators rather than attendees.
+
+    ``never`` is not a fault: an attendee who has not committed yet has nothing
+    to sync, and reporting that as a failure would train operators to ignore the
+    field on exactly the instances where it later matters.
+
+    Parsed defensively on purpose. The record is written by a shell hook running
+    on the far side of a network call, so a truncated, empty or half-written file
+    is a normal outcome rather than an exceptional one, and none of those should
+    be able to take down the readiness endpoint that reports them.
+    """
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            raw = handle.read(4096)
+    except OSError:
+        return {"state": "never", "at": None, "exit": None, "detail": ""}
+
+    fields: dict[str, str] = {}
+    for line in raw.splitlines():
+        key, sep, value = line.partition("=")
+        if sep:
+            fields.setdefault(key.strip(), value)
+
+    try:
+        code = int(fields.get("exit", ""))
+    except ValueError:
+        return {"state": "never", "at": None, "exit": None, "detail": ""}
+    try:
+        at = float(fields.get("at", ""))
+    except ValueError:
+        at = None
+
+    detail = "".join(
+        char for char in fields.get("detail", "") if char.isprintable()
+    ).strip()[:240]
+    return {
+        "state": "ok" if code == 0 else "failed",
+        "at": at,
+        "exit": code,
+        "detail": "" if code == 0 else detail,
+    }
+
+
 def _write_git_setup(user: User) -> None:
     hooks_dir = os.path.join(user.home, ".githooks")
     os.makedirs(hooks_dir, exist_ok=True)
@@ -583,5 +677,9 @@ def _write_git_setup(user: User) -> None:
 
     post_commit = os.path.join(hooks_dir, "post-commit")
     with open(post_commit, "w") as f:
-        f.write(_POST_COMMIT.replace("{email}", user.email))
+        f.write(
+            _POST_COMMIT.replace("{email}", user.email).replace(
+                "{status_path}", workspace_sync_status_path(user)
+            )
+        )
     os.chmod(post_commit, 0o755)

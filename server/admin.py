@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from . import attendee as attendee_binding
-from . import config, help as help_module, obo, spend
+from . import config, help as help_module, obo, spend, user_content
 from .auth import require_admin
 from .content import Broadcast, ContentPack, content_service
 from .credentials import credential_manager
@@ -283,6 +283,7 @@ def presence():
             "first_seen": user.first_seen,
             "cli_ready": bool(user.cli_ready),
             "obo": obo.obo_manager.status(user.email),
+            "workspace_sync": user_content.workspace_sync_status(user),
             "sessions": [s.to_dict() for s in sessions],
         })
     return {
