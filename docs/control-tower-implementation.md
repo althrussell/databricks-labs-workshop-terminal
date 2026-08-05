@@ -135,7 +135,7 @@ The hard checks are:
    stale there. The soft `model_profile` check reports the active profile and
    any pins that are set.
 
-Three **soft** checks ride alongside them, each carrying `"soft": true` and each
+Four **soft** checks ride alongside them, each carrying `"soft": true` and each
 excluded from the `ready` verdict. CT should surface a soft `red` to the
 operator, but must never treat any of them as an admission failure.
 
@@ -167,6 +167,14 @@ always exists and configuration cannot prove the feature works — so the check 
 collected at least once, and `red` only if `dropped` is non-zero, meaning the
 buffer overflowed and events were lost for good. See
 [§14](#14-workshop-insight-capture-opt-in-per-event).
+
+`workspace_sync` reports whether the attendee's committed work is reaching their
+Workspace home. Amber means nothing has been committed yet. `red` means the
+`post-commit` hook ran and `databricks sync` failed, so the work exists only in
+the container and will not survive a restart — almost always because the app SP
+was never granted write on `/Workspace/Users/<attendee>/projects`. See
+[§3](#3-identity--permissions-the-app-sp-needs). Per-attendee detail is in
+`/api/admin/presence` under `users[].workspace_sync`.
 
 The report and release manifest never include token or secret values. CT should poll with bounded
 backoff during installer/reconciler startup, fail the instance on persistent
@@ -215,6 +223,32 @@ It is never considered rotating and is never used to create another PAT.
 | `MANAGE`, `USE_CATALOG`, `CREATE_SCHEMA` | only the attendee's dedicated catalog | GET/PATCH its grants and create workshop schemas; add narrower object-create privileges only when the content requires them |
 | Member of `ADMIN_GROUP` (`platform_admins`) | workspace group | SCIM group resolution + operator/admin access |
 | SCIM read (`/Me`, `/Users`) | workspace | resolve attendee group membership for operator gating |
+| `CAN_MANAGE` | `/Workspace/Users/<attendee>/projects` | persist the attendee's committed work — see below |
+
+### Persisting the attendee's committed work
+
+The terminal installs a git `post-commit` hook that runs `databricks sync` from
+`~/projects/<repo>` to `/Workspace/Users/<attendee>/projects/<repo>`, so an
+attendee's committed work survives a container restart. It does **not** survive
+teardown: the workspace goes with it, and keeping the work means pushing to a
+remote the attendee owns.
+
+That hook authenticates as the app SP, which has no access to any user's home by
+default, so **without this grant it fails on every commit**. CT must grant it at
+provisioning:
+
+- `mkdirs` the folder first — a home directory is materialised on the user's
+  first login, and at provisioning time the attendee has usually never signed in.
+- Use the **additive** permissions call (`update_permissions`, PATCH). The
+  replacing one (`set_permissions`, PUT) strips the attendee's access to their
+  own folder, which is worse than the problem it solves.
+- Grant on `projects`, not the whole home. The hook writes nowhere else.
+
+Best-effort: an attendee who cannot sync still has a working terminal, so a
+refused grant must not fail their deploy. It must not be silent either — the
+terminal reports the outcome of the last sync as a soft `workspace_sync` check
+on `/readyz` and per-attendee in `/api/admin/presence`. `red` there means
+committed work is not leaving the container, and the usual cause is this grant.
 
 The CT **deployer SP** (the one calling the admin API) additionally needs
 `CAN_USE` on the app itself and membership in `ADMIN_GROUP` — see

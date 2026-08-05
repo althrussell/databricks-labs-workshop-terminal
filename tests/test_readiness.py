@@ -248,6 +248,7 @@ def test_all_hard_checks_green_is_ready(tmp_path):
         "insight_capture",
         "model_gateway",
         "model_profile",
+        "workspace_sync",
     }
 
 

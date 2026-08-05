@@ -3,6 +3,8 @@
 import json
 import os
 import subprocess
+import time
+import uuid
 
 from .conftest import ALICE
 
@@ -534,6 +536,179 @@ def test_git_identity_and_sync_hook(client, monkeypatch):
     hook = open(os.path.join(home, ".githooks", "post-commit")).read()
     assert "/Workspace/Users/alice@example.com/projects" in hook
     assert "databricks sync" in hook
+
+
+def _clear_sync_status():
+    """Drop any record left by an earlier case.
+
+    The attendee home is shared across tests in a session, so a stale record
+    reads as this test's result -- which would let a case assert a state the
+    hook never produced.
+    """
+    from server import user_content
+    from server.users import user_manager
+
+    path = user_content.workspace_sync_status_path(
+        user_manager.get("alice@example.com")
+    )
+    if os.path.exists(path):
+        os.unlink(path)
+
+
+def _commit_with_hook(home, tmp_path, *, cli_exit, cli_stderr="boom"):
+    """Commit in a real repo under ~/projects and let the real hook fire.
+
+    Runs the shipped hook rather than asserting on its text. The bug this covers
+    was never in what the script said -- it was that the script's outcome went
+    nowhere -- so a test that greps the template would have passed throughout.
+    """
+    shim = tmp_path / "shim"
+    shim.mkdir(exist_ok=True)
+    (shim / "databricks").write_text(
+        f"#!/bin/sh\necho '{cli_stderr}' >&2\nexit {cli_exit}\n"
+    )
+    (shim / "databricks").chmod(0o755)
+    _clear_sync_status()
+
+    # realpath because the hook guards on "$HOME/projects"/* and git reports the
+    # physical path: on macOS the temp home is /var/... while git resolves
+    # /private/var/..., so an unresolved HOME makes the hook exit before syncing
+    # and the test would pass for the wrong reason.
+    real_home = os.path.realpath(home)
+    repo = os.path.join(real_home, "projects", f"demo-{uuid.uuid4().hex[:8]}")
+    os.makedirs(repo, exist_ok=True)
+    env = {
+        "HOME": real_home,
+        "PATH": f"{shim}:{os.environ['PATH']}",
+        "GIT_CONFIG_GLOBAL": os.path.join(home, ".gitconfig"),
+        "GIT_AUTHOR_NAME": "Attendee",
+        "GIT_AUTHOR_EMAIL": "alice@example.com",
+        "GIT_COMMITTER_NAME": "Attendee",
+        "GIT_COMMITTER_EMAIL": "alice@example.com",
+    }
+    with open(os.path.join(repo, "app.py"), "w") as handle:
+        handle.write("print('hi')\n")
+    for argv in (
+        ["git", "init", "-q"],
+        ["git", "add", "-A"],
+        ["git", "commit", "-q", "-m", "work"],
+    ):
+        done = subprocess.run(
+            argv, cwd=repo, env=env, capture_output=True, text=True, timeout=60
+        )
+        assert done.returncode == 0, done.stderr
+
+    from server import user_content
+    from server.users import user_manager
+
+    user = user_manager.get("alice@example.com")
+    # The sync is backgrounded so the attendee's commit never blocks on the
+    # network, which means the record lands after the hook has already returned.
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        status = user_content.workspace_sync_status(user)
+        if status["state"] != "never":
+            return status
+        time.sleep(0.1)
+    return user_content.workspace_sync_status(user)
+
+
+def test_a_failed_workspace_sync_is_recorded_instead_of_only_logged(
+    client, monkeypatch, tmp_path
+):
+    """The hook ran as the app service principal, which has no write access to
+    the attendee's Workspace home, so it failed on every commit of a live event
+    and said so only in ~/.sync.log -- inside a container nobody can open."""
+    home = _provisioned_home(client, monkeypatch)
+
+    status = _commit_with_hook(
+        home, tmp_path, cli_exit=1, cli_stderr="PERMISSION_DENIED: cannot write"
+    )
+
+    assert status["state"] == "failed"
+    assert status["exit"] == 1
+    assert "PERMISSION_DENIED" in status["detail"]
+
+
+def test_a_successful_workspace_sync_records_no_failure_detail(
+    client, monkeypatch, tmp_path
+):
+    home = _provisioned_home(client, monkeypatch)
+
+    status = _commit_with_hook(home, tmp_path, cli_exit=0, cli_stderr="")
+
+    assert status["state"] == "ok"
+    assert status["exit"] == 0
+    assert status["detail"] == ""
+
+
+def test_a_failed_sync_is_reported_without_taking_the_workshop_down(
+    client, monkeypatch, tmp_path
+):
+    """Red, but still serving. A sync failure costs the attendee their work only
+    if the container also restarts; refusing to serve costs it outright."""
+    home = _provisioned_home(client, monkeypatch)
+    _commit_with_hook(home, tmp_path, cli_exit=1)
+    # The instance-level report speaks for the bound attendee, which is the
+    # identity Control Tower injects when it provisions the app.
+    monkeypatch.setenv("WORKSHOP_ATTENDEE_EMAIL", "alice@example.com")
+
+    from server import readiness
+
+    report = readiness.evaluate_runtime()
+    check = report["checks"]["workspace_sync"]
+
+    assert check["soft"] is True
+    assert check["state"] == "red"
+    assert check["ok"] is False
+    assert "will not survive a container restart" in check["detail"]
+
+
+def test_no_commits_yet_is_not_reported_as_a_sync_failure(client, monkeypatch):
+    """Otherwise operators learn to ignore the field on exactly the instances
+    where it later matters."""
+    from server import user_content
+    from server.users import user_manager
+
+    _provisioned_home(client, monkeypatch)
+    _clear_sync_status()
+    status = user_content.workspace_sync_status(
+        user_manager.get("alice@example.com")
+    )
+
+    assert status["state"] == "never"
+    assert status["exit"] is None
+
+
+def test_a_half_written_sync_record_does_not_break_the_readiness_endpoint(
+    client, monkeypatch
+):
+    """The record is written by a shell hook on the far side of a network call,
+    so truncation is a normal outcome, not an exceptional one."""
+    from server import user_content
+    from server.users import user_manager
+
+    _provisioned_home(client, monkeypatch)
+    user = user_manager.get("alice@example.com")
+    path = user_content.workspace_sync_status_path(user)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as handle:
+        handle.write("at=nonsense\nexit=\ndet")
+
+    assert user_content.workspace_sync_status(user)["state"] == "never"
+
+
+def test_presence_carries_the_sync_state_per_attendee(
+    client, monkeypatch, as_admin
+):
+    _provisioned_home(client, monkeypatch)
+    _clear_sync_status()
+
+    body = client.get(
+        "/api/admin/presence", headers={"X-Forwarded-Email": "op@example.com"}
+    ).json()
+
+    assert body["users"][0]["workspace_sync"]["state"] == "never"
 
 
 def test_claude_json_mcp_off_by_default(client, monkeypatch):
