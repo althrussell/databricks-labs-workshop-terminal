@@ -32,7 +32,7 @@ import secrets
 import shutil
 
 from . import config
-from .users import User
+from .users import User, email_slug
 
 logger = logging.getLogger(__name__)
 
@@ -520,10 +520,14 @@ def _write_claude_json(user: User) -> None:
 # -- git identity + workspace-sync hook --
 
 _POST_COMMIT = """#!/bin/bash
-# Auto-sync committed work to the attendee's Databricks Workspace home so it
-# outlives this container. It does not outlive the workshop: teardown deletes the
-# workspace too, so keeping the work means pushing it to a remote the attendee
-# owns. Only syncs repos inside ~/projects/.
+# Auto-sync committed work to the attendee's Databricks Workspace home, where
+# they can open it in the workspace UI, use it from a notebook or job, and still
+# reach it once this app is gone. The container's own copy lives on DATA_ROOT
+# and is not the thing at risk here.
+#
+# It does not outlive the workshop either way: teardown deletes the workspace
+# too, so keeping the work means pushing it to a remote the attendee owns.
+# Only syncs repos inside ~/projects/.
 SYNC_LOG="$HOME/.sync.log"
 STATUS="{status_path}"
 
@@ -539,9 +543,9 @@ echo "[post-commit] $(date +%H:%M:%S) syncing $REPO_ROOT -> $DEST" >> "$SYNC_LOG
 mkdir -p "$(dirname "$STATUS")" 2>/dev/null
 
 # Still backgrounded -- a commit must never block on the network -- but the
-# outcome is now recorded. This hook is the only thing standing between an
-# attendee and losing their work to a container restart, and for a long time it
-# could fail on every single commit while reporting that to nobody.
+# outcome is now recorded. This hook is the only route an attendee's work has
+# out of the container, and for a long time it could fail on every single
+# commit while reporting that to nobody.
 #
 # databricks sync respects .gitignore and never uploads .git. Strip app SP
 # creds so the CLI authenticates from ~/.databrickscfg.
@@ -590,7 +594,27 @@ def workspace_sync_status_path(user: User) -> str:
     return os.path.join(user.home, ".workshop", "workspace-sync")
 
 
+def workspace_sync_status_for_email(email: str) -> dict:
+    """The sync record for an attendee who may not be in the registry.
+
+    The registry is process-local, so after a restart it is empty until the
+    attendee's next request -- while the record itself is on ``DATA_ROOT`` and
+    outlived the container. Reading it through the registry would report the
+    reassuring "nothing committed yet" over the top of a recorded failure, in
+    the one window where an operator is most likely to be looking.
+
+    A home path is a pure function of the email, so this needs no user object
+    and creates nothing.
+    """
+    home = os.path.join(config.users_root(), email_slug(email))
+    return _read_workspace_sync(os.path.join(home, ".workshop", "workspace-sync"))
+
+
 def workspace_sync_status(user: User) -> dict:
+    return _read_workspace_sync(workspace_sync_status_path(user))
+
+
+def _read_workspace_sync(path: str) -> dict:
     """What the last post-commit sync did, for operators rather than attendees.
 
     ``never`` is not a fault: an attendee who has not committed yet has nothing
@@ -602,7 +626,6 @@ def workspace_sync_status(user: User) -> dict:
     is a normal outcome rather than an exceptional one, and none of those should
     be able to take down the readiness endpoint that reports them.
     """
-    path = workspace_sync_status_path(user)
     try:
         with open(path, encoding="utf-8", errors="replace") as handle:
             raw = handle.read(4096)

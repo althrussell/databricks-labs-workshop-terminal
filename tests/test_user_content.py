@@ -645,8 +645,9 @@ def test_a_successful_workspace_sync_records_no_failure_detail(
 def test_a_failed_sync_is_reported_without_taking_the_workshop_down(
     client, monkeypatch, tmp_path
 ):
-    """Red, but still serving. A sync failure costs the attendee their work only
-    if the container also restarts; refusing to serve costs it outright."""
+    """Red, but still serving. What a failed sync costs is the attendee's route
+    to their work from outside the terminal; refusing to serve would cost them
+    the workshop to protect a copy that DATA_ROOT already holds."""
     home = _provisioned_home(client, monkeypatch)
     _commit_with_hook(home, tmp_path, cli_exit=1)
     # The instance-level report speaks for the bound attendee, which is the
@@ -661,7 +662,28 @@ def test_a_failed_sync_is_reported_without_taking_the_workshop_down(
     assert check["soft"] is True
     assert check["state"] == "red"
     assert check["ok"] is False
-    assert "will not survive a container restart" in check["detail"]
+    assert "exists only inside the terminal" in check["detail"]
+
+
+def test_a_recorded_failure_still_reports_after_the_registry_is_lost(
+    client, monkeypatch, tmp_path
+):
+    """The registry is process-local; the record is on DATA_ROOT and outlives
+    the container. Reading the failure through the registry would report the
+    reassuring "nothing committed yet" over the top of it, for the whole window
+    after a restart -- when an operator is most likely to be looking."""
+    home = _provisioned_home(client, monkeypatch)
+    _commit_with_hook(home, tmp_path, cli_exit=1)
+    monkeypatch.setenv("WORKSHOP_ATTENDEE_EMAIL", "alice@example.com")
+
+    from server import readiness
+    from server.users import user_manager
+
+    user_manager._users.clear()  # the restart: registry empty, disk intact
+
+    check = readiness.evaluate_runtime()["checks"]["workspace_sync"]
+
+    assert check["state"] == "red"
 
 
 def test_no_commits_yet_is_not_reported_as_a_sync_failure(client, monkeypatch):

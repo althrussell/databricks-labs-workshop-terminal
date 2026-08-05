@@ -170,9 +170,9 @@ buffer overflowed and events were lost for good. See
 
 `workspace_sync` reports whether the attendee's committed work is reaching their
 Workspace home. Amber means nothing has been committed yet. `red` means the
-`post-commit` hook ran and `databricks sync` failed, so the work exists only in
-the container and will not survive a restart — almost always because the app SP
-was never granted write on `/Workspace/Users/<attendee>/projects`. See
+`post-commit` hook ran and `databricks sync` failed, so the work exists only
+inside the terminal — almost always because the app SP was never granted write
+on `/Workspace/Users/<attendee>/projects`. See
 [§3](#3-identity--permissions-the-app-sp-needs). Per-attendee detail is in
 `/api/admin/presence` under `users[].workspace_sync`.
 
@@ -228,10 +228,15 @@ It is never considered rotating and is never used to create another PAT.
 ### Persisting the attendee's committed work
 
 The terminal installs a git `post-commit` hook that runs `databricks sync` from
-`~/projects/<repo>` to `/Workspace/Users/<attendee>/projects/<repo>`, so an
-attendee's committed work survives a container restart. It does **not** survive
-teardown: the workspace goes with it, and keeping the work means pushing to a
-remote the attendee owns.
+`~/projects/<repo>` to `/Workspace/Users/<attendee>/projects/<repo>`. This is
+the only route an attendee's work has out of the container: synced, they can
+open it in the workspace UI, use it from a notebook or job, and still reach it
+once the app is gone.
+
+It is **not** a backup of last resort, and should not be sold to attendees as
+one. The container's own copy lives on `DATA_ROOT` and is not what is at risk,
+and nothing here survives teardown — the workspace goes with it. An attendee who
+wants to keep their work must push it to a remote they own.
 
 That hook authenticates as the app SP, which has no access to any user's home by
 default, so **without this grant it fails on every commit**. CT must grant it at

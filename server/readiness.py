@@ -665,11 +665,12 @@ def evaluate(
             pending=insight["pending"],
             dropped=insight["dropped"],
         ),
-        # Soft because a failed sync costs an attendee their work only if the
-        # container also restarts, and refusing to serve the workshop would cost
-        # it outright. Reported at all because this failed on every commit of a
-        # live event while announcing it nowhere but a log file in a container
-        # nobody can open.
+        # Soft because the container's copy under DATA_ROOT is not lost when
+        # this fails -- what is lost is the attendee's ability to reach their
+        # work from outside the terminal. Refusing to serve would cost them the
+        # workshop to protect a copy. Reported at all because this failed on
+        # every commit of a live event while announcing it nowhere but a log
+        # file in a container nobody can open.
         "workspace_sync": _soft(
             sync["state"] != "failed",
             "green" if sync["state"] == "ok" else "amber"
@@ -681,8 +682,8 @@ def evaluate(
                 else "no commits yet, so nothing has been synced"
                 if sync["state"] == "never"
                 else "committed work is NOT reaching the attendee's Workspace "
-                f"home (databricks sync exited {sync['exit']}) — it will not "
-                "survive a container restart"
+                f"home (databricks sync exited {sync['exit']}) — it exists only "
+                "inside the terminal"
             ),
             state_detail=sync["detail"],
             last_attempt_at=sync["at"],
@@ -701,24 +702,22 @@ def evaluate(
 
 
 def _bound_workspace_sync() -> dict | None:
-    """The bound attendee's last sync outcome, or None if there isn't one yet.
+    """The bound attendee's last sync outcome, or None if the instance is unbound.
 
     One app serves one attendee, so the instance-level report can speak for that
-    attendee. Before anyone has connected there is no home to read and no claim
-    worth making, which is not the same as a healthy sync.
+    attendee. Read straight off disk rather than through the user registry: the
+    registry is process-local and empty until the attendee's next request, while
+    the record survives on ``DATA_ROOT``, so going through it would paper over a
+    recorded failure with "nothing committed yet" for the whole window after a
+    restart. Creates nothing -- a readiness probe has no business provisioning
+    anyone.
     """
     from . import attendee, user_content
-    from .users import user_manager
 
     email = attendee.resolved_email()
     if not email:
         return None
-    # peek, never get: get() creates the user and bootstraps their home, and a
-    # readiness probe has no business provisioning anyone.
-    user = user_manager.peek(email)
-    if user is None:
-        return None
-    return user_content.workspace_sync_status(user)
+    return user_content.workspace_sync_status_for_email(email)
 
 
 def evaluate_runtime() -> dict:
