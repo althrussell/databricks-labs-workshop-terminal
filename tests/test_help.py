@@ -23,13 +23,10 @@ def test_clear_hand_keeps_message_history(client, as_admin):
             "message_id": "keep-1",
             "sender_role": "operator",
             "body": "still visible after resolve",
-            "show_banner": False,
         },
     )
-    client.post(
-        "/api/admin/broadcast",
-        json={"message": "", "level": "info", "ttl_s": 1, "clear_help": True},
-    )
+    resolved = client.post("/api/admin/help/clear")
+    assert resolved.status_code == 200
     thread = client.get(
         "/api/help/thread", headers={"X-Forwarded-Email": "alice@example.com"}
     ).json()
@@ -137,15 +134,62 @@ def test_presence_includes_help_fields(client, as_admin):
     assert presence["help_raised_at"]
 
 
-def test_operator_broadcast_clear_help(client, as_admin):
+def test_resolve_clears_hand_via_dedicated_endpoint(client, as_admin):
+    """Resolving a request has its own endpoint, not an empty broadcast.
+
+    Clearing the hand used to ride along on ``/api/admin/broadcast`` as an
+    empty message with a flag, which meant every resolve pushed a no-op notice
+    at every attendee's banner and the broadcast contract carried a field that
+    had nothing to do with broadcasting.
+    """
     client.post("/api/help/raise", json={"note": "x"}, headers={"X-Forwarded-Email": "alice@example.com"})
-    resp = client.post(
-        "/api/admin/broadcast",
-        json={"message": "", "level": "info", "ttl_s": 1, "clear_help": True},
-    )
+    resp = client.post("/api/admin/help/clear")
     assert resp.status_code == 200
     cfg = client.get("/api/config", headers={"X-Forwarded-Email": "alice@example.com"}).json()
     assert cfg["help"]["raised"] is False
+
+
+def test_operator_reply_never_hijacks_the_banner(client, as_admin):
+    """An operator reply is a toast, and leaves the pinned notice alone."""
+    client.post(
+        "/api/admin/broadcast",
+        json={"message": "Lunch at 12:30", "level": "info", "ttl_s": 600, "surface": "banner"},
+    )
+    client.post(
+        "/api/admin/help/message",
+        json={"message_id": "op-9", "sender_role": "operator", "body": "restart the warehouse"},
+    )
+    cfg = client.get("/api/config", headers={"X-Forwarded-Email": "alice@example.com"}).json()
+    assert cfg["broadcast"]["message"] == "Lunch at 12:30"
+
+
+def test_toast_surface_broadcast_is_not_retained_as_a_banner(client, as_admin):
+    """A toast-surface broadcast fires and is gone; only banners are replayed."""
+    client.post("/api/admin/broadcast", json={"message": "", "clear": True})
+    resp = client.post(
+        "/api/admin/broadcast",
+        json={"message": "5 minutes left", "level": "info", "ttl_s": 20, "surface": "toast"},
+    )
+    assert resp.status_code == 200
+    cfg = client.get("/api/config", headers={"X-Forwarded-Email": "alice@example.com"}).json()
+    assert cfg["broadcast"] is None
+
+
+def test_ack_pushes_read_receipt_to_control_tower(client, ct_env, monkeypatch):
+    mock_post = MagicMock(return_value=MagicMock(status_code=200, text="ok"))
+    monkeypatch.setattr(help_module.requests, "post", mock_post)
+    monkeypatch.setattr(help_module, "app_identity_bearer", lambda: "oauth-bearer")
+
+    resp = client.post(
+        "/api/help/ack",
+        json={"message_id": "op-1"},
+        headers={"X-Forwarded-Email": "alice@example.com"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["acked"] is True
+    assert mock_post.call_args[0][0] == (
+        "https://ct.example/api/help/messages/op-1/seen"
+    )
 
 
 def test_attendee_follow_up_message(client, ct_env, monkeypatch):
@@ -191,7 +235,6 @@ def test_admin_help_message_ingest(client, as_admin):
             "sender_role": "operator",
             "sender": "op@x.com",
             "body": "try restarting the warehouse",
-            "show_banner": False,
         },
     )
     assert resp.status_code == 200, resp.text

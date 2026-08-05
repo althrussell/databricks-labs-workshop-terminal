@@ -148,9 +148,12 @@ export interface DiscoveryRecord {
 
 export interface Broadcast {
   message: string;
-  level: "info" | "success" | "warning";
+  level: "info" | "success" | "warning" | "error";
   ttl_s: number;
-  clear_help?: boolean;
+  /** Only banners are retained server-side, so only banners arrive here. */
+  surface?: "banner" | "toast";
+  durability?: "transient" | "sticky" | "critical";
+  clear?: boolean;
 }
 
 export interface HelpState {
@@ -168,7 +171,6 @@ export interface HelpMessage {
   sender?: string;
   body: string;
   created_at: string;
-  show_banner?: boolean;
 }
 
 export interface HelpThread {
@@ -279,6 +281,12 @@ export const api = {
       "/api/help/messages",
       { method: "POST", body: JSON.stringify({ body }) },
     ),
+  /** Read receipt: this attendee has been shown an operator message. */
+  ackHelpMessage: (messageId: string) =>
+    request<{ acked: boolean }>("/api/help/ack", {
+      method: "POST",
+      body: JSON.stringify({ message_id: messageId }),
+    }),
 };
 
 export { ApiError };

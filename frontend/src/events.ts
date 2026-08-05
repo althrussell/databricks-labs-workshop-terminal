@@ -1,6 +1,21 @@
 // App-level event socket (/ws/events) with auto-reconnect: phase changes,
 // broadcasts, content updates. Singleton shared by every component.
 
+/** Where a notification lands. Decided by Control Tower, never inferred here.
+ *
+ * `banner` is persistent room or system state that must survive a page reload.
+ * `toast` is a discrete message addressed to this attendee. `none` is a message
+ * that needs no notification at all — typically one the attendee just typed.
+ */
+export type NotificationSurface = "banner" | "toast" | "none";
+
+/** Whether a toast may dismiss itself.
+ *
+ * `transient` auto-dismisses (pacing chatter). `sticky` waits for the attendee
+ * (a direct answer to their question). `critical` is a lock or suspension.
+ */
+export type NotificationDurability = "transient" | "sticky" | "critical";
+
 export type AppEvent =
   | { t: "phase"; phase: string }
   | {
@@ -8,8 +23,9 @@ export type AppEvent =
       message: string;
       level: string;
       ttl_s: number;
-      clear_help?: boolean;
-      source?: string;
+      surface?: NotificationSurface;
+      durability?: NotificationDurability;
+      clear?: boolean;
     }
   | {
       t: "help_message";
@@ -19,7 +35,9 @@ export type AppEvent =
       sender?: string;
       body: string;
       created_at: string;
-      show_banner?: boolean;
+      surface?: NotificationSurface;
+      durability?: NotificationDurability;
+      request_ack?: boolean;
     }
   | { t: "help_state"; raised: boolean; note?: string | null }
   | { t: "content_updated" }
