@@ -57,6 +57,35 @@ export function pushToast(stack: Toast[], toast: Toast): Toast[] {
   return next.filter((t) => !surplus.has(t.id));
 }
 
+/** What to do with an incoming help message: show it, record it, or neither.
+ *
+ * Two decisions that used to be one. The read receipt was a side effect of the
+ * toast rendering, which was fine while the toast was the only way to see a
+ * reply — but the conversation panel shows it too, and toasting on top of an
+ * open conversation covers the composer the attendee would answer in. Splitting
+ * them lets the toast be suppressed without the operator being told the reply
+ * was never opened, which is the signal their attention queue runs on.
+ */
+export function helpMessageSurface({
+  senderRole,
+  helpOpen,
+  surface,
+  requestAck,
+}: {
+  senderRole: string | undefined;
+  helpOpen: boolean;
+  /** Control Tower may route a message away from the toast surface. */
+  surface?: string;
+  /** Control Tower may waive the receipt (e.g. the attendee's own echo). */
+  requestAck?: boolean;
+}): { toast: boolean; acknowledge: boolean } {
+  // An attendee does not need to be notified of what they just typed.
+  if (senderRole !== "operator") return { toast: false, acknowledge: false };
+  const acknowledge = requestAck !== false;
+  if (surface && surface !== "toast") return { toast: false, acknowledge };
+  return { toast: !helpOpen, acknowledge };
+}
+
 /** Seconds from the server, clamped, or undefined to mean "use the default". */
 export function transientTtlMs(ttlSeconds: number | undefined): number | undefined {
   if (typeof ttlSeconds !== "number" || ttlSeconds <= 0) return undefined;

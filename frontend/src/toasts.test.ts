@@ -5,6 +5,7 @@ import {
   MAX_TRANSIENT,
   MAX_TRANSIENT_MS,
   Toast,
+  helpMessageSurface,
   pushToast,
   transientTtlMs,
 } from "./toasts.ts";
@@ -71,4 +72,54 @@ test("a missing or nonsense ttl falls back to the default", () => {
 
 test("an absurd ttl cannot pin a transient toast on screen", () => {
   assert.equal(transientTtlMs(86_400), MAX_TRANSIENT_MS);
+});
+
+test("a reply toasts when the conversation is closed", () => {
+  assert.deepEqual(helpMessageSurface({ senderRole: "operator", helpOpen: false }), {
+    toast: true,
+    acknowledge: true,
+  });
+});
+
+test("a reply does not toast over the conversation it belongs to", () => {
+  // The toast host sits above the composer, so toasting a reply the attendee is
+  // already reading covers the box they would reply in.
+  assert.equal(
+    helpMessageSurface({ senderRole: "operator", helpOpen: true }).toast,
+    false,
+  );
+});
+
+test("a reply read in the open conversation still sends its receipt", () => {
+  // The receipt used to be a side effect of the toast rendering. Suppressing
+  // the toast without this would tell the operator "delivered, never opened"
+  // about a reply the attendee had open on screen — and that signal is what
+  // drives the attention queue.
+  assert.equal(
+    helpMessageSurface({ senderRole: "operator", helpOpen: true }).acknowledge,
+    true,
+  );
+});
+
+test("the attendee's own message neither toasts nor acknowledges", () => {
+  assert.deepEqual(helpMessageSurface({ senderRole: "attendee", helpOpen: false }), {
+    toast: false,
+    acknowledge: false,
+  });
+});
+
+test("a message Control Tower routed off the toast surface stays off it", () => {
+  assert.equal(
+    helpMessageSurface({ senderRole: "operator", helpOpen: false, surface: "banner" })
+      .toast,
+    false,
+  );
+});
+
+test("Control Tower can waive the receipt", () => {
+  assert.equal(
+    helpMessageSurface({ senderRole: "operator", helpOpen: true, requestAck: false })
+      .acknowledge,
+    false,
+  );
 });
