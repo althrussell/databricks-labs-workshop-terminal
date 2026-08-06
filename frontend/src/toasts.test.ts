@@ -5,6 +5,7 @@ import {
   MAX_TRANSIENT,
   MAX_TRANSIENT_MS,
   Toast,
+  clearHelpReplies,
   helpMessageSurface,
   pushToast,
   transientTtlMs,
@@ -114,6 +115,37 @@ test("a message Control Tower routed off the toast surface stays off it", () => 
       .toast,
     false,
   );
+});
+
+test("clearing for the open conversation hands back what still needs receipting", () => {
+  // The conversation displays these now, so they leave the stack — but the
+  // receipt cannot leave with them. It used to ride on the toast rendering,
+  // and anything cleared before that ran would be reported to the operator as
+  // never opened while the attendee had it on screen.
+  const stack = [
+    { ...toast("help:1", "sticky"), ackMessageId: "m1" },
+    toast("broadcast:pace"),
+    { ...toast("help:2", "critical"), ackMessageId: "m2" },
+  ];
+  const { receipts, kept } = clearHelpReplies(stack);
+  assert.deepEqual(receipts, ["m1", "m2"]);
+  assert.deepEqual(
+    kept.map((t) => t.id),
+    ["broadcast:pace"],
+  );
+});
+
+test("clearing leaves a reply that was never asked to be receipted", () => {
+  const { receipts, kept } = clearHelpReplies([toast("help:1", "sticky")]);
+  assert.deepEqual(receipts, []);
+  assert.deepEqual(kept, []);
+});
+
+test("clearing a stack with no replies changes nothing", () => {
+  const stack = [toast("broadcast:a"), toast("broadcast:b")];
+  const { receipts, kept } = clearHelpReplies(stack);
+  assert.deepEqual(receipts, []);
+  assert.equal(kept.length, 2);
 });
 
 test("Control Tower can waive the receipt", () => {

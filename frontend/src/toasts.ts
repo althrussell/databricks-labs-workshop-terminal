@@ -86,6 +86,34 @@ export function helpMessageSurface({
   return { toast: !helpOpen, acknowledge };
 }
 
+/** Prefix marking a toast as an operator reply, which the conversation also holds. */
+const HELP_PREFIX = "help:";
+
+/** Drop the replies the open conversation now displays, keeping their receipts.
+ *
+ * Returns the receipts rather than sending them so the caller stays the only
+ * thing that talks to the network. They cannot be skipped: the receipt used to
+ * be a side effect of the toast rendering, so clearing a toast before that ran
+ * would report a reply as never opened while the attendee had it on screen —
+ * and that signal is what the operator's attention queue is built on. Sending
+ * one twice is harmless; the caller dedupes.
+ */
+export function clearHelpReplies(stack: Toast[]): {
+  receipts: string[];
+  kept: Toast[];
+} {
+  const receipts: string[] = [];
+  const kept: Toast[] = [];
+  for (const toast of stack) {
+    if (!toast.id.startsWith(HELP_PREFIX)) {
+      kept.push(toast);
+      continue;
+    }
+    if (toast.ackMessageId) receipts.push(toast.ackMessageId);
+  }
+  return { receipts, kept };
+}
+
 /** Seconds from the server, clamped, or undefined to mean "use the default". */
 export function transientTtlMs(ttlSeconds: number | undefined): number | undefined {
   if (typeof ttlSeconds !== "number" || ttlSeconds <= 0) return undefined;

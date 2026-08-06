@@ -6,6 +6,7 @@ import {
   Toast,
   ToastLevel,
   TRANSIENT_MS,
+  clearHelpReplies,
   helpMessageSurface,
   pushToast,
   transientTtlMs,
@@ -72,10 +73,20 @@ export default function ToastHost({
 
   // Opening the conversation clears the replies it now displays. Otherwise the
   // toast an attendee clicked to get here stays parked over the composer.
+  //
+  // Receipts are sent here rather than left to the card that is being removed.
+  // A card sends its own on mount, which covers the ordinary case, but a toast
+  // cleared in the same commit that added it may never get that far — and the
+  // cost of missing one is the operator being told a reply the attendee is
+  // reading was never opened. `acknowledge` dedupes, so overlapping with the
+  // card costs nothing.
   useEffect(() => {
     if (!helpOpen) return;
-    setToasts((prev) => prev.filter((t) => !t.id.startsWith("help:")));
-  }, [helpOpen]);
+    const { receipts, kept } = clearHelpReplies(toasts);
+    if (kept.length === toasts.length) return;
+    receipts.forEach(acknowledge);
+    setToasts(kept);
+  }, [helpOpen, toasts, acknowledge]);
 
   useEffect(
     () =>
