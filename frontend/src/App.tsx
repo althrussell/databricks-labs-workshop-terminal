@@ -390,7 +390,10 @@ export default function App() {
       </header>
 
       <BannerBar initial={config?.broadcast ?? null} />
-      <ToastHost onOpenHelp={() => setHelpChatOpen(true)} />
+      <ToastHost
+        onOpenHelp={() => setHelpChatOpen(true)}
+        helpOpen={helpChatOpen}
+      />
       <HelpChatPanel
         open={helpChatOpen}
         onClose={() => setHelpChatOpen(false)}

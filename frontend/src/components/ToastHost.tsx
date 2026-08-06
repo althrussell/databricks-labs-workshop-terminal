@@ -6,6 +6,8 @@ import {
   Toast,
   ToastLevel,
   TRANSIENT_MS,
+  clearHelpReplies,
+  helpMessageSurface,
   pushToast,
   transientTtlMs,
 } from "../toasts";
@@ -38,14 +40,22 @@ function level(value: string | undefined): ToastLevel {
 
 export default function ToastHost({
   onOpenHelp,
+  helpOpen = false,
 }: {
   /** Opens the help conversation, so a reply is one click from its thread. */
   onOpenHelp?: () => void;
+  /** True while the conversation panel is showing, which already displays replies. */
+  helpOpen?: boolean;
 }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   // Acks are fire-and-forget and must happen exactly once per message, even
   // though React may render a toast twice in development strict mode.
   const acked = useRef<Set<string>>(new Set());
+  // Read inside the event subscription, which is set up once. A dependency
+  // would tear the socket listener down and rebuild it every time the panel
+  // opened, and an event arriving in that gap would be lost.
+  const helpOpenRef = useRef(helpOpen);
+  helpOpenRef.current = helpOpen;
 
   const push = useCallback((toast: Toast) => {
     setToasts((prev) => pushToast(prev, toast));
@@ -55,21 +65,53 @@ export default function ToastHost({
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  const acknowledge = useCallback((messageId: string | undefined) => {
+    if (!messageId || acked.current.has(messageId)) return;
+    acked.current.add(messageId);
+    void api.ackHelpMessage(messageId).catch(() => undefined);
+  }, []);
+
+  // Opening the conversation clears the replies it now displays. Otherwise the
+  // toast an attendee clicked to get here stays parked over the composer.
+  //
+  // Receipts are sent here rather than left to the card that is being removed.
+  // A card sends its own on mount, which covers the ordinary case, but a toast
+  // cleared in the same commit that added it may never get that far — and the
+  // cost of missing one is the operator being told a reply the attendee is
+  // reading was never opened. `acknowledge` dedupes, so overlapping with the
+  // card costs nothing.
+  useEffect(() => {
+    if (!helpOpen) return;
+    const { receipts, kept } = clearHelpReplies(toasts);
+    if (kept.length === toasts.length) return;
+    receipts.forEach(acknowledge);
+    setToasts(kept);
+  }, [helpOpen, toasts, acknowledge]);
+
   useEffect(
     () =>
       onAppEvent((event) => {
         if (event.t === "help_message") {
-          // The attendee's own messages need no notification, and neither does
-          // anything Control Tower routed away from the toast surface.
-          if (event.sender_role !== "operator") return;
-          if (event.surface && event.surface !== "toast") return;
+          const plan = helpMessageSurface({
+            senderRole: event.sender_role,
+            helpOpen: helpOpenRef.current,
+            surface: event.surface,
+            requestAck: event.request_ack,
+          });
+          // Still receipted when the panel swallowed the toast: the attendee
+          // can see it either way, and the operator's queue reads this to
+          // decide who is being ignored.
+          if (!plan.toast) {
+            if (plan.acknowledge) acknowledge(event.message_id);
+            return;
+          }
           push({
             id: `help:${event.message_id}`,
             level: "info",
             durability: event.durability ?? "sticky",
             title: event.sender ? `${event.sender} replied` : "Operator replied",
             body: event.body,
-            ackMessageId: event.request_ack === false ? undefined : event.message_id,
+            ackMessageId: plan.acknowledge ? event.message_id : undefined,
             openHelp: true,
           });
           return;
@@ -92,7 +134,7 @@ export default function ToastHost({
           });
         }
       }),
-    [push]
+    [push, acknowledge]
   );
 
   return (
