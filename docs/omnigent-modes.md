@@ -23,6 +23,38 @@ Mode 5 is out of reach for the APJ fleet: Databricks Sandbox is offered only in
 `us-east-1`, `us-west-2`, `eu-west-1`, `ap-southeast-1`, and `ap-south-1`. Our
 workshops run in `ap-southeast-2`.
 
+That is not just a documented region list. On a workspace where the managed
+preview *is* enabled in `ap-southeast-2`, the sandbox surface is absent from the
+API entirely, while the host surface answers normally:
+
+```
+GET /api/2.0/omnigent/v1/sandboxes → 404 {"detail":"Not Found"}
+GET /api/2.0/omnigent/v1/hosts     → 200 {"hosts":[…]}
+GET /api/2.0/omnigent/v1/runners   → 200 {"data":[]}
+```
+
+## Enabling the managed preview
+
+Modes 4 and 5 need the workspace-level Omnigent preview turned on. **There is no
+working public API for this.** Admins toggle it by hand at
+`https://<workspace-host>/settings/workspace/previews`.
+
+The obvious candidate does not work. `workspace-settings-v2` exposes an
+`omnigents` setting, but it is metadata only: `PATCH` fails even against a
+workspace where the preview is already active, and the value it reports does not
+track the toggle. Do not build provisioning on it.
+
+Probe the real thing functionally instead — the host endpoint's status code is
+the flag:
+
+```
+GET /api/2.0/omnigent/v1/hosts → 404   preview off
+GET /api/2.0/omnigent/v1/hosts → 200   preview on
+```
+
+This is what Control Tower has to gate a mode 4 run on, and it is why mode 4
+cannot be fully self-service until the toggle grows an API.
+
 ## Mode 4: what the spike established
 
 **The managed Omnigent host API is served at `/api/2.0/omnigent`, not at
@@ -74,9 +106,11 @@ The spike proved the connection. It did not prove the workshop.
   managed URL through the terminal app's `env_overrides`. CT's readiness
   contract currently probes a paired Omnigent app for its version; with no app
   to probe, that path needs a decision rather than a default.
-- **Workspace preview flag.** Omnigent is a workspace-level preview
-  (`omnigents`). Provisioning has to enable it per attendee workspace or the
-  managed endpoint will not exist.
+- **Workspace preview flag.** This is the hard blocker, not a task. The preview
+  has no working public API (see "Enabling the managed preview" above), so a
+  freshly provisioned attendee workspace has no managed endpoint and no way for
+  Control Tower to give it one. Until that changes, every mode 4 workshop needs
+  a human to toggle each workspace by hand — which does not scale past a demo.
 - **Model access.** Mode 3 routes models through the paired app's configuration.
   What the managed server offers an attendee, and whether it honors the pinned
   model pool, is unverified.
