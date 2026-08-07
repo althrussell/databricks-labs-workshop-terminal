@@ -13,7 +13,7 @@ discussion, a test plan, and a Control Tower payload.
 | 1 | Off | `false` | — | Nowhere; bare `claude`/`codex` only | Supported |
 | 2 | Local | `true` | empty | Per-attendee loopback server auto-spawned in the WT container | Supported (default) |
 | 3 | Self-hosted app | `true` | WT's own Omnigent App | WT container, as a host registered to the paired app | Supported (production today) |
-| 4 | Managed server, WT host | `true` | `https://<workspace-host>/api/2.0/omnigent` | WT container, as a host registered to the workspace's managed Omnigent | Spiked; see below |
+| 4 | Managed server, WT host | `true` | `https://<workspace-host>/api/2.0/omnigent` | WT container, as a host registered to the workspace's managed Omnigent | Does not connect from the app; see below |
 | 5 | Managed server, Sandbox host | `true` | managed, host delegated to Databricks Sandbox | Databricks-managed sandbox, not WT | Not available in `ap-southeast-2` |
 
 Modes 3 and 4 differ only in *which server the host registers to*. The host
@@ -89,7 +89,36 @@ GET /api/2.0/omnigent/v1/hosts/7f51338c… → 200
 
 `status: "online"` is exactly the value `readiness()` requires before it reports
 `connected: true`, and the `host_id` matched `stable_host_identity` byte for
-byte. No WT change is needed to make mode 4 connect.
+byte.
+
+That spike was run by hand, and it concluded too much. See below.
+
+### The spike was not the workshop: mode 4 does not connect from the app
+
+Running the same configuration from a real deployed Workshop Terminal against
+the same managed server does *not* connect. The host worker cycles
+`waiting_for_token → running → backoff` indefinitely and the server keeps
+reporting the host `offline`.
+
+`stable_host_identity` is not the problem: the app derived
+`7f51338c6f548b1f64e4e48849bdc2ee`, the same id the hand-run spike registered.
+Nor is OBO plumbing — the failing run has OBO fully healthy
+(`enabled: true`, `validation_state: "verified"`, `fresh: true`, no missing
+scopes) and still backs off.
+
+The difference between the two runs is the *credential*, not the code. The
+spike authenticated with a full user OAuth token from `databricks auth token`.
+WT does not have one and never will: it mirrors the attendee's forwarded OBO
+token, which carries only the scopes on the app resource —
+`catalog.catalogs:read`, `catalog.schemas:read`, `catalog.tables:read`, `sql`.
+There is no Omnigent scope to add to that list.
+
+So the working assumption is that host registration needs authority the OBO
+token cannot carry. Until that is resolved with the Omnigent team, **mode 4 is
+not reachable from a Workshop Terminal app**, whatever the preview flag says.
+Do not plan a workshop on it, and do not read the hand-run spike above as
+evidence that it works — it only proves the URL and the host identity are
+right.
 
 ### Why the managed app looked empty
 
@@ -100,8 +129,11 @@ of making WT that host.
 
 ### What mode 4 still needs before it is a supported mode
 
-The spike proved the connection. It did not prove the workshop.
+Two of these are blocking today, in this order.
 
+- **Host registration from the app.** Nothing else matters until this works —
+  see the section above. A hand-run host connects; a deployed Workshop Terminal
+  does not.
 - **Control Tower.** A mode 4 run sets `pair_omnigent_app: false` and passes the
   managed URL through the terminal app's `env_overrides`. CT's readiness
   contract currently probes a paired Omnigent app for its version; with no app
