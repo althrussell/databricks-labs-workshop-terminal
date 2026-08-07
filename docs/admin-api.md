@@ -396,7 +396,7 @@ stats collection. It returns the exact local supervisor `status`, `connected`,
 and `expected_host_id`; `host_id` and `last_seen_at` appear only after a fresh
 attendee-owned bearer verifies `GET /v1/hosts/{expected_host_id}` as `online`.
 `last_seen_at` is the UTC timestamp when Workshop Terminal completed that
-successful verification; upstream v0.7.0's host response has no last-seen field.
+successful verification; upstream v0.8.2's host response has no last-seen field.
 Network/auth/offline/mismatch results remain disconnected and never expose the
 bearer.
 
@@ -429,7 +429,7 @@ python scripts/push_content.py presence
 | `ARTIFACT_MANIFEST_PATH` | empty | Optional mirror override for the repo-owned contract in `assets/artifacts/manifest.json`; may redirect `source` only, and a version/checksum override is rejected |
 | `CLAUDE_CODE_VERSION` | `2.1.216` in `app.yaml` | Exact reviewed Claude Code CLI release candidate |
 | `CODEX_CLI_VERSION` | `0.144.6` in `app.yaml` | Exact reviewed Codex CLI release candidate |
-| `OMNIGENT_VERSION` | `0.7.0` in `app.yaml` | Exact reviewed Omnigent release candidate, matched to the dedicated App protocol |
+| `OMNIGENT_VERSION` | `0.8.2` in `app.yaml` | Exact reviewed Omnigent release candidate, matched to the dedicated App protocol |
 | `DATABRICKS_CLI_VERSION` | `1.8.0` in `app.yaml` | Exact reviewed Databricks CLI release input |
 | `DEEPWIKI_MCP_URL` / `EXA_MCP_URL` | public endpoints | MCP servers for attendee agents (empty string disables) |
 | `ACCESS_GROUP` | *(unset)* | Optional group restricting attendee access |

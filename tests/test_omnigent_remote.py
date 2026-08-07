@@ -1361,7 +1361,7 @@ def test_app_yaml_defaults_remote_off_and_pins_omnigent_070():
     env = {item["name"]: item["value"] for item in app_yaml["env"]}
     assert env["OMNIGENT_APP_URL"] == ""
     assert env["WORKSHOP_ATTENDEE_EMAIL"] == ""
-    assert env["OMNIGENT_VERSION"] == "0.7.0"
+    assert env["OMNIGENT_VERSION"] == "0.8.2"
 
 
 def test_remote_start_rejects_disabled_or_incompatible_omnigent(monkeypatch):
@@ -1375,7 +1375,7 @@ def test_remote_start_rejects_disabled_or_incompatible_omnigent(monkeypatch):
 
     monkeypatch.setenv("OMNIGENT_ENABLED", "true")
     monkeypatch.setattr(install, "OMNIGENT_VERSION", "0.6.0")
-    with pytest.raises(ValueError, match="0.7.0"):
+    with pytest.raises(ValueError, match="0.8.2"):
         RemoteHostManager().start()
 
 

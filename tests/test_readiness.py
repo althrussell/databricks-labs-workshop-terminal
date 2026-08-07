@@ -27,7 +27,7 @@ def _good_inputs(tmp_path):
         "SKILLS_REF": "v1.2.3",
         "CLAUDE_CODE_VERSION": "2.1.216",
         "CODEX_CLI_VERSION": "0.144.6",
-        "OMNIGENT_VERSION": "0.7.0",
+        "OMNIGENT_VERSION": "0.8.2",
         "DATABRICKS_CLI_VERSION": "1.8.0",
         "NODE_VERSION": "24.18.1",
         "PI_CLI_VERSION": "0.83.0",
@@ -85,7 +85,7 @@ def _good_inputs(tmp_path):
                 "databricks": "1.8.0",
                 "node": "24.18.1",
                 "pi": "0.83.0",
-                "omnigent": "0.7.0",
+                "omnigent": "0.8.2",
             }.items()
         } | {
             "databricks_agent_skills": {

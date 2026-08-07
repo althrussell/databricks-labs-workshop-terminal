@@ -9,16 +9,18 @@ link.
 ## Confirmed upstream behavior
 
 A read-only spike used `gh` against `omnigent-ai/omnigent` main at
-`815cdbef431397a59ab296e194fce026d9e79b4f` (newer than the requested baseline
-`43f58d74ccc11d070abbb3b017797e3ab3f7263e`). The following are source-confirmed:
+`d8c7167b162f681bd8e7aef5274777387d8939cb`. The following are source-confirmed:
 
-- The published `omnigent==0.7.0` wheel contains the upstream React UI. Its
-  release commit is `35519fb04743f66b30cac8a40695d5d72fa163ea`; the wheel SHA-256
+- The published `omnigent==0.8.2` wheel contains the upstream React UI. Its
+  release commit is `72746f177eec0266268ebf8b940cef5bd8087ecf`; the wheel SHA-256
   is recorded in `deploy/omnigent-app/upstream-lock.json`.
-- Omnigent 0.7.0 requires Python `>=3.12,<3.13`. The App source intentionally
+- Omnigent 0.8.2 requires Python `>=3.12,<3.13`. The App source intentionally
   omits `requirements.txt` so Databricks Apps selects uv mode from
   `pyproject.toml` and `uv.lock` instead of its Python 3.11 pip mode.
-- Upstream's v0.7.0 and verified-main Databricks wrappers are identical.
+- Upstream's Databricks wrapper is byte-identical between v0.8.2 and v0.8.2, so
+  this App's adaptation carries no structural change across the upgrade. Main has
+  since diverged from v0.8.2 by adding a SQLAlchemy project store; we track the
+  release wrapper deliberately, not main.
 - The remote foreground host command is
   `omnigent host --server <OMNIGENT_APP_URL> --non-interactive`.
   `--non-interactive` suppresses browser login; it does not create credentials.
@@ -48,7 +50,7 @@ Every authenticated Workshop Terminal request carries the attendee's Databricks
 Apps OBO bearer in `X-Forwarded-Access-Token`. When `OMNIGENT_APP_URL` is set,
 Workshop Terminal mirrors that bearer into the attendee's isolated
 `~/.omnigent/auth_tokens.json`, keyed by the normalized App URL, using
-Omnigent 0.7.0's `{token,user_id,expires_at}` record shape. The attendee email
+Omnigent 0.8.2's `{token,user_id,expires_at}` record shape. The attendee email
 is lowercased and JWT `exp` supplies `expires_at`. Capture ordering uses JWT
 `iat` then `exp`; a late older request, even if still valid, cannot replace the
 newer mirrored bearer.
@@ -132,7 +134,7 @@ attendee quitting a session they had deliberately joined, and would fork a new
 session on every such exit.
 
 Remote startup fails closed unless Omnigent is enabled and the effective CLI
-install is exactly protocol-compatible 0.7.0. Local mode retains install-spec
+install is exactly protocol-compatible 0.8.2. Local mode retains install-spec
 override support.
 
 Remote startup also enforces the security topology: exactly one attendee may
@@ -211,7 +213,7 @@ Workshop Terminal App so the proxy forwards the attendee OBO bearer.
    Apps does not mount Unity Catalog volumes, so the path is unreachable from the
    filesystem. Startup fails if the write is not permitted.
 7. Poll App deployment state, authenticated `GET /health`, and
-   `GET /api/version`; require version `0.7.0`. Successful health proves the
+   `GET /api/version`; require version `0.8.2`. Successful health proves the
    Volume startup invariant.
 8. Record the App URL and resource/deployment identifiers.
 9. Deploy Workshop Terminal with the normalized App URL, exact attendee email,
@@ -230,7 +232,7 @@ steps 3–10 retain the dependency order above.
 
 App health is true only when deployment is running, authenticated
 `GET /health` returns HTTP 200 with `{"status":"ok"}`, and
-`GET /api/version` is `0.7.0`. Resource readiness additionally requires the
+`GET /api/version` is `0.8.2`. Resource readiness additionally requires the
 Lakebase endpoint active and an App-SP write probe to the bound Volume.
 
 Workshop readiness is stricter:
@@ -256,7 +258,7 @@ URL and attendee identity, but may set `connected=true`, `host_id`, and
 attendee-owned host and the observed `host_id` equals `expected_host_id`.
 Workshop Terminal performs that verification only while its local supervisor is
 running and a fresh attendee-owned token mirror exists, using authenticated
-`GET /v1/hosts/{expected_host_id}` with a short timeout. Upstream v0.7.0 does
+`GET /v1/hosts/{expected_host_id}` with a short timeout. Upstream v0.8.2 does
 not return a last-seen field, so `last_seen_at` is the UTC timestamp when
 Workshop Terminal completed the successful exact-host online verification.
 Network/auth failures produce `connected=false` while retaining the honest
@@ -309,7 +311,7 @@ Delete in dependency order:
 5. delete the Lakebase branch/project; and
 6. remove persisted deployment/resource correlation rows.
 
-Contract version 1.5 issues no static host credential. Teardown uses the same
+Contract version 1.6 issues no static host credential. Teardown uses the same
 deterministically derived host ID for correlation and repeated cleanup;
 not-found is success, but permission failures are surfaced.
 

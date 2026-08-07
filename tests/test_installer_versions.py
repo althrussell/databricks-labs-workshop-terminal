@@ -84,7 +84,7 @@ class _SyntheticArtifactContract:
             return self._entries[name]
         path = self.root / name
         payload = (
-            b"omnigent==0.7.0 --hash=sha256:" + b"a" * 64 + b"\n"
+            b"omnigent==0.8.2 --hash=sha256:" + b"a" * 64 + b"\n"
             if name == "omnigent_lock"
             else name.encode()
         )
@@ -646,8 +646,8 @@ def test_omnigent_installs_from_the_hash_pinned_lock_alone(
     (prefix / "bin").mkdir(parents=True)
     lock = tmp_path / "omnigent.lock"
     lock.write_text(
-        "omnigent==0.7.0 --hash=sha256:" + "a" * 64 + "\n"
-        "omnigent-client==0.7.0 --hash=sha256:" + "b" * 64 + "\n"
+        "omnigent==0.8.2 --hash=sha256:" + "a" * 64 + "\n"
+        "omnigent-client==0.8.2 --hash=sha256:" + "b" * 64 + "\n"
     )
     uv_archive = _make_archive(tmp_path, "uv_binary", "uv-linux/uv")
     python_archive = _make_archive(
@@ -747,7 +747,7 @@ def test_omnigent_installs_from_the_hash_pinned_lock_alone(
     # The lock is the anchor: edit it and the whole install stops being reusable,
     # because a different lock can resolve to different wheels.
     original_lock = lock.read_bytes()
-    lock.write_text("omnigent==0.7.0 --hash=sha256:" + "c" * 64 + "\n")
+    lock.write_text("omnigent==0.8.2 --hash=sha256:" + "c" * 64 + "\n")
     assert not install._omnigent_install_reusable(str(prefix), entries)
     lock.write_bytes(original_lock)
 
@@ -786,7 +786,7 @@ def test_all_release_candidate_defaults_are_exact():
     assert install.CLAUDE_VERSION == "2.1.216"
     assert install.CODEX_VERSION == "0.144.6"
     assert install.DATABRICKS_CLI_VERSION == "1.8.0"
-    assert install.OMNIGENT_VERSION == "0.7.0"
+    assert install.OMNIGENT_VERSION == "0.8.2"
 
 
 def test_skills_fetch_records_exact_ref_and_resolved_commit(

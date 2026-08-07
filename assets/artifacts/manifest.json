@@ -51,10 +51,10 @@
       "version": "24.18.1"
     },
     "omnigent_lock": {
-      "lock_sha256": "463ec60f34a2fb6140aa9caf8697c42f672d653a1ff6ac1f6e1b5c5c67d0e6d3",
-      "sha256": "463ec60f34a2fb6140aa9caf8697c42f672d653a1ff6ac1f6e1b5c5c67d0e6d3",
-      "source": "omnigent-0.7.0.lock",
-      "version": "0.7.0"
+      "lock_sha256": "808b4a3bc524f35db93e6864f03a4e384884e0d678e60f7c559ba39a2cf9698b",
+      "sha256": "808b4a3bc524f35db93e6864f03a4e384884e0d678e60f7c559ba39a2cf9698b",
+      "source": "omnigent-0.8.2.lock",
+      "version": "0.8.2"
     },
     "pi_npm_package": {
       "sha256": "7097fe4b38762dda7ec78001e7b90430c849fbaf717325bfe8109744e32255e6",

@@ -8,9 +8,9 @@ env:
   - name: OMNIGENT_AUTH_PROVIDER
     value: header
   - name: OMNIGENT_BUILD_VERSION
-    value: "0.7.0"
+    value: "0.8.2"
   - name: OMNIGENT_BUILD_SHA
-    value: "35519fb04743f66b30cac8a40695d5d72fa163ea"
+    value: "72746f177eec0266268ebf8b940cef5bd8087ecf"
   # Workshop Polly variants — the selectable model sets attendees compare.
   # "false" leaves stock polly as the only agent.
   - name: WORKSHOP_POLLY_VARIANTS

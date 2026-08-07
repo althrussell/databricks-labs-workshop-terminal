@@ -73,7 +73,7 @@ def gateway_host() -> str:
 
 
 # Mirrors ``omnigent/pi_native_credentials.py::_is_databricks_ai_gateway_url``
-# (verified against the deployed 0.7.0 wheel). Omnigent routes a base URL as the
+# (verified against the deployed 0.8.2 wheel). Omnigent routes a base URL as the
 # AI Gateway only when it is https, its hostname ends in a trusted
 # Databricks-owned suffix, AND either the hostname carries an ``ai-gateway`` DNS
 # label or the path starts with ``/ai-gateway/``. All three conditions are

@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["contract_version", "ready", "status", "app", "resources", "remote_host", "failure"],
   "properties": {
-    "contract_version": {"type": "string", "const": "1.5"},
+    "contract_version": {"type": "string", "const": "1.6"},
     "ready": {"type": "boolean"},
     "status": {"type": "string", "enum": ["provisioning", "ready", "degraded", "blocked", "failed"]},
     "app": {
@@ -21,7 +21,7 @@
           "required": ["status"],
           "properties": {"status": {"type": "string", "const": "ok"}}
         },
-        "server_version": {"type": "string", "const": "0.7.0"}
+        "server_version": {"type": "string", "const": "0.8.2"}
       }
     },
     "resources": {
