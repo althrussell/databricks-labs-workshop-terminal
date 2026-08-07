@@ -1,7 +1,7 @@
 """Dedicated Omnigent control plane for Databricks Apps.
 
 This is a thin adaptation of upstream ``deploy/databricks/src/app.py`` from
-Omnigent v0.7.0. It serves the published upstream UI and durable stores only;
+Omnigent v0.8.2. It serves the published upstream UI and durable stores only;
 native harnesses, PTYs, and working directories belong on an external host.
 """
 
@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.INFO, stream=sys.stderr, force=True)
 logger = logging.getLogger("omnigent-workshop-app")
 
 if sys.version_info < (3, 12):
-    raise RuntimeError("Omnigent 0.7.0 requires Python 3.12 or newer")
+    raise RuntimeError("Omnigent 0.8.2 requires Python 3.12 or newer")
 
 # Fallback lifetime when the credential response carries no usable expiry.
 _TOKEN_TTL_SECONDS = 50 * 60
@@ -79,7 +79,7 @@ def _register_polly_variants(agent_store, artifact_store, agent_cache) -> None:
     actually changed so restarts are no-ops, and swaps the agent cache's
     extracted bundle in lockstep so the next request cannot serve a stale spec.
     The coupling to a private symbol is acceptable only because this deployment
-    pins Omnigent to exactly 0.7.0; the guard below is what keeps a future
+    pins Omnigent to exactly 0.8.2; the guard below is what keeps a future
     upgrade from turning a moved symbol into a failed boot.
     """
     if os.environ.get("WORKSHOP_POLLY_VARIANTS", "true").strip().lower() != "true":

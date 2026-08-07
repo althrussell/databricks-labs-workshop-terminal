@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["contract_version", "deployment", "resources", "environment", "remote_host"],
   "properties": {
-    "contract_version": {"type": "string", "const": "1.5"},
+    "contract_version": {"type": "string", "const": "1.6"},
     "deployment": {
       "type": "object",
       "additionalProperties": false,
@@ -14,7 +14,7 @@
         "app_name": {"type": "string", "minLength": 1},
         "app_url": {"type": "string", "minLength": 1},
         "deployment_id": {"type": "string", "minLength": 1},
-        "server_version": {"type": "string", "const": "0.7.0"},
+        "server_version": {"type": "string", "const": "0.8.2"},
         "source_repo": {"type": "string", "minLength": 1},
         "source_ref": {"type": "string", "minLength": 1},
         "source_ref_immutable": {"type": "boolean"},

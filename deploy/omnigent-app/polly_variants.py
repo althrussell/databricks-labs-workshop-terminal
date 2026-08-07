@@ -23,7 +23,7 @@ What we deliberately do NOT patch:
 - The upstream prompt's prose. A trimmed roster contradicts it (it introduces
   six sub-agents by name), so we append an authoritative override block rather
   than editing 200 lines we would have to re-edit on every upgrade.
-- Reasoning effort. In 0.7.0 it is a per-session/per-task hint on the
+- Reasoning effort. In 0.8.2 it is a per-session/per-task hint on the
   conversation, not a spec field, so a variant cannot pin it. The frontier
   description tells the attendee to set it in the session instead of us
   pretending it is configured.

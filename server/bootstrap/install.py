@@ -39,8 +39,8 @@ logger = logging.getLogger(__name__)
 CLAUDE_VERSION = os.environ.get("CLAUDE_CODE_VERSION", "2.1.216").strip()
 CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.144.6").strip()
 DATABRICKS_CLI_VERSION = os.environ.get("DATABRICKS_CLI_VERSION", "1.8.0").strip()
-OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "0.7.0").strip()
-OMNIGENT_PROTOCOL_VERSION = "0.7.0"
+OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "0.8.2").strip()
+OMNIGENT_PROTOCOL_VERSION = "0.8.2"
 # Node 24 is the active LTS line; Node 22 is maintenance-only. Pi additionally
 # declares ``engines.node >= 22.19.0``, so the old 22.14.0 pin could not have
 # run it at all.
@@ -108,15 +108,15 @@ TERMINAL_STATUSES = frozenset({"complete", "error", "degraded"})
 
 
 def validate_remote_compatibility() -> None:
-    """Fail fast when remote mode cannot guarantee the 0.7.0 protocol."""
+    """Fail fast when remote mode cannot guarantee the pinned protocol."""
     if not config.omnigent_app_url():
         return
     if not config.omnigent_enabled():
         raise ValueError("OMNIGENT_APP_URL requires OMNIGENT_ENABLED=true")
     if OMNIGENT_VERSION != OMNIGENT_PROTOCOL_VERSION:
         raise ValueError(
-            "Remote Omnigent requires an exact protocol-compatible 0.7.0 "
-            f"install, got {OMNIGENT_VERSION!r}"
+            "Remote Omnigent requires an exact protocol-compatible "
+            f"{OMNIGENT_PROTOCOL_VERSION} install, got {OMNIGENT_VERSION!r}"
         )
 
 

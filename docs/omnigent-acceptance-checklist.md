@@ -8,7 +8,7 @@ IDs, HTTP status, and redacted logs for every step.
 - [ ] Pin the Workshop Terminal source revision and confirm
       `source_subdir=deploy/omnigent-app`.
 - [ ] Confirm `upstream-lock.json`, `pyproject.toml`, and `uv.lock` agree on
-      Omnigent `0.7.0`, and `pyproject.toml` requires Python
+      Omnigent `0.8.2`, and `pyproject.toml` requires Python
       `>=3.12,<3.13`.
 - [ ] Create a dedicated Lakebase project, production branch, endpoint, and
       default database; verify the endpoint becomes active.
@@ -23,7 +23,7 @@ IDs, HTTP status, and redacted logs for every step.
 ## App validation
 
 - [ ] An authenticated `GET /health` returns HTTP 200 and `{"status":"ok"}`.
-- [ ] `GET /api/version` returns `{"version":"0.7.0"}`.
+- [ ] `GET /api/version` returns `{"version":"0.8.2"}`.
 - [ ] Deny Volume writes to the App SP and verify startup/health fails. Restore
       `WRITE_VOLUME`; verify startup writes+fsyncs a unique probe beneath
       `AP_ARTIFACT_VOLUME_PATH` and removes it successfully. Deny deletion and
@@ -88,7 +88,7 @@ IDs, HTTP status, and redacted logs for every step.
       before `connected=true`; offline, mismatch, network, and auth failures
       retain the exact local lifecycle state and return no token.
 - [ ] Confirm `last_seen_at` is the UTC time Workshop Terminal successfully
-      verified the host, not an upstream field (v0.7.0 returns none).
+      verified the host, not an upstream field (v0.8.2 returns none).
 - [ ] Run normal stats collection and verify persisted readiness transitions
       pending → ready → disconnected. Repeat in final pre-teardown collection;
       an admin fetch error or malformed/mismatched report must invalidate stale

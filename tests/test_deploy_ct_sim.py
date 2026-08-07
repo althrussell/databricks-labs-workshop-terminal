@@ -42,7 +42,7 @@ def test_uploaded_yaml_patch_sets_current_event_contract_without_mutating_repo()
         claude_code_version="2.1.216",
         codex_cli_version="0.144.6",
         databricks_cli_version="1.8.0",
-        omnigent_version="0.7.0",
+        omnigent_version="0.8.2",
         node_version="24.18.1",
         pi_cli_version="0.83.0",
         gateway_host="https://dbc-af3ed11d-d267.cloud.databricks.com/ai-gateway",
