@@ -97,11 +97,27 @@ def directory_checksum(
     path: os.PathLike[str] | str,
     names: set[str] | None = None,
 ) -> str:
+    """Hash what was installed into a tree, ignoring the interpreter's cache.
+
+    Compiled bytecode is excluded deliberately. It is written lazily by whoever
+    imports the code, not by the install, so a tree that included it could only
+    match its own stamp until something ran — and then never again. Measured on
+    a live instance: the first Omnigent host start wrote 593 ``.pyc`` files into
+    ``omnigent-venv``, which turned the ``supply_chain`` proof permanently
+    invalid and so made ``/readyz`` return 503 for the rest of the event. A hard
+    admission gate that fails the moment the product is used is worse than no
+    gate, because it teaches an operator to ignore it.
+
+    Nothing is given up: bytecode is derived from the ``.py`` files, which are
+    hashed, so tampering with the source still changes this digest.
+    """
     root = os.fspath(path)
     digest = hashlib.sha256()
     if not os.path.isdir(root):
         return ""
     for current, dirs, files in os.walk(root, followlinks=False):
+        dirs[:] = [name for name in dirs if name != "__pycache__"]
+        files = [name for name in files if not name.endswith((".pyc", ".pyo"))]
         dirs.sort()
         files.sort()
         relative_dir = os.path.relpath(current, root)

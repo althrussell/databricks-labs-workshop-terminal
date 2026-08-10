@@ -371,6 +371,29 @@ def test_one_directory_checksum_handles_python_symlink_trees_identically(
     assert artifacts.directory_checksum(runtime) != canonical
 
 
+def test_running_the_code_in_a_tree_does_not_invalidate_its_checksum(tmp_path):
+    from server.bootstrap import artifacts
+
+    venv = tmp_path / "omnigent-venv" / "lib" / "python3.12" / "site-packages" / "omni"
+    venv.mkdir(parents=True)
+    (venv / "agent.py").write_text("def run(): pass\n")
+    tree = tmp_path / "omnigent-venv"
+    installed = artifacts.directory_checksum(tree)
+
+    # Importing a module writes bytecode beside it. Measured live: the first
+    # Omnigent host start wrote 593 .pyc files into the venv, which invalidated
+    # the supply_chain proof permanently and left /readyz at 503 for the rest of
+    # the event — a hard admission gate failing because the product was used.
+    cache = venv / "__pycache__"
+    cache.mkdir()
+    (cache / "agent.cpython-312.pyc").write_bytes(b"\x00compiled")
+
+    assert artifacts.directory_checksum(tree) == installed
+    # Source is still covered, which is what the proof is actually for.
+    (venv / "agent.py").write_text("def run(): steal()\n")
+    assert artifacts.directory_checksum(tree) != installed
+
+
 def test_manifest_and_prewarm_share_directory_symlink_semantics(tmp_path):
     from server.bootstrap import artifacts
 

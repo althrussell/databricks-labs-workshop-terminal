@@ -400,6 +400,62 @@ successful verification; upstream v0.8.2's host response has no last-seen field.
 Network/auth/offline/mismatch results remain disconnected and never expose the
 bearer.
 
+### `GET /api/admin/diagnostics`
+The answer to "why did that attendee see an error?", without their browser and
+without a shell on their container.
+
+| Field | Meaning |
+|---|---|
+| `errors` | Classified Omnigent failures from the collector's journal, newest first. Each carries `code`, `attendee`, `source` (`runner`/`host`/`server`), `level`, `logger`, `session`, a redacted `message`, the redacted `detail` (traceback), a `fingerprint`, and `count`/`first_seen`/`last_seen` |
+| `collector` | Sweep counters and whether the background collector is running |
+| `readyz` | The same runtime readiness report `/readyz` returns |
+| `identity` | Most recent `identity.resolved` snapshot per attendee — which principal each CLI surface resolves to on each plane |
+| `hosts` | Per-attendee Omnigent host readiness |
+
+`limit` (default 50, max 500) caps `errors`. The journal is de-duplicated by
+`(attendee, session, code, traceback fingerprint)` and persisted beside the
+session journal, so it survives a restart of the app — which matters, because
+the failures worth reading are usually the ones that restarted something.
+
+### `GET /api/admin/diagnostics/logs`
+Redacted tails of the Omnigent **process** logs — `~/.omnigent/logs/*/*.log`,
+which now includes the captured host stdout/stderr. Optional `attendee`,
+`source`, and `limit_bytes` (default 64 KiB, max 256 KiB).
+
+Never returns `auth_tokens.json` and never returns PTY scrollback: how the
+machine failed is operator-visible, what the attendee typed is not.
+
+### `POST /api/admin/diagnostics/sweep`
+Run a collection pass now instead of waiting for the next tick. An operator
+reading the panel has an attendee waiting.
+
+### `GET /api/admin/omnigent-tier`
+Whether the Omnigent tier is being offered, and who could actually launch it:
+`enabled` (false once demoted), `remote` (whether this deployment is wired to a
+remote Omnigent app at all), and an `attendees` list carrying each attendee's
+sign-in freshness and host state.
+
+### `POST /api/admin/omnigent-tier`
+`{"enabled": false}` withdraws every Omnigent-backed card fleet-wide;
+`{"enabled": true}` restores them. Open tabs are pushed the change immediately.
+
+This is the rung-4 lever in [`operator-runbook.md`](./operator-runbook.md): the
+Omnigent harnesses share one credential plane and fail together, so when that
+plane is down the useful move is to withdraw them and leave the bare tier —
+Claude, Codex and Terminal — which runs on the app credential and cannot fail
+the same way. Distinct from the spend kill-switch (`agent-controls`), which
+pauses *every* agent and stops the workshop.
+
+### `POST /api/admin/recover`
+`{"email": "..."}` for one attendee, `{}` for everyone. Runs the same three
+steps the server takes on its own — re-mirror the attendee's token, wake their
+Omnigent host, ask their tab for a fresh one — and returns `recovered` plus a
+per-attendee `results` array with the actions taken. The operator cooldown is
+bypassed: it exists to stop a log sweep thrashing, not to refuse a human.
+
+An attendee's own Recover button hits the unauthenticated-to-admin
+`POST /api/recover`, which does the same for the caller only.
+
 ## CLI usage
 
 `scripts/push_content.py` wraps all of the above:
@@ -415,6 +471,18 @@ python scripts/push_content.py pack ./my_event_pack.json
 python scripts/push_content.py presence
 ```
 
+`scripts/pull_diagnostics.py` is the diagnostics companion, and takes a file of
+app URLs so a fleet can be checked in one pass:
+
+```bash
+export DATABRICKS_TOKEN=...   # member of platform_admins
+
+python scripts/pull_diagnostics.py summary --url https://my-app-1234.aws.databricksapps.com
+python scripts/pull_diagnostics.py errors  --url https://my-app-1234.aws.databricksapps.com
+python scripts/pull_diagnostics.py logs    --url https://... --source runner
+python scripts/pull_diagnostics.py errors  --urls ./instances.txt   # whole fleet
+```
+
 ## Deploy-time configuration (env vars)
 
 | Var | Default | Purpose |
@@ -422,6 +490,11 @@ python scripts/push_content.py presence
 | `WORKSHOP_PAT` | *(unset)* | Emergency-only vended workspace credential. Normal mode uses direct `app_identity_oauth`; a static PAT is always reported `degraded` |
 | `WORKSHOP_APP_SP_ID` | *(unset; required for `/readyz`)* | Numeric SCIM `service_principal_id` returned by app create/get. Control Tower patches the uploaded `app.yaml` after app creation and before deploy; SCIM `/Me` must match this ID together with `DATABRICKS_CLIENT_ID` in `userName` when `applicationId` is absent |
 | `ADMIN_GROUP` | `platform_admins` | Group that grants operator/admin access |
+| `WORKSHOP_LOG_COLLECTOR` | `true` | Background sweep of Omnigent process logs into the diagnostics journal |
+| `WORKSHOP_LOG_COLLECTOR_INTERVAL_S` | `5` | Seconds between sweeps |
+| `WORKSHOP_LOG_JOURNAL_CAPACITY` | `500` | Distinct classified errors retained across restarts |
+| `OMNIGENT_HOST_LOG_LEVEL` | `DEBUG` | Log level for the per-attendee Omnigent host process; the records explaining a failed start are below INFO |
+| `OMNIGENT_HOST_LOG_MAX_BYTES` | `2097152` | Ceiling on one attendee's captured host stdout/stderr before rotation |
 | `LAB_COACH` | `true` | Append lab-coach instructions to attendee agent memory |
 | `TOPIC_DETECTION` | `true` | Terminal keyword spotting for contextual insights |
 | `SKILLS_REPO` | github databricks/databricks-agent-skills | Skills source; event use is constrained by the reviewed artifact manifest |

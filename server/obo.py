@@ -135,6 +135,7 @@ class OboManager:
 
     def __init__(self) -> None:
         self._by_email: dict[str, _Record] = {}
+        self._health: dict[str, str] = {}
         self._lock = threading.Lock()
 
     def capture(self, email: str, token: str | None) -> None:
@@ -287,6 +288,41 @@ class OboManager:
                 current.written_at = time.time()
         if mirrored and mirrored_exp is not None and mirrored_exp > time.time():
             _notify_remote_host(user.email)
+        self.note_health(user.email)
+
+    def note_health(self, email: str) -> str:
+        """Emit ``obo.health`` when an attendee's credential changes state.
+
+        The mirror going stale is the single failure that kills every Omnigent
+        harness at once, and until now it was only observable by an attendee
+        hitting it. Mirrors ``credential.health``: state changes only, so a
+        healthy room is quiet and a room going stale is loud.
+        """
+        snapshot = self.status(email)
+        if not (snapshot["enabled"] or config.omnigent_remote_enabled()):
+            state = "disabled"
+        elif not snapshot["present"]:
+            state = "absent"
+        elif snapshot["fresh"]:
+            state = "fresh"
+        else:
+            state = "stale"
+        with self._lock:
+            changed = self._health.get(email) != state
+            self._health[email] = state
+        if changed:
+            from . import telemetry
+
+            telemetry.obo_health(
+                email,
+                state,
+                {
+                    "expires_in": snapshot["expires_in"],
+                    "last_refresh": snapshot["last_refresh"],
+                    "validation_state": snapshot["validation_state"],
+                },
+            )
+        return state
 
     def status(self, email: str | None = None) -> dict:
         """Health/presence view for one attendee (no token material)."""
@@ -395,3 +431,103 @@ def _notify_remote_host(email: str) -> None:
     from .omnigent_remote import remote_host_manager
 
     remote_host_manager.notify(email)
+
+
+class OboFreshnessWatcher:
+    """Renew ahead of expiry instead of discovering staleness on failure.
+
+    Workshop Terminal holds no refresh token, so a fresh OBO can only be
+    *pulled* from a live browser tab. What it can do is notice early and ask:
+    while a credential is approaching expiry this nudges every connected tab to
+    re-authenticate, long before an attendee would see anything. If no tab
+    answers, the nudge fails silently and the credential goes stale — but now it
+    does so as a reported state change rather than as a room full of broken
+    terminals.
+
+    It is also the only sampler that runs when nobody is clicking, which makes
+    it the thing that turns "went stale at some point" into a timestamped
+    ``obo.health`` transition.
+    """
+
+    def __init__(
+        self,
+        manager: OboManager | None = None,
+        *,
+        interval: float | None = None,
+        renew_lead: float | None = None,
+        publish=None,
+    ) -> None:
+        self._manager = manager or obo_manager
+        self._interval = interval if interval is not None else config.obo_watch_interval()
+        self._renew_lead = renew_lead if renew_lead is not None else config.obo_renew_lead()
+        self._publish = publish
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._last_nudge = 0.0
+
+    def start(self) -> None:
+        if self._thread is not None:
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(
+            target=self._loop, daemon=True, name="obo-freshness"
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        thread, self._thread = self._thread, None
+        if thread is not None:
+            thread.join(timeout=2.0)
+
+    @property
+    def running(self) -> bool:
+        """Whether anything is renewing the attendee credential right now.
+
+        No single OBO survives an eight-hour event, so what has to outlast the
+        event is the renewal loop, not the token. Readiness asks this rather
+        than doing token arithmetic that can only ever answer "no".
+        """
+        thread = self._thread
+        return thread is not None and thread.is_alive()
+
+    def _loop(self) -> None:
+        while not self._stop.wait(timeout=self._interval):
+            try:
+                self.sample()
+            except Exception:  # noqa: BLE001 — never take the app down over this
+                logger.warning("OBO freshness sample failed", exc_info=True)
+
+    def sample(self, now: float | None = None) -> dict[str, str]:
+        """Record every attendee's credential state; nudge the ones expiring."""
+        now = now if now is not None else time.time()
+        with self._manager._lock:  # noqa: SLF001 — same module, one owner
+            emails = list(self._manager._by_email)
+        states: dict[str, str] = {}
+        expiring = False
+        for email in emails:
+            states[email] = self._manager.note_health(email)
+            snapshot = self._manager.status(email)
+            expires_in = snapshot.get("expires_in")
+            if expires_in is not None and expires_in <= self._renew_lead:
+                expiring = True
+        # One nudge for the room, not one per attendee: the event carries no
+        # identity, and an instance hosts a single attendee anyway.
+        if expiring and now - self._last_nudge >= self._interval:
+            self._last_nudge = now
+            self._nudge()
+        return states
+
+    def _nudge(self) -> None:
+        publish = self._publish
+        if publish is None:
+            from .events import event_hub
+
+            publish = event_hub.publish
+        try:
+            publish({"t": "obo_refresh"})
+        except Exception:  # noqa: BLE001 — best-effort by construction
+            logger.debug("OBO refresh nudge failed", exc_info=True)
+
+
+obo_watcher = OboFreshnessWatcher()

@@ -38,10 +38,20 @@ RETIRED_SKILL_NAMES = (
 
 
 def _provisioned_home(client, monkeypatch):
-    from server import user_content
+    from server import credentials, user_content
     from server.users import user_manager
 
     monkeypatch.setenv("WORKSHOP_PAT", "dapi-test-token")
+    # A provisioned HOME is only fully written when the credential manager can
+    # hand over a token: the files that carry one — `.claude/settings.json`
+    # among them — are skipped otherwise, and a bash session degrades rather
+    # than failing. Serving the token directly makes that deterministic.
+    # Without it the outcome depends on whether an earlier test left a
+    # validated credential cached on the module singleton, which is how
+    # test_auto_mode_defaults came to pass in a full run and fail on its own.
+    monkeypatch.setattr(
+        credentials.credential_manager, "token", lambda: "dapi-test-token"
+    )
     user_content._provisioned.discard("alice@example.com")
     resp = client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE)
     assert resp.status_code == 200

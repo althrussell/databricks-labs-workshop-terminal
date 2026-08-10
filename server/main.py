@@ -20,7 +20,20 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import agents, config, help as help_module, obo, operational, readiness, spend, user_content
+from . import (
+    agents,
+    config,
+    help as help_module,
+    identity,
+    models,
+    obo,
+    operational,
+    readiness,
+    selfheal,
+    spend,
+    telemetry,
+    user_content,
+)
 from .admin import router as admin_router
 from .auth import Principal, get_current_user, is_admin
 from .bootstrap import install
@@ -34,6 +47,7 @@ from .credentials import (
 from .entitlements import entitlement_manager
 from .event_emitter import event_emitter, flush_loop
 from .events import event_hub
+from .log_collector import install_app_error_journal, log_collector
 from .omnigent_remote import remote_host_manager
 from .sessions import SessionLimitError, session_manager
 from .users import user_manager
@@ -132,6 +146,18 @@ async def lifespan(app: FastAPI):
     emitter_threads = []
     try:
         remote_host_manager.start()
+        # P4: the Omnigent process logs an attendee's failure lands in are on disk
+        # either way. Sweeping them is the difference between an operator seeing
+        # the traceback and an operator seeing a screenshot.
+        if config.log_collector_enabled():
+            log_collector.start()
+        # And this app's own tracebacks, which land on stdout and so are absent
+        # from every operator tool. An attendee reporting "it just says error"
+        # may be reporting a 500 from here, not from Omnigent.
+        install_app_error_journal()
+        # P2: notice a credential approaching expiry while there is still a tab
+        # able to renew it, rather than after every terminal has failed.
+        obo.obo_watcher.start()
         if not config.local_dev():
             # Capture the platform-injected M2M secret into one explicit SDK
             # client, scrub it from process env, and harden the same-UID process
@@ -167,6 +193,8 @@ async def lifespan(app: FastAPI):
     finally:
         if emitter_stop is not None:
             _stop_control_tower_threads(emitter_stop, emitter_threads)
+        log_collector.stop()
+        obo.obo_watcher.stop()
         remote_host_manager.stop()
         entitlement_manager.stop()
 
@@ -203,13 +231,40 @@ def get_config(principal: Principal = Depends(get_current_user)):
         },
         "credential": credential_manager.status(),
         "obo": obo.obo_manager.status(principal.name),
+        # One place to read "how long have I got, and what still works?" —
+        # separately per plane, because the app credential and the attendee's
+        # tab-bound OBO fail differently and cost different things.
+        "durability": readiness.durability(
+            credential_manager.status(),
+            obo.obo_manager.status(principal.name),
+            os.environ,
+        ),
         "omnigent_remote": {
             "enabled": config.omnigent_remote_enabled(),
             "url": config.omnigent_app_url(),
         },
         "entitlements": entitlement_manager.status(),
+        # The model-comparison exercise, as the attendee runs it. Published from
+        # the same resolution the generated Codex config uses, so what the UI
+        # offers and what `codex --profile <name>` finds cannot drift apart.
+        "model_comparison": model_comparison(),
         "help": help_module.snapshot(),
     }
+
+
+def model_comparison() -> list[dict]:
+    """Comparison profiles this deployment will actually serve, in a fixed order."""
+    resolved = models.comparison_models()
+    return [
+        {
+            "profile": name,
+            "model": resolved[name],
+            "label": label,
+            "command": f"codex --profile {name}",
+        }
+        for name, (_default, label) in models.COMPARISON_MODELS.items()
+        if name in resolved
+    ]
 
 
 class HelpRaiseBody(BaseModel):
@@ -320,6 +375,23 @@ def obo_refresh(body: _EmailBody, request: Request):
     except Exception:  # noqa: BLE001 — nudge is best-effort
         pass
     return {"written": written, **obo.obo_manager.status(email)}
+
+
+@app.post("/api/recover")
+def recover(principal: Principal = Depends(get_current_user)):
+    """The attendee-facing Recover button: re-mirror, wake the host, re-ask the tab.
+
+    Same three actions the server takes automatically when it notices a
+    credential failure. Exposed because an attendee looking at a banner should
+    have something to press that is not "reload and hope", and because pressing
+    it is the fastest signal we get that somebody is stuck.
+    """
+    result = selfheal.self_healer.recover(principal.name, "attendee pressed Recover", force=True)
+    return {
+        "recovered": bool(result.get("credential_fresh")),
+        "actions": result.get("actions", []),
+        "obo": obo.obo_manager.status(principal.name),
+    }
 
 
 @app.post("/api/entitlements/reconcile")
@@ -437,15 +509,24 @@ def set_persona(body: _PersonaBody, principal: Principal = Depends(get_current_u
 
 
 @app.get("/api/agents")
-def list_agents(_: Principal = Depends(get_current_user)):
+def list_agents(principal: Principal = Depends(get_current_user)):
     ready = install.ready()
     catalog = []
     for agent in agents.load_catalog():
         requires = agent.get("requires", [])
         installed = all(ready.get(r, False) for r in requires)
+        # A launch that cannot succeed is not offered. `blocked` separates
+        # "this will fail on a stale credential" from "still installing" so the
+        # card can say which one it is instead of spinning.
+        blocked = agents.launch_block(agent, principal.name) if installed else ""
+        # An install step that ended badly never retries, so the card would spin
+        # for the rest of the workshop. Say what failed instead.
+        install_error = "" if installed else install.failure_for(requires)
         catalog.append({
             **{k: agent[k] for k in ("id", "label", "description", "icon", "order")},
-            "ready": installed,
+            "ready": installed and not blocked,
+            "blocked": blocked,
+            "install_error": install_error,
             "needs_credentials": bool(requires),
         })
     return {"agents": catalog, "credential": credential_manager.status()}
@@ -489,6 +570,7 @@ def acknowledge_prior_session(
 def create_session(body: CreateSessionBody, principal: Principal = Depends(get_current_user)):
     agent = agents.get_agent(body.agent_id)
     if agent is None:
+        telemetry.session_create_failed(principal.name, body.agent_id, "unknown_agent")
         raise HTTPException(status_code=404, detail=f"Unknown agent '{body.agent_id}'")
 
     user = user_manager.get(principal.name)
@@ -503,13 +585,47 @@ def create_session(body: CreateSessionBody, principal: Principal = Depends(get_c
     try:
         spend.check_can_launch(user, agent)
     except spend.SpendBlocked as e:
+        telemetry.session_create_failed(
+            principal.name,
+            agent["id"],
+            "agents_paused" if e.status == 403 else "agent_budget_exhausted",
+            e.message,
+        )
         raise HTTPException(status_code=e.status, detail=e.message)
 
     requires = agent.get("requires", [])
     ready = install.ready()
     missing = [r for r in requires if not ready.get(r, False)]
     if missing:
+        # The installer step that is still pending is the actionable half: an
+        # operator sees which dependency is holding the room up, not just that
+        # somebody's launch bounced.
+        telemetry.session_create_failed(
+            principal.name, agent["id"], "agent_installing", f"missing: {','.join(missing)}"
+        )
         raise HTTPException(status_code=409, detail=f"{agent['label']} is still installing — try again in a moment")
+
+    # Refuse rather than fail: every Omnigent session started behind a stale
+    # mirror dies with an auth error the attendee cannot act on, and the bare
+    # CLIs below are unaffected and still launchable.
+    blocked = agents.launch_block(agent, principal.name)
+    if blocked:
+        # Try to fix it before saying anything: most of the time the mirror is
+        # merely behind a token the tab has already delivered, and re-writing it
+        # turns a refusal into a launch nobody had to think about.
+        selfheal.self_healer.recover(
+            principal.name, f"launch {agent['id']}: {blocked}", force=True
+        )
+        blocked = agents.launch_block(agent, principal.name)
+    if blocked:
+        telemetry.session_create_failed(principal.name, agent["id"], "obo_stale", blocked)
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"{agent['label']} is waiting for your Databricks sign-in to refresh. "
+                "Reload this tab; Claude, Codex and Terminal work in the meantime."
+            ),
+        )
 
     # Write/refresh this user's CLI configs from the vended credential. Agent
     # CLIs hard-require it; bash degrades gracefully (shell works, databricks
@@ -519,6 +635,9 @@ def create_session(body: CreateSessionBody, principal: Principal = Depends(get_c
     except CredentialError as e:
         if requires:
             user.errors += 1  # P1-14: failed agent launch (no credential)
+            telemetry.session_create_failed(
+                principal.name, agent["id"], "credential_unavailable", str(e)
+            )
             raise HTTPException(status_code=503, detail=str(e))
         logger.warning("bash session for %s without credentials: %s", principal.name, e)
 
@@ -530,10 +649,17 @@ def create_session(body: CreateSessionBody, principal: Principal = Depends(get_c
             user, agent["id"], agents.launch_command(agent), agent["label"],
         )
     except SessionLimitError as e:
+        telemetry.session_create_failed(
+            principal.name, agent["id"], "session_limit", str(e)
+        )
         raise HTTPException(status_code=429, detail=str(e))
     user.sessions_launched[agent["id"]] = user.sessions_launched.get(agent["id"], 0) + 1
     # C3b: emit a session.started event (no-op unless CT ingest is configured).
     event_emitter.emit("session.started", principal.name, {"agent": agent["id"]})
+    # Record which principal each CLI surface resolves to on each plane, so a
+    # resource created during this session can be attributed later. Backgrounded
+    # and TTL'd — it must never be in the launch path.
+    identity.observe(user)
     return {"session": session.to_dict()}
 
 
@@ -567,6 +693,44 @@ def close_session(session_id: str, principal: Principal = Depends(get_current_us
         raise HTTPException(status_code=404, detail="Session not found")
     session_manager.terminate(session)
     return {"status": "ok"}
+
+
+class AttendeeErrorBody(BaseModel):
+    code: str
+    detail: str = ""
+    agent_id: str = ""
+    session_id: str = ""
+
+
+@app.post("/api/telemetry/error")
+def report_attendee_error(
+    body: AttendeeErrorBody, principal: Principal = Depends(get_current_user)
+):
+    """The attendee's browser reporting what it just put on their screen.
+
+    The one signal nothing server-side can produce, and the one that closes the
+    loop the incident exposed: it proves the code the attendee saw and the
+    diagnostics an operator reads describe the same moment. Fire-and-forget by
+    design — the UI must never depend on the reply.
+    """
+    telemetry.attendee_error_seen(
+        principal.name,
+        body.code,
+        {
+            "detail": body.detail[:300],
+            "agent": body.agent_id[:64],
+            "session_id": body.session_id[:64],
+        },
+    )
+    # An error on the attendee's screen is also the earliest arriving signal we
+    # get. `retry` tells the browser whether trying again is worth it, so the
+    # attendee is not asked to reload for something already fixed.
+    healed = {"attempted": False}
+    if selfheal.is_auth_error(body.code, body.detail):
+        healed = selfheal.self_healer.recover(
+            principal.name, f"attendee saw {body.code}"[:120]
+        )
+    return {"status": "ok", "retry": bool(healed.get("credential_fresh"))}
 
 
 @app.get("/api/nuggets")

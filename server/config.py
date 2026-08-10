@@ -311,6 +311,70 @@ def omnigent_host_stable_runtime() -> int:
     return max(1, _env_int("OMNIGENT_HOST_STABLE_RUNTIME_S", 30))
 
 
+def omnigent_stale_grace() -> int:
+    """Seconds a running Omnigent host tolerates a stale OBO mirror.
+
+    Past this it is stood down into ``waiting_for_token`` — visibly gated and
+    recoverable — rather than left running and failing every session with an
+    auth error the attendee cannot act on."""
+    return max(5, _env_int("OMNIGENT_STALE_GRACE_S", 60))
+
+
+def obo_renew_lead() -> int:
+    """How far ahead of OBO expiry to start nudging the tab for a fresh token.
+
+    The app holds no refresh token, so renewal is *pulled* from a live browser
+    tab. Ten minutes of lead means an ordinary poll refreshes it long before an
+    attendee could notice, and a tab that has stopped polling is identified as a
+    problem while there is still time to say so."""
+    return max(60, _env_int("OBO_RENEW_LEAD_S", 600))
+
+
+def obo_watch_interval() -> float:
+    """Seconds between OBO freshness samples."""
+    return max(5.0, float(_env_int("OBO_WATCH_INTERVAL_S", 30)))
+
+
+def omnigent_host_log_level() -> str:
+    """``OMNIGENT_LOG_LEVEL`` for the per-attendee host process.
+
+    DEBUG by default. The host is one supervised process per attendee, not a hot
+    path, and the records that explain a failed start (``exc_info`` on the
+    connect and spec-resolution paths) are below INFO. The volume it costs is
+    bounded by the rotating capture in ``server/diagnostics.py``; the volume it
+    saves is an operator reconstructing an incident from a screenshot."""
+    return _env("OMNIGENT_HOST_LOG_LEVEL", "DEBUG").strip().upper() or "DEBUG"
+
+
+def omnigent_host_log_max_bytes() -> int:
+    """Ceiling for one attendee's captured host stdout/stderr log."""
+    return max(64 * 1024, _env_int("OMNIGENT_HOST_LOG_MAX_BYTES", 2 * 1024 * 1024))
+
+
+def log_collector_enabled() -> bool:
+    """Whether the background sweep of Omnigent process logs runs."""
+    return _env("WORKSHOP_LOG_COLLECTOR", "true").lower() not in (
+        "false",
+        "0",
+        "no",
+        "off",
+    )
+
+
+def log_collector_interval() -> float:
+    """Seconds between collector sweeps.
+
+    Five seconds because the operator use case is "an attendee just told me it
+    broke" — the answer has to be there by the time an operator opens the panel,
+    and the read is a few kilobytes of tail per attendee."""
+    return max(1.0, float(_env_int("WORKSHOP_LOG_COLLECTOR_INTERVAL_S", 5)))
+
+
+def log_journal_capacity() -> int:
+    """Distinct classified errors retained across restarts."""
+    return max(20, _env_int("WORKSHOP_LOG_JOURNAL_CAPACITY", 500))
+
+
 def workshop_phase_default() -> str:
     return _env("WORKSHOP_PHASE", "intro")
 

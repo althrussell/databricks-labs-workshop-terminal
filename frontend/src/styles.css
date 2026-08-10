@@ -8,6 +8,7 @@
   --text-dim: #8b94a3;
   --success: #3dba6f;
   --warning: #f2b01e;
+  --danger: #e35d5d;
   --radius: 10px;
   --font-sans: "DM Sans Variable", -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", Menlo, monospace;
@@ -364,8 +365,69 @@ body {
   border-left: 3px solid var(--brand-primary);
 }
 
+/* Not dismissible, and loud enough to read past: the attendee's agents are
+   already failing by the time this shows. Still a banner rather than a modal —
+   the bare CLIs underneath it keep working and must stay reachable. */
+.banner-blocking {
+  border-left: 3px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, var(--bg-panel));
+  font-size: 13.5px;
+}
+
+/* The standing rule, stated quietly for as long as it applies. Sized to be
+   readable and ignorable at the same time; it is on screen for hours. */
+.tab-rule {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 20px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.tab-rule-soon {
+  color: var(--warning);
+}
+
+.tab-rule-clock {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
 .banner .icon-btn {
   margin-left: auto;
+}
+
+/* The one thing an attendee can press to fix the banner they are reading. It
+   sits before the dismiss button, so `margin-left: auto` moves the pair right
+   together rather than splitting them across the bar. */
+.banner-action {
+  margin-left: auto;
+  padding: 3px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 50%, transparent);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.banner-action:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--warning) 22%, transparent);
+}
+
+.banner-action:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.banner-action + .icon-btn {
+  margin-left: 0;
 }
 
 /* ---- toasts ----
@@ -832,6 +894,11 @@ body {
   opacity: 0.7;
 }
 
+/* Waiting is what an install needs; this one needs the attendee to act. */
+.hero-card.is-blocked:disabled {
+  cursor: not-allowed;
+}
+
 .hero-card-primary {
   border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--border));
   background: linear-gradient(
@@ -881,6 +948,14 @@ body {
   color: var(--success);
 }
 
+.hero-card-state.is-blocked {
+  color: var(--warning);
+}
+
+.hero-card-state.is-failed {
+  color: var(--danger);
+}
+
 .hero-boot {
   display: inline-block;
   text-align: left;
@@ -919,6 +994,23 @@ body {
 
 .boot-busy {
   color: var(--brand-primary);
+}
+
+.boot-failed {
+  color: var(--danger);
+}
+
+.hero-boot-error {
+  color: var(--danger);
+  font-size: 11.5px;
+  font-family: var(--font-mono, monospace);
+}
+
+.hero-boot-note {
+  margin-top: 10px;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .hero-hint {
@@ -1497,6 +1589,69 @@ body {
 
 .dot-offline {
   background: var(--border);
+}
+
+.dot-warn {
+  background: var(--warning);
+}
+
+.dot-error {
+  background: var(--danger);
+}
+
+.op-note {
+  color: var(--text-dim);
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin: 0 0 12px;
+}
+
+.op-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.op-warn {
+  color: var(--warning);
+  font-size: 12px;
+}
+
+.danger-btn,
+.secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.danger-btn {
+  background: var(--danger);
+  border: none;
+  color: #fff;
+}
+
+.secondary-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.secondary-btn:hover {
+  border-color: var(--brand-primary);
+}
+
+.danger-btn:disabled,
+.secondary-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .op-status {

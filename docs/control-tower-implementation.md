@@ -96,29 +96,42 @@ The hard checks are:
    `WORKSHOP_PAT` is absent, and successful OAuth validation occurred within the
    bounded freshness window. JWT expiry is tracked when inspectable; a stale
    validation or static fallback is not release-ready.
-4. `app_sp_binding`: `WORKSHOP_APP_SP_ID` is numeric and the latest safe OAuth
+4. `credential_durability`: both credential planes can be *kept* alive for the
+   rest of the event. Not the same question as `credentials`, which asks whether
+   the app credential is healthy right now — an instance can pass that at nine
+   in the morning and strand its attendee at noon. The app plane is durable when
+   it is rotating, or when a static token's expiry outlives
+   `WORKSHOP_EVENT_ENDS_AT`. The attendee plane is durable when the OBO freshness
+   watcher is running, which is what renews a token no attendee's OBO could
+   outlive on its own. Deliberately not raw token arithmetic on the OBO: an
+   attendee credential lives about an hour, so a gate built that way would be red
+   on every instance from the first minute and switched off after one event.
+   Red only for the two failures that actually end a workshop mid-session — a
+   static token expiring inside the event window, and remote Omnigent configured
+   with nothing renewing the attendee credential.
+5. `app_sp_binding`: `WORKSHOP_APP_SP_ID` is numeric and the latest safe OAuth
    diagnostic proves the same numeric SCIM ID with the expected app client UUID.
    A missing, non-numeric, mismatched, or unverified ID is not release-ready.
-5. `installers`: Node, Claude, Codex, Databricks CLI, skills, and—when
+6. `installers`: Node, Claude, Codex, Databricks CLI, skills, and—when
    enabled—tmux and Omnigent have completed installation. The release manifest
    reports each enabled CLI's expected and observed version, and readiness
    requires an exact match.
-6. `session_state`: `SESSION_STATE_PATH` is a file destination whose parent
+7. `session_state`: `SESSION_STATE_PATH` is a file destination whose parent
    supports mode-0600 SessionMetadataStore-style atomic write/read. The journal
    contains restart metadata only—never terminal output. The probe uses and
    removes a disposable sibling; it never mutates the real journal.
-7. `catalog`: `WORKSHOP_CATALOG` matches a recent successful read-after-patch
+8. `catalog`: `WORKSHOP_CATALOG` matches a recent successful read-after-patch
    proof that the attendee is owner and has `ALL_PRIVILEGES`.
-8. `entitlements`: reconciliation is enabled and healthy, has recent
+9. `entitlements`: reconciliation is enabled and healthy, has recent
    attendee/catalog proof, and either its background thread is alive or a
    fresh on-demand reconcile succeeded. Empty-attendee runs fail closed.
-9. `obo`: OBO is enabled, the configured hint includes the required scopes,
+10. `obo`: OBO is enabled, the configured hint includes the required scopes,
    and a trusted proxy-forwarded attendee token has actually exposed
    `catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql` in its
    JWT `scope`/`scp` claim. The profile must be present and fresh, and that scope
    observation must be no older than 300 seconds. Before a token is observed—or
    after it expires/goes stale—HTTP remains 503.
-10. `release_pins`: `SKILLS_REF` is not a branch tip; exact Claude Code,
+11. `release_pins`: `SKILLS_REF` is not a branch tip; exact Claude Code,
    Codex CLI, Databricks CLI, and Node version pins are present, plus Omnigent
    and Pi CLI when Omnigent is enabled; and each of those pins equals the version
    bootstrap actually installed. Both halves are needed — raising a pin does not
@@ -277,6 +290,8 @@ take effect on restart with **no rebuild**. Set these per instance:
 | `OMNIGENT_VERSION` | `0.8.2` release candidate | reviewed Omnigent release matched to the dedicated App protocol |
 | `DATABRICKS_CLI_VERSION` | reviewed exact version | make the Databricks CLI input explicit |
 | `ANTHROPIC_MODEL` / `CODEX_MODEL` | reviewed endpoint names | prevent model drift between instances |
+| `WORKSHOP_CODEX_COMPARE` | the profiles `scripts/smoke_models.py` passed | drop a comparison model that cannot hold a tool call, without a release ([model comparison](model-comparison.md)) |
+| `WORKSHOP_EVENT_ENDS_AT` | epoch seconds when the event ends | the `credential_durability` gate has nothing to compare a credential lifetime against without it, so a static credential expiring mid-session is admitted |
 | `WORKSHOP_RUN_ID` | CT's run id for this attendee | event attribution on ingested events |
 | `DATABRICKS_WORKSPACE_ID` | the workspace id | event attribution |
 | `CONTROL_TOWER_INGEST_URL` | *(optional)* CT ingest base URL | enable the additive push path (§5); unnecessary for delivery, which is by collection |
@@ -596,6 +611,14 @@ python scripts/ct_fleet.py --inventory inventory.json repush \
 The fleet kill switch is `POST /api/admin/agent-controls` with
 `{"enabled": false}`. It pauses new paid-agent launches only; bash and already
 running sessions remain available. Resume with `{"enabled": true}`.
+
+A narrower lever sits beside it: `POST /api/admin/omnigent-tier` with
+`{"enabled": false}` withdraws only the Omnigent-backed cards and leaves bare
+Claude, Codex and Terminal running. That is the right move when the Omnigent
+credential plane is failing across a room, because the kill switch would stop
+the workshop while this one keeps it going. The ladder for choosing between them
+is [`operator-runbook.md`](./operator-runbook.md); `POST /api/admin/recover` is
+the per-attendee rung below both.
 
 Restarted apps retain phase only in process memory, so CT must re-push the
 content pack and then phase after readiness returns. Session metadata on the

@@ -119,10 +119,12 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
     )
     # The App's env surface is an allowlist so that widening it is a deliberate,
     # reviewed act. Beyond the required bindings the only additions permitted are
-    # the workshop's Polly model-set knobs, which are model endpoint names and a
-    # feature switch — never a credential. Matching the namespace rather than
+    # the workshop's Polly model-set knobs — model endpoint names, a feature
+    # switch, and the harness roster the paired Workshop Terminal instance
+    # reports — never a credential. Matching the namespace rather than
     # enumerating each pin keeps this from needing an edit per tier while still
     # failing on anything outside it.
+    allowed = {"WORKSHOP_POLLY_VARIANTS", "WORKSHOP_HARNESSES"}
     required = {
         "AP_LAKEBASE_ENDPOINT",
         "AP_ARTIFACT_VOLUME_PATH",
@@ -134,7 +136,7 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
     unexpected = sorted(
         name
         for name in set(env) - required
-        if name != "WORKSHOP_POLLY_VARIANTS" and not name.startswith("POLLY_")
+        if name not in allowed and not name.startswith("POLLY_")
     )
     assert unexpected == [], (
         f"deploy/omnigent-app/app.yaml declares {unexpected}, which is outside the "

@@ -233,7 +233,8 @@ def test_all_hard_checks_green_is_ready(tmp_path):
         "topology",
         "attendee_identity",
         "credentials",
-            "app_sp_binding",
+        "credential_durability",
+        "app_sp_binding",
         "secret_protection",
         "installers",
         "supply_chain",
@@ -389,6 +390,22 @@ def test_installers_require_every_enabled_agent_and_support_tool(tmp_path):
     assert "databricks" in report["checks"]["installers"]["missing"]
 
 
+def test_readiness_reports_which_harnesses_this_instance_actually_has(tmp_path):
+    """The Omnigent App advertises polly workers from its own container and
+    cannot see this one. Pi is advisory here — the instance is ready without it
+    — so the App has no way to know a pi worker would dispatch into nothing
+    unless this instance says so."""
+    _, _, installer, _, _, _ = _good_inputs(tmp_path)
+
+    without_pi = _evaluate(tmp_path, installer=installer)
+    installer["ready"]["pi"] = True
+    with_pi = _evaluate(tmp_path, installer=installer)
+
+    assert without_pi["checks"]["installers"]["harnesses"] == ["claude", "codex"]
+    assert without_pi["checks"]["installers"]["ok"] is True
+    assert with_pi["checks"]["installers"]["harnesses"] == ["claude", "codex", "pi"]
+
+
 def test_degraded_skills_fail_readiness_and_are_named_separately(tmp_path):
     """A vendored-fallback skills install is usable but unreviewed. It must fail
     readiness, and it must not be reported as merely incomplete."""
@@ -436,6 +453,9 @@ def test_entitlements_must_be_enabled_and_healthy(tmp_path):
 
     assert disabled["checks"]["entitlements"]["ok"] is False
     assert unhealthy["checks"]["entitlements"]["ok"] is False
+    # The reason travels with the verdict. Without it an operator sees only
+    # "unhealthy" and cannot tell a missing grant from an unreachable catalog.
+    assert unhealthy["checks"]["entitlements"]["last_error"] == "failed"
 
 
 def test_entitlements_require_recent_attendee_catalog_proof_and_live_loop(tmp_path):

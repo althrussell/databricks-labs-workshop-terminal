@@ -19,6 +19,23 @@ have no access to anything the SP creates. This reconciler closes that gap:
 An in-memory transition ledger records discovered, verified, handed-off, and
 failed resources for attendee and Control Tower status surfaces. All calls use
 the app SP bearer and emit ``entitlements.health`` on failure.
+
+**Coverage audit.** The adapters below cover what a workshop build actually
+produces: apps, jobs, pipelines, serving endpoints, Lakebase instances and
+projects, warehouses, Lakeview dashboards, and every Unity Catalog object via
+the catalog grant. Deliberately *not* covered, because handing off on an
+unverified creator is worse than not handing off at all:
+
+- **Genie spaces** — ``/api/2.0/genie/spaces`` returns neither a creator nor a
+  creation time, and there is no second read that supplies one. A ``genie``
+  permission type exists, so this becomes addable the moment the list does.
+- **Vector search endpoints, experiments, SQL queries and alerts, registered
+  models** — permission types exist (``vector-search-endpoints``,
+  ``experiments``, ``queries``, ``alerts``, ``registered-models``) but the list
+  shapes are unverified against a live workspace. Adding a spec with a wrong
+  ``items_key`` or ``id_field`` turns the health check permanently red, so each
+  one waits for a measured response. UC-resident models are already covered by
+  the catalog grant.
 """
 
 from __future__ import annotations
@@ -53,6 +70,10 @@ class ResourceSpec:
     requires_baseline: bool = False
     created_millis: bool = False
     unsupported_reason: str | None = None
+    detail_path: str | None = None
+    creator_is_path: bool = False
+    state_field: str | None = None
+    skip_states: frozenset[str] = frozenset()
 
 
 # Every adapter names the API's permission identifier, not merely its display
@@ -91,13 +112,20 @@ _RESOURCE_SPECS = (
         "creator_name", None, {"page_size": 100},
         supports_owner=True, requires_baseline=True,
     ),
+    # Lakeview exposes no creator field anywhere, but a dashboard created
+    # without an explicit parent_path lands in the caller's workspace home, and
+    # a service principal's home is /Users/<application-id> — an identity the
+    # SCIM lookup below already knows. The list response omits the path, so the
+    # creator check costs one detail read per dashboard. A dashboard the agent
+    # put in the attendee's own folder fails this check and is correctly left
+    # alone: they already inherit CAN_MANAGE from their home directory.
     ResourceSpec(
         "dashboards", "/api/2.0/lakeview/dashboards", "dashboards", "dashboard_id",
-        "dashboards", None, "create_time", {"page_size": 100},
-        unsupported_reason=(
-            "unsupported creator verification: Lakeview list/get responses "
-            "do not expose an authoritative creator identity"
-        ),
+        "dashboards", "parent_path", "create_time", {"page_size": 100},
+        detail_path="/api/2.0/lakeview/dashboards/{id}",
+        creator_is_path=True,
+        state_field="lifecycle_state",
+        skip_states=frozenset({"TRASHED"}),
     ),
 )
 
@@ -232,6 +260,10 @@ def _created_by_sp(spec: ResourceSpec, item: dict, sp_identities: set[str]) -> b
     if not spec.creator_field:
         return True
     creator = str(_field_value(item, spec.creator_field) or "").strip().lower()
+    if spec.creator_is_path:
+        # A workspace path names its owner in the last segment — /Users/<email>
+        # for a person, /Users/<application-id> for a service principal.
+        creator = creator.rstrip("/").rsplit("/", 1)[-1]
     return bool(creator) and creator in sp_identities
 
 
@@ -383,7 +415,22 @@ class EntitlementManager:
         from .users import user_manager
 
         source = "on_demand" if email else "background"
-        emails = [email] if email else [u.email for u in user_manager.all()]
+        if email:
+            emails = [email]
+        else:
+            # The instance-wide binding, not just whoever has already knocked.
+            # Control Tower gates admission on /readyz, and this reconciler's
+            # proof is one of the checks — so keying it on the roster alone made
+            # every fresh instance red until the attendee arrived, which is the
+            # one moment the gate exists to happen before. Measured on a live
+            # deployment: "no attendee available for entitlement verification"
+            # on an instance whose attendee was configured all along.
+            from . import attendee as attendee_binding
+
+            bound = attendee_binding.resolved_email()
+            emails = [u.email for u in user_manager.all()]
+            if bound and bound not in emails:
+                emails.insert(0, bound)
         result: dict = {
             "enabled": True,
             "emails": emails,
@@ -493,6 +540,13 @@ class EntitlementManager:
                 continue
             granted = 0
             for item in items:
+                if spec.skip_states and str(
+                    item.get(spec.state_field or "") or ""
+                ).strip().upper() in spec.skip_states:
+                    # Deleted resources keep appearing in list responses for a
+                    # while. Granting on one is harmless but it lands in the
+                    # attendee's handoff ledger as something they can open.
+                    continue
                 raw_id = item.get(spec.id_field)
                 if raw_id is None:
                     # Built-in resources are listed alongside the app's own and
@@ -607,6 +661,19 @@ class EntitlementManager:
     ) -> tuple[bool, str | None]:
         if spec.unsupported_reason:
             return False, spec.unsupported_reason
+        if (
+            spec.detail_path
+            and spec.creator_field
+            and _field_value(item, spec.creator_field) is None
+        ):
+            # Summary listings drop the fields that identify a creator. Read the
+            # resource itself rather than handing off on a guess.
+            detail, error = _get_json(
+                f"{host}{spec.detail_path.format(id=resource_id)}", bearer
+            )
+            if error:
+                return False, f"detail read: {error}"
+            item = {**item, **(detail or {})}
         if not _created_by_sp(spec, item, sp_identities):
             return False, None
 

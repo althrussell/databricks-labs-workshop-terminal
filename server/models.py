@@ -97,6 +97,66 @@ _INSIGHT_CHEAP = ("databricks-gpt-oss-120b",) + tuple(
 )
 
 
+# The model-comparison exercise, as Codex profiles.
+#
+# Comparing what different models cost for the same task used to require Pi,
+# because Pi is the only harness that routes per model across the Anthropic,
+# Responses and chat-completions surfaces. That made the most fragile component
+# in the room load-bearing for its headline exercise. Bare Codex reaches the
+# same models through one plain OpenAI-shaped surface — verified 200s on
+# ``<host>/serving-endpoints/chat/completions`` — and touches no OBO token on
+# the way, so the comparison survives everything Phase 2 is about.
+#
+# Each entry is a Codex profile name the attendee types (``codex --profile
+# glm``), the endpoint behind it, and how it is described when we publish the
+# set. Every one is overridable via ``CODEX_COMPARE_<NAME>`` so a renamed or
+# withdrawn endpoint is a values change, not a release.
+COMPARISON_MODELS: dict[str, tuple[str, str]] = {
+    "glm": ("databricks-glm-5-2", "GLM 5.2"),
+    "kimi": ("databricks-kimi-k3", "Kimi K3"),
+    "gemini": ("databricks-gemini-3-6-flash", "Gemini 3.6 Flash"),
+}
+
+
+def comparison_supported() -> frozenset[str] | None:
+    """The profiles ``scripts/smoke_models.py`` proved usable, or ``None``.
+
+    Serving an endpoint is not the same as being usable from Codex: these models
+    answer a plain turn readily and vary widely on tool calling, which is the
+    only part that matters for an agent that has to edit files. The smoke matrix
+    measures that and prints a ``WORKSHOP_CODEX_COMPARE`` line; setting it drops
+    the failures for the next event without a release. Unset means unmeasured,
+    and unmeasured advertises everything served — the same posture as before the
+    matrix existed.
+    """
+    raw = os.environ.get("WORKSHOP_CODEX_COMPARE", "").strip()
+    if not raw:
+        return None
+    return frozenset(part.strip().lower() for part in raw.split(",") if part.strip())
+
+
+def comparison_models(available: set[str] | None = None) -> dict[str, str]:
+    """Profile name -> endpoint for every comparison model an attendee can use.
+
+    Filtered two ways. Against discovery, so a region a release behind advertises
+    the profiles it has rather than the ones it does not — an attendee typing
+    ``codex --profile kimi`` into a 404 learns nothing about model cost. And
+    against the smoke matrix's verdict, so a model that is served but cannot hold
+    a tool call is not put in front of a room. An empty or missing ``available``
+    means discovery failed, not that the workspace serves nothing, so everything
+    survives that filter.
+    """
+    supported = comparison_supported()
+    resolved: dict[str, str] = {}
+    for name, (default, _label) in COMPARISON_MODELS.items():
+        if supported is not None and name not in supported:
+            continue
+        model = os.environ.get(f"CODEX_COMPARE_{name.upper()}", "").strip() or default
+        if not available or model in available:
+            resolved[name] = model
+    return resolved
+
+
 @dataclass(frozen=True)
 class Role:
     """One job a model does, and how to fill it.
@@ -243,3 +303,20 @@ def resolve(name: str, available: set[str]) -> str:
 def resolve_all(available: set[str]) -> dict[str, str]:
     """Every role at once, for callers that write several into one config."""
     return {name: resolve(name, available) for name in _PINS}
+
+
+__all__ = [
+    "COMPARISON_MODELS",
+    "DEFAULT_PROFILE",
+    "PROFILES",
+    "Profile",
+    "Role",
+    "chain",
+    "comparison_models",
+    "comparison_supported",
+    "pinned",
+    "profile",
+    "resolve",
+    "resolve_all",
+    "role",
+]

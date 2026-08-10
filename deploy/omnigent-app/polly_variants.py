@@ -50,6 +50,10 @@ _CLAUDE = "claude_code"
 _CODEX = "codex"
 _PI = "pi"
 
+# The CLI each worker slot needs on PATH in the attendee's container. Also what
+# the roster preflight probes for.
+_WORKER_CLI = {_CLAUDE: "claude", _CODEX: "codex", _PI: "pi"}
+
 
 @dataclass(frozen=True)
 class Tier:
@@ -175,8 +179,30 @@ def _env_key(tier_name: str, suffix: str) -> str:
     return f"{tier_name.upper().replace('-', '_')}_{suffix}"
 
 
+def available_workers(env: dict[str, str]) -> set[str]:
+    """Worker slots whose CLI the attendee's container actually has.
+
+    ``WORKSHOP_HARNESSES`` is a comma-separated list of installed CLIs, set from
+    the Workshop Terminal instance's own readiness (``ready`` in ``/readyz``).
+    The App is a separate container from the one the harnesses run in, so it
+    cannot look — and pi in particular is advisory in the installer: it can be
+    absent from a healthy instance, and every tier here names a pi worker.
+    Dispatching to a CLI that is not there costs the attendee a turn and prints
+    an error they can do nothing about.
+
+    Unset means unmeasured, and unmeasured keeps every slot: this variable
+    arrived after the deployments that use it, and a missing value must not
+    silently strip a roster that works.
+    """
+    raw = (env.get("WORKSHOP_HARNESSES") or "").strip()
+    if not raw:
+        return set(_WORKER_CLI)
+    installed = {part.strip().lower() for part in raw.split(",") if part.strip()}
+    return {worker for worker, cli in _WORKER_CLI.items() if cli in installed}
+
+
 def _resolved(tier: Tier, env: dict[str, str]) -> Tier:
-    """Apply env overrides to a tier.
+    """Apply env overrides to a tier, and drop slots this deployment cannot run.
 
     Every model pin is overridable so a renamed or withdrawn endpoint is a
     deployment values change rather than a code change — these names are the
@@ -185,18 +211,39 @@ def _resolved(tier: Tier, env: dict[str, str]) -> Tier:
     """
     brain_model = env.get(_env_key(tier.name, "BRAIN_MODEL"), "").strip()
     brain_harness = env.get(_env_key(tier.name, "BRAIN_HARNESS"), "").strip()
+    installed = available_workers(env)
     workers = {}
     for worker, model in tier.workers.items():
+        if worker not in installed:
+            continue
         override = env.get(
             _env_key(tier.name, f"WORKER_{worker.upper()}_MODEL"), ""
         ).strip()
         workers[worker] = override or model
     return Tier(
         name=tier.name,
-        headline=tier.headline,
+        headline=_headline(tier, workers),
         brain_harness=brain_harness or tier.brain_harness,
         brain_model=brain_model or tier.brain_model,
         workers=workers,
+    )
+
+
+def _headline(tier: Tier, workers: dict[str, str]) -> str:
+    """The tier's description, corrected when a slot was dropped.
+
+    Each headline names the models an attendee is choosing between — that is the
+    whole basis on which they pick a tier. Leaving it promising a GLM worker that
+    is not in the roster would make the App's picker lie about the one thing it
+    exists to describe.
+    """
+    dropped = [_WORKER_CLI[worker] for worker in tier.workers if worker not in workers]
+    if not dropped:
+        return tier.headline
+    return (
+        f"{tier.headline} Reduced roster on this instance: "
+        f"{', '.join(_WORKER_CLI[w] for w in workers)} "
+        f"({', '.join(dropped)} not installed)."
     )
 
 
@@ -306,6 +353,17 @@ def build(dest_root: Path, *, env: dict[str, str] | None = None) -> list[Path]:
     built = []
     for tier in TIERS:
         resolved = _resolved(tier, environ)
+        if len(resolved.workers) < 2:
+            # Cross-vendor review — a diff reviewed by a worker that did not
+            # write it — is what a polly tier is for, and it takes two vendors.
+            # A tier that cannot do it is worse than absent: an attendee picks
+            # it by name, gets a degraded orchestrator, and has no way to know.
+            logger.warning(
+                "polly variant %s not registered: only %s installed here",
+                tier.name,
+                ", ".join(sorted(resolved.workers)) or "no roster CLI",
+            )
+            continue
         dest = dest_root / resolved.name
         if dest.exists():
             shutil.rmtree(dest)

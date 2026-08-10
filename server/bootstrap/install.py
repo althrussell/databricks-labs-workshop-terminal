@@ -334,6 +334,14 @@ def _set(
                 else (None if clear_release else previous.get("actual_checksum"))
             ),
         }
+        changed = previous.get("status") != status
+    # An install step that ends badly is the reason an attendee's agent never
+    # becomes launchable. Reported once per transition, outside the state lock,
+    # so it reaches an operator before the attendee reports a stuck spinner.
+    if changed and status in ("error", "degraded"):
+        from .. import telemetry
+
+        telemetry.install_step_failed(step, status, error or "")
 
 
 def _release_specs() -> dict[str, tuple[bool, str]]:
@@ -369,6 +377,36 @@ def _ready_from(steps: dict) -> dict:
             and steps.get("tmux", {}).get("status") == "complete"
         ),
     }
+
+
+# Which install steps a launchable binary actually waits on. ``_ready_from``
+# encodes the same relationships; naming them here lets a card say *which* step
+# failed instead of spinning on "installing" until the workshop ends.
+STEPS_BY_BINARY = {
+    "claude": ("claude",),
+    "codex": ("codex",),
+    "omnigent": ("omnigent", "tmux"),
+    "pi": ("pi",),
+}
+
+
+def failure_for(requires) -> str:
+    """Why a card needing these binaries will never go ready — ``""`` if it may.
+
+    An install step that ends in ``error`` or ``degraded`` is terminal: nothing
+    retries it, so the spinner an attendee is watching will spin until they give
+    up and ask. Reporting the step and its message turns that into something an
+    operator can act on and an attendee can stop waiting for.
+    """
+    with _state_lock:
+        steps = dict(_state)
+    for binary in requires or ():
+        for name in STEPS_BY_BINARY.get(binary, (binary,)):
+            step = steps.get(name) or {}
+            if step.get("status") in ("error", "degraded"):
+                detail = (step.get("error") or step["status"]).strip()
+                return f"{name}: {detail}"[:200]
+    return ""
 
 
 def ready() -> dict:

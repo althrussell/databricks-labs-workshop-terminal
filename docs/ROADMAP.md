@@ -84,6 +84,13 @@ The workshop ends; the relationship shouldn't.
   assistance → Terminal.
 - **Model/version pinning per event** — already env-driven; keep current with
   gateway model churn.
+- **A durable attendee credential** — the agent builds as the app service
+  principal because nothing attendee-shaped can write: the OBO scope vocabulary
+  has no write scope, the attendee cannot mint a PAT, an admin cannot mint one
+  for them, and the Apps proxy rejects PATs on the runner hop. The one surviving
+  route is a custom OAuth U2M app integration holding a refresh token
+  server-side, gated on three account-level questions. Post-event, scoped in
+  [adr/0002-attendee-credential.md](adr/0002-attendee-credential.md).
 
 ## Deliberately not building
 

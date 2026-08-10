@@ -257,6 +257,14 @@ def configure_claude(
 _CODEX_MODEL_PROVIDER = "databricks"
 _CODEX_PROVIDER_DISPLAY_NAME = "Databricks Model Serving"
 
+# A second Codex provider on the plain chat-completions surface. The Responses
+# provider above only serves the OpenAI family; GLM, Kimi and Gemini answer on
+# `<host>/serving-endpoints/chat/completions` and nowhere else Codex can reach.
+# Kept separate rather than switching the default provider's wire: the everyday
+# driver stays on Responses, which is what Codex is tuned for.
+_CODEX_CHAT_PROVIDER = "databricks-chat"
+_CODEX_CHAT_DISPLAY_NAME = "Databricks Model Serving (chat)"
+
 # What we key our entry under in ~/.omnigent/config.yaml. A separate name from
 # the codex table id above, and prefixed like `databricks-gateway`, because we
 # delete this key when it no longer applies: an unnamespaced `databricks` is
@@ -339,9 +347,43 @@ def configure_codex(
         f'args = ["{token_path}"]\n'
         "timeout_ms = 5000\n"
         "refresh_interval_ms = 240000\n"
+        f"{_codex_comparison_toml(token_path, available)}"
     )
     with open(os.path.join(codex_dir, "config.toml"), "w") as f:
         f.write(config_toml)
+
+
+def _codex_comparison_toml(token_path: str, available: set[str]) -> str:
+    """Profiles for the model-comparison exercise, on the chat-completions wire.
+
+    This is what takes Pi off the critical path for the workshop's headline
+    exercise. An attendee runs ``codex --profile glm`` against the same task and
+    reads the difference; nothing in that route touches the attendee OBO token,
+    so it keeps working through every credential failure Phase 2 is about.
+    """
+    comparisons = models.comparison_models(available)
+    if not comparisons:
+        return ""
+    profiles = "".join(
+        f"\n[profiles.{name}]\n"
+        f'model = "{model}"\n'
+        f'model_provider = "{_CODEX_CHAT_PROVIDER}"\n'
+        for name, model in sorted(comparisons.items())
+    )
+    return (
+        "\n"
+        f"[model_providers.{_CODEX_CHAT_PROVIDER}]\n"
+        f'name = "{_CODEX_CHAT_DISPLAY_NAME}"\n'
+        f'base_url = "{config.databricks_host()}/serving-endpoints"\n'
+        'wire_api = "chat"\n'
+        "\n"
+        f"[model_providers.{_CODEX_CHAT_PROVIDER}.auth]\n"
+        'command = "cat"\n'
+        f'args = ["{token_path}"]\n'
+        "timeout_ms = 5000\n"
+        "refresh_interval_ms = 240000\n"
+        f"{profiles}"
+    )
 
 
 def _gateway_token_path(user: User) -> str:
@@ -534,6 +576,20 @@ def _databrickscfg_path(user: User) -> str:
     return os.path.join(user.home, ".databrickscfg")
 
 
+def omnigent_databrickscfg_path(user: User) -> str:
+    """The config the Omnigent host and every terminal below it resolve against.
+
+    Deliberately a *different* file from ``~/.databrickscfg``: that one carries
+    the app service principal in ``[DEFAULT]``, and the Omnigent plane must never
+    be able to reach it. The runner's token factory falls back to Databricks SDK
+    auth whenever the mirrored OIDC token is missing or stale, with no way to
+    disable that fallback — so whatever this file can resolve is an identity the
+    runner can silently assume. Holding only the attendee's own profile makes the
+    worst case "acts as the attendee", which is what it should be acting as.
+    """
+    return os.path.join(user.home, ".config", "workshop", "omnigent-databrickscfg")
+
+
 def _write_databrickscfg_profile(user: User, profile: str, token: str) -> None:
     """Read-modify-write a single profile in ``~/.databrickscfg`` without
     clobbering the others, under the per-user lock.
@@ -579,10 +635,30 @@ def configure_databricks_cli(user: User, token: str) -> None:
     _write_databrickscfg_profile(user, "DEFAULT", token)
 
 
+def _write_omnigent_profile_locked(user: User, obo_token: str) -> None:
+    """Mirror the attendee profile into the Omnigent-plane config.
+
+    Whole-file write rather than read-modify-write: this file holds exactly one
+    profile by design, and rebuilding it is how we guarantee no other credential
+    can accumulate in it.
+    """
+    parser = configparser.ConfigParser()
+    profile = config.obo_profile_name()
+    parser.add_section(profile)
+    parser[profile]["host"] = config.databricks_host()
+    parser[profile]["token"] = obo_token
+    import io
+
+    output = io.StringIO()
+    parser.write(output)
+    _atomic_write_text(omnigent_databrickscfg_path(user), output.getvalue())
+
+
 def update_me_profile(user: User, obo_token: str) -> None:
     """Write the attendee's OBO token to the ``[me]`` profile (governance-faithful
     Unity Catalog reads as the attendee), preserving ``[DEFAULT]``."""
-    _write_databrickscfg_profile(user, config.obo_profile_name(), obo_token)
+    with user.lock:
+        update_me_profile_locked(user, obo_token)
 
 
 def update_me_profile_locked(user: User, obo_token: str) -> None:
@@ -590,6 +666,7 @@ def update_me_profile_locked(user: User, obo_token: str) -> None:
     _write_databrickscfg_profile_locked(
         user, config.obo_profile_name(), obo_token
     )
+    _write_omnigent_profile_locked(user, obo_token)
 
 
 def configure_all(user: User, token: str) -> None:

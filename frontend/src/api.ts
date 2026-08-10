@@ -50,6 +50,8 @@ export interface AppConfig {
   broadcast: Broadcast | null;
   limits: { max_sessions_per_user: number };
   credential: CredentialStatus;
+  /** This attendee's browser-bound Databricks sign-in, as the server last saw it. */
+  obo: OboStatus;
   help: HelpState;
   omnigent_remote: {
     enabled: boolean;
@@ -64,7 +66,43 @@ export interface AgentInfo {
   icon: string;
   order: number;
   ready: boolean;
+  /** Why this agent is not launchable despite being installed ("" when it is). */
+  blocked?: string;
+  /** Which install step failed terminally, when the agent will never go ready. */
+  install_error?: string;
   needs_credentials: boolean;
+}
+
+export interface OboStatus {
+  enabled: boolean;
+  present: boolean;
+  fresh: boolean;
+  expires_in: number | null;
+  last_refresh: number | null;
+}
+
+/** One attendee's standing on the Omnigent plane, as the operator panel shows it. */
+export interface OmnigentAttendee {
+  email: string;
+  obo: OboStatus;
+  host: { status: string; last_exit_code?: number };
+}
+
+export interface OmnigentTier {
+  /** False once an operator has demoted the tier fleet-wide. */
+  enabled: boolean;
+  /** Whether this deployment is wired to a remote Omnigent app at all. */
+  remote: boolean;
+  attendees: OmnigentAttendee[];
+}
+
+export interface RecoveryResult {
+  email: string;
+  attempted: boolean;
+  reason?: string;
+  actions?: string[];
+  credential_fresh?: boolean;
+  obo: OboStatus;
 }
 
 export interface SessionInfo {
@@ -238,6 +276,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ text }),
     }),
+  recover: () =>
+    request<{ recovered: boolean; actions: string[] }>("/api/recover", {
+      method: "POST",
+    }),
   setPersona: (persona: Persona) =>
     request<{ persona: Persona }>("/api/persona", {
       method: "POST",
@@ -264,6 +306,19 @@ export const api = {
     request("/api/admin/broadcast", {
       method: "POST",
       body: JSON.stringify({ message, level, ttl_s }),
+    }),
+  adminOmnigentTier: () => request<OmnigentTier>("/api/admin/omnigent-tier"),
+  /** Withdraw the Omnigent cards fleet-wide, or put them back. */
+  adminSetOmnigentTier: (enabled: boolean) =>
+    request<{ enabled: boolean }>("/api/admin/omnigent-tier", {
+      method: "POST",
+      body: JSON.stringify({ enabled }),
+    }),
+  /** Re-mirror, wake the host and nudge the tab — for one attendee or all. */
+  adminRecover: (email?: string) =>
+    request<{ recovered: string[]; results: RecoveryResult[] }>("/api/admin/recover", {
+      method: "POST",
+      body: JSON.stringify({ email: email ?? "" }),
     }),
   raiseHelp: (note?: string) =>
     request<{ raised: boolean; pushed: boolean; note?: string | null }>(

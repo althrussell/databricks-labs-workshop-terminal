@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import attendee as attendee_binding
+from . import cli_config
 from . import config
 from .users import User, email_slug
 
@@ -86,11 +87,18 @@ def build_host_launch(
         "OMNIGENT_HOST_TOKEN",
     ):
         env.pop(key, None)
-    env["DATABRICKS_CONFIG_FILE"] = os.path.join(
-        user.home, ".config", "workshop", "omnigent-empty-databrickscfg"
-    )
-    env["DATABRICKS_CONFIG_PROFILE"] = "workshop-omnigent-no-credentials"
+    # Native terminals inherit this environment (their OSEnvSpec is
+    # "caller_process"), so it is the agent's Databricks environment as much as
+    # the host's. It points at the attendee-only config rather than
+    # ~/.databrickscfg: the app service principal stays unreachable from the
+    # Omnigent plane, while the agent's CLI still resolves an identity.
+    env["DATABRICKS_CONFIG_FILE"] = cli_config.omnigent_databrickscfg_path(user)
+    env["DATABRICKS_CONFIG_PROFILE"] = config.obo_profile_name()
     env["OMNIGENT_APP_URL"] = server_url
+    # The host's own file logs are the only place a start failure keeps its
+    # traceback; at the default level the interesting records are filtered out
+    # before they are written, which is how an incident became archaeology.
+    env.setdefault("OMNIGENT_LOG_LEVEL", config.omnigent_host_log_level())
     identity = stable_host_identity(user, server_url)
     env["OMNIGENT_HOST_ID"] = identity.host_id
     env["OMNIGENT_HOST_NAME"] = identity.name
@@ -103,6 +111,77 @@ def build_host_launch(
     ]
     cwd = os.path.join(user.home, "projects")
     return argv, env, cwd
+
+
+def host_log_path(user: User) -> Path:
+    """Where an attendee's captured host stdout/stderr lands.
+
+    Under ``~/.omnigent/logs/host/`` so a single collector sweep finds it
+    alongside the logs Omnigent writes itself, with a distinct name so the two
+    never contend for the same file.
+    """
+    return Path(user.home) / ".omnigent" / "logs" / "host" / "host-stdio.log"
+
+
+class _StdioCapture:
+    """A pipe whose read end is drained into a bounded, redacted log.
+
+    The host used to be spawned onto ``/dev/null``. Anything it printed outside
+    the logging framework — an import error, an unhandled exception on the way
+    up, a subprocess complaining — was gone before anyone could ask what
+    happened, which is precisely the material a failed start consists of.
+    """
+
+    def __init__(self, log, write_fd: int, thread: threading.Thread) -> None:
+        self.log = log
+        self._write_fd: int | None = write_fd
+        self._thread = thread
+
+    @property
+    def write_fd(self) -> int:
+        assert self._write_fd is not None
+        return self._write_fd
+
+    def release(self) -> None:
+        """Drop the parent's handle so the drain thread sees EOF at child exit."""
+        fd, self._write_fd = self._write_fd, None
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+
+def _start_stdio_capture(user: User) -> _StdioCapture | None:
+    from . import diagnostics
+
+    log = diagnostics.BoundedLog(
+        host_log_path(user), max_bytes=config.omnigent_host_log_max_bytes()
+    )
+    try:
+        read_fd, write_fd = os.pipe()
+    except OSError:
+        logger.warning("could not open a host stdio pipe for %s", user.email)
+        return None
+
+    def drain() -> None:
+        try:
+            with os.fdopen(read_fd, "rb") as stream:
+                while True:
+                    raw = stream.readline(16384)
+                    if not raw:
+                        break
+                    log.write(
+                        diagnostics.clip(
+                            raw.decode("utf-8", "replace").rstrip("\r\n")
+                        )
+                    )
+        except OSError:
+            pass
+
+    thread = threading.Thread(target=drain, daemon=True, name="omnigent-host-stdio")
+    thread.start()
+    return _StdioCapture(log, write_fd, thread)
 
 
 def _token_path(user: User) -> Path:
@@ -149,6 +228,9 @@ class _Host:
     process: subprocess.Popen | None = None
     attempts: int = 0
     last_exit_code: int | None = None
+    # Last state reported to Control Tower, so health events describe movement
+    # rather than the supervisor's polling rate.
+    announced_status: str | None = None
 
 
 class RemoteHostManager:
@@ -165,8 +247,10 @@ class RemoteHostManager:
         backoff_base: float = 1.0,
         backoff_cap: float = 30.0,
         shutdown_timeout: float = 4.0,
+        stale_grace: float | None = None,
         stable_runtime: float | None = None,
         now_fn: Callable[[], datetime] | None = None,
+        stdio_capture: Callable[[User], "_StdioCapture | None"] | None = None,
     ) -> None:
         if user_manager is None:
             from .users import user_manager as default_user_manager
@@ -175,11 +259,19 @@ class RemoteHostManager:
         self._users = user_manager
         self._popen = popen_factory
         self._binary_resolver = binary_resolver or self._resolve_binary
+        self._stdio_capture = stdio_capture or _start_stdio_capture
         self._random = random_fn
         self._poll_interval = poll_interval
         self._backoff_base = backoff_base
         self._backoff_cap = backoff_cap
         self._shutdown_timeout = shutdown_timeout
+        # Grace before a stale mirror stands the host down. Long enough that a
+        # write in flight or a tab mid-poll is not mistaken for a dead
+        # credential, short enough that an attendee is gated rather than
+        # collecting auth errors.
+        self._stale_grace = (
+            float(config.omnigent_stale_grace()) if stale_grace is None else stale_grace
+        )
         self._now = now_fn or (lambda: datetime.now(timezone.utc))
         self._stable_runtime = (
             float(config.omnigent_host_stable_runtime())
@@ -405,6 +497,29 @@ class RemoteHostManager:
             raise ValueError(f"invalid remote host state: {status}")
         with self._lock:
             host.status = status
+        self._announce(host)
+
+    def _announce(self, host: _Host) -> None:
+        """Emit ``omnigent.host_health`` when this host's state has moved.
+
+        Transitions only. A supervisor re-asserting ``backoff`` every few
+        seconds would drown the event stream in exactly the situation an
+        operator most needs to read it. Callers that set ``host.status``
+        directly under the lock call this afterwards.
+        """
+        with self._lock:
+            status = host.status
+            if host.announced_status == status:
+                return
+            host.announced_status = status
+            attempts, exit_code = host.attempts, host.last_exit_code
+        from . import telemetry
+
+        telemetry.omnigent_host_health(
+            host.user.email,
+            status,
+            {"attempts": attempts, "last_exit_code": exit_code},
+        )
 
     def _run(self, email: str, host: _Host) -> None:
         while True:
@@ -423,6 +538,11 @@ class RemoteHostManager:
             host.wake.clear()
             if not fresh_mirrored_token_exists(host.user, server_url):
                 self._set_status(host, "waiting_for_token")
+                # The supervisor is the only thing that notices staleness while
+                # nobody is clicking, so it is where obo.health gets sampled.
+                from .obo import obo_manager
+
+                obo_manager.note_health(host.user.email)
                 # Close the check/clear race: if a fresh capture landed between
                 # the first check and state update, loop immediately.
                 if fresh_mirrored_token_exists(host.user, server_url):
@@ -444,6 +564,12 @@ class RemoteHostManager:
                     return
                 self._spawns_in_progress += 1
             process = None
+            capture = self._stdio_capture(host.user)
+            stdio = capture.write_fd if capture is not None else subprocess.DEVNULL
+            if capture is not None:
+                capture.log.write(
+                    f"=== host start {self._now().isoformat()} attempt={host.attempts}"
+                )
             try:
                 process = self._popen(
                     argv,
@@ -451,13 +577,25 @@ class RemoteHostManager:
                     cwd=cwd,
                     env=env,
                     stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    stdout=stdio,
+                    stderr=stdio,
                     start_new_session=True,
                     close_fds=True,
                 )
-            except (OSError, subprocess.SubprocessError):
-                logger.warning("Omnigent host failed to start for %s", email)
+            except (OSError, subprocess.SubprocessError) as error:
+                logger.warning(
+                    "Omnigent host failed to start for %s: %s",
+                    email,
+                    error,
+                    exc_info=True,
+                )
+                if capture is not None:
+                    capture.log.write(f"=== host spawn failed: {error!r}")
+            finally:
+                # The child holds its own duplicate; keeping ours open would
+                # leave the drain thread waiting for an EOF that never comes.
+                if capture is not None:
+                    capture.release()
             with self._spawn_condition:
                 self._spawns_in_progress -= 1
                 self._spawn_condition.notify_all()
@@ -471,6 +609,7 @@ class RemoteHostManager:
                     host.process = process
                     if process is not None:
                         host.status = "running"
+            self._announce(host)
             if cleanup_after_stop and process is not None:
                 self._terminate_group(
                     process,
@@ -480,20 +619,66 @@ class RemoteHostManager:
                     host.process = None
                 return
 
+            stood_down = False
             if process is not None:
                 started_at = time.monotonic()
+                stale_since: float | None = None
                 while process.poll() is None:
                     with self._lock:
                         if self._stopping:
                             return
+                    # A host running behind an expired mirror is the worst of
+                    # the available states: it advertises itself as ready and
+                    # fails every session with an auth error the attendee
+                    # cannot act on. Better to stand it down and say so.
+                    if fresh_mirrored_token_exists(host.user, server_url):
+                        stale_since = None
+                    else:
+                        now = time.monotonic()
+                        stale_since = stale_since or now
+                        if now - stale_since >= self._stale_grace:
+                            logger.warning(
+                                "Omnigent host for %s stood down: OBO mirror stale for %.0fs",
+                                email,
+                                now - stale_since,
+                            )
+                            self._terminate_group(
+                                process, deadline=now + self._shutdown_timeout
+                            )
+                            stood_down = True
+                            break
                     host.wake.clear()
                     host.wake.wait(timeout=self._poll_interval)
                 with self._lock:
                     host.last_exit_code = process.poll()
                     host.process = None
+                    exit_code = host.last_exit_code
                 runtime = time.monotonic() - started_at
+                if exit_code:
+                    tail = capture.log.tail(2048) if capture is not None else ""
+                    logger.warning(
+                        "Omnigent host for %s exited %s after %.1fs; last output:\n%s",
+                        email,
+                        exit_code,
+                        runtime,
+                        tail.strip() or "<nothing captured>",
+                    )
             else:
                 runtime = 0.0
+
+            if stood_down:
+                # Not a crash: nothing to back off from, and the attempt counter
+                # must not be spent on a credential problem. Wait for the next
+                # capture to wake us.
+                self._set_status(host, "waiting_for_token")
+                from .obo import obo_manager
+
+                obo_manager.note_health(email)
+                host.wake.clear()
+                if fresh_mirrored_token_exists(host.user, server_url):
+                    continue
+                host.wake.wait()
+                continue
 
             with self._lock:
                 if self._stopping:
@@ -504,6 +689,7 @@ class RemoteHostManager:
                 host.attempts = self.attempt_after_exit(host.attempts, runtime)
                 if host.attempts == 0:
                     attempt = 0
+            self._announce(host)
             delay = self.backoff_delay(attempt)
             host.wake.clear()
             host.wake.wait(timeout=delay)

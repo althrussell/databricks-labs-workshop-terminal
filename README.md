@@ -68,7 +68,12 @@ operator admin panel.
 ## What operators get
 
 - An in-app **Operator panel** (members of the `platform_admins` workspace
-  group): live presence, phase control, broadcast banners.
+  group): live presence, phase control, broadcast banners, and the two levers
+  for a bad moment — recover one attendee's Databricks sign-in, or demote the
+  Omnigent tier fleet-wide so a room keeps working on the bare CLIs.
+- **A floor runbook**: [docs/operator-runbook.md](docs/operator-runbook.md) —
+  what to do when an attendee says their agent is broken, in the order that
+  costs them the least. Worth reading before an event rather than during one.
 - A remote **admin API** (same group, works for service principals too) for
   Control Tower or `scripts/push_content.py` — push content packs, set the
   phase, broadcast. See [docs/admin-api.md](docs/admin-api.md).

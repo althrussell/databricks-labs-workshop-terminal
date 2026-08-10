@@ -150,6 +150,32 @@ def test_capture_writes_me_profile_and_preserves_default(client, monkeypatch, en
     assert cfg["me"]["host"] == cfg["DEFAULT"]["host"]
 
 
+def test_capture_mirrors_me_into_the_omnigent_config_without_the_sp(
+    client, monkeypatch, enable_obo
+):
+    """The Omnigent plane resolves the attendee and only the attendee.
+
+    Native terminals inherit the host's DATABRICKS_CONFIG_FILE, so this file is
+    what the agent's CLI reads. It must carry the attendee's profile (otherwise
+    the CLI has no credentials at all inside Omnigent) and must never carry the
+    service principal (the runner's SDK fallback would then silently act as it).
+    """
+    from server import cli_config, obo
+    from server.users import user_manager
+
+    user = user_manager.get("carol@example.com")
+    cli_config.configure_databricks_cli(user, "sp-default-token")
+    obo.OboManager().capture("carol@example.com", make_jwt(time.time() + 3600))
+
+    omni = configparser.ConfigParser()
+    omni.read(cli_config.omnigent_databrickscfg_path(user))
+
+    assert omni["me"]["token"].count(".") == 2  # the captured JWT
+    assert omni["me"]["host"]
+    assert "sp-default-token" not in omni["me"].values()
+    assert omni.defaults() == {}
+
+
 def test_default_rotation_does_not_clobber_me(client, monkeypatch, enable_obo):
     from server import cli_config, obo
     from server.users import user_manager

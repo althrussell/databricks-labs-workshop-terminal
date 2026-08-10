@@ -15,7 +15,17 @@ orchestration (the bundled `polly` orchestrator), and a web UI.
 Today the Workshop Terminal launches **bare** `claude` / `codex` CLIs. This
 design makes Omnigent the **default session type**: attendees land in the
 `omnigent` TUI, with `omnigent claude` and `omnigent codex` as direct session
-types, and the bare CLIs kept as demoted fallbacks.
+types, and the bare CLIs kept alongside.
+
+> **Correction (August 2026).** This section originally called the bare CLIs
+> "demoted fallbacks", and §5 below repeated the idea. That framing is wrong in
+> a way that matters on a workshop floor. Every harness inside Omnigent shares
+> one runner credential, so they fail *together*: `omnigent claude` is not a
+> refuge from a failing `pi`. The bare tier is the only real fallback, because
+> it runs on the app service principal in the attendee's own container and no
+> browser tab can invalidate it. Recovery procedure lives in
+> [`operator-runbook.md`](./operator-runbook.md); do not use this design doc as
+> one.
 
 ### Goals
 
@@ -293,10 +303,14 @@ Policy:
 
 ## 5. Failure modes
 
+Design-time analysis. What an operator actually does during an event is
+[`operator-runbook.md`](./operator-runbook.md) — start there.
+
 | Failure | Behavior |
 |---|---|
-| tmux/omnigent download blocked at boot | `omnigent*` catalog entries stay "installing…" with the error in `/api/setup-status`; bare claude/codex unaffected. Operators see it immediately. |
-| omnigent rc bug mid-workshop | Operator re-promotes bare entries via `AGENT_CATALOG_PATH` content-pack override — no redeploy. |
+| tmux/omnigent download blocked at boot | `omnigent*` catalog entries report the failed install step in `/api/setup-status` and on the card itself, rather than spinning; bare claude/codex unaffected. Operators see it immediately. |
+| Attendee's Databricks sign-in goes stale | **Every** Omnigent harness fails, together, before harness selection — the runner holds one credential for all of them. Omnigent cards are withdrawn rather than offered; bare claude/codex/bash are untouched and are the fallback. |
+| omnigent rc bug mid-workshop | Operator demotes the Omnigent tier fleet-wide from the operator panel — takes effect on the next poll, no redeploy, bare CLIs unaffected. |
 | Gateway token expired in token file | `auth_command` is re-run per refresh; next mint reads the rotated file. A single failed request window (<rotation period) is possible, same as today. |
 | Attendee deletes `~/.omnigent/config.yaml` | Next session's `configure_all` rewrites it (omnigent would otherwise drop into its first-run wizard — annoying, not dangerous). |
 | Port exhaustion / pidfile corruption | Omnigent's picker falls back to OS-assigned ports; a corrupt pidfile means one orphaned server and a fresh spawn — degraded, not broken. |
