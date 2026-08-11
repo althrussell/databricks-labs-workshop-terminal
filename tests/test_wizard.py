@@ -123,6 +123,49 @@ def test_skip_records_nothing(user):
     assert discovery.discovery_store.for_attendee(user.email) == []
 
 
+def test_dismissing_the_agent_picker_does_not_erase_the_brief(user):
+    """Skip and Escape fire from the third step too, where the attendee has
+    already answered everything. Treating that as "I decline to tell you" would
+    blank the home recap and the agent's instruction overlay for someone who had
+    just finished filling the thing in — and leave the record already at Control
+    Tower describing a brief the app no longer believes exists."""
+    wizard.save(user, {
+        "what_building": "A warranty dashboard",
+        "industry": "automotive_mobility",
+        "current_stack": ["Snowflake"],
+    })
+
+    wizard.save(user, {"skipped": True})
+
+    brief = wizard.read_brief(user)
+    assert brief.what_building == "A warranty dashboard"
+    assert brief.industry == "automotive_mobility"
+    assert brief.current_stack == ["Snowflake"]
+    assert brief.skipped is False
+    assert user_content._wizard_overlay(user) != ""
+
+
+def test_a_dismissal_does_not_burn_a_discovery_revision(user):
+    """Nobody touched the answers, so a second revision would make the record
+    look like it was being actively refined."""
+    wizard.save(user, {"what_building": "A warranty dashboard"})
+    wizard.save(user, {"skipped": True})
+
+    records = discovery.discovery_store.for_attendee(user.email)
+    assert len(records) == 1
+    assert records[0].revision == 1
+
+
+def test_an_omitted_field_is_unchanged_but_a_cleared_one_is_cleared(user):
+    """The distinction the merge turns on. Going Back and deleting the stack
+    chips has to stick, or the attendee cannot correct themselves."""
+    wizard.save(user, {"what_building": "A dashboard", "current_stack": ["Snowflake"]})
+
+    wizard.save(user, {"current_stack": []})
+    assert wizard.read_brief(user).what_building == "A dashboard"
+    assert wizard.read_brief(user).current_stack == []
+
+
 def test_an_empty_brief_records_nothing(user):
     """Clicking Next through an empty form is not a finding. A row saying an
     attendee exists and wants nothing is worse than no row, because it looks
@@ -331,6 +374,32 @@ def test_skipping_produces_no_starter_prompt(user):
 
 
 # -- API --------------------------------------------------------------------
+
+def test_the_industry_filter_actually_refilters(user, seeded):
+    """The chip is pressed before anything is saved, so the brief cannot answer
+    which industry the grid is for. Read off the brief instead and the filter
+    visibly does nothing, which reads as a broken control."""
+    ideas = wizard.state(user, "automotive_mobility")["ideas"]
+    assert "automotive_mobility" in ideas[0]["industries"]
+
+    ideas = wizard.state(user, "cross_industry")["ideas"]
+    assert "cross_industry" in ideas[0]["industries"]
+
+
+def test_a_dismissal_over_http_keeps_the_saved_brief(client):
+    """The wire format matters as much as the merge: a model whose fields all
+    default would arrive as an instruction to blank every one of them."""
+    # Its own attendee: the data root is session-scoped, so writing a brief for
+    # a shared one leaks into every later test that asks whether to show it.
+    who = {"X-Forwarded-Email": "dismisser@example.com"}
+
+    client.post("/api/wizard", headers=who, json={"what_building": "A dashboard"})
+    client.post("/api/wizard", headers=who, json={"skipped": True})
+
+    brief = client.get("/api/wizard", headers=who).json()["brief"]
+    assert brief["what_building"] == "A dashboard"
+    assert brief["skipped"] is False
+
 
 def test_the_wizard_endpoint_round_trips(client):
     from tests.conftest import ALICE

@@ -332,7 +332,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ persona }),
     }),
-  wizard: () => request<WizardState>("/api/wizard"),
+  wizard: (industry?: string) =>
+    request<WizardState>(
+      industry ? `/api/wizard?industry=${encodeURIComponent(industry)}` : "/api/wizard"
+    ),
   saveWizard: (body: WizardSave) =>
     request<{ brief: WizardBrief; starter_prompt: string }>("/api/wizard", {
       method: "POST",

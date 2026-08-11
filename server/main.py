@@ -519,17 +519,19 @@ class _WizardBody(BaseModel):
 
 
 @app.get("/api/wizard")
-def get_wizard(principal: Principal = Depends(get_current_user)):
+def get_wizard(industry: str = "", principal: Principal = Depends(get_current_user)):
     """Wizard state: whether to show it, and the ideas to show if so.
 
     Ideas are selected server-side because only the server can see which demo
     tables actually exist, and a card whose data was never seeded must never
-    reach the grid.
+    reach the grid. ``industry`` re-filters that grid for someone browsing before
+    they have committed to anything, so it is a query parameter rather than
+    something read back off the saved brief.
     """
     from . import wizard
     from .users import user_manager
 
-    return wizard.state(user_manager.get(principal.name))
+    return wizard.state(user_manager.get(principal.name), industry)
 
 
 @app.post("/api/wizard")
@@ -544,7 +546,10 @@ def save_wizard(body: _WizardBody, principal: Principal = Depends(get_current_us
     from .users import user_manager
 
     user = user_manager.get(principal.name)
-    brief = wizard.save(user, body.model_dump())
+    # Only the keys the attendee actually sent: the dismissal path posts nothing
+    # but ``skipped``, and the defaults on the model would otherwise read as an
+    # instruction to blank every answer they had already given.
+    brief = wizard.save(user, body.model_dump(exclude_unset=True))
     # The brief is inlined into the agent's instructions, so they have to be
     # rewritten now. Sessions are almost always launched from the wizard's last
     # step, after this call, so the first agent to start already has it.

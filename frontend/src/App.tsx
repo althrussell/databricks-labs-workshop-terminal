@@ -73,7 +73,9 @@ export default function App() {
   const [helpRaised, setHelpRaised] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [brief, setBrief] = useState<WizardBrief | null>(null);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const helpChatOpenRef = useRef(false);
+  const wizardChecked = useRef(false);
   const [view, setView] = useState<"home" | "terminals" | "operator">(
     location.pathname.startsWith("/operator") ? "operator" : "home"
   );
@@ -111,7 +113,12 @@ export default function App() {
       })
       .catch((e) => setError(
         e instanceof Error ? e.message : String(e)
-      ));
+      ))
+      // Either way the answer is known, which is what the wizard is waiting on.
+      // A failed lookup counts as loaded: an attendee whose very first request
+      // failed is not mid-build, and suppressing the wizard forever on a network
+      // blip is the worse of the two mistakes.
+      .finally(() => setSessionsLoaded(true));
 
     refreshAgents();
     const interval = setInterval(refreshAgents, 5000);
@@ -134,8 +141,16 @@ export default function App() {
    * least able to shrug it off.
    *
    * Suppressed when a session already exists — a returning attendee is mid-build,
-   * and a modal asking what they intend to build is at best late. */
+   * and a modal asking what they intend to build is at best late. That check has
+   * to wait for the session list to arrive: asking on mount only ever reads the
+   * empty array the state starts as, which is indistinguishable from a first
+   * arrival and opens the modal over somebody's running terminal. */
   useEffect(() => {
+    if (!sessionsLoaded || wizardChecked.current) return;
+    // Once per load. Without the guard the wizard would reopen the moment an
+    // attendee closed their last terminal, which is precisely when they are
+    // least in the mood for it.
+    wizardChecked.current = true;
     api
       .wizard()
       .then((state) => {
@@ -143,10 +158,7 @@ export default function App() {
         if (state.should_show && sessions.length === 0) setWizardOpen(true);
       })
       .catch(() => undefined);
-    // Deliberately once, on mount. Re-running it as sessions change would
-    // reopen the wizard the moment an attendee closed their last terminal.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [sessionsLoaded, sessions.length]);
 
   useEffect(() => {
     if (config?.help) setHelpRaised(config.help.raised);

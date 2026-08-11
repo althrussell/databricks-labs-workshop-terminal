@@ -309,25 +309,44 @@ def save(user: User, payload: dict[str, Any]) -> WizardBrief:
     have said everything the record needs, and the third step is agent selection.
     Someone who picks an agent from the landing page instead of the wizard's own
     cards must not lose what they already told us.
+
+    **An absent key means unchanged, not cleared.** The dismissal path sends only
+    ``{"skipped": true}``, and it fires from the third step too — where the
+    attendee has already told us everything. Rebuilding the brief from the
+    payload alone would blank a completed brief the moment someone pressed Escape
+    on the agent picker, taking the home recap and the agent's instruction
+    overlay with it while the discovery record it no longer matches was already
+    at Control Tower.
     """
     existing = read_brief(user)
+
+    def given(key: str, clean: Any, previous: Any) -> Any:
+        return clean(payload[key]) if key in payload else previous
+
     brief = WizardBrief(
         # Minted once and kept for the life of the session. Everything downstream
         # — the agent's refinements, CT's de-duplication — hangs off this id
         # being stable across saves.
         record_id=existing.record_id or uuid.uuid4().hex,
-        what_building=_clean_text(payload.get("what_building")),
-        industry=_clean_text(payload.get("industry"))[:64],
-        intent=_clean_text(payload.get("intent")).lower(),
-        idea_id=_clean_text(payload.get("idea_id"))[:64],
-        current_stack=_clean_list(payload.get("current_stack")),
-        persona=_clean_text(payload.get("persona")).lower(),
+        what_building=given("what_building", _clean_text, existing.what_building),
+        industry=given("industry", lambda v: _clean_text(v)[:64], existing.industry),
+        intent=given("intent", lambda v: _clean_text(v).lower(), existing.intent),
+        idea_id=given("idea_id", lambda v: _clean_text(v)[:64], existing.idea_id),
+        current_stack=given("current_stack", _clean_list, existing.current_stack),
+        persona=given("persona", lambda v: _clean_text(v).lower(), existing.persona),
         seen=True,
-        skipped=bool(payload.get("skipped")),
-        completed_at=discovery._now(),
+        completed_at=existing.completed_at,
     )
     if brief.intent not in INTENTS:
         brief.intent = ""
+
+    # Skipped means "I declined to tell you", which someone who has already told
+    # us cannot retroactively do. Both the home recap and the instruction overlay
+    # read this flag, so honouring it on a step-three dismissal would silently
+    # withhold a brief the attendee filled in.
+    brief.skipped = bool(payload.get("skipped")) and not brief.has_content
+    if brief.has_content:
+        brief.completed_at = brief.completed_at or discovery._now()
 
     write_brief(user, brief)
 
@@ -335,6 +354,12 @@ def save(user: User, payload: dict[str, Any]) -> WizardBrief:
         # Skipping is an answer, and the answer is "leave me alone". Recording it
         # anyway would make the record the one thing the attendee explicitly
         # declined to give.
+        return brief
+
+    if existing.has_content and to_discovery(existing) == to_discovery(brief):
+        # A dismissal, or a second save of an unchanged brief. Re-emitting would
+        # burn a revision on identical content and make the record look like it
+        # was being actively refined when nobody touched it.
         return brief
 
     # No-ops when capture is off, which is the whole consent boundary: a
@@ -366,10 +391,15 @@ def starter_prompt(brief: WizardBrief) -> str:
     )
 
 
-def state(user: User) -> dict[str, Any]:
-    """Everything the frontend needs to render the wizard."""
+def state(user: User, industry: str = "") -> dict[str, Any]:
+    """Everything the frontend needs to render the wizard.
+
+    ``industry`` is the filter chip the attendee just pressed, which is not yet
+    in the brief — they are still choosing what to build, and the whole point of
+    the chip is to see the grid change before committing to anything.
+    """
     brief = read_brief(user)
-    industry = brief.industry or default_industry()
+    industry = _clean_text(industry)[:64] or brief.industry or default_industry()
     return {
         "brief": brief.to_json(),
         "should_show": not brief.seen,

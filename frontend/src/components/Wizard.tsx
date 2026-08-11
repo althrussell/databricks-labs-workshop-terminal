@@ -141,10 +141,13 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
     pickIdea(pick);
   }
 
+  // The chip has to be sent, not just set: the brief has not been saved yet, so
+  // the server has no other way to know which industry the grid is being asked
+  // for, and a filter that visibly does nothing is worse than no filter.
   function refreshIdeas(nextIndustry: string) {
     setIndustry(nextIndustry);
     api
-      .wizard()
+      .wizard(nextIndustry)
       .then((s) => setIdeas(s.ideas))
       .catch(() => undefined);
   }
@@ -188,7 +191,11 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
       setStep(3);
     } catch {
       // Losing the brief is bad; blocking the attendee behind a failed save is
-      // worse. Let them through to the agents either way.
+      // worse. Let them through to the agents either way — but with a prompt.
+      // Step three launches with whatever is in this state, and an empty string
+      // there drops them at the blank cursor this whole wizard exists to avoid,
+      // having just watched their answers scroll past.
+      setStarterPrompt(selectedIdea ? selectedIdea.prompt : what.trim());
       setStep(3);
     } finally {
       setSaving(false);
