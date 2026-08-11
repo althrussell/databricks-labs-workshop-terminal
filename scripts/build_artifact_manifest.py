@@ -9,9 +9,12 @@ upstream sources rather than trusting whatever a reviewer pasted in.
     python3 scripts/build_artifact_manifest.py --check     # verify, change nothing
     python3 scripts/build_artifact_manifest.py --write     # rewrite the manifest
 
-Needs outbound access to nodejs.org, github.com, downloads.claude.ai, and
-registry.npmjs.org. Run it from a network that reaches all four; the manifest it
-produces is what attendees install, so partial regeneration is not accepted.
+Needs outbound access to nodejs.org, github.com, downloads.claude.ai, and an npm
+registry. Run it from a network that reaches all four; the manifest it produces
+is what attendees install, so partial regeneration is not accepted. npm is read
+through whatever registry npm is configured with -- on a Databricks laptop that
+is the managed proxy, since registry.npmjs.org does not resolve there -- while
+the recorded source URL stays canonical for boot to fetch.
 
 Sources that publish a checksum of their own (Node, the Databricks CLI, the
 Claude release manifest) are cross-checked against it instead of being taken on
@@ -44,8 +47,9 @@ CLI_RELEASE = (
     "https://github.com/databricks/cli/releases/download/"
     f"v{install.DATABRICKS_CLI_VERSION}"
 )
-NPM_REGISTRY = "https://registry.npmjs.org/@openai/codex"
-PI_NPM_REGISTRY = "https://registry.npmjs.org/@earendil-works/pi-coding-agent"
+NPM_PUBLIC_REGISTRY = "https://registry.npmjs.org"
+CODEX_PACKAGE = "@openai/codex"
+PI_PACKAGE = "@earendil-works/pi-coding-agent"
 UV_VERSION = "0.12.0"
 PYTHON_RELEASE = "20260728"
 PYTHON_VERSION = "3.12.13"
@@ -59,6 +63,36 @@ def _fetch(url: str) -> bytes:
 
 def _fetch_text(url: str) -> str:
     return _fetch(url).decode("utf-8")
+
+
+def _npm_base() -> str:
+    """The registry to download from, which is not the registry we record.
+
+    Databricks laptops reach npm through a managed proxy and cannot resolve
+    ``registry.npmjs.org`` at all, so this script fetches from whatever npm is
+    configured to use. The manifest still records the canonical public URL,
+    because boot resolves ``source`` from a container with no proxy access.
+    """
+    # npm treats npm_config_* as case-insensitive, and CI sets the lower form.
+    configured = (
+        os.environ.get("NPM_CONFIG_REGISTRY")
+        or os.environ.get("npm_config_registry")
+        or ""
+    ).strip()
+    if not configured:
+        try:
+            configured = subprocess.run(
+                ["npm", "config", "get", "registry"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=True,
+            ).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            configured = ""
+    if configured in {"", "null", "undefined"}:
+        configured = NPM_PUBLIC_REGISTRY
+    return configured.rstrip("/")
 
 
 def _download_sha256(url: str) -> tuple[str, str]:
@@ -91,7 +125,7 @@ def _verified(url: str, expected: str, label: str) -> str:
 
 
 def _npm_entry(
-    registry: str,
+    package: str,
     packument: dict,
     version: str,
     basename: str,
@@ -100,12 +134,17 @@ def _npm_entry(
     """Checksum an npm tarball, cross-checked against npm's own attestation.
 
     npm publishes ``dist.integrity`` (SHA-512) for every version. Verifying the
-    download against it means a compromised or stale mirror cannot slip different
-    bytes past this script, which is the only reason a mirror is usable at all.
+    download against it means a stale mirror cannot slip different bytes past
+    this script, which is the only reason a mirror is usable at all. When the
+    mirror serves the packument too it is attesting its own bytes, so this
+    narrows to an internal-consistency check; the standing guarantee is that
+    ``source`` stays canonical and boot re-verifies sha256 against a manifest a
+    human reviewed.
     """
     dist = packument["versions"][version]["dist"]
-    url = f"{registry}/-/{basename}-{version}.tgz"
-    checksum, path = _download_sha256(url)
+    url = f"{NPM_PUBLIC_REGISTRY}/{package}/-/{basename}-{version}.tgz"
+    download = str(dist["tarball"])
+    checksum, path = _download_sha256(download)
     try:
         algorithm, encoded = str(dist["integrity"]).split("-", 1)
         expected = base64.b64decode(encoded).hex()
@@ -114,13 +153,13 @@ def _npm_entry(
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(chunk)
         if digest.hexdigest() != expected:
-            raise SystemExit(f"{url} does not match its published {algorithm}")
+            raise SystemExit(f"{download} does not match its published {algorithm}")
         entry = {"version": version, "source": url, "sha256": checksum}
         if executable:
             with tarfile.open(path) as archive:
                 member = archive.extractfile(f"package/{executable}")
                 if member is None:
-                    raise SystemExit(f"{url} has no {executable}")
+                    raise SystemExit(f"{download} has no {executable}")
                 entry["executable_sha256"] = hashlib.sha256(member.read()).hexdigest()
     finally:
         os.unlink(path)
@@ -167,8 +206,9 @@ def build() -> dict:
         _fetch_text(f"{CLAUDE_RELEASES}/{install.CLAUDE_VERSION}/manifest.json")
     )
     claude_linux = claude_manifest["platforms"]["linux-x64"]["checksum"]
-    codex_packument = json.loads(_fetch_text(NPM_REGISTRY))
-    pi_packument = json.loads(_fetch_text(PI_NPM_REGISTRY))
+    npm = _npm_base()
+    codex_packument = json.loads(_fetch_text(f"{npm}/{CODEX_PACKAGE}"))
+    pi_packument = json.loads(_fetch_text(f"{npm}/{PI_PACKAGE}"))
     _assert_pi_node_floor(pi_packument)
 
     node_x64 = f"node-v{install.NODE_VERSION}-linux-x64.tar.xz"
@@ -199,8 +239,10 @@ def build() -> dict:
             "sha256": install.TMUX_STATIC_SHA256,
         },
         "claude_installer": {
+            # _vendored_script_entry swaps source for the vendored filename and
+            # keeps this URL as `upstream`, so it must be the URL, not the file.
             "version": install.CLAUDE_VERSION,
-            "source": "claude-code-bootstrap.sh",
+            "source": install.CLAUDE_INSTALLER_URL,
             "sha256": "",
         },
         "claude_binary": {
@@ -211,17 +253,17 @@ def build() -> dict:
             "sha256": claude_linux,
         },
         "codex_npm_launcher_package": _npm_entry(
-            NPM_REGISTRY, codex_packument, install.CODEX_VERSION, "codex"
+            CODEX_PACKAGE, codex_packument, install.CODEX_VERSION, "codex"
         ),
         "codex_native_package_linux_x64": _npm_entry(
-            NPM_REGISTRY,
+            CODEX_PACKAGE,
             codex_packument,
             f"{install.CODEX_VERSION}-linux-x64",
             "codex",
             CODEX_NATIVE_EXECUTABLE,
         ),
         "pi_npm_package": _npm_entry(
-            PI_NPM_REGISTRY, pi_packument, install.PI_VERSION, "pi-coding-agent"
+            PI_PACKAGE, pi_packument, install.PI_VERSION, "pi-coding-agent"
         ),
         "databricks_cli_installer": {
             "version": install.DATABRICKS_CLI_VERSION,
