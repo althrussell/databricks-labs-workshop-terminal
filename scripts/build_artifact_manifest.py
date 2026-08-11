@@ -199,8 +199,10 @@ def build() -> dict:
             "sha256": install.TMUX_STATIC_SHA256,
         },
         "claude_installer": {
+            # _vendored_script_entry swaps source for the vendored filename and
+            # keeps this URL as `upstream`, so it must be the URL, not the file.
             "version": install.CLAUDE_VERSION,
-            "source": "claude-code-bootstrap.sh",
+            "source": install.CLAUDE_INSTALLER_URL,
             "sha256": "",
         },
         "claude_binary": {
