@@ -221,9 +221,9 @@ class User:
         diagnostics into the attendee's terminal.
 
         Any argument suppresses the probe. An optional first positional selects
-        a different agent, which is how a model-set variant (``polly-economy``
-        and friends) can get its own catalog card; it is only read as an agent
-        when it does not look like a flag, so ``workshop-omnigent --help`` still
+        a different agent (for example ``codex``) so a catalog card can launch
+        something other than stock ``polly``; it is only read as an agent when
+        it does not look like a flag, so ``workshop-omnigent --help`` still
         reaches the CLI. Flags reach the create path because a human typing them
         is driving the CLI directly, not asking to resume a conversation.
 

@@ -631,12 +631,10 @@ def evaluate(
             ),
             missing=missing_installers,
             degraded=degraded_installers,
-            # The roster the Omnigent App may safely advertise. Pi is advisory
-            # here — an instance is ready without it — but every polly variant
-            # names a pi worker, and the App runs in a different container and
-            # cannot look. Reporting the installed set is what lets CT set
-            # WORKSHOP_HARNESSES rather than have a brain dispatch into a CLI
-            # that was never installed.
+            # Installed agent CLIs for operators / older CT revisions. Workshop
+            # Polly economy/balanced/frontier tiers (which needed
+            # WORKSHOP_HARNESSES on the Omnigent App) are removed; stock polly
+            # plus optional Auto · smart routing remain.
             harnesses=installed_harnesses,
         ),
         "supply_chain": _check(

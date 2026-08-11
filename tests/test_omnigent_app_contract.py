@@ -119,12 +119,14 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
     )
     # The App's env surface is an allowlist so that widening it is a deliberate,
     # reviewed act. Beyond the required bindings the only additions permitted are
-    # the workshop's Polly model-set knobs — model endpoint names, a feature
-    # switch, and the harness roster the paired Workshop Terminal instance
-    # reports — never a credential. Matching the namespace rather than
-    # enumerating each pin keeps this from needing an edit per tier while still
-    # failing on anything outside it.
-    allowed = {"WORKSHOP_POLLY_VARIANTS", "WORKSHOP_HARNESSES"}
+    # smart-routing knobs (feature switch + optional URL/router/prefix overrides)
+    # — never a credential.
+    allowed = {
+        "WORKSHOP_SMART_ROUTING",
+        "WORKSHOP_ROUTING_BASE_URL",
+        "WORKSHOP_ROUTING_ROUTER_NAME",
+        "WORKSHOP_ROUTING_MODEL_PREFIXES",
+    }
     required = {
         "AP_LAKEBASE_ENDPOINT",
         "AP_ARTIFACT_VOLUME_PATH",
@@ -133,25 +135,22 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
         "OMNIGENT_BUILD_SHA",
     }
     assert required <= set(env)
-    unexpected = sorted(
-        name
-        for name in set(env) - required
-        if name not in allowed and not name.startswith("POLLY_")
-    )
+    unexpected = sorted(name for name in set(env) - required if name not in allowed)
     assert unexpected == [], (
         f"deploy/omnigent-app/app.yaml declares {unexpected}, which is outside the "
         "App's allowed env surface"
     )
-    # A model pin ships empty: the default lives in polly_variants.TIERS, and a
-    # non-empty value here would be a second, silently-winning source of truth.
-    for name in set(env) - required - {"WORKSHOP_POLLY_VARIANTS"}:
+    assert env["WORKSHOP_SMART_ROUTING"]["value"] == "false"
+    for name in allowed - {"WORKSHOP_SMART_ROUTING"}:
         assert env[name].get("value", "") == "", f"{name} must ship empty"
     assert not {
         "DATABRICKS_TOKEN",
         "DATABRICKS_CLIENT_SECRET",
         "OPENAI_API_KEY",
         "ANTHROPIC_API_KEY",
+        "WORKSHOP_POLLY_VARIANTS",
     }.intersection(env)
+    assert not any(name.startswith("POLLY_") for name in env)
 
 
 def test_wrapper_retains_upstream_control_plane_topology():
@@ -167,11 +166,16 @@ def test_wrapper_retains_upstream_control_plane_topology():
     }
     assert "sys.version_info < (3, 12)" in source
     assert "host_store = HostStore(DB_URI)" in source
-    assert "caps=RuntimeCaps()" in source
+    assert "build_runtime_caps(_workspace_client)" in source
+    assert "from smart_routing import build_runtime_caps" in source
+    assert "_register_polly_variants" not in source
+    assert "polly_variants" not in source
     assert 'os.environ["OMNIGENT_AUTH_PROVIDER"] = "header"' in source
     assert 'uvicorn.run(app, host="0.0.0.0", port=PORT)' in source
     assert "OMNIGENT_REMOTE_HOST_ENABLED" not in source
     assert "public_sharing=" not in source
+    assert (APP_DIR / "smart_routing.py").is_file()
+    assert not (APP_DIR / "polly_variants.py").exists()
     imported_roots = {
         alias.name.split(".", 1)[0]
         for node in ast.walk(tree)

@@ -11,49 +11,15 @@ env:
     value: "0.8.2"
   - name: OMNIGENT_BUILD_SHA
     value: "72746f177eec0266268ebf8b940cef5bd8087ecf"
-  # Workshop Polly variants — the selectable model sets attendees compare.
-  # "false" leaves stock polly as the only agent.
-  - name: WORKSHOP_POLLY_VARIANTS
-    value: "true"
-  # The harness CLIs installed in the paired Workshop Terminal instance, copied
-  # from that instance's /readyz `installers.harnesses`. The App runs in its own
-  # container and cannot look, so without this it advertises workers that may
-  # not exist — pi in particular is advisory in the WT installer, and every tier
-  # names a pi worker. Empty means unmeasured and keeps the full roster.
-  - name: WORKSHOP_HARNESSES
+  # Auto · smart routing (AI Gateway routes:select). Default false: labs returns
+  # ENDPOINT_NOT_FOUND until the account enables routing/v1. Set true only after
+  # that product is on — otherwise the UI shows a dead Auto option.
+  - name: WORKSHOP_SMART_ROUTING
+    value: "false"
+  # Optional overrides (empty = built-in defaults in smart_routing.py).
+  - name: WORKSHOP_ROUTING_BASE_URL
     value: ""
-  # Every model pin is overridable so a renamed or withdrawn serving endpoint is
-  # a values change, not a release. Empty means "use the built-in default" (see
-  # polly_variants.TIERS). Naming convention:
-  #   POLLY_<TIER>_BRAIN_MODEL / _BRAIN_HARNESS
-  #   POLLY_<TIER>_WORKER_<WORKER>_MODEL
-  # e.g. POLLY_ECONOMY_WORKER_PI_MODEL, POLLY_FRONTIER_BRAIN_MODEL.
-  #
-  # Every brain runs Claude on claude-sdk, which is the harness the stock polly
-  # prompt was written against. Moving one to a GPT or GLM brain means setting
-  # POLLY_<TIER>_BRAIN_HARNESS as well as _BRAIN_MODEL: claude-sdk speaks the
-  # Anthropic wire API, so a non-Claude model pin alone fails at resolve time.
-  - name: POLLY_ECONOMY_BRAIN_MODEL
+  - name: WORKSHOP_ROUTING_ROUTER_NAME
     value: ""
-  - name: POLLY_ECONOMY_BRAIN_HARNESS
-    value: ""
-  - name: POLLY_ECONOMY_WORKER_CODEX_MODEL
-    value: ""
-  - name: POLLY_ECONOMY_WORKER_PI_MODEL
-    value: ""
-  - name: POLLY_BALANCED_BRAIN_MODEL
-    value: ""
-  - name: POLLY_BALANCED_WORKER_CLAUDE_CODE_MODEL
-    value: ""
-  - name: POLLY_BALANCED_WORKER_CODEX_MODEL
-    value: ""
-  - name: POLLY_BALANCED_WORKER_PI_MODEL
-    value: ""
-  - name: POLLY_FRONTIER_BRAIN_MODEL
-    value: ""
-  - name: POLLY_FRONTIER_WORKER_CLAUDE_CODE_MODEL
-    value: ""
-  - name: POLLY_FRONTIER_WORKER_CODEX_MODEL
-    value: ""
-  - name: POLLY_FRONTIER_WORKER_PI_MODEL
+  - name: WORKSHOP_ROUTING_MODEL_PREFIXES
     value: ""

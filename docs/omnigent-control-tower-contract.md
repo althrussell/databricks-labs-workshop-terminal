@@ -183,6 +183,30 @@ After the App service principal exists, Control Tower grants it Lakebase
 database connect/create and schema/table migration privileges. The first app
 start may fail before those grants; that is a provisioning phase, not readiness.
 
+### Smart routing (Auto · smart routing)
+
+Omnigent Auto uses AI Gateway `POST …/ai-gateway/routing/v1/routes:select` from
+the control-plane App as the App service principal (ambient Apps OAuth). Labs
+(`DATABRICKS_CONFIG_PROFILE=labs`, 2026-08-11) authenticated successfully but
+returned HTTP 404 `ENDPOINT_NOT_FOUND` / "routing/v1/routes:select is not
+enabled for this account." That is an **account-level product flag**, not a
+missing App-SP grant: no Control Tower privilege change unblocks it.
+
+Until the account enables routing:
+
+- Leave Omnigent App `WORKSHOP_SMART_ROUTING=false` (shipped default).
+- Do not grant the Omni App SP general model-serving for harness inference.
+
+After the account enables routing:
+
+- Set `WORKSHOP_SMART_ROUTING=true` on the Omnigent App deploy.
+- Ambient App SP OAuth is sufficient for the routing API call (no extra
+  model-serving role). Candidate models still come from the attendee host;
+  harness inference still uses the Workshop Terminal gateway token.
+
+Workshop Polly economy/balanced/frontier template agents are removed; stock
+`polly` is the default agent.
+
 ## Environment ownership
 
 Databricks Apps runtime owns `DATABRICKS_APP_PORT`, `PGHOST`, `PGPORT`,

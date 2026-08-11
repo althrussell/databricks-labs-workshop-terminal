@@ -958,16 +958,16 @@ def test_tui_helper_creates_polly_when_the_probe_is_missing(monkeypatch, tmp_pat
     assert completed.stderr == ""
 
 
-def test_tui_helper_takes_an_agent_name_so_variants_get_their_own_cards(
+def test_tui_helper_takes_an_agent_name_so_named_agents_get_their_own_cards(
     monkeypatch, tmp_path
 ):
-    """This is what lets each model-set variant be a separate launch card
-    instead of requiring the attendee to type a CLI invocation."""
+    """A first positional that is not a flag selects the agent for the remote
+    launch card (stock polly remains the default when omitted)."""
     argv = _run_tui_helper(
-        tmp_path, monkeypatch, ["polly-economy"], app_url="https://app.example.com"
+        tmp_path, monkeypatch, ["codex"], app_url="https://app.example.com"
     )
 
-    assert argv == ["polly-economy", "--server", "https://app.example.com"]
+    assert argv == ["codex", "--server", "https://app.example.com"]
 
 
 def test_tui_helper_does_not_mistake_a_flag_for_an_agent_name(monkeypatch, tmp_path):
