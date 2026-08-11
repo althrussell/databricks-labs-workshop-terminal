@@ -103,6 +103,10 @@ The workshop ends; the relationship shouldn't.
   still owns no external state, so this constraint holds where it was load-bearing
   — the reversal is that attendee-authored discovery answers leave the instance
   at all. See [adr/0001-workshop-insight-capture.md](adr/0001-workshop-insight-capture.md).
+  **Also amended** by the shared `workshop_demo` catalog: it is long-lived and
+  outside any run, but Control Tower's operator owns it, no code path here or
+  there creates or writes it, and teardown is still `apps.delete` because a run
+  creates nothing in it. See [adr/0003-shared-demo-catalog.md](adr/0003-shared-demo-catalog.md).
 - Prompt injection as fake user messages — context goes through memory files;
   user-visible chips the attendee clicks are the only way text enters a
   terminal on their behalf.

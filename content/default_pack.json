@@ -600,6 +600,20 @@
       "weight": 6
     },
     {
+      "id": "build-demo-data",
+      "title": "There's real data already here 📊",
+      "markdown": "You don't have to make data up. There's a catalog of realistic industry data in this workspace — vehicles, customers, parts, transactions — ready to query. Your agent knows where it is.",
+      "phases": [
+        "build"
+      ],
+      "triggers": [
+        "idle_5m"
+      ],
+      "cta": "Show me the data →",
+      "prompt": "What demo data is available in this workspace? Show me the tables, then pick the most interesting one and build me something with it.",
+      "weight": 7
+    },
+    {
       "id": "wrap-certificate",
       "title": "Claim your certificate 🏆",
       "markdown": "You built real things on Databricks today. Download your personalized certificate — with your stats: agent sessions, lines of code, resources created.",
@@ -670,5 +684,586 @@
         "prompt": "I want to keep this work after the workshop. Walk me through pushing my project to a git remote I own, and tell me exactly what I should download before this environment is deleted."
       }
     ]
-  }
+  },
+  "default_industry": "automotive_mobility",
+  "ideas": [
+    {
+      "id": "auto-part-failures",
+      "label": "Find the parts that fail early",
+      "outcome": "A page ranking parts by how often they fail per 1,000 vehicles",
+      "prompt": "Build me a dashboard ranking parts by warranty claims per 1,000 vehicles fitted, using parts360. Show the worst 20, break them down by supplier and by affected model, and flag any part where the rate is rising.",
+      "industries": ["automotive_mobility"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["dashboards", "sql"],
+      "shape": "dashboard",
+      "technical": false,
+      "demo_tables": ["automotive_mobility.parts360", "automotive_mobility.warranty_claims"]
+    },
+    {
+      "id": "auto-breakdown-risk",
+      "label": "Spot vehicles heading for a breakdown",
+      "outcome": "A model that flags vehicles likely to need unplanned work",
+      "prompt": "Train a model that predicts which vehicles are heading for an unplanned repair. Use telematics_events for behaviour and fault codes, vehicle360 for age and service history, and warranty claims as the outcome to learn from. Show me which signals mattered most.",
+      "industries": ["automotive_mobility"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["mlflow", "sql"],
+      "shape": "ml",
+      "technical": true,
+      "demo_tables": [
+        "automotive_mobility.telematics_events",
+        "automotive_mobility.vehicle360",
+        "automotive_mobility.dtc_codes"
+      ]
+    },
+    {
+      "id": "auto-fleet-questions",
+      "label": "Ask questions about the fleet in plain English",
+      "outcome": "Somewhere you can type a question and get an answer from the data",
+      "prompt": "Set up a Genie space over vehicle360 and customer360 so I can ask questions about the fleet in plain English. Give it good descriptions and a few example questions to start from.",
+      "industries": ["automotive_mobility"],
+      "intents": ["business_problem", "evaluation", "learning"],
+      "products": ["genie", "sql"],
+      "shape": "ai",
+      "technical": false,
+      "demo_tables": ["automotive_mobility.vehicle360", "automotive_mobility.customer360"]
+    },
+    {
+      "id": "auto-telematics-landing",
+      "label": "Land the daily telematics drops automatically",
+      "outcome": "New vehicle data files picked up and loaded without anyone touching it",
+      "prompt": "The raw volume has daily telematics JSON drops. Build a pipeline that picks up new files automatically with Auto Loader, cleans them into a table I can query, and checks the data looks right before it lands.",
+      "industries": ["automotive_mobility"],
+      "intents": ["business_problem", "evaluation", "learning"],
+      "products": ["pipelines", "autoloader"],
+      "shape": "pipeline",
+      "technical": true,
+      "demo_tables": ["automotive_mobility.telematics_events"]
+    },
+    {
+      "id": "auto-customer-drift",
+      "label": "See which customers are drifting away",
+      "outcome": "A page listing customers who still own a car but stopped coming in",
+      "prompt": "Build me an app showing customers who still own a vehicle but have not been back for service in over 18 months. customer360 has a service_defection_flag and a next_best_action already. Let me filter by dealer and sort by how much they used to spend.",
+      "industries": ["automotive_mobility"],
+      "intents": ["business_problem"],
+      "products": ["apps", "sql"],
+      "shape": "app",
+      "technical": false,
+      "demo_tables": ["automotive_mobility.customer360"]
+    },
+    {
+      "id": "auto-recall-progress",
+      "label": "Track how a recall is going",
+      "outcome": "A live view of which vehicles still have outstanding recall work",
+      "prompt": "Build a dashboard tracking recall campaign progress: how many affected vehicles are done versus outstanding, broken down by campaign, region and model, with the slowest-moving campaigns called out.",
+      "industries": ["automotive_mobility"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["dashboards", "sql"],
+      "shape": "dashboard",
+      "technical": false,
+      "demo_tables": [
+        "automotive_mobility.recall_campaigns",
+        "automotive_mobility.campaign_vehicles",
+        "automotive_mobility.vehicle360"
+      ]
+    },
+    {
+      "id": "auto-parts-stockouts",
+      "label": "Stop running out of the parts you need",
+      "outcome": "A page showing which parts are about to run out and where",
+      "prompt": "Build an app that flags parts at risk of stocking out: compare on-hand and on-order against the last 12 months of consumption in parts360, weight it by how badly the part has run out before, and show me the worst locations.",
+      "industries": ["automotive_mobility"],
+      "intents": ["business_problem"],
+      "products": ["apps", "sql"],
+      "shape": "app",
+      "technical": false,
+      "demo_tables": [
+        "automotive_mobility.parts360",
+        "automotive_mobility.parts_inventory"
+      ]
+    },
+    {
+      "id": "auto-ev-charging",
+      "label": "See how the electric fleet is charging",
+      "outcome": "A view of charging behaviour across the electric and hybrid vehicles",
+      "prompt": "Build a dashboard on charging_sessions joined to vehicle360: energy delivered over time, how it splits across charger speeds, cost per kWh, and which models charge most. Only BEV and PHEV vehicles have sessions, so make that explicit.",
+      "industries": ["automotive_mobility"],
+      "intents": ["business_problem", "evaluation", "learning"],
+      "products": ["dashboards", "sql"],
+      "shape": "dashboard",
+      "technical": false,
+      "demo_tables": [
+        "automotive_mobility.charging_sessions",
+        "automotive_mobility.vehicle360"
+      ]
+    },
+    {
+      "id": "auto-supersession",
+      "label": "Work out which part actually ships today",
+      "outcome": "A lookup that follows a part through every replacement to the current one",
+      "prompt": "In the parts table, superseded_by forms chains rather than single hops, so the current part number can be several replacements away. Write the query that walks a part to the end of its chain, then wrap it in a small lookup app. parts360 already has the answer resolved, so check yourself against it.",
+      "industries": ["automotive_mobility"],
+      "intents": ["business_problem", "learning"],
+      "products": ["sql", "apps"],
+      "shape": "app",
+      "technical": true,
+      "demo_tables": ["automotive_mobility.parts", "automotive_mobility.parts360"]
+    },
+
+    {
+      "id": "retail-stockouts",
+      "label": "See which stores are about to run out",
+      "outcome": "A page showing stores at risk of running out of their best sellers",
+      "prompt": "Build a dashboard showing which stores are about to run out of stock: compare daily inventory against how fast each product is selling, and rank by the revenue at risk.",
+      "industries": ["retail"],
+      "intents": ["business_problem"],
+      "products": ["dashboards", "sql"],
+      "shape": "dashboard",
+      "technical": false,
+      "demo_tables": [
+        "retail.inventory_daily",
+        "retail.products",
+        "retail.stores"
+      ]
+    },
+    {
+      "id": "retail-basket",
+      "label": "Find what people buy together",
+      "outcome": "A list of product pairs that sell together more often than chance",
+      "prompt": "Work out which products get bought together from the order lines, score the pairs so coincidence does not dominate, and show me the strongest combinations by category.",
+      "industries": ["retail"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["sql", "mlflow"],
+      "shape": "ml",
+      "technical": true,
+      "demo_tables": ["retail.orders", "retail.order_items", "retail.products"]
+    },
+    {
+      "id": "retail-store-app",
+      "label": "Give store managers their own page",
+      "outcome": "A small app a store manager can open to see just their store",
+      "prompt": "Build an app where a store manager picks their store and sees today's sales, what is running low, and how they compare to last week. Keep it readable on a phone.",
+      "industries": ["retail"],
+      "intents": ["business_problem"],
+      "products": ["apps", "sql"],
+      "shape": "app",
+      "technical": false,
+      "demo_tables": ["retail.stores", "retail.inventory_daily", "retail.orders"]
+    },
+
+    {
+      "id": "fs-fraud-scoring",
+      "label": "Catch fraudulent transactions",
+      "outcome": "A model that scores transactions and explains why it flagged them",
+      "prompt": "Train a fraud detection model on the transactions table using fraud_labels as the ground truth. Deal with how rare fraud is, show me precision and recall rather than just accuracy, and tell me which features drove the flags.",
+      "industries": ["financial_services"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["mlflow", "serving"],
+      "shape": "ml",
+      "technical": true,
+      "demo_tables": [
+        "financial_services.transactions",
+        "financial_services.fraud_labels"
+      ]
+    },
+    {
+      "id": "fs-spend-questions",
+      "label": "Ask where the money is going",
+      "outcome": "Somewhere you can ask spending questions in plain English",
+      "prompt": "Set up a Genie space over transactions, merchants and customers so I can ask about spending patterns in plain English, with example questions to get started.",
+      "industries": ["financial_services"],
+      "intents": ["business_problem", "evaluation", "learning"],
+      "products": ["genie", "sql"],
+      "shape": "ai",
+      "technical": false,
+      "demo_tables": [
+        "financial_services.transactions",
+        "financial_services.merchants",
+        "financial_services.customers"
+      ]
+    },
+    {
+      "id": "fs-txn-pipeline",
+      "label": "Build the transaction pipeline properly",
+      "outcome": "A clean, tested flow from raw transactions to something reportable",
+      "prompt": "Build a bronze/silver/gold pipeline over the transactions data with real data quality checks — no negative amounts, no transactions on closed accounts, no duplicate ids — and show me what it caught.",
+      "industries": ["financial_services"],
+      "intents": ["evaluation", "learning"],
+      "products": ["pipelines", "sql"],
+      "shape": "pipeline",
+      "technical": true,
+      "demo_tables": [
+        "financial_services.transactions",
+        "financial_services.accounts"
+      ]
+    },
+
+    {
+      "id": "health-readmission",
+      "label": "Predict who is likely to come back",
+      "outcome": "A model flagging patients at risk of readmission",
+      "prompt": "Build a model predicting 30-day readmission from encounters, patient history and diagnoses. Be careful not to leak anything from after discharge, and tell me which factors mattered.",
+      "industries": ["healthcare"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["mlflow"],
+      "shape": "ml",
+      "technical": true,
+      "demo_tables": [
+        "healthcare.encounters",
+        "healthcare.patients",
+        "healthcare.diagnoses"
+      ]
+    },
+    {
+      "id": "health-capacity",
+      "label": "See where the pressure is",
+      "outcome": "A view of demand by department, day and time",
+      "prompt": "Build a dashboard showing where demand is concentrated: encounters by department, day of week and hour, average length of stay, and which providers are carrying the most.",
+      "industries": ["healthcare"],
+      "intents": ["business_problem"],
+      "products": ["dashboards", "sql"],
+      "shape": "dashboard",
+      "technical": false,
+      "demo_tables": ["healthcare.encounters", "healthcare.providers"]
+    },
+    {
+      "id": "health-claims-questions",
+      "label": "Ask questions about claims",
+      "outcome": "Somewhere you can ask about claims and costs in plain English",
+      "prompt": "Set up a Genie space over claims and diagnoses so I can ask about cost and volume in plain English. This is synthetic data, so say so in the space description.",
+      "industries": ["healthcare"],
+      "intents": ["evaluation", "learning"],
+      "products": ["genie", "sql"],
+      "shape": "ai",
+      "technical": false,
+      "demo_tables": ["healthcare.claims", "healthcare.diagnoses"]
+    },
+
+    {
+      "id": "mfg-predictive-maintenance",
+      "label": "Predict machine failures before they happen",
+      "outcome": "A model that warns which machines are heading for a breakdown",
+      "prompt": "Use the sensor readings and defect history to predict which machines are heading for a failure. Build the features from the sensor time series, train it, and show me how much warning it actually gives.",
+      "industries": ["manufacturing"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["mlflow", "pipelines"],
+      "shape": "ml",
+      "technical": true,
+      "demo_tables": [
+        "manufacturing.sensor_readings",
+        "manufacturing.machines",
+        "manufacturing.defects"
+      ]
+    },
+    {
+      "id": "mfg-sensor-stream",
+      "label": "Handle the sensor data as it arrives",
+      "outcome": "A pipeline that keeps up with the sensor feed and alerts on anomalies",
+      "prompt": "Build a streaming pipeline over sensor_readings that keeps a rolling average per machine and raises something visible when a reading goes out of range.",
+      "industries": ["manufacturing"],
+      "intents": ["evaluation", "learning"],
+      "products": ["pipelines", "streaming"],
+      "shape": "pipeline",
+      "technical": true,
+      "demo_tables": ["manufacturing.sensor_readings", "manufacturing.machines"]
+    },
+    {
+      "id": "mfg-defect-dashboard",
+      "label": "Find where defects come from",
+      "outcome": "A page tracing defects back to machines, shifts and suppliers",
+      "prompt": "Build a dashboard on defects joined to work orders and machines: defect rate by machine, by shift and by supplier, with the biggest contributors ranked.",
+      "industries": ["manufacturing"],
+      "intents": ["business_problem"],
+      "products": ["dashboards", "sql"],
+      "shape": "dashboard",
+      "technical": false,
+      "demo_tables": [
+        "manufacturing.defects",
+        "manufacturing.work_orders",
+        "manufacturing.machines"
+      ]
+    },
+
+    {
+      "id": "media-churn",
+      "label": "Work out who is about to cancel",
+      "outcome": "A model that flags subscribers likely to leave",
+      "prompt": "Predict which subscribers are about to cancel, using viewing behaviour and subscription history with churn_labels as the outcome. Show me which behaviours give it away earliest.",
+      "industries": ["media"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["mlflow"],
+      "shape": "ml",
+      "technical": true,
+      "demo_tables": [
+        "media.subscriptions",
+        "media.churn_labels",
+        "media.viewers"
+      ]
+    },
+    {
+      "id": "media-recommend",
+      "label": "Recommend what to watch next",
+      "outcome": "Personalised recommendations you can actually try out",
+      "prompt": "Build a recommender over view_events and content, then let me type in a viewer id and see what it suggests and why.",
+      "industries": ["media"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["vector-search", "mlflow", "apps"],
+      "shape": "ai",
+      "technical": true,
+      "demo_tables": ["media.view_events", "media.content", "media.viewers"]
+    },
+    {
+      "id": "media-watch-dashboard",
+      "label": "See what people are actually watching",
+      "outcome": "A view of what is being watched, by whom and for how long",
+      "prompt": "Build a dashboard over view_events and content: most-watched titles, completion rates, when people watch, and which titles get abandoned early.",
+      "industries": ["media"],
+      "intents": ["business_problem", "learning"],
+      "products": ["dashboards", "sql"],
+      "shape": "dashboard",
+      "technical": false,
+      "demo_tables": ["media.view_events", "media.content"]
+    },
+
+    {
+      "id": "gov-requests-dashboard",
+      "label": "Track how fast requests get resolved",
+      "outcome": "A page showing service request volumes and how long they take",
+      "prompt": "Build a dashboard over service_requests: volume by category and area, how long each type takes to close, and which ones are ageing badly.",
+      "industries": ["public_sector"],
+      "intents": ["business_problem"],
+      "products": ["dashboards", "sql"],
+      "shape": "dashboard",
+      "technical": false,
+      "demo_tables": ["public_sector.service_requests", "public_sector.facilities"]
+    },
+    {
+      "id": "gov-permit-app",
+      "label": "Make permits easy to look up",
+      "outcome": "A searchable page for permits and their status",
+      "prompt": "Build an app for searching permits by address, type and status, showing where each one is in the process and how long it has been sitting there.",
+      "industries": ["public_sector"],
+      "intents": ["business_problem"],
+      "products": ["apps", "sql"],
+      "shape": "app",
+      "technical": false,
+      "demo_tables": ["public_sector.permits", "public_sector.facilities"]
+    },
+    {
+      "id": "gov-budget-questions",
+      "label": "Ask where the budget went",
+      "outcome": "Somewhere you can ask budget questions in plain English",
+      "prompt": "Set up a Genie space over budgets and service_requests so I can ask how spending lines up with demand, in plain English.",
+      "industries": ["public_sector"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["genie", "sql"],
+      "shape": "ai",
+      "technical": false,
+      "demo_tables": ["public_sector.budgets", "public_sector.service_requests"]
+    },
+
+    {
+      "id": "energy-meter-stream",
+      "label": "Keep up with the smart meter feed",
+      "outcome": "A pipeline that ingests meter readings continuously",
+      "prompt": "Build a streaming pipeline over meter_readings that aggregates consumption per meter per hour and handles readings that turn up late.",
+      "industries": ["energy_utilities"],
+      "intents": ["evaluation", "learning"],
+      "products": ["pipelines", "streaming"],
+      "shape": "pipeline",
+      "technical": true,
+      "demo_tables": ["energy_utilities.meter_readings", "energy_utilities.meters"]
+    },
+    {
+      "id": "energy-outage-dashboard",
+      "label": "See who is affected by outages",
+      "outcome": "A page showing outages, how long they lasted and who they hit",
+      "prompt": "Build a dashboard over outages joined to meters and customers: how many customers affected, how long each outage lasted, and which areas suffer most.",
+      "industries": ["energy_utilities"],
+      "intents": ["business_problem"],
+      "products": ["dashboards", "sql"],
+      "shape": "dashboard",
+      "technical": false,
+      "demo_tables": [
+        "energy_utilities.outages",
+        "energy_utilities.meters",
+        "energy_utilities.customers"
+      ]
+    },
+    {
+      "id": "energy-usage-anomaly",
+      "label": "Spot meters behaving strangely",
+      "outcome": "A model that flags meters whose usage does not add up",
+      "prompt": "Find meters whose consumption pattern has shifted in a way that does not look like normal seasonal change. Build the baseline per meter, flag the outliers, and show me the most suspicious ones.",
+      "industries": ["energy_utilities"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["mlflow", "sql"],
+      "shape": "ml",
+      "technical": true,
+      "demo_tables": ["energy_utilities.meter_readings", "energy_utilities.meters"]
+    },
+
+    {
+      "id": "telco-churn",
+      "label": "Work out which subscribers will leave",
+      "outcome": "A model that flags subscribers likely to churn",
+      "prompt": "Predict subscriber churn using call detail records, plan information and churn_labels. Show me which behaviours predict it earliest and how much warning that gives.",
+      "industries": ["telco"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["mlflow"],
+      "shape": "ml",
+      "technical": true,
+      "demo_tables": ["telco.subscribers", "telco.churn_labels", "telco.plans"]
+    },
+    {
+      "id": "telco-network-dashboard",
+      "label": "Find the cells that are struggling",
+      "outcome": "A page showing where the network is under strain",
+      "prompt": "Build a dashboard over the call detail records and network cells: traffic per cell over time, dropped call rates, and which cells are consistently worst.",
+      "industries": ["telco"],
+      "intents": ["business_problem"],
+      "products": ["dashboards", "sql"],
+      "shape": "dashboard",
+      "technical": false,
+      "demo_tables": ["telco.cdr", "telco.network_cells"]
+    },
+    {
+      "id": "telco-plan-questions",
+      "label": "Ask whether people are on the right plan",
+      "outcome": "Somewhere you can ask about plans and usage in plain English",
+      "prompt": "Set up a Genie space over subscribers, plans and usage so I can ask which customers are on the wrong plan for how they actually use the service.",
+      "industries": ["telco"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["genie", "sql"],
+      "shape": "ai",
+      "technical": false,
+      "demo_tables": ["telco.subscribers", "telco.plans", "telco.cdr"]
+    },
+
+    {
+      "id": "cross-revenue-dashboard",
+      "label": "See how the business is doing",
+      "outcome": "A revenue dashboard you can slice by product and time",
+      "prompt": "Build a dashboard over the sales data: revenue and margin over time, best and worst products, and how the channels compare. Make the time period selectable.",
+      "industries": ["cross_industry"],
+      "intents": ["business_problem", "learning"],
+      "products": ["dashboards", "sql"],
+      "shape": "dashboard",
+      "technical": false,
+      "demo_tables": [
+        "cross_industry.sales",
+        "cross_industry.products",
+        "cross_industry.customers"
+      ]
+    },
+    {
+      "id": "cross-funnel",
+      "label": "See where people drop off",
+      "outcome": "A funnel showing where visitors give up",
+      "prompt": "Build a funnel from the web events — viewed, searched, added to cart, checked out, purchased — group the events into sessions, and show me where the biggest drop-off is.",
+      "industries": ["cross_industry"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["dashboards", "sql", "pipelines"],
+      "shape": "pipeline",
+      "technical": true,
+      "demo_tables": ["cross_industry.web_events", "cross_industry.sales"]
+    },
+    {
+      "id": "cross-customer-questions",
+      "label": "Ask questions about your customers",
+      "outcome": "Somewhere you can ask about customers in plain English",
+      "prompt": "Set up a Genie space over customers and sales so I can ask questions in plain English, with good column descriptions and a few examples to start from.",
+      "industries": ["cross_industry"],
+      "intents": ["evaluation", "learning"],
+      "products": ["genie", "sql"],
+      "shape": "ai",
+      "technical": false,
+      "demo_tables": ["cross_industry.customers", "cross_industry.sales"]
+    },
+    {
+      "id": "cross-repeat-buyers",
+      "label": "Predict who will buy again",
+      "outcome": "A model scoring customers on how likely they are to come back",
+      "prompt": "Build a model predicting which customers will buy again in the next 90 days, using how recently and how often they have bought and what they spent. Show me the top segment.",
+      "industries": ["cross_industry"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["mlflow", "sql"],
+      "shape": "ml",
+      "technical": true,
+      "demo_tables": ["cross_industry.sales", "cross_industry.customers"]
+    },
+
+    {
+      "id": "generic-space-invaders",
+      "label": "Build Space Invaders",
+      "outcome": "A working game you can play, and send to someone",
+      "prompt": "Build me a playable Space Invaders game as a Databricks App, deploy it, and give me the URL. Make it look good.",
+      "industries": [],
+      "intents": ["fun", "learning"],
+      "products": ["apps"],
+      "shape": "fun",
+      "technical": false,
+      "demo_tables": []
+    },
+    {
+      "id": "generic-team-quiz",
+      "label": "Make a quiz for your team",
+      "outcome": "A quiz app with a live scoreboard",
+      "prompt": "Build a multiplayer quiz app with a live scoreboard, deploy it, and give me the URL so people can join from their phones.",
+      "industries": [],
+      "intents": ["fun", "learning"],
+      "products": ["apps", "lakebase"],
+      "shape": "fun",
+      "technical": false,
+      "demo_tables": []
+    },
+    {
+      "id": "generic-first-pipeline",
+      "label": "Build your first pipeline",
+      "outcome": "A working pipeline with quality checks, explained as it goes",
+      "prompt": "I have not built a pipeline on Databricks before. Build one with a bronze/silver/gold flow and data quality checks, and explain each part as you go so I understand what it is doing and why.",
+      "industries": [],
+      "intents": ["learning", "evaluation"],
+      "products": ["pipelines"],
+      "shape": "pipeline",
+      "technical": false,
+      "demo_tables": []
+    },
+    {
+      "id": "generic-my-own-data",
+      "label": "Use my own data",
+      "outcome": "Your own file loaded, explored and turned into a dashboard",
+      "prompt": "I want to work with my own data. Walk me through getting a CSV or spreadsheet in here, then explore what is in it and build me a dashboard over the interesting parts.",
+      "industries": [],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["sql", "dashboards"],
+      "shape": "dashboard",
+      "technical": false,
+      "demo_tables": []
+    },
+    {
+      "id": "generic-internal-tool",
+      "label": "Build a small internal tool",
+      "outcome": "A working app your team could actually use, with a real URL",
+      "prompt": "Build me a small internal tool as a Databricks App — something with a form, a list, and data that persists. Ask me what it should be for, then build it and deploy it.",
+      "industries": [],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["apps", "lakebase"],
+      "shape": "app",
+      "technical": false,
+      "demo_tables": []
+    },
+    {
+      "id": "generic-doc-qa",
+      "label": "Ask questions about your documents",
+      "outcome": "An assistant that answers from documents you give it",
+      "prompt": "Build me an assistant that answers questions from a set of documents, with links back to where each answer came from. Use whatever documents we have, or make some up if we have none.",
+      "industries": [],
+      "intents": ["business_problem", "evaluation", "learning"],
+      "products": ["vector-search", "serving", "apps"],
+      "shape": "ai",
+      "technical": false,
+      "demo_tables": []
+    }
+  ]
 }

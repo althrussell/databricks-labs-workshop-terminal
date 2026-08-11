@@ -7,7 +7,10 @@ insight capture, between the Workshop Terminal (producer) and Control Tower
 Companion documents:
 
 - [adr/0001-workshop-insight-capture.md](adr/0001-workshop-insight-capture.md) —
-  why this reverses two stated principles, and what did *not* change.
+  why this reverses two stated principles, and what did *not* change. Its
+  2026-08-11 amendment covers the wizard as a second discovery producer.
+- [adr/0003-shared-demo-catalog.md](adr/0003-shared-demo-catalog.md) — why the
+  shared demo catalog is not the durable state ADR 0001 rejected.
 - [control-tower-implementation.md](control-tower-implementation.md) — the
   existing C1–C5 contracts this extends.
 - Control Tower's `docs/08-integration-architecture.md` — the consumer side.
@@ -34,7 +37,8 @@ Captured:
 - **Behavioural signal** — what the attendee did. Topics, sessions, minutes,
   code, workspace resource census. Already gathered by `server/stats.py`.
 - **Elicited discovery** — what the attendee wants, in their own words, given
-  knowingly to an agent that told them why it was asking.
+  knowingly: either typed into the opening wizard, or told to an agent that said
+  why it was asking.
 - **Edge summary** — a summary derived from the attendee's prompts and the
   artifacts the agent wrote for them, regenerated as their session progresses.
 
@@ -196,7 +200,8 @@ downstream synthesis would systematically discard the best material.
 
 ### `discovery.record` — elicited discovery
 
-Emitted when the agent has gathered enough signal, once per record. Multiple
+Emitted when the opening wizard collects what the attendee came to build, and
+again whenever an agent has gathered enough signal to improve on it. Multiple
 records per attendee are expected as understanding improves; each is a separate
 event, and the record supersedes prior ones with the same `record_id`.
 
@@ -211,7 +216,7 @@ schema that demanded completeness would push the agent into interrogating people
 | `captured_at` | RFC 3339 | First capture time. Unchanged by later revisions. |
 | `revision` | integer | Starts at 1, bumped on every change. Last segment of `idempotency_key`. |
 | `redacted_by_attendee` | boolean | Present and `true` only on a withdrawal; every content field is then blank. |
-| `agent` | string | Which agent elicited it (`claude`/`codex`/`omnigent`). |
+| `agent` | string | Which producer elicited it (`claude`/`codex`/`omnigent`/`wizard`). |
 | `confidence` | enum | `low` \| `medium` \| `high` — the agent's own read of how firmly the attendee stated this. |
 | `session_intent` | enum | `business_problem` \| `evaluation` \| `learning` \| `fun` — why they were building. |
 | `use_case_title` | string | Short label. |
@@ -244,6 +249,30 @@ inferred `business_problem` cannot masquerade as a stated one.
 Absent means unclassified — an older Terminal build, or a session whose material
 genuinely did not say. It never means the attendee had no purpose, and synthesis
 must not read it that way.
+
+**Two producers write these records, not one.** `agent: "wizard"` marks a record
+the attendee typed into the opening wizard before any agent existed;
+`claude`/`codex`/`omnigent` mark one an agent elicited mid-build. A consumer must
+not treat `wizard` as a lesser source — it is the strongest provenance in the
+system, which is why the wizard emits `confidence: "high"` unconditionally while
+an agent is instructed to grade its own certainty.
+
+**The two producers share a `record_id` on purpose.** The wizard mints it, and
+the agent is told that id through its instruction overlay and refines the same
+record as the session teaches it more. So the normal lifecycle of one attendee's
+record is `revision 1` from the wizard followed by higher revisions from an
+agent, with `agent` changing between revisions and `confidence` possibly
+dropping as the agent adds fields it inferred rather than heard. **Supersession
+is by `revision` alone; `agent` and `confidence` are descriptive, not
+precedence.** A consumer that preferred `wizard` revisions would freeze the
+record at what someone typed in the first ninety seconds and discard everything
+the workshop actually revealed.
+
+Fields the wizard never sets, so their absence carries no meaning on a
+wizard-authored revision: `timeline` (it does not ask — an attendee has no
+authority over their employer's timing, and a captured answer reads downstream
+as a commitment), `blockers` and `interest_signals` (nobody knows these before
+they have started).
 
 **How the agent reaches this.** `assets/bin/workshop-discovery` posts to
 `POST /api/discovery` on the local app, authenticated by the attendee's callback

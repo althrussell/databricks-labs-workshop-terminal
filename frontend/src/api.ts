@@ -19,6 +19,53 @@ export interface IdeaPrompt {
 
 export type Persona = "technical" | "business";
 
+export interface WizardIdea {
+  id: string;
+  label: string;
+  outcome: string;
+  prompt: string;
+  industries: string[];
+  intents: string[];
+  products: string[];
+  shape: string;
+  technical: boolean;
+  demo_tables: string[];
+}
+
+export interface WizardBrief {
+  record_id: string;
+  what_building: string;
+  industry: string;
+  intent: string;
+  idea_id: string;
+  current_stack: string[];
+  persona: string;
+  seen: boolean;
+  skipped: boolean;
+  completed_at: string;
+}
+
+export interface WizardState {
+  brief: WizardBrief;
+  should_show: boolean;
+  default_industry: string;
+  industries: string[];
+  demo_data_available: boolean;
+  intents: string[];
+  ideas: WizardIdea[];
+  capture_enabled: boolean;
+}
+
+export interface WizardSave {
+  what_building?: string;
+  industry?: string;
+  intent?: string;
+  idea_id?: string;
+  current_stack?: string[];
+  persona?: string;
+  skipped?: boolean;
+}
+
 export interface CredentialStatus {
   configured: boolean;
   rotating: boolean;
@@ -284,6 +331,15 @@ export const api = {
     request<{ persona: Persona }>("/api/persona", {
       method: "POST",
       body: JSON.stringify({ persona }),
+    }),
+  wizard: (industry?: string) =>
+    request<WizardState>(
+      industry ? `/api/wizard?industry=${encodeURIComponent(industry)}` : "/api/wizard"
+    ),
+  saveWizard: (body: WizardSave) =>
+    request<{ brief: WizardBrief; starter_prompt: string }>("/api/wizard", {
+      method: "POST",
+      body: JSON.stringify(body),
     }),
   nuggets: () =>
     request<{ phase: string; nuggets: Nugget[]; prompts: IdeaPrompt[] }>("/api/nuggets"),

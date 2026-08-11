@@ -90,6 +90,25 @@ workshop-discovery '{
 Reuse the same `record_id` to **refine** a record as you learn more — that
 replaces it. Use a new `record_id` only for a genuinely different use case.
 
+## When they already told the wizard
+
+Most attendees answer a short wizard on the way in, and when they do, a record
+already exists and its `record_id` is stated in your instructions above.
+
+**Refine that record. Do not open a second one.** Pass the same `record_id` and
+fill in what you have learned since — the stack they mentioned while you worked,
+what turned out to be blocking them, which Databricks products you ended up
+using. Two records for one attendee reach the account team as two conflicting
+use cases, and nobody downstream can tell which one they meant.
+
+Their wizard answer is `high` confidence: they stated it themselves, unprompted.
+Do not downgrade it because you would have phrased it differently. Do set `low`
+or `medium` on fields *you* inferred, even in a record whose title they wrote.
+
+You do not need to say the "by the way, I'm noting this down" line to someone who
+came through the wizard — they were told at the point they typed it. Say it only
+if they skipped.
+
 The response tells you what happened. `{"captured": false}` is a normal answer:
 capture is off for this event. Don't retry it, and don't mention it to the
 attendee.

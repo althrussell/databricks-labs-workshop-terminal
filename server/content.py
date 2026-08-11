@@ -97,6 +97,37 @@ class IdeaPrompt(BaseModel):
     prompt: str
 
 
+class WizardIdea(BaseModel):
+    """One card in the "I'm not sure yet — show me ideas" grid.
+
+    Tagged rather than bucketed. An idea belongs to any number of industries and
+    intents, so one flat list serves every combination the wizard can ask for
+    without a card having to be written twice.
+
+    ``demo_tables`` is the load-bearing field. It names the tables the idea needs,
+    unqualified by catalog (``automotive_mobility.parts360``), and the selector
+    checks them against what is actually seeded before the card is allowed on
+    screen. Someone who clicked "I'm not sure yet" has said they have no idea and
+    is trusting the grid; handing them something that cannot be built with the
+    data present is the worst thing the wizard can do. An empty list means the
+    idea needs no demo data and is always buildable.
+    """
+
+    id: str
+    label: str
+    outcome: str  # one line, framed as what the attendee ends up with
+    prompt: str  # typed into the terminal on launch
+    industries: list[str] = Field(default_factory=list)  # empty = generic
+    intents: list[str] = Field(default_factory=list)
+    products: list[str] = Field(default_factory=list)
+    # dashboard | app | pipeline | ai | ml | fun. The selector spreads the six
+    # cards across these, so someone who wanted an app is never shown six
+    # dashboards and told there is nothing here for them.
+    shape: str = "dashboard"
+    technical: bool = False
+    demo_tables: list[str] = Field(default_factory=list)
+
+
 class ShellConfig(BaseModel):
     links: list[ShellLink] = Field(default_factory=list)
     workspace_links: list[WorkspaceLink] = Field(default_factory=list)
@@ -113,6 +144,13 @@ class ContentPack(BaseModel):
     # phase -> ideation chips ("all" applies to every phase).
     prompts: dict[str, list[IdeaPrompt]] = Field(default_factory=dict)
     nuggets: list[Nugget] = Field(default_factory=list)
+    # The wizard's idea grid. See WizardIdea.
+    ideas: list[WizardIdea] = Field(default_factory=list)
+    # A workshop is almost always one customer, so the industry is known before
+    # anyone arrives. Setting it here means the first render of the idea grid is
+    # already right and the industry chips become a correction rather than a
+    # prerequisite. Empty falls back to a deliberate cross-industry spread.
+    default_industry: str = ""
 
 
 class Broadcast(BaseModel):
@@ -199,6 +237,14 @@ class ContentService:
             pack, phase = self._pack, self._phase
         chips = list(pack.prompts.get("all", [])) + list(pack.prompts.get(phase, []))
         return [c.model_dump() for c in chips]
+
+    def ideas(self) -> list[WizardIdea]:
+        with self._lock:
+            return list(self._pack.ideas)
+
+    def default_industry(self) -> str:
+        with self._lock:
+            return self._pack.default_industry
 
     def active_broadcast(self) -> Broadcast | None:
         """The pinned notice, if one is standing.
