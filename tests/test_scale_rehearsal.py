@@ -5,8 +5,13 @@ The distinction this file defends: ``credentials`` asks whether the app
 credential is healthy right now, and an instance can pass it at nine in the
 morning and strand its attendee at noon. ``credential_durability`` asks the
 question that has an answer before the room fills — can each plane be *kept*
-alive for the rest of the event — and because Control Tower admits on a 200
-from ``/readyz``, answering no blocks admission with no CT change at all.
+alive for the rest of the event — so answering no is what should keep an
+attendee off that instance.
+
+Should, because the enforcement is Control Tower's item 9 and CT has not built
+it: at ``databricks-labs-control-tower@e42228f`` provisioning admits on the Apps
+deployment state and never calls ``/readyz``. What this file proves is that the
+verdict is correct and machine-readable; a CT PR is what turns it into a gate.
 """
 
 from __future__ import annotations

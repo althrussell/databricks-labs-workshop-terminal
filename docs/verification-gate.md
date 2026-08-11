@@ -95,10 +95,17 @@ workshop, discovered by them.
 
 ### The admission gate
 
-`/readyz` carries a hard `credential_durability` check. Control Tower already
-blocks admission on a 503 from `/readyz`, so this needs no CT change: an
-instance that cannot keep its credentials alive for the rest of the event never
-gets an attendee.
+`/readyz` carries a hard `credential_durability` check, so an instance that
+cannot keep its credentials alive for the rest of the event can be refused an
+attendee.
+
+**Can be, not is.** Blocking admission on it is
+[Control Tower's item 9](control-tower-implementation.md), and CT does not do it
+yet: measured against `databricks-labs-control-tower@e42228f`, provisioning
+waits on the Apps deployment state and probes HTTP `/health` on the Omnigent app
+only — `/readyz` appears in that repo in comments and nowhere in its code. Until
+the CT side lands, every hard gate here is a report an operator has to read
+rather than a gate, which is worth knowing before trusting one.
 
 It asks whether each plane can be **kept** alive, not whether a token outlives
 the event:
