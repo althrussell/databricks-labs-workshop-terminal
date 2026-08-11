@@ -18,12 +18,14 @@ import {
   AppConfig,
   PriorSessionInfo,
   SessionInfo,
+  WizardBrief,
   relaunchAndAcknowledge,
   splitSessionPayload,
 } from "./api";
 import databricksLogo from "./assets/databricks-logo.svg";
 import BannerBar from "./components/BannerBar";
 import Hero from "./components/Hero";
+import Wizard from "./components/Wizard";
 import LaunchBar from "./components/LaunchBar";
 import NuggetsPane from "./components/NuggetsPane";
 import OperatorPanel from "./components/OperatorPanel";
@@ -69,6 +71,8 @@ export default function App() {
   const [helpChatOpen, setHelpChatOpen] = useState(false);
   const [helpUnread, setHelpUnread] = useState(0);
   const [helpRaised, setHelpRaised] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [brief, setBrief] = useState<WizardBrief | null>(null);
   const helpChatOpenRef = useRef(false);
   const [view, setView] = useState<"home" | "terminals" | "operator">(
     location.pathname.startsWith("/operator") ? "operator" : "home"
@@ -120,6 +124,29 @@ export default function App() {
   useEffect(() => {
     helpChatOpenRef.current = helpChatOpen;
   }, [helpChatOpen]);
+
+  /* The wizard opens once, on the first arrival, and never again.
+   *
+   * `should_show` is the server's answer, not the browser's: it is keyed on the
+   * brief file rather than localStorage so a reload, a second tab, or the
+   * reconnect after a wifi flap cannot re-present a modal someone already
+   * skipped. In a workshop room all three of those happen, usually to the person
+   * least able to shrug it off.
+   *
+   * Suppressed when a session already exists — a returning attendee is mid-build,
+   * and a modal asking what they intend to build is at best late. */
+  useEffect(() => {
+    api
+      .wizard()
+      .then((state) => {
+        setBrief(state.brief);
+        if (state.should_show && sessions.length === 0) setWizardOpen(true);
+      })
+      .catch(() => undefined);
+    // Deliberately once, on mount. Re-running it as sessions change would
+    // reopen the wizard the moment an attendee closed their last terminal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (config?.help) setHelpRaised(config.help.raised);
@@ -226,6 +253,27 @@ export default function App() {
       return;
     }
     launch(agentId);
+  }
+
+  /** Launch from the wizard's last step, carrying the first prompt in.
+   *
+   * Deliberately the same typing mechanism the ideation chips use: the prompt
+   * lands at the agent's prompt UNSENT so the attendee presses Enter. The wizard
+   * hands them a loaded first move; it does not take the move for them, and an
+   * agent that started talking on its own would undercut the whole point of
+   * putting them in front of a terminal.
+   */
+  async function launchFromWizard(agentId: string, starterPrompt: string) {
+    setWizardOpen(false);
+    const session = await launch(agentId);
+    if (!session || !starterPrompt) return;
+    try {
+      // The CLI needs a moment before text will land at its prompt.
+      await new Promise((r) => setTimeout(r, 4000));
+      await api.typeIntoSession(session.id, starterPrompt);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   }
 
   // Ideation chips / insight-card prompts: type the text into the attendee's
@@ -584,8 +632,10 @@ export default function App() {
                   workspaceLinks={config?.shell.workspace_links ?? []}
                   hasSessions={sessions.length > 0}
                   launching={launching}
+                  brief={brief}
                   onLaunch={openOrLaunch}
                   onIdea={ideaToSession}
+                  onEditBrief={() => setWizardOpen(true)}
                 />
               )}
               {sessions.map((session) => (
@@ -608,6 +658,20 @@ export default function App() {
             />
           )}
         </div>
+      )}
+
+      {wizardOpen && (
+        <Wizard
+          agents={agents}
+          launching={launching}
+          onLaunch={launchFromWizard}
+          onClose={() => {
+            setWizardOpen(false);
+            // Pick up whatever the wizard saved so Home's recap line is right
+            // immediately, rather than after the next reload.
+            api.wizard().then((s) => setBrief(s.brief)).catch(() => undefined);
+          }}
+        />
       )}
 
       {certOpen && (

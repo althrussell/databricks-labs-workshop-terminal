@@ -531,6 +531,17 @@ def workshop_schema() -> str:
     return _env("WORKSHOP_SCHEMA")
 
 
+def workshop_demo_catalog() -> str:
+    """Shared read-only demo catalog (one schema per industry) the agent builds
+    against instead of generating its own fixtures.
+
+    Not this attendee's catalog and not created by this run: Control Tower seeds
+    it once per metastore and every attendee reads the same copy, so it outlives
+    every workshop and nothing here may write to it. Empty means the deployment
+    has no demo data, and every surface that would mention it goes quiet."""
+    return _env("WORKSHOP_DEMO_CATALOG")
+
+
 def entitlement_reconcile_interval() -> int:
     """Seconds between SP-driven entitlement reconciliation sweeps."""
     return _env_int("ENTITLEMENT_RECONCILE_INTERVAL", 300)

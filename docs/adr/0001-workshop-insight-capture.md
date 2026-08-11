@@ -1,6 +1,6 @@
 # ADR 0001 — Workshop insight capture reverses two stated principles
 
-- **Status:** accepted
+- **Status:** accepted, amended 2026-08-11 (see [Amendment](#amendment-2026-08-11--discovery-is-no-longer-agent-only))
 - **Date:** 2026-07-30
 - **Affects:** this repo and `databricks-labs-control-tower` (paired branches)
 
@@ -107,3 +107,40 @@ What did not change:
   This asymmetry is worth naming: we route *our* copy of the insight to Lakebase
   and hand the attendee an instruction. It is defensible only because their route
   is a two-command push and ours cannot be delegated to them at all.
+
+## Amendment (2026-08-11) — discovery is no longer agent-only
+
+This ADR assumed a single producer. Decision 3 above says discovery records are
+"agent-elicited", and the Alternatives section argues only about *how* an agent
+should derive them. The opening wizard now produces them too, before any agent
+has started.
+
+**What changed.** The wizard's first two screens ask what the attendee came to
+build; that answer becomes the terminal's first prompt *and* a
+`discovery.record` at `confidence: high`. The wizard mints the `record_id` and
+the agent is handed it, so the agent refines that record rather than opening a
+second one.
+
+**Why this does not reopen the argument this ADR settled.** The thing that made
+agent elicitation delicate was that an agent asking questions to fill a schema
+turns a build session into an interview — which is why the overlay is written
+against interrogation and why partial records are the expected case. A wizard
+does not have that failure mode: it is asked once, before anything is running,
+and it is skippable. Nothing about the consent boundary moves either. The wizard
+routes through the same `discovery.record()` path, which no-ops when
+`WORKSHOP_INSIGHT_CAPTURE` is off, and a skipped wizard emits nothing at all —
+declining is an answer, and recording it anyway would capture the one thing the
+attendee explicitly withheld.
+
+**What it costs.** `agent` is now a producer name rather than a harness name,
+and a record's `agent` and `confidence` can change between revisions of the same
+`record_id`. Consumers must supersede on `revision` alone; the contract says so
+explicitly, because a consumer that preferred the high-confidence wizard
+revision would freeze each record at what someone typed in the first ninety
+seconds.
+
+**What it buys.** The records that previously did not exist. Agent-elicited
+discovery only ever fired for attendees who got far enough into a conversation
+for the agent to have something to record, which systematically excluded the
+people who stalled — and a person who stalled is exactly who an account team
+most needs to hear about.

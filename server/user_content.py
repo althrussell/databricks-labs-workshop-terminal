@@ -133,6 +133,7 @@ DEFAULT_PERSONA = "business"
 
 _PERSONA_RELATIVE = os.path.join(".workshop", "persona")
 _PERSONA_MARKER = "<!-- workshop-persona -->"
+_WIZARD_MARKER = "<!-- workshop-brief -->"
 
 
 def persona_path(user: User) -> str:
@@ -181,6 +182,24 @@ def set_persona(user: User, persona: str) -> str:
     _store_persona(user, persona)
     _write_instructions(user)
     return persona
+
+
+def set_wizard_brief(user: User, brief) -> None:
+    """Fold a completed wizard brief into the agent's instructions.
+
+    Same shape as ``set_persona`` and for the same reason: the brief is inlined
+    into the instruction files, and the attendee can finish the wizard either
+    before their first session or after one is already running with instructions
+    that predate it.
+
+    The brief also carries a persona, which the wizard collects as an optional
+    aside rather than its own screen. Storing it here keeps the landing-page
+    toggle and the wizard writing to one place.
+    """
+    persona = (getattr(brief, "persona", "") or "").strip().lower()
+    if persona in PERSONAS:
+        _store_persona(user, persona)
+    _write_instructions(user)
 
 
 # -- instructions (CLAUDE.md / AGENTS.md + lab coach) --
@@ -255,8 +274,104 @@ def _persona_overlay(user: User) -> str:
     )
 
 
+def _wizard_overlay(user: User) -> str:
+    """What the attendee told the wizard, stated in the instructions.
+
+    Two jobs. The obvious one is that the agent knows what they came to build
+    before the first token, so it can start building instead of interviewing.
+
+    The less obvious one is ``record_id``. The wizard has already filed a
+    discovery record; the agent must refine *that* record rather than open a
+    second one. Without this line the same attendee arrives at Control Tower as
+    two unrelated use cases and the account brief reads as though they wanted two
+    different things.
+
+    Empty when the attendee skipped, which leaves the agent in exactly the state
+    it was in before the wizard existed — free to ask.
+    """
+    from . import wizard
+
+    brief = wizard.read_brief(user)
+    if brief.skipped or not brief.has_content:
+        return ""
+
+    lines = [_WIZARD_MARKER, "## What this attendee came to build", ""]
+    what = brief.what_building.strip()
+    idea = wizard.idea_by_id(brief.idea_id)
+    if what:
+        lines.append(f"In their own words: **{what}**")
+    elif idea:
+        lines.append(f"They picked this from a list of ideas: **{idea.label}** — {idea.outcome}.")
+    if idea and what:
+        lines.append("")
+        lines.append(f"They also picked the idea **{idea.label}** — {idea.outcome}.")
+    if brief.industry:
+        lines += ["", f"Industry: **{brief.industry.replace('_', ' ')}**."]
+    if brief.intent:
+        described = {
+            "business_problem": "solving a real problem from work",
+            "evaluation": "evaluating whether Databricks can do this",
+            "learning": "learning — they want to understand it, not just get output",
+            "fun": "here to build something fun",
+        }.get(brief.intent, brief.intent)
+        lines.append(f"They are here for: **{described}**.")
+    if brief.current_stack:
+        lines.append(f"They mentioned using: {', '.join(brief.current_stack)}.")
+
+    lines += [
+        "",
+        "They told us this on the way in, so **do not ask them again**. No "
+        "restating it back as a requirements summary, no clarifying round — open "
+        "with the build. If it turns out you misread what they wanted, correct "
+        "course mid-build rather than stopping to re-scope.",
+    ]
+
+    if config.discovery_enabled() and brief.record_id:
+        lines += [
+            "",
+            f"A discovery record already exists for this: `{brief.record_id}`. "
+            "When you learn more about what they are trying to do, **update that "
+            "record** by passing the same `record_id` — do not open a new one. A "
+            "second record for the same attendee reads downstream as a second, "
+            "conflicting use case.",
+        ]
+
+    return "\n".join(lines) + "\n"
+
+
+def _demo_data_overlay(user: User) -> str:
+    """The demo catalog and how to use it, if this deployment has one.
+
+    Scoped to the attendee's industry when the wizard captured one, because a
+    single schema listed in full is something the agent will actually use, while
+    every schema in the catalog is a wall of table names it will skim past.
+
+    Empty when the catalog is unset or unreachable, so a deployment without demo
+    data never promises the agent tables it cannot query.
+    """
+    from . import demo_data, wizard
+
+    if not demo_data.enabled():
+        return ""
+    brief = wizard.read_brief(user)
+    manifest = demo_data.manifest(brief.industry)
+    if not manifest:
+        return ""
+    with open(os.path.join(_ASSETS, "instructions", "demo_data.md")) as f:
+        template = f.read()
+    return template.replace("{manifest}", manifest).replace(
+        "{workshop_catalog}", config.workshop_catalog() or "<your catalog>"
+    )
+
+
 def _write_instructions(user: User) -> None:
-    text = f"{_base_instructions()}\n\n{_persona_overlay(user)}"
+    parts = [
+        _base_instructions(),
+        _persona_overlay(user),
+        _wizard_overlay(user),
+        _demo_data_overlay(user),
+    ]
+    text = "\n\n".join(p for p in parts if p.strip())
 
     claude_md = os.path.join(user.home, ".claude", "CLAUDE.md")
     os.makedirs(os.path.dirname(claude_md), exist_ok=True)

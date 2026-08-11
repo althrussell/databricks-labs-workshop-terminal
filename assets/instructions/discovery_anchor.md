@@ -11,3 +11,8 @@ A thin record beats no record. A title and an intent are enough to send — `fun
 is a complete answer, and "they wanted a Space Invaders clone" is a complete
 summary. Do not go back and interrogate them to fill the rest. Fields and intent
 values are in the discovery section below.
+
+**If a `record_id` is named in your instructions, use that one.** The attendee
+already described this build to the wizard on the way in, and that call refines
+their record rather than opening a second. A new id here would reach their
+account team as a second, contradictory use case for the same person.

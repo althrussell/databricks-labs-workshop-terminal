@@ -236,28 +236,53 @@ def test_the_hint_offers_a_real_build_instead():
     assert "tell it what you'd like to build" in app.lower()
 
 
-def test_the_landing_page_asks_before_the_session_starts():
+def test_the_ui_asks_before_the_session_starts():
     """Asked in the UI while they read the page, it costs nothing. Asked by the
-    agent, it costs the first turn."""
-    hero = (ROOT / "frontend" / "src" / "components" / "Hero.tsx").read_text(
+    agent, it costs the first turn.
+
+    The question moved from a standalone toggle on the landing page into the
+    wizard's context step, where it sits beside the other optional questions
+    instead of being the only thing on Home that looks like a form. The guarantee
+    is unchanged: something other than the agent asks it, before any session.
+    """
+    wizard = (ROOT / "frontend" / "src" / "components" / "Wizard.tsx").read_text(
         encoding="utf-8"
     )
 
-    assert "api.setPersona" in hero
-    assert "hero-persona" in hero
-    # Never in the attendee's words: they are choosing how things get explained,
-    # not filling in a profile field.
-    assert "persona" not in hero.split("return (")[1].lower().replace(
-        "hero-persona", ""
-    ).replace("choosepersona", "")
+    assert 'setPersona("business")' in wizard
+    assert 'setPersona("technical")' in wizard
+    # Framed as how things get explained, never as a profile field about them.
+    assert "How should your agent explain things?" in wizard
+    assert "Plain language" in wizard
 
 
 def test_choosing_is_optional():
     """A required choice would be a gate in front of the workshop — the server
-    defaults instead, so an attendee can ignore it entirely."""
+    defaults instead, so an attendee can ignore it entirely.
+
+    Two ways out, both of which must leave the persona unset: Skip, and simply
+    not touching the chips before Next.
+    """
+    wizard = (ROOT / "frontend" / "src" / "components" / "Wizard.tsx").read_text(
+        encoding="utf-8"
+    )
+
+    assert "disabled={!persona}" not in wizard
+    # Continuing is gated on having said what they are building, never on this.
+    assert "const canContinue = what.trim().length > 0 || ideaId !== \"\"" in wizard
+    assert 'const [persona, setPersona] = useState("")' in wizard
+
+
+def test_the_landing_page_no_longer_carries_its_own_picker():
+    """One place to answer it, not two that can disagree.
+
+    Home used to own a persona toggle. Leaving it there alongside the wizard's
+    would let an attendee set it twice and see the second answer silently
+    overwrite the first — with no indication which one the agent got.
+    """
     hero = (ROOT / "frontend" / "src" / "components" / "Hero.tsx").read_text(
         encoding="utf-8"
     )
 
-    assert "disabled={!persona}" not in hero
-    assert "useState<Persona | null>(null)" in hero
+    assert "hero-persona" not in hero
+    assert "api.setPersona" not in hero

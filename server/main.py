@@ -18,7 +18,7 @@ import asyncio
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import (
     agents,
@@ -506,6 +506,53 @@ def set_persona(body: _PersonaBody, principal: Principal = Depends(get_current_u
     except ValueError:
         raise HTTPException(status_code=400, detail="unknown persona") from None
     return {"persona": persona}
+
+
+class _WizardBody(BaseModel):
+    what_building: str = ""
+    industry: str = ""
+    intent: str = ""
+    idea_id: str = ""
+    current_stack: list[str] = Field(default_factory=list)
+    persona: str = ""
+    skipped: bool = False
+
+
+@app.get("/api/wizard")
+def get_wizard(principal: Principal = Depends(get_current_user)):
+    """Wizard state: whether to show it, and the ideas to show if so.
+
+    Ideas are selected server-side because only the server can see which demo
+    tables actually exist, and a card whose data was never seeded must never
+    reach the grid.
+    """
+    from . import wizard
+    from .users import user_manager
+
+    return wizard.state(user_manager.get(principal.name))
+
+
+@app.post("/api/wizard")
+def save_wizard(body: _WizardBody, principal: Principal = Depends(get_current_user)):
+    """Save what the attendee told the wizard, and hand back the first prompt.
+
+    Returns the starter prompt rather than leaving the frontend to assemble it:
+    a chosen idea card carries a prompt written to produce a good first build,
+    and that text belongs with the catalogue rather than in the UI.
+    """
+    from . import user_content, wizard
+    from .users import user_manager
+
+    user = user_manager.get(principal.name)
+    brief = wizard.save(user, body.model_dump())
+    # The brief is inlined into the agent's instructions, so they have to be
+    # rewritten now. Sessions are almost always launched from the wizard's last
+    # step, after this call, so the first agent to start already has it.
+    user_content.set_wizard_brief(user, brief)
+    return {
+        "brief": brief.to_json(),
+        "starter_prompt": wizard.starter_prompt(brief),
+    }
 
 
 @app.get("/api/agents")
