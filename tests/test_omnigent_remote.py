@@ -894,8 +894,15 @@ def test_tui_helper_joins_an_existing_session_so_both_tools_show_one_conversatio
     monkeypatch, tmp_path
 ):
     """The whole point of the card: a conversation started in the App's UI and
-    the terminal must be the SAME conversation. ``run --server`` with no agent
-    is the thin client that joins one; naming an agent would fork a new one."""
+    the terminal must be the SAME conversation.
+
+    It has to survive the second launch, though. The agent-less ``run --server``
+    thin client this used to run cannot create a session — measured live, the
+    first prompt needing one fails inside the TUI with "Sessions API fresh
+    session creation requires a local agent bundle" — so the agent is named in
+    this branch too, and ``-c`` is what continues the existing conversation
+    rather than forking a new one.
+    """
     argv = _run_tui_helper(
         tmp_path,
         monkeypatch,
@@ -904,7 +911,7 @@ def test_tui_helper_joins_an_existing_session_so_both_tools_show_one_conversatio
         live_sessions=True,
     )
 
-    assert argv == ["run", "--server", "https://app.example.com"]
+    assert argv == ["polly", "--server", "https://app.example.com", "-c"]
 
 
 def test_tui_helper_creates_polly_when_there_is_nothing_to_join(monkeypatch, tmp_path):

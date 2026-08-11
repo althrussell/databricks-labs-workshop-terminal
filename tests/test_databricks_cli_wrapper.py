@@ -78,6 +78,36 @@ def test_omnigent_plane_cli_resolves_the_workshop_config(tmp_path, monkeypatch):
     assert "args=current-user me" in result.stdout
 
 
+def test_a_claude_native_pane_still_resolves_the_workshop_config(
+    tmp_path, monkeypatch
+):
+    """Upstream strips ``DATABRICKS_CONFIG_PROFILE`` from native Claude panes.
+
+    Measured in the deployed 0.8.2 wheel: ``runner/native/orchestration.py``
+    launches the Claude terminal with ``env_unset = ["DATABRICKS_CONFIG_PROFILE",
+    "CLAUDECODE"]``, and ``inner/terminal.py`` applies that strip after merging
+    the spec env, so the variable is gone unconditionally. A wrapper that keyed
+    the redirect on the profile instead of the config file would therefore work
+    everywhere except the one surface most attendees actually use.
+    """
+    user, wrapper, _real = _bootstrap(tmp_path, monkeypatch)
+    omnigent_cfg = str(
+        Path(user.home) / ".config" / "workshop" / "omnigent-databrickscfg"
+    )
+
+    result = _run(
+        wrapper,
+        user.home,
+        {"DATABRICKS_CONFIG_FILE": omnigent_cfg},
+        "current-user",
+        "me",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert f"cfg={Path(user.home) / '.databrickscfg'}" in result.stdout
+    assert "profile=<unset>" in result.stdout
+
+
 def test_workshop_terminal_environment_is_untouched(tmp_path, monkeypatch):
     user, wrapper, _real = _bootstrap(tmp_path, monkeypatch)
 

@@ -192,19 +192,24 @@ class User:
     def _write_omnigent_helper(self) -> None:
         """Install the stable TUI entrypoint used by the Omnigent catalog card.
 
-        The two ``--server`` forms mean opposite things. ``omnigent run --server
-        <url>`` with no agent is a thin client: it lists the sessions the server
-        already holds and joins one, which is what makes a conversation started
-        in the App's UI the same conversation the terminal shows. Naming an
-        agent instead is what CREATES a session, in the local-runner/remote-
-        server topology — harnesses run in the attendee's container, session
-        state lives on the App.
+        Both branches name the agent, because only a named agent uploads the
+        local agent bundle. Measured on a live deployment: an argument-free
+        ``omnigent run --server <url>`` is a thin client, and while it can join
+        a conversation the server already holds, the first prompt that needs a
+        new session dies inside the TUI with "Sessions API fresh session
+        creation requires a local agent bundle". That is reachable by any
+        attendee whose second launch follows a conversation whose runner is
+        gone — an upstream error box, in the product, with no way forward.
+        ``omnigent polly --server <url> -c`` is the shape that keeps both
+        properties: the bundle is uploaded, so a session can always be created,
+        and ``--continue`` resumes the most recent conversation for the agent,
+        which is what makes a conversation started in the App's UI the same
+        conversation the terminal shows.
 
-        The card wants the joining form, but it cannot use it unconditionally:
-        against a fresh control plane the attach exits "No sessions found on the
-        server", which is every attendee's first launch of the workshop. So an
-        argument-free invocation probes for a joinable session first and only
-        creates one when the attendee has none. ``polly`` is the bundled
+        Continuation is still conditional, because ``-c`` needs something to
+        continue: against a fresh control plane — every attendee's first launch
+        — there is nothing, so an argument-free invocation probes first and
+        creates plainly when the attendee has none. ``polly`` is the bundled
         orchestrator a bare ``omnigent`` already launches for a Claude
         credential, so that create path is the behavior the card had before the
         App existed.
@@ -246,7 +251,7 @@ class User:
             'if [ "$#" -eq 0 ] && '
             '"$HOME/.local/bin/workshop-omnigent-live-sessions" '
             "2>/dev/null; then\n"
-            '  exec omnigent run --server "$OMNIGENT_APP_URL"\n'
+            '  exec omnigent polly --server "$OMNIGENT_APP_URL" -c\n'
             "fi\n"
             "AGENT=polly\n"
             'case "${1:-}" in\n'

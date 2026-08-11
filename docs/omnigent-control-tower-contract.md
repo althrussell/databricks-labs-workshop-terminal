@@ -24,17 +24,24 @@ A read-only spike used `gh` against `omnigent-ai/omnigent` main at
 - The remote foreground host command is
   `omnigent host --server <OMNIGENT_APP_URL> --non-interactive`.
   `--non-interactive` suppresses browser login; it does not create credentials.
-- The terminal/REPL command is `omnigent run --server <OMNIGENT_APP_URL>` when
-  the attendee already has a joinable session, and
-  `omnigent polly --server <OMNIGENT_APP_URL>` when they do not. Either targets
-  the remote control plane and does not start a second local Omnigent server.
-  The two forms are not interchangeable: with no agent, `run --server` is a thin
-  client that joins a session the server already holds, which is what makes a
-  conversation opened in the App's UI the same conversation the terminal shows;
-  naming an agent instead CREATES a session under the local-runner/remote-server
-  topology. The attach cannot be used unconditionally because it exits
-  `No sessions found on the server` against a fresh control plane, which is
-  every attendee's first launch, so the helper probes first (see below). `polly`
+- The terminal/REPL command is `omnigent polly --server <OMNIGENT_APP_URL> -c`
+  when the attendee already has a joinable session, and the same command without
+  `-c` when they do not. Either targets the remote control plane and does not
+  start a second local Omnigent server.
+
+  Both name the agent, because only a named agent uploads the local agent
+  bundle and so puts the launch in the local-runner/remote-server topology.
+  The agent-less `omnigent run --server <url>` is a thin client: it can join a
+  session the server already holds, but it cannot create one, and measured on a
+  live deployment the first prompt that needs a new session fails inside the TUI
+  with `Sessions API fresh session creation requires a local agent bundle`.
+  Any attendee whose second launch follows a conversation whose runner is gone
+  reaches that, which is why this App does not use the form.
+  `-c` is what preserves the property the attach existed for — it continues the
+  most recent conversation for the agent, so a conversation opened in the App's
+  UI is the conversation the terminal shows. It is conditional only because it
+  needs something to continue, which a fresh control plane (every attendee's
+  first launch) does not have, so the helper probes first (see below). `polly`
   is the bundled orchestrator a bare `omnigent` launches for a Claude
   credential, so the create path matches the terminal's pre-App behavior.
 - `omnigent login <OMNIGENT_APP_URL>` detects Databricks Apps and runs
@@ -108,9 +115,9 @@ CLI invents and persists a uuid, then waits out its timeout for a daemon nobody
 runs while the attendee's real host is online beside it.
 
 The generated `workshop-omnigent` TUI helper is authoritative. With the URL and
-no arguments it executes `omnigent run --server "$OMNIGENT_APP_URL"` when the
-attendee has a joinable session and `omnigent polly --server "$OMNIGENT_APP_URL"`
-when they do not; either way no second local server starts. Any argument
+no arguments it executes `omnigent polly --server "$OMNIGENT_APP_URL" -c` when
+the attendee has a joinable session and the same command without `-c` when they
+do not; either way no second local server starts. Any argument
 suppresses the probe: a first positional that does not look like a flag is taken
 as the agent to create a session with, so a model-set variant can have its own
 catalog card. With an empty URL it executes bare `omnigent`, preserving the

@@ -79,9 +79,12 @@ IDs, HTTP status, and redacted logs for every step.
       the generated helper executes `omnigent polly --server <OMNIGENT_APP_URL>`
       with no second local server.
 - [ ] With a session already open, launch the card again and verify it executes
-      `omnigent run --server <OMNIGENT_APP_URL>` and offers that session, so the
-      App's UI and the terminal show the same conversation rather than forking a
-      second one.
+      `omnigent polly --server <OMNIGENT_APP_URL> -c` and continues that
+      conversation, so the App's UI and the terminal show the same one rather
+      than forking a second. Then send a prompt: an agent-less
+      `run --server` client reaches this point and dies with `Sessions API fresh
+      session creation requires a local agent bundle`, so the prompt — not the
+      launch — is what proves the branch.
 - [ ] Verify supervisor shutdown sends TERM to process groups, waits within the
       Apps shutdown window, then KILLs/reaps stragglers without restart.
 - [ ] Verify authenticated `GET /v1/hosts/{expected_host_id}` reports `online`
