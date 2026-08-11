@@ -121,6 +121,15 @@ and refuses to register a tier left with fewer than two vendors — cross-vendor
 review is what a tier is for, and an attendee choosing one by name has no way to
 tell it was quietly degraded. Unset means unmeasured and keeps the full roster.
 
+Control Tower sets it from the measurement, and only when the measurement says
+something is missing: the App is deployed before the terminal has finished
+installing anything, so the value is not knowable at that point, and a full
+roster is what unset already means. Once the terminal's `/readyz` reports a
+short harness list, CT redeploys the paired App with `WORKSHOP_HARNESSES` set
+(`_align_omnigent_roster` in its provisioning). A healthy instance therefore
+pays nothing, and the degraded instance — the one that would otherwise dispatch
+to a Pi that is not there — pays one redeploy.
+
 ## Run it before the event, not during
 
 Re-run the matrix whenever the model set changes or a workshop moves region.

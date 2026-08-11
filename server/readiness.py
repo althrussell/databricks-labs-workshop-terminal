@@ -694,7 +694,23 @@ def evaluate(
             obo_ok,
             "OBO is enabled with required scopes"
             if obo_ok
-            else "OBO is disabled or required scopes are missing",
+            else "OBO is disabled"
+            if not _bool(env, "ENABLE_OBO")
+            else "no attendee has opened this instance yet, so no OBO token has "
+            "been forwarded to validate scopes against"
+            if obo_status.get("present") is not True
+            else "required scopes are missing",
+            # The one hard check nothing on this instance can turn green on its
+            # own: scope verification needs a real attendee token, and a token
+            # arrives only when a browser forwards one. So a perfectly
+            # provisioned instance is red here until its attendee shows up,
+            # which is exactly when Control Tower is deciding whether to hand
+            # it to them. Flagged rather than softened: once an attendee *has*
+            # arrived, this check failing is a genuine reason to pull the
+            # instance, and demoting it to soft would lose that. Admission is
+            # documented against the flag in
+            # docs/control-tower-implementation.md §1.
+            attendee_dependent=True,
             enabled=_bool(env, "ENABLE_OBO"),
             missing=missing_scopes,
             validation_state=obo_validation_state,
