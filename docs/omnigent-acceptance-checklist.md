@@ -18,6 +18,11 @@ IDs, HTTP status, and redacted logs for every step.
 - [ ] Grant `WRITE_VOLUME`, `USE_CATALOG`, and `USE_SCHEMA`.
 - [ ] Bind App resource keys `postgres` and `artifact_volume`.
 - [ ] Verify `OMNIGENT_AUTH_PROVIDER=header`.
+- [ ] Confirm `WORKSHOP_SMART_ROUTING` is `false` unless the account has enabled
+      AI Gateway `routing/v1/routes:select` (labs returns `ENDPOINT_NOT_FOUND`
+      until then — do not ship a dead Auto option).
+- [ ] Confirm workshop Polly economy/balanced/frontier agents are absent; stock
+      `polly` remains.
 - [ ] Deploy the App and confirm the process binds the runtime port.
 
 ## App validation
@@ -29,6 +34,12 @@ IDs, HTTP status, and redacted logs for every step.
       `AP_ARTIFACT_VOLUME_PATH` and removes it successfully. Deny deletion and
       verify startup fails rather than declaring the Volume healthy.
 - [ ] The upstream web UI loads through the Apps proxy.
+- [ ] New-chat agent picker does not list `polly-economy` / `polly-balanced` /
+      `polly-frontier`.
+- [ ] With `WORKSHOP_SMART_ROUTING=false`, Auto · smart routing is hidden.
+- [ ] With routing account-enabled and `WORKSHOP_SMART_ROUTING=true`, Auto
+      appears; first-message routing uses App SP OAuth to `routes:select`;
+      harness inference still uses the Workshop Terminal gateway token.
 - [ ] A request without proxy authentication is rejected.
 - [ ] A client-supplied `X-Forwarded-Email` cannot bypass the Apps proxy.
 - [ ] Create/read a test conversation and verify it survives an App restart.

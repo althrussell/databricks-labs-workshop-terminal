@@ -121,8 +121,9 @@ The hard checks are:
    enabled—tmux and Omnigent have completed installation. The release manifest
    reports each enabled CLI's expected and observed version, and readiness
    requires an exact match. The check also reports `harnesses`: the agent CLIs
-   this instance actually has, which is the value the paired Omnigent App needs
-   as `WORKSHOP_HARNESSES` ([model comparison](model-comparison.md)).
+   this instance actually has (useful for operators; the dedicated Omnigent App
+   no longer consumes `WORKSHOP_HARNESSES` after Polly model-set tiers were
+   removed).
 8. `supply_chain`: the reviewed bootstrap artifact manifest is complete and
    valid, and its persistent proof is reusable. Also reports whether a
    configured toolchain mirror was actually used, which is the silent

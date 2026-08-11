@@ -26,6 +26,30 @@ present. This avoids the platform's Python 3.11 pip mode, which cannot install
 Omnigent 0.8.2. No Node build, Git checkout, or host-side build process runs in
 the App.
 
+## Omnigent Auto · smart routing (optional)
+
+When the Databricks account has enabled AI Gateway
+`routing/v1/routes:select`, set `WORKSHOP_SMART_ROUTING=true` on the Omnigent
+App. The wrapper builds an `ExternalRoutingClient` authenticated as the App
+service principal (refreshing OAuth via ambient Apps credentials) and attaches
+it to `RuntimeCaps.routing_client`. The new-chat picker then shows
+**Auto · smart routing**; candidate models still come from the attendee host's
+runner catalog, and harness inference still uses the Workshop Terminal gateway
+token.
+
+Labs spike (2026-08-11, `DATABRICKS_CONFIG_PROFILE=labs`): authenticated POST to
+`/ai-gateway/routing/v1/routes:select` returned HTTP 404
+`ENDPOINT_NOT_FOUND` / "routing/v1/routes:select is not enabled for this
+account." No App-SP grant fixes that — it is an account-level product flag.
+Keep `WORKSHOP_SMART_ROUTING=false` (the default) until the account enables
+routing; otherwise the UI would show a dead Auto option.
+
+Optional overrides (empty = defaults in `smart_routing.py`):
+
+- `WORKSHOP_ROUTING_BASE_URL`
+- `WORKSHOP_ROUTING_ROUTER_NAME` (default `task_v0`)
+- `WORKSHOP_ROUTING_MODEL_PREFIXES` (default `databricks-`)
+
 ## Required App resources
 
 Each Omnigent App requires resources that are dedicated to that App:
@@ -48,9 +72,10 @@ The App resource bindings inject `AP_LAKEBASE_ENDPOINT`, the standard
 
 The App service principal also needs `USE_CATALOG` on the Volume's parent
 catalog and `USE_SCHEMA` on its parent schema. Keep that principal
-least-privileged: Lakebase, the artifact Volume, and control-plane resources
-only. Do not grant model serving access or inject model keys, PATs, arbitrary
-shell credentials, or cloud credentials.
+least-privileged: Lakebase, the artifact Volume, and (when smart routing is
+on) the ability to call AI Gateway `routes:select` with ambient Apps OAuth.
+Do not grant general model-serving access for harness inference, and do not
+inject model keys, PATs, arbitrary shell credentials, or cloud credentials.
 
 ## First-deploy Lakebase grant
 

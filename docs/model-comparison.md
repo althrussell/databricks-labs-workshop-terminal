@@ -93,42 +93,17 @@ Both exist so a dead endpoint mid-event is a values change rather than a
 release. The endpoint names in `server/models.COMPARISON_MODELS` are the part of
 this that goes stale fastest.
 
-## The Polly tiers, and the roster gap
+## Omnigent Auto (optional second path)
 
-The in-Omnigent comparison (`polly-economy` / `polly-balanced` /
-`polly-frontier`) still exists and still uses Pi for its third vendor. It is now
-the *second* way to run the exercise rather than the only one.
+Workshop Polly economy/balanced/frontier agents were removed. Stock `polly`
+remains the default Omnigent agent. When the account enables AI Gateway
+`routes:select` and the Omnigent App sets `WORKSHOP_SMART_ROUTING=true`, the
+new-chat picker offers **Auto · smart routing**, which picks harness + model
+from the live host catalog. That path is independent of the Codex comparison
+profiles above; both can coexist.
 
-Pi is advisory in the Workshop Terminal installer: an instance is ready without
-it, because a missing Pi costs the cheap-model tiers rather than the workshop.
-But every tier in `deploy/omnigent-app/polly_variants.py` names a Pi worker, and
-the Omnigent App registers those tiers from its own container — it cannot see
-whether the paired Workshop Terminal instance installed Pi. A brain dispatching
-to a CLI that is not there spends the attendee's turn on an error they cannot
-act on.
-
-So the App is told. Set `WORKSHOP_HARNESSES` on the Omnigent App to the harness
-list the paired instance reports at `/readyz` under
-`checks.installers.harnesses`:
-
-```
-WORKSHOP_HARNESSES=claude,codex,pi
-```
-
-The builder then prunes worker slots whose CLI is absent, corrects the tier
-description so the picker does not promise a model that is not in the roster,
-and refuses to register a tier left with fewer than two vendors — cross-vendor
-review is what a tier is for, and an attendee choosing one by name has no way to
-tell it was quietly degraded. Unset means unmeasured and keeps the full roster.
-
-Control Tower sets it from the measurement, and only when the measurement says
-something is missing: the App is deployed before the terminal has finished
-installing anything, so the value is not knowable at that point, and a full
-roster is what unset already means. Once the terminal's `/readyz` reports a
-short harness list, CT redeploys the paired App with `WORKSHOP_HARNESSES` set
-(`_align_omnigent_roster` in its provisioning). A healthy instance therefore
-pays nothing, and the degraded instance — the one that would otherwise dispatch
-to a Pi that is not there — pays one redeploy.
+Until routing is account-enabled, leave smart routing off and use the Codex
+profiles for cross-vendor comparison.
 
 ## Run it before the event, not during
 
