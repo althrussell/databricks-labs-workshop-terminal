@@ -696,6 +696,31 @@ def test_a_recorded_failure_still_reports_after_the_registry_is_lost(
     assert check["state"] == "red"
 
 
+def test_a_provisioned_home_is_the_home_readiness_computes(client, monkeypatch):
+    """Pins the invariant the two tests above depend on, and that broke them.
+
+    ``User.home`` is fixed at construction from ``config.users_root()``, while
+    ``readiness`` recomputes the path from the same function at call time. Those
+    agree in production, where the root never moves — and disagreed across tests,
+    because the registry is a process-wide singleton and modules repoint the root
+    at their own ``tmp_path``. A stale ``alice`` cached by an earlier module sent
+    the hook's record to a directory readiness never looked in, so both sync
+    tests reported ``amber`` when run after ``test_omnigent_remote`` and ``red``
+    when run alone.
+
+    Asserted here rather than left to the ``conftest`` fixture alone: deleting
+    that fixture should fail a test that explains why it exists, not quietly
+    restore an order-dependent suite that nobody trusts during event week.
+    """
+    from server import config
+    from server.users import email_slug, user_manager
+
+    home = _provisioned_home(client, monkeypatch)
+
+    assert home == os.path.join(config.users_root(), email_slug("alice@example.com"))
+    assert user_manager.peek("alice@example.com").home == home
+
+
 def test_no_commits_yet_is_not_reported_as_a_sync_failure(client, monkeypatch):
     """Otherwise operators learn to ignore the field on exactly the instances
     where it later matters."""

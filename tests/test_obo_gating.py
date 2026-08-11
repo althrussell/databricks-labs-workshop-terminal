@@ -21,13 +21,22 @@ ALICE = {"X-Forwarded-Email": "alice@example.com"}
 
 @pytest.fixture
 def remote_omnigent(monkeypatch, tmp_path):
-    """A remote-Omnigent instance with every installer complete."""
-    from server import config
+    """A remote-Omnigent instance with every installer complete, and no mirror.
+
+    The OBO store is a process-wide singleton whose captures outlive the test
+    that made them, so "no token captured" is only true here if no earlier test
+    in the run captured one for this attendee. That made
+    ``test_no_captured_token_is_reported_as_absent_not_as_installing`` pass in
+    file order and fail in others — an order-dependent red that would cost real
+    debugging during event week. Each test starts from an empty store instead.
+    """
+    from server import config, obo
     from server.bootstrap import install as install_mod
 
     monkeypatch.setenv("OMNIGENT_APP_URL", REMOTE_URL)
     monkeypatch.setenv("ENABLE_OBO", "true")
     monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
+    monkeypatch.setattr(obo, "obo_manager", obo.OboManager())
     monkeypatch.setattr(
         install_mod,
         "ready",
@@ -51,14 +60,12 @@ def emitted(monkeypatch):
 
 
 def _capture(monkeypatch, expires_in: float) -> None:
-    """Put a token with the given remaining life in the process-local store."""
+    """Put a token with the given remaining life in the store the fixture made."""
     from server import obo
     from server.users import user_manager
 
     user_manager.get("alice@example.com")
-    manager = obo.OboManager()
-    monkeypatch.setattr(obo, "obo_manager", manager)
-    manager.capture("alice@example.com", make_jwt(time.time() + expires_in))
+    obo.obo_manager.capture("alice@example.com", make_jwt(time.time() + expires_in))
 
 
 def _agents(client) -> dict[str, dict]:
