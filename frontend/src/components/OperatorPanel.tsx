@@ -1,6 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
-import { KeyRound, Megaphone, RadioTower, Users } from "lucide-react";
-import { api, CredentialStatus, PresenceUser } from "../api";
+import {
+  KeyRound,
+  LifeBuoy,
+  Megaphone,
+  RadioTower,
+  ShieldOff,
+  Users,
+} from "lucide-react";
+import {
+  api,
+  CredentialStatus,
+  OmnigentAttendee,
+  OmnigentTier,
+  PresenceUser,
+} from "../api";
 
 export default function OperatorPanel() {
   const [phases, setPhases] = useState<string[]>([]);
@@ -8,6 +21,8 @@ export default function OperatorPanel() {
   const [users, setUsers] = useState<PresenceUser[]>([]);
   const [sessionCount, setSessionCount] = useState(0);
   const [credential, setCredential] = useState<CredentialStatus | null>(null);
+  const [tier, setTier] = useState<OmnigentTier | null>(null);
+  const [working, setWorking] = useState("");
   const [message, setMessage] = useState("");
   const [level, setLevel] = useState("info");
   const [status, setStatus] = useState("");
@@ -29,6 +44,7 @@ export default function OperatorPanel() {
         setCredential(data.credential);
       })
       .catch(() => undefined);
+    api.adminOmnigentTier().then(setTier).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -49,6 +65,38 @@ export default function OperatorPanel() {
     await api.adminPhase(next);
     setPhase(next);
     setStatus(`Phase set to ${next}`);
+  }
+
+  async function setTierEnabled(enabled: boolean) {
+    setWorking("tier");
+    try {
+      const next = await api.adminSetOmnigentTier(enabled);
+      setTier((prev) => (prev ? { ...prev, enabled: next.enabled } : prev));
+      setStatus(
+        next.enabled
+          ? "Omnigent restored — cards return on the attendees' next poll."
+          : "Omnigent demoted fleet-wide. Everyone keeps Claude, Codex and Terminal."
+      );
+    } finally {
+      setWorking("");
+      refresh();
+    }
+  }
+
+  async function recover(email?: string) {
+    setWorking(email ?? "all");
+    try {
+      const result = await api.adminRecover(email);
+      const target = email ?? "everyone";
+      setStatus(
+        result.recovered.length
+          ? `Recovered ${result.recovered.join(", ")}.`
+          : `No credential recovered for ${target} — the tab has to be open and signed in.`
+      );
+    } finally {
+      setWorking("");
+      refresh();
+    }
   }
 
   async function sendBroadcast() {
@@ -78,6 +126,78 @@ export default function OperatorPanel() {
           {credential.state !== "rotating" && credential.last_error && (
             <p className="credential-error">{credential.last_error}</p>
           )}
+        </section>
+      )}
+
+      {tier?.remote && (
+        <section className="op-card">
+          <h2>
+            <ShieldOff size={16} /> Omnigent plane
+          </h2>
+          <p className="op-note">
+            Every Omnigent harness shares one credential plane, so they fail
+            together. Demoting withdraws those cards for everyone and leaves
+            bare Claude, Codex and Terminal, which run on the app credential and
+            cannot fail this way.
+          </p>
+          <div className="op-actions">
+            <button
+              className={tier.enabled ? "danger-btn" : "primary-btn"}
+              disabled={working === "tier"}
+              onClick={() => setTierEnabled(!tier.enabled)}
+            >
+              {tier.enabled ? "Demote Omnigent (fleet)" : "Restore Omnigent"}
+            </button>
+            <button
+              className="secondary-btn"
+              disabled={working === "all"}
+              onClick={() => recover()}
+            >
+              <LifeBuoy size={13} /> Recover everyone
+            </button>
+            {!tier.enabled && (
+              <span className="op-warn">Demoted — attendees see bare CLIs only.</span>
+            )}
+          </div>
+          <table className="presence-table">
+            <thead>
+              <tr>
+                <th></th>
+                <th>Attendee</th>
+                <th>Sign-in</th>
+                <th>Host</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {tier.attendees.map((a) => (
+                <tr key={a.email}>
+                  <td>
+                    <span className={`dot ${a.obo.fresh ? "dot-online" : "dot-warn"}`} />
+                  </td>
+                  <td>{a.email}</td>
+                  <td>{signInLabel(a)}</td>
+                  <td>{a.host.status}</td>
+                  <td>
+                    <button
+                      className="secondary-btn"
+                      disabled={working === a.email}
+                      onClick={() => recover(a.email)}
+                    >
+                      Recover
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {tier.attendees.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="presence-empty">
+                    No attendees yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </section>
       )}
 
@@ -176,6 +296,14 @@ function credentialLabel(c: CredentialStatus): string {
     default:
       return c.configured ? "Configured (checking…)" : "Not configured";
   }
+}
+
+/** How long this attendee's Omnigent access has left, in words. */
+function signInLabel(a: OmnigentAttendee): string {
+  if (!a.obo.present) return "never captured";
+  if (!a.obo.fresh) return "stale — tab closed or expired";
+  if (a.obo.expires_in == null) return "signed in";
+  return `${Math.max(0, Math.round(a.obo.expires_in / 60))}m left`;
 }
 
 function timeAgo(epoch: number): string {

@@ -21,7 +21,7 @@ content), see [`admin-api.md`](./admin-api.md).
 | 6 | Collect events on every harvest (`GET /api/admin/insight-events`) and act on **`credential.health`** | Catch a bad grant hours/days ahead, not at T-0. The Apps proxy blocks a token-only push, so collection is the delivery path | First sign of trouble is an attendee 503 on event day |
 | 7 | *(OBO opt-in)* Enable **user authorization** + set the app's **`user_api_scopes`** (`catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql`; no `unity-catalog` scope exists), admin-grant consent, restart, set `ENABLE_OBO=true` | Agent can read data **as the attendee** (governance-faithful UC), not as the SP | `databricks --profile me` empty/401; attendee sees the SP's catalogs, not theirs |
 | 8 | *(OBO opt-in)* Reuse a matching dedicated catalog when FEVM already provisioned it; otherwise create it. Ensure labuser OWNER + `ALL PRIVILEGES` + `MANAGE`; app SP catalog-scoped `MANAGE`, `USE_CATALOG`, `CREATE_SCHEMA`; pass **`WORKSHOP_CATALOG`** and set `ENABLE_ENTITLEMENTS=true` | Works without `CREATE CATALOG` entitlement while preserving exact scoped grants | Reconciliation cannot verify/reapply grants, or the labuser/app SP cannot use created objects |
-| 9 | Gate admission on **`GET /readyz` returning 200** | The deep gate proves topology, credentials, installers, persistence, catalog, entitlements, OBO, and release pins together | A process can be live at `/healthz` while unsafe or incomplete for attendees |
+| 9 | Gate admission on **`GET /readyz`** — every hard check green except the `attendee_dependent` ones ([the rule](#the-admission-rule)) | The deep gate proves topology, credentials, installers, persistence, catalog, entitlements, OBO, and release pins together | A process can be live at `/healthz` while unsafe or incomplete for attendees |
 | 10 | Inject **`WORKSHOP_ATTENDEE_EMAIL`** with the attendee assigned to this instance | Binds every attendee HTTP/WebSocket request to the Control Tower assignment | A second attendee is denied with 403/4403 instead of sharing instance-wide credentials |
 | 11 | After app create/get, patch uploaded `app.yaml` with numeric **`WORKSHOP_APP_SP_ID=service_principal_id`** before every new or existing-app deploy | Live SCIM `/Me` identifies the app with `userName=<client UUID>` plus numeric `id`, but may omit `applicationId` | `/readyz` stays red because app-SP OAuth cannot be authoritatively bound |
 
@@ -50,7 +50,7 @@ Databricks Apps then injects and refreshes its OAuth credentials:
 6. Sync source, deploy, and start the app (one Uvicorn worker; documented
    auto-injected `UVICORN_HOST`/`UVICORN_PORT`, with no explicit host/port args)
 7. Verify direct OAuth through the admin credential status, then poll GET /readyz
-   until HTTP 200; HTTP 503 blocks attendee admission
+   until nothing but an attendee-dependent check is red (see the admission rule)
 8. Validate the same contract on a second independent instance
 9. Teardown at event end (revoke and delete)
 ```
@@ -96,29 +96,60 @@ The hard checks are:
    `WORKSHOP_PAT` is absent, and successful OAuth validation occurred within the
    bounded freshness window. JWT expiry is tracked when inspectable; a stale
    validation or static fallback is not release-ready.
-4. `app_sp_binding`: `WORKSHOP_APP_SP_ID` is numeric and the latest safe OAuth
+4. `credential_durability`: both credential planes can be *kept* alive for the
+   rest of the event. Not the same question as `credentials`, which asks whether
+   the app credential is healthy right now — an instance can pass that at nine
+   in the morning and strand its attendee at noon. The app plane is durable when
+   it is rotating, or when a static token's expiry outlives
+   `WORKSHOP_EVENT_ENDS_AT`. The attendee plane is durable when the OBO freshness
+   watcher is running, which is what renews a token no attendee's OBO could
+   outlive on its own. Deliberately not raw token arithmetic on the OBO: an
+   attendee credential lives about an hour, so a gate built that way would be red
+   on every instance from the first minute and switched off after one event.
+   Red only for the two failures that actually end a workshop mid-session — a
+   static token expiring inside the event window, and remote Omnigent configured
+   with nothing renewing the attendee credential.
+5. `app_sp_binding`: `WORKSHOP_APP_SP_ID` is numeric and the latest safe OAuth
    diagnostic proves the same numeric SCIM ID with the expected app client UUID.
    A missing, non-numeric, mismatched, or unverified ID is not release-ready.
-5. `installers`: Node, Claude, Codex, Databricks CLI, skills, and—when
+6. `secret_protection`: the OAuth client secret was captured before any PTY
+   existed, scrubbed from the environment the agents inherit, and the server
+   process is non-dumpable. Attendees get a shell on this container, so an
+   unhardened boundary means the app's own credential is readable by the person
+   it is meant to be spent on behalf of.
+7. `installers`: Node, Claude, Codex, Databricks CLI, skills, and—when
    enabled—tmux and Omnigent have completed installation. The release manifest
    reports each enabled CLI's expected and observed version, and readiness
-   requires an exact match.
-6. `session_state`: `SESSION_STATE_PATH` is a file destination whose parent
+   requires an exact match. The check also reports `harnesses`: the agent CLIs
+   this instance actually has, which is the value the paired Omnigent App needs
+   as `WORKSHOP_HARNESSES` ([model comparison](model-comparison.md)).
+8. `supply_chain`: the reviewed bootstrap artifact manifest is complete and
+   valid, and its persistent proof is reusable. Also reports whether a
+   configured toolchain mirror was actually used, which is the silent
+   degradation this check exists to surface: artifacts arriving over the
+   internet on an event that staged them.
+9. `session_state`: `SESSION_STATE_PATH` is a file destination whose parent
    supports mode-0600 SessionMetadataStore-style atomic write/read. The journal
    contains restart metadata only—never terminal output. The probe uses and
    removes a disposable sibling; it never mutates the real journal.
-7. `catalog`: `WORKSHOP_CATALOG` matches a recent successful read-after-patch
+10. `catalog`: `WORKSHOP_CATALOG` matches a recent successful read-after-patch
    proof that the attendee is owner and has `ALL_PRIVILEGES`.
-8. `entitlements`: reconciliation is enabled and healthy, has recent
+11. `entitlements`: reconciliation is enabled and healthy, has recent
    attendee/catalog proof, and either its background thread is alive or a
    fresh on-demand reconcile succeeded. Empty-attendee runs fail closed.
-9. `obo`: OBO is enabled, the configured hint includes the required scopes,
+12. `obo`: OBO is enabled, the configured hint includes the required scopes,
    and a trusted proxy-forwarded attendee token has actually exposed
    `catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql` in its
    JWT `scope`/`scp` claim. The profile must be present and fresh, and that scope
    observation must be no older than 300 seconds. Before a token is observed—or
    after it expires/goes stale—HTTP remains 503.
-10. `release_pins`: `SKILLS_REF` is not a branch tip; exact Claude Code,
+
+   **This is the one hard check no instance can turn green on its own**, and it
+   carries `"attendee_dependent": true` to say so. A token arrives only when a
+   browser forwards one, so a perfectly provisioned instance is red here until
+   its attendee opens it — which is after the moment Control Tower is deciding
+   whether to hand it over. See the admission rule below.
+13. `release_pins`: `SKILLS_REF` is not a branch tip; exact Claude Code,
    Codex CLI, Databricks CLI, and Node version pins are present, plus Omnigent
    and Pi CLI when Omnigent is enabled; and each of those pins equals the version
    bootstrap actually installed. Both halves are needed — raising a pin does not
@@ -176,11 +207,43 @@ on `/Workspace/Users/<attendee>/projects`. See
 [§3](#3-identity--permissions-the-app-sp-needs). Per-attendee detail is in
 `/api/admin/presence` under `users[].workspace_sync`.
 
-The report and release manifest never include token or secret values. CT should poll with bounded
-backoff during installer/reconciler startup, fail the instance on persistent
-503, and retain the per-check report as release evidence. For this phase,
-exercise the full create-to-ready sequence on **two instances**; a single green
-instance does not validate the external Control Tower implementation.
+The report and release manifest never include token or secret values.
+
+### The admission rule
+
+CT polls `/readyz` with bounded backoff during installer and reconciler startup
+and retains the per-check report as release evidence. What it blocks on is **not
+the 200**, because with OBO enabled a 200 cannot happen before the attendee
+arrives:
+
+> Block admission while any hard check is red **and not
+> `attendee_dependent`**. Warn on an `attendee_dependent` red, and never treat a
+> soft check as an admission failure.
+
+Measured on this build, an otherwise perfectly provisioned instance that nobody
+has opened is red on `obo` alone, so the rule reduces to "everything except OBO
+must be green before an attendee is given the URL, and OBO must go green
+once they open it". `attendee_dependent` is a flag on the check rather than a
+list of names in Control Tower, so the two repos cannot drift on which checks
+those are.
+
+The reason `obo` is still hard rather than soft: once an attendee *has* arrived,
+this check failing means their agents cannot read as them, which is a genuine
+reason to pull the instance out of the room. One bit cannot say both "not yet"
+and "broken", so the bit stays strict and the flag carries the distinction.
+
+Control Tower implements the judgement in `backend/terminal_contract.py` and the
+waiting in its Databricks adapter (`AppDeploymentService.await_terminal_admission`),
+called from `_deploy_unit_apps` before the unit is marked READY; a required
+terminal that never clears fails its unit, which is what keeps an attendee off
+it. The verdict's one-line summary lands on the unit's app health, so an
+operator reading a failed seat sees which check refused it rather than a
+timeout. `CONTROL_TOWER_WORKSHOP_TERMINAL_READYZ_GATE=false` turns the wait off
+for a run that must be handed over unverified.
+
+For this phase, exercise the full create-to-ready sequence on **two instances**;
+a single green instance does not validate the external Control Tower
+implementation.
 
 ---
 
@@ -277,6 +340,8 @@ take effect on restart with **no rebuild**. Set these per instance:
 | `OMNIGENT_VERSION` | `0.8.2` release candidate | reviewed Omnigent release matched to the dedicated App protocol |
 | `DATABRICKS_CLI_VERSION` | reviewed exact version | make the Databricks CLI input explicit |
 | `ANTHROPIC_MODEL` / `CODEX_MODEL` | reviewed endpoint names | prevent model drift between instances |
+| `WORKSHOP_CODEX_COMPARE` | the profiles `scripts/smoke_models.py` passed | drop a comparison model that cannot hold a tool call, without a release ([model comparison](model-comparison.md)). CT passes through `CONTROL_TOWER_WORKSHOP_CODEX_COMPARE`, so a measurement reaches a fleet without a WT release |
+| `WORKSHOP_EVENT_ENDS_AT` | epoch seconds when the event ends | the `credential_durability` gate has nothing to compare a credential lifetime against without it, so a static credential expiring mid-session is admitted. CT derives it from the run's own `termination_at` rather than asking an operator for a number it already knows |
 | `WORKSHOP_RUN_ID` | CT's run id for this attendee | event attribution on ingested events |
 | `DATABRICKS_WORKSPACE_ID` | the workspace id | event attribution |
 | `CONTROL_TOWER_INGEST_URL` | *(optional)* CT ingest base URL | enable the additive push path (§5); unnecessary for delivery, which is by collection |
@@ -596,6 +661,14 @@ python scripts/ct_fleet.py --inventory inventory.json repush \
 The fleet kill switch is `POST /api/admin/agent-controls` with
 `{"enabled": false}`. It pauses new paid-agent launches only; bash and already
 running sessions remain available. Resume with `{"enabled": true}`.
+
+A narrower lever sits beside it: `POST /api/admin/omnigent-tier` with
+`{"enabled": false}` withdraws only the Omnigent-backed cards and leaves bare
+Claude, Codex and Terminal running. That is the right move when the Omnigent
+credential plane is failing across a room, because the kill switch would stop
+the workshop while this one keeps it going. The ladder for choosing between them
+is [`operator-runbook.md`](./operator-runbook.md); `POST /api/admin/recover` is
+the per-attendee rung below both.
 
 Restarted apps retain phase only in process memory, so CT must re-push the
 content pack and then phase after readiness returns. Session metadata on the

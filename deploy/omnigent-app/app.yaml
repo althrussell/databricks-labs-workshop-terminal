@@ -15,6 +15,13 @@ env:
   # "false" leaves stock polly as the only agent.
   - name: WORKSHOP_POLLY_VARIANTS
     value: "true"
+  # The harness CLIs installed in the paired Workshop Terminal instance, copied
+  # from that instance's /readyz `installers.harnesses`. The App runs in its own
+  # container and cannot look, so without this it advertises workers that may
+  # not exist — pi in particular is advisory in the WT installer, and every tier
+  # names a pi worker. Empty means unmeasured and keeps the full roster.
+  - name: WORKSHOP_HARNESSES
+    value: ""
   # Every model pin is overridable so a renamed or withdrawn serving endpoint is
   # a values change, not a release. Empty means "use the built-in default" (see
   # polly_variants.TIERS). Naming convention:

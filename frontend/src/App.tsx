@@ -27,11 +27,14 @@ import Hero from "./components/Hero";
 import LaunchBar from "./components/LaunchBar";
 import NuggetsPane from "./components/NuggetsPane";
 import OperatorPanel from "./components/OperatorPanel";
+import SignInNotice from "./components/SignInNotice";
 import RaiseHandButton from "./components/RaiseHandButton";
 import HelpChatPanel from "./components/HelpChatPanel";
 import ToastHost from "./components/ToastHost";
 import TerminalView from "./components/TerminalView";
 import { bindIdentityRefresh, onAppEvent } from "./events";
+import { friendlyError, type RecoveryAction } from "./errors";
+import { codeFromMessage, postAttendeeError, reportAttendeeError } from "./telemetry";
 
 // The escape hatch for an attendee facing an empty prompt. Deliberately a real
 // build request rather than a greeting: the coach is told to build immediately
@@ -60,6 +63,7 @@ export default function App() {
   const [certName, setCertName] = useState("");
   const [certBusy, setCertBusy] = useState(false);
   const [error, setError] = useState("");
+  const [recovering, setRecovering] = useState(false);
   const [connectionLost, setConnectionLost] = useState(false);
   const [nuggetsCollapsed, setNuggetsCollapsed] = useState(false);
   const [helpChatOpen, setHelpChatOpen] = useState(false);
@@ -124,7 +128,10 @@ export default function App() {
   useEffect(
     () =>
       onAppEvent((event) => {
-        if (event.t === "connection_lost") setConnectionLost(true);
+        if (event.t === "connection_lost") {
+          setConnectionLost(true);
+          reportAttendeeError("websocket_lost", event.reason);
+        }
         if (event.t === "reconnected") setConnectionLost(false);
         if (event.t === "help_state") setHelpRaised(event.raised);
         if (event.t === "help_message" && event.sender_role === "operator") {
@@ -142,7 +149,7 @@ export default function App() {
     if (allReady) refreshAgents();
   }, [allReady, refreshAgents]);
 
-  async function launch(agentId: string): Promise<SessionInfo | null> {
+  async function launch(agentId: string, retried = false): Promise<SessionInfo | null> {
     setLaunching(agentId);
     setError("");
     try {
@@ -153,10 +160,41 @@ export default function App() {
       if (agentId !== "bash") setHintSessionId(session.id);
       return session;
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      // Same string on both sides of the glass: what the attendee reads here
+      // is what an operator finds in diagnostics, without waiting to be told.
+      // The reply says whether the server repaired the credential while
+      // answering, in which case one silent retry beats an error the attendee
+      // would have cleared by clicking the same button again.
+      const canRetry = await postAttendeeError(
+        codeFromMessage(message, "session_start_failed"),
+        message,
+        { agentId }
+      );
+      if (canRetry && !retried) return launch(agentId, true);
+      setError(message);
       return null;
     } finally {
       setLaunching(null);
+    }
+  }
+
+  async function runRecovery(action: RecoveryAction) {
+    if (action === "reload") {
+      location.reload();
+      return;
+    }
+    setRecovering(true);
+    try {
+      const { recovered } = await api.recover();
+      if (recovered) {
+        setError("");
+        refreshAgents();
+      }
+    } catch {
+      /* the banner is already up; a failed recovery adds nothing to read */
+    } finally {
+      setRecovering(false);
     }
   }
 
@@ -390,6 +428,13 @@ export default function App() {
       </header>
 
       <BannerBar initial={config?.broadcast ?? null} />
+      {/* The tab rule. Above the other banners because a stale sign-in is the
+          cause of most of what they warn about. */}
+      <SignInNotice
+        omnigentEnabled={!!config?.omnigent_remote.enabled}
+        obo={config?.obo}
+        onReload={() => location.reload()}
+      />
       <ToastHost
         onOpenHelp={() => setHelpChatOpen(true)}
         helpOpen={helpChatOpen}
@@ -438,7 +483,18 @@ export default function App() {
       )}
       {error && (
         <div className="banner banner-warning">
-          <span>{error}</span>
+          {/* A harness code is not a message and runner logs are not reachable
+              from here. Show what happened and the one button that fixes it. */}
+          <span>{friendlyError(error).message}</span>
+          {friendlyError(error).action !== "none" && (
+            <button
+              className="banner-action"
+              disabled={recovering}
+              onClick={() => runRecovery(friendlyError(error).action)}
+            >
+              {recovering ? "Recovering…" : friendlyError(error).actionLabel}
+            </button>
+          )}
           <button className="icon-btn" onClick={() => setError("")}>
             <X size={14} />
           </button>

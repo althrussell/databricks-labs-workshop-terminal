@@ -38,10 +38,20 @@ RETIRED_SKILL_NAMES = (
 
 
 def _provisioned_home(client, monkeypatch):
-    from server import user_content
+    from server import credentials, user_content
     from server.users import user_manager
 
     monkeypatch.setenv("WORKSHOP_PAT", "dapi-test-token")
+    # A provisioned HOME is only fully written when the credential manager can
+    # hand over a token: the files that carry one — `.claude/settings.json`
+    # among them — are skipped otherwise, and a bash session degrades rather
+    # than failing. Serving the token directly makes that deterministic.
+    # Without it the outcome depends on whether an earlier test left a
+    # validated credential cached on the module singleton, which is how
+    # test_auto_mode_defaults came to pass in a full run and fail on its own.
+    monkeypatch.setattr(
+        credentials.credential_manager, "token", lambda: "dapi-test-token"
+    )
     user_content._provisioned.discard("alice@example.com")
     resp = client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE)
     assert resp.status_code == 200
@@ -684,6 +694,31 @@ def test_a_recorded_failure_still_reports_after_the_registry_is_lost(
     check = readiness.evaluate_runtime()["checks"]["workspace_sync"]
 
     assert check["state"] == "red"
+
+
+def test_a_provisioned_home_is_the_home_readiness_computes(client, monkeypatch):
+    """Pins the invariant the two tests above depend on, and that broke them.
+
+    ``User.home`` is fixed at construction from ``config.users_root()``, while
+    ``readiness`` recomputes the path from the same function at call time. Those
+    agree in production, where the root never moves — and disagreed across tests,
+    because the registry is a process-wide singleton and modules repoint the root
+    at their own ``tmp_path``. A stale ``alice`` cached by an earlier module sent
+    the hook's record to a directory readiness never looked in, so both sync
+    tests reported ``amber`` when run after ``test_omnigent_remote`` and ``red``
+    when run alone.
+
+    Asserted here rather than left to the ``conftest`` fixture alone: deleting
+    that fixture should fail a test that explains why it exists, not quietly
+    restore an order-dependent suite that nobody trusts during event week.
+    """
+    from server import config
+    from server.users import email_slug, user_manager
+
+    home = _provisioned_home(client, monkeypatch)
+
+    assert home == os.path.join(config.users_root(), email_slug("alice@example.com"))
+    assert user_manager.peek("alice@example.com").home == home
 
 
 def test_no_commits_yet_is_not_reported_as_a_sync_failure(client, monkeypatch):

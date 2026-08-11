@@ -287,11 +287,37 @@ def test_reconcile_grants_catalog_and_non_uc(monkeypatch, enabled):
     assert status["verification_source"] == "on_demand"
 
 
+def test_background_reconcile_uses_the_bound_attendee_before_anyone_arrives(
+    monkeypatch, enabled
+):
+    """Admission has to be answerable before the attendee's first click.
+
+    Control Tower gates on /readyz, of which this reconciler's proof is one
+    check. Keying the background pass on the seen-users roster made a freshly
+    deployed instance report "no attendee available" until someone opened it —
+    the gate reporting red at exactly the moment it is supposed to pass.
+    """
+    fake = _fake_with_resources()
+    mgr = _mgr(monkeypatch, fake)
+    from server.users import user_manager
+
+    monkeypatch.setattr(user_manager, "all", lambda: [])
+    monkeypatch.setenv("WORKSHOP_ATTENDEE_EMAIL", "alice@example.com")
+
+    result = mgr.reconcile()
+
+    assert result["errors"] == []
+    assert result["emails"] == ["alice@example.com"]
+    assert mgr.status()["verified_email"] == "alice@example.com"
+    assert mgr.status()["verification_source"] == "background"
+
+
 def test_reconcile_without_attendee_fails_closed(monkeypatch, enabled):
     fake = _strict_fake()
     mgr = _mgr(monkeypatch, fake)
     from server.users import user_manager
     monkeypatch.setattr(user_manager, "all", lambda: [])
+    monkeypatch.delenv("WORKSHOP_ATTENDEE_EMAIL", raising=False)
 
     result = mgr.reconcile()
 
@@ -506,8 +532,16 @@ def test_resource_adapters_use_correct_ids_and_safe_permission_fallback(monkeypa
         (f"{host}/api/2.0/lakeview/dashboards", {"page_size": 100}, {
             "dashboards": [{
                 "dashboard_id": "dashboard-id",
+                "lifecycle_state": "ACTIVE",
                 "create_time": "1970-01-01T00:18:20Z",
             }],
+        }),
+        # Lakeview list responses omit the path, so the creator check reads the
+        # dashboard itself; an SP's workspace home is /Users/<application-id>.
+        (f"{host}/api/2.0/lakeview/dashboards/dashboard-id", {}, {
+            "dashboard_id": "dashboard-id",
+            "parent_path": "/Users/app-client-id",
+            "create_time": "1970-01-01T00:18:20Z",
         }),
     ):
         fake.register_get(url, params, payload)
@@ -522,6 +556,7 @@ def test_resource_adapters_use_correct_ids_and_safe_permission_fallback(monkeypa
         ("apps", "app-name"),
         ("database-instances", "database-name"),
         ("database-projects", "project-id"),
+        ("dashboards", "dashboard-id"),
     ):
         fake.register_patch(
             f"{host}/api/2.0/permissions/{permission_type}/{resource_id}",
@@ -545,6 +580,7 @@ def test_resource_adapters_use_correct_ids_and_safe_permission_fallback(monkeypa
         f"{host}/api/2.0/permissions/database-instances/database-name",
         f"{host}/api/2.0/permissions/database-projects/project-id",
         f"{host}/api/2.0/permissions/warehouses/warehouse-id",
+        f"{host}/api/2.0/permissions/dashboards/dashboard-id",
     }
     assert expected_urls <= {c[1] for c in patches}
     for resource_type, resource_id in (
@@ -561,14 +597,13 @@ def test_resource_adapters_use_correct_ids_and_safe_permission_fallback(monkeypa
         if detail["resource_type"] == "warehouses"
     ][0]
     assert warehouse["permission_level"] == "CAN_MANAGE"
-    assert result["handoff"]["summary"]["handed_off"] == 7
+    assert result["handoff"]["summary"]["handed_off"] == 8
     dashboard = [
         detail for detail in result["handoff"]["details"]
         if detail["resource_type"] == "dashboards"
     ][0]
-    assert dashboard["state"] == "unsupported"
-    assert "unsupported" in dashboard["error"]
-    assert result["handoff"]["summary"]["unsupported"] == 1
+    assert dashboard["state"] == "handed_off"
+    assert dashboard["permission_level"] == "CAN_MANAGE"
     assert not any("dashboards" in error for error in result["errors"])
     assert mgr.status()["ok"] is True
 
@@ -685,6 +720,61 @@ def test_an_owned_resource_missing_its_id_is_still_reported(monkeypatch, enabled
     result = mgr.reconcile("alice@example.com")
 
     assert any("missing id" in e for e in result["errors"])
+
+
+def test_a_dashboard_in_the_attendees_own_folder_is_left_alone(monkeypatch, enabled):
+    """Creator verification for dashboards is a path check, and it cuts both ways.
+
+    A dashboard the agent wrote into the attendee's workspace home already
+    inherits CAN_MANAGE from that directory. Patching it would be noise at best,
+    and in a workspace with more than one attendee it would be a handoff of
+    somebody else's work.
+    """
+    fake = _strict_fake()
+    host = "https://test.cloud.databricks.com"
+    fake.register_get(f"{host}/api/2.0/lakeview/dashboards", {"page_size": 100}, {
+        "dashboards": [{
+            "dashboard_id": "theirs",
+            "lifecycle_state": "ACTIVE",
+            "create_time": "1970-01-01T00:18:20Z",
+        }],
+    })
+    fake.register_get(f"{host}/api/2.0/lakeview/dashboards/theirs", {}, {
+        "dashboard_id": "theirs",
+        "parent_path": "/Users/alice@example.com",
+        "create_time": "1970-01-01T00:18:20Z",
+    })
+    mgr = _scoped_mgr(monkeypatch, fake)
+
+    result = mgr.reconcile("alice@example.com")
+
+    assert not [c for c in fake.calls if c[0] == "PATCH" and "theirs" in c[1]]
+    assert result["errors"] == []
+    assert result["non_uc"]["alice@example.com"]["dashboards"] == 0
+
+
+def test_a_trashed_dashboard_is_not_handed_off(monkeypatch, enabled):
+    """Deleted dashboards linger in list responses for a while after the delete."""
+    fake = _strict_fake()
+    host = "https://test.cloud.databricks.com"
+    fake.register_get(f"{host}/api/2.0/lakeview/dashboards", {"page_size": 100}, {
+        "dashboards": [{
+            "dashboard_id": "gone",
+            "lifecycle_state": "TRASHED",
+            "create_time": "1970-01-01T00:18:20Z",
+        }],
+    })
+    mgr = _scoped_mgr(monkeypatch, fake)
+
+    result = mgr.reconcile("alice@example.com")
+
+    # Skipped outright: no detail read, no patch, and nothing in the ledger for
+    # the attendee to be pointed at.
+    assert not [c for c in fake.calls if "gone" in str(c[1])]
+    assert not [
+        d for d in result["handoff"]["details"] if d["resource_id"] == "gone"
+    ]
+    assert result["errors"] == []
 
 
 def test_unverifiable_warehouse_is_failed_closed_and_visible(monkeypatch, enabled):

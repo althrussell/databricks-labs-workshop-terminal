@@ -30,6 +30,30 @@ def client(_test_env):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_user_registry():
+    """Drop attendees cached by earlier tests, whose homes point elsewhere.
+
+    ``User.home`` is computed once, at construction, from ``config.users_root()``
+    — and many modules repoint that at their own ``tmp_path``. The registry is a
+    process-wide singleton that nothing reset, so a test creating
+    ``alice@example.com`` under its temporary root left every later test holding
+    a home under a directory that no longer exists.
+
+    That is an order-dependent failure, which is the expensive kind: two
+    ``workspace_sync`` tests passed alone and reported ``amber`` instead of
+    ``red`` after ``test_omnigent_remote`` ran first, because the record was
+    written to the stale home while readiness recomputed the real one. During
+    event week a suite that is red for this reason is a suite whose real
+    regressions nobody looks at.
+    """
+    from server.users import user_manager
+
+    user_manager._users.clear()
+    yield
+    user_manager._users.clear()
+
+
+@pytest.fixture(autouse=True)
 def _restore_content_state():
     """Content service is a module singleton — restore pack/phase per test."""
     from server.content import content_service

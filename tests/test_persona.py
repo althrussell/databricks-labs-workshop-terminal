@@ -37,15 +37,20 @@ def _no_persona_yet(_test_env):
     without this, a test that sets "technical" silently changes the starting
     conditions of the next one, and the default-seeding tests pass or fail
     depending on file order.
-    """
-    from server.users import user_manager
 
-    user = user_manager.peek("alice@example.com")
-    if user is not None:
-        try:
-            os.remove(os.path.join(user.home, PERSONA_RELATIVE))
-        except OSError:
-            pass
+    The home is derived from the email rather than looked up in the registry,
+    which is process-wide, reset between tests, and empty before the attendee's
+    first request. Asking it where the home is made the reset conditional on
+    state this fixture exists to be independent of.
+    """
+    from server import config
+    from server.users import email_slug
+
+    home = os.path.join(config.users_root(), email_slug("alice@example.com"))
+    try:
+        os.remove(os.path.join(home, PERSONA_RELATIVE))
+    except OSError:
+        pass
     yield
 
 

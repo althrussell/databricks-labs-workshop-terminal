@@ -12,10 +12,15 @@ import json
 import logging
 import os
 import shlex
+import threading
 
 from . import config
 
 logger = logging.getLogger(__name__)
+
+_lock = threading.Lock()
+# The operator's "demote Omnigent" lever. None means nobody has pulled it.
+_demoted: bool = False
 
 _DEFAULT_CATALOG = os.path.join(os.path.dirname(__file__), "..", "content", "agents.json")
 
@@ -58,6 +63,78 @@ def load_catalog() -> list[dict]:
 
 def get_agent(agent_id: str) -> dict | None:
     return next((a for a in load_catalog() if a.get("id") == agent_id), None)
+
+
+def is_omnigent_backed(agent: dict) -> bool:
+    """Whether launching this card goes through the Omnigent host.
+
+    Keyed on the required binary, not the literal id, so a future
+    Omnigent-backed card is gated by the same rule without anyone remembering
+    to add it here.
+    """
+    return agent.get("id") == "omnigent" or "omnigent" in (agent.get("requires") or [])
+
+
+def omnigent_demoted() -> bool:
+    """Whether an operator has withdrawn the Omnigent tier for this instance."""
+    with _lock:
+        return _demoted
+
+
+def set_omnigent_demoted(demoted: bool) -> None:
+    """Withdraw (or restore) every Omnigent-backed card.
+
+    The lever an operator reaches for when the Omnigent plane is failing across
+    a room and waiting is not working: one call moves everyone to bare Claude,
+    Codex and bash, which run on the app credential and cannot be taken out by
+    an attendee's expired sign-in. Deliberately separate from the spend
+    kill-switch, which pauses *all* agents — demoting is the move that keeps a
+    workshop running rather than stopping it.
+
+    Runtime state, not config: an operator flips this mid-event and it must take
+    effect on the next poll without a redeploy.
+    """
+    global _demoted
+    with _lock:
+        _demoted = demoted
+    logger.warning("Omnigent tier %s by operator", "demoted" if demoted else "restored")
+
+
+def reset_demotion() -> None:
+    """Clear the operator override. For tests."""
+    set_omnigent_demoted(False)
+
+
+def launch_block(agent: dict, email: str) -> str:
+    """Why this agent cannot be launched right now — ``""`` when it can.
+
+    Everything that runs through the Omnigent host inherits the attendee's OBO
+    mirror, and a stale mirror kills every session it starts with an auth error
+    the attendee cannot act on. Refusing up front is the difference between an
+    explained wait and a room full of identical unexplained failures.
+
+    Bare Claude, Codex and bash are deliberately not consulted here: they are
+    the fallback the runbook sends people to, so they must never be gated by
+    credential state on a plane they do not use.
+    """
+    if not is_omnigent_backed(agent):
+        return ""
+    if omnigent_demoted():
+        return "operator_demoted"
+    if not config.omnigent_remote_enabled():
+        return ""
+    from . import obo
+
+    status = obo.obo_manager.status(email)
+    if not status["present"]:
+        return "credential_absent"
+    expires_in = status["expires_in"]
+    # Read freshness off the expiry rather than status()["fresh"], which is
+    # additionally gated on ENABLE_OBO. The remote host needs the mirror whether
+    # or not the ``me`` CLI profile is switched on.
+    if expires_in is not None and expires_in <= obo.FRESH_MARGIN:
+        return "credential_stale"
+    return ""
 
 
 def launch_command(agent: dict) -> list[str]:

@@ -307,6 +307,58 @@ def test_the_economy_brain_can_be_moved_back_off_claude(tmp_path, stock):
     assert economy["executor"]["model"] == "system.ai.gpt-5-6-luna"
 
 
+def test_a_harness_this_instance_lacks_is_not_put_on_the_roster(tmp_path, stock):
+    """Pi is advisory in the WT installer — an instance is healthy without it —
+    but every tier names a pi worker. A dispatch to a CLI that was never
+    installed costs the attendee a turn and prints an error they cannot act on.
+    """
+    built = _build(tmp_path, stock, env={"WORKSHOP_HARNESSES": "claude,codex"})
+
+    for tier, config in built.items():
+        assert "pi" not in config["tools"]["agents"], tier
+        assert not (tmp_path / "built" / tier / "agents" / "pi").exists(), tier
+        override = config["prompt"].split("WORKSHOP MODEL POLICY")[1]
+        assert "`pi`" not in override, tier
+        # Nor may the preflight probe for it: the brain would report a missing
+        # CLI at the human, about a worker it was never offered.
+        assert "command -v claude codex || true" in override, tier
+
+
+def test_a_tier_that_loses_cross_vendor_review_is_not_offered_at_all(tmp_path, stock):
+    """Economy is codex + pi. Without pi it is one vendor, so a diff would be
+    reviewed by the worker that wrote it — which is the thing polly is for. An
+    attendee picking it by name would have no way to know it was degraded."""
+    built = _build(tmp_path, stock, env={"WORKSHOP_HARNESSES": "claude,codex"})
+
+    assert "polly-economy" not in built
+    assert set(built) == {"polly-balanced", "polly-frontier"}
+    assert not (tmp_path / "built" / "polly-economy").exists()
+
+
+def test_a_reduced_roster_says_so_where_the_attendee_picks(tmp_path, stock):
+    """The headline names the models being compared — that is the whole basis
+    for choosing a tier. Promising a GLM worker that is not in the roster makes
+    the picker lie about the one thing it exists to describe."""
+    built = _build(tmp_path, stock, env={"WORKSHOP_HARNESSES": "claude,codex"})
+
+    description = built["polly-balanced"]["description"]
+
+    assert "Reduced roster" in description
+    assert "pi not installed" in description
+    assert "Reduced roster" not in _build(tmp_path, stock)["polly-balanced"]["description"]
+
+
+def test_an_unmeasured_deployment_keeps_the_full_roster(tmp_path, stock):
+    """The variable arrived after the deployments that use it; a missing value
+    must not silently strip a roster that works today."""
+    assert polly_variants.available_workers({}) == {"claude_code", "codex", "pi"}
+    assert set(_build(tmp_path, stock, env={"WORKSHOP_HARNESSES": "  "})) == {
+        "polly-economy",
+        "polly-balanced",
+        "polly-frontier",
+    }
+
+
 def test_rebuilding_is_idempotent(tmp_path, stock):
     """Registration runs on every App start, including restarts, so a second
     build must not accumulate a doubled prompt or leftover worker dirs."""

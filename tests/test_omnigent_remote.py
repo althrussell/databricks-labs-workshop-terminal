@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 import threading
@@ -12,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from .synthetic_secrets import DAPI_TOKEN
 from .test_obo import make_jwt
 
 
@@ -367,14 +369,18 @@ def test_host_launch_exact_argv_and_secret_free_environment(monkeypatch, tmp_pat
     assert re.fullmatch(r"[a-z0-9-]+", env["OMNIGENT_HOST_NAME"])
     assert len(env["OMNIGENT_HOST_NAME"]) <= 64
     assert "OMNIGENT_HOST_TOKEN" not in env
-    assert env["DATABRICKS_CONFIG_PROFILE"] == "workshop-omnigent-no-credentials"
+    assert env["DATABRICKS_CONFIG_PROFILE"] == "me"
     isolated = Path(env["DATABRICKS_CONFIG_FILE"])
     assert (
-        isolated
-        == Path(user.home) / ".config" / "workshop" / "omnigent-empty-databrickscfg"
+        isolated == Path(user.home) / ".config" / "workshop" / "omnigent-databrickscfg"
     )
-    assert isolated.read_text() == ""
     assert isolated.stat().st_mode & 0o777 == 0o600
+    # The service principal must stay unreachable from the Omnigent plane: the
+    # runner falls back to Databricks SDK auth against this file whenever the
+    # mirrored OIDC token is stale, so anything resolvable here is an identity
+    # the runner can silently assume.
+    assert isolated != Path(user.home) / ".databrickscfg"
+    assert "DEFAULT" not in isolated.read_text()
     assert (
         not {
             "DATABRICKS_TOKEN",
@@ -481,6 +487,77 @@ class _FakeProcess:
         return self.returncode
 
 
+def test_host_output_is_captured_to_a_bounded_redacted_log(monkeypatch, tmp_path):
+    """The host's stdout is the only record of why a start failed.
+
+    It used to go to /dev/null, which is how an attendee could be shown
+    ``native_terminal_start_failed`` while no operator could say what raised it.
+    """
+    from server import config
+    from server.omnigent_remote import (
+        RemoteHostManager,
+        _start_stdio_capture,
+        host_log_path,
+    )
+    from server.users import UserManager
+
+    monkeypatch.setenv("OMNIGENT_APP_URL", REMOTE_URL)
+    monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
+    users = UserManager()
+    user = users.get("alice@example.com")
+    (Path(user.home) / ".omnigent" / "auth_tokens.json").write_text(
+        json.dumps({
+            REMOTE_URL: {
+                "token": "secret",
+                "user_id": user.email,
+                "expires_at": time.time() + 3600,
+            }
+        })
+    )
+
+    captures = []
+
+    def capture_factory(u):
+        capture = _start_stdio_capture(u)
+        captures.append(capture)
+        return capture
+
+    leaked = DAPI_TOKEN
+
+    def popen(argv, **kwargs):
+        written = os.fdopen(os.dup(kwargs["stdout"]), "w")
+        written.write(
+            "Traceback (most recent call last):\n"
+            "RuntimeError: Databricks token refresh returned no token\n"
+            f"leaked authorization: Bearer {leaked}\n"
+        )
+        written.close()
+        return _FakeProcess(exits=True)
+
+    hosts = RemoteHostManager(
+        user_manager=users,
+        popen_factory=popen,
+        binary_resolver=lambda: "/opt/bin/omnigent",
+        poll_interval=0.01,
+        stdio_capture=capture_factory,
+    )
+    hosts.start()
+    hosts.notify("alice@example.com")
+    _wait_for(lambda: host_log_path(user).exists())
+    for capture in captures:
+        capture._thread.join(timeout=2)
+    hosts.stop()
+
+    captured = host_log_path(user).read_text()
+    assert "Databricks token refresh returned no token" in captured
+    assert "=== host start" in captured
+    # Whatever the host prints is written through the same redaction as an API
+    # response — a log an operator can read is a log a credential can leak from.
+    assert leaked not in captured
+    assert "<redacted>" in captured or "<pat>" in captured
+    assert host_log_path(user).stat().st_mode & 0o777 == 0o600
+
+
 def test_one_host_process_per_attendee_under_concurrent_notifications(
     monkeypatch, tmp_path
 ):
@@ -536,8 +613,11 @@ def test_one_host_process_per_attendee_under_concurrent_notifications(
     assert len(calls) == 1
     assert calls[0][1]["shell"] is False
     assert calls[0][1]["start_new_session"] is True
-    assert calls[0][1]["stdout"] is subprocess.DEVNULL
-    assert calls[0][1]["stderr"] is subprocess.DEVNULL
+    assert calls[0][1]["stdin"] is subprocess.DEVNULL
+    # stdout and stderr share one captured pipe: the host's output is the only
+    # record of a start failure, so it goes to a bounded log, never /dev/null.
+    assert calls[0][1]["stdout"] == calls[0][1]["stderr"]
+    assert calls[0][1]["stdout"] is not subprocess.DEVNULL
     assert "pid" not in hosts.status("alice@example.com")
     hosts.stop()
 
@@ -763,10 +843,9 @@ def test_generated_tui_helper_routes_remote_and_local(monkeypatch, tmp_path):
     assert 'exec omnigent "$@"' in text
     assert "unset DATABRICKS_TOKEN DATABRICKS_CLIENT_ID" in text
     assert (
-        'DATABRICKS_CONFIG_FILE="$HOME/.config/workshop/omnigent-empty-databrickscfg"'
-        in text
+        'DATABRICKS_CONFIG_FILE="$HOME/.config/workshop/omnigent-databrickscfg"' in text
     )
-    assert "DATABRICKS_CONFIG_PROFILE=workshop-omnigent-no-credentials" in text
+    assert "DATABRICKS_CONFIG_PROFILE=me" in text
     assert helper.stat().st_mode & 0o111
 
 
@@ -815,8 +894,15 @@ def test_tui_helper_joins_an_existing_session_so_both_tools_show_one_conversatio
     monkeypatch, tmp_path
 ):
     """The whole point of the card: a conversation started in the App's UI and
-    the terminal must be the SAME conversation. ``run --server`` with no agent
-    is the thin client that joins one; naming an agent would fork a new one."""
+    the terminal must be the SAME conversation.
+
+    It has to survive the second launch, though. The agent-less ``run --server``
+    thin client this used to run cannot create a session — measured live, the
+    first prompt needing one fails inside the TUI with "Sessions API fresh
+    session creation requires a local agent bundle" — so the agent is named in
+    this branch too, and ``-c`` is what continues the existing conversation
+    rather than forking a new one.
+    """
     argv = _run_tui_helper(
         tmp_path,
         monkeypatch,
@@ -825,7 +911,7 @@ def test_tui_helper_joins_an_existing_session_so_both_tools_show_one_conversatio
         live_sessions=True,
     )
 
-    assert argv == ["run", "--server", "https://app.example.com"]
+    assert argv == ["polly", "--server", "https://app.example.com", "-c"]
 
 
 def test_tui_helper_creates_polly_when_there_is_nothing_to_join(monkeypatch, tmp_path):

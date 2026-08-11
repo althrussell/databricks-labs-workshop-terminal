@@ -43,6 +43,11 @@ REQUIRED_READY_CHECKS = frozenset({
     "topology",
     "attendee_identity",
     "credentials",
+    # Not the same question as ``credentials``: that one asks whether the app
+    # credential is healthy now, this one asks whether both planes can be kept
+    # alive until the event ends. An instance can pass the first and strand an
+    # attendee at hour three.
+    "credential_durability",
     "installers",
     "supply_chain",
     "session_state",

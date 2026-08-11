@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  AlertTriangle,
   BarChart3,
   Bot,
   Check,
@@ -34,6 +35,8 @@ const IMAGE_ICONS: Record<string, string> = {
   omnigent: omnigentLogo,
 };
 
+const FAILED_STATUSES = ["error", "degraded"];
+
 const STEP_LABELS: Record<string, string> = {
   node: "Preparing the runtime",
   claude: "Installing Claude Code",
@@ -43,6 +46,42 @@ const STEP_LABELS: Record<string, string> = {
   tmux: "Preparing the session manager",
   omnigent: "Installing Omnigent",
 };
+
+/** What a card that is not launchable should say, and why.
+ *
+ * Three different reasons used to render as one spinner. An attendee cannot
+ * tell "thirty more seconds" from "this will never finish", and neither could
+ * the operator they eventually asked.
+ */
+function cardState(agent: AgentInfo): { text: string; kind: string; title?: string } {
+  if (agent.ready) return { text: "ready", kind: "is-ready" };
+  if (agent.blocked === "operator_demoted") {
+    return {
+      text: "paused by your host",
+      kind: "is-blocked",
+      title:
+        "Your host has paused this agent for now. Claude, Codex and Terminal are unaffected.",
+    };
+  }
+  if (agent.blocked) {
+    return {
+      text: "reload to sign in",
+      kind: "is-blocked",
+      title:
+        "Your Databricks sign-in needs refreshing — reload this tab. Claude, Codex and Terminal still work.",
+    };
+  }
+  if (agent.install_error) {
+    // Terminal: nothing retries a failed install step, so the spinner this
+    // replaces would have run until the attendee gave up and asked.
+    return {
+      text: "install failed",
+      kind: "is-failed",
+      title: `${agent.install_error} — tell your host; use Claude, Codex or Terminal meanwhile.`,
+    };
+  }
+  return { text: "installing", kind: "" };
+}
 
 interface Props {
   agents: AgentInfo[];
@@ -66,7 +105,10 @@ export default function Hero({
   onLaunch,
   onIdea,
 }: Props) {
-  const [steps, setSteps] = useState<Record<string, { status: string }> | null>(null);
+  const [steps, setSteps] = useState<Record<
+    string,
+    { status: string; error?: string | null }
+  > | null>(null);
   const [installing, setInstalling] = useState(false);
   const [ideas, setIdeas] = useState<IdeaPrompt[]>([]);
   const [tips, setTips] = useState<Nugget[]>([]);
@@ -97,6 +139,12 @@ export default function Hero({
       if (timer) clearInterval(timer);
     };
   }, []);
+
+  // `degraded` counts: it means the step produced something usable without
+  // meeting its reviewed contract, and it never becomes complete on its own.
+  const failedSteps = Object.entries(steps ?? {}).filter(([, step]) =>
+    FAILED_STATUSES.includes(step.status)
+  );
 
   useEffect(() => {
     const refresh = () =>
@@ -155,12 +203,16 @@ export default function Hero({
             const Icon = ICONS[agent.icon] ?? SquareTerminal;
             const imageIcon = IMAGE_ICONS[agent.icon];
             const busy = launching === agent.id;
+            const state = cardState(agent);
             return (
               <button
                 key={agent.id}
-                className={`hero-card ${i === 0 ? "hero-card-primary" : ""}`}
+                className={`hero-card ${i === 0 ? "hero-card-primary" : ""} ${
+                  agent.ready ? "" : state.kind
+                }`}
                 style={{ animationDelay: `${i * 90}ms` }}
                 disabled={!agent.ready || busy}
+                title={state.title}
                 onClick={() => onLaunch(agent.id)}
               >
                 <span className="hero-card-icon">
@@ -174,38 +226,61 @@ export default function Hero({
                 </span>
                 <span className="hero-card-label">{agent.label}</span>
                 <span className="hero-card-desc">{agent.description}</span>
-                <span className={`hero-card-state ${agent.ready ? "is-ready" : ""}`}>
-                  {agent.ready ? (
-                    <>
-                      <span className="dot dot-online" /> ready
-                    </>
+                <span className={`hero-card-state ${state.kind}`}>
+                  {state.kind === "is-ready" ? (
+                    <span className="dot dot-online" />
+                  ) : state.kind === "" ? (
+                    <Loader2 size={11} className="spin" />
                   ) : (
-                    <>
-                      <Loader2 size={11} className="spin" /> installing
-                    </>
-                  )}
+                    <span
+                      className={`dot ${
+                        state.kind === "is-failed" ? "dot-error" : "dot-warn"
+                      }`}
+                    />
+                  )}{" "}
+                  {state.text}
                 </span>
               </button>
             );
           })}
         </div>
 
-        {installing && steps && (
+        {/* Kept on screen after the install finishes when a step failed: the
+            spinner used to disappear and leave a permanently unready card with
+            no explanation anywhere the attendee could see. */}
+        {steps && (installing || failedSteps.length > 0) && (
           <div className="hero-boot">
-            <div className="hero-boot-title">Setting up your workshop…</div>
+            <div className="hero-boot-title">
+              {installing
+                ? "Setting up your workshop…"
+                : "Setup finished with a problem"}
+            </div>
             {Object.entries(STEP_LABELS).map(([key, label]) =>
               steps[key] ? (
                 <div key={key} className="hero-boot-step">
                   {steps[key].status === "complete" ? (
                     <Check size={13} className="boot-done" />
+                  ) : FAILED_STATUSES.includes(steps[key].status) ? (
+                    <AlertTriangle size={13} className="boot-failed" />
                   ) : (
                     <Loader2 size={13} className="spin boot-busy" />
                   )}
                   <span className={steps[key].status === "complete" ? "boot-done-text" : ""}>
                     {label}
                   </span>
+                  {FAILED_STATUSES.includes(steps[key].status) && (
+                    <span className="hero-boot-error">
+                      {steps[key].error || steps[key].status}
+                    </span>
+                  )}
                 </div>
               ) : null
+            )}
+            {failedSteps.length > 0 && (
+              <div className="hero-boot-note">
+                Tell your host — this will not fix itself. Everything marked
+                ready above still works.
+              </div>
             )}
           </div>
         )}

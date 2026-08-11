@@ -101,6 +101,14 @@ env:
     value: ""
 
   # --- Workshop / content steering ---
+  # When the event ends, as epoch seconds. Control Tower patches it per event.
+  # The `credential_durability` admission gate compares each credential plane
+  # against the time left here, so leaving it empty is not neutral: the gate can
+  # still catch a deployment with nothing renewing the attendee credential, but
+  # a static WORKSHOP_PAT whose expiry lands mid-session becomes unanswerable
+  # and is admitted. Set it for any real event.
+  - name: WORKSHOP_EVENT_ENDS_AT
+    value: ""
   - name: WORKSHOP_PHASE
     value: intro
   - name: CONTENT_PACK_PATH

@@ -405,9 +405,24 @@ class SessionManager:
         logger.info("session %s created (%s) for %s", session.id[:8], agent_id, user.email)
         return session
 
-    def terminate(self, session: Session) -> None:
-        """SIGHUP -> wait -> SIGKILL -> close fd -> drop from registry."""
+    def terminate(self, session: Session, reason: str = "closed") -> None:
+        """SIGHUP -> wait -> SIGKILL -> close fd -> drop from registry.
+
+        ``reason`` distinguishes the three ways a terminal ends — the attendee
+        closed it, the agent exited, or the reaper took it — which is the
+        difference between "they finished" and "it died on them".
+        """
+        # Claim the session by removing it from the registry, and only then tear
+        # it down. Three callers race here — the attendee closing a tab, the PTY
+        # reader seeing EOF, and the idle reaper — and the teardown is not
+        # idempotent: two closes of the same master fd is a double close, and
+        # the second one can land on a descriptor another thread has since been
+        # given. Claiming first makes the loser a no-op instead of a hazard.
+        with self._lock:
+            claimed = self._sessions.pop(session.id, None) is not None
         self._fanout(session, {"t": "exit"})
+        if not claimed:
+            return
         try:
             os.kill(session.pid, signal.SIGHUP)
             time.sleep(GRACEFUL_SHUTDOWN_WAIT)
@@ -419,8 +434,6 @@ class SessionManager:
             os.close(session.master_fd)
         except OSError:
             pass
-        with self._lock:
-            self._sessions.pop(session.id, None)
         # A deliberately-closed session is no longer a restart ghost: drop it
         # from the journal so it isn't surfaced after a future restart.
         if self._store is not None:
@@ -428,7 +441,16 @@ class SessionManager:
                 self._store.remove(session.id)
             except Exception:  # noqa: BLE001
                 logger.warning("session journal remove failed for %s", session.id[:8])
-        logger.info("session %s terminated", session.id[:8])
+        logger.info("session %s terminated (%s)", session.id[:8], reason)
+        from . import telemetry
+
+        telemetry.session_exited(
+            session.owner_email,
+            session.agent_id,
+            reason,
+            session_id=session.id,
+            duration_s=time.time() - session.created_at,
+        )
 
     # -- internals --
 
@@ -469,7 +491,7 @@ class SessionManager:
         handle_output(decoder.flush())
         session.exited = True
         self._fanout(session, {"t": "exit"})
-        self.terminate(session)
+        self.terminate(session, reason="exited")
 
     def _fanout(self, session: Session, message: dict) -> None:
         loop = self._loop
@@ -521,7 +543,7 @@ class SessionManager:
             stale = [s for s in live if now - s.last_activity > timeout]
             for session in stale:
                 logger.info("reaping idle session %s (owner=%s)", session.id[:8], session.owner_email)
-                self.terminate(session)
+                self.terminate(session, reason="idle_reaped")
             # Refresh the journal so a restart replays reasonably recent
             # scrollback/activity (within one reaper interval), not create-time.
             if self._store is not None:

@@ -91,6 +91,24 @@ automatically forwards a fresh token, then retry. No OBO refresh is possible
 while the browser sends no request. (Building and deploying are unaffected —
 they run as `DEFAULT`.)
 
+**Python that creates things has to name its profile.** Inside the Omnigent
+harnesses the environment points the Databricks SDK at an attendee-scoped
+config, so a bare `WorkspaceClient()` can read and cannot build — you get a 403
+on the create, not a clear auth error. Say which identity you want:
+
+```python
+import os
+from databricks.sdk import WorkspaceClient
+
+cfg = os.path.expanduser("~/.databrickscfg")
+build = WorkspaceClient(profile="DEFAULT", config_file=cfg)  # provisions, deploys
+mine = WorkspaceClient(profile="me", config_file=cfg)        # the attendee's own view
+```
+
+The CLI needs none of this: `databricks ...` and `databricks-me ...` already
+resolve to the right identity wherever you run them, so prefer shelling out for
+one-off creates and keep the SDK for real code.
+
 ## Where to create things — always inside `$WORKSHOP_CATALOG`
 
 So that everything you build is automatically usable by the attendee:

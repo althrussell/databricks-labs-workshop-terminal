@@ -14,6 +14,7 @@ import tempfile
 import time
 
 from . import models
+from .obo import FRESH_MARGIN as OBO_FRESH_MARGIN
 
 
 EXPECTED_OBO_SCOPES = frozenset(
@@ -43,6 +44,113 @@ def _int(env: Mapping[str, str], name: str, default: int) -> int:
         return int(env.get(name, "") or default)
     except ValueError:
         return default
+
+
+def event_ends_in(env: Mapping[str, str], now: float | None = None) -> int | None:
+    """Seconds left in the event, from ``WORKSHOP_EVENT_ENDS_AT`` (epoch seconds).
+
+    Unset on most deployments, and that is fine — it exists so an operator can
+    ask the question that actually matters before a room fills up: will these
+    credentials outlive the workshop?
+    """
+    raw = (env.get("WORKSHOP_EVENT_ENDS_AT") or "").strip()
+    if not raw:
+        return None
+    try:
+        ends_at = float(raw)
+    except ValueError:
+        return None
+    return max(0, int(ends_at - (now if now is not None else time.time())))
+
+
+def sustainability(
+    credential_status: Mapping[str, object],
+    env: Mapping[str, str],
+    remaining: int | None,
+    *,
+    obo_renewing: bool,
+) -> dict:
+    """Can each plane be *kept* alive for the rest of the event?
+
+    Deliberately not "does this token outlive the event". No attendee OBO ever
+    does — they are minted for about an hour — so a gate built on raw expiry
+    would be red on every instance from the first minute and turned off by the
+    end of the first event. What must outlast the event is the machinery: the
+    app credential rotating server-side, and the freshness watcher pulling a new
+    OBO from the tab before the old one dies.
+
+    That leaves two failures this can actually catch, both of which end a
+    workshop mid-session and neither of which is visible until it does: a static
+    token configured with an expiry inside the event window, and a deployment
+    wired to remote Omnigent with nothing renewing the attendee credential.
+    """
+    rotating = str(credential_status.get("state") or "") == "rotating"
+    app_expires_in = credential_status.get("token_expires_in")
+    app_durable = rotating or _outlives(app_expires_in, remaining)
+    remote = bool((env.get("OMNIGENT_APP_URL") or "").strip())
+    return {
+        "app_plane_durable": app_durable,
+        "app_plane_rotating": rotating,
+        "attendee_plane_renewing": (not remote) or obo_renewing,
+        "sustainable": app_durable and ((not remote) or obo_renewing),
+    }
+
+
+def _outlives(expires_in: object, remaining: int | None) -> bool:
+    if remaining is None or expires_in is None:
+        return True  # unanswerable, and an unanswerable question is not a failure
+    try:
+        return int(expires_in) >= remaining  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return True
+
+
+def durability(
+    credential_status: Mapping[str, object],
+    obo_status: Mapping[str, object],
+    env: Mapping[str, str],
+    now: float | None = None,
+    *,
+    obo_renewing: bool | None = None,
+) -> dict:
+    """How long each credential plane has left, and what that costs right now.
+
+    Two planes fail differently and must be read separately. The app service
+    principal's token rotates server-side and takes the whole instance with it;
+    the attendee's OBO is pulled from a live browser tab and takes only the
+    Omnigent harnesses. Reporting one number for "credentials" hid exactly that
+    distinction during the incident this exists to prevent.
+    """
+    app_expires_in = credential_status.get("token_expires_in")
+    obo_expires_in = obo_status.get("expires_in")
+    obo_present = obo_status.get("present") is True
+    remote = bool((env.get("OMNIGENT_APP_URL") or "").strip())
+    obo_live = obo_present and (
+        obo_expires_in is None or int(obo_expires_in) > OBO_FRESH_MARGIN
+    )
+    remaining = event_ends_in(env, now)
+    if obo_renewing is None:
+        from .obo import obo_watcher
+
+        obo_renewing = obo_watcher.running
+    return {
+        **sustainability(credential_status, env, remaining, obo_renewing=obo_renewing),
+        "app_credential_expires_in": app_expires_in,
+        "attendee_obo_expires_in": obo_expires_in,
+        "attendee_obo_present": obo_present,
+        "event_ends_in": remaining,
+        # The single question an operator asks mid-event: can this attendee
+        # start an Omnigent session right now, or only the bare CLIs?
+        "omnigent_launchable": (not remote) or obo_live,
+        "outlasts_event": (
+            None
+            if remaining is None
+            else all(
+                value is None or int(value) >= remaining
+                for value in (app_expires_in, obo_expires_in if remote else None)
+            )
+        ),
+    }
 
 
 def _check(ok: bool, detail: str, **extra: object) -> dict:
@@ -150,10 +258,19 @@ def evaluate(
     gateway_status: Mapping[str, object] | None = None,
     workspace_sync: Mapping[str, object] | None = None,
     writable_probe: Callable[[str], bool] = _path_writable,
+    obo_renewing: bool | None = None,
     now: float | None = None,
 ) -> dict:
     """Return the complete, secret-free readiness report."""
     current_time = time.time() if now is None else now
+    if obo_renewing is None:
+        from .obo import obo_watcher
+
+        obo_renewing = obo_watcher.running
+    event_remaining = event_ends_in(env, current_time)
+    sustainable = sustainability(
+        credential_status, env, event_remaining, obo_renewing=obo_renewing
+    )
     gateway_status = gateway_status or {}
     sync = {
         "state": "never",
@@ -249,6 +366,11 @@ def evaluate(
         for name in required_steps
         if isinstance(steps.get(name), Mapping)
         and steps[name].get("status") == "degraded"
+    ]
+    agents_ready = installer_status.get("ready")
+    agents_ready = agents_ready if isinstance(agents_ready, Mapping) else {}
+    installed_harnesses = [
+        name for name in ("claude", "codex", "pi") if agents_ready.get(name) is True
     ]
     artifact_manifest = installer_status.get("artifact_manifest")
     artifact_manifest = (
@@ -456,6 +578,26 @@ def evaluate(
             last_successful_at=last_credential_success,
             max_age_seconds=CREDENTIAL_SUCCESS_MAX_AGE,
         ),
+        # Hard, and therefore an admission gate: Control Tower blocks on a 503
+        # from here. An instance that cannot keep its credentials alive for the
+        # rest of the event is one that will strand an attendee mid-session,
+        # which is worse than never admitting them to it.
+        "credential_durability": _check(
+            sustainable["sustainable"],
+            (
+                "both credential planes can be kept alive for the rest of the event"
+                if sustainable["sustainable"]
+                else "the app credential is static and expires before the event ends"
+                if not sustainable["app_plane_durable"]
+                else "remote Omnigent is configured but nothing is renewing the "
+                "attendee credential — every Omnigent harness will fail together "
+                "when the first token expires"
+            ),
+            event_ends_in=event_remaining,
+            app_plane_durable=sustainable["app_plane_durable"],
+            app_plane_rotating=sustainable["app_plane_rotating"],
+            attendee_plane_renewing=sustainable["attendee_plane_renewing"],
+        ),
         "app_sp_binding": _check(
             app_sp_binding_ok,
             "app client UUID and numeric service-principal identity are authoritatively verified"
@@ -489,6 +631,13 @@ def evaluate(
             ),
             missing=missing_installers,
             degraded=degraded_installers,
+            # The roster the Omnigent App may safely advertise. Pi is advisory
+            # here — an instance is ready without it — but every polly variant
+            # names a pi worker, and the App runs in a different container and
+            # cannot look. Reporting the installed set is what lets CT set
+            # WORKSHOP_HARNESSES rather than have a brain dispatch into a CLI
+            # that was never installed.
+            harnesses=installed_harnesses,
         ),
         "supply_chain": _check(
             supply_chain_ok,
@@ -534,12 +683,34 @@ def evaluate(
             thread_alive=entitlement_status.get("thread_alive") is True,
             last_verified_at=last_verified_at,
             verification_source=entitlement_status.get("verification_source"),
+            # The reconciler already knows why it failed. Not reporting it left
+            # an operator with "unhealthy" and no way to tell a missing grant
+            # from an unreachable catalog without shelling into the box.
+            catalog=entitlement_status.get("catalog"),
+            last_reconcile=entitlement_status.get("last_reconcile"),
+            last_error=entitlement_status.get("last_error"),
         ),
         "obo": _check(
             obo_ok,
             "OBO is enabled with required scopes"
             if obo_ok
-            else "OBO is disabled or required scopes are missing",
+            else "OBO is disabled"
+            if not _bool(env, "ENABLE_OBO")
+            else "no attendee has opened this instance yet, so no OBO token has "
+            "been forwarded to validate scopes against"
+            if obo_status.get("present") is not True
+            else "required scopes are missing",
+            # The one hard check nothing on this instance can turn green on its
+            # own: scope verification needs a real attendee token, and a token
+            # arrives only when a browser forwards one. So a perfectly
+            # provisioned instance is red here until its attendee shows up,
+            # which is exactly when Control Tower is deciding whether to hand
+            # it to them. Flagged rather than softened: once an attendee *has*
+            # arrived, this check failing is a genuine reason to pull the
+            # instance, and demoting it to soft would lose that. Admission is
+            # documented against the flag in
+            # docs/control-tower-implementation.md §1.
+            attendee_dependent=True,
             enabled=_bool(env, "ENABLE_OBO"),
             missing=missing_scopes,
             validation_state=obo_validation_state,
@@ -697,6 +868,13 @@ def evaluate(
         "status": "ready" if ready else "not_ready",
         "ready": ready,
         "checks": checks,
+        "durability": durability(
+            credential_status,
+            obo_status,
+            env,
+            now=current_time,
+            obo_renewing=obo_renewing,
+        ),
         "release_manifest": release_manifest,
     }
 
@@ -727,7 +905,7 @@ def evaluate_runtime() -> dict:
     from .credentials import credential_manager, secret_protection_status
     from .entitlements import entitlement_manager
     from .event_emitter import event_emitter
-    from .obo import obo_manager
+    from .obo import obo_manager, obo_watcher
 
     return evaluate(
         env=os.environ,
@@ -740,6 +918,7 @@ def evaluate_runtime() -> dict:
         attendee_binding=attendee.binding(),
         delivery_status=event_emitter.delivery_status(),
         workspace_sync=_bound_workspace_sync(),
+        obo_renewing=obo_watcher.running,
     )
 
 

@@ -1,15 +1,25 @@
 """Brag certificate and idle nudges."""
 
 import os
+import shutil
 import subprocess
 
 from .conftest import ALICE
 
 
 def _seed_repo(home: str) -> None:
-    repo = os.path.join(home, "projects", "demo")
-    if os.path.isdir(os.path.join(repo, ".git")):
-        return  # already seeded by an earlier test (HOMEs persist per session)
+    """Seed exactly one project, whatever earlier tests left behind.
+
+    Attendee HOMEs live on a session-scoped ``DATA_ROOT``, so alice's
+    ``projects`` directory accumulates across the suite — every repo the
+    workspace-sync tests commit in lands there too. ``test_stats_gathering``
+    asserts an exact count, so it passed only while it happened to run before
+    those tests and failed at six projects when the file order moved. Reseeding
+    from empty keeps the assertion exact and makes it independent of order.
+    """
+    projects = os.path.join(home, "projects")
+    shutil.rmtree(projects, ignore_errors=True)
+    repo = os.path.join(projects, "demo")
     os.makedirs(repo, exist_ok=True)
     with open(os.path.join(repo, "pipeline.py"), "w") as f:
         f.write("print('hello')\n" * 40)

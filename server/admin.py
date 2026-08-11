@@ -13,8 +13,9 @@ import time
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from . import agents
 from . import attendee as attendee_binding
-from . import config, help as help_module, obo, spend, user_content
+from . import config, help as help_module, obo, readiness, spend, user_content
 from .auth import require_admin
 from .content import Broadcast, ContentPack, content_service
 from .credentials import credential_manager
@@ -296,6 +297,175 @@ def collect_insight_events(after: int = 0, stream: str = "", limit: int = 0):
 def omnigent_host_readiness():
     """Token-free verified host readiness for Control Tower reconciliation."""
     return remote_host_manager.readiness(attendee_binding.resolved_email())
+
+
+@router.get("/diagnostics")
+def diagnostics(limit: int = 50):
+    """Everything needed to answer "why did that attendee see an error?".
+
+    The rule this serves: an operator must be able to see any error an attendee
+    can see, with more detail, without the attendee's browser and without
+    shelling into the box. Classified errors come from the collector's journal,
+    which survives an app restart; readiness and identity come from live state.
+    """
+    from . import identity
+    from .log_collector import log_collector
+
+    def _hosts() -> list[dict]:
+        # readiness() rejects an email that is not the bound attendee, and the
+        # roster can hold an operator who opened the panel.
+        bound = attendee_binding.resolved_email()
+        return [
+            remote_host_manager.readiness(user.email)
+            for user in user_manager.all()
+            if user.email == bound
+        ]
+
+    # Section by section, because the panel is the operator's only window when
+    # something is already wrong: a broken section must cost its own contents and
+    # nothing else. A 500 here once hid the very traceback that caused it.
+    return {
+        section: _section(name=section, produce=produce)
+        for section, produce in (
+            (
+                "errors",
+                lambda: log_collector.journal.recent(limit=max(1, min(limit, 500))),
+            ),
+            ("collector", log_collector.status),
+            ("readyz", readiness.evaluate_runtime),
+            ("identity", identity.all_snapshots),
+            ("hosts", _hosts),
+        )
+    }
+
+
+def _section(*, name: str, produce):
+    try:
+        return produce()
+    except Exception as error:  # noqa: BLE001 — see diagnostics()
+        logger.warning("diagnostics section %s failed", name, exc_info=True)
+        return {"error": f"{type(error).__name__}: {error}"[:400]}
+
+
+@router.get("/diagnostics/logs")
+def diagnostic_logs(attendee: str = "", source: str = "", limit_bytes: int = 64 * 1024):
+    """Redacted tails of the Omnigent process logs on this instance.
+
+    Process logs only — never ``auth_tokens.json``, never PTY scrollback. The
+    privacy boundary is the same one the collector works inside: how the machine
+    failed is operator-visible, what the attendee typed is not.
+    """
+    from .diagnostics import BoundedLog
+    from .log_collector import log_files
+
+    budget = max(1024, min(limit_bytes, 256 * 1024))
+    logs = []
+    for user in user_manager.all():
+        if attendee and user.email != attendee:
+            continue
+        for path in log_files(user.home):
+            if source and path.parent.name != source:
+                continue
+            logs.append(
+                {
+                    "attendee": user.email,
+                    "source": path.parent.name,
+                    "path": str(path),
+                    "size": path.stat().st_size if path.exists() else 0,
+                    "tail": BoundedLog(path).tail(budget),
+                }
+            )
+    return {"logs": logs, "limit_bytes": budget}
+
+
+@router.post("/diagnostics/sweep")
+def diagnostic_sweep():
+    """Collect now rather than waiting for the next tick.
+
+    An operator reading this panel has an attendee waiting; the sweep interval
+    is tuned for background cost, not for someone standing at a desk.
+    """
+    from .log_collector import log_collector
+
+    captured = log_collector.sweep()
+    return {"captured": captured, "collector": log_collector.status()}
+
+
+class OmnigentTierBody(BaseModel):
+    enabled: bool
+
+
+@router.get("/omnigent-tier")
+def omnigent_tier():
+    """Whether the Omnigent tier is being offered, and to whom it would work."""
+    return {
+        "enabled": not agents.omnigent_demoted(),
+        "remote": config.omnigent_remote_enabled(),
+        "attendees": [
+            {
+                "email": user.email,
+                "obo": obo.obo_manager.status(user.email),
+                "host": remote_host_manager.status(user.email),
+            }
+            for user in user_manager.all()
+        ],
+    }
+
+
+@router.post("/omnigent-tier")
+def set_omnigent_tier(body: OmnigentTierBody):
+    """Demote the Omnigent tier, or restore it.
+
+    The lever for the failure this whole plan is about: every Omnigent harness
+    shares one credential plane, so when that plane is failing they fail
+    together, and no amount of retrying by individual attendees helps. Demoting
+    withdraws those cards fleet-wide and leaves bare Claude, Codex and bash —
+    which run on the app credential — so a room keeps working instead of
+    queueing at the help desk.
+
+    Distinct from the spend kill-switch: that pauses every agent. This one keeps
+    the workshop running on the tier that cannot fail this way.
+    """
+    agents.set_omnigent_demoted(not body.enabled)
+    # Tell every open tab immediately. The card state is read from /api/agents,
+    # and an attendee staring at a card that no longer works is the situation
+    # the lever exists to end.
+    event_hub.publish({"t": "agents_changed"})
+    return {"enabled": not agents.omnigent_demoted()}
+
+
+class RecoverBody(BaseModel):
+    email: str = ""
+
+
+@router.post("/recover")
+def recover_attendee(body: RecoverBody):
+    """Run credential recovery for one attendee, or for everyone.
+
+    The same three actions the server takes on its own when it notices a
+    credential failure — re-mirror, wake the host, ask the tab for a fresh token
+    — put behind an operator button so a report from the floor can be answered
+    in seconds rather than by walking someone through a reload.
+    """
+    from . import selfheal
+
+    targets = (
+        [body.email.strip().lower()]
+        if body.email.strip()
+        else [user.email for user in user_manager.all()]
+    )
+    results = [
+        {
+            "email": email,
+            **selfheal.self_healer.recover(email, "operator recovery", force=True),
+            "obo": obo.obo_manager.status(email),
+        }
+        for email in targets
+    ]
+    return {
+        "recovered": [r["email"] for r in results if r.get("credential_fresh")],
+        "results": results,
+    }
 
 
 @router.get("/presence")
