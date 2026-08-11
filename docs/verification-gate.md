@@ -99,13 +99,18 @@ workshop, discovered by them.
 cannot keep its credentials alive for the rest of the event can be refused an
 attendee.
 
-**Can be, not is.** Blocking admission on it is
-[Control Tower's item 9](control-tower-implementation.md), and CT does not do it
-yet: measured against `databricks-labs-control-tower@e42228f`, provisioning
-waits on the Apps deployment state and probes HTTP `/health` on the Omnigent app
-only — `/readyz` appears in that repo in comments and nowhere in its code. Until
-the CT side lands, every hard gate here is a report an operator has to read
-rather than a gate, which is worth knowing before trusting one.
+Blocking admission on it is
+[Control Tower's item 9](control-tower-implementation.md), and CT now does it:
+`await_terminal_admission` polls this endpoint after a terminal deploys and fails
+a required unit that never clears, so a broken instance costs a seat at
+provisioning rather than an attendee mid-exercise. Landed in
+`databricks-labs-control-tower#89`.
+
+What it blocks on is not the 200 — see
+[the admission rule](control-tower-implementation.md#the-admission-rule) for why
+`obo` is exempt and how the `attendee_dependent` flag carries that. A CT older
+than #89 waits on the Apps deployment state alone, in which case every hard gate
+here is a report an operator has to read rather than a gate.
 
 It asks whether each plane can be **kept** alive, not whether a token outlives
 the event:
