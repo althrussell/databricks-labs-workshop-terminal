@@ -29,3 +29,10 @@ env:
     value: ""
   - name: WORKSHOP_ROUTING_MODEL_PREFIXES
     value: ""
+  # The judge's candidate menu, cheapest-first, and the arms it may never pick.
+  # Both are comma-separated bare model ids. Here so a price change or a
+  # withdrawn model is an app restart rather than a release.
+  - name: WORKSHOP_ROUTING_MODEL_ORDER
+    value: ""
+  - name: WORKSHOP_ROUTING_MODEL_EXCLUDE
+    value: ""

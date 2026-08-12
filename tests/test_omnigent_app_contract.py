@@ -127,6 +127,14 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
         "WORKSHOP_ROUTING_BASE_URL",
         "WORKSHOP_ROUTING_ROUTER_NAME",
         "WORKSHOP_ROUTING_MODEL_PREFIXES",
+        # The judge's candidate order and its never-pick list. Admitted because
+        # a price change or a withdrawn endpoint should be an app restart rather
+        # than a release: the default order named only the GPT arms once, and
+        # every unnamed Claude arm fell back to sorting by model id, which put
+        # the dearest endpoint in the workspace at the head of a list the judge
+        # reads as cheapest-first.
+        "WORKSHOP_ROUTING_MODEL_ORDER",
+        "WORKSHOP_ROUTING_MODEL_EXCLUDE",
     }
     required = {
         "AP_LAKEBASE_ENDPOINT",
