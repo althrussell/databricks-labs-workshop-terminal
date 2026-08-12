@@ -202,6 +202,17 @@ app also POSTs to Control Tower's `/api/help/raise|lower|messages` using the
 app service-principal OAuth bearer (fail-soft when misconfigured). Optional note
 on raise, max 280 characters; message bodies max 2000 characters.
 
+That push only reaches a Control Tower in **this** workspace. Across workspaces
+— the supported event topology — it is refused by the Apps proxy and delivery
+falls to collection instead; see
+[`help_outbox`](#help_outbox--the-delivery-path-for-what-the-attendee-writes).
+The refusal is reported once per process, not once per message.
+
+Where the push does work, both paths are live, so it carries the same
+`message_id` the outbox offers for that message. Control Tower files the row
+under that id and recognises the second arrival as a duplicate; without it the
+attendee's sentence would appear twice in the operator's thread.
+
 `GET /api/config` includes a `help` block
 `{raised, note, raised_at, message_count, help_request_id}` for the header
 control.
@@ -219,6 +230,40 @@ presence reconcile:
 | `help_open` | bool | Alias of `help_raised` |
 | `help_note` | string \| null | Optional note (≤280 chars) |
 | `help_raised_at` | number \| null | Unix timestamp when raised |
+| `help_outbox` | array | Attendee messages and read receipts waiting to be collected (see below) |
+
+#### `help_outbox` — the delivery path for what the attendee writes
+
+The push to Control Tower described above cannot authenticate in the supported
+topology. This app's OAuth bearer is minted against the attendee's own
+workspace, and Control Tower sits behind the Databricks Apps proxy of the admin
+workspace, which rejects a token minted elsewhere with `401` and an empty body
+before Control Tower's code runs. Collection is the direction that works, so
+attendee-authored help traffic waits here until Control Tower polls for it.
+
+Each entry carries a monotonic `seq` and a `kind`:
+
+```json
+{"seq": 4, "kind": "message", "message_id": "uuid", "body": "still stuck",
+ "sender_role": "attendee", "created_at": "2026-08-12T08:36:03Z"}
+{"seq": 5, "kind": "seen", "message_id": "uuid"}
+```
+
+`message_id` is assigned here and is the same id Control Tower stores, so a
+round that is collected but not acknowledged is applied exactly once. Raised
+and lowered hands are **not** in the outbox — `help_raised` already carries
+that state and Control Tower already reconciles it.
+
+At most 20 entries are offered per response and 50 are retained; a backlog only
+grows while nothing is collecting, which is also when nobody is reading it.
+
+### `POST /api/admin/help/ack`
+
+Control Tower confirms it has applied everything up to a sequence number, and
+the terminal drops it: `{"through_seq": 5}` → `{"status": "ok",
+"acked_through": 5, "pending": 0}`. Until this arrives the same entries are
+offered again, because an unacknowledged message is indistinguishable from one
+that never arrived.
 
 ### OBO + entitlements status (operator pre-flight)
 

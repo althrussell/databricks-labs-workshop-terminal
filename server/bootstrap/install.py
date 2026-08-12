@@ -356,8 +356,8 @@ def _release_specs() -> dict[str, tuple[bool, str]]:
         "node": (True, NODE_VERSION),
         # Pi is only reachable as an Omnigent harness, so it follows Omnigent's
         # enablement rather than being installed unconditionally.
-        "pi": (config.omnigent_enabled(), PI_VERSION),
-        "omnigent": (config.omnigent_enabled(), OMNIGENT_VERSION),
+        "pi": (config.omnigent_offered(), PI_VERSION),
+        "omnigent": (config.omnigent_offered(), OMNIGENT_VERSION),
     }
 
 
@@ -523,7 +523,7 @@ def _prewarm_status_unlocked() -> dict:
         "codex": CODEX_VERSION,
         "databricks": DATABRICKS_CLI_VERSION,
     }
-    if config.omnigent_enabled():
+    if config.omnigent_offered():
         expected_versions["omnigent"] = OMNIGENT_VERSION
         expected_versions["pi"] = PI_VERSION
 
@@ -591,7 +591,7 @@ def _prewarm_status_unlocked() -> dict:
             ),
         }
 
-    if config.omnigent_enabled():
+    if config.omnigent_offered():
         tmux_path = os.path.join(bin_dir, "tmux")
         tmux_stamp = _read_json(os.path.join(prefix, "tmux.install.json"))
         tmux_checksum = _file_checksum(tmux_path)
@@ -1980,7 +1980,7 @@ def _run_parallel_installers(tasks, *, max_workers: int) -> None:
 
 
 def run_in_background() -> None:
-    omnigent = config.omnigent_enabled()
+    omnigent = config.omnigent_offered()
     steps = ["node", "claude", "codex", "databricks", "skills"]
     if omnigent:
         steps += ["tmux", "omnigent", "pi"]

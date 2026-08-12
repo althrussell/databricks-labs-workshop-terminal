@@ -251,6 +251,161 @@ def test_attendee_follow_up_message(client, ct_env, monkeypatch):
     assert len(thread.json()["messages"]) >= 2
 
 
+def test_a_refused_push_still_leaves_the_message_for_collection(
+    client, as_admin, ct_env, monkeypatch
+):
+    """The 401 that started this: the push cannot authenticate, and must not
+    be the only way an attendee's words reach the operator.
+
+    Control Tower is behind the Apps proxy of a different workspace than this
+    terminal, and the token this app can mint is refused there. Everything the
+    attendee wrote therefore has to be waiting on the surface Control Tower
+    *can* read, which is presence.
+    """
+    monkeypatch.setattr(
+        help_module.requests,
+        "post",
+        MagicMock(return_value=MagicMock(status_code=401, text="{}")),
+    )
+    monkeypatch.setattr(help_module, "app_identity_bearer", lambda: "oauth-bearer")
+
+    posted = client.post(
+        "/api/help/messages",
+        json={"body": "my warehouse will not start"},
+        headers={"X-Forwarded-Email": "alice@example.com"},
+    )
+    assert posted.status_code == 200
+    assert posted.json()["pushed"] is False
+    # One refused attempt, not two: the raise fallback is the same caller at
+    # the same door, and it was doubling the failure in the operator's log.
+    assert help_module.requests.post.call_count == 1
+
+    outbox = client.get("/api/admin/presence").json()["help_outbox"]
+    messages = [e for e in outbox if e["kind"] == "message"]
+    assert [m["body"] for m in messages] == ["my warehouse will not start"]
+    assert messages[0]["message_id"] == posted.json()["message"]["message_id"]
+
+
+def test_a_push_that_works_names_the_same_message_the_outbox_is_holding(
+    client, as_admin, ct_env, monkeypatch
+):
+    """Both paths are live where the push authenticates, so both must agree.
+
+    Same workspace, no proxy in between: Control Tower accepts the push *and*
+    later collects the outbox entry. Without a shared id it would file the
+    attendee's sentence twice, and only one of the two could be marked seen.
+    """
+    mock_resp = MagicMock(status_code=200, text="ok")
+    mock_resp.json.return_value = {}
+    monkeypatch.setattr(
+        help_module.requests, "post", MagicMock(return_value=mock_resp)
+    )
+    monkeypatch.setattr(help_module, "app_identity_bearer", lambda: "oauth-bearer")
+    hdrs = {"X-Forwarded-Email": "alice@example.com"}
+
+    raised = client.post("/api/help/raise", json={"note": "stuck on UC"}, headers=hdrs)
+    posted = client.post(
+        "/api/help/messages", json={"body": "still stuck"}, headers=hdrs
+    )
+    assert raised.status_code == 200 and posted.status_code == 200
+
+    pushed_ids = [
+        call.kwargs["json"].get("message_id")
+        for call in help_module.requests.post.call_args_list
+    ]
+    outbox = client.get("/api/admin/presence").json()["help_outbox"]
+    assert pushed_ids == [e["message_id"] for e in outbox if e["kind"] == "message"]
+    assert posted.json()["message"]["message_id"] in pushed_ids
+
+
+def test_the_operator_sees_the_opening_note_and_the_follow_up(client, as_admin):
+    """Raising with a note is the first message of the conversation.
+
+    Control Tower can derive that one from ``help_note``, but only that one and
+    only its first version — so it travels the same way as every other message,
+    with the id it was given here, and Control Tower stops guessing.
+    """
+    hdrs = {"X-Forwarded-Email": "alice@example.com"}
+    client.post("/api/help/raise", json={"note": "stuck on UC"}, headers=hdrs)
+    client.post("/api/help/messages", json={"body": "still stuck"}, headers=hdrs)
+
+    outbox = client.get("/api/admin/presence").json()["help_outbox"]
+    assert [e["body"] for e in outbox if e["kind"] == "message"] == [
+        "stuck on UC",
+        "still stuck",
+    ]
+    assert [e["seq"] for e in outbox] == sorted(e["seq"] for e in outbox)
+
+
+def test_a_read_receipt_waits_for_collection_too(client, as_admin):
+    client.post(
+        "/api/help/ack",
+        json={"message_id": "op-1"},
+        headers={"X-Forwarded-Email": "alice@example.com"},
+    )
+    outbox = client.get("/api/admin/presence").json()["help_outbox"]
+    assert [(e["kind"], e["message_id"]) for e in outbox] == [("seen", "op-1")]
+
+
+def test_nothing_is_dropped_until_control_tower_says_it_has_it(client, as_admin):
+    """An unacknowledged message is indistinguishable from an unread one."""
+    hdrs = {"X-Forwarded-Email": "alice@example.com"}
+    client.post("/api/help/messages", json={"body": "first"}, headers=hdrs)
+    client.post("/api/help/messages", json={"body": "second"}, headers=hdrs)
+
+    outbox = client.get("/api/admin/presence").json()["help_outbox"]
+    assert len(outbox) == 2
+
+    # Collected the first only — the second is still owed to the operator.
+    acked = client.post("/api/admin/help/ack", json={"through_seq": outbox[0]["seq"]})
+    assert acked.status_code == 200
+    assert acked.json()["pending"] == 1
+
+    remaining = client.get("/api/admin/presence").json()["help_outbox"]
+    assert [e["body"] for e in remaining] == ["second"]
+
+    client.post("/api/admin/help/ack", json={"through_seq": remaining[0]["seq"]})
+    assert client.get("/api/admin/presence").json()["help_outbox"] == []
+
+
+def test_a_backlog_cannot_grow_without_bound(client, as_admin):
+    """A terminal nobody is collecting from must not answer presence with a novel.
+
+    Presence is polled every few seconds for every seat in the room, so an
+    outbox that grew forever would turn one unreachable Control Tower into a
+    fleet-wide payload problem.
+    """
+    hdrs = {"X-Forwarded-Email": "alice@example.com"}
+    for i in range(help_module._OUTBOX_MAX + 15):
+        client.post("/api/help/messages", json={"body": f"m{i}"}, headers=hdrs)
+
+    assert len(help_module.outbox_snapshot()) == help_module._OUTBOX_MAX
+    page = client.get("/api/admin/presence").json()["help_outbox"]
+    assert len(page) == help_module._OUTBOX_PAGE
+    # The oldest survivors go first, so collection drains in order.
+    assert page[0]["body"] == "m15"
+
+
+def test_the_refusal_is_explained_once_not_once_per_message(
+    client, ct_env, monkeypatch, caplog
+):
+    monkeypatch.setattr(
+        help_module.requests,
+        "post",
+        MagicMock(return_value=MagicMock(status_code=401, text="{}")),
+    )
+    monkeypatch.setattr(help_module, "app_identity_bearer", lambda: "oauth-bearer")
+    hdrs = {"X-Forwarded-Email": "alice@example.com"}
+
+    with caplog.at_level("WARNING", logger="server.help"):
+        for i in range(5):
+            client.post("/api/help/messages", json={"body": f"m{i}"}, headers=hdrs)
+
+    rejected = [r for r in caplog.records if "ct_push_rejected" in r.getMessage()]
+    assert len(rejected) == 1
+    assert "collection" in rejected[0].getMessage()
+
+
 def test_admin_help_message_ingest(client, as_admin):
     resp = client.post(
         "/api/admin/help/message",

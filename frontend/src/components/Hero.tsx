@@ -11,6 +11,9 @@ interface Props {
   hasSessions: boolean;
   launching: string | null;
   brief: WizardBrief | null;
+  /** False when the operator switched the wizard off: the recap stays, the way
+   * back into a modal this workshop does not use does not. */
+  canEditBrief: boolean;
   onLaunch: (agentId: string) => void;
   onIdea: (prompt: string) => void;
   onEditBrief: () => void;
@@ -25,6 +28,7 @@ export default function Hero({
   hasSessions,
   launching,
   brief,
+  canEditBrief,
   onLaunch,
   onIdea,
   onEditBrief,
@@ -89,9 +93,11 @@ export default function Hero({
           <div className="hero-brief">
             <span className="hero-brief-label">You're building</span>
             <span className="hero-brief-text">{briefLine}</span>
-            <button className="hero-brief-edit" onClick={onEditBrief}>
-              <Pencil size={11} /> Change what I'm building
-            </button>
+            {canEditBrief && (
+              <button className="hero-brief-edit" onClick={onEditBrief}>
+                <Pencil size={11} /> Change what I'm building
+              </button>
+            )}
           </div>
         )}
 

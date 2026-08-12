@@ -1194,30 +1194,6 @@
     },
 
     {
-      "id": "generic-space-invaders",
-      "label": "Build Space Invaders",
-      "outcome": "A working game you can play, and send to someone",
-      "prompt": "Build me a playable Space Invaders game as a Databricks App, deploy it, and give me the URL. Make it look good.",
-      "industries": [],
-      "intents": ["fun", "learning"],
-      "products": ["apps"],
-      "shape": "fun",
-      "technical": false,
-      "demo_tables": []
-    },
-    {
-      "id": "generic-team-quiz",
-      "label": "Make a quiz for your team",
-      "outcome": "A quiz app with a live scoreboard",
-      "prompt": "Build a multiplayer quiz app with a live scoreboard, deploy it, and give me the URL so people can join from their phones.",
-      "industries": [],
-      "intents": ["fun", "learning"],
-      "products": ["apps", "lakebase"],
-      "shape": "fun",
-      "technical": false,
-      "demo_tables": []
-    },
-    {
       "id": "generic-first-pipeline",
       "label": "Build your first pipeline",
       "outcome": "A working pipeline with quality checks, explained as it goes",

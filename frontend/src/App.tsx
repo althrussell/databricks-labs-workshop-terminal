@@ -35,6 +35,7 @@ import HelpChatPanel from "./components/HelpChatPanel";
 import ToastHost from "./components/ToastHost";
 import TerminalView from "./components/TerminalView";
 import { bindIdentityRefresh, onAppEvent } from "./events";
+import { ideaAgentId, ideaSession } from "./ideation";
 import { friendlyError, type RecoveryAction } from "./errors";
 import { codeFromMessage, postAttendeeError, reportAttendeeError } from "./telemetry";
 
@@ -82,6 +83,30 @@ export default function App() {
 
   const refreshAgents = useCallback(() => {
     api.agents().then((data) => setAgents(data.agents)).catch(() => undefined);
+  }, []);
+
+  /* Stable across renders, because the wizard treats a changed prop identity as
+   * a reason to re-run its mount effect — and Home re-renders every few seconds
+   * while it polls agent install progress. An inline arrow here used to wipe
+   * whatever the attendee was typing into the wizard. */
+  // The operator's create-time choice, and only once it is known. Reading an
+  // unloaded config as "on" was wrong for the one path that does not consult the
+  // server again: "Change what I'm building" opens the wizard directly, so an
+  // attendee with a saved brief and a slow or failed /api/config could reopen a
+  // modal their run had switched off. Unknown therefore means unavailable, which
+  // costs the control a moment of lateness and nothing else.
+  const wizardAvailable = config?.onboarding_wizard.enabled === true;
+
+  const openWizard = useCallback(() => {
+    if (!wizardAvailable) return;
+    setWizardOpen(true);
+  }, [wizardAvailable]);
+
+  const closeWizard = useCallback(() => {
+    setWizardOpen(false);
+    // Pick up whatever the wizard saved so Home's recap line is right
+    // immediately, rather than after the next reload.
+    api.wizard().then((s) => setBrief(s.brief)).catch(() => undefined);
   }, []);
 
   const refreshIdentity = useCallback(async () => {
@@ -155,7 +180,9 @@ export default function App() {
       .wizard()
       .then((state) => {
         setBrief(state.brief);
-        if (state.should_show && sessions.length === 0) setWizardOpen(true);
+        if (state.enabled && state.should_show && sessions.length === 0) {
+          setWizardOpen(true);
+        }
       })
       .catch(() => undefined);
   }, [sessionsLoaded, sessions.length]);
@@ -289,14 +316,27 @@ export default function App() {
   }
 
   // Ideation chips / insight-card prompts: type the text into the attendee's
-  // agent session UNSENT — they press Enter. Opens a Claude session if none.
+  // agent session UNSENT — they press Enter. Opens a coding agent if none, and
+  // one this workshop actually offers: naming Claude here launched an agent an
+  // operator may have withheld, which failed and left the attendee with an error
+  // where the sentence they clicked should have been.
   async function ideaToSession(prompt: string) {
-    let target =
-      sessions.find((s) => s.agent_id === "claude" && !s.exited) ??
-      sessions.find((s) => !s.exited);
+    const agentId = ideaAgentId(agents);
+    let target: SessionInfo | undefined = ideaSession(sessions, agentId);
     let fresh = false;
     if (!target) {
-      target = (await launch("claude")) ?? undefined;
+      if (!agentId) {
+        // Nothing open and nothing to open it with. Only reachable on a
+        // workshop whose agent selection matched nothing in the catalogue, but
+        // a chip that quietly does nothing when clicked is worse than saying so.
+        if (agents.length > 0) {
+          setError(
+            "This workshop offers no coding agent to type that into — open a terminal and ask there."
+          );
+        }
+        return;
+      }
+      target = (await launch(agentId)) ?? undefined;
       fresh = true;
       if (!target) return;
     } else {
@@ -645,9 +685,10 @@ export default function App() {
                   hasSessions={sessions.length > 0}
                   launching={launching}
                   brief={brief}
+                  canEditBrief={wizardAvailable}
                   onLaunch={openOrLaunch}
                   onIdea={ideaToSession}
-                  onEditBrief={() => setWizardOpen(true)}
+                  onEditBrief={openWizard}
                 />
               )}
               {sessions.map((session) => (
@@ -677,12 +718,7 @@ export default function App() {
           agents={agents}
           launching={launching}
           onLaunch={launchFromWizard}
-          onClose={() => {
-            setWizardOpen(false);
-            // Pick up whatever the wizard saved so Home's recap line is right
-            // immediately, rather than after the next reload.
-            api.wizard().then((s) => setBrief(s.brief)).catch(() => undefined);
-          }}
+          onClose={closeWizard}
         />
       )}
 

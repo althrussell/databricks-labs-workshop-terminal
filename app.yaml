@@ -113,6 +113,18 @@ env:
     value: intro
   - name: CONTENT_PACK_PATH
     value: ""
+  # The opening wizard: what the attendee is here to build, asked once on first
+  # arrival. On by default, because an unconfigured instance should still avoid
+  # dropping someone at a blinking cursor. Control Tower sets this from the
+  # create form; "false" lands attendees on Home with no modal, for a format
+  # that walks the room through the first build together.
+  - name: WORKSHOP_ONBOARDING_WIZARD
+    value: "true"
+  # Coding agents offered to attendees, chosen when the workshop was created:
+  # a comma-separated subset of "omnigent,claude,codex". Empty means all of
+  # them. The plain Terminal is always available and is not listed here.
+  - name: WORKSHOP_AGENTS
+    value: ""
 
   # --- Skills overlay (databricks-agent-skills) ---
   # Skills are fetched once, stamped with ref + resolved commit + content

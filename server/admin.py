@@ -181,6 +181,25 @@ def help_clear(body: HelpClearIn = HelpClearIn()):
     return {"status": "ok", "help_request_id": body.help_request_id}
 
 
+class HelpAckIn(BaseModel):
+    through_seq: int = 0
+
+
+@router.post("/help/ack")
+def help_ack(body: HelpAckIn):
+    """Control Tower has the attendee's messages up to ``through_seq``.
+
+    The counterpart to the ``help_outbox`` on ``GET /api/admin/presence``.
+    Until this arrives the terminal keeps offering the same events, because an
+    unacknowledged message is indistinguishable from one Control Tower never
+    read — and re-offering costs a few bytes a poll, while dropping it costs an
+    attendee their answer.
+    """
+    from . import help as help_module
+
+    return {"status": "ok", **help_module.ack_outbox(body.through_seq)}
+
+
 @router.get("/stats")
 def harvest_stats(final: bool = False):
     """Harvest endpoint for Control Tower: per-attendee build stats (cached

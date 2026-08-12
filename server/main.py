@@ -243,6 +243,11 @@ def get_config(principal: Principal = Depends(get_current_user)):
             "enabled": config.omnigent_remote_enabled(),
             "url": config.omnigent_app_url(),
         },
+        # Carried here as well as on /api/wizard so Home can tell "the operator
+        # switched this off" from "this attendee has already seen it" without a
+        # second request — the two look identical in `should_show`, and only one
+        # of them should also hide the recap's way back in.
+        "onboarding_wizard": {"enabled": config.onboarding_wizard_enabled()},
         "entitlements": entitlement_manager.status(),
         # The model-comparison exercise, as the attendee runs it. Published from
         # the same resolution the generated Codex config uses, so what the UI

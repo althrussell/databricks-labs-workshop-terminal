@@ -47,6 +47,8 @@ export interface WizardBrief {
 
 export interface WizardState {
   brief: WizardBrief;
+  /** False when the workshop was created with the wizard switched off. */
+  enabled: boolean;
   should_show: boolean;
   default_industry: string;
   industries: string[];
@@ -104,6 +106,7 @@ export interface AppConfig {
     enabled: boolean;
     url: string;
   };
+  onboarding_wizard: { enabled: boolean };
 }
 
 export interface AgentInfo {

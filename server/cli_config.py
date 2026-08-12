@@ -678,9 +678,9 @@ def configure_all(user: User, token: str) -> None:
     configure_claude(user, token, write_token=False, available=available)
     configure_codex(user, token, write_token=False, available=available)
     user.cli_ready.update({"claude", "codex", "databricks"})
-    # Omnigent is feature-flagged off by default — don't write a config for a
-    # session type we don't offer.
-    if config.omnigent_enabled():
+    # Omnigent is feature-flagged off by default, and a workshop can be created
+    # without it — don't write a config for a session type we don't offer.
+    if config.omnigent_offered():
         configure_omnigent(user, token, write_token=False, available=available)
         user.cli_ready.add("omnigent")
     with user.lock:
@@ -707,7 +707,7 @@ def update_tokens(user: User, token: str) -> None:
         missing_codex = not os.path.exists(
             os.path.join(user.home, ".codex", "config.toml")
         )
-        missing_omnigent = config.omnigent_enabled() and not os.path.exists(
+        missing_omnigent = config.omnigent_offered() and not os.path.exists(
             os.path.join(user.home, ".omnigent", "config.yaml")
         )
 

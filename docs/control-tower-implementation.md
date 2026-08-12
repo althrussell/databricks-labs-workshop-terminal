@@ -358,6 +358,8 @@ take effect on restart with **no rebuild**. Set these per instance:
 | `DISCOVERY_ENABLED` | `false` *(optional, within capture)* | drop the conversational discovery tier while keeping the derived behavioural signal |
 | `WORKSHOP_TOOLCHAIN_MIRROR_PATH` | *(optional)* `/Volumes/<catalog>/<schema>/<volume>` | serve the pinned toolchain from a staged UC Volume instead of the public internet (§15). Empty = download from source, which needs no volume and is the default |
 | `WORKSHOP_TOOLCHAIN_MIRROR_STRICT` | `false` | fail an artifact the mirror cannot serve instead of falling back to the internet. Air-gapped events only |
+| `WORKSHOP_ONBOARDING_WIZARD` | `true` *(CT fleet default; per-run opt-out)* | the opening wizard that asks what the attendee is here to build (§16). `false` lands attendees on Home with no modal, for a format that walks the room through the first build together |
+| `WORKSHOP_AGENTS` | empty *(all)*, or a subset of `omnigent,claude,codex` | the coding agents attendees may launch (§16). The plain Terminal is always offered and is never listed here. Deselecting Omnigent also skips its install, so a run that will not use it does not pay for the harness on cold boot |
 
 Model defaults can vary by event or attendee because CT applies overrides to
 each app instance independently. For example, set
@@ -392,9 +394,12 @@ to rely on.
 `CONTROL_TOWER_INGEST_URL` + `CONTROL_TOWER_INGEST_TOKEN` + `WORKSHOP_RUN_ID`
 starts a background flusher, but if CT is itself a Databricks App its proxy
 rejects a request carrying only `X-Ingest-Token` before it reaches CT's code. It
-works for a CT reachable without the Apps proxy, or for a caller that also
-presents an OAuth bearer for a principal granted `CAN USE` on the CT app. Push
-is therefore optional and additive; the envelope below is the canonical one
+works for a CT reachable without the Apps proxy, or for a caller presenting an
+OAuth bearer that is both **minted against the workspace hosting CT** and held
+by a principal granted `CAN USE` on the CT app. A deployed terminal is neither:
+its token is scoped to the attendee's own workspace, which the proxy refuses
+whatever the principal is entitled to (see [§11b](#11b-attendee-help--collect-it-the-terminal-cannot-push-it)).
+Push is therefore optional and additive; the envelope below is the canonical one
 either way.
 
 ```http
@@ -639,6 +644,46 @@ text. CT should alert on rising bootstrap errors, `503`s, overflows, stale
 credentials, or handoff failures and use `/api/admin/stats` as reconciliation.
 The emitter flusher and operational reporter retain their thread handles and
 are signalled and briefly joined during app shutdown.
+
+## 11b. Attendee help — collect it, the terminal cannot push it
+
+The app posts a raised hand and each attendee message to CT's
+`/api/help/raise|lower|messages` using its own service-principal OAuth bearer.
+**In the supported topology that push cannot succeed.** The terminal runs in the
+attendee's workspace, so the token it can mint is scoped to that workspace, and
+CT's Databricks Apps proxy — in the admin workspace — refuses any token minted
+elsewhere. The rejection is `401` with an empty body, produced by the proxy
+before CT's code runs, so no grant on CT's side changes it. `CAN USE` for the
+app SP is necessary but not sufficient; the token's workspace is what fails.
+
+Delivery is therefore by collection, on the presence poll CT already makes:
+
+1. `GET {app_url}/api/admin/presence` returns `help_raised` / `help_note` /
+   `help_raised_at` as before, plus **`help_outbox`** — the attendee's messages
+   and read receipts, each with a monotonic `seq` and a `message_id` assigned
+   here.
+2. Apply them keyed on `message_id`. Store CT's message row under that same id
+   so a round you collect twice lands once.
+3. `POST {app_url}/api/admin/help/ack` with `{"through_seq": <highest applied>}`.
+   The terminal keeps offering anything unacknowledged.
+
+Three consequences for CT:
+
+- **Do not also synthesise a message from `help_note`** when `help_outbox` is
+  present in the payload. It is the same opening sentence, and filing it twice
+  gives the attendee two rows, only one of which can ever be marked seen.
+- **Honour `message_id` on the push, where the push works at all.** Same-workspace
+  deployments deliver by both paths, so `/api/help/raise` and `/api/help/messages`
+  now carry the same `message_id` the outbox will offer. Store the row under it
+  and treat a repeat as already filed; assign your own id only when the field is
+  absent, which means a terminal older than the outbox.
+- **Poll while a run is live, not only while an operator is watching.** An
+  unwatched run collects nothing, so a hand raised during a break is queued at
+  the terminal until someone opens the console.
+
+Operator → attendee is unaffected: CT mints a token for the attendee's own
+workspace, which the terminal's proxy accepts, and `/api/admin/help/message`
+and `/api/admin/help/clear` work as documented.
 
 ## 12. Fleet operations, restart recovery, and kill switch
 
@@ -908,6 +953,50 @@ rather than a bad install. Full detail in
 
 ---
 
+## 16. What the operator chooses when the workshop is created
+
+Two settings describe the room rather than the infrastructure, so they are asked
+on CT's create form and arrive as `env_overrides` on the terminal app. Both are
+read at runtime, so a change plus a restart is enough — no rebuild.
+
+| Setting | Env | Default |
+|---|---|---|
+| Show the onboarding wizard | `WORKSHOP_ONBOARDING_WIZARD` | `true` |
+| Coding agents attendees can launch | `WORKSHOP_AGENTS` | empty (all) |
+
+**The wizard.** On, an attendee's first arrival asks what they are here to build
+and hands the answer to their agent as a first prompt. Off, they land on Home
+with no modal and no way back into one — the right shape for a format where the
+room is walked through the first build together, and the wrong one for a
+self-paced event, which is why the default is on.
+
+This is deliberately independent of `WORKSHOP_INSIGHT_CAPTURE`. Capture decides
+whether the answer reaches CT; the wizard decides whether the question is asked.
+A run that records nothing still wants the attendee to start with something
+running.
+
+**The agents.** A comma-separated subset of `omnigent`, `claude`, `codex`.
+Empty means all of them, because an instance nobody configured has to offer a
+full launcher rather than an empty one. Unknown ids are carried, not dropped, so
+a CT that has learned a new agent id is not silently narrowed by an older
+terminal.
+
+The plain **Terminal** (bash) is never listed. It is the fallback the runbook
+sends a room to when an agent plane fails, so it is not an operator's to remove.
+
+Deselecting Omnigent also skips the Omnigent, tmux and pi installs and writes no
+per-attendee Omnigent config — a workshop that will not launch the harness
+should not pay for it on cold boot. It composes with `OMNIGENT_ENABLED`: either
+one being off is enough to withdraw the card.
+
+Both settings are per-run overrides on top of CT's fleet defaults
+(`CONTROL_TOWER_WORKSHOP_ONBOARDING_WIZARD`, `CONTROL_TOWER_WORKSHOP_AGENTS`),
+and CT writes them into the deployment env *and* the uploaded `app.yaml`, so an
+operator clicking Deploy in the Apps console cannot silently restore a wizard or
+an agent the run opted out of.
+
+---
+
 ## Appendix — quick reference
 
 - App SP client id: `service_principal_client_id` from `apps create` / `apps get`.
@@ -922,3 +1011,7 @@ rather than a bad install. Full detail in
   `run_id`/`workspace_id` from the polled unit and namespace a runless key with
   the run. Push (`POST {INGEST_URL}/api/ingest/events`, `X-Ingest-Token`) is
   additive and blocked by the Apps proxy for a deployed terminal.
+- Help delivery: `help_outbox` on `GET {app_url}/api/admin/presence`, applied by
+  the terminal's `message_id`, then `POST {app_url}/api/admin/help/ack`
+  `{"through_seq": n}`. The terminal's own push to CT is blocked by the same
+  proxy, for the same reason (§11b).

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Database,
@@ -72,6 +72,19 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
   const [steps, setSteps] = useState<SetupSteps | null>(null);
   const [installing, setInstalling] = useState(false);
 
+  // Held in a ref so the load effect below never lists it as a dependency.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  /* Runs once, on mount, and must never run again.
+   *
+   * This effect seeds the state the attendee then edits, so re-running it is
+   * data loss rather than a refresh: it would overwrite the sentence being
+   * typed with the empty one on the server, deselect a chosen card, and hand
+   * back a freshly shuffled grid mid-read. A dependency on anything the parent
+   * re-creates each render — `onClose` was an inline arrow, and Home re-renders
+   * every few seconds while it polls agent install progress — makes that happen
+   * on a timer. */
   useEffect(() => {
     api
       .wizard()
@@ -85,8 +98,8 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
         setStack(s.brief.current_stack);
         setPersona(s.brief.persona);
       })
-      .catch(() => onClose());
-  }, [onClose]);
+      .catch(() => onCloseRef.current());
+  }, []);
 
   // The agent cards on step three are the real picker, so they need the same
   // install progress the landing page shows. Polling starts with the wizard
