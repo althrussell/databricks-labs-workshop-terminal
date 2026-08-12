@@ -19,14 +19,22 @@ export interface SessionLike {
 
 /** The agent to open for an ideation prompt, or "" if this workshop offers none.
  *
- * Claude first when it is offered, because the prompts are written in its voice
- * and it is the cheapest of the three to start. Otherwise the catalogue's own
- * order, which is the order the operator's selection is presented in.
+ * Launchable first, then Claude by preference, then catalogue order. Readiness
+ * has to come before preference: the catalogue leads with Omnigent, whose launch
+ * is refused while it installs and again whenever the attendee's sign-in has
+ * gone stale, and refusing a prompt on that basis while Codex sits ready beside
+ * it is the same dead end as naming an agent the operator never offered.
+ *
+ * When nothing is launchable yet we still return the agent we would have picked,
+ * so the attendee reads "still installing" rather than watching a chip do
+ * nothing.
  */
 export function ideaAgentId(agents: readonly AgentInfo[]): string {
   const coding = agents.filter((agent) => agent.id !== "bash");
-  const preferred = coding.find((agent) => agent.id === "claude") ?? coding[0];
-  return preferred?.id ?? "";
+  const preferred = (choices: readonly AgentInfo[]) =>
+    choices.find((agent) => agent.id === "claude") ?? choices[0];
+  const launchable = coding.filter((agent) => agent.ready && !agent.blocked);
+  return (preferred(launchable) ?? preferred(coding))?.id ?? "";
 }
 
 /** The open session an ideation prompt should be typed into, if there is one.

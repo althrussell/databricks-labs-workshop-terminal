@@ -4,7 +4,10 @@ import assert from "node:assert/strict";
 import { ideaAgentId, ideaSession, type SessionLike } from "./ideation.ts";
 import type { AgentInfo } from "./api.ts";
 
-function agent(id: string): AgentInfo {
+function agent(
+  id: string,
+  extra: Partial<AgentInfo> = {}
+): AgentInfo {
   return {
     id,
     label: id,
@@ -13,6 +16,7 @@ function agent(id: string): AgentInfo {
     order: 0,
     ready: true,
     needs_credentials: false,
+    ...extra,
   };
 }
 
@@ -35,6 +39,23 @@ test("a workshop created without Claude still has somewhere to type", () => {
 test("a plain terminal is never launched to hold a prompt for an agent", () => {
   assert.equal(ideaAgentId([agent("bash")]), "");
   assert.equal(ideaAgentId([]), "");
+});
+
+test("an agent that cannot be launched right now is not the one we pick", () => {
+  // Omnigent leads the catalogue and is refused while it installs, and again
+  // when the attendee's sign-in has gone stale. Codex is right there.
+  const installing = [agent("omnigent", { ready: false }), agent("codex")];
+  assert.equal(ideaAgentId(installing), "codex");
+
+  const stale = [agent("omnigent", { blocked: "sign-in is stale" }), agent("codex")];
+  assert.equal(ideaAgentId(stale), "codex");
+});
+
+test("with nothing launchable yet, the refusal comes from the right agent", () => {
+  // Better a "still installing" the attendee can wait out than a chip that
+  // silently does nothing.
+  const none = [agent("omnigent", { ready: false }), agent("claude", { ready: false })];
+  assert.equal(ideaAgentId(none), "claude");
 });
 
 test("an already open session is used rather than a second one opened", () => {
