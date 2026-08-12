@@ -1,17 +1,22 @@
 """Build Omnigent Auto · smart routing for the workshop control plane.
 
-Uses upstream ``ExternalRoutingClient`` against Databricks AI Gateway
-``routes:select``. Candidate models still come from the attendee host's live
-runner catalog; this module only supplies the server-side router client and
-App-SP auth for the routing API call.
+Omnigent 0.9.0 routes from two backends. The external client calls Databricks AI
+Gateway ``routes:select``; the built-in judge asks a small model instead. The
+external one is richer but only serves gateway-backed harnesses, so upstream
+prefers it and falls back to the judge — including when the workspace has no
+routing API at all, which is our case: labs answers ``routes:select`` with
+``ENDPOINT_NOT_FOUND`` / "not enabled for this account". 0.9.0 latches that
+after one request, so the external client costs one call per process and the
+judge serves every decision after it.
 
-Harness inference stays on the Workshop Terminal gateway-token path. Do not
-inject model-serving credentials here.
+That fallback is what lets Auto ship on by default. We still configure the
+external client, so an account that does have routing gets the better router
+without a code change.
 
-``WORKSHOP_SMART_ROUTING`` must be explicitly true. Labs (2026-08-11) returns
-``ENDPOINT_NOT_FOUND`` / "routing/v1/routes:select is not enabled for this
-account" — shipping Auto while that flag is off would show a dead picker
-option. Enable the account product first, then set the env on the App.
+Routing is the only inference the App itself performs, and it is pinned to
+``WORKSHOP_ROUTING_JUDGE_MODEL``. Harness inference stays on the Workshop
+Terminal gateway-token path; do not widen the App service principal beyond
+CAN_QUERY on the judge endpoint.
 """
 
 from __future__ import annotations
@@ -23,19 +28,23 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger("omnigent-workshop-app.smart_routing")
 
-_DEFAULT_ROUTER_NAME = "task_v0"
-_DEFAULT_MODEL_PREFIXES = ("databricks-",)
+_DEFAULT_JUDGE_MODEL = "databricks-gpt-5-6-luna"
 _ROUTING_PATH = "/ai-gateway/routing/v1"
 
 
 def smart_routing_enabled(env: dict[str, str] | None = None) -> bool:
     source = env if env is not None else os.environ
-    return source.get("WORKSHOP_SMART_ROUTING", "false").strip().lower() in {
+    return source.get("WORKSHOP_SMART_ROUTING", "true").strip().lower() in {
         "1",
         "true",
         "yes",
         "on",
     }
+
+
+def judge_model(env: dict[str, str] | None = None) -> str:
+    source = env if env is not None else os.environ
+    return source.get("WORKSHOP_ROUTING_JUDGE_MODEL", "").strip() or _DEFAULT_JUDGE_MODEL
 
 
 def routing_base_url(
@@ -63,6 +72,28 @@ def routing_base_url(
     return f"{parsed.scheme}://{parsed.netloc}{_ROUTING_PATH}"
 
 
+def workspace_host(
+    workspace_client: Any,
+    env: dict[str, str] | None = None,
+) -> str:
+    source = env if env is not None else os.environ
+    host = (source.get("DATABRICKS_HOST") or "").strip().rstrip("/")
+    if not host:
+        host = str(getattr(workspace_client.config, "host", "") or "").rstrip("/")
+    if not host:
+        raise RuntimeError("DATABRICKS_HOST (or WorkspaceClient config.host) is required")
+    return host if "://" in host else f"https://{host}"
+
+
+def _app_bearer(workspace_client: Any) -> str:
+    headers = workspace_client.config.authenticate()
+    authorization = str(headers.get("Authorization") or "")
+    token = authorization.removeprefix("Bearer ").strip()
+    if not token:
+        raise RuntimeError("WorkspaceClient authenticate() returned no bearer token")
+    return token
+
+
 class WorkspaceClientBearerAuth:
     """httpx Auth that mints a fresh App SP bearer on every request.
 
@@ -80,52 +111,114 @@ class WorkspaceClientBearerAuth:
 
         if not isinstance(request, httpx.Request):
             raise TypeError("expected httpx.Request")
-        headers = self._workspace_client.config.authenticate()
-        authorization = headers.get("Authorization")
-        if not authorization:
-            raise RuntimeError("WorkspaceClient authenticate() returned no Authorization")
-        request.headers["Authorization"] = authorization
+        request.headers["Authorization"] = f"Bearer {_app_bearer(self._workspace_client)}"
         yield request
 
 
-def build_routing_client(
+class AppServicePrincipalJudge:
+    """Upstream's judge, rebuilt per call so its credential cannot go stale.
+
+    ``_build_policy_llm_client`` binds ``{"base_url", "api_key"}`` once, which a
+    long-lived App outlives: ambient Apps OAuth expires in about an hour. The
+    client is a dataclass wrapping an HTTP client, so rebuilding it is cheap
+    next to the model call it exists to make.
+
+    Satisfies upstream's ``RoutingClient`` protocol, including the ``last_error``
+    that callers surface when a decision comes back empty.
+    """
+
+    def __init__(
+        self,
+        workspace_client: Any,
+        model: str,
+        *,
+        env: dict[str, str] | None = None,
+    ) -> None:
+        self._workspace_client = workspace_client
+        self._model = model
+        self._env = env
+        self.last_error: str | None = None
+
+    def _connection(self) -> dict[str, str]:
+        host = workspace_host(self._workspace_client, self._env)
+        return {
+            "base_url": f"{host}/serving-endpoints",
+            "api_key": _app_bearer(self._workspace_client),
+        }
+
+    async def route(
+        self,
+        message: str,
+        available_models: dict[str, list[str]],
+    ) -> Any | None:
+        from omnigent.runtime.policies.builder import _build_policy_llm_client
+        from omnigent.server.smart_routing import LLMRoutingClient
+        from omnigent.spec.types import LLMConfig
+
+        self.last_error = None
+        try:
+            policy_client = _build_policy_llm_client(
+                LLMConfig(model=self._model), self._connection()
+            )
+        except Exception as exc:  # noqa: BLE001 — fail open, the turn still runs
+            self.last_error = f"routing judge unavailable: {exc}"
+            logger.warning("Routing judge could not be built", exc_info=True)
+            return None
+        if policy_client is None:
+            self.last_error = "routing judge client could not be built"
+            return None
+
+        judge = LLMRoutingClient(policy_client)
+        result = await judge.route(message, available_models)
+        self.last_error = judge.last_error
+        return result
+
+
+def build_routing_settings(env: dict[str, str] | None = None) -> Any:
+    """Build ``RoutingSettings``, overriding only what the App configures.
+
+    Everything left unset keeps the upstream default, which is deliberate: the
+    router name (``task_v1``) and the model prefixes (``databricks-`` and
+    ``system.ai.``) are facts about the gateway contract, not workshop policy.
+    """
+    from omnigent.server.smart_routing import RoutingSettings
+
+    source = env if env is not None else os.environ
+    overrides: dict[str, Any] = {}
+
+    router_name = source.get("WORKSHOP_ROUTING_ROUTER_NAME", "").strip()
+    if router_name:
+        overrides["router_name"] = router_name
+
+    prefixes_raw = source.get("WORKSHOP_ROUTING_MODEL_PREFIXES", "").strip()
+    if prefixes_raw:
+        prefixes = tuple(part.strip() for part in prefixes_raw.split(",") if part.strip())
+        if prefixes:
+            overrides["model_prefixes"] = prefixes
+
+    return RoutingSettings(**overrides)
+
+
+def build_external_routing_client(
     workspace_client: Any,
     *,
+    settings: Any,
     env: dict[str, str] | None = None,
 ) -> Any | None:
-    """Return an ``ExternalRoutingClient`` or ``None`` when disabled / misconfigured."""
-    if not smart_routing_enabled(env):
-        logger.info(
-            "Smart routing disabled (WORKSHOP_SMART_ROUTING is not true); "
-            "Auto option stays hidden"
-        )
-        return None
-
+    """Return an ``ExternalRoutingClient``, or ``None`` when it cannot be built."""
     try:
         import httpx
         from omnigent.server.smart_routing import ExternalRoutingClient
     except Exception:  # noqa: BLE001 — fail-soft at App startup
-        logger.warning("Smart routing imports failed; leaving routing_client=None", exc_info=True)
+        logger.warning("External routing imports failed", exc_info=True)
         return None
 
-    source = env if env is not None else os.environ
     try:
-        base_url = routing_base_url(workspace_client=workspace_client, env=source)
+        base_url = routing_base_url(workspace_client=workspace_client, env=env)
     except Exception:  # noqa: BLE001
-        logger.warning("Smart routing base URL unresolved; leaving routing_client=None", exc_info=True)
+        logger.warning("External routing base URL unresolved", exc_info=True)
         return None
 
-    router_name = (
-        source.get("WORKSHOP_ROUTING_ROUTER_NAME", "").strip() or _DEFAULT_ROUTER_NAME
-    )
-    prefixes_raw = source.get("WORKSHOP_ROUTING_MODEL_PREFIXES", "").strip()
-    if prefixes_raw:
-        model_prefixes = [part.strip() for part in prefixes_raw.split(",") if part.strip()]
-    else:
-        model_prefixes = list(_DEFAULT_MODEL_PREFIXES)
-
-    # httpx.Auth protocol: subclass is cleaner but duck-typing works if we
-    # register as httpx.Auth. Prefer an explicit subclass instance.
     class _AppsSpAuth(httpx.Auth):
         def __init__(self, client: Any) -> None:
             self._inner = WorkspaceClientBearerAuth(client)
@@ -136,21 +229,46 @@ def build_routing_client(
     try:
         client = ExternalRoutingClient(
             base_url=base_url,
-            router_name=router_name,
+            router_name=settings.router_name,
             auth=_AppsSpAuth(workspace_client),
-            model_prefixes=model_prefixes,
+            model_prefixes=list(settings.model_prefixes),
+            selection_model=settings.selection_model,
+            menus=settings.menus,
+            servable_aliases=settings.servable_aliases,
         )
     except Exception:  # noqa: BLE001
         logger.warning("ExternalRoutingClient construction failed", exc_info=True)
         return None
 
     logger.info(
-        "Smart routing enabled: base_url=%s router_name=%s model_prefixes=%s",
+        "External router configured: base_url=%s router_name=%s",
         base_url,
-        router_name,
-        model_prefixes,
+        settings.router_name,
     )
     return client
+
+
+def build_judge_routing_client(
+    workspace_client: Any,
+    *,
+    env: dict[str, str] | None = None,
+) -> Any | None:
+    """Return the built-in judge, or ``None`` when it cannot be built."""
+    try:
+        from omnigent.server.smart_routing import LLMRoutingClient  # noqa: F401
+    except Exception:  # noqa: BLE001
+        logger.warning("Routing judge imports failed", exc_info=True)
+        return None
+
+    model = judge_model(env)
+    try:
+        workspace_host(workspace_client, env)
+    except Exception:  # noqa: BLE001
+        logger.warning("Routing judge host unresolved", exc_info=True)
+        return None
+
+    logger.info("Routing judge configured: model=%s", model)
+    return AppServicePrincipalJudge(workspace_client, model, env=env)
 
 
 def build_runtime_caps(
@@ -158,10 +276,41 @@ def build_runtime_caps(
     *,
     env: dict[str, str] | None = None,
 ) -> Any:
-    """Build ``RuntimeCaps``, attaching a routing client when enabled."""
+    """Build ``RuntimeCaps``, attaching both routing backends when enabled."""
     from omnigent.runtime.caps import RuntimeCaps
 
-    routing_client = build_routing_client(workspace_client, env=env)
-    if routing_client is None:
+    if not smart_routing_enabled(env):
+        logger.info(
+            "Smart routing disabled (WORKSHOP_SMART_ROUTING is not true); "
+            "Auto option stays hidden"
+        )
         return RuntimeCaps()
-    return RuntimeCaps(routing_client=routing_client)
+
+    try:
+        from omnigent.server.routing_backend import RoutingBackends
+    except Exception:  # noqa: BLE001
+        logger.warning("Routing backend imports failed; routing stays off", exc_info=True)
+        return RuntimeCaps()
+
+    try:
+        settings = build_routing_settings(env)
+    except Exception:  # noqa: BLE001
+        logger.warning("Routing settings unresolved; routing stays off", exc_info=True)
+        return RuntimeCaps()
+
+    backends = RoutingBackends(
+        external=build_external_routing_client(
+            workspace_client, settings=settings, env=env
+        ),
+        local=build_judge_routing_client(workspace_client, env=env),
+    )
+    primary = backends.any()
+    if primary is None:
+        logger.warning("No routing backend could be built; Auto stays hidden")
+        return RuntimeCaps()
+
+    return RuntimeCaps(
+        routing_client=primary,
+        routing_backends=backends,
+        routing_settings=settings,
+    )

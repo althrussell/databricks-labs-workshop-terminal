@@ -8,14 +8,19 @@ env:
   - name: OMNIGENT_AUTH_PROVIDER
     value: header
   - name: OMNIGENT_BUILD_VERSION
-    value: "0.8.2"
+    value: "0.9.0"
   - name: OMNIGENT_BUILD_SHA
-    value: "72746f177eec0266268ebf8b940cef5bd8087ecf"
-  # Auto · smart routing (AI Gateway routes:select). Default false: labs returns
-  # ENDPOINT_NOT_FOUND until the account enables routing/v1. Set true only after
-  # that product is on — otherwise the UI shows a dead Auto option.
+    value: "cc4720a79fbdf9ccee56724bf571e7d48e1d9ac2"
+  # Auto · smart routing. Two backends: the AI Gateway routes:select router when
+  # the account has it, and the built-in judge otherwise. Labs has no routing
+  # API, so the external client latches off after one call and the judge serves
+  # every decision — which is why this can now default true.
   - name: WORKSHOP_SMART_ROUTING
-    value: "false"
+    value: "true"
+  # The judge model. Must be a serving endpoint the App service principal holds
+  # CAN_QUERY on; it is the only inference the App itself performs.
+  - name: WORKSHOP_ROUTING_JUDGE_MODEL
+    value: "databricks-gpt-5-6-luna"
   # Optional overrides (empty = built-in defaults in smart_routing.py).
   - name: WORKSHOP_ROUTING_BASE_URL
     value: ""

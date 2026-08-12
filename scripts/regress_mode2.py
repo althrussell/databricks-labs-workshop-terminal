@@ -112,8 +112,8 @@ async def main() -> int:
         steps = (await c.get(f"{base}/api/setup-status")).json().get("steps", {})
         if args.agent == "omnigent":
             omni = steps.get("omnigent", {})
-            r.add("omnigent 0.8.2 installed",
-                  omni.get("status") == "complete" and omni.get("actual_version") == "0.8.2",
+            r.add("omnigent 0.9.0 installed",
+                  omni.get("status") == "complete" and omni.get("actual_version") == "0.9.0",
                   f"status={omni.get('status')} version={omni.get('actual_version')}")
 
         resp = await c.post(f"{base}/api/sessions", json={"agent_id": args.agent})

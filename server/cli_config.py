@@ -73,7 +73,8 @@ def gateway_host() -> str:
 
 
 # Mirrors ``omnigent/pi_native_credentials.py::_is_databricks_ai_gateway_url``
-# (verified against the deployed 0.8.2 wheel). Omnigent routes a base URL as the
+# (verified against the deployed 0.9.0 wheel, where it moved to
+# ``omnigent/databricks_ai_gateway.py``). Omnigent routes a base URL as the
 # AI Gateway only when it is https, its hostname ends in a trusted
 # Databricks-owned suffix, AND either the hostname carries an ``ai-gateway`` DNS
 # label or the path starts with ``/ai-gateway/``. All three conditions are
@@ -105,6 +106,28 @@ def _is_omnigent_gateway_form(url: str) -> bool:
     # NOT satisfy this, which is why the check below evaluates the derived base
     # URL rather than the configured root.
     return (parsed.path or "").startswith("/" + _AI_GATEWAY_LABEL + "/")
+
+
+def beta_negotiation_env(gateway_backed: bool) -> dict:
+    """How Claude Code should settle its ``anthropic-beta`` set.
+
+    On the AI Gateway, Claude Code negotiates the beta set instead of sending
+    every flag blindly, so the betas can stay on. Off it, we keep the older
+    ``CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS`` workaround: the
+    ``/serving-endpoints/anthropic`` fallback is a different surface that has
+    not been shown to accept those flags, and a 400 "invalid beta flag" breaks
+    the session outright — a worse failure than the one we are avoiding.
+
+    What we are avoiding is not cosmetic: disabling experimental betas also
+    disables MCP tool search, which rides on ``advanced-tool-use``. Without it
+    every MCP tool schema loads eagerly and inflates the context window.
+    Omnigent 0.9.0 launches its own Claude terminals with
+    ``CLAUDE_CODE_USE_GATEWAY=1`` for this reason, and re-adds the disable flag
+    whenever it does not see that variable.
+    """
+    if gateway_backed:
+        return {"CLAUDE_CODE_USE_GATEWAY": "1"}
+    return {"CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1"}
 
 
 def gateway_status() -> dict:
@@ -219,7 +242,7 @@ def configure_claude(
         "ANTHROPIC_DEFAULT_SONNET_MODEL": models.resolve("standard", available),
         "ANTHROPIC_DEFAULT_HAIKU_MODEL": models.resolve("fast", available),
         "ANTHROPIC_CUSTOM_HEADERS": "x-databricks-use-coding-agent-mode: true",
-        "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
+        **beta_negotiation_env(bool(gateway)),
         # The CLI install is shared across attendees — never self-update.
         "DISABLE_AUTOUPDATER": "1",
         # Re-run apiKeyHelper on this cadence (ms) so a live process always picks

@@ -237,9 +237,9 @@ def test_omnigent_lock_rejects_an_unpinned_or_unhashed_requirement(tmp_path):
     from server.bootstrap.artifacts import _fully_pinned_hashed_lock
 
     unpinned = tmp_path / "unpinned.lock"
-    unpinned.write_text("omnigent==0.8.2\ntransitive-package\n")
+    unpinned.write_text("omnigent==0.9.0\ntransitive-package\n")
     unhashed = tmp_path / "unhashed.lock"
-    unhashed.write_text("omnigent>=0.8.2 --hash=sha256:" + "d" * 64 + "\n")
+    unhashed.write_text("omnigent>=0.9.0 --hash=sha256:" + "d" * 64 + "\n")
 
     assert _fully_pinned_hashed_lock(str(unpinned)) is False
     assert _fully_pinned_hashed_lock(str(unhashed)) is False

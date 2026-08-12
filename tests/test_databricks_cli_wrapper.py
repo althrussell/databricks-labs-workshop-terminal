@@ -83,10 +83,11 @@ def test_a_claude_native_pane_still_resolves_the_workshop_config(
 ):
     """Upstream strips ``DATABRICKS_CONFIG_PROFILE`` from native Claude panes.
 
-    Measured in the deployed 0.8.2 wheel: ``runner/native/orchestration.py``
+    Measured in the deployed 0.9.0 wheel: ``runner/native/orchestration.py``
     launches the Claude terminal with ``env_unset = ["DATABRICKS_CONFIG_PROFILE",
-    "CLAUDECODE"]``, and ``inner/terminal.py`` applies that strip after merging
-    the spec env, so the variable is gone unconditionally. A wrapper that keyed
+    "CLAUDECODE"]`` (plus ``ANTHROPIC_API_KEY`` under an ``apiKeyHelper``, which
+    is our configuration), and ``inner/terminal.py`` applies that strip after
+    merging the spec env, so the variable is gone unconditionally. A wrapper that keyed
     the redirect on the profile instead of the config file would therefore work
     everywhere except the one surface most attendees actually use.
     """
