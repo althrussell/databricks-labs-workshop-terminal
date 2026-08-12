@@ -358,6 +358,8 @@ take effect on restart with **no rebuild**. Set these per instance:
 | `DISCOVERY_ENABLED` | `false` *(optional, within capture)* | drop the conversational discovery tier while keeping the derived behavioural signal |
 | `WORKSHOP_TOOLCHAIN_MIRROR_PATH` | *(optional)* `/Volumes/<catalog>/<schema>/<volume>` | serve the pinned toolchain from a staged UC Volume instead of the public internet (§15). Empty = download from source, which needs no volume and is the default |
 | `WORKSHOP_TOOLCHAIN_MIRROR_STRICT` | `false` | fail an artifact the mirror cannot serve instead of falling back to the internet. Air-gapped events only |
+| `WORKSHOP_ONBOARDING_WIZARD` | `true` *(CT fleet default; per-run opt-out)* | the opening wizard that asks what the attendee is here to build (§16). `false` lands attendees on Home with no modal, for a format that walks the room through the first build together |
+| `WORKSHOP_AGENTS` | empty *(all)*, or a subset of `omnigent,claude,codex` | the coding agents attendees may launch (§16). The plain Terminal is always offered and is never listed here. Deselecting Omnigent also skips its install, so a run that will not use it does not pay for the harness on cold boot |
 
 Model defaults can vary by event or attendee because CT applies overrides to
 each app instance independently. For example, set
@@ -905,6 +907,50 @@ misses on a volume nobody re-staged — no stale-file case, no need to coordinat
 WT releases with a re-stage — and a corrupt or tampered blob costs a fallback
 rather than a bad install. Full detail in
 [`artifact-manifest.md`](./artifact-manifest.md#toolchain-mirror).
+
+---
+
+## 16. What the operator chooses when the workshop is created
+
+Two settings describe the room rather than the infrastructure, so they are asked
+on CT's create form and arrive as `env_overrides` on the terminal app. Both are
+read at runtime, so a change plus a restart is enough — no rebuild.
+
+| Setting | Env | Default |
+|---|---|---|
+| Show the onboarding wizard | `WORKSHOP_ONBOARDING_WIZARD` | `true` |
+| Coding agents attendees can launch | `WORKSHOP_AGENTS` | empty (all) |
+
+**The wizard.** On, an attendee's first arrival asks what they are here to build
+and hands the answer to their agent as a first prompt. Off, they land on Home
+with no modal and no way back into one — the right shape for a format where the
+room is walked through the first build together, and the wrong one for a
+self-paced event, which is why the default is on.
+
+This is deliberately independent of `WORKSHOP_INSIGHT_CAPTURE`. Capture decides
+whether the answer reaches CT; the wizard decides whether the question is asked.
+A run that records nothing still wants the attendee to start with something
+running.
+
+**The agents.** A comma-separated subset of `omnigent`, `claude`, `codex`.
+Empty means all of them, because an instance nobody configured has to offer a
+full launcher rather than an empty one. Unknown ids are carried, not dropped, so
+a CT that has learned a new agent id is not silently narrowed by an older
+terminal.
+
+The plain **Terminal** (bash) is never listed. It is the fallback the runbook
+sends a room to when an agent plane fails, so it is not an operator's to remove.
+
+Deselecting Omnigent also skips the Omnigent, tmux and pi installs and writes no
+per-attendee Omnigent config — a workshop that will not launch the harness
+should not pay for it on cold boot. It composes with `OMNIGENT_ENABLED`: either
+one being off is enough to withdraw the card.
+
+Both settings are per-run overrides on top of CT's fleet defaults
+(`CONTROL_TOWER_WORKSHOP_ONBOARDING_WIZARD`, `CONTROL_TOWER_WORKSHOP_AGENTS`),
+and CT writes them into the deployment env *and* the uploaded `app.yaml`, so an
+operator clicking Deploy in the Apps console cannot silently restore a wizard or
+an agent the run opted out of.
 
 ---
 

@@ -36,6 +36,20 @@ _BASH = {
 }
 
 
+def offered_agent_ids() -> list[str] | None:
+    """The operator's agent selection, or ``None`` when they made none.
+
+    Separate from ``config.workshop_agents`` so the "bash is not a choice" rule
+    lives with the catalog rather than with the env parsing: bash is the escape
+    hatch the runbook sends people to, and an operator picking coding agents is
+    not being asked whether attendees may open a shell.
+    """
+    selected = config.workshop_agents()
+    if selected is None:
+        return None
+    return [*selected, "bash"]
+
+
 def load_catalog() -> list[dict]:
     path = os.environ.get("AGENT_CATALOG_PATH", "").strip() or os.path.normpath(_DEFAULT_CATALOG)
     agents: list[dict] = []
@@ -46,6 +60,12 @@ def load_catalog() -> list[dict]:
         logger.error("agent catalog unreadable at %s: %s — bash only", path, e)
     if not any(a.get("id") == "bash" for a in agents):
         agents.append(_BASH)
+    # The workshop's own selection, made when the run was created. Applied
+    # before the Omnigent gate below so the two compose: an operator who picked
+    # Omnigent still loses it on an instance where the feature is off.
+    offered = offered_agent_ids()
+    if offered is not None:
+        agents = [a for a in agents if a.get("id") in offered]
     # Omnigent is feature-flagged off by default (not on public PyPI yet). When
     # disabled, drop it everywhere at once — no card, no launch — regardless of
     # which catalog source (default or AGENT_CATALOG_PATH) declared it.

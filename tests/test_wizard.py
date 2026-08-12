@@ -325,6 +325,40 @@ def test_without_a_demo_catalog_the_whole_catalogue_is_offered(monkeypatch):
     assert any(i.demo_tables for i in ideas)
 
 
+def test_an_attendee_keeps_the_grid_they_were_given(user, seeded):
+    """The grid is asked for again on every reconnect, second tab and pressed
+    filter chip. An unseeded selector answers differently each time, so six new
+    cards appear under someone halfway through reading the old ones — and, once,
+    wiped the sentence they were typing beside them."""
+    first = [i["id"] for i in wizard.state(user)["ideas"]]
+    again = [i["id"] for i in wizard.state(user)["ideas"]]
+
+    assert first == again
+
+
+def test_two_attendees_do_not_get_the_same_six(seeded):
+    """The reason the shuffle exists: a room that all sees the same grid in the
+    same order builds the same thing. Stability is per attendee, not global."""
+    grids = {
+        email: tuple(
+            i["id"]
+            for i in wizard.state(
+                types.SimpleNamespace(email=email, home="/nonexistent")
+            )["ideas"]
+        )
+        for email in (f"labuser{n}@example.com" for n in range(12))
+    }
+
+    assert len(set(grids.values())) > 1, grids
+
+
+def test_the_guided_grid_never_offers_a_game(seeded):
+    """A game is a legitimate thing to build here — `fun` stays a session intent
+    a discovery record can carry — but it is not a path we steer someone down.
+    Somebody who clicked "show me ideas" is asking what this platform is for."""
+    assert not [i for i in content.content_service.ideas() if i.shape == "fun"]
+
+
 def test_the_shipped_pack_covers_every_industry_it_names(seeded):
     """A pack that names an industry with one idea in one shape produces a grid
     padded out with generics, which reads as "nothing here for you"."""
@@ -417,6 +451,55 @@ def test_the_wizard_endpoint_round_trips(client):
     assert saved["starter_prompt"]
 
     assert client.get("/api/wizard", headers=ALICE).json()["should_show"] is False
+
+
+# -- the operator's switch --------------------------------------------------
+
+def test_a_workshop_can_be_created_without_the_wizard(user, monkeypatch):
+    """Some formats walk the whole room through the first build together, and a
+    modal asking what each person intends is noise in front of that."""
+    monkeypatch.setattr(wizard.config, "onboarding_wizard_enabled", lambda: False)
+    state = wizard.state(user)
+
+    assert state["enabled"] is False
+    assert state["should_show"] is False
+
+
+def test_the_switch_is_the_servers_answer_not_the_browsers(client, monkeypatch):
+    """Answered where a reload, a second tab and a reconnect all have to agree —
+    the same reason `seen` lives on the server."""
+    from server import config as server_config
+    from tests.conftest import BOB
+
+    monkeypatch.setattr(server_config, "onboarding_wizard_enabled", lambda: False)
+
+    assert client.get("/api/wizard", headers=BOB).json()["should_show"] is False
+    assert (
+        client.get("/api/config", headers=BOB).json()["onboarding_wizard"]["enabled"]
+        is False
+    )
+
+
+def test_the_wizard_is_offered_by_default(client):
+    """An instance nobody configured still avoids dropping someone at a blinking
+    cursor with no idea what to type."""
+    from tests.conftest import BOB
+
+    assert (
+        client.get("/api/config", headers=BOB).json()["onboarding_wizard"]["enabled"]
+        is True
+    )
+
+
+def test_capture_being_off_does_not_withdraw_the_wizard(user, monkeypatch):
+    """Capture decides whether the answer leaves the instance; the wizard decides
+    whether the question is asked. A run that records nothing still wants the
+    attendee to start with something running."""
+    monkeypatch.setattr(wizard.config, "discovery_enabled", lambda: False)
+    state = wizard.state(user)
+
+    assert state["capture_enabled"] is False
+    assert state["enabled"] is True
 
 
 def test_one_attendees_brief_is_not_another_attendees(client):

@@ -228,7 +228,9 @@ def select_ideas(
         return []
 
     # Shuffle before sorting so equal-scoring cards vary between attendees rather
-    # than the whole room seeing the same six in the same order.
+    # than the whole room seeing the same six in the same order. Callers that
+    # want the same attendee to keep seeing the same six pass a seeded rng — see
+    # ``state``.
     rng.shuffle(pool)
     pool.sort(key=lambda i: _score(i, industry, intent), reverse=True)
 
@@ -397,17 +399,33 @@ def state(user: User, industry: str = "") -> dict[str, Any]:
     ``industry`` is the filter chip the attendee just pressed, which is not yet
     in the brief — they are still choosing what to build, and the whole point of
     the chip is to see the grid change before committing to anything.
+
+    The shuffle is seeded on the attendee's identity, so the grid is theirs and
+    stays theirs. An unseeded selector answers the same question differently
+    every time it is asked, which turns a reconnect, a second tab, or a pressed
+    filter chip into six new cards under someone who was halfway through reading
+    the old ones. Seeding keeps the property the shuffle exists for — the room
+    does not all see the same six — without that cost.
     """
     brief = read_brief(user)
     industry = _clean_text(industry)[:64] or brief.industry or default_industry()
+    enabled = config.onboarding_wizard_enabled()
     return {
         "brief": brief.to_json(),
-        "should_show": not brief.seen,
+        "enabled": enabled,
+        # A run whose operator switched the wizard off asks nobody anything.
+        # Answered on the server rather than in the browser so the decision
+        # holds for a reload, a second tab and any future caller of this
+        # endpoint at once.
+        "should_show": enabled and not brief.seen,
         "default_industry": default_industry(),
         "industries": demo_data.industries(),
         "demo_data_available": bool(demo_data.inventory()),
         "intents": list(INTENTS),
-        "ideas": [i.model_dump() for i in select_ideas(industry)],
+        "ideas": [
+            i.model_dump()
+            for i in select_ideas(industry, rng=random.Random(user.email))
+        ],
         "capture_enabled": config.discovery_enabled(),
     }
 

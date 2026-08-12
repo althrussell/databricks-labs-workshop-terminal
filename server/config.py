@@ -189,6 +189,44 @@ def agents_enabled_default() -> bool:
     return _env("AGENTS_ENABLED", "true").lower() not in ("false", "0", "no", "off")
 
 
+def onboarding_wizard_enabled() -> bool:
+    """Whether the opening wizard is offered at all (``WORKSHOP_ONBOARDING_WIZARD``).
+
+    On by default: the wizard exists because the worst moment in this product is
+    a working terminal and no idea what to type, and an instance that nobody
+    configured should still avoid that. An operator running a format where the
+    room is walked through the first build together turns it off, and attendees
+    land on Home with no modal.
+
+    Deliberately independent of ``WORKSHOP_INSIGHT_CAPTURE``. Capture decides
+    whether answers leave the instance; this decides whether the question is
+    asked. Tying them would mean a run that records nothing also loses the
+    starter prompt, which is the half of the wizard that serves the attendee
+    rather than the account team.
+    """
+    return _env_bool("WORKSHOP_ONBOARDING_WIZARD", True)
+
+
+def workshop_agents() -> list[str] | None:
+    """The coding agents this deployment offers, or ``None`` for all of them.
+
+    ``WORKSHOP_AGENTS`` is the operator's pick at workshop-create time
+    (``omnigent,claude,codex``); empty means unset rather than "none", because a
+    deployment nobody configured has to offer the full catalogue rather than an
+    empty launcher.
+
+    Unknown ids are kept rather than dropped: Control Tower and this app ship
+    separately, so a CT that has learned a new agent id must not have its
+    selection silently narrowed by an older terminal. An id nothing in the
+    catalog matches simply selects nothing.
+    """
+    raw = _env("WORKSHOP_AGENTS").strip()
+    if not raw:
+        return None
+    ids = [part.strip().lower() for part in raw.split(",")]
+    return [i for i in ids if i]
+
+
 def max_agent_launches_per_user() -> int:
     """Per-attendee lifetime cap on coding-agent launches; 0 = unlimited (P1-16).
 
@@ -209,6 +247,20 @@ def omnigent_enabled() -> bool:
     reach out, or to fall back to bare claude/codex only).
     """
     return _env("OMNIGENT_ENABLED", "true").lower() not in ("false", "0", "no", "off")
+
+
+def omnigent_offered() -> bool:
+    """Whether this deployment both supports Omnigent and was asked for it.
+
+    Two independent decisions land on the same answer: ``OMNIGENT_ENABLED`` is
+    the platform saying the harness can run here at all, ``WORKSHOP_AGENTS`` is
+    the operator saying attendees should see it. The install path reads this
+    rather than ``omnigent_enabled`` alone, so a workshop created without
+    Omnigent does not spend its cold boot fetching a harness and tmux that
+    nothing will ever launch.
+    """
+    selected = workshop_agents()
+    return omnigent_enabled() and (selected is None or "omnigent" in selected)
 
 
 def normalize_omnigent_app_url(

@@ -84,6 +84,27 @@ export default function App() {
     api.agents().then((data) => setAgents(data.agents)).catch(() => undefined);
   }, []);
 
+  /* Stable across renders, because the wizard treats a changed prop identity as
+   * a reason to re-run its mount effect — and Home re-renders every few seconds
+   * while it polls agent install progress. An inline arrow here used to wipe
+   * whatever the attendee was typing into the wizard. */
+  // The operator's create-time choice. Unknown while config is still loading,
+  // which reads as "on": the wizard's own `should_show` is server-gated too, so
+  // an optimistic answer here cannot open a modal a disabled run should not have.
+  const wizardAvailable = config?.onboarding_wizard.enabled !== false;
+
+  const openWizard = useCallback(() => {
+    if (!wizardAvailable) return;
+    setWizardOpen(true);
+  }, [wizardAvailable]);
+
+  const closeWizard = useCallback(() => {
+    setWizardOpen(false);
+    // Pick up whatever the wizard saved so Home's recap line is right
+    // immediately, rather than after the next reload.
+    api.wizard().then((s) => setBrief(s.brief)).catch(() => undefined);
+  }, []);
+
   const refreshIdentity = useCallback(async () => {
     const cfg = await api.config();
     setConfig(cfg);
@@ -155,7 +176,9 @@ export default function App() {
       .wizard()
       .then((state) => {
         setBrief(state.brief);
-        if (state.should_show && sessions.length === 0) setWizardOpen(true);
+        if (state.enabled && state.should_show && sessions.length === 0) {
+          setWizardOpen(true);
+        }
       })
       .catch(() => undefined);
   }, [sessionsLoaded, sessions.length]);
@@ -645,9 +668,10 @@ export default function App() {
                   hasSessions={sessions.length > 0}
                   launching={launching}
                   brief={brief}
+                  canEditBrief={wizardAvailable}
                   onLaunch={openOrLaunch}
                   onIdea={ideaToSession}
-                  onEditBrief={() => setWizardOpen(true)}
+                  onEditBrief={openWizard}
                 />
               )}
               {sessions.map((session) => (
@@ -677,12 +701,7 @@ export default function App() {
           agents={agents}
           launching={launching}
           onLaunch={launchFromWizard}
-          onClose={() => {
-            setWizardOpen(false);
-            // Pick up whatever the wizard saved so Home's recap line is right
-            // immediately, rather than after the next reload.
-            api.wizard().then((s) => setBrief(s.brief)).catch(() => undefined);
-          }}
+          onClose={closeWizard}
         />
       )}
 
