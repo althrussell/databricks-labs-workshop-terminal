@@ -1,12 +1,12 @@
 """Dedicated Omnigent control plane for Databricks Apps.
 
 This is a thin adaptation of upstream ``deploy/databricks/src/app.py`` from
-Omnigent v0.8.2. It serves the published upstream UI and durable stores only;
+Omnigent v0.9.0. It serves the published upstream UI and durable stores only;
 native harnesses, PTYs, and working directories belong on an external host.
 
-Optional Auto · smart routing is wired through ``smart_routing.build_runtime_caps``
-when ``WORKSHOP_SMART_ROUTING=true`` and the account has enabled AI Gateway
-``routes:select``. Harness model calls still run on the attendee host with the
+Auto · smart routing is wired through ``smart_routing.build_runtime_caps`` when
+``WORKSHOP_SMART_ROUTING=true``. Routing decisions are the only inference the
+App itself performs; harness model calls still run on the attendee host with the
 Workshop Terminal gateway token — not the App service principal.
 """
 
@@ -29,7 +29,7 @@ logging.basicConfig(level=logging.INFO, stream=sys.stderr, force=True)
 logger = logging.getLogger("omnigent-workshop-app")
 
 if sys.version_info < (3, 12):
-    raise RuntimeError("Omnigent 0.8.2 requires Python 3.12 or newer")
+    raise RuntimeError("Omnigent 0.9.0 requires Python 3.12 or newer")
 
 # Fallback lifetime when the credential response carries no usable expiry.
 _TOKEN_TTL_SECONDS = 50 * 60
@@ -91,6 +91,9 @@ try:
         SqlAlchemyPermissionStore,
     )
     from omnigent.stores.policy_store.sqlalchemy_store import SqlAlchemyPolicyStore
+    from omnigent.stores.project_store.sqlalchemy_store import (
+        SqlAlchemyProjectStore,
+    )
     from omnigent.stores.scheduled_task_store.sqlalchemy_store import (
         SqlAlchemyScheduledTaskStore,
     )
@@ -161,6 +164,9 @@ try:
     comment_store = SqlAlchemyCommentStore(DB_URI)
     permission_store = SqlAlchemyPermissionStore(DB_URI)
     policy_store = SqlAlchemyPolicyStore(DB_URI)
+    # New in 0.9.0's upstream wrapper. Without it create_app leaves the
+    # /v1/projects endpoints unmounted while the bundled SPA still offers them.
+    project_store = SqlAlchemyProjectStore(DB_URI)
     scheduled_task_store = SqlAlchemyScheduledTaskStore(DB_URI)
     agent_cache = AgentCache(artifact_store=artifact_store, cache_dir=CACHE_DIR)
 
@@ -196,6 +202,7 @@ try:
         comment_store=comment_store,
         permission_store=permission_store,
         policy_store=policy_store,
+        project_store=project_store,
         host_store=host_store,
         scheduled_task_store=scheduled_task_store,
         auth_provider=auth_provider,

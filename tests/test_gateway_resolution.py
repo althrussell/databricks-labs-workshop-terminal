@@ -167,3 +167,26 @@ def test_plain_http_is_rejected():
     assert not cli_config._is_omnigent_gateway_form(
         "http://123.ai-gateway.cloud.databricks.com/anthropic"
     )
+
+
+def test_beta_negotiation_is_only_enabled_on_the_gateway():
+    """Claude Code's beta set is settled differently on and off the gateway.
+
+    On the gateway it negotiates, so the betas stay on and MCP tool search
+    (which rides on ``advanced-tool-use``) keeps loading schemas on demand. Off
+    it, the ``/serving-endpoints/anthropic`` fallback has not been shown to
+    accept those flags, and a 400 "invalid beta flag" would break the session —
+    so the older disable workaround stays in place there.
+    """
+    assert cli_config.beta_negotiation_env(True) == {"CLAUDE_CODE_USE_GATEWAY": "1"}
+    assert cli_config.beta_negotiation_env(False) == {
+        "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1"
+    }
+
+
+def test_the_two_beta_flags_are_never_sent_together():
+    """Omnigent 0.9.0 reads CLAUDE_CODE_USE_GATEWAY to decide whether to re-add
+    the disable flag. Sending both would be contradictory on either path."""
+    for gateway_backed in (True, False):
+        env = cli_config.beta_negotiation_env(gateway_backed)
+        assert len(env) == 1

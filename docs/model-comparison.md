@@ -96,14 +96,15 @@ this that goes stale fastest.
 ## Omnigent Auto (optional second path)
 
 Workshop Polly economy/balanced/frontier agents were removed. Stock `polly`
-remains the default Omnigent agent. When the account enables AI Gateway
-`routes:select` and the Omnigent App sets `WORKSHOP_SMART_ROUTING=true`, the
-new-chat picker offers **Auto · smart routing**, which picks harness + model
-from the live host catalog. That path is independent of the Codex comparison
-profiles above; both can coexist.
+remains the default Omnigent agent. The new-chat picker offers **Auto · smart
+routing**, which picks harness + model from the live host catalog. That path is
+independent of the Codex comparison profiles above; both can coexist.
 
-Until routing is account-enabled, leave smart routing off and use the Codex
-profiles for cross-vendor comparison.
+Auto is on by default from Omnigent 0.9.0. Where the account has AI Gateway
+`routes:select` the external router decides; everywhere else — labs included —
+the built-in judge does, calling the model pinned by
+`WORKSHOP_ROUTING_JUDGE_MODEL`. Use the Codex profiles when you want a fixed
+cross-vendor comparison rather than a per-task pick.
 
 ## Run it before the event, not during
 

@@ -99,6 +99,12 @@ def build_host_launch(
     # traceback; at the default level the interesting records are filtered out
     # before they are written, which is how an incident became archaeology.
     env.setdefault("OMNIGENT_LOG_LEVEL", config.omnigent_host_log_level())
+    # Omnigent's runner reads this from its own process env (not Claude's
+    # settings.json) and re-adds CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1 when
+    # it is unset, which turns off MCP tool search and loads every tool schema
+    # eagerly. Gated on a resolved gateway for the same reason as the harness
+    # settings: the serving-endpoints fallback is not the negotiating surface.
+    env.update(cli_config.beta_negotiation_env(bool(cli_config.gateway_host())))
     identity = stable_host_identity(user, server_url)
     env["OMNIGENT_HOST_ID"] = identity.host_id
     env["OMNIGENT_HOST_NAME"] = identity.name

@@ -76,7 +76,7 @@ path lines up without modification:
   version against the pinned protocol version. It never probes the remote, so
   it does not care which server the host registers to.
 
-Verified against the labs workspace with Omnigent 0.8.2, using a token mirrored
+Verified against the labs workspace with Omnigent 0.9.0, using a token mirrored
 the same way `obo.py` writes one. The host connected and the server agreed:
 
 ```

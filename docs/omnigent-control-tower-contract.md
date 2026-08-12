@@ -9,17 +9,19 @@ link.
 ## Confirmed upstream behavior
 
 A read-only spike used `gh` against `omnigent-ai/omnigent` main at
-`d8c7167b162f681bd8e7aef5274777387d8939cb`. The following are source-confirmed:
+`a8f41cb997bf8e17b2e96f5967479521f9bf2a52`. The following are source-confirmed:
 
-- The published `omnigent==0.8.2` wheel contains the upstream React UI. Its
-  release commit is `72746f177eec0266268ebf8b940cef5bd8087ecf`; the wheel SHA-256
+- The published `omnigent==0.9.0` wheel contains the upstream React UI. Its
+  release commit is `cc4720a79fbdf9ccee56724bf571e7d48e1d9ac2`; the wheel SHA-256
   is recorded in `deploy/omnigent-app/upstream-lock.json`.
-- Omnigent 0.8.2 requires Python `>=3.12,<3.13`. The App source intentionally
+- Omnigent 0.9.0 requires Python `>=3.12,<3.13`. The App source intentionally
   omits `requirements.txt` so Databricks Apps selects uv mode from
   `pyproject.toml` and `uv.lock` instead of its Python 3.11 pip mode.
-- Upstream's Databricks wrapper is byte-identical between v0.8.2 and v0.8.2, so
-  this App's adaptation carries no structural change across the upgrade. Main has
-  since diverged from v0.8.2 by adding a SQLAlchemy project store; we track the
+- Upstream's Databricks wrapper changed in exactly one way between v0.8.2 and
+  v0.9.0: the SQLAlchemy project store that had been sitting on main is now in
+  the release, constructed and passed to `create_app`. Our adaptation mirrors
+  that, because `create_app` leaves the `/v1/projects` endpoints unmounted when
+  the store is absent while the bundled SPA still offers them. We track the
   release wrapper deliberately, not main.
 - The remote foreground host command is
   `omnigent host --server <OMNIGENT_APP_URL> --non-interactive`.
@@ -57,7 +59,7 @@ Every authenticated Workshop Terminal request carries the attendee's Databricks
 Apps OBO bearer in `X-Forwarded-Access-Token`. When `OMNIGENT_APP_URL` is set,
 Workshop Terminal mirrors that bearer into the attendee's isolated
 `~/.omnigent/auth_tokens.json`, keyed by the normalized App URL, using
-Omnigent 0.8.2's `{token,user_id,expires_at}` record shape. The attendee email
+Omnigent 0.9.0's `{token,user_id,expires_at}` record shape. The attendee email
 is lowercased and JWT `exp` supplies `expires_at`. Capture ordering uses JWT
 `iat` then `exp`; a late older request, even if still valid, cannot replace the
 newer mirrored bearer.
@@ -141,7 +143,7 @@ attendee quitting a session they had deliberately joined, and would fork a new
 session on every such exit.
 
 Remote startup fails closed unless Omnigent is enabled and the effective CLI
-install is exactly protocol-compatible 0.8.2. Local mode retains install-spec
+install is exactly protocol-compatible 0.9.0. Local mode retains install-spec
 override support.
 
 Remote startup also enforces the security topology: exactly one attendee may
@@ -185,27 +187,56 @@ start may fail before those grants; that is a provisioning phase, not readiness.
 
 ### Smart routing (Auto · smart routing)
 
-Omnigent Auto uses AI Gateway `POST …/ai-gateway/routing/v1/routes:select` from
-the control-plane App as the App service principal (ambient Apps OAuth). Labs
+Omnigent 0.9.0 has two routing backends and the App configures both.
+
+The external one is AI Gateway `POST …/ai-gateway/routing/v1/routes:select`,
+called as the App service principal with ambient Apps OAuth. Labs
 (`DATABRICKS_CONFIG_PROFILE=labs`, 2026-08-11) authenticated successfully but
 returned HTTP 404 `ENDPOINT_NOT_FOUND` / "routing/v1/routes:select is not
 enabled for this account." That is an **account-level product flag**, not a
 missing App-SP grant: no Control Tower privilege change unblocks it.
 
-Until the account enables routing:
+The local one is the built-in judge, and it is what makes Auto usable anyway.
+0.9.0 latches the external client off after its first `ENDPOINT_NOT_FOUND`, so
+the cost is one request per App process and the judge answers everything after
+it. `GET /v1/info` drops the external routing source once latched, so the UI
+never offers a router that cannot answer. The judge also serves any pane whose
+harness is not gateway-backed, which the external router cannot do because its
+picks are gateway catalog ids that pane cannot reach.
 
-- Leave Omnigent App `WORKSHOP_SMART_ROUTING=false` (shipped default).
-- Do not grant the Omni App SP general model-serving for harness inference.
+Control Tower obligations:
 
-After the account enables routing:
+- `WORKSHOP_SMART_ROUTING=true` (shipped default).
+- Ensure the Omnigent App SP can query exactly the serving endpoint named by
+  `WORKSHOP_ROUTING_JUDGE_MODEL` (default `databricks-gpt-5-6-luna`). The
+  default needs no action: pay-per-token foundation models are queryable by any
+  principal with workspace access, and expose no endpoint ID to grant on.
+  Pointing the setting at a custom endpoint does require `CAN_QUERY`.
+- Do not grant the Omnigent App SP general model-serving. Harness inference
+  runs on the attendee host under the Workshop Terminal gateway token, and
+  candidate models still come from that host's runner catalog.
 
-- Set `WORKSHOP_SMART_ROUTING=true` on the Omnigent App deploy.
-- Ambient App SP OAuth is sufficient for the routing API call (no extra
-  model-serving role). Candidate models still come from the attendee host;
-  harness inference still uses the Workshop Terminal gateway token.
+If the account later enables routing, no code or config change is needed: the
+external client stops latching off and takes precedence on gateway-backed
+panes.
 
 Workshop Polly economy/balanced/frontier template agents are removed; stock
 `polly` is the default agent.
+
+### Shared-session approvals (upstream, 0.9.0)
+
+Posting a session event — including an `approval` verdict — requires
+`LEVEL_EDIT`, not `LEVEL_OWNER`. Any principal granted edit on a shared session
+can therefore resolve that session's approval prompts. This reverts a
+previously tightened check and is upstream behavior, not a Workshop Terminal
+choice.
+
+It does not currently expose attendees to each other: each attendee gets their
+own App, host, and sessions, the App never enables public sharing, and the
+`header` auth provider scopes every request to the proxy-authenticated
+identity. Treat it as a constraint on any future change that would share one
+session across attendees — that change would also hand every editor the
+approval gate.
 
 ## Environment ownership
 
@@ -244,7 +275,7 @@ Workshop Terminal App so the proxy forwards the attendee OBO bearer.
    Apps does not mount Unity Catalog volumes, so the path is unreachable from the
    filesystem. Startup fails if the write is not permitted.
 7. Poll App deployment state, authenticated `GET /health`, and
-   `GET /api/version`; require version `0.8.2`. Successful health proves the
+   `GET /api/version`; require version `0.9.0`. Successful health proves the
    Volume startup invariant.
 8. Record the App URL and resource/deployment identifiers.
 9. Deploy Workshop Terminal with the normalized App URL, exact attendee email,
@@ -263,7 +294,7 @@ steps 3–10 retain the dependency order above.
 
 App health is true only when deployment is running, authenticated
 `GET /health` returns HTTP 200 with `{"status":"ok"}`, and
-`GET /api/version` is `0.8.2`. Resource readiness additionally requires the
+`GET /api/version` is `0.9.0`. Resource readiness additionally requires the
 Lakebase endpoint active and an App-SP write probe to the bound Volume.
 
 Workshop readiness is stricter:
@@ -289,7 +320,7 @@ URL and attendee identity, but may set `connected=true`, `host_id`, and
 attendee-owned host and the observed `host_id` equals `expected_host_id`.
 Workshop Terminal performs that verification only while its local supervisor is
 running and a fresh attendee-owned token mirror exists, using authenticated
-`GET /v1/hosts/{expected_host_id}` with a short timeout. Upstream v0.8.2 does
+`GET /v1/hosts/{expected_host_id}` with a short timeout. Upstream v0.9.0 does
 not return a last-seen field, so `last_seen_at` is the UTC timestamp when
 Workshop Terminal completed the successful exact-host online verification.
 Network/auth failures produce `connected=false` while retaining the honest

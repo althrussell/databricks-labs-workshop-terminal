@@ -338,7 +338,7 @@ take effect on restart with **no rebuild**. Set these per instance:
 | `SKILLS_REF` | leave unset | the reviewed tag ships in `assets/artifacts/manifest.json` (item 5) |
 | `CLAUDE_CODE_VERSION` | `2.1.216` release candidate | reviewed Claude Code CLI release |
 | `CODEX_CLI_VERSION` | `0.144.6` release candidate | reviewed Codex CLI release |
-| `OMNIGENT_VERSION` | `0.8.2` release candidate | reviewed Omnigent release matched to the dedicated App protocol |
+| `OMNIGENT_VERSION` | `0.9.0` release candidate | reviewed Omnigent release matched to the dedicated App protocol |
 | `DATABRICKS_CLI_VERSION` | reviewed exact version | make the Databricks CLI input explicit |
 | `ANTHROPIC_MODEL` / `CODEX_MODEL` | reviewed endpoint names | prevent model drift between instances |
 | `WORKSHOP_CODEX_COMPARE` | the profiles `scripts/smoke_models.py` passed | drop a comparison model that cannot hold a tool call, without a release ([model comparison](model-comparison.md)). CT passes through `CONTROL_TOWER_WORKSHOP_CODEX_COMPARE`, so a measurement reaches a fleet without a WT release |

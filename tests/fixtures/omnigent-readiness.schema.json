@@ -21,7 +21,7 @@
           "required": ["status"],
           "properties": {"status": {"type": "string", "const": "ok"}}
         },
-        "server_version": {"type": "string", "const": "0.8.2"}
+        "server_version": {"type": "string", "const": "0.9.0"}
       }
     },
     "resources": {

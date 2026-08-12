@@ -8,7 +8,7 @@ IDs, HTTP status, and redacted logs for every step.
 - [ ] Pin the Workshop Terminal source revision and confirm
       `source_subdir=deploy/omnigent-app`.
 - [ ] Confirm `upstream-lock.json`, `pyproject.toml`, and `uv.lock` agree on
-      Omnigent `0.8.2`, and `pyproject.toml` requires Python
+      Omnigent `0.9.0`, and `pyproject.toml` requires Python
       `>=3.12,<3.13`.
 - [ ] Create a dedicated Lakebase project, production branch, endpoint, and
       default database; verify the endpoint becomes active.
@@ -18,9 +18,11 @@ IDs, HTTP status, and redacted logs for every step.
 - [ ] Grant `WRITE_VOLUME`, `USE_CATALOG`, and `USE_SCHEMA`.
 - [ ] Bind App resource keys `postgres` and `artifact_volume`.
 - [ ] Verify `OMNIGENT_AUTH_PROVIDER=header`.
-- [ ] Confirm `WORKSHOP_SMART_ROUTING` is `false` unless the account has enabled
-      AI Gateway `routing/v1/routes:select` (labs returns `ENDPOINT_NOT_FOUND`
-      until then — do not ship a dead Auto option).
+- [ ] Confirm `WORKSHOP_SMART_ROUTING` is `true` and
+      `WORKSHOP_ROUTING_JUDGE_MODEL` names a serving endpoint the App service
+      principal can query. Pay-per-token foundation models need no grant; a
+      custom endpoint needs `CAN_QUERY`. Without query access Auto still appears
+      but every decision falls back to the session default.
 - [ ] Confirm workshop Polly economy/balanced/frontier agents are absent; stock
       `polly` remains.
 - [ ] Deploy the App and confirm the process binds the runtime port.
@@ -28,7 +30,7 @@ IDs, HTTP status, and redacted logs for every step.
 ## App validation
 
 - [ ] An authenticated `GET /health` returns HTTP 200 and `{"status":"ok"}`.
-- [ ] `GET /api/version` returns `{"version":"0.8.2"}`.
+- [ ] `GET /api/version` returns `{"version":"0.9.0"}`.
 - [ ] Deny Volume writes to the App SP and verify startup/health fails. Restore
       `WRITE_VOLUME`; verify startup writes+fsyncs a unique probe beneath
       `AP_ARTIFACT_VOLUME_PATH` and removes it successfully. Deny deletion and
@@ -37,9 +39,13 @@ IDs, HTTP status, and redacted logs for every step.
 - [ ] New-chat agent picker does not list `polly-economy` / `polly-balanced` /
       `polly-frontier`.
 - [ ] With `WORKSHOP_SMART_ROUTING=false`, Auto · smart routing is hidden.
-- [ ] With routing account-enabled and `WORKSHOP_SMART_ROUTING=true`, Auto
-      appears; first-message routing uses App SP OAuth to `routes:select`;
-      harness inference still uses the Workshop Terminal gateway token.
+- [ ] With `WORKSHOP_SMART_ROUTING=true`, Auto appears and a first message
+      returns a decision. On an account without `routes:select` the App logs one
+      `ENDPOINT_NOT_FOUND` and latches the external router off; `GET /v1/info`
+      then reports the `oss` routing source only, and the decision chip is
+      sourced `oss-llm`.
+- [ ] Confirm harness inference still uses the Workshop Terminal gateway token:
+      the judge call is the only inference the App service principal makes.
 - [ ] A request without proxy authentication is rejected.
 - [ ] A client-supplied `X-Forwarded-Email` cannot bypass the Apps proxy.
 - [ ] Create/read a test conversation and verify it survives an App restart.
@@ -102,7 +108,7 @@ IDs, HTTP status, and redacted logs for every step.
       before `connected=true`; offline, mismatch, network, and auth failures
       retain the exact local lifecycle state and return no token.
 - [ ] Confirm `last_seen_at` is the UTC time Workshop Terminal successfully
-      verified the host, not an upstream field (v0.8.2 returns none).
+      verified the host, not an upstream field (v0.9.0 returns none).
 - [ ] Run normal stats collection and verify persisted readiness transitions
       pending → ready → disconnected. Repeat in final pre-teardown collection;
       an admin fetch error or malformed/mismatched report must invalidate stale

@@ -8,7 +8,7 @@
     "health_body": {
       "status": "ok"
     },
-    "server_version": "0.8.2"
+    "server_version": "0.9.0"
   },
   "resources": {
     "lakebase_ready": true,

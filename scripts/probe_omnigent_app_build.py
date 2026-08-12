@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove the Omnigent App's uv.lock installs 0.8.2 on Databricks Apps.
+"""Prove the Omnigent App's uv.lock installs 0.9.0 on Databricks Apps.
 
 Mode 3 acceptance needs a dedicated Lakebase and UC Volume, which is real
 persistent infrastructure. The dependency resolution is the part the version
@@ -7,7 +7,7 @@ bump actually changed, and it can be checked without any of that: deploy the
 App source with the two resource bindings stubbed out, then read the build log.
 
 Startup is expected to fail at Lakebase. That failure is the success signal —
-reaching it means Python 3.12 was provisioned and the locked 0.8.2 wheel set
+reaching it means Python 3.12 was provisioned and the locked 0.9.0 wheel set
 installed from files.pythonhosted.org.
 
   DATABRICKS_CONFIG_PROFILE=labs python scripts/probe_omnigent_app_build.py
