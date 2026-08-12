@@ -311,7 +311,22 @@ class AppServicePrincipalJudge:
         from omnigent.spec.types import LLMConfig
 
         self.last_error = None
-        available_models = shape_judge_menu(available_models, env=self._env)
+        # Every other failure in this method fails open, and shaping has to as
+        # well: it is an optimisation on the menu, so nothing it can do to
+        # itself is worth ending a turn over. Its own guard covers the import
+        # of ``harness_bars_model`` but not the calls, and that is upstream code
+        # walking model ids we do not control the shape of.
+        #
+        # Fail to "no verdict" rather than to the unshaped menu. Unshaped is
+        # what routed a greeting to the dearest arm in the workspace, and it can
+        # also name a model the harness refuses, which hangs the turn instead of
+        # degrading it. No verdict just runs on the session's own model.
+        try:
+            available_models = shape_judge_menu(available_models, env=self._env)
+        except Exception as exc:  # noqa: BLE001 — fail open, the turn still runs
+            self.last_error = f"could not shape the judge menu: {exc}"
+            logger.warning("Judge menu shaping failed", exc_info=True)
+            return None
         if not available_models:
             self.last_error = "no candidate model survives this session's harness bars"
             return None

@@ -488,6 +488,37 @@ def test_a_judge_with_no_runnable_candidate_returns_no_verdict(fake_omnigent, mo
     assert "called" not in built
 
 
+def test_a_broken_shaper_costs_the_routing_not_the_turn(fake_omnigent, monkeypatch):
+    """Shaping is an optimisation on the menu, so it may not end a turn.
+
+    Its own guard covers importing ``harness_bars_model`` but not calling it,
+    and that is upstream code walking model ids whose shape we do not control.
+    Everything else in ``route`` already fails open; before this, shaping was
+    the one step that could raise straight through it.
+    """
+
+    policies = ModuleType("omnigent.runtime.policies")
+    builder = ModuleType("omnigent.runtime.policies.builder")
+    builder._build_policy_llm_client = lambda *_a, **_k: object()
+    types_module = ModuleType("omnigent.spec.types")
+    types_module.LLMConfig = lambda **kwargs: SimpleNamespace(**kwargs)
+    monkeypatch.setitem(sys.modules, "omnigent.runtime.policies", policies)
+    monkeypatch.setitem(sys.modules, "omnigent.runtime.policies.builder", builder)
+    monkeypatch.setitem(sys.modules, "omnigent.spec", ModuleType("omnigent.spec"))
+    monkeypatch.setitem(sys.modules, "omnigent.spec.types", types_module)
+
+    def _explode(*_args, **_kwargs):
+        raise RuntimeError("upstream changed the bar signature")
+
+    monkeypatch.setattr(smart_routing, "shape_judge_menu", _explode)
+
+    judge = smart_routing.AppServicePrincipalJudge(_client(), "databricks-judge", env={})
+    result = asyncio.run(judge.route("do a thing", {"pi": ["databricks-claude-sonnet-5"]}))
+
+    assert result is None
+    assert "could not shape the judge menu" in judge.last_error
+
+
 def test_codex_is_never_offered_a_chat_only_model(fake_omnigent):
     """glm-5-2 is upstream's first task_v1 codex arm and codex cannot run it.
 

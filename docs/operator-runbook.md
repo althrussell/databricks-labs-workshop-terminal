@@ -30,9 +30,12 @@ product enforces this: `launch_block` in `server/agents.py` consults credential
 state *only* for Omnigent-backed cards, so bare cards stay launchable even when
 everything else is gated off.
 
-The model-comparison exercise also runs on the bare tier — `codex --profile
-glm`, `kimi`, `gemini` — so it survives a total Omnigent outage. See
-[`model-comparison.md`](./model-comparison.md).
+The model-comparison exercise is the exception: it no longer has a bare-tier
+form. Those models answer only on chat-completions, and codex-cli dropped that
+wire, so there is no Codex profile behind them any more. The endpoints
+themselves are still live — `/api/config` publishes the URL under
+`model_comparison` — but reaching them means an HTTP call from Terminal, not a
+harness. See [`model-comparison.md`](./model-comparison.md).
 
 ---
 
@@ -61,8 +64,10 @@ retry.
 
 Tell them to use **Claude Code**, **Codex** or **Terminal**. All three are on
 the same home screen and need no sign-in of their own. If they were doing the
-model-comparison exercise, `codex --profile glm` (or `kimi`, `gemini`) is the
-same exercise with no Omnigent involvement.
+model-comparison exercise, move them to a different exercise rather than a
+different harness — there is no bare-tier form of that one to fall back to (see
+above), and offering a `codex --profile` for it will cost them a minute finding
+out it does not start.
 
 This is a real answer, not a consolation prize. The attendee keeps working while
 you deal with the cause.
