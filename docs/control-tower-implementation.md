@@ -667,7 +667,7 @@ Delivery is therefore by collection, on the presence poll CT already makes:
 3. `POST {app_url}/api/admin/help/ack` with `{"through_seq": <highest applied>}`.
    The terminal keeps offering anything unacknowledged.
 
-Three consequences for CT:
+Four consequences for CT:
 
 - **Do not also synthesise a message from `help_note`** when `help_outbox` is
   present in the payload. It is the same opening sentence, and filing it twice
@@ -680,6 +680,13 @@ Three consequences for CT:
 - **Poll while a run is live, not only while an operator is watching.** An
   unwatched run collects nothing, so a hand raised during a break is queued at
   the terminal until someone opens the console.
+- **Do not close a collected conversation because `help_raised` went false.**
+  The hand is usually down by the time you collect the message: the attendee
+  lowered it after typing, or an operator resolved while the terminal still
+  held it. Cancelling a raise that carries no words is right; cancelling one
+  that carries a question drops it seconds after it arrives. The same goes for
+  a terminal that stops answering — apps restart mid-workshop, and the question
+  outlives the app that asked it.
 
 Operator → attendee is unaffected: CT mints a token for the attendee's own
 workspace, which the terminal's proxy accepts, and `/api/admin/help/message`
