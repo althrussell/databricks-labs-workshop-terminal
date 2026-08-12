@@ -59,8 +59,8 @@ call is the only inference the App itself performs.
 Configuration:
 
 - `WORKSHOP_ROUTING_JUDGE_MODEL` (default `databricks-gpt-5-6-luna`) — the
-  serving endpoint the judge calls. Pinned in `app.yaml` rather than left to
-  the built-in default, because it is a privilege grant as much as a setting.
+  serving endpoint the judge calls. Pinned in `app.yaml` rather than left to the
+  built-in default, because it decides what the App service principal may reach.
 - `WORKSHOP_ROUTING_BASE_URL` — override the routing base URL.
 - `WORKSHOP_ROUTING_ROUTER_NAME` — override the router strategy. Empty keeps
   upstream's default (`task_v1` in 0.9.0; it was `task_v0` before).
@@ -93,8 +93,20 @@ The App resource bindings inject `AP_LAKEBASE_ENDPOINT`, the standard
 The App service principal also needs `USE_CATALOG` on the Volume's parent
 catalog and `USE_SCHEMA` on its parent schema. Keep that principal
 least-privileged: Lakebase, the artifact Volume, the ability to call AI Gateway
-`routes:select` with ambient Apps OAuth, and `CAN_QUERY` on exactly one serving
-endpoint — the routing judge named by `WORKSHOP_ROUTING_JUDGE_MODEL`:
+`routes:select` with ambient Apps OAuth, and query access to exactly one
+serving endpoint — the routing judge named by `WORKSHOP_ROUTING_JUDGE_MODEL`.
+
+How that query access is obtained depends on the endpoint type, and the default
+judge needs no grant at all:
+
+- Pay-per-token foundation models (`databricks-gpt-5-6-luna` and the rest of
+  the `databricks-*` family) are `FOUNDATION_MODEL_API` endpoints. Any principal
+  with workspace access can query them, an App service principal included.
+  There is also nothing to grant: these endpoints expose no endpoint ID, and the
+  permissions API rejects the name — verified on labs, where a freshly created
+  App with no grants of its own queried the judge successfully.
+- A custom or provisioned-throughput endpoint does have an ID and does need an
+  explicit grant:
 
 ```bash
 databricks serving-endpoints set-permissions <judge-endpoint-id> --json '{
@@ -105,11 +117,10 @@ databricks serving-endpoints set-permissions <judge-endpoint-id> --json '{
 }'
 ```
 
-That grant is a deliberate, narrow exception to the rule below, and it is the
-reason the judge model is pinned in `app.yaml`: widening it to a second
-endpoint should require editing both the grant and the config. Harness
-inference is unaffected — it runs on the attendee host under the Workshop
-Terminal gateway token, never as this principal. Do not grant general
+Either way the reach is one endpoint, which is why the judge model is pinned in
+`app.yaml`: moving it is a config edit that an operator can see and review.
+Harness inference is unaffected — it runs on the attendee host under the
+Workshop Terminal gateway token, never as this principal. Do not grant general
 model-serving access, and do not inject model keys, PATs, arbitrary shell
 credentials, or cloud credentials.
 
@@ -151,7 +162,7 @@ still contains its normal process managers, so this wrapper does not claim to
 remove those internals. Workshop policy is
 that execution belongs on an attendee-owned external host and the App service
 principal receives no shell or arbitrary cloud credentials, and no model
-access beyond `CAN_QUERY` on the single routing-judge endpoint.
+access beyond querying the single routing-judge endpoint.
 
 Workshop Terminal implements remote authentication with the attendee OBO token
 from each authenticated Databricks Apps request. It atomically mirrors the

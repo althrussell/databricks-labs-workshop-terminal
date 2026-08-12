@@ -20,8 +20,9 @@ IDs, HTTP status, and redacted logs for every step.
 - [ ] Verify `OMNIGENT_AUTH_PROVIDER=header`.
 - [ ] Confirm `WORKSHOP_SMART_ROUTING` is `true` and
       `WORKSHOP_ROUTING_JUDGE_MODEL` names a serving endpoint the App service
-      principal holds `CAN_QUERY` on. Without that grant Auto still appears but
-      every decision falls back to the session default.
+      principal can query. Pay-per-token foundation models need no grant; a
+      custom endpoint needs `CAN_QUERY`. Without query access Auto still appears
+      but every decision falls back to the session default.
 - [ ] Confirm workshop Polly economy/balanced/frontier agents are absent; stock
       `polly` remains.
 - [ ] Deploy the App and confirm the process binds the runtime port.

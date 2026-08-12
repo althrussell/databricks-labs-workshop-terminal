@@ -15,8 +15,8 @@ without a code change.
 
 Routing is the only inference the App itself performs, and it is pinned to
 ``WORKSHOP_ROUTING_JUDGE_MODEL``. Harness inference stays on the Workshop
-Terminal gateway-token path; do not widen the App service principal beyond
-CAN_QUERY on the judge endpoint.
+Terminal gateway-token path; do not widen the App service principal past the
+one judge endpoint.
 """
 
 from __future__ import annotations

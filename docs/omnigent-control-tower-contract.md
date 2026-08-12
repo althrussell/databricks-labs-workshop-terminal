@@ -207,10 +207,11 @@ picks are gateway catalog ids that pane cannot reach.
 Control Tower obligations:
 
 - `WORKSHOP_SMART_ROUTING=true` (shipped default).
-- Grant the Omnigent App SP `CAN_QUERY` on exactly the serving endpoint named
-  by `WORKSHOP_ROUTING_JUDGE_MODEL` (default `databricks-gpt-5-6-luna`). This
-  is the one deliberate exception to "no model-serving for the App SP"; it
-  covers routing decisions only.
+- Ensure the Omnigent App SP can query exactly the serving endpoint named by
+  `WORKSHOP_ROUTING_JUDGE_MODEL` (default `databricks-gpt-5-6-luna`). The
+  default needs no action: pay-per-token foundation models are queryable by any
+  principal with workspace access, and expose no endpoint ID to grant on.
+  Pointing the setting at a custom endpoint does require `CAN_QUERY`.
 - Do not grant the Omnigent App SP general model-serving. Harness inference
   runs on the attendee host under the Workshop Terminal gateway token, and
   candidate models still come from that host's runner catalog.

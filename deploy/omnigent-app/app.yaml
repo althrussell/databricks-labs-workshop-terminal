@@ -17,8 +17,9 @@ env:
   # every decision — which is why this can now default true.
   - name: WORKSHOP_SMART_ROUTING
     value: "true"
-  # The judge model. Must be a serving endpoint the App service principal holds
-  # CAN_QUERY on; it is the only inference the App itself performs.
+  # The judge model, and the only inference the App itself performs. Must be a
+  # serving endpoint the App service principal can query: pay-per-token
+  # foundation models need no grant, a custom endpoint needs CAN_QUERY.
   - name: WORKSHOP_ROUTING_JUDGE_MODEL
     value: "databricks-gpt-5-6-luna"
   # Optional overrides (empty = built-in defaults in smart_routing.py).
