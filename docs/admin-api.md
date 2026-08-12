@@ -501,9 +501,9 @@ python scripts/pull_diagnostics.py errors  --urls ./instances.txt   # whole flee
 | `SKILLS_REF` | empty in `app.yaml` | Exact reviewed tag/SHA for the skills overlay; must match the manifest ref, commit, and content SHA-256 |
 | `ARTIFACT_MANIFEST_PATH` | empty | Optional mirror override for the repo-owned contract in `assets/artifacts/manifest.json`; may redirect `source` only, and a version/checksum override is rejected |
 | `CLAUDE_CODE_VERSION` | `2.1.216` in `app.yaml` | Exact reviewed Claude Code CLI release candidate |
-| `CODEX_CLI_VERSION` | `0.144.6` in `app.yaml` | Exact reviewed Codex CLI release candidate |
+| `CODEX_CLI_VERSION` | `0.147.0` in `app.yaml` | Exact reviewed Codex CLI release candidate |
 | `OMNIGENT_VERSION` | `0.9.0` in `app.yaml` | Exact reviewed Omnigent release candidate, matched to the dedicated App protocol |
-| `DATABRICKS_CLI_VERSION` | `1.8.0` in `app.yaml` | Exact reviewed Databricks CLI release input |
+| `DATABRICKS_CLI_VERSION` | `1.11.0` in `app.yaml` | Exact reviewed Databricks CLI release input |
 | `DEEPWIKI_MCP_URL` / `EXA_MCP_URL` | public endpoints | MCP servers for attendee agents (empty string disables) |
 | `ACCESS_GROUP` | *(unset)* | Optional group restricting attendee access |
 | `WORKSHOP_ATTENDEE_EMAIL` | *(unset; required for `/readyz`)* | Control-Tower-injected email assigned to this one app instance. A different attendee receives HTTP 403 / WebSocket 4403 unless `ALLOW_SHARED_TOPOLOGY=true`. Admin service-principal routes remain group-authorized and independent of this binding |

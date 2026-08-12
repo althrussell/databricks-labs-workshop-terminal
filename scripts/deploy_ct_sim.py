@@ -52,8 +52,8 @@ DEFAULT_SCOPES = "catalog.catalogs:read,catalog.schemas:read,catalog.tables:read
 BASELINE_SCOPES = frozenset(DEFAULT_SCOPES.split(","))
 EXACT_DEFAULTS = {
     "claude_code_version": "2.1.216",
-    "codex_cli_version": "0.144.6",
-    "databricks_cli_version": "1.8.0",
+    "codex_cli_version": "0.147.0",
+    "databricks_cli_version": "1.11.0",
     "omnigent_version": "0.9.0",
     "node_version": "24.18.1",
     "pi_cli_version": "0.83.0",

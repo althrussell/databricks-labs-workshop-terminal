@@ -43,8 +43,8 @@ file, extracts it into a content-addressed cache directory, and uses the named
 executable inside it.
 
 The Codex native package entry additionally carries `executable_sha256`. For
-0.144.6 the launcher aliases `@openai/codex-linux-x64` to
-`npm:@openai/codex@0.144.6-linux-x64`, while the native tarball's internal
+0.147.0 the launcher aliases `@openai/codex-linux-x64` to
+`npm:@openai/codex@0.147.0-linux-x64`, while the native tarball's internal
 package name remains `@openai/codex`. Bootstrap installs only the launcher via
 offline npm, explicitly extracts the verified native tarball under the alias
 directory, and validates `vendor/x86_64-unknown-linux-musl/bin/codex`.

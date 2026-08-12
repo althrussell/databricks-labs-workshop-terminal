@@ -190,9 +190,9 @@ env:
   - name: CLAUDE_CODE_VERSION
     value: "2.1.216"
   - name: CODEX_CLI_VERSION
-    value: "0.144.6"
+    value: "0.147.0"
   - name: DATABRICKS_CLI_VERSION
-    value: "1.8.0"
+    value: "1.11.0"
   # Node 24 is the active LTS line. It is also a floor, not just a preference:
   # Pi requires node >= 22.19.0.
   - name: NODE_VERSION
