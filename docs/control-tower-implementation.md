@@ -394,9 +394,12 @@ to rely on.
 `CONTROL_TOWER_INGEST_URL` + `CONTROL_TOWER_INGEST_TOKEN` + `WORKSHOP_RUN_ID`
 starts a background flusher, but if CT is itself a Databricks App its proxy
 rejects a request carrying only `X-Ingest-Token` before it reaches CT's code. It
-works for a CT reachable without the Apps proxy, or for a caller that also
-presents an OAuth bearer for a principal granted `CAN USE` on the CT app. Push
-is therefore optional and additive; the envelope below is the canonical one
+works for a CT reachable without the Apps proxy, or for a caller presenting an
+OAuth bearer that is both **minted against the workspace hosting CT** and held
+by a principal granted `CAN USE` on the CT app. A deployed terminal is neither:
+its token is scoped to the attendee's own workspace, which the proxy refuses
+whatever the principal is entitled to (see [§11b](#11b-attendee-help--collect-it-the-terminal-cannot-push-it)).
+Push is therefore optional and additive; the envelope below is the canonical one
 either way.
 
 ```http
@@ -641,6 +644,41 @@ text. CT should alert on rising bootstrap errors, `503`s, overflows, stale
 credentials, or handoff failures and use `/api/admin/stats` as reconciliation.
 The emitter flusher and operational reporter retain their thread handles and
 are signalled and briefly joined during app shutdown.
+
+## 11b. Attendee help — collect it, the terminal cannot push it
+
+The app posts a raised hand and each attendee message to CT's
+`/api/help/raise|lower|messages` using its own service-principal OAuth bearer.
+**In the supported topology that push cannot succeed.** The terminal runs in the
+attendee's workspace, so the token it can mint is scoped to that workspace, and
+CT's Databricks Apps proxy — in the admin workspace — refuses any token minted
+elsewhere. The rejection is `401` with an empty body, produced by the proxy
+before CT's code runs, so no grant on CT's side changes it. `CAN USE` for the
+app SP is necessary but not sufficient; the token's workspace is what fails.
+
+Delivery is therefore by collection, on the presence poll CT already makes:
+
+1. `GET {app_url}/api/admin/presence` returns `help_raised` / `help_note` /
+   `help_raised_at` as before, plus **`help_outbox`** — the attendee's messages
+   and read receipts, each with a monotonic `seq` and a `message_id` assigned
+   here.
+2. Apply them keyed on `message_id`. Store CT's message row under that same id
+   so a round you collect twice lands once.
+3. `POST {app_url}/api/admin/help/ack` with `{"through_seq": <highest applied>}`.
+   The terminal keeps offering anything unacknowledged.
+
+Two consequences for CT:
+
+- **Do not also synthesise a message from `help_note`** when `help_outbox` is
+  present in the payload. It is the same opening sentence, and filing it twice
+  gives the attendee two rows, only one of which can ever be marked seen.
+- **Poll while a run is live, not only while an operator is watching.** An
+  unwatched run collects nothing, so a hand raised during a break is queued at
+  the terminal until someone opens the console.
+
+Operator → attendee is unaffected: CT mints a token for the attendee's own
+workspace, which the terminal's proxy accepts, and `/api/admin/help/message`
+and `/api/admin/help/clear` work as documented.
 
 ## 12. Fleet operations, restart recovery, and kill switch
 
@@ -968,3 +1006,7 @@ an agent the run opted out of.
   `run_id`/`workspace_id` from the polled unit and namespace a runless key with
   the run. Push (`POST {INGEST_URL}/api/ingest/events`, `X-Ingest-Token`) is
   additive and blocked by the Apps proxy for a deployed terminal.
+- Help delivery: `help_outbox` on `GET {app_url}/api/admin/presence`, applied by
+  the terminal's `message_id`, then `POST {app_url}/api/admin/help/ack`
+  `{"through_seq": n}`. The terminal's own push to CT is blocked by the same
+  proxy, for the same reason (§11b).

@@ -24,6 +24,30 @@ _messages: list[dict[str, Any]] = []
 _help_request_id: str | None = None
 _MAX_MESSAGES = 200
 
+# Attendee-authored help traffic waiting for Control Tower to collect it.
+#
+# The direct push below cannot authenticate: this app's OAuth token is minted
+# against its own attendee workspace, and Control Tower sits behind the Apps
+# proxy of a different workspace, which rejects that token with a 401 before
+# Control Tower's code runs. Collection is the direction that does work — CT
+# polls every terminal a few seconds apart — so what the attendee writes waits
+# here on ``GET /api/admin/presence`` until CT has it and acks.
+#
+# ``help_raised``/``help_note`` already ride on presence and CT already
+# reconciles them, so the outbox carries only what those fields cannot express:
+# each message with the id it was given locally, and each read receipt.
+_outbox: list[dict[str, Any]] = []
+_outbox_seq = 0
+# A backlog only grows while CT is not collecting, which is also when nobody is
+# reading it. Keep the recent end of it and bound the presence payload.
+_OUTBOX_MAX = 50
+_OUTBOX_PAGE = 20
+
+# Whether this process has already explained a refused push. Repeating it per
+# raise, per message and per read receipt buried the one line that says what
+# happened under hundreds that say it again.
+_push_rejection = {"logged": False}
+
 
 def snapshot() -> dict[str, Any]:
     """Current help state for config/presence surfaces."""
@@ -45,7 +69,34 @@ def presence_fields() -> dict[str, Any]:
             "help_note": _note or None,
             "help_raised_at": _raised_at if _open else None,
             "help_open": _open,
+            # Present even when empty: it is how Control Tower tells a terminal
+            # that hands it messages from one that cannot, and so whether to
+            # keep deriving the opening message from ``help_note``.
+            "help_outbox": _outbox[:_OUTBOX_PAGE],
         }
+
+
+def _enqueue_locked(kind: str, **fields: Any) -> None:
+    """Queue one attendee-side event for collection. Caller holds ``_lock``."""
+    global _outbox_seq
+    _outbox_seq += 1
+    _outbox.append({"seq": _outbox_seq, "kind": kind, **fields})
+    if len(_outbox) > _OUTBOX_MAX:
+        del _outbox[: len(_outbox) - _OUTBOX_MAX]
+
+
+def ack_outbox(through_seq: int) -> dict[str, Any]:
+    """Drop what Control Tower has applied, up to and including ``through_seq``."""
+    with _lock:
+        global _outbox
+        _outbox = [e for e in _outbox if int(e["seq"]) > through_seq]
+        return {"acked_through": through_seq, "pending": len(_outbox)}
+
+
+def outbox_snapshot() -> list[dict[str, Any]]:
+    """Everything still waiting on Control Tower (tests and diagnostics)."""
+    with _lock:
+        return list(_outbox)
 
 
 def thread_snapshot() -> dict[str, Any]:
@@ -66,16 +117,16 @@ def raise_hand(note: str | None = None) -> dict[str, Any]:
         _note = note_clean or ""
         _raised_at = time.time()
         if note_clean:
-            _append_local(
-                {
-                    "message_id": str(uuid4()),
-                    "help_request_id": _help_request_id,
-                    "sender_role": "attendee",
-                    "sender": "",
-                    "body": note_clean,
-                    "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                }
-            )
+            local = {
+                "message_id": str(uuid4()),
+                "help_request_id": _help_request_id,
+                "sender_role": "attendee",
+                "sender": "",
+                "body": note_clean,
+                "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+            _append_local(local)
+            _enqueue_locked("message", **local)
     pushed = _push_control_tower("raise", note_clean)
     event_hub.publish({"t": "help_state", "raised": True, "note": note_clean})
     return {"raised": True, "pushed": pushed, "note": note_clean}
@@ -107,9 +158,12 @@ def reset_for_tests() -> None:
     """Wipe raised state and message buffer (test fixture only)."""
     clear_hand()
     with _lock:
-        global _messages, _help_request_id
+        global _messages, _help_request_id, _outbox, _outbox_seq
         _messages = []
         _help_request_id = None
+        _outbox = []
+        _outbox_seq = 0
+        _push_rejection["logged"] = False
 
 
 def post_attendee_message(body: str, *, sender: str = "") -> dict[str, Any]:
@@ -131,10 +185,13 @@ def post_attendee_message(body: str, *, sender: str = "") -> dict[str, Any]:
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
         _append_local(local)
+        _enqueue_locked("message", **local)
     pushed = _push_control_tower_message(text)
-    if not pushed:
-        # Fall back to raise so CT still opens a queue row when message API
-        # is unavailable on an older Control Tower.
+    if not pushed and not _push_rejection["logged"]:
+        # Fall back to raise so CT still opens a queue row when the message API
+        # is unavailable on an older Control Tower. Pointless once the proxy has
+        # refused us — it is the same caller against the same door, and it was
+        # doubling the failure in the log for every message.
         _push_control_tower("raise", text[:280])
     # The attendee typed this, so they have already seen it — no toast, no ack.
     event_hub.publish(
@@ -199,6 +256,8 @@ def acknowledge_message(message_id: str) -> bool:
     mid = (message_id or "").strip()
     if not mid:
         return False
+    with _lock:
+        _enqueue_locked("seen", message_id=mid)
     base = config.control_tower_url()
     run_id = config.workshop_run_id()
     unit_id = config.workshop_unit_id()
@@ -246,6 +305,22 @@ def _push_control_tower_message(body: str) -> bool:
     return _ct_post(url, {"run_id": run_id, "unit_id": unit_id, "body": body})
 
 
+def _log_push_rejection(status: int) -> None:
+    """Say once that the push is refused, and that nothing is lost by it."""
+    if _push_rejection["logged"]:
+        _log.debug("help.ct_push_rejected status=%s (already reported)", status)
+        return
+    _push_rejection["logged"] = True
+    _log.warning(
+        "help.ct_push_rejected status=%s — Control Tower's Apps proxy will not "
+        "accept this app's token, which is minted against its own workspace. "
+        "Attendee help traffic is delivered by collection instead: it waits in "
+        "the presence outbox until Control Tower polls for it. Not logging "
+        "further rejections from this process.",
+        status,
+    )
+
+
 def _ct_post(url: str, payload: dict[str, str]) -> bool:
     bearer = app_identity_bearer()
     if not bearer:
@@ -263,6 +338,9 @@ def _ct_post(url: str, payload: dict[str, str]) -> bool:
         )
     except requests.RequestException as exc:
         _log.warning("help.ct_push_failed: %s", exc)
+        return False
+    if response.status_code in (401, 403):
+        _log_push_rejection(response.status_code)
         return False
     if response.status_code >= 400:
         _log.warning(
