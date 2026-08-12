@@ -1,56 +1,58 @@
-# Model comparison without Pi
+# Model comparison
 
 The workshop's headline exercise is: build something, read the session's real
 token and cost figures, build it again on a different set of models, compare.
 
-That exercise used to require Pi, because Pi is the only harness that routes per
-model across the Anthropic, Responses and chat-completions surfaces. It also
-made the most fragile component in the room load-bearing for the thing the room
-is there to see: every Omnigent harness — Pi included — dies together when the
-attendee's tab-bound OBO token goes stale.
+## The Codex profiles are gone, and cannot come back
 
-Bare Codex reaches the same models over one plain OpenAI-shaped surface and
-touches no attendee credential on the way. The comparison therefore survives
-every credential failure Phase 2 of the stability plan is about.
-
-## What an attendee runs
+`codex --profile glm|kimi|gemini` used to carry this. codex-cli 0.144.6 removed
+the chat-completions wire — `responses` is now the only accepted `wire_api` —
+and these three models answer on chat completions and nowhere else. The
+gateway's Responses surface refuses them explicitly:
 
 ```
-codex --profile glm      # GLM 5.2
-codex --profile kimi     # Kimi K3
-codex --profile gemini   # Gemini 3.6 Flash
+{"error_code":"BAD_REQUEST",
+ "message":"Responses API passthrough is not supported for model databricks-glm-5-2."}
 ```
 
-Plain `codex` stays on the everyday driver (a GPT-5.6 tier on the Responses
-wire, which is what Codex is tuned for). The profiles above are the exception,
-not the new default.
+So there is no wire that Codex speaks and these models answer. The profiles were
+removed in full.
 
-The published set is whatever this deployment will actually serve, and it is
-readable from `/api/config` under `model_comparison` — resolved from the same
-code that writes `~/.codex/config.toml`, so the UI and the CLI cannot disagree.
+**This was not a degradation, it was a total outage.** An unknown `wire_api` does
+not make Codex skip one provider — it invalidates the entire `config.toml`. Codex
+then loads its own default config, which has no `databricks` provider, and every
+session dies at startup:
 
-## How it is wired
+```
+Error: error loading default config after config error:
+Model provider `databricks` not found
+```
 
-`server/cli_config.configure_codex` writes a second Codex provider next to the
-default one:
+That took out bare `codex` **and** the Omnigent native Codex terminal together,
+because Omnigent copies this same file into its per-session `CODEX_HOME`.
+`tests/test_codex_model_profiles.py` now pins every generated provider to a wire
+the shipped CLI accepts, and pins every `model_provider` reference to a table
+that exists.
 
-| | default | comparison |
-|---|---|---|
-| provider id | `databricks` | `databricks-chat` |
-| wire | `responses` | `chat` |
-| base URL | `<gateway>/codex/v1` | `<host>/serving-endpoints` |
-| auth | rotating gateway-token file | the same file |
+## Where the exercise stands
 
-Both read the same rotating token file through a provider `auth` command, so a
-long-running comparison survives token rotation exactly as an ordinary session
-does.
+The set is still resolved and still smoke-tested, and `/api/config` still
+publishes it under `model_comparison` — as `{profile, model, label, endpoint}`,
+with the serving-endpoints URL rather than a command. Nothing advertises an
+invocation we cannot promise works.
 
-Profiles are filtered against serving-endpoint discovery, so a region that is a
+What is missing is a harness that carries it. Omnigent still speaks the chat
+wire (`wire_api: chat` is valid in an Omnigent `gateway` provider), so
+re-homing it there is the open follow-up. Until that lands and is verified
+against a live workspace, the models are reachable over plain HTTP at the
+published endpoint.
+
+Models are filtered against serving-endpoint discovery, so a region that is a
 release behind advertises the models it has rather than the ones it does not.
 
 ## Publishing the set: the smoke matrix
 
-Serving an endpoint is not the same as being usable from Codex. These models all
+Serving an endpoint is not the same as being usable by an agent. These models all
 answer a question; tool-calling fidelity across vendors is where it stops
 working, and an attendee's first file edit is where they would find out.
 
@@ -78,9 +80,9 @@ The script exits non-zero if anything failed and prints the line that drops it:
 WORKSHOP_CODEX_COMPARE=glm,gemini
 ```
 
-Set that in the deployment and the failing profile disappears from the generated
-Codex config and from `/api/config`. Leaving it unset means *unmeasured*, and an
-unmeasured deployment offers everything the workspace serves.
+Set that in the deployment and the failing model disappears from `/api/config`.
+Leaving it unset means *unmeasured*, and an unmeasured deployment offers
+everything the workspace serves.
 
 ## Environment
 
@@ -97,14 +99,18 @@ this that goes stale fastest.
 
 Workshop Polly economy/balanced/frontier agents were removed. Stock `polly`
 remains the default Omnigent agent. The new-chat picker offers **Auto · smart
-routing**, which picks harness + model from the live host catalog. That path is
-independent of the Codex comparison profiles above; both can coexist.
+routing**, which picks harness + model from the live host catalog.
 
 Auto is on by default from Omnigent 0.9.0. Where the account has AI Gateway
 `routes:select` the external router decides; everywhere else — labs included —
 the built-in judge does, calling the model pinned by
-`WORKSHOP_ROUTING_JUDGE_MODEL`. Use the Codex profiles when you want a fixed
-cross-vendor comparison rather than a per-task pick.
+`WORKSHOP_ROUTING_JUDGE_MODEL`.
+
+Note that the catalog Auto picks from is the workspace's live model list, which
+includes the chat-only models above. A routed pick that lands on one of them
+cannot be served on the Responses wire — the same constraint that removed the
+Codex profiles. Excluding them from the candidate menu is tracked with the
+routing work, not here.
 
 ## Run it before the event, not during
 
