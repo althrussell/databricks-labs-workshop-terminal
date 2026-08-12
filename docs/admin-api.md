@@ -208,6 +208,11 @@ falls to collection instead; see
 [`help_outbox`](#help_outbox--the-delivery-path-for-what-the-attendee-writes).
 The refusal is reported once per process, not once per message.
 
+Where the push does work, both paths are live, so it carries the same
+`message_id` the outbox offers for that message. Control Tower files the row
+under that id and recognises the second arrival as a duplicate; without it the
+attendee's sentence would appear twice in the operator's thread.
+
 `GET /api/config` includes a `help` block
 `{raised, note, raised_at, message_count, help_request_id}` for the header
 control.

@@ -46,6 +46,25 @@ def _int(env: Mapping[str, str], name: str, default: int) -> int:
         return default
 
 
+def _omnigent_offered(env: Mapping[str, str]) -> bool:
+    """Whether this deployment installs Omnigent, and so whether to require it.
+
+    Mirrors ``config.omnigent_offered`` on a plain mapping, because readiness has
+    to judge the install the bootstrap actually ran. Reading ``OMNIGENT_ENABLED``
+    alone made a workshop created without Omnigent permanently unready: nothing
+    installed tmux or the harness, readiness still demanded both, and the room
+    was held out of admission for a harness it was never going to launch.
+    """
+    if not _bool(env, "OMNIGENT_ENABLED", True):
+        return False
+    selected = [
+        part.strip().lower()
+        for part in env.get("WORKSHOP_AGENTS", "").split(",")
+        if part.strip()
+    ]
+    return not selected or "omnigent" in selected
+
+
 def event_ends_in(env: Mapping[str, str], now: float | None = None) -> int | None:
     """Seconds left in the event, from ``WORKSHOP_EVENT_ENDS_AT`` (epoch seconds).
 
@@ -350,7 +369,7 @@ def evaluate(
     steps = installer_status.get("steps")
     steps = steps if isinstance(steps, Mapping) else {}
     required_steps = ["node", "claude", "codex", "databricks", "skills"]
-    if _bool(env, "OMNIGENT_ENABLED", True):
+    if _omnigent_offered(env):
         required_steps.extend(["tmux", "omnigent"])
     missing_installers = [
         name

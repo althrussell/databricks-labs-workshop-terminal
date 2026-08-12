@@ -111,14 +111,16 @@ def thread_snapshot() -> dict[str, Any]:
 
 def raise_hand(note: str | None = None) -> dict[str, Any]:
     note_clean = (note or "").strip()[:280] or None
+    note_id = ""
     with _lock:
         global _open, _note, _raised_at
         _open = True
         _note = note_clean or ""
         _raised_at = time.time()
         if note_clean:
+            note_id = str(uuid4())
             local = {
-                "message_id": str(uuid4()),
+                "message_id": note_id,
                 "help_request_id": _help_request_id,
                 "sender_role": "attendee",
                 "sender": "",
@@ -127,7 +129,7 @@ def raise_hand(note: str | None = None) -> dict[str, Any]:
             }
             _append_local(local)
             _enqueue_locked("message", **local)
-    pushed = _push_control_tower("raise", note_clean)
+    pushed = _push_control_tower("raise", note_clean, message_id=note_id)
     event_hub.publish({"t": "help_state", "raised": True, "note": note_clean})
     return {"raised": True, "pushed": pushed, "note": note_clean}
 
@@ -186,13 +188,13 @@ def post_attendee_message(body: str, *, sender: str = "") -> dict[str, Any]:
         }
         _append_local(local)
         _enqueue_locked("message", **local)
-    pushed = _push_control_tower_message(text)
+    pushed = _push_control_tower_message(text, message_id=local["message_id"])
     if not pushed and not _push_rejection["logged"]:
         # Fall back to raise so CT still opens a queue row when the message API
         # is unavailable on an older Control Tower. Pointless once the proxy has
         # refused us — it is the same caller against the same door, and it was
         # doubling the failure in the log for every message.
-        _push_control_tower("raise", text[:280])
+        _push_control_tower("raise", text[:280], message_id=local["message_id"])
     # The attendee typed this, so they have already seen it — no toast, no ack.
     event_hub.publish(
         {"t": "help_message", **local, "surface": "none", "request_ack": False}
@@ -281,7 +283,9 @@ def _append_local(msg: dict[str, Any]) -> None:
         _messages = _messages[-_MAX_MESSAGES:]
 
 
-def _push_control_tower(action: str, note: str | None) -> bool:
+def _push_control_tower(
+    action: str, note: str | None, *, message_id: str = ""
+) -> bool:
     base = config.control_tower_url()
     run_id = config.workshop_run_id()
     unit_id = config.workshop_unit_id()
@@ -292,17 +296,27 @@ def _push_control_tower(action: str, note: str | None) -> bool:
     payload: dict[str, str] = {"run_id": run_id, "unit_id": unit_id}
     if action == "raise" and note:
         payload["note"] = note
+        if message_id:
+            payload["message_id"] = message_id
     return _ct_post(url, payload)
 
 
-def _push_control_tower_message(body: str) -> bool:
+def _push_control_tower_message(body: str, *, message_id: str = "") -> bool:
     base = config.control_tower_url()
     run_id = config.workshop_run_id()
     unit_id = config.workshop_unit_id()
     if not base or not run_id or not unit_id:
         return False
     url = f"{base.rstrip('/')}/api/help/messages"
-    return _ct_post(url, {"run_id": run_id, "unit_id": unit_id, "body": body})
+    payload = {"run_id": run_id, "unit_id": unit_id, "body": body}
+    # The same id this message has locally and in the outbox. Both delivery
+    # paths are live in a same-workspace deployment, and without a shared id the
+    # push would file the text under Control Tower's own id and the collection
+    # would file it again under ours — the attendee's sentence twice in the
+    # operator's thread, with only one of them markable as seen.
+    if message_id:
+        payload["message_id"] = message_id
+    return _ct_post(url, payload)
 
 
 def _log_push_rejection(status: int) -> None:

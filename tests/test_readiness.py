@@ -390,6 +390,42 @@ def test_installers_require_every_enabled_agent_and_support_tool(tmp_path):
     assert "databricks" in report["checks"]["installers"]["missing"]
 
 
+def test_a_workshop_without_omnigent_is_ready_without_it(tmp_path):
+    """The operator deselected Omnigent, so the bootstrap never installed it.
+
+    Requiring it anyway held the room out of admission for a harness it was
+    never going to launch: nothing installed tmux or the harness, this check
+    still demanded both, and Control Tower blocks on the 503.
+    """
+    _, _, installer, _, _, _ = _good_inputs(tmp_path)
+    for step in ("tmux", "omnigent"):
+        del installer["steps"][step]
+
+    report = _evaluate(
+        tmp_path,
+        installer=installer,
+        mutate_env=lambda env: env.update({"WORKSHOP_AGENTS": "claude,codex"}),
+    )
+
+    assert report["checks"]["installers"]["ok"] is True
+    assert report["checks"]["installers"]["missing"] == []
+
+
+def test_a_workshop_that_kept_omnigent_still_waits_for_it(tmp_path):
+    """The selection narrows what is required; it does not excuse what is offered."""
+    _, _, installer, _, _, _ = _good_inputs(tmp_path)
+    del installer["steps"]["omnigent"]
+
+    report = _evaluate(
+        tmp_path,
+        installer=installer,
+        mutate_env=lambda env: env.update({"WORKSHOP_AGENTS": "omnigent,claude"}),
+    )
+
+    assert report["checks"]["installers"]["ok"] is False
+    assert "omnigent" in report["checks"]["installers"]["missing"]
+
+
 def test_readiness_reports_which_harnesses_this_instance_actually_has(tmp_path):
     """The Omnigent App advertises polly workers from its own container and
     cannot see this one. Pi is advisory here — the instance is ready without it

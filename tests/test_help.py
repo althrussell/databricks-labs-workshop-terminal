@@ -286,6 +286,38 @@ def test_a_refused_push_still_leaves_the_message_for_collection(
     assert messages[0]["message_id"] == posted.json()["message"]["message_id"]
 
 
+def test_a_push_that_works_names_the_same_message_the_outbox_is_holding(
+    client, as_admin, ct_env, monkeypatch
+):
+    """Both paths are live where the push authenticates, so both must agree.
+
+    Same workspace, no proxy in between: Control Tower accepts the push *and*
+    later collects the outbox entry. Without a shared id it would file the
+    attendee's sentence twice, and only one of the two could be marked seen.
+    """
+    mock_resp = MagicMock(status_code=200, text="ok")
+    mock_resp.json.return_value = {}
+    monkeypatch.setattr(
+        help_module.requests, "post", MagicMock(return_value=mock_resp)
+    )
+    monkeypatch.setattr(help_module, "app_identity_bearer", lambda: "oauth-bearer")
+    hdrs = {"X-Forwarded-Email": "alice@example.com"}
+
+    raised = client.post("/api/help/raise", json={"note": "stuck on UC"}, headers=hdrs)
+    posted = client.post(
+        "/api/help/messages", json={"body": "still stuck"}, headers=hdrs
+    )
+    assert raised.status_code == 200 and posted.status_code == 200
+
+    pushed_ids = [
+        call.kwargs["json"].get("message_id")
+        for call in help_module.requests.post.call_args_list
+    ]
+    outbox = client.get("/api/admin/presence").json()["help_outbox"]
+    assert pushed_ids == [e["message_id"] for e in outbox if e["kind"] == "message"]
+    assert posted.json()["message"]["message_id"] in pushed_ids
+
+
 def test_the_operator_sees_the_opening_note_and_the_follow_up(client, as_admin):
     """Raising with a note is the first message of the conversation.
 

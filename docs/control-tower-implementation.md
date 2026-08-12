@@ -667,11 +667,16 @@ Delivery is therefore by collection, on the presence poll CT already makes:
 3. `POST {app_url}/api/admin/help/ack` with `{"through_seq": <highest applied>}`.
    The terminal keeps offering anything unacknowledged.
 
-Two consequences for CT:
+Three consequences for CT:
 
 - **Do not also synthesise a message from `help_note`** when `help_outbox` is
   present in the payload. It is the same opening sentence, and filing it twice
   gives the attendee two rows, only one of which can ever be marked seen.
+- **Honour `message_id` on the push, where the push works at all.** Same-workspace
+  deployments deliver by both paths, so `/api/help/raise` and `/api/help/messages`
+  now carry the same `message_id` the outbox will offer. Store the row under it
+  and treat a repeat as already filed; assign your own id only when the field is
+  absent, which means a terminal older than the outbox.
 - **Poll while a run is live, not only while an operator is watching.** An
   unwatched run collects nothing, so a hand raised during a break is queued at
   the terminal until someone opens the console.
