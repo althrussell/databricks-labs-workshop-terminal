@@ -147,9 +147,10 @@ def test_an_unmeasured_deployment_offers_everything_it_serves(monkeypatch):
     assert set(models.comparison_models()) == {"glm", "kimi", "gemini"}
 
 
-def test_the_config_endpoint_publishes_what_codex_was_configured_with(
+def test_the_config_endpoint_publishes_the_endpoint_not_a_dead_command(
     client, monkeypatch
 ):
+    """No harness command can be promised here — see server.main.model_comparison."""
     from server import main
 
     monkeypatch.setenv("WORKSHOP_CODEX_COMPARE", "kimi")
@@ -161,6 +162,9 @@ def test_the_config_endpoint_publishes_what_codex_was_configured_with(
             "profile": "kimi",
             "model": "databricks-kimi-k3",
             "label": "Kimi K3",
-            "command": "codex --profile kimi",
+            "endpoint": (
+                "https://test.cloud.databricks.com"
+                "/serving-endpoints/databricks-kimi-k3/invocations"
+            ),
         }
     ]

@@ -336,8 +336,8 @@ take effect on restart with **no rebuild**. Set these per instance:
 | `WORKSHOP_ATTENDEE_EMAIL` | the attendee email assigned to this instance | fail-closed attendee identity binding; required by `/readyz` |
 | `WORKSHOP_APP_SP_ID` | numeric `service_principal_id` from app create/get | authoritative SCIM `/Me` app binding; patch the uploaded `app.yaml` after app creation and before deploy |
 | `SKILLS_REF` | leave unset | the reviewed tag ships in `assets/artifacts/manifest.json` (item 5) |
-| `CLAUDE_CODE_VERSION` | `2.1.216` release candidate | reviewed Claude Code CLI release |
-| `CODEX_CLI_VERSION` | `0.144.6` release candidate | reviewed Codex CLI release |
+| `CLAUDE_CODE_VERSION` | `2.1.228` release candidate | reviewed Claude Code CLI release |
+| `CODEX_CLI_VERSION` | `0.147.0` release candidate | reviewed Codex CLI release |
 | `OMNIGENT_VERSION` | `0.9.0` release candidate | reviewed Omnigent release matched to the dedicated App protocol |
 | `DATABRICKS_CLI_VERSION` | reviewed exact version | make the Databricks CLI input explicit |
 | `ANTHROPIC_MODEL` / `CODEX_MODEL` | reviewed endpoint names | prevent model drift between instances |

@@ -280,13 +280,20 @@ def configure_claude(
 _CODEX_MODEL_PROVIDER = "databricks"
 _CODEX_PROVIDER_DISPLAY_NAME = "Databricks Model Serving"
 
-# A second Codex provider on the plain chat-completions surface. The Responses
-# provider above only serves the OpenAI family; GLM, Kimi and Gemini answer on
-# `<host>/serving-endpoints/chat/completions` and nowhere else Codex can reach.
-# Kept separate rather than switching the default provider's wire: the everyday
-# driver stays on Responses, which is what Codex is tuned for.
-_CODEX_CHAT_PROVIDER = "databricks-chat"
-_CODEX_CHAT_DISPLAY_NAME = "Databricks Model Serving (chat)"
+# Codex once carried a second provider on the plain chat-completions surface so
+# GLM, Kimi and Gemini — which answer on `<host>/serving-endpoints/chat/
+# completions` and nowhere else — were reachable as `codex --profile <name>`.
+# codex-cli 0.144.6 removed the chat wire: `responses` is now the only accepted
+# `wire_api`, and an unknown value does not degrade to a skipped provider, it
+# invalidates the WHOLE config. Codex then falls back to its default config,
+# which has no `databricks` provider, and every session dies at startup with
+# "Model provider `databricks` not found" — the Omnigent native terminal
+# included, since it copies this same file into its per-session CODEX_HOME.
+#
+# The gateway's Responses surface refuses those models too ("Responses API
+# passthrough is not supported for model databricks-glm-5-2"), so there is no
+# wire that both Codex speaks and they answer. The comparison exercise moved to
+# Omnigent, which still speaks chat — see models.COMPARISON_MODELS.
 
 # What we key our entry under in ~/.omnigent/config.yaml. A separate name from
 # the codex table id above, and prefixed like `databricks-gateway`, because we
@@ -370,43 +377,9 @@ def configure_codex(
         f'args = ["{token_path}"]\n'
         "timeout_ms = 5000\n"
         "refresh_interval_ms = 240000\n"
-        f"{_codex_comparison_toml(token_path, available)}"
     )
     with open(os.path.join(codex_dir, "config.toml"), "w") as f:
         f.write(config_toml)
-
-
-def _codex_comparison_toml(token_path: str, available: set[str]) -> str:
-    """Profiles for the model-comparison exercise, on the chat-completions wire.
-
-    This is what takes Pi off the critical path for the workshop's headline
-    exercise. An attendee runs ``codex --profile glm`` against the same task and
-    reads the difference; nothing in that route touches the attendee OBO token,
-    so it keeps working through every credential failure Phase 2 is about.
-    """
-    comparisons = models.comparison_models(available)
-    if not comparisons:
-        return ""
-    profiles = "".join(
-        f"\n[profiles.{name}]\n"
-        f'model = "{model}"\n'
-        f'model_provider = "{_CODEX_CHAT_PROVIDER}"\n'
-        for name, model in sorted(comparisons.items())
-    )
-    return (
-        "\n"
-        f"[model_providers.{_CODEX_CHAT_PROVIDER}]\n"
-        f'name = "{_CODEX_CHAT_DISPLAY_NAME}"\n'
-        f'base_url = "{config.databricks_host()}/serving-endpoints"\n'
-        'wire_api = "chat"\n'
-        "\n"
-        f"[model_providers.{_CODEX_CHAT_PROVIDER}.auth]\n"
-        'command = "cat"\n'
-        f'args = ["{token_path}"]\n'
-        "timeout_ms = 5000\n"
-        "refresh_interval_ms = 240000\n"
-        f"{profiles}"
-    )
 
 
 def _gateway_token_path(user: User) -> str:

@@ -253,14 +253,21 @@ def get_config(principal: Principal = Depends(get_current_user)):
 
 
 def model_comparison() -> list[dict]:
-    """Comparison profiles this deployment will actually serve, in a fixed order."""
+    """Comparison models this deployment will actually serve, in a fixed order.
+
+    Carries the endpoint rather than a command to run. These models answer only
+    on chat-completions, and codex-cli 0.144.6 removed that wire, so there is no
+    harness command here we can promise works — see server/models for the whole
+    story. Publishing the resolved set without a command keeps the UI honest
+    instead of printing an invocation that exits non-zero in front of a room.
+    """
     resolved = models.comparison_models()
     return [
         {
             "profile": name,
             "model": resolved[name],
             "label": label,
-            "command": f"codex --profile {name}",
+            "endpoint": f"{config.databricks_host()}/serving-endpoints/{resolved[name]}/invocations",
         }
         for name, (_default, label) in models.COMPARISON_MODELS.items()
         if name in resolved

@@ -5,11 +5,15 @@ import shutil
 import subprocess
 import sys
 import threading
+from pathlib import Path
 
 import pytest
+import yaml
 
 from server.bootstrap import install
 
+
+_ROOT = Path(__file__).resolve().parents[1]
 
 _ARCHIVE_EXECUTABLES = {
     "uv_binary": "uv-x86_64-unknown-linux-gnu/uv",
@@ -131,7 +135,7 @@ def restore_installer_state(monkeypatch, tmp_path):
 @pytest.mark.parametrize(
     ("output", "expected"),
     [
-        ("2.1.216 (Claude Code)", "2.1.216"),
+        ("2.1.228 (Claude Code)", "2.1.228"),
         ("codex-cli 0.144.6", "0.144.6"),
         ("Databricks CLI v1.8.0", "1.8.0"),
         ("omnigent 0.5.1", "0.5.1"),
@@ -167,7 +171,7 @@ def test_status_exposes_secret_free_expected_and_actual_release_manifest():
     install._set(
         "claude",
         "complete",
-        expected_version="2.1.216",
+        expected_version="2.1.228",
         actual_version="2.1.215",
     )
 
@@ -178,7 +182,7 @@ def test_status_exposes_secret_free_expected_and_actual_release_manifest():
         for key in ("enabled", "expected", "actual", "match")
     } == {
         "enabled": True,
-        "expected": "2.1.216",
+        "expected": "2.1.228",
         "actual": "2.1.215",
         "match": False,
     }
@@ -204,14 +208,14 @@ def test_setup_steps_record_source_timing_and_verification_fields(monkeypatch):
     install._set(
         "claude",
         "running",
-        expected_version="2.1.216",
+        expected_version="2.1.228",
         source="network",
         expected_checksum="abc",
     )
     install._set(
         "claude",
         "complete",
-        actual_version="2.1.216",
+        actual_version="2.1.228",
         actual_checksum="abc",
     )
 
@@ -220,8 +224,8 @@ def test_setup_steps_record_source_timing_and_verification_fields(monkeypatch):
     assert step["started_at"] == 100.0
     assert step["completed_at"] == 104.25
     assert step["duration_ms"] == 4250
-    assert step["expected_version"] == "2.1.216"
-    assert step["actual_version"] == "2.1.216"
+    assert step["expected_version"] == "2.1.228"
+    assert step["actual_version"] == "2.1.228"
     assert step["expected_checksum"] == "abc"
     assert step["actual_checksum"] == "abc"
 
@@ -783,10 +787,77 @@ def test_omnigent_missing_staged_supply_chain_sets_installer_error(
 
 
 def test_all_release_candidate_defaults_are_exact():
-    assert install.CLAUDE_VERSION == "2.1.216"
-    assert install.CODEX_VERSION == "0.144.6"
-    assert install.DATABRICKS_CLI_VERSION == "1.8.0"
+    assert install.CLAUDE_VERSION == "2.1.228"
+    assert install.CODEX_VERSION == "0.147.0"
+    assert install.DATABRICKS_CLI_VERSION == "1.11.0"
     assert install.OMNIGENT_VERSION == "0.9.0"
+
+
+# Manifest artifact -> the app.yaml env var pinning the same release, and the
+# suffix the artifact's version carries on top of it. Packages published
+# per-platform put the target triple in the version string, and that suffix is
+# part of the pin: it is what makes the linux-x64 tarball a different artifact
+# from the launcher that resolves it.
+_VERSION_PINS = {
+    "claude_binary": ("CLAUDE_CODE_VERSION", ""),
+    "claude_installer": ("CLAUDE_CODE_VERSION", ""),
+    "codex_npm_launcher_package": ("CODEX_CLI_VERSION", ""),
+    "codex_native_package_linux_x64": ("CODEX_CLI_VERSION", "-linux-x64"),
+    "databricks_cli_archive_linux_x64": ("DATABRICKS_CLI_VERSION", ""),
+    "databricks_cli_installer": ("DATABRICKS_CLI_VERSION", ""),
+    "node_linux_arm64": ("NODE_VERSION", ""),
+    "node_linux_x64": ("NODE_VERSION", ""),
+    "omnigent_lock": ("OMNIGENT_VERSION", ""),
+    "pi_npm_package": ("PI_CLI_VERSION", ""),
+}
+
+
+def _app_yaml_env() -> dict[str, str]:
+    return {
+        item["name"]: item.get("value", "")
+        for item in yaml.safe_load((_ROOT / "app.yaml").read_text())["env"]
+    }
+
+
+def test_a_version_bump_lands_in_the_manifest_and_app_yaml_together():
+    """The two halves of a pin must move in one commit.
+
+    ``app.yaml`` says which version the installer demands; the manifest says
+    which bytes it downloads. Boot fetches the manifest's artifact and then
+    refuses anything whose ``--version`` disagrees with the env var, so a bump
+    applied to one file alone does not degrade -- it fails the install outright,
+    three retries then a red release manifest, for every attendee at once.
+
+    It is also invisible upstream of that. Control Tower mirrors the manifest
+    and reports the volume current, because by its own contract it is: the pin
+    it staged is the pin the manifest names. Nothing between the commit and the
+    attendee's terminal compares the two files, so this is where a half-applied
+    bump gets caught.
+    """
+    manifest = json.loads(
+        (_ROOT / "assets" / "artifacts" / "manifest.json").read_text()
+    )["artifacts"]
+    env = _app_yaml_env()
+
+    assert {
+        name: manifest[name]["version"] for name in _VERSION_PINS
+    } == {
+        name: f"{env[variable]}{suffix}"
+        for name, (variable, suffix) in _VERSION_PINS.items()
+    }
+
+
+def test_every_version_app_yaml_pins_is_covered_by_that_check():
+    """A table is only as good as its coverage.
+
+    A newly pinned CLI added to ``app.yaml`` and the manifest, but not here,
+    would be pinned in two places and compared in neither -- which is the state
+    this pair of tests exists to make impossible, so it has to hold for the next
+    CLI as well as the current six.
+    """
+    pinned = {name for name in _app_yaml_env() if "VERSION" in name}
+
+    assert pinned == {variable for variable, _ in _VERSION_PINS.values()}
 
 
 def test_skills_fetch_records_exact_ref_and_resolved_commit(

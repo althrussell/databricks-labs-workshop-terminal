@@ -1,10 +1,11 @@
-"""The model-comparison exercise, reachable without Pi.
+"""The generated Codex config has to be loadable by the Codex we ship.
 
-Comparing what different models cost for the same task is the workshop's
-headline exercise, and it used to require Pi — the one harness that routes per
-model across three wire protocols, and the most fragile thing in the room. These
-profiles put the same models on bare Codex over plain chat-completions, which
-touches no attendee credential and cannot be taken out by a stale OBO token.
+An unknown ``wire_api`` is not a skipped provider — codex-cli rejects the whole
+file, falls back to its own default config, and every session dies at startup
+with "Model provider `databricks` not found". That took out bare Codex and the
+Omnigent native terminal together, because Omnigent copies this same file into
+its per-session ``CODEX_HOME``. These tests pin the config to what the pinned
+CLI actually accepts.
 """
 
 from __future__ import annotations
@@ -15,6 +16,10 @@ import tomllib
 import pytest
 
 from server import cli_config, models
+
+# codex-cli 0.144.6 (assets/artifacts/manifest.json) accepts exactly one value:
+# `unknown variant "chat", expected "responses"`. Chat completions is gone.
+CODEX_ACCEPTED_WIRE_APIS = {"responses"}
 
 
 @pytest.fixture
@@ -35,31 +40,28 @@ def _toml(user) -> dict:
         return tomllib.load(handle)
 
 
-def test_every_comparison_model_gets_a_profile_an_attendee_can_type(user):
+def test_every_provider_speaks_a_wire_this_codex_accepts(user):
+    """The regression itself: one bad wire invalidates the entire config."""
     cli_config.configure_codex(user, "tok-1", available=set())
 
+    for name, provider in _toml(user)["model_providers"].items():
+        assert provider["wire_api"] in CODEX_ACCEPTED_WIRE_APIS, (
+            f"provider {name!r} would make codex discard the whole config"
+        )
+
+
+def test_no_model_provider_reference_dangles(user):
+    """A profile or default pointing at an undefined table is the same failure."""
+    cli_config.configure_codex(user, "tok-1", available=set())
     config = _toml(user)
+    defined = set(config["model_providers"])
 
-    assert set(config["profiles"]) == {"glm", "kimi", "gemini"}
-    assert config["profiles"]["glm"]["model"] == "databricks-glm-5-2"
-    assert config["profiles"]["kimi"]["model"] == "databricks-kimi-k3"
-    assert config["profiles"]["gemini"]["model"] == "databricks-gemini-3-6-flash"
-
-
-def test_the_comparison_runs_on_chat_completions_at_the_workspace_host(user):
-    """The only surface these models answer on, and one Codex can speak."""
-    cli_config.configure_codex(user, "tok-1", available=set())
-
-    provider = _toml(user)["model_providers"]["databricks-chat"]
-
-    assert provider["wire_api"] == "chat"
-    assert provider["base_url"] == "https://ws.cloud.databricks.com/serving-endpoints"
-    for profile in _toml(user)["profiles"].values():
-        assert profile["model_provider"] == "databricks-chat"
+    assert config["model_provider"] in defined
+    for name, profile in config.get("profiles", {}).items():
+        assert profile["model_provider"] in defined, f"profile {name!r} dangles"
 
 
-def test_the_everyday_driver_is_left_on_the_responses_wire(user):
-    """Codex is tuned for the OpenAI family; the comparison is the exception."""
+def test_the_everyday_driver_is_on_the_responses_wire(user):
     cli_config.configure_codex(user, "tok-1", available=set())
 
     config = _toml(user)
@@ -68,10 +70,10 @@ def test_the_everyday_driver_is_left_on_the_responses_wire(user):
     assert config["model_providers"]["databricks"]["wire_api"] == "responses"
 
 
-def test_the_comparison_survives_token_rotation_like_everything_else(user):
+def test_the_driver_survives_token_rotation(user):
     cli_config.configure_codex(user, "tok-1", available=set())
 
-    auth = _toml(user)["model_providers"]["databricks-chat"]["auth"]
+    auth = _toml(user)["model_providers"]["databricks"]["auth"]
 
     assert auth["command"] == "cat"
     assert auth["args"] == [
@@ -80,33 +82,35 @@ def test_the_comparison_survives_token_rotation_like_everything_else(user):
     assert auth["refresh_interval_ms"] == 240000
 
 
-def test_a_model_this_region_does_not_serve_is_not_advertised(user):
-    """An attendee typing `codex --profile kimi` into a 404 learns nothing."""
-    cli_config.configure_codex(
-        user, "tok-1", available={"databricks-glm-5-2", "databricks-gpt-5-6-terra"}
-    )
+def test_the_comparison_models_are_not_offered_as_codex_profiles(user):
+    """They answer only on chat-completions, which this Codex cannot speak.
 
-    assert set(_toml(user)["profiles"]) == {"glm"}
-
-
-def test_a_workspace_serving_none_of_them_writes_no_comparison_block(user):
-    cli_config.configure_codex(user, "tok-1", available={"databricks-gpt-5-6-terra"})
+    The gateway's Responses surface refuses them too, so there is no wire that
+    would let them back in — offering a profile here is offering a broken one.
+    """
+    cli_config.configure_codex(user, "tok-1", available=set())
 
     config = _toml(user)
 
     assert "profiles" not in config
-    assert "databricks-chat" not in config["model_providers"]
+    assert set(config["model_providers"]) == {"databricks"}
 
 
-def test_a_withdrawn_endpoint_is_a_values_change_not_a_release(user, monkeypatch):
-    monkeypatch.setenv("CODEX_COMPARE_KIMI", "databricks-kimi-k4")
-
-    cli_config.configure_codex(user, "tok-1", available=set())
-
-    assert _toml(user)["profiles"]["kimi"]["model"] == "databricks-kimi-k4"
-
-
-def test_failed_discovery_keeps_every_profile_rather_than_none():
+def test_failed_discovery_keeps_every_comparison_model_rather_than_none():
     """Empty availability means we could not ask, not that nothing is served."""
     assert set(models.comparison_models(set())) == {"glm", "kimi", "gemini"}
     assert set(models.comparison_models(None)) == {"glm", "kimi", "gemini"}
+
+
+def test_a_model_this_region_does_not_serve_is_not_published(user):
+    resolved = models.comparison_models(
+        {"databricks-glm-5-2", "databricks-gpt-5-6-terra"}
+    )
+
+    assert set(resolved) == {"glm"}
+
+
+def test_a_withdrawn_endpoint_is_a_values_change_not_a_release(monkeypatch):
+    monkeypatch.setenv("CODEX_COMPARE_KIMI", "databricks-kimi-k4")
+
+    assert models.comparison_models(set())["kimi"] == "databricks-kimi-k4"

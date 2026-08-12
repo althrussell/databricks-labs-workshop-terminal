@@ -107,8 +107,29 @@ def fake_omnigent(monkeypatch):
         RoutingSettings=_FakeRoutingSettings,
         ExternalRoutingClient=_external,
         LLMRoutingClient=object,
+        harness_bars_model=_fake_harness_bars_model,
     )
     return built
+
+
+# Upstream's SMART_ROUTING_PI_EXCLUDED, folded the way upstream folds it: under
+# pi the harness gateway 400s on every gpt-5.5/5.6 reasoning arm and on Claude
+# Haiku. This is the guard the external path applies and the judge does not.
+_PI_EXCLUDED = (
+    "databricks-claude-haiku-4-5",
+    "databricks-gpt-5-5",
+    "databricks-gpt-5-5-pro",
+    "databricks-gpt-5-6-luna",
+    "databricks-gpt-5-6-terra",
+    "databricks-gpt-5-6-sol",
+)
+
+
+def _fake_harness_bars_model(harness, model, **_kwargs):
+    if harness != "pi":
+        return False
+    fold = smart_routing._bare_model_id
+    return fold(model) in {fold(m) for m in _PI_EXCLUDED}
 
 
 # --- Enablement and configuration -----------------------------------------
@@ -300,3 +321,220 @@ def test_workspace_client_bearer_auth_sets_authorization():
 
     assert flows == [request]
     assert request.headers["Authorization"] == "Bearer rotated-token"
+
+
+# --- Judge menu shaping ----------------------------------------------------
+# The judge is the fallback the external router leans on whenever task_v1 picks
+# an arm this workspace cannot land, so a wrong candidate list here is a wrong
+# answer in front of the room.
+
+
+def test_the_judge_cannot_pick_a_model_the_harness_bars(fake_omnigent):
+    """The screenshot failure: "No available harness can run gpt-5.6-luna".
+
+    Upstream filters the external verdict through the pi bar but hands the
+    judge the raw catalog, so the judge answered with a pi/gpt pair that was
+    impossible at the moment it was made.
+    """
+    shaped = smart_routing.shape_judge_menu(
+        {"pi": ["databricks-gpt-5.6-luna", "databricks-gpt-5.6-sol", "databricks-glm-5-2"]},
+        env={},
+    )
+
+    assert shaped == {"pi": ["databricks-glm-5-2"]}
+
+
+def test_a_harness_with_nothing_left_is_dropped_not_offered_empty(fake_omnigent):
+    shaped = smart_routing.shape_judge_menu(
+        {"pi": ["databricks-gpt-5.6-luna"], "codex": ["databricks-gpt-5.6-luna"]},
+        env={},
+    )
+
+    assert "pi" not in shaped
+    assert shaped["codex"] == ["databricks-gpt-5.6-luna"]
+
+
+def test_candidates_are_ordered_cheapest_first(fake_omnigent):
+    """luna 28 < terra 282 < sol 642 DBU per output token."""
+    shaped = smart_routing.shape_judge_menu(
+        {
+            "codex": [
+                "databricks-gpt-5.6-sol",
+                "databricks-gpt-5.6-luna",
+                "databricks-gpt-5.6-terra",
+            ]
+        },
+        env={},
+    )
+
+    assert shaped["codex"] == [
+        "databricks-gpt-5.6-luna",
+        "databricks-gpt-5.6-terra",
+        "databricks-gpt-5.6-sol",
+    ]
+
+
+def test_a_trivial_prompt_on_pi_does_not_buy_the_flagship(fake_omnigent):
+    """The regression that reached a live workshop, in full.
+
+    pi bars every GPT arm and Haiku, so its menu is Claude-only. While the cost
+    order named the GPT arms alone, every survivor landed in the unranked bucket
+    where the sole tiebreak is the model id -- and ``claude-fable-5``, the
+    dearest endpoint the workspace serves, sorts ahead of opus and sonnet on the
+    letter F. The judge reads position as price, so "hi" bought the flagship.
+
+    Both halves of the fix are asserted here because either alone still fails:
+    ordering Claude without excluding fable leaves it reachable as the "no cheap
+    branch holds" fallback, and excluding fable without ordering Claude leaves
+    opus-5 at the head on the same alphabetical accident.
+    """
+    shaped = smart_routing.shape_judge_menu(
+        {
+            "pi": [
+                "databricks-claude-opus-5",
+                "databricks-claude-fable-5",
+                "databricks-claude-sonnet-5",
+                "databricks-claude-haiku-4-5",
+                "databricks-gpt-5.6-luna",
+            ]
+        },
+        env={},
+    )
+
+    assert shaped["pi"] == ["databricks-claude-sonnet-5", "databricks-claude-opus-5"]
+
+
+def test_the_dearest_endpoint_is_barred_from_every_harness(fake_omnigent):
+    """fable-5 is out of scope for a workshop, not merely last.
+
+    Ordering it last would still hand it to the rubric's "no cheap branch holds"
+    fallback, which selects the far end of the list.
+    """
+    shaped = smart_routing.shape_judge_menu(
+        {
+            "pi": ["databricks-claude-fable-5"],
+            "claude-sdk": ["databricks-claude-fable-5", "databricks-claude-sonnet-5"],
+        },
+        env={},
+    )
+
+    # pi keeps no candidate at all, so it is dropped rather than offered empty.
+    assert shaped == {"claude-sdk": ["databricks-claude-sonnet-5"]}
+
+
+def test_the_deprecated_generation_is_not_a_candidate_at_all(fake_omnigent):
+    """gpt-5.5 prices like sol and is a generation behind — never the answer."""
+    shaped = smart_routing.shape_judge_menu(
+        {"codex": ["databricks-gpt-5.5", "databricks-gpt-5-5-pro", "databricks-gpt-5.6-luna"]},
+        env={},
+    )
+
+    assert shaped["codex"] == ["databricks-gpt-5.6-luna"]
+
+
+def test_an_unpriced_model_sorts_after_the_ones_we_priced(fake_omnigent):
+    """Not knowing a price is not evidence that it is cheap."""
+    shaped = smart_routing.shape_judge_menu(
+        {"codex": ["databricks-claude-opus-4-8", "databricks-gpt-5.6-sol"]},
+        env={},
+    )
+
+    assert shaped["codex"] == ["databricks-gpt-5.6-sol", "databricks-claude-opus-4-8"]
+
+
+def test_order_and_exclusions_are_a_values_change_not_a_release(fake_omnigent):
+    shaped = smart_routing.shape_judge_menu(
+        {"codex": ["databricks-gpt-5.6-luna", "databricks-gpt-5.6-sol"]},
+        env={
+            "WORKSHOP_ROUTING_MODEL_ORDER": "gpt-5-6-sol,gpt-5-6-luna",
+            "WORKSHOP_ROUTING_MODEL_EXCLUDE": "",
+        },
+    )
+
+    assert shaped["codex"] == ["databricks-gpt-5.6-sol", "databricks-gpt-5.6-luna"]
+
+
+def test_the_router_and_catalog_spellings_of_one_arm_compare_equal(fake_omnigent):
+    """The router keys arms ``gpt-5-6-sol``; the catalog spells them dotted."""
+    assert smart_routing._bare_model_id("databricks-gpt-5.6-sol") == "gpt-5-6-sol"
+    assert smart_routing._bare_model_id("system.ai.GPT-5.6-Sol[1M]") == "gpt-5-6-sol"
+
+
+def test_a_judge_with_no_runnable_candidate_returns_no_verdict(fake_omnigent, monkeypatch):
+    """Better unrouted on the session default than routed somewhere dead."""
+    built = {}
+
+    policies = ModuleType("omnigent.runtime.policies")
+    builder = ModuleType("omnigent.runtime.policies.builder")
+
+    def _build(*_args, **_kwargs):
+        built["called"] = True
+        return object()
+
+    builder._build_policy_llm_client = _build
+    types_module = ModuleType("omnigent.spec.types")
+    types_module.LLMConfig = lambda **kwargs: SimpleNamespace(**kwargs)
+    monkeypatch.setitem(sys.modules, "omnigent.runtime.policies", policies)
+    monkeypatch.setitem(sys.modules, "omnigent.runtime.policies.builder", builder)
+    monkeypatch.setitem(sys.modules, "omnigent.spec", ModuleType("omnigent.spec"))
+    monkeypatch.setitem(sys.modules, "omnigent.spec.types", types_module)
+
+    judge = smart_routing.AppServicePrincipalJudge(_client(), "databricks-judge", env={})
+    result = asyncio.run(judge.route("do a thing", {"pi": ["databricks-gpt-5.6-luna"]}))
+
+    assert result is None
+    assert "harness bars" in judge.last_error
+    # And it did not pay for a judge call to reach that conclusion.
+    assert "called" not in built
+
+
+def test_a_broken_shaper_costs_the_routing_not_the_turn(fake_omnigent, monkeypatch):
+    """Shaping is an optimisation on the menu, so it may not end a turn.
+
+    Its own guard covers importing ``harness_bars_model`` but not calling it,
+    and that is upstream code walking model ids whose shape we do not control.
+    Everything else in ``route`` already fails open; before this, shaping was
+    the one step that could raise straight through it.
+    """
+
+    policies = ModuleType("omnigent.runtime.policies")
+    builder = ModuleType("omnigent.runtime.policies.builder")
+    builder._build_policy_llm_client = lambda *_a, **_k: object()
+    types_module = ModuleType("omnigent.spec.types")
+    types_module.LLMConfig = lambda **kwargs: SimpleNamespace(**kwargs)
+    monkeypatch.setitem(sys.modules, "omnigent.runtime.policies", policies)
+    monkeypatch.setitem(sys.modules, "omnigent.runtime.policies.builder", builder)
+    monkeypatch.setitem(sys.modules, "omnigent.spec", ModuleType("omnigent.spec"))
+    monkeypatch.setitem(sys.modules, "omnigent.spec.types", types_module)
+
+    def _explode(*_args, **_kwargs):
+        raise RuntimeError("upstream changed the bar signature")
+
+    monkeypatch.setattr(smart_routing, "shape_judge_menu", _explode)
+
+    judge = smart_routing.AppServicePrincipalJudge(_client(), "databricks-judge", env={})
+    result = asyncio.run(judge.route("do a thing", {"pi": ["databricks-claude-sonnet-5"]}))
+
+    assert result is None
+    assert "could not shape the judge menu" in judge.last_error
+
+
+def test_codex_is_never_offered_a_chat_only_model(fake_omnigent):
+    """glm-5-2 is upstream's first task_v1 codex arm and codex cannot run it.
+
+    Responses-only CLI, and the gateway refuses the passthrough, so the pick is
+    dead before it is made — this is the "glm in the codex model list" report.
+    """
+    shaped = smart_routing.shape_judge_menu(
+        {"codex": ["system.ai.glm-5-2", "databricks-kimi-k3", "databricks-gpt-5.6-luna"]},
+        env={},
+    )
+
+    assert shaped["codex"] == ["databricks-gpt-5.6-luna"]
+
+
+def test_a_harness_that_speaks_chat_keeps_those_models(fake_omnigent):
+    """The bar is per harness, not global: pi runs glm fine."""
+    shaped = smart_routing.shape_judge_menu({"pi": ["databricks-glm-5-2"]}, env={})
+
+    assert shaped["pi"] == ["databricks-glm-5-2"]

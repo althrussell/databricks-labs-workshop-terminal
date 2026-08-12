@@ -97,20 +97,19 @@ _INSIGHT_CHEAP = ("databricks-gpt-oss-120b",) + tuple(
 )
 
 
-# The model-comparison exercise, as Codex profiles.
+# The model-comparison exercise: same task, different vendor, read the cost.
 #
-# Comparing what different models cost for the same task used to require Pi,
-# because Pi is the only harness that routes per model across the Anthropic,
-# Responses and chat-completions surfaces. That made the most fragile component
-# in the room load-bearing for its headline exercise. Bare Codex reaches the
-# same models through one plain OpenAI-shaped surface — verified 200s on
-# ``<host>/serving-endpoints/chat/completions`` — and touches no OBO token on
-# the way, so the comparison survives everything Phase 2 is about.
+# These three answer on ``<host>/serving-endpoints/chat/completions`` and
+# nowhere else. They were Codex profiles until codex-cli 0.144.6 dropped the
+# chat wire entirely — see the note in cli_config — and the gateway's Responses
+# surface rejects them outright ("Responses API passthrough is not supported
+# for model databricks-glm-5-2"), so no harness on the Responses wire can carry
+# this exercise. The set is still published and still smoke-tested; what is
+# gone is the ``codex --profile`` transport.
 #
-# Each entry is a Codex profile name the attendee types (``codex --profile
-# glm``), the endpoint behind it, and how it is described when we publish the
-# set. Every one is overridable via ``CODEX_COMPARE_<NAME>`` so a renamed or
-# withdrawn endpoint is a values change, not a release.
+# Each entry is the short name, the endpoint behind it, and how it is described
+# when we publish the set. Every one is overridable via ``CODEX_COMPARE_<NAME>``
+# so a renamed or withdrawn endpoint is a values change, not a release.
 COMPARISON_MODELS: dict[str, tuple[str, str]] = {
     "glm": ("databricks-glm-5-2", "GLM 5.2"),
     "kimi": ("databricks-kimi-k3", "Kimi K3"),
@@ -139,8 +138,8 @@ def comparison_models(available: set[str] | None = None) -> dict[str, str]:
     """Profile name -> endpoint for every comparison model an attendee can use.
 
     Filtered two ways. Against discovery, so a region a release behind advertises
-    the profiles it has rather than the ones it does not — an attendee typing
-    ``codex --profile kimi`` into a 404 learns nothing about model cost. And
+    the models it has rather than the ones it does not — an attendee pointed at a
+    404 learns nothing about model cost. And
     against the smoke matrix's verdict, so a model that is served but cannot hold
     a tool call is not put in front of a room. An empty or missing ``available``
     means discovery failed, not that the workspace serves nothing, so everything
