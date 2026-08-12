@@ -500,7 +500,7 @@ python scripts/pull_diagnostics.py errors  --urls ./instances.txt   # whole flee
 | `SKILLS_REPO` | github databricks/databricks-agent-skills | Skills source; event use is constrained by the reviewed artifact manifest |
 | `SKILLS_REF` | empty in `app.yaml` | Exact reviewed tag/SHA for the skills overlay; must match the manifest ref, commit, and content SHA-256 |
 | `ARTIFACT_MANIFEST_PATH` | empty | Optional mirror override for the repo-owned contract in `assets/artifacts/manifest.json`; may redirect `source` only, and a version/checksum override is rejected |
-| `CLAUDE_CODE_VERSION` | `2.1.216` in `app.yaml` | Exact reviewed Claude Code CLI release candidate |
+| `CLAUDE_CODE_VERSION` | `2.1.228` in `app.yaml` | Exact reviewed Claude Code CLI release candidate |
 | `CODEX_CLI_VERSION` | `0.147.0` in `app.yaml` | Exact reviewed Codex CLI release candidate |
 | `OMNIGENT_VERSION` | `0.9.0` in `app.yaml` | Exact reviewed Omnigent release candidate, matched to the dedicated App protocol |
 | `DATABRICKS_CLI_VERSION` | `1.11.0` in `app.yaml` | Exact reviewed Databricks CLI release input |

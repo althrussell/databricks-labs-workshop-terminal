@@ -39,7 +39,7 @@ def test_uploaded_yaml_patch_sets_current_event_contract_without_mutating_repo()
         anthropic_model="databricks-claude-sonnet-5",
         codex_model="databricks-gpt-5-6-codex",
         model_profile="economy",
-        claude_code_version="2.1.216",
+        claude_code_version="2.1.228",
         codex_cli_version="0.147.0",
         databricks_cli_version="1.11.0",
         omnigent_version="0.9.0",

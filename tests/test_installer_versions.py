@@ -135,7 +135,7 @@ def restore_installer_state(monkeypatch, tmp_path):
 @pytest.mark.parametrize(
     ("output", "expected"),
     [
-        ("2.1.216 (Claude Code)", "2.1.216"),
+        ("2.1.228 (Claude Code)", "2.1.228"),
         ("codex-cli 0.144.6", "0.144.6"),
         ("Databricks CLI v1.8.0", "1.8.0"),
         ("omnigent 0.5.1", "0.5.1"),
@@ -171,7 +171,7 @@ def test_status_exposes_secret_free_expected_and_actual_release_manifest():
     install._set(
         "claude",
         "complete",
-        expected_version="2.1.216",
+        expected_version="2.1.228",
         actual_version="2.1.215",
     )
 
@@ -182,7 +182,7 @@ def test_status_exposes_secret_free_expected_and_actual_release_manifest():
         for key in ("enabled", "expected", "actual", "match")
     } == {
         "enabled": True,
-        "expected": "2.1.216",
+        "expected": "2.1.228",
         "actual": "2.1.215",
         "match": False,
     }
@@ -208,14 +208,14 @@ def test_setup_steps_record_source_timing_and_verification_fields(monkeypatch):
     install._set(
         "claude",
         "running",
-        expected_version="2.1.216",
+        expected_version="2.1.228",
         source="network",
         expected_checksum="abc",
     )
     install._set(
         "claude",
         "complete",
-        actual_version="2.1.216",
+        actual_version="2.1.228",
         actual_checksum="abc",
     )
 
@@ -224,8 +224,8 @@ def test_setup_steps_record_source_timing_and_verification_fields(monkeypatch):
     assert step["started_at"] == 100.0
     assert step["completed_at"] == 104.25
     assert step["duration_ms"] == 4250
-    assert step["expected_version"] == "2.1.216"
-    assert step["actual_version"] == "2.1.216"
+    assert step["expected_version"] == "2.1.228"
+    assert step["actual_version"] == "2.1.228"
     assert step["expected_checksum"] == "abc"
     assert step["actual_checksum"] == "abc"
 
@@ -787,7 +787,7 @@ def test_omnigent_missing_staged_supply_chain_sets_installer_error(
 
 
 def test_all_release_candidate_defaults_are_exact():
-    assert install.CLAUDE_VERSION == "2.1.216"
+    assert install.CLAUDE_VERSION == "2.1.228"
     assert install.CODEX_VERSION == "0.147.0"
     assert install.DATABRICKS_CLI_VERSION == "1.11.0"
     assert install.OMNIGENT_VERSION == "0.9.0"

@@ -2,15 +2,15 @@
   "//": "GENERATED FILE. Run `python3 scripts/build_artifact_manifest.py --write` to regenerate. See docs/artifact-manifest.md.",
   "artifacts": {
     "claude_binary": {
-      "sha256": "74deca45220b8080ec75ab099bd5a5980e41a2b5879846a008fb115d436de085",
-      "source": "https://downloads.claude.ai/claude-code-releases/2.1.216/linux-x64/claude",
-      "version": "2.1.216"
+      "sha256": "d535985e6941a3eb00179ccd7f52ceb0c6623a0305a518ebc4e6514f84a94c99",
+      "source": "https://downloads.claude.ai/claude-code-releases/2.1.228/linux-x64/claude",
+      "version": "2.1.228"
     },
     "claude_installer": {
       "sha256": "cde4f1702d3b1695f92b73d26888364e17bca476e17f0fd676484c951d36c125",
       "source": "claude-code-bootstrap.sh",
       "upstream": "https://claude.ai/install.sh",
-      "version": "2.1.216"
+      "version": "2.1.228"
     },
     "codex_native_package_linux_x64": {
       "executable_sha256": "cb0a15567e9a60a5820d54b0f6ae86d504dc3805c1eab21a47f70e3eb7b73a40",

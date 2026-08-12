@@ -25,7 +25,7 @@ def _good_inputs(tmp_path):
         "OBO_SCOPES": EXPECTED_SCOPES,
         "OMNIGENT_ENABLED": "true",
         "SKILLS_REF": "v1.2.3",
-        "CLAUDE_CODE_VERSION": "2.1.216",
+        "CLAUDE_CODE_VERSION": "2.1.228",
         "CODEX_CLI_VERSION": "0.144.6",
         "OMNIGENT_VERSION": "0.9.0",
         "DATABRICKS_CLI_VERSION": "1.8.0",
@@ -80,7 +80,7 @@ def _good_inputs(tmp_path):
                 "match": True,
             }
             for name, version in {
-                "claude": "2.1.216",
+                "claude": "2.1.228",
                 "codex": "0.144.6",
                 "databricks": "1.8.0",
                 "node": "24.18.1",
@@ -700,7 +700,7 @@ def test_release_pins_require_installed_versions_to_match(tmp_path):
 
     assert report["checks"]["release_pins"]["ok"] is False
     assert "claude" in report["checks"]["release_pins"]["mismatched"]
-    assert report["release_manifest"]["claude"]["expected"] == "2.1.216"
+    assert report["release_manifest"]["claude"]["expected"] == "2.1.228"
     assert report["release_manifest"]["claude"]["actual"] == "2.1.215"
 
 
