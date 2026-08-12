@@ -35,6 +35,7 @@ import HelpChatPanel from "./components/HelpChatPanel";
 import ToastHost from "./components/ToastHost";
 import TerminalView from "./components/TerminalView";
 import { bindIdentityRefresh, onAppEvent } from "./events";
+import { ideaAgentId, ideaSession } from "./ideation";
 import { friendlyError, type RecoveryAction } from "./errors";
 import { codeFromMessage, postAttendeeError, reportAttendeeError } from "./telemetry";
 
@@ -88,10 +89,13 @@ export default function App() {
    * a reason to re-run its mount effect — and Home re-renders every few seconds
    * while it polls agent install progress. An inline arrow here used to wipe
    * whatever the attendee was typing into the wizard. */
-  // The operator's create-time choice. Unknown while config is still loading,
-  // which reads as "on": the wizard's own `should_show` is server-gated too, so
-  // an optimistic answer here cannot open a modal a disabled run should not have.
-  const wizardAvailable = config?.onboarding_wizard.enabled !== false;
+  // The operator's create-time choice, and only once it is known. Reading an
+  // unloaded config as "on" was wrong for the one path that does not consult the
+  // server again: "Change what I'm building" opens the wizard directly, so an
+  // attendee with a saved brief and a slow or failed /api/config could reopen a
+  // modal their run had switched off. Unknown therefore means unavailable, which
+  // costs the control a moment of lateness and nothing else.
+  const wizardAvailable = config?.onboarding_wizard.enabled === true;
 
   const openWizard = useCallback(() => {
     if (!wizardAvailable) return;
@@ -312,14 +316,27 @@ export default function App() {
   }
 
   // Ideation chips / insight-card prompts: type the text into the attendee's
-  // agent session UNSENT — they press Enter. Opens a Claude session if none.
+  // agent session UNSENT — they press Enter. Opens a coding agent if none, and
+  // one this workshop actually offers: naming Claude here launched an agent an
+  // operator may have withheld, which failed and left the attendee with an error
+  // where the sentence they clicked should have been.
   async function ideaToSession(prompt: string) {
-    let target =
-      sessions.find((s) => s.agent_id === "claude" && !s.exited) ??
-      sessions.find((s) => !s.exited);
+    const agentId = ideaAgentId(agents);
+    let target: SessionInfo | undefined = ideaSession(sessions, agentId);
     let fresh = false;
     if (!target) {
-      target = (await launch("claude")) ?? undefined;
+      if (!agentId) {
+        // Nothing open and nothing to open it with. Only reachable on a
+        // workshop whose agent selection matched nothing in the catalogue, but
+        // a chip that quietly does nothing when clicked is worse than saying so.
+        if (agents.length > 0) {
+          setError(
+            "This workshop offers no coding agent to type that into — open a terminal and ask there."
+          );
+        }
+        return;
+      }
+      target = (await launch(agentId)) ?? undefined;
       fresh = true;
       if (!target) return;
     } else {
