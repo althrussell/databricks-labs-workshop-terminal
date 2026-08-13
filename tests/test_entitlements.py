@@ -795,3 +795,219 @@ def test_unverifiable_warehouse_is_failed_closed_and_visible(monkeypatch, enable
     assert failed["state"] == "failed"
     assert "baseline" in failed["error"]
     assert mgr.status()["handoff"]["summary"]["failed"] >= 1
+
+
+# --- Apps the attendee builds run as their own service principal ------------
+#
+# At servco every attendee-built app hit "does not have USE CATALOG privilege"
+# and "does not have SELECT privilege" on data the attendee could read fine
+# themselves, and it was cleared by hand mid-event. The principal is minted when
+# the app is created, so nothing written at provision time names it.
+
+
+class _CatalogAwareRequests(_StrictRequests):
+    """Serves catalog permissions from state that a PATCH actually mutates.
+
+    The base fake answers the permissions read from a fixed payload, which would
+    let a grant that never landed read back as present -- the exact failure mode
+    the readback exists to catch.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.catalog_grants = {"alice@example.com": {"ALL_PRIVILEGES"}}
+        self.catalog_patch_response = None
+
+    _CATALOG_PERMISSIONS = (
+        "https://test.cloud.databricks.com"
+        "/api/2.1/unity-catalog/permissions/catalog/wsh_alice"
+    )
+
+    def patch(self, url, headers=None, json=None, timeout=None):
+        if "changes" in (json or {}) and url == self._CATALOG_PERMISSIONS:
+            self.calls.append(("PATCH", url, json))
+            if self.catalog_patch_response is not None:
+                return self.catalog_patch_response
+            for change in json["changes"]:
+                self.catalog_grants.setdefault(change["principal"], set()).update(
+                    change.get("add", [])
+                )
+            return _Resp(200, {})
+        return super().patch(url, headers=headers, json=json, timeout=timeout)
+
+    def get(self, url, headers=None, params=None, timeout=None):
+        if not params and url == self._CATALOG_PERMISSIONS:
+            self.calls.append(("GET", url, {}))
+            return _Resp(200, {
+                "privilege_assignments": [
+                    {"principal": principal, "privileges": sorted(privileges)}
+                    for principal, privileges in self.catalog_grants.items()
+                ]
+            })
+        return super().get(url, headers=headers, params=params, timeout=timeout)
+
+
+def _fake_with_attendee_app(client_id="app-sp-99"):
+    fake = _CatalogAwareRequests()
+    host = "https://test.cloud.databricks.com"
+    for get in _strict_fake().gets.items():
+        fake.gets.setdefault(*get)
+    app = {
+        "name": "showroom",
+        "creator": "app-sp",
+        "create_time": "1970-01-01T00:18:20Z",
+    }
+    if client_id:
+        app["service_principal_client_id"] = client_id
+    fake.register_get(f"{host}/api/2.0/apps", {"page_size": 100}, {"apps": [app]})
+    fake.register_patch(f"{host}/api/2.0/permissions/apps/showroom", {"CAN_MANAGE"})
+    return fake
+
+
+def _catalog_grant_calls(fake, principal):
+    return [
+        call
+        for call in fake.calls
+        if call[0] == "PATCH"
+        and "unity-catalog/permissions/catalog" in call[1]
+        and call[2]["changes"][0]["principal"] == principal
+    ]
+
+
+def test_attendee_app_service_principal_is_granted_on_the_catalog(
+    monkeypatch, enabled
+):
+    fake = _fake_with_attendee_app()
+    mgr = _scoped_mgr(monkeypatch, fake)
+
+    result = mgr.reconcile("alice@example.com")
+
+    assert result["errors"] == []
+    granted = _catalog_grant_calls(fake, "app-sp-99")
+    assert granted, "the app's own principal was never granted on the catalog"
+    added = set(granted[0][2]["changes"][0]["add"])
+    # Read is what the room was blocked on; write is here so an app that
+    # persists something is not the next incident. MANAGE deliberately is not.
+    assert {"USE_CATALOG", "SELECT"} <= added
+    assert "MANAGE" not in added
+    assert fake.catalog_grants["app-sp-99"] >= {"USE_CATALOG", "SELECT"}
+
+    entry = [
+        d
+        for d in result["handoff"]["details"]
+        if d["resource_type"] == "app-service-principals"
+    ][0]
+    assert entry["state"] == "handed_off"
+    assert entry["resource_id"] == "showroom"
+
+
+def test_app_service_principal_grant_is_not_reissued_every_sweep(
+    monkeypatch, enabled
+):
+    """A grant that is already proven is not re-sent.
+
+    The reconciler sweeps every few minutes, and at a hundred instances a
+    redundant control-plane write per app per sweep is the shape of load that
+    produced the 429s in the servco handoff ledgers.
+    """
+    fake = _fake_with_attendee_app()
+    mgr = _scoped_mgr(monkeypatch, fake)
+
+    mgr.reconcile("alice@example.com")
+    after_first = len(_catalog_grant_calls(fake, "app-sp-99"))
+    mgr.reconcile("alice@example.com")
+
+    assert after_first == 1
+    assert len(_catalog_grant_calls(fake, "app-sp-99")) == 1
+
+
+def test_app_service_principal_grant_failure_is_visible_and_retried(
+    monkeypatch, enabled
+):
+    fake = _fake_with_attendee_app()
+    fake.catalog_patch_response = _Resp(403, {}, "PERMISSION_DENIED")
+    mgr = _scoped_mgr(monkeypatch, fake)
+
+    result = mgr.reconcile("alice@example.com")
+
+    assert any("app-sp-99" in e for e in result["errors"])
+    assert mgr.status()["ok"] is False
+    entry = [
+        d
+        for d in result["handoff"]["details"]
+        if d["resource_type"] == "app-service-principals"
+    ][0]
+    assert entry["state"] == "failed"
+    assert "403" in entry["error"]
+
+    # Not memoized, so the next sweep tries again -- otherwise a single 429
+    # would leave the app permanently unable to read.
+    fake.catalog_patch_response = None
+    second = mgr.reconcile("alice@example.com")
+    assert not any("app-sp-99" in e for e in second["errors"])
+    assert fake.catalog_grants["app-sp-99"] >= {"USE_CATALOG", "SELECT"}
+
+
+def test_grant_that_does_not_land_is_caught_by_the_readback(monkeypatch, enabled):
+    """A 200 from the permissions PATCH is not proof the privilege is held."""
+    fake = _fake_with_attendee_app()
+
+    def _swallow(url, headers=None, json=None, timeout=None):
+        fake.calls.append(("PATCH", url, json))
+        return _Resp(200, {})
+
+    original = fake.patch
+
+    def patch(url, headers=None, json=None, timeout=None):
+        if "changes" in (json or {}) and json["changes"][0]["principal"] == "app-sp-99":
+            return _swallow(url, headers, json, timeout)
+        return original(url, headers=headers, json=json, timeout=timeout)
+
+    fake.patch = patch
+    mgr = _scoped_mgr(monkeypatch, fake)
+
+    result = mgr.reconcile("alice@example.com")
+
+    assert any("missing" in e and "app-sp-99" in e for e in result["errors"])
+    assert mgr.status()["ok"] is False
+
+
+def test_app_without_a_principal_yet_is_not_reported(monkeypatch, enabled):
+    """A just-created app has no principal for a moment. That is not a fault."""
+    fake = _fake_with_attendee_app(client_id=None)
+    mgr = _scoped_mgr(monkeypatch, fake)
+
+    result = mgr.reconcile("alice@example.com")
+
+    assert result["errors"] == []
+    assert not _catalog_grant_calls(fake, "app-sp-99")
+    assert not [
+        d
+        for d in result["handoff"]["details"]
+        if d["resource_type"] == "app-service-principals"
+    ]
+
+
+def test_foreign_app_principal_is_left_alone(monkeypatch, enabled):
+    """An app this SP did not create is not the attendee's build.
+
+    In practice that is the Workshop Terminal itself, whose grants belong to
+    Control Tower. Granting on an unverified creator is how a reconciler widens
+    access to something it does not own.
+    """
+    fake = _fake_with_attendee_app()
+    host = "https://test.cloud.databricks.com"
+    fake.register_get(f"{host}/api/2.0/apps", {"page_size": 100}, {
+        "apps": [{
+            "name": "someone-elses",
+            "creator": "other-sp",
+            "create_time": "1970-01-01T00:18:20Z",
+            "service_principal_client_id": "app-sp-99",
+        }]
+    })
+    mgr = _scoped_mgr(monkeypatch, fake)
+
+    result = mgr.reconcile("alice@example.com")
+
+    assert result["errors"] == []
+    assert not _catalog_grant_calls(fake, "app-sp-99")

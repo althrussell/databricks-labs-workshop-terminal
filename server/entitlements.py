@@ -130,6 +130,9 @@ _RESOURCE_SPECS = (
 )
 
 
+_APPS_SPEC = next(spec for spec in _RESOURCE_SPECS if spec.label == "apps")
+
+
 def _sp_bearer() -> str | None:
     """The app service-principal bearer used for every reconcile call (P1-2:
     auto-refreshed OAuth identity, falls back to a vended PAT)."""
@@ -180,6 +183,45 @@ def _grant_catalog_all_privileges(
     url = f"{host}/api/2.1/unity-catalog/permissions/catalog/{catalog}"
     body = {"changes": [{"principal": principal, "add": ["ALL_PRIVILEGES"]}]}
     return _patch(url, bearer, body)
+
+
+# Read plus write inside the attendee's own catalog, and deliberately not
+# MANAGE: the app should be able to build and query, not re-grant. Catalog
+# scope so it inherits to schemas and tables the app has not created yet.
+APP_SP_CATALOG_PRIVILEGES = (
+    "USE_CATALOG",
+    "USE_SCHEMA",
+    "SELECT",
+    "MODIFY",
+    "CREATE_SCHEMA",
+    "CREATE_TABLE",
+)
+
+
+def _grant_catalog_privileges(
+    host: str, bearer: str, catalog: str, principal: str, privileges: tuple[str, ...]
+) -> tuple[bool, str | None]:
+    url = f"{host}/api/2.1/unity-catalog/permissions/catalog/{catalog}"
+    body = {"changes": [{"principal": principal, "add": list(privileges)}]}
+    return _patch(url, bearer, body)
+
+
+def _catalog_privileges_for(
+    host: str, bearer: str, catalog: str, principal: str
+) -> tuple[set[str] | None, str | None]:
+    payload, error = _get_json(
+        f"{host}/api/2.1/unity-catalog/permissions/catalog/{catalog}", bearer
+    )
+    if error:
+        return None, error
+    wanted = principal.strip().lower()
+    for assignment in (payload or {}).get("privilege_assignments", []) or []:
+        if not isinstance(assignment, dict):
+            continue
+        if str(assignment.get("principal") or "").strip().lower() != wanted:
+            continue
+        return {str(v) for v in assignment.get("privileges", []) or []}, None
+    return set(), None
 
 
 def _set_catalog_owner(
@@ -337,6 +379,9 @@ class EntitlementManager:
         self._verified_email: str | None = None
         self._verified_catalog: str | None = None
         self._verification_source: str | None = None
+        # client_id -> catalog it has been proven readable on. Keeps the app-SP
+        # grant a one-shot per app rather than a per-sweep re-grant.
+        self._app_sp_grants: dict[str, str] = {}
 
     def start(self) -> None:
         if not config.entitlements_enabled():
@@ -509,7 +554,7 @@ class EntitlementManager:
                 if "@" not in em:
                     continue
                 counts, errs = self._handoff_resources(
-                    host, bearer, em, identities
+                    host, bearer, em, identities, catalog
                 )
                 result["non_uc"][em] = counts
                 errors.extend(errs)
@@ -525,6 +570,7 @@ class EntitlementManager:
         bearer: str,
         principal: str,
         sp_identities: set[str],
+        catalog: str | None = None,
     ) -> tuple[dict[str, int], list[str]]:
         counts: dict[str, int] = {}
         errors: list[str] = []
@@ -559,6 +605,18 @@ class EntitlementManager:
                         errors.append(f"{spec.label}: response missing {spec.id_field}")
                     continue
                 resource_id = str(raw_id)
+
+                if spec.label == "apps" and catalog:
+                    # Before the handoff logic, and outside its already-done
+                    # short circuit: an app whose CAN_MANAGE handoff succeeded
+                    # on an earlier sweep skips the rest of this loop, and its
+                    # catalog grant would never be retried if it had failed.
+                    errors.extend(
+                        self._grant_app_sp_catalog_access(
+                            host, bearer, catalog, principal, item, sp_identities
+                        )
+                    )
+
                 previous_level = self._handed_off_level(
                     principal, spec.label, resource_id
                 )
@@ -640,6 +698,101 @@ class EntitlementManager:
                     )
             counts[spec.label] = granted
         return counts, errors
+
+    def _grant_app_sp_catalog_access(
+        self,
+        host: str,
+        bearer: str,
+        catalog: str,
+        principal: str,
+        app: dict,
+        sp_identities: set[str],
+    ) -> list[str]:
+        """Give an attendee-built app's own service principal access to the catalog.
+
+        When an attendee's agent deploys an app, Databricks mints a service
+        principal for it. That principal is new, so it is in none of the groups
+        the catalog was granted to and it holds nothing; the app then cannot
+        read the data it was built against. At servco this surfaced as "does not
+        have USE CATALOG privilege" and "does not have SELECT privilege" and was
+        cleared by hand mid-event.
+
+        This is a **backstop**. Control Tower grants the whole workspace read on
+        the attendee's catalog at provision time, which covers these principals
+        without anyone discovering them, and covers them before this reconciler
+        has run. This exists for the instance whose provisioning predates that,
+        or whose catalog is not the provisioned one.
+
+        Once per app, not once per sweep. A repeated identical grant is a write
+        against the control plane for no change, and at a hundred instances
+        sweeping every few minutes that is exactly the shape of load that
+        produced the 429s in the servco handoff ledgers. A failed grant is not
+        memoized, so it retries.
+        """
+        if not _created_by_sp(_APPS_SPEC, app, sp_identities):
+            # An app this SP did not create is not the attendee's build. Most
+            # likely it is the Workshop Terminal itself, whose grants belong to
+            # Control Tower.
+            return []
+        client_id = str(
+            app.get("service_principal_client_id")
+            or app.get("service_principal_id")
+            or ""
+        ).strip()
+        app_name = str(app.get("name") or client_id or "<unnamed>")
+        if not client_id:
+            # Apps report their principal only once it exists. A just-created
+            # app has none yet and will on the next sweep, so this is a normal
+            # intermediate state rather than something to report.
+            return []
+        with self._lock:
+            if self._app_sp_grants.get(client_id) == catalog:
+                return []
+
+        ok, error = _grant_catalog_privileges(
+            host, bearer, catalog, client_id, APP_SP_CATALOG_PRIVILEGES
+        )
+        if not ok:
+            message = f"app service principal catalog grant: {error or 'failed'}"
+            self._transition(
+                principal, "app-service-principals", app_name, "failed", error=message
+            )
+            return [f"app {app_name} ({client_id}): {message}"]
+
+        held, read_error = _catalog_privileges_for(host, bearer, catalog, client_id)
+        if read_error:
+            message = f"app service principal grant readback: {read_error}"
+            self._transition(
+                principal, "app-service-principals", app_name, "failed", error=message
+            )
+            return [f"app {app_name} ({client_id}): {message}"]
+        missing = [
+            p
+            for p in APP_SP_CATALOG_PRIVILEGES
+            if p not in (held or set()) and "ALL_PRIVILEGES" not in (held or set())
+        ]
+        if missing:
+            # A PATCH that returned 200 is not proof. Report what is actually
+            # absent, because the attendee-visible symptom names a privilege.
+            message = (
+                f"app service principal missing {', '.join(missing)} on {catalog} "
+                f"after grant"
+            )
+            self._transition(
+                principal, "app-service-principals", app_name, "failed", error=message
+            )
+            return [f"app {app_name} ({client_id}): {message}"]
+
+        with self._lock:
+            self._app_sp_grants[client_id] = catalog
+        self._transition(
+            principal,
+            "app-service-principals",
+            app_name,
+            "handed_off",
+            permission_level=",".join(APP_SP_CATALOG_PRIVILEGES),
+        )
+        return []
 
     def _handed_off_level(
         self, principal: str, resource_type: str, resource_id: str
