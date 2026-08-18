@@ -685,7 +685,28 @@
       }
     ]
   },
-  "default_industry": "automotive_mobility",
+  "default_industry": "",
+  "wizard_stacks": [
+    "Snowflake",
+    "BigQuery",
+    "Redshift",
+    "Synapse / Fabric",
+    "SQL Server",
+    "Oracle",
+    "Postgres",
+    "Kafka",
+    "dbt",
+    "Airflow",
+    "Tableau",
+    "Power BI",
+    "Spreadsheets"
+  ],
+  "wizard_intent_labels": {
+    "business_problem": "Solving a real problem from work",
+    "evaluation": "Seeing whether Databricks can do this",
+    "learning": "Learning how this works",
+    "fun": "Building something fun"
+  },
   "ideas": [
     {
       "id": "auto-part-failures",

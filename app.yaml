@@ -120,6 +120,20 @@ env:
   # that walks the room through the first build together.
   - name: WORKSHOP_ONBOARDING_WIZARD
     value: "true"
+  # LLM-powered idea grid inside the opening wizard. On by default: an older
+  # Control Tower that does not feed this param still gets generated cards.
+  # false keeps the static catalogue (facilitated rooms, air-gapped deploys).
+  - name: WORKSHOP_LLM_WIZARD
+    value: "true"
+  # Industry chip to preselect. Empty means the attendee chooses — never
+  # silently automotive. Wins over the content pack when set, and is ignored
+  # when that schema is not actually seeded.
+  - name: WORKSHOP_DEFAULT_INDUSTRY
+    value: ""
+  # Pin for the wizard's serving endpoint. Empty uses the wizard chain
+  # (gpt-5-4-mini, then luna, haiku, gpt-oss-120b).
+  - name: WORKSHOP_WIZARD_MODEL
+    value: ""
   # Coding agents offered to attendees, chosen when the workshop was created:
   # a comma-separated subset of "omnigent,claude,codex". Empty means all of
   # them. The plain Terminal is always available and is not listed here.

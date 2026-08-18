@@ -55,6 +55,28 @@ MAX_TEXT = 2000
 MAX_LIST_ITEMS = 12
 MAX_ITEM_CHARS = 120
 
+_DEFAULT_STACKS = [
+    "Snowflake",
+    "BigQuery",
+    "Redshift",
+    "Synapse / Fabric",
+    "SQL Server",
+    "Oracle",
+    "Postgres",
+    "Kafka",
+    "dbt",
+    "Airflow",
+    "Tableau",
+    "Power BI",
+    "Spreadsheets",
+]
+_DEFAULT_INTENT_LABELS = {
+    "business_problem": "Solving a real problem from work",
+    "evaluation": "Seeing whether Databricks can do this",
+    "learning": "Learning how this works",
+    "fun": "Building something fun",
+}
+
 
 @dataclass
 class WizardBrief:
@@ -76,6 +98,10 @@ class WizardBrief:
     seen: bool = False
     skipped: bool = False
     completed_at: str = ""
+    # True only when the attendee continued with the industry chip visible, or
+    # picked a card that named one. Pack/env default_industry may preselect the
+    # UI; it must not reach discovery or the overlay until they confirm it.
+    industry_stated: bool = False
 
     def to_json(self) -> dict[str, Any]:
         return asdict(self)
@@ -94,6 +120,7 @@ class WizardBrief:
             seen=bool(raw.get("seen")),
             skipped=bool(raw.get("skipped")),
             completed_at=str(raw.get("completed_at") or ""),
+            industry_stated=bool(raw.get("industry_stated")),
         )
 
     @property
@@ -104,7 +131,13 @@ class WizardBrief:
         not reach discovery: a row saying an attendee exists and wants nothing is
         worse than no row, because it looks like a finding.
         """
-        return bool(self.what_building.strip() or self.idea_id or self.industry)
+        stated = self.industry if self.industry_stated else ""
+        return bool(self.what_building.strip() or self.idea_id or stated)
+
+    @property
+    def stated_industry(self) -> str:
+        """The industry they confirmed, never the pack/env preselect."""
+        return self.industry if self.industry_stated else ""
 
 
 # -- storage (one file per attendee, beside the persona) --
@@ -163,14 +196,32 @@ def _clean_list(value: Any) -> list[str]:
 def default_industry() -> str:
     """The industry to preselect before the attendee says anything.
 
-    A workshop is almost always one customer, so the operator knows this before
-    the doors open. Honoured only when that industry is actually seeded — a pack
-    naming an industry the notebook never created would otherwise silently empty
-    the grid.
+    ``WORKSHOP_DEFAULT_INDUSTRY`` (the Control Tower create-form choice) wins
+    over the content pack, so an operator does not need a pack edit to name the
+    room. Honoured only when that industry is actually seeded — a value the
+    notebook never created would otherwise silently empty the grid.
     """
-    configured = content.content_service.default_industry().strip()
+    configured = (
+        config.workshop_default_industry().strip()
+        or content.content_service.default_industry().strip()
+    )
     if configured and (not demo_data.enabled() or demo_data.has_industry(configured)):
-        return configured
+        return demo_data.normalize_industry(configured) or configured
+    return ""
+
+
+def industry_of(idea: content.WizardIdea) -> str:
+    """The schema this card belongs to, if it belongs to one.
+
+    Tagged ``industries`` win; otherwise the schema of the first demo table.
+    A generic card (no tags, no tables) returns empty — picking it is a choice
+    *not* to steer the agent at a schema.
+    """
+    if idea.industries:
+        return demo_data.normalize_industry(idea.industries[0]) or idea.industries[0]
+    if idea.demo_tables:
+        schema, _, _ = idea.demo_tables[0].partition(".")
+        return demo_data.normalize_industry(schema) or schema
     return ""
 
 
@@ -208,29 +259,40 @@ def select_ideas(
 ) -> list[content.WizardIdea]:
     """The cards to show someone who said they are not sure yet.
 
-    Three properties, in priority order:
+    Four properties, in priority order:
 
     1. **Every card is buildable.** Anything naming demo tables this deployment
-       has not seeded is excluded outright, not shown-but-unbadged. Somebody who
-       clicked "show me ideas" has told us they have no idea and is trusting the
-       grid; the one unforgivable outcome is handing them something that cannot
-       be built.
-    2. **The shapes are spread.** Six dashboards tells an attendee who wanted to
-       build an app that this workshop is not for them. So the selector takes the
-       best card of each shape first and only then fills up, which is worth more
-       than the marginal industry score it costs.
-    3. **It is never empty.** Industry match degrades to generic cards, which
-       need no demo data and are therefore always available.
+       has not seeded is excluded outright, not shown-but-unbadged.
+    2. **The grid stays inside the chosen industry.** Tagged matches first,
+       then untagged generics. A foreign industry is never pulled in to fill a
+       shape — that was how a healthcare attendee saw a random automotive ML
+       card.
+    3. **The shapes are spread.** Six dashboards tells an attendee who wanted
+       to build an app that this workshop is not for them.
+    4. **It is never empty.** An unseeded or unset industry degrades to generic
+       cards, which need no demo data.
     """
     rng = rng or random.Random()
-    pool = [i for i in content.content_service.ideas() if _buildable(i)]
-    if not pool:
+    buildable = [i for i in content.content_service.ideas() if _buildable(i)]
+    if not buildable:
         return []
 
-    # Shuffle before sorting so equal-scoring cards vary between attendees rather
-    # than the whole room seeing the same six in the same order. Callers that
-    # want the same attendee to keep seeing the same six pass a seeded rng — see
-    # ``state``.
+    industry = demo_data.normalize_industry(industry) if industry else ""
+    generics = [i for i in buildable if not i.industries]
+    if industry:
+        tagged = [i for i in buildable if industry in i.industries]
+        # Exhaust the industry catalogue before padding with generics, including
+        # extra cards of a shape already taken — three retail ideas plus three
+        # "build a pipeline" generics reads as nothing here for you.
+        pool = tagged + generics
+    elif demo_data.enabled():
+        # No industry chosen: generics only. No generic has shape ``ml``, and
+        # filling that hole from a random industry is the leak this filter
+        # exists to close. Without a catalog the whole list is reachable.
+        pool = list(generics) or buildable
+    else:
+        pool = buildable
+
     rng.shuffle(pool)
     pool.sort(key=lambda i: _score(i, industry, intent), reverse=True)
 
@@ -246,7 +308,6 @@ def select_ideas(
         picked = {i.id for i in chosen}
         chosen += [i for i in pool if i.id not in picked][: limit - len(chosen)]
 
-    # One final sort so the strongest match leads, now that the spread is locked in.
     chosen.sort(key=lambda i: _score(i, industry, intent), reverse=True)
     return chosen[:limit]
 
@@ -296,7 +357,7 @@ def to_discovery(brief: WizardBrief) -> dict[str, Any]:
         "agent": "wizard",
         "confidence": "high",
         "session_intent": brief.intent,
-        "industry": brief.industry,
+        "industry": brief.stated_industry,
         "use_case_title": title[:120],
         "use_case_summary": brief.what_building.strip(),
         "goal": brief.what_building.strip(),
@@ -331,16 +392,35 @@ def save(user: User, payload: dict[str, Any]) -> WizardBrief:
         # being stable across saves.
         record_id=existing.record_id or uuid.uuid4().hex,
         what_building=given("what_building", _clean_text, existing.what_building),
-        industry=given("industry", lambda v: _clean_text(v)[:64], existing.industry),
+        industry=existing.industry,
         intent=given("intent", lambda v: _clean_text(v).lower(), existing.intent),
         idea_id=given("idea_id", lambda v: _clean_text(v)[:64], existing.idea_id),
         current_stack=given("current_stack", _clean_list, existing.current_stack),
         persona=given("persona", lambda v: _clean_text(v).lower(), existing.persona),
         seen=True,
         completed_at=existing.completed_at,
+        industry_stated=existing.industry_stated,
     )
     if brief.intent not in INTENTS:
         brief.intent = ""
+
+    # A picked card owns the industry: its schema is a fact, the chip is a
+    # suggestion. A generic card is a choice *not* to steer, which is why an
+    # empty derived industry is still ``stated``.
+    if "idea_id" in payload and brief.idea_id:
+        idea = idea_by_id(brief.idea_id)
+        if idea:
+            brief.industry = industry_of(idea)
+            brief.industry_stated = True
+    elif "industry" in payload:
+        brief.industry = demo_data.normalize_industry(_clean_text(payload["industry"])[:64])
+        if "industry_stated" in payload:
+            brief.industry_stated = bool(payload["industry_stated"])
+        else:
+            # Sending the key is a choice, including clearing it.
+            brief.industry_stated = True
+    elif "industry_stated" in payload:
+        brief.industry_stated = bool(payload["industry_stated"])
 
     # Skipped means "I declined to tell you", which someone who has already told
     # us cannot retroactively do. Both the home recap and the instruction overlay
@@ -408,8 +488,13 @@ def state(user: User, industry: str = "") -> dict[str, Any]:
     does not all see the same six — without that cost.
     """
     brief = read_brief(user)
-    industry = _clean_text(industry)[:64] or brief.industry or default_industry()
+    industry = demo_data.normalize_industry(_clean_text(industry)[:64]) or (
+        brief.stated_industry or default_industry()
+    )
     enabled = config.onboarding_wizard_enabled()
+    llm_on = config.llm_wizard_enabled()
+    stacks = content.content_service.wizard_stacks() or _DEFAULT_STACKS
+    intent_labels = content.content_service.wizard_intent_labels() or _DEFAULT_INTENT_LABELS
     return {
         "brief": brief.to_json(),
         "enabled": enabled,
@@ -422,11 +507,17 @@ def state(user: User, industry: str = "") -> dict[str, Any]:
         "industries": demo_data.industries(),
         "demo_data_available": bool(demo_data.inventory()),
         "intents": list(INTENTS),
+        "intent_labels": intent_labels,
+        "stacks": stacks,
         "ideas": [
             i.model_dump()
             for i in select_ideas(industry, rng=random.Random(user.email))
         ],
         "capture_enabled": config.discovery_enabled(),
+        "llm_wizard": {
+            "enabled": llm_on,
+            "model": config.workshop_wizard_model(),
+        },
     }
 
 
@@ -437,6 +528,7 @@ __all__ = [
     "brief_path",
     "default_industry",
     "idea_by_id",
+    "industry_of",
     "read_brief",
     "save",
     "select_ideas",

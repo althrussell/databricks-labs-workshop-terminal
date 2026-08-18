@@ -150,7 +150,12 @@ class ContentPack(BaseModel):
     # anyone arrives. Setting it here means the first render of the idea grid is
     # already right and the industry chips become a correction rather than a
     # prerequisite. Empty falls back to a deliberate cross-industry spread.
+    # ``WORKSHOP_DEFAULT_INDUSTRY`` wins over this when set.
     default_industry: str = ""
+    # Shown on the wizard's optional "what do you use today" chips.
+    wizard_stacks: list[str] = Field(default_factory=list)
+    # session_intent value -> attendee-facing label.
+    wizard_intent_labels: dict[str, str] = Field(default_factory=dict)
 
 
 class Broadcast(BaseModel):
@@ -245,6 +250,14 @@ class ContentService:
     def default_industry(self) -> str:
         with self._lock:
             return self._pack.default_industry
+
+    def wizard_stacks(self) -> list[str]:
+        with self._lock:
+            return list(self._pack.wizard_stacks)
+
+    def wizard_intent_labels(self) -> dict[str, str]:
+        with self._lock:
+            return dict(self._pack.wizard_intent_labels)
 
     def active_broadcast(self) -> Broadcast | None:
         """The pinned notice, if one is standing.

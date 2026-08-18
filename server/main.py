@@ -248,6 +248,10 @@ def get_config(principal: Principal = Depends(get_current_user)):
         # second request — the two look identical in `should_show`, and only one
         # of them should also hide the recap's way back in.
         "onboarding_wizard": {"enabled": config.onboarding_wizard_enabled()},
+        "llm_wizard": {
+            "enabled": config.llm_wizard_enabled(),
+            "model": config.workshop_wizard_model(),
+        },
         "entitlements": entitlement_manager.status(),
         # The model-comparison exercise, as the attendee runs it. Published from
         # the same resolution the generated Codex config uses, so what the UI
@@ -523,6 +527,7 @@ def set_persona(body: _PersonaBody, principal: Principal = Depends(get_current_u
 class _WizardBody(BaseModel):
     what_building: str = ""
     industry: str = ""
+    industry_stated: bool = False
     intent: str = ""
     idea_id: str = ""
     current_stack: list[str] = Field(default_factory=list)
@@ -570,6 +575,37 @@ def save_wizard(body: _WizardBody, principal: Principal = Depends(get_current_us
         "brief": brief.to_json(),
         "starter_prompt": wizard.starter_prompt(brief),
     }
+
+
+class _WizardSuggestBody(BaseModel):
+    text: str = ""
+    industry: str = ""
+
+
+@app.post("/api/wizard/suggest")
+def suggest_wizard(
+    body: _WizardSuggestBody, principal: Principal = Depends(get_current_user)
+):
+    """Replace the idea grid with model-written, table-verified cards.
+
+    The attendee frontend calls this, never Control Tower. A timeout or a
+    switched-off flag returns the deterministic selector so the modal never
+    waits on a model that is not answering.
+    """
+    from . import wizard_llm
+
+    return wizard_llm.suggest(body.text, body.industry)
+
+
+@app.get("/api/wizard/surprise")
+def surprise_wizard(
+    industry: str = "", principal: Principal = Depends(get_current_user)
+):
+    """One verified idea, for the Surprise me button."""
+    from . import wizard
+
+    idea = wizard.surprise(industry)
+    return {"idea": idea.model_dump() if idea else None}
 
 
 @app.get("/api/agents")

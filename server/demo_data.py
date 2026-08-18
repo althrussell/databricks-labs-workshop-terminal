@@ -132,7 +132,37 @@ def industries() -> list[str]:
 
 
 def has_industry(industry: str) -> bool:
-    return bool(industry) and industry in inventory()
+    """Whether this name resolves to a schema that is actually seeded."""
+    if not industry:
+        return False
+    resolved = normalize_industry(industry)
+    return bool(resolved) and resolved in inventory()
+
+
+def normalize_industry(value: str) -> str:
+    """Map a human or slug industry name onto a seeded schema, or empty.
+
+    Discovery records and overlay text have historically mixed ``financial
+    services`` with ``financial_services``. The catalog key is the schema name;
+    anything that does not resolve to one is treated as unset so we never
+    advertise a schema that is not there.
+    """
+    raw = (value or "").strip().lower()
+    if not raw:
+        return ""
+    slug = raw.replace(" ", "_").replace("-", "_")
+    if not enabled():
+        # No catalog in this deployment: keep the slug so a typed industry still
+        # reaches discovery, but do not invent a schema we have not seen.
+        return slug
+    inv = inventory()
+    if slug in inv:
+        return slug
+    compact = slug.replace("_", "")
+    for schema in inv:
+        if schema.replace("_", "") == compact:
+            return schema
+    return ""
 
 
 def verify(tables: list[str]) -> bool:
@@ -189,6 +219,7 @@ def manifest(industry: str = "") -> str:
     def _tables_for(schema: str) -> list[str]:
         return sorted(inv[schema], key=_rank)
 
+    industry = normalize_industry(industry)
     if industry and industry in inv:
         tables = _tables_for(industry)
         shown, hidden = tables[:_MANIFEST_TABLE_CAP], len(tables) - _MANIFEST_TABLE_CAP

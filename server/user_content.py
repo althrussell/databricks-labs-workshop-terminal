@@ -305,8 +305,8 @@ def _wizard_overlay(user: User) -> str:
     if idea and what:
         lines.append("")
         lines.append(f"They also picked the idea **{idea.label}** — {idea.outcome}.")
-    if brief.industry:
-        lines += ["", f"Industry: **{brief.industry.replace('_', ' ')}**."]
+    if brief.stated_industry:
+        lines += ["", f"Industry: **{brief.stated_industry.replace('_', ' ')}**."]
     if brief.intent:
         described = {
             "business_problem": "solving a real problem from work",
@@ -354,14 +354,22 @@ def _demo_data_overlay(user: User) -> str:
     if not demo_data.enabled():
         return ""
     brief = wizard.read_brief(user)
-    manifest = demo_data.manifest(brief.industry)
+    scoped = brief.stated_industry
+    manifest = demo_data.manifest(scoped)
     if not manifest:
         return ""
     with open(os.path.join(_ASSETS, "instructions", "demo_data.md")) as f:
         template = f.read()
-    return template.replace("{manifest}", manifest).replace(
+    text = template.replace("{manifest}", manifest).replace(
         "{workshop_catalog}", config.workshop_catalog() or "<your catalog>"
     )
+    if not scoped:
+        text += (
+            "\n\nThey have not chosen an industry. Do not assume automotive "
+            "or any other schema — ask, or pick the one whose tables match "
+            "what they described.\n"
+        )
+    return text
 
 
 def _write_instructions(user: User) -> None:

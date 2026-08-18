@@ -1,0 +1,40 @@
+{
+  "catalog": "workshop_demo",
+  "comment": "Schemas and tables the shipped content pack's idea cards name. The Control Tower seed notebook must create at least these; extra tables are fine. CI asserts the pack is a subset of this fixture.",
+  "schemas": {
+    "automotive_mobility": [
+      "campaign_vehicles",
+      "charging_sessions",
+      "customer360",
+      "dtc_codes",
+      "parts",
+      "parts360",
+      "parts_inventory",
+      "recall_campaigns",
+      "telematics_events",
+      "vehicle360",
+      "warranty_claims"
+    ],
+    "cross_industry": ["customers", "products", "sales", "web_events"],
+    "energy_utilities": ["customers", "meter_readings", "meters", "outages"],
+    "financial_services": [
+      "accounts",
+      "customers",
+      "fraud_labels",
+      "merchants",
+      "transactions"
+    ],
+    "healthcare": ["claims", "diagnoses", "encounters", "patients", "providers"],
+    "manufacturing": ["defects", "machines", "sensor_readings", "work_orders"],
+    "media": [
+      "churn_labels",
+      "content",
+      "subscriptions",
+      "view_events",
+      "viewers"
+    ],
+    "public_sector": ["budgets", "facilities", "permits", "service_requests"],
+    "retail": ["inventory_daily", "order_items", "orders", "products", "stores"],
+    "telco": ["cdr", "churn_labels", "network_cells", "plans", "subscribers"]
+  }
+}
