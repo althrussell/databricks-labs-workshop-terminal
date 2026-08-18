@@ -207,6 +207,34 @@ def onboarding_wizard_enabled() -> bool:
     return _env_bool("WORKSHOP_ONBOARDING_WIZARD", True)
 
 
+def llm_wizard_enabled() -> bool:
+    """Whether the opening wizard may call a model for ideas and industry.
+
+    On by default: a missing env (an older Control Tower that does not feed the
+    param) still gets the LLM grid. An operator who wants the static catalogue
+    — a facilitated room, an air-gapped deploy, a deterministic eval — sets
+    ``WORKSHOP_LLM_WIZARD=false``. Independent of ``WORKSHOP_ONBOARDING_WIZARD``:
+    off wizard means no modal; on wizard with this off means today's selector.
+    """
+    return _env_bool("WORKSHOP_LLM_WIZARD", True)
+
+
+def workshop_default_industry() -> str:
+    """Operator-chosen industry preselect (``WORKSHOP_DEFAULT_INDUSTRY``).
+
+    Empty means none — the attendee chooses, and the pack's ``default_industry``
+    is the fallback. Wins over the pack when set so a Control Tower create-form
+    choice does not require a pack edit. Honouring it still requires the schema
+    to be seeded; see ``wizard.default_industry``.
+    """
+    return _env("WORKSHOP_DEFAULT_INDUSTRY")
+
+
+def workshop_wizard_model() -> str:
+    """Pin for the wizard's serving endpoint, or empty for the role chain."""
+    return _env("WORKSHOP_WIZARD_MODEL")
+
+
 def workshop_agents() -> list[str] | None:
     """The coding agents this deployment offers, or ``None`` for all of them.
 

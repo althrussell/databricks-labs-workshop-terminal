@@ -36,6 +36,7 @@ export interface WizardBrief {
   record_id: string;
   what_building: string;
   industry: string;
+  industry_stated: boolean;
   intent: string;
   idea_id: string;
   current_stack: string[];
@@ -54,13 +55,17 @@ export interface WizardState {
   industries: string[];
   demo_data_available: boolean;
   intents: string[];
+  intent_labels?: Record<string, string>;
+  stacks?: string[];
   ideas: WizardIdea[];
   capture_enabled: boolean;
+  llm_wizard?: { enabled: boolean; model: string };
 }
 
 export interface WizardSave {
   what_building?: string;
   industry?: string;
+  industry_stated?: boolean;
   intent?: string;
   idea_id?: string;
   current_stack?: string[];
@@ -107,6 +112,7 @@ export interface AppConfig {
     url: string;
   };
   onboarding_wizard: { enabled: boolean };
+  llm_wizard?: { enabled: boolean; model: string };
 }
 
 export interface AgentInfo {
@@ -344,6 +350,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  wizardSuggest: (
+    body: { text: string; industry: string },
+    signal?: AbortSignal
+  ) =>
+    request<{ industry: string; ideas: WizardIdea[]; source: string }>(
+      "/api/wizard/suggest",
+      { method: "POST", body: JSON.stringify(body), signal }
+    ),
+  wizardSurprise: (industry?: string) =>
+    request<{ idea: WizardIdea | null }>(
+      industry
+        ? `/api/wizard/surprise?industry=${encodeURIComponent(industry)}`
+        : "/api/wizard/surprise"
+    ),
   nuggets: () =>
     request<{ phase: string; nuggets: Nugget[]; prompts: IdeaPrompt[] }>("/api/nuggets"),
   myDiscovery: () =>

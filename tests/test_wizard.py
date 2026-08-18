@@ -294,11 +294,24 @@ def test_every_offered_idea_is_actually_buildable(seeded):
             assert demo_data.verify(idea.demo_tables), (industry, idea.id)
 
 
-def test_an_unseeded_industry_still_gets_a_full_grid(seeded):
-    """Degrades to generic cards, which need no demo data. Never empty: an empty
-    grid is worst for the attendee least able to recover from it."""
+def test_an_unseeded_industry_never_leaks_a_foreign_industry(seeded):
+    """Degrades to generic cards, which need no demo data. Never empty, and
+    never a random automotive ML card to fill a shape the generics do not
+    cover — that was how a healthcare attendee saw a car-parts model."""
     ideas = wizard.select_ideas("healthcare", rng=random.Random(3))
-    assert len(ideas) == wizard.IDEA_COUNT
+    assert ideas
+    for idea in ideas:
+        assert not idea.industries or "healthcare" in idea.industries
+        assert "automotive_mobility" not in idea.industries
+
+
+def test_an_empty_industry_stays_on_generic_cards(seeded):
+    """No generic has shape ml. Filling that hole from a random industry is
+    the leak the filter exists to close."""
+    ideas = wizard.select_ideas("", rng=random.Random(11))
+    assert ideas
+    for idea in ideas:
+        assert idea.industries == []
 
 
 def test_the_six_cards_span_at_least_four_shapes(seeded):
@@ -491,6 +504,94 @@ def test_the_wizard_is_offered_by_default(client):
     )
 
 
+def test_the_pack_default_is_not_a_stated_industry(user, seeded, monkeypatch):
+    """Preselecting the chip is a suggestion. Typing a healthcare sentence
+    without touching it must not tell the agent, or Control Tower, that they
+    are automotive."""
+    monkeypatch.setattr(
+        content.content_service, "default_industry", lambda: "automotive_mobility"
+    )
+    wizard.save(user, {"what_building": "predict 30-day readmission"})
+
+    assert discovery.discovery_store.for_attendee(user.email)[0].industry == ""
+    overlay = user_content._demo_data_overlay(user)
+    assert "do not assume automotive" in overlay.lower()
+
+
+def test_picking_a_retail_card_scopes_the_overlay_to_retail(user, seeded, monkeypatch):
+    """The card owns the schema. A chip left on automotive must not win."""
+    inventory = {
+        **seeded,
+        "retail": {"orders", "order_items", "products", "stores", "inventory_daily"},
+    }
+    monkeypatch.setattr(demo_data, "_cache", inventory)
+    idea = next(
+        i for i in content.content_service.ideas() if "retail" in i.industries
+    )
+    wizard.save(user, {"idea_id": idea.id, "what_building": idea.outcome})
+
+    overlay = user_content._demo_data_overlay(user)
+    assert "workshop_demo.retail" in overlay
+    assert "vehicle360" not in overlay
+    assert discovery.discovery_store.for_attendee(user.email)[0].industry == "retail"
+
+
+def test_industry_aliases_resolve_to_the_seeded_schema(seeded):
+    assert demo_data.normalize_industry("automotive mobility") == "automotive_mobility"
+    assert demo_data.normalize_industry("Automotive-Mobility") == "automotive_mobility"
+    assert demo_data.normalize_industry("healthcare") == ""  # not seeded here
+
+
+def test_the_env_default_industry_wins_over_the_pack(seeded, monkeypatch):
+    monkeypatch.setattr(
+        content.content_service, "default_industry", lambda: "automotive_mobility"
+    )
+    monkeypatch.setattr(
+        wizard.config, "workshop_default_industry", lambda: "cross_industry"
+    )
+    assert wizard.default_industry() == "cross_industry"
+
+
+def test_an_unseeded_env_default_is_ignored(seeded, monkeypatch):
+    monkeypatch.setattr(content.content_service, "default_industry", lambda: "")
+    monkeypatch.setattr(
+        wizard.config, "workshop_default_industry", lambda: "healthcare"
+    )
+    assert wizard.default_industry() == ""
+
+
+def test_the_shipped_pack_names_only_seed_manifest_schemas():
+    """Renaming a seed-notebook schema used to empty the grid with no error.
+    The fixture is the contract with that notebook: every pack demo_tables
+    schema must be in it."""
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    pack = json.loads((root / "content" / "default_pack.json").read_text())
+    fixture = json.loads(
+        (root / "tests" / "fixtures" / "demo-seed-manifest.json").read_text()
+    )
+    allowed = {schema: set(tables) for schema, tables in fixture["schemas"].items()}
+    missing: list[str] = []
+    for idea in pack["ideas"]:
+        for ref in idea.get("demo_tables") or []:
+            schema, _, table = ref.partition(".")
+            if schema not in allowed or table not in allowed[schema]:
+                missing.append(ref)
+    assert missing == [], missing
+    assert pack.get("default_industry", "") == ""
+
+
+def test_the_llm_wizard_is_on_by_default(client):
+    from tests.conftest import BOB
+
+    cfg = client.get("/api/config", headers=BOB).json()
+    assert cfg["llm_wizard"]["enabled"] is True
+    state = client.get("/api/wizard", headers=BOB).json()
+    assert state["llm_wizard"]["enabled"] is True
+
+
 def test_capture_being_off_does_not_withdraw_the_wizard(user, monkeypatch):
     """Capture decides whether the answer leaves the instance; the wizard decides
     whether the question is asked. A run that records nothing still wants the
@@ -508,3 +609,19 @@ def test_one_attendees_brief_is_not_another_attendees(client):
     client.post("/api/wizard", headers=ALICE, json={"what_building": "Alice's build"})
     assert client.get("/api/wizard", headers=BOB).json()["should_show"] is True
     assert client.get("/api/wizard", headers=BOB).json()["brief"]["what_building"] == ""
+
+
+def test_the_wizard_ui_makes_industry_a_choice_and_does_not_skip_on_backdrop():
+    """Grep-style, same as the persona tests: there is no Wizard.tsx runner, and
+    these strings are the contract the plan asked for."""
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parents[1] / "frontend" / "src" / "components" / "Wizard.tsx").read_text()
+    assert "This room's demo data is" in src
+    assert "industryOf(idea)" in src
+    assert "works with any data" in src
+    assert "A little context (optional)" in src
+    assert "Press Enter to start" in src
+    assert 'className="modal-backdrop" onClick={skip}' not in src
+    assert "wizardSuggest" in src
+    assert "wizardSurprise" in src

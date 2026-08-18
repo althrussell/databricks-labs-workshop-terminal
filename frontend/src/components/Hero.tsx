@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Lightbulb, Link as LinkIcon, Pencil, Wand2 } from "lucide-react";
 import { api, AgentInfo, IdeaPrompt, Nugget, WorkspaceLink, WizardBrief } from "../api";
+import { humanIndustry } from "../wizard";
 import AgentCards, { ICONS, SetupProgress, SetupSteps, SETUP_POLL_MS } from "./AgentCards";
 
 interface Props {
@@ -74,6 +75,8 @@ export default function Hero({
   // visible and changeable rather than something that vanished into a modal —
   // an attendee whose plan changed an hour in has nowhere else to say so.
   const briefLine = brief && !brief.skipped ? brief.what_building.trim() : "";
+  const briefIndustry =
+    brief && !brief.skipped && brief.industry_stated ? brief.industry : "";
 
   return (
     <div className="hero">
@@ -93,6 +96,11 @@ export default function Hero({
           <div className="hero-brief">
             <span className="hero-brief-label">You're building</span>
             <span className="hero-brief-text">{briefLine}</span>
+            {briefIndustry && (
+              <span className="hero-brief-industry">
+                {humanIndustry(briefIndustry)}
+              </span>
+            )}
             {canEditBrief && (
               <button className="hero-brief-edit" onClick={onEditBrief}>
                 <Pencil size={11} /> Change what I'm building

@@ -47,6 +47,21 @@ const STARTER_PROMPT =
   "Build me something real I can show off by the end of the session — " +
   "pick a good example for a Databricks workshop and just go.";
 
+/** Type into a just-launched session as soon as it will take input.
+ *
+ * A blind 4s wait used to sit between launch and the first prompt. Trying
+ * immediately, then once more after a short pause, lands the text as soon as
+ * the PTY is accepting it without making every attendee wait the worst case.
+ */
+async function typeWhenSessionReady(sessionId: string, text: string) {
+  try {
+    await api.typeIntoSession(sessionId, text);
+  } catch {
+    await new Promise((r) => setTimeout(r, 800));
+    await api.typeIntoSession(sessionId, text);
+  }
+}
+
 const LINK_ICONS: Record<string, typeof LinkIcon> = {
   "book-open": BookOpen,
   "graduation-cap": GraduationCap,
@@ -307,9 +322,7 @@ export default function App() {
     const session = await launch(agentId);
     if (!session || !starterPrompt) return;
     try {
-      // The CLI needs a moment before text will land at its prompt.
-      await new Promise((r) => setTimeout(r, 4000));
-      await api.typeIntoSession(session.id, starterPrompt);
+      await typeWhenSessionReady(session.id, starterPrompt);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -345,10 +358,10 @@ export default function App() {
     }
     try {
       if (fresh) {
-        // Give the CLI a moment to boot before the text lands at its prompt.
-        await new Promise((r) => setTimeout(r, 4000));
+        await typeWhenSessionReady(target.id, prompt);
+      } else {
+        await api.typeIntoSession(target.id, prompt);
       }
-      await api.typeIntoSession(target.id, prompt);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }

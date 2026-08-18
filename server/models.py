@@ -304,6 +304,25 @@ def resolve_all(available: set[str]) -> dict[str, str]:
     return {name: resolve(name, available) for name in _PINS}
 
 
+# Opening-wizard idea generation. Kept off Profile so an event's cost posture
+# does not quietly swap the attendee's first-arrival model, and so the existing
+# role tests do not have to learn a sixth slot. Pin with WORKSHOP_WIZARD_MODEL.
+_WIZARD = (
+    "databricks-gpt-5-4-mini",
+    "databricks-gpt-5-6-luna",
+    "databricks-claude-haiku-4-5",
+    "databricks-gpt-oss-120b",
+)
+
+
+def wizard_chain() -> tuple[str, ...]:
+    """Candidates for the opening wizard, pin first when one is set."""
+    pin = os.environ.get("WORKSHOP_WIZARD_MODEL", "").strip()
+    if pin:
+        return (pin,) + tuple(name for name in _WIZARD if name != pin)
+    return _WIZARD
+
+
 __all__ = [
     "COMPARISON_MODELS",
     "DEFAULT_PROFILE",
@@ -318,4 +337,5 @@ __all__ = [
     "resolve",
     "resolve_all",
     "role",
+    "wizard_chain",
 ]

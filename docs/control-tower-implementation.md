@@ -359,6 +359,9 @@ take effect on restart with **no rebuild**. Set these per instance:
 | `WORKSHOP_TOOLCHAIN_MIRROR_PATH` | *(optional)* `/Volumes/<catalog>/<schema>/<volume>` | serve the pinned toolchain from a staged UC Volume instead of the public internet (§15). Empty = download from source, which needs no volume and is the default |
 | `WORKSHOP_TOOLCHAIN_MIRROR_STRICT` | `false` | fail an artifact the mirror cannot serve instead of falling back to the internet. Air-gapped events only |
 | `WORKSHOP_ONBOARDING_WIZARD` | `true` *(CT fleet default; per-run opt-out)* | the opening wizard that asks what the attendee is here to build (§16). `false` lands attendees on Home with no modal, for a format that walks the room through the first build together |
+| `WORKSHOP_LLM_WIZARD` | `true` *(CT fleet default; per-run opt-out)* | LLM-powered idea cards inside the wizard (§16). A missing env is on, so an older Control Tower still gets generated cards. `false` keeps the static catalogue |
+| `WORKSHOP_DEFAULT_INDUSTRY` | empty *(attendee chooses)* | industry chip to preselect (§16). Empty is not automotive. Ignored when that schema is not seeded |
+| `WORKSHOP_WIZARD_MODEL` | empty *(wizard chain)* | pin for the wizard serving endpoint. Empty uses gpt-5-4-mini, then luna, haiku, gpt-oss-120b |
 | `WORKSHOP_AGENTS` | empty *(all)*, or a subset of `omnigent,claude,codex` | the coding agents attendees may launch (§16). The plain Terminal is always offered and is never listed here. Deselecting Omnigent also skips its install, so a run that will not use it does not pay for the harness on cold boot |
 
 Model defaults can vary by event or attendee because CT applies overrides to
@@ -962,13 +965,15 @@ rather than a bad install. Full detail in
 
 ## 16. What the operator chooses when the workshop is created
 
-Two settings describe the room rather than the infrastructure, so they are asked
-on CT's create form and arrive as `env_overrides` on the terminal app. Both are
+Four settings describe the room rather than the infrastructure, so they are asked
+on CT's create form and arrive as `env_overrides` on the terminal app. All are
 read at runtime, so a change plus a restart is enough — no rebuild.
 
 | Setting | Env | Default |
 |---|---|---|
 | Show the onboarding wizard | `WORKSHOP_ONBOARDING_WIZARD` | `true` |
+| LLM-powered idea grid | `WORKSHOP_LLM_WIZARD` | `true` (missing env is on) |
+| Room industry preselect | `WORKSHOP_DEFAULT_INDUSTRY` | empty (attendee chooses) |
 | Coding agents attendees can launch | `WORKSHOP_AGENTS` | empty (all) |
 
 **The wizard.** On, an attendee's first arrival asks what they are here to build
@@ -976,6 +981,19 @@ and hands the answer to their agent as a first prompt. Off, they land on Home
 with no modal and no way back into one — the right shape for a format where the
 room is walked through the first build together, and the wrong one for a
 self-paced event, which is why the default is on.
+
+Industry chips are always visible when demo schemas are seeded. Pack/env
+`default_industry` may preselect a chip; it is not a stated discovery fact until
+they continue. Picking an idea card copies that card's schema into the brief
+and the agent overlay (`workshop_demo.<industry>`).
+
+**LLM ideas.** On (the default, including when CT does not feed the param), a
+fast model writes six cards from this room's seeded tables, matched to what they
+type, and may move the industry chip. Off, the static catalogue only — for a
+facilitated room that wants the same six cards for everyone, or an air-gapped
+deploy. Independent of the onboarding switch: off wizard means no modal; on
+wizard with this off means the deterministic selector. The model never writes a
+discovery record; Next still confirms.
 
 This is deliberately independent of `WORKSHOP_INSIGHT_CAPTURE`. Capture decides
 whether the answer reaches CT; the wizard decides whether the question is asked.
@@ -996,8 +1014,9 @@ per-attendee Omnigent config — a workshop that will not launch the harness
 should not pay for it on cold boot. It composes with `OMNIGENT_ENABLED`: either
 one being off is enough to withdraw the card.
 
-Both settings are per-run overrides on top of CT's fleet defaults
-(`CONTROL_TOWER_WORKSHOP_ONBOARDING_WIZARD`, `CONTROL_TOWER_WORKSHOP_AGENTS`),
+These settings are per-run overrides on top of CT's fleet defaults
+(`CONTROL_TOWER_WORKSHOP_ONBOARDING_WIZARD`, `CONTROL_TOWER_WORKSHOP_LLM_WIZARD`,
+`CONTROL_TOWER_WORKSHOP_DEFAULT_INDUSTRY`, `CONTROL_TOWER_WORKSHOP_AGENTS`),
 and CT writes them into the deployment env *and* the uploaded `app.yaml`, so an
 operator clicking Deploy in the Apps console cannot silently restore a wizard or
 an agent the run opted out of.
