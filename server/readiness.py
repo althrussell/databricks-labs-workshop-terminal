@@ -264,6 +264,36 @@ def _path_writable(path: str) -> bool:
             os.unlink(probe_path)
 
 
+def _app_service_principal_grants(entitlement_status: Mapping[str, object]) -> dict:
+    """Summarise the app-service-principal catalog grants from the handoff ledger.
+
+    An app the attendee built runs as a service principal that has to be granted
+    on the catalog separately, and when that grant fails the app reads nothing
+    while every other check stays green. ``last_error`` alone truncates to five
+    messages across all resource types, so name the apps here: at a hundred
+    instances the useful question is which app is blocked, not that something is.
+    """
+    handoff = entitlement_status.get("handoff")
+    details = handoff.get("details") if isinstance(handoff, Mapping) else None
+    granted: list[str] = []
+    failed: list[dict] = []
+    for entry in details or []:
+        if not isinstance(entry, Mapping):
+            continue
+        if entry.get("resource_type") != "app-service-principals":
+            continue
+        name = str(entry.get("resource_id") or "")
+        if entry.get("state") == "handed_off":
+            granted.append(name)
+        elif entry.get("state") == "failed":
+            failed.append({"app": name, "error": entry.get("error")})
+    return {
+        "granted": sorted(granted),
+        "failed": sorted(failed, key=lambda f: f["app"]),
+        "ok": not failed,
+    }
+
+
 def evaluate(
     *,
     env: Mapping[str, str],
@@ -432,6 +462,7 @@ def evaluate(
         and reconciler_available
     )
     catalog_ok = bool(catalog) and attendee_verified and catalog_verified and entitlement_recent
+    app_sp_grants = _app_service_principal_grants(entitlement_status)
 
     configured_scopes = {
         scope.strip()
@@ -694,7 +725,14 @@ def evaluate(
             entitlement_ok,
             "entitlement reconciliation is enabled and healthy"
             if entitlement_ok
-            else "entitlement reconciliation is disabled, unhealthy, or missing its catalog",
+            else (
+                "apps the attendee built cannot read the catalog: "
+                + "; ".join(
+                    f"{f['app']} ({f['error']})" for f in app_sp_grants["failed"][:3]
+                )
+                if not app_sp_grants["ok"]
+                else "entitlement reconciliation is disabled, unhealthy, or missing its catalog"
+            ),
             enabled=entitlement_enabled,
             healthy=entitlement_status.get("ok") is True,
             thread_alive=entitlement_status.get("thread_alive") is True,
@@ -706,6 +744,7 @@ def evaluate(
             catalog=entitlement_status.get("catalog"),
             last_reconcile=entitlement_status.get("last_reconcile"),
             last_error=entitlement_status.get("last_error"),
+            app_service_principals=app_sp_grants,
         ),
         "obo": _check(
             obo_ok,
@@ -716,7 +755,16 @@ def evaluate(
             else "no attendee has opened this instance yet, so no OBO token has "
             "been forwarded to validate scopes against"
             if obo_status.get("present") is not True
-            else "required scopes are missing",
+            else f"required scopes are missing: {', '.join(missing_scopes)}"
+            if missing_scopes
+            else "the last OBO validation is stale; scopes verified at "
+            f"{obo_validated_at}, older than {OBO_VALIDATION_MAX_AGE}s"
+            if not obo_recent
+            else f"OBO token validation is {obo_validation_state}, not verified"
+            if obo_validation_state != "verified"
+            # Reached only when present is True but stale or unfresh in a way
+            # the branches above do not name.
+            else "the forwarded OBO token is not usable",
             # The one hard check nothing on this instance can turn green on its
             # own: scope verification needs a real attendee token, and a token
             # arrives only when a browser forwards one. So a perfectly

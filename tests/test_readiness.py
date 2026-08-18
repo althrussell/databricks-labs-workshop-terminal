@@ -523,6 +523,93 @@ def test_entitlements_require_recent_attendee_catalog_proof_and_live_loop(tmp_pa
     assert dead_loop["checks"]["entitlements"]["ok"] is False
 
 
+def test_entitlements_name_the_app_whose_catalog_grant_failed(tmp_path):
+    """An operator watching a hundred instances needs the app, not "unhealthy".
+
+    At servco the symptom was an attendee's app unable to read the catalog while
+    the attendee themselves could, and ``last_error`` truncates to five messages
+    across every resource type, so the app that is actually blocked can fall off
+    the end of it.
+    """
+    blocked = _evaluate(
+        tmp_path,
+        entitlements={
+            "enabled": True,
+            "catalog": "workshop_alice",
+            "ok": False,
+            "thread_alive": True,
+            "last_verified_at": 900.0,
+            "verified_email": "alice@example.com",
+            "verified_catalog": "workshop_alice",
+            "verification_source": "background",
+            "last_error": "something else entirely",
+            "handoff": {
+                "summary": {},
+                "details": [
+                    {
+                        "resource_type": "app-service-principals",
+                        "resource_id": "showroom",
+                        "state": "failed",
+                        "error": "403 PERMISSION_DENIED",
+                    },
+                    {
+                        "resource_type": "app-service-principals",
+                        "resource_id": "loyalty",
+                        "state": "handed_off",
+                        "error": None,
+                    },
+                    {"resource_type": "jobs", "resource_id": "11", "state": "failed"},
+                ],
+            },
+        },
+    )
+
+    check = blocked["checks"]["entitlements"]
+    assert check["ok"] is False
+    assert check["app_service_principals"]["failed"] == [
+        {"app": "showroom", "error": "403 PERMISSION_DENIED"}
+    ]
+    assert check["app_service_principals"]["granted"] == ["loyalty"]
+    assert "showroom" in check["detail"]
+
+
+def test_entitlements_report_app_grants_clean_when_none_failed(tmp_path):
+    healthy = _evaluate(tmp_path)
+
+    assert healthy["checks"]["entitlements"]["ok"] is True
+    assert healthy["checks"]["entitlements"]["app_service_principals"] == {
+        "granted": [],
+        "failed": [],
+        "ok": True,
+    }
+
+
+def test_obo_says_which_condition_failed(tmp_path):
+    """"Required scopes are missing" was printed when none were.
+
+    Every servco instance reported that after the event, with an empty missing
+    list, because the real cause was a validation older than the max age. It
+    sent the post-mortem looking for a scope misconfiguration that did not
+    exist, and an operator triaging a live instance would lose the same time.
+    """
+    good_obo = _good_inputs(tmp_path)[4]
+
+    stale = _evaluate(tmp_path, obo={**good_obo, "validated_at": 1.0})
+    unverified = _evaluate(
+        tmp_path, obo={**good_obo, "validation_state": "pending"}
+    )
+    short_scopes = _evaluate(
+        tmp_path,
+        obo={**good_obo, "verified_scopes": ["sql"]},
+    )
+
+    assert "stale" in stale["checks"]["obo"]["detail"]
+    assert stale["checks"]["obo"]["missing"] == []
+    assert "pending" in unverified["checks"]["obo"]["detail"]
+    # And when scopes genuinely are missing, it still says so — and names them.
+    assert "catalog.tables:read" in short_scopes["checks"]["obo"]["detail"]
+
+
 def test_obo_requires_enablement_and_expected_scopes(tmp_path):
     disabled = _evaluate(
         tmp_path,
@@ -630,7 +717,9 @@ def test_a_disabled_or_misscoped_obo_says_which_it_is(tmp_path):
     )
 
     assert disabled["checks"]["obo"]["detail"] == "OBO is disabled"
-    assert misscoped["checks"]["obo"]["detail"] == "required scopes are missing"
+    assert misscoped["checks"]["obo"]["detail"].startswith(
+        "required scopes are missing: "
+    )
 
 
 def test_release_pins_require_fixed_ref_cli_versions_and_models(tmp_path):
