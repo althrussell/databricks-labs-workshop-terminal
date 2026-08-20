@@ -32,7 +32,7 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger("omnigent-workshop-app.smart_routing")
 
-_DEFAULT_JUDGE_MODEL = "databricks-gpt-5-6-luna"
+_DEFAULT_JUDGE_MODEL = "system.ai.gpt-5-6-luna"
 _ROUTING_PATH = "/ai-gateway/routing/v1"
 
 
@@ -143,18 +143,33 @@ _DEFAULT_MODEL_ORDER = (
 
 # Never routable, whatever the prompt.
 #
-# gpt-5.5 prices like sol (642) and is a generation behind, so there is no task
-# it is the right answer for. claude-fable-5 is the dearest endpoint the
-# workspace serves and is deliberately out of scope for a workshop; it is
-# excluded rather than ordered last because last is still reachable, and the
-# judge falls back to the *last* entry when no cheap branch holds.
+# gpt-5.5 prices like sol (642) and is a generation behind, so there was no task
+# it was the right answer for; it did not survive the legacy retirement either,
+# which makes both gpt-5-5 entries belt-and-braces rather than load-bearing.
+# They stay because the catalogue is the workspace's to publish and an inert
+# exclusion costs a set lookup. claude-fable-5 is live and is the real work
+# here: it is the dearest model service the workspace serves and deliberately
+# out of scope for a workshop. It is excluded rather than ordered last because
+# last is still reachable — the judge falls back to the *last* entry when no
+# cheap branch holds.
 _DEFAULT_MODEL_EXCLUDE = ("gpt-5-5", "gpt-5-5-pro", "claude-fable-5")
 
 # Models that answer only on chat-completions, per harness that cannot speak it.
-# codex-cli 0.147.0 is Responses-only and the gateway refuses these outright
-# ("Responses API passthrough is not supported for model databricks-glm-5-2"),
-# so a codex verdict naming one is dead before it is made. Not a global
-# exclusion: pi speaks chat and runs them fine.
+# codex-cli 0.147.0 is Responses-only and the gateway refuses these outright, so
+# a codex verdict naming one is dead before it is made. Not a global exclusion:
+# pi speaks chat and runs them fine.
+#
+# Every entry is confirmed against a live catalogue rather than inferred from an
+# error message: each of these model services lists
+# ``mlflow/v1/chat/completions`` in its ``supported_api_types`` and none lists
+# ``openai/v1/responses``.
+#
+# kimi-k3 and gemini-3-6-flash used to be here and are kept: they did not
+# survive the legacy retirement, so no catalogue offers them and the entries are
+# inert — but a workspace a release behind is exactly what this file exists to
+# tolerate, and a stale bar costs one set lookup while a missing one hangs a
+# turn. gemini-3-5-flash-lite and qwen35-122b-a10b are their replacements in the
+# comparison set and are chat-only on the same evidence.
 #
 # This cannot be fixed by trimming the router's menu, which is why it is a
 # judge-side list. glm-5-2 is the first entry in SMART_ROUTING_TASK_V1_CODEX_ARMS
@@ -163,10 +178,16 @@ _DEFAULT_MODEL_EXCLUDE = ("gpt-5-5", "gpt-5-5-pro", "claude-fable-5")
 #
 # Hardcoded because the judge is handed bare model ids. The catalog knows the
 # real answer -- entries carry ``wire_apis``, and the rule is "codex needs
-# OPENAI_RESPONSES" -- so if this list ever needs a fourth entry, fetch the
+# OPENAI_RESPONSES" -- so if this list ever needs another entry, fetch the
 # catalog instead of extending it.
 _HARNESS_CHAT_ONLY_BARS: dict[str, tuple[str, ...]] = {
-    "codex": ("glm-5-2", "kimi-k3", "gemini-3-6-flash"),
+    "codex": (
+        "glm-5-2",
+        "gemini-3-5-flash-lite",
+        "qwen35-122b-a10b",
+        "kimi-k3",
+        "gemini-3-6-flash",
+    ),
 }
 
 
@@ -174,9 +195,12 @@ def _bare_model_id(model: str) -> str:
     """Fold a model id to the spelling comparisons use.
 
     The router keys arms bare and dashed (``gpt-5-6-sol``); a catalog spells the
-    same arm prefixed and dotted (``databricks-gpt-5.6-sol``). Upstream folds
-    them the same way — dots to dashes, prefix and ``[1m]`` context suffix off,
-    case folded — so the two vocabularies compare equal.
+    same arm qualified and dotted (``system.ai.GPT-5.6-Sol``, or the retired
+    ``databricks-gpt-5.6-sol``). Upstream folds them the same way — dots to
+    dashes, prefix and ``[1m]`` context suffix off, case folded — so the two
+    vocabularies compare equal. Both prefixes stay recognised: a fold that
+    stopped understanding the old spelling would silently stop matching arms on
+    a workspace that had not finished migrating.
     """
     bare = model.strip().lower()
     for prefix in ("databricks-", "system.ai."):
@@ -295,9 +319,16 @@ class AppServicePrincipalJudge:
         self.last_error: str | None = None
 
     def _connection(self) -> dict[str, str]:
+        # Unity AI Gateway's provider-agnostic chat surface. The client appends
+        # ``/chat/completions``, which is what makes ``/mlflow/v1`` the right
+        # base rather than the gateway root. This was ``{host}/serving-endpoints``
+        # until the legacy per-model endpoints were retired; that path now 404s,
+        # which would have taken the judge down silently — it fails soft, so a
+        # dead base URL reads as "no verdict" and every turn quietly runs
+        # unrouted on its default.
         host = workspace_host(self._workspace_client, self._env)
         return {
-            "base_url": f"{host}/serving-endpoints",
+            "base_url": f"{host}/ai-gateway/mlflow/v1",
             "api_key": _app_bearer(self._workspace_client),
         }
 
@@ -352,8 +383,11 @@ def build_routing_settings(env: dict[str, str] | None = None) -> Any:
     """Build ``RoutingSettings``, overriding only what the App configures.
 
     Everything left unset keeps the upstream default, which is deliberate: the
-    router name (``task_v1``) and the model prefixes (``databricks-`` and
-    ``system.ai.``) are facts about the gateway contract, not workshop policy.
+    router name (``task_v1``) and the model prefixes are facts about the gateway
+    contract, not workshop policy. Upstream's prefix default spans both
+    ``databricks-`` and ``system.ai.``, and leaving it alone is still right —
+    narrowing it to ``system.ai.`` would gain nothing and would break the App
+    against any workspace mid-migration.
     """
     from omnigent.server.smart_routing import RoutingSettings
 

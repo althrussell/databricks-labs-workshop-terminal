@@ -402,7 +402,7 @@ def test_what_the_summariser_actually_emits_satisfies_the_schema(schema: dict) -
         prompt_count=12,
         redactions=1,
     )
-    for generator, model in (("llm", "databricks-claude-haiku-4-5"), ("extraction", None)):
+    for generator, model in (("llm", "system.ai.claude-haiku-4-5"), ("extraction", None)):
         payload = _payload(
             {
                 "headline": "Streaming ingest prototype.",

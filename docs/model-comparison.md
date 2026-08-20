@@ -7,16 +7,18 @@ token and cost figures, build it again on a different set of models, compare.
 
 `codex --profile glm|kimi|gemini` used to carry this. codex-cli 0.144.6 removed
 the chat-completions wire — `responses` is now the only accepted `wire_api` —
-and these three models answer on chat completions and nowhere else. The
-gateway's Responses surface refuses them explicitly:
+and these models answer on chat completions and nowhere else. That is no longer
+an error message we quote but a property we can read: a Unity Catalog model
+service declares the wires it serves, and `system.ai.glm-5-2` reports
 
 ```
-{"error_code":"BAD_REQUEST",
- "message":"Responses API passthrough is not supported for model databricks-glm-5-2."}
+"supported_api_types": ["mlflow/v1/chat/completions", "mlflow/v1/responses"]
 ```
 
-So there is no wire that Codex speaks and these models answer. The profiles were
-removed in full.
+with no `openai/v1/responses` among them. So there is no wire that Codex speaks
+and these models answer, and `models.resolve()` now enforces that mechanically
+rather than by convention — see the wire filter in `server/models.py`. The
+profiles were removed in full.
 
 **This was not a degradation, it was a total outage.** An unknown `wire_api` does
 not make Codex skip one provider — it invalidates the entire `config.toml`. Codex
@@ -38,8 +40,14 @@ that exists.
 
 The set is still resolved and still smoke-tested, and `/api/config` still
 publishes it under `model_comparison` — as `{profile, model, label, endpoint}`,
-with the serving-endpoints URL rather than a command. Nothing advertises an
-invocation we cannot promise works.
+with a URL rather than a command. Nothing advertises an invocation we cannot
+promise works.
+
+That URL is now the same for every entry: Unity AI Gateway's provider-agnostic
+`{host}/ai-gateway/mlflow/v1/chat/completions`, which takes the model in the
+request body. One endpoint and a model name that changes is a better shape for
+this exercise than a URL per model, because the thing the attendee varies is
+exactly the thing the comparison is about.
 
 What is missing is a harness that carries it. Omnigent still speaks the chat
 wire (`wire_api: chat` is valid in an Omnigent `gateway` provider), so
@@ -47,8 +55,12 @@ re-homing it there is the open follow-up. Until that lands and is verified
 against a live workspace, the models are reachable over plain HTTP at the
 published endpoint.
 
-Models are filtered against serving-endpoint discovery, so a region that is a
+Models are filtered against model-service discovery, so a region that is a
 release behind advertises the models it has rather than the ones it does not.
+The vendors are deliberately distinct — reading one task priced three ways is
+the point — which is why Kimi K3 and Gemini 3.6 Flash were replaced by
+Gemini 3.5 Flash Lite and Qwen 3.5 122B rather than by two more of the same
+family when they left the catalogue.
 
 ## Publishing the set: the smoke matrix
 

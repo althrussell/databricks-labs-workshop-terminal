@@ -19,8 +19,10 @@ It prints the matrix and the ``WORKSHOP_CODEX_COMPARE`` line that drops whatever
 failed. Setting that line is how a failing model leaves the event without a
 release; see ``server/models.comparison_supported``.
 
-Auth: any token the workspace accepts on ``/serving-endpoints`` — the app service
-principal's, or your own while rehearsing.
+Auth: any token the workspace accepts on Unity AI Gateway — the app service
+principal's, or your own while rehearsing. ``EXECUTE`` on the ``system.ai``
+model services is held by all account users by default, so a personal token
+rehearses the same path the event runs.
 
   export DATABRICKS_HOST=https://ws.cloud.databricks.com
   export DATABRICKS_TOKEN=...
@@ -182,10 +184,10 @@ JUDGES = {
 
 def run_check(host: str, token: str, model: str, check: str, post=None) -> dict:
     """One check against one model. Never raises — a failure is a result."""
-    payload = dict(REQUESTS[check], model=model)
+    payload = dict(REQUESTS[check], model=models.service_name(model))
     send = post or _post
     try:
-        body = send(f"{host}/serving-endpoints/chat/completions", token, payload)
+        body = send(f"{host}/ai-gateway/mlflow/v1/chat/completions", token, payload)
     except Exception as exc:  # noqa: BLE001 — an unreachable model is a verdict
         return {"check": check, "ok": False, "detail": str(exc)[:160]}
     ok, detail = JUDGES[check](body)
@@ -255,7 +257,9 @@ def main() -> int:
     # Unfiltered on purpose: the point is to measure everything we might offer,
     # including whatever a previous run's WORKSHOP_CODEX_COMPARE dropped.
     candidates = {
-        name: os.environ.get(f"CODEX_COMPARE_{name.upper()}", "").strip() or default
+        name: models.service_name(
+            os.environ.get(f"CODEX_COMPARE_{name.upper()}", "").strip() or default
+        )
         for name, (default, _label) in models.COMPARISON_MODELS.items()
         if not args.profile or name in args.profile
     }

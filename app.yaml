@@ -95,8 +95,10 @@ env:
   # Agent-elicited discovery. Defaults on with capture; set false for signal only.
   - name: DISCOVERY_ENABLED
     value: ""
-  # Serving endpoint for the wrap summary. Empty falls back to quoting the
-  # attendee's own words rather than inventing a narrative.
+  # Model for the wrap summary. Empty falls back to quoting the attendee's own
+  # words rather than inventing a narrative. A short name (`claude-haiku-4-5`) or
+  # a fully-qualified model service (`system.ai.claude-haiku-4-5`) both work —
+  # server/models.py qualifies a short one before it goes on the wire.
   - name: INSIGHT_SUMMARY_MODEL
     value: ""
 
@@ -130,8 +132,8 @@ env:
   # when that schema is not actually seeded.
   - name: WORKSHOP_DEFAULT_INDUSTRY
     value: ""
-  # Pin for the wizard's serving endpoint. Empty uses the wizard chain
-  # (gpt-5-4-mini, then luna, haiku, gpt-oss-120b).
+  # Pin for the wizard's model. Empty uses the wizard chain (gpt-5-4-mini, then
+  # luna, haiku, gpt-oss-120b). Short or fully-qualified, as above.
   - name: WORKSHOP_WIZARD_MODEL
     value: ""
   # Coding agents offered to attendees, chosen when the workshop was created:
@@ -160,32 +162,36 @@ env:
     value: ""
 
   # --- Model gateway / CLI defaults ---
-  # Injected by Control Tower per workspace. Left empty, the gateway is
-  # auto-constructed from the workspace id, which is read from
-  # DATABRICKS_WORKSPACE_ID or an `adb-<digits>` hostname — Azure's shape. An
-  # AWS `dbc-...` workspace matches neither, so no candidate URL is ever built
-  # and every CLI falls back to <host>/serving-endpoints.
+  # Optional, and for most deployments it should stay empty. Left empty, the
+  # gateway resolves to the workspace-hosted form
+  # `https://<workspace-host>/ai-gateway`, which needs nothing but
+  # DATABRICKS_HOST and works on every cloud and hostname shape.
   #
-  # That fallback serves every model an attendee needs (Claude, the GPT
-  # Responses models, and the chat-completions-only models like GLM all answer
-  # there), so a workshop runs without this. What it costs is governance: the
-  # gateway is where an event's traffic meets gateway policy, usage tracking and
-  # rate limits. /readyz reports the difference as the soft `model_gateway`
-  # check — amber, not red.
-  # PREFER the workspace-hosted form:
-  #   https://<workspace>.cloud.databricks.com/ai-gateway
-  # Omnigent accepts a dedicated `ai-gateway` DNS-label host too, but that shape
-  # is materially more fragile here: for a dedicated subdomain it cannot infer
-  # the workspace hostname (stripping `ai-gateway.` gives an NXDOMAIN), so it
-  # falls back to resolving ~/.databrickscfg DEFAULT. If that resolution fails,
-  # Pi lists no models AND the openai-completions provider is dropped entirely —
-  # which is precisely the provider GLM routes through. The workspace-hosted
-  # form has no such dependency: the gateway hostname IS the workspace hostname.
+  # This used to be the difference between a governed event and an ungoverned
+  # one: with no gateway resolved, the CLIs fell back to
+  # <host>/serving-endpoints, which served every model an attendee needed. That
+  # is no longer true. Databricks retired the legacy per-model endpoints in
+  # favour of Unity Catalog model services (`system.ai.<model>`), and
+  # /serving-endpoints/anthropic/v1/messages now answers 404 — so the gateway is
+  # the only surface serving these models, and there is no fallback behind it.
+  # /readyz still reports `model_gateway` as a soft check, because gating an
+  # attendee out is worse than letting them in to find out, but amber here now
+  # means broken rather than merely ungoverned.
+  #
+  # Set this only to point an event at a DEDICATED gateway subdomain. That shape
+  # is materially more fragile: Omnigent cannot infer the workspace hostname
+  # from it (stripping `ai-gateway.` gives an NXDOMAIN), so it falls back to
+  # resolving ~/.databrickscfg DEFAULT. If that resolution fails, Pi lists no
+  # models AND the openai-completions provider is dropped entirely — which is
+  # precisely the provider GLM routes through. The workspace-hosted form has no
+  # such dependency: the gateway hostname IS the workspace hostname.
   - name: DATABRICKS_GATEWAY_HOST
     value: ""
-  # Fallback lever only. This auto-constructs the DEDICATED-SUBDOMAIN form
-  # (https://<id>.ai-gateway.cloud.databricks.com), so it inherits the
-  # .databrickscfg dependency described above. Prefer DATABRICKS_GATEWAY_HOST.
+  # Also optional, and no longer a rescue lever. This auto-constructs the
+  # DEDICATED-SUBDOMAIN form (https://<id>.ai-gateway.cloud.databricks.com), so
+  # it inherits the .databrickscfg dependency described above, and it is probed
+  # before the workspace-hosted default rather than after. Leave it empty unless
+  # you specifically want that subdomain.
   - name: DATABRICKS_WORKSPACE_ID
     value: ""
   # An event's cost posture, in one word. Empty means "balanced", which is what
@@ -207,6 +213,12 @@ env:
   # Pins override the profile for the two roles an operator addresses directly.
   # Each leads its role's chain rather than replacing it, so a model this region
   # does not serve degrades to the best one it does rather than failing.
+  #
+  # Write the short name — `claude-opus-5`, `gpt-5-6-sol` — and server/models.py
+  # qualifies it to `system.ai.claude-opus-5` on the wire. A fully-qualified name
+  # is accepted verbatim, including a context-window variant such as
+  # `system.ai.claude-sonnet-4-6[1m]` where the workspace serves one. The retired
+  # `databricks-` prefix is not accepted anywhere and will not resolve.
   - name: ANTHROPIC_MODEL
     value: ""
   - name: CODEX_MODEL

@@ -36,6 +36,17 @@ unverified creator is worse than not handing off at all:
   ``items_key`` or ``id_field`` turns the health check permanently red, so each
   one waits for a measured response. UC-resident models are already covered by
   the catalog grant.
+
+**The models an attendee's CLIs talk to are not in scope here, and that is not
+an omission.** Those are Unity Catalog model services in ``system.ai``, reached
+through Unity AI Gateway, and the grant that governs them is ``EXECUTE`` on the
+model service — held by all account users by default, on a schema no workshop
+creates and none should try to hand off. The ``serving-endpoints`` adapter below
+is about something else entirely: an endpoint an *attendee* deployed during the
+workshop, which is theirs to keep and so needs the handoff. That is also why the
+list it reads still returns built-in foundation-model endpoints with no id (see
+the note in the scan loop) — the legacy surface lingers in that listing after
+having stopped serving traffic.
 """
 
 from __future__ import annotations

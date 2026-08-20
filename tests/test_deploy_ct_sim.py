@@ -18,8 +18,8 @@ def _valid_argv():
         "--profile", "event-profile",
         "--attendee", "attendee@example.com",
         "--skills-ref", "v1.2.3",
-        "--anthropic-model", "databricks-claude-sonnet-5",
-        "--codex-model", "databricks-gpt-5-6-codex",
+        "--anthropic-model", "claude-sonnet-5",
+        "--codex-model", "gpt-5-6-terra",
     ]
 
 
@@ -36,8 +36,8 @@ def test_uploaded_yaml_patch_sets_current_event_contract_without_mutating_repo()
         scopes="catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql",
         admin_group="event_admins",
         skills_ref="v1.2.3",
-        anthropic_model="databricks-claude-sonnet-5",
-        codex_model="databricks-gpt-5-6-codex",
+        anthropic_model="claude-sonnet-5",
+        codex_model="gpt-5-6-terra",
         model_profile="economy",
         claude_code_version="2.1.228",
         codex_cli_version="0.147.0",
@@ -84,10 +84,12 @@ def _gateway_error(value):
         deploy_ct_sim._parse_args(_valid_argv() + ["--gateway-host", value])
 
 
-def test_the_gateway_host_is_optional_because_its_absence_is_a_degradation_not_a_break():
-    """Without it every CLI falls back to <host>/serving-endpoints, which serves
-    every model the workshop uses. What it costs is gateway policy, usage tracking
-    and rate limits, which Workshop Terminal reports as a soft readiness check."""
+def test_the_gateway_host_is_optional_because_the_terminal_derives_one():
+    """Left empty, the terminal derives <host>/ai-gateway from DATABRICKS_HOST,
+    which needs no workspace id and works on the AWS hostnames that match no
+    dedicated-subdomain shape. The flag is for pointing an event at a dedicated
+    gateway instead, so its absence is a default rather than a gap — and it is
+    no longer a route to the retired serving-endpoints surface, which 404s."""
     args = deploy_ct_sim._parse_args(_valid_argv())
     settings = deploy_ct_sim._event_settings_from_args(args, args.attendee, "")
 
@@ -235,8 +237,8 @@ def test_parser_defaults_to_no_static_pat():
         "--profile", "event-profile",
         "--attendee", "attendee@example.com",
         "--skills-ref", "v1.2.3",
-        "--anthropic-model", "databricks-claude-sonnet-5",
-        "--codex-model", "databricks-gpt-5-6-codex",
+        "--anthropic-model", "claude-sonnet-5",
+        "--codex-model", "gpt-5-6-terra",
     ])
 
     assert args.with_emergency_pat is False
@@ -419,7 +421,7 @@ def test_tool_versions_accept_exact_semver_with_prerelease_and_build(flag):
         "claude",
         "codex",
         "endpoint-latest",
-        "databricks-claude-sonnet",
+        "system.ai.claude-sonnet",
         "model*",
         "model@latest",
         " model-1",
@@ -432,6 +434,41 @@ def test_model_names_reject_floating_or_non_endpoint_values(flag, value):
 
     with pytest.raises(SystemExit):
         deploy_ct_sim._parse_args(argv)
+
+
+@pytest.mark.parametrize("flag", ["--anthropic-model", "--codex-model"])
+def test_a_retired_serving_endpoint_name_is_refused_not_translated(flag, capsys):
+    """The pin an operator would carry over from the last event.
+
+    The terminal folds this spelling at runtime, where the alternative is no
+    model at all. Here the alternative is a question, and the legacy and Unity
+    Catalog catalogues are not the same set — a name that existed as an endpoint
+    need not exist as a model service. Refusing makes someone check what this
+    event's workspace serves while there is still time to.
+    """
+    argv = _valid_argv()
+    argv[argv.index(flag) + 1] = "databricks-claude-sonnet-5"
+
+    with pytest.raises(SystemExit):
+        deploy_ct_sim._parse_args(argv)
+
+    message = capsys.readouterr().err
+    assert "retired" in message
+    # And it says what to write instead, in both accepted spellings.
+    assert "claude-sonnet-5" in message
+    assert "system.ai.claude-sonnet-5" in message
+
+
+@pytest.mark.parametrize(
+    "value", ["claude-sonnet-5", "system.ai.claude-sonnet-5"]
+)
+def test_both_accepted_spellings_of_a_model_service_pass(value):
+    """Short is what the chains use; fully qualified is what the workspace UI
+    shows. Qualifying is idempotent, so either lands on the same service."""
+    argv = _valid_argv()
+    argv[argv.index("--anthropic-model") + 1] = value
+
+    assert deploy_ct_sim._parse_args(argv).anthropic_model == value
 
 
 def test_the_scripts_profile_list_matches_the_terminals():
@@ -496,8 +533,8 @@ def test_event_mode_rejects_disabled_required_features(flag):
             "--profile", "event-profile",
             "--attendee", "attendee@example.com",
             "--skills-ref", "v1.2.3",
-            "--anthropic-model", "databricks-claude-sonnet-5",
-            "--codex-model", "databricks-gpt-5-6-codex",
+            "--anthropic-model", "claude-sonnet-5",
+            "--codex-model", "gpt-5-6-terra",
             flag,
         ])
 
@@ -505,8 +542,8 @@ def test_event_mode_rejects_disabled_required_features(flag):
         "--profile", "event-profile",
         "--attendee", "attendee@example.com",
         "--skills-ref", "v1.2.3",
-        "--anthropic-model", "databricks-claude-sonnet-5",
-        "--codex-model", "databricks-gpt-5-6-codex",
+        "--anthropic-model", "claude-sonnet-5",
+        "--codex-model", "gpt-5-6-terra",
         "--non-event-mode",
         flag,
     ])
@@ -520,8 +557,8 @@ def test_event_mode_requires_all_baseline_obo_scopes_and_allows_extras():
             "--profile", "event-profile",
             "--attendee", "attendee@example.com",
             "--skills-ref", "v1.2.3",
-            "--anthropic-model", "databricks-claude-sonnet-5",
-            "--codex-model", "databricks-gpt-5-6-codex",
+            "--anthropic-model", "claude-sonnet-5",
+            "--codex-model", "gpt-5-6-terra",
             "--scopes", missing_sql,
         ])
 
@@ -547,8 +584,8 @@ def test_profile_is_required_or_loaded_from_environment():
     base = [
         "--attendee", "attendee@example.com",
         "--skills-ref", "v1.2.3",
-        "--anthropic-model", "databricks-claude-sonnet-5",
-        "--codex-model", "databricks-gpt-5-6-codex",
+        "--anthropic-model", "claude-sonnet-5",
+        "--codex-model", "gpt-5-6-terra",
     ]
     with pytest.raises(SystemExit):
         deploy_ct_sim._parse_args(base, environ={})
@@ -1050,8 +1087,8 @@ def test_real_main_dry_run_never_imports_or_calls_databricks_api(monkeypatch, ca
         "--profile", "event-profile",
         "--attendee", "attendee@example.com",
         "--skills-ref", "v1.2.3",
-        "--anthropic-model", "databricks-claude-sonnet-5",
-        "--codex-model", "databricks-gpt-5-6-codex",
+        "--anthropic-model", "claude-sonnet-5",
+        "--codex-model", "gpt-5-6-terra",
     ])
 
     assert result == 0

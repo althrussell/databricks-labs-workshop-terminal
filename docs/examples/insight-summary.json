@@ -11,7 +11,7 @@
     "revision": 4,
     "generated_at": "2026-07-30T11:58:31.004000+00:00",
     "generator": "llm",
-    "model": "databricks-claude-haiku-4-5",
+    "model": "system.ai.claude-haiku-4-5",
     "phase": "wrap",
     "headline": "Prototyped a Lakebase-backed feature store to replace self-managed Postgres ahead of a Q3 Snowflake renewal.",
     "what_they_built": "Stood up a synced table from a streaming pipeline into Lakebase and a small Databricks App that reads per-account features by key, then benchmarked lookup latency against their current EC2 Postgres. Ended the session with a working read path and a Genie space over the same tables for their analysts.",

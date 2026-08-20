@@ -13,7 +13,7 @@ import time
 import pytest
 import yaml
 
-from server import cli_config
+from server import cli_config, models
 from server.bootstrap import install
 from server.users import User
 
@@ -27,7 +27,7 @@ def user(_test_env):
 
 @pytest.fixture(autouse=True)
 def _no_endpoint_discovery(monkeypatch):
-    monkeypatch.setattr(cli_config, "_discover_serving_endpoints", lambda token: set())
+    monkeypatch.setattr(cli_config, "discover_model_services", lambda token: {})
 
 
 @pytest.fixture(autouse=True)
@@ -65,11 +65,11 @@ def test_codex_and_pi_resolve_through_a_databricks_aware_provider(user, monkeypa
     """Omnigent must see a Databricks AI Gateway, not an anonymous proxy.
 
     Read as a plain `gateway`, omnigent sends Codex and Pi down its
-    vendor-direct path, which strips the `databricks-` prefix off model ids —
-    the workspace serves `databricks-claude-opus-4-8` and Pi asked for
-    `claude-opus-4-8`, so every message 404'd. Codex fell over on the same
-    misread, reporting itself unlaunchable because it found no Databricks
-    provider and no `auth.json` behind it.
+    vendor-direct path, which strips the qualifying prefix off model ids — the
+    gateway answers `system.ai.claude-opus-4-8` and Pi asked for
+    `claude-opus-4-8`, which is not a model service, so every message 404'd.
+    Codex fell over on the same misread, reporting itself unlaunchable because
+    it found no Databricks provider and no `auth.json` behind it.
     """
     monkeypatch.setattr(
         cli_config, "gateway_host", lambda: "https://ws.cloud.databricks.com/ai-gateway"
@@ -109,9 +109,9 @@ def test_codex_base_url_is_the_spelling_omnigent_can_rewrite(user, monkeypatch):
 def test_without_a_gateway_the_single_provider_still_owns_every_surface(
     user, monkeypatch
 ):
-    """Recognition is by URL: the serving-endpoints fallback has no
-    `/ai-gateway/` path, so pinning it would only swap one silent failure for
-    another."""
+    """Recognition is by URL, and with no host there is no URL at all — so
+    there is nothing for the pinned provider to name. Reachable now only when
+    DATABRICKS_HOST is unset, since every configured host derives a gateway."""
     monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
     cli_config.configure_omnigent(user, "tok-1")
     providers = yaml.safe_load(open(_config_path(user)))["providers"]
@@ -223,14 +223,20 @@ def test_local_omnigent_keeps_its_own_host_identity(monkeypatch):
         assert "host" not in (yaml.safe_load(handle) or {})
 
 
-def test_serving_endpoints_fallback_urls(user, monkeypatch):
-    monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
+def test_the_workspace_hosted_gateway_needs_no_configuration(user):
+    """The case that was silently broken. gateway_host() is left unpatched here
+    on purpose: an AWS `dbc-`/plain hostname matches neither the Azure
+    `adb-<digits>` shape nor a set DATABRICKS_WORKSPACE_ID, so the old resolver
+    returned nothing and wrote `<host>/serving-endpoints/anthropic` — a surface
+    that now 404s. Deriving `<host>/ai-gateway` from the host alone is what
+    makes those deployments work without an operator knowing to intervene."""
     cli_config.configure_omnigent(user, "tok-1")
     with open(_config_path(user)) as f:
         text = f.read()
     host = "https://test.cloud.databricks.com"
-    assert f"base_url: {host}/serving-endpoints/anthropic" in text
-    assert f"base_url: {host}/serving-endpoints" in text
+    assert f"base_url: {host}/ai-gateway/anthropic" in text
+    assert f"base_url: {host}/ai-gateway/codex/v1" in text
+    assert "serving-endpoints" not in text
 
 
 def test_token_file_written_0600(user, monkeypatch):
@@ -245,20 +251,20 @@ def test_token_file_written_0600(user, monkeypatch):
 def test_model_defaults_pick_from_available(user, monkeypatch):
     monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
     monkeypatch.setattr(
-        cli_config, "_discover_serving_endpoints",
-        lambda token: {"databricks-claude-opus-4-7"},
+        cli_config, "discover_model_services",
+        lambda token: {"claude-opus-4-6": frozenset({models.ANTHROPIC_MESSAGES})},
     )
     cli_config.configure_omnigent(user, "tok-1")
     with open(_config_path(user)) as f:
         text = f.read()
-    # Only opus-4-7 available → the sonnet-first chain degrades all the way
+    # Only opus-4-6 served → the sonnet-first chain degrades all the way
     # through to it.
-    assert "default: databricks-claude-opus-4-7" in text
-    # No GPT endpoint is READY here, so Codex falls to the head of its chain
-    # unverified rather than to a hardcoded name. Discovery this narrow means
+    assert "default: system.ai.claude-opus-4-6" in text
+    # No GPT model is served here, so Codex falls to the head of its chain
+    # unverified rather than to a hardcoded name. A catalogue this narrow means
     # either a region a long way behind or a failed API call, and the newest
     # model we know of is the better guess in both cases.
-    assert "default: databricks-gpt-5-6-terra" in text
+    assert "default: system.ai.gpt-5-6-terra" in text
 
 
 def test_the_economy_profile_reaches_the_generated_config(user, monkeypatch):
@@ -270,12 +276,12 @@ def test_the_economy_profile_reaches_the_generated_config(user, monkeypatch):
     monkeypatch.delenv("CODEX_MODEL", raising=False)
     monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
     monkeypatch.setattr(
-        cli_config, "_discover_serving_endpoints",
+        cli_config, "discover_model_services",
         lambda token: {
-            "databricks-claude-sonnet-5",
-            "databricks-claude-opus-5",
-            "databricks-gpt-5-6-luna",
-            "databricks-gpt-5-6-terra",
+            "claude-sonnet-5": frozenset({models.ANTHROPIC_MESSAGES}),
+            "claude-opus-5": frozenset({models.ANTHROPIC_MESSAGES}),
+            "gpt-5-6-luna": frozenset({models.OPENAI_RESPONSES}),
+            "gpt-5-6-terra": frozenset({models.OPENAI_RESPONSES}),
         },
     )
     cli_config.configure_omnigent(user, "tok-1")
@@ -285,11 +291,11 @@ def test_the_economy_profile_reaches_the_generated_config(user, monkeypatch):
     with open(os.path.join(user.home, ".claude", "settings.json")) as f:
         claude = json.load(f)["env"]
 
-    assert "default: databricks-claude-sonnet-5" in omnigent
-    assert "default: databricks-gpt-5-6-luna" in omnigent
-    # Opus is READY and still not reachable: that is the ceiling, not a default.
-    assert claude["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "databricks-claude-sonnet-5"
-    assert "databricks-claude-opus-5" not in omnigent
+    assert "default: system.ai.claude-sonnet-5" in omnigent
+    assert "default: system.ai.gpt-5-6-luna" in omnigent
+    # Opus is served and still not reachable: that is the ceiling, not a default.
+    assert claude["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "system.ai.claude-sonnet-5"
+    assert "claude-opus-5" not in omnigent
 
 
 def test_configure_all_discovers_endpoints_once_for_all_three_configs(
@@ -301,10 +307,13 @@ def test_configure_all_discovers_endpoints_once_for_all_three_configs(
 
     def _count(token):
         calls.append(token)
-        return {"databricks-claude-sonnet-5", "databricks-gpt-5-6-terra"}
+        return {
+            "claude-sonnet-5": frozenset({models.ANTHROPIC_MESSAGES}),
+            "gpt-5-6-terra": frozenset({models.OPENAI_RESPONSES}),
+        }
 
     monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
-    monkeypatch.setattr(cli_config, "_discover_serving_endpoints", _count)
+    monkeypatch.setattr(cli_config, "discover_model_services", _count)
     cli_config.configure_all(user, "tok-1")
 
     assert len(calls) == 1
@@ -317,14 +326,17 @@ def test_default_claude_model_is_sonnet_5(user, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
     monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
     monkeypatch.setattr(
-        cli_config, "_discover_serving_endpoints",
-        lambda token: {"databricks-claude-sonnet-5", "databricks-claude-opus-4-8"},
+        cli_config, "discover_model_services",
+        lambda token: {
+            "claude-sonnet-5": frozenset({models.ANTHROPIC_MESSAGES}),
+            "claude-opus-4-8": frozenset({models.ANTHROPIC_MESSAGES}),
+        },
     )
     cli_config.configure_omnigent(user, "tok-1")
     with open(_config_path(user)) as f:
         text = f.read()
-    assert "default: databricks-claude-sonnet-5" in text
-    assert "default: databricks-claude-opus-4-8" not in text
+    assert "default: system.ai.claude-sonnet-5" in text
+    assert "default: system.ai.claude-opus-4-8" not in text
 
 
 def test_runner_idle_timeout_written(user, monkeypatch):

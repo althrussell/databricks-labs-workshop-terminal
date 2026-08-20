@@ -71,7 +71,7 @@ def _stub_harvest(monkeypatch, harvest: Harvest):
     monkeypatch.setattr(artifacts, "harvest_user", lambda user, **kw: harvest)
 
 
-def _stub_model(monkeypatch, answer: dict | str, model: str = "databricks-claude-haiku-4-5"):
+def _stub_model(monkeypatch, answer: dict | str, model: str = "system.ai.claude-haiku-4-5"):
     def fake(harvest, signal):
         if isinstance(answer, str):
             return insight_summary._extract_json(answer), model
@@ -128,7 +128,7 @@ def test_a_model_summary_is_emitted_as_an_insight_summary_event(monkeypatch, emi
     )
 
     assert payload["generator"] == "llm"
-    assert payload["model"] == "databricks-claude-haiku-4-5"
+    assert payload["model"] == "system.ai.claude-haiku-4-5"
     assert payload["use_cases"][0]["title"] == "Real-time order ingestion"
     [event] = _emitted(emitter)
     assert event["type"] == "insight.summary"
@@ -308,7 +308,7 @@ def test_the_model_classifies_the_session_intent(monkeypatch, emitter):
         insight_summary, "_ask_model",
         lambda h, s: (
             {"headline": "Built a Space Invaders clone.", "session_intent": "fun"},
-            "databricks-claude-haiku-4-5",
+            "system.ai.claude-haiku-4-5",
         ),
     )
 
@@ -327,7 +327,7 @@ def test_an_invented_session_intent_is_dropped(monkeypatch, emitter):
         insight_summary, "_ask_model",
         lambda h, s: (
             {"headline": "Something happened.", "session_intent": "probably commercial"},
-            "databricks-claude-haiku-4-5",
+            "system.ai.claude-haiku-4-5",
         ),
     )
 
@@ -518,7 +518,7 @@ def test_a_forced_pass_does_not_overlap_one_already_in_flight(monkeypatch, emitt
                 _User(), phase="wrap", force=True, emitter=emitter
             )
         )
-        return {"headline": "Built something."}, "databricks-claude-haiku-4-5"
+        return {"headline": "Built something."}, "system.ai.claude-haiku-4-5"
 
     monkeypatch.setattr(insight_summary, "_ask_model", model_then_force)
     payload = insight_summary.summarise_user(
@@ -559,7 +559,7 @@ def test_concurrent_passes_emit_one_summary(monkeypatch, emitter):
     def slow(harvest, signal):
         inside.set()
         release.wait(timeout=5)
-        return {"headline": "Built something."}, "databricks-claude-haiku-4-5"
+        return {"headline": "Built something."}, "system.ai.claude-haiku-4-5"
 
     monkeypatch.setattr(insight_summary, "_ask_model", slow)
     results: list[dict | None] = []
@@ -661,27 +661,56 @@ def test_an_unexpected_model_error_still_ships_a_summary(monkeypatch, emitter):
 # --- model selection ----------------------------------------------------------
 
 
+def _chat(*names):
+    """A discovered catalogue serving each name on the chat-completions wire."""
+    from server import models
+
+    return {name: frozenset({models.CHAT_COMPLETIONS}) for name in names}
+
+
 def test_the_cheap_tier_is_preferred_for_a_summarisation_job(monkeypatch):
     monkeypatch.delenv("INSIGHT_SUMMARY_MODEL", raising=False)
     monkeypatch.setattr(
-        insight_summary, "_ready_endpoints",
-        lambda token: {"databricks-claude-sonnet-5", "databricks-claude-haiku-4-5"},
+        insight_summary, "_served_models",
+        lambda token: _chat("claude-sonnet-5", "claude-haiku-4-5"),
     )
-    assert insight_summary._pick_model("tok") == "databricks-claude-haiku-4-5"
+    assert insight_summary._pick_model("tok") == "system.ai.claude-haiku-4-5"
 
 
 def test_a_pinned_model_wins_without_discovery(monkeypatch):
-    monkeypatch.setenv("INSIGHT_SUMMARY_MODEL", "databricks-claude-opus-4-8")
+    monkeypatch.setenv("INSIGHT_SUMMARY_MODEL", "claude-opus-4-8")
     monkeypatch.setattr(
-        insight_summary, "_ready_endpoints",
-        lambda token: pytest.fail("a pinned endpoint needs no discovery"),
+        insight_summary, "_served_models",
+        lambda token: pytest.fail("a pinned model service needs no discovery"),
     )
-    assert insight_summary._pick_model("tok") == "databricks-claude-opus-4-8"
+    assert insight_summary._pick_model("tok") == "system.ai.claude-opus-4-8"
 
 
-def test_no_ready_endpoint_is_reported_as_model_unavailable(monkeypatch):
+def test_a_pin_written_fully_qualified_is_not_qualified_twice(monkeypatch):
+    """An operator copying the name off the workspace UI writes the whole thing,
+    and `system.ai.system.ai.x` names nothing."""
+    monkeypatch.setenv("INSIGHT_SUMMARY_MODEL", "system.ai.claude-opus-4-8")
+    assert insight_summary._pick_model("tok") == "system.ai.claude-opus-4-8"
+
+
+def test_no_served_model_is_reported_as_model_unavailable(monkeypatch):
     monkeypatch.delenv("INSIGHT_SUMMARY_MODEL", raising=False)
-    monkeypatch.setattr(insight_summary, "_ready_endpoints", lambda token: set())
+    monkeypatch.setattr(insight_summary, "_served_models", lambda token: {})
+    with pytest.raises(insight_summary.ModelUnavailable):
+        insight_summary._pick_model("tok")
+
+
+def test_a_model_that_cannot_speak_chat_completions_is_not_picked(monkeypatch):
+    """The summariser posts one chat-completions turn. A model the workspace
+    serves on some other surface only looks available; picking it would 404 and
+    cost the summary the extraction fallback would have delivered."""
+    from server import models
+
+    monkeypatch.delenv("INSIGHT_SUMMARY_MODEL", raising=False)
+    monkeypatch.setattr(
+        insight_summary, "_served_models",
+        lambda token: {"claude-haiku-4-5": frozenset({models.ANTHROPIC_MESSAGES})},
+    )
     with pytest.raises(insight_summary.ModelUnavailable):
         insight_summary._pick_model("tok")
 

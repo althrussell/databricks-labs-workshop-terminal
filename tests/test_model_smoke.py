@@ -103,7 +103,11 @@ def test_an_unreachable_model_is_a_verdict_not_a_crash():
 
 def test_the_matrix_publishes_the_line_that_drops_a_failure():
     def answer(url, token, payload):
-        if payload["model"] == "bad" and "tools" in payload:
+        # Qualified, because that is the only spelling the gateway answers and
+        # run_check renders it rather than trusting its caller to have done so.
+        assert url.endswith("/ai-gateway/mlflow/v1/chat/completions")
+        assert payload["model"].startswith("system.ai.")
+        if payload["model"] == "system.ai.bad" and "tools" in payload:
             return _reply("I cannot do that.")
         if "tools" not in payload:
             return _reply("Sure.")
@@ -127,7 +131,7 @@ def test_nothing_passing_publishes_a_refusal_rather_than_an_empty_set():
         return _reply("")
 
     rendered = smoke_models.render(
-        smoke_models.smoke("https://ws", "tok", {"glm": "databricks-glm-5-2"}, post=refuse)
+        smoke_models.smoke("https://ws", "tok", {"glm": "system.ai.glm-5-2"}, post=refuse)
     )
 
     assert "do not run the comparison" in rendered
@@ -144,27 +148,32 @@ def test_an_unmeasured_deployment_offers_everything_it_serves(monkeypatch):
     monkeypatch.delenv("WORKSHOP_CODEX_COMPARE", raising=False)
 
     assert models.comparison_supported() is None
-    assert set(models.comparison_models()) == {"glm", "kimi", "gemini"}
+    assert set(models.comparison_models()) == {"glm", "gemini", "qwen"}
 
 
 def test_the_config_endpoint_publishes_the_endpoint_not_a_dead_command(
     client, monkeypatch
 ):
-    """No harness command can be promised here — see server.main.model_comparison."""
+    """No harness command can be promised here — see server.main.model_comparison.
+
+    The endpoint is one URL for every model now: Unity AI Gateway takes the
+    service name in the body, where the retired per-model endpoints put it in
+    the path.
+    """
     from server import main
 
-    monkeypatch.setenv("WORKSHOP_CODEX_COMPARE", "kimi")
+    monkeypatch.setenv("WORKSHOP_CODEX_COMPARE", "glm")
 
     published = main.model_comparison()
 
     assert published == [
         {
-            "profile": "kimi",
-            "model": "databricks-kimi-k3",
-            "label": "Kimi K3",
+            "profile": "glm",
+            "model": "system.ai.glm-5-2",
+            "label": "GLM 5.2",
             "endpoint": (
                 "https://test.cloud.databricks.com"
-                "/serving-endpoints/databricks-kimi-k3/invocations"
+                "/ai-gateway/mlflow/v1/chat/completions"
             ),
         }
     ]
