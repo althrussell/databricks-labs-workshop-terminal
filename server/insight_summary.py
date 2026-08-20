@@ -310,31 +310,31 @@ def _string_list(raw: object, limit: int = MAX_LIST_ITEMS) -> list[str]:
 
 
 class ModelUnavailable(RuntimeError):
-    """No reachable serving endpoint, or it answered with something unusable."""
+    """No reachable model service, or it answered with something unusable."""
 
 
-def _ready_endpoints(token: str) -> set[str]:
-    from .cli_config import _discover_serving_endpoints
+def _served_models(token: str) -> dict[str, frozenset[str]]:
+    from .cli_config import discover_model_services
 
-    return _discover_serving_endpoints(token)
+    return discover_model_services(token)
 
 
 def _pick_model(token: str) -> str:
-    """The summariser's endpoint, from the ``insight`` role in server/models.py.
+    """The summariser's model, from the ``insight`` role in server/models.py.
 
     Unlike the CLI writers this raises rather than guessing when nothing in the
-    chain is READY, because there is a good non-LLM answer available: the
+    chain is served, because there is a good non-LLM answer available: the
     extraction generator quotes the attendee's own words. A summary invented by
-    an endpoint we could not confirm exists is worse than that.
+    a model we could not confirm exists is worse than that.
     """
     pinned = config.insight_summary_model()
     if pinned:
-        return pinned
-    available = _ready_endpoints(token)
+        return models.service_name(pinned)
+    available = _served_models(token)
     for name in models.chain("insight"):
-        if name in available:
-            return name
-    raise ModelUnavailable("no summarisation endpoint is READY in this workspace")
+        if models.serves(available, name, "insight"):
+            return models.service_name(name)
+    raise ModelUnavailable("no summarisation model service is available in this workspace")
 
 
 def _extract_json(text: str) -> dict:
@@ -367,8 +367,10 @@ def _ask_model(harvest: artifacts.Harvest, signal: dict | None) -> tuple[dict, s
 
     from .credentials import CredentialError, credential_manager
 
-    host = config.databricks_host()
-    if not host:
+    from .cli_config import unified_chat_url
+
+    url = unified_chat_url()
+    if not url:
         raise ModelUnavailable("no DATABRICKS_HOST configured")
     try:
         token = credential_manager.token()
@@ -378,9 +380,10 @@ def _ask_model(harvest: artifacts.Harvest, signal: dict | None) -> tuple[dict, s
     model = _pick_model(token)
     try:
         resp = requests.post(
-            f"{host}/serving-endpoints/{model}/invocations",
+            url,
             headers={"Authorization": f"Bearer {token}"},
             json={
+                "model": model,
                 "messages": [
                     {"role": "system", "content": _PROMPT},
                     {"role": "user", "content": _material(harvest, signal)},
@@ -393,9 +396,9 @@ def _ask_model(harvest: artifacts.Harvest, signal: dict | None) -> tuple[dict, s
             timeout=_MODEL_TIMEOUT,
         )
     except requests.RequestException as exc:
-        raise ModelUnavailable(f"serving endpoint unreachable: {exc}") from exc
+        raise ModelUnavailable(f"AI Gateway unreachable: {exc}") from exc
     if resp.status_code != 200:
-        raise ModelUnavailable(f"serving endpoint returned {resp.status_code}")
+        raise ModelUnavailable(f"AI Gateway returned {resp.status_code}")
     try:
         content = resp.json()["choices"][0]["message"]["content"]
     except (ValueError, KeyError, IndexError, TypeError) as exc:

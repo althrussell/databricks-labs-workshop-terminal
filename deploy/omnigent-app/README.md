@@ -58,14 +58,17 @@ call is the only inference the App itself performs.
 
 Configuration:
 
-- `WORKSHOP_ROUTING_JUDGE_MODEL` (default `databricks-gpt-5-6-luna`) — the
-  serving endpoint the judge calls. Pinned in `app.yaml` rather than left to the
-  built-in default, because it decides what the App service principal may reach.
+- `WORKSHOP_ROUTING_JUDGE_MODEL` (default `system.ai.gpt-5-6-luna`) — the Unity
+  Catalog model service the judge calls, fully qualified. Pinned in `app.yaml`
+  rather than left to the built-in default, because it decides what the App
+  service principal may reach.
 - `WORKSHOP_ROUTING_BASE_URL` — override the routing base URL.
 - `WORKSHOP_ROUTING_ROUTER_NAME` — override the router strategy. Empty keeps
   upstream's default (`task_v1` in 0.9.0; it was `task_v0` before).
 - `WORKSHOP_ROUTING_MODEL_PREFIXES` — override the catalog prefixes. Empty
-  keeps upstream's defaults (`databricks-` and `system.ai.`).
+  keeps upstream's defaults (`databricks-` and `system.ai.`). Leave it empty:
+  the legacy prefix costs nothing to keep recognising and dropping it would
+  break arm matching on any workspace still serving both spellings.
 
 Each override is deliberately empty by default so the gateway-contract facts
 stay upstream's to define.
@@ -94,25 +97,24 @@ The App service principal also needs `USE_CATALOG` on the Volume's parent
 catalog and `USE_SCHEMA` on its parent schema. Keep that principal
 least-privileged: Lakebase, the artifact Volume, the ability to call AI Gateway
 `routes:select` with ambient Apps OAuth, and query access to exactly one
-serving endpoint — the routing judge named by `WORKSHOP_ROUTING_JUDGE_MODEL`.
+model — the routing judge named by `WORKSHOP_ROUTING_JUDGE_MODEL`.
 
-How that query access is obtained depends on the endpoint type, and the default
+How that query access is obtained depends on what the judge is, and the default
 judge needs no grant at all:
 
-- Pay-per-token foundation models (`databricks-gpt-5-6-luna` and the rest of
-  the `databricks-*` family) are `FOUNDATION_MODEL_API` endpoints. Any principal
-  with workspace access can query them, an App service principal included.
-  There is also nothing to grant: these endpoints expose no endpoint ID, and the
-  permissions API rejects the name — verified on labs, where a freshly created
-  App with no grants of its own queried the judge successfully.
-- A custom or provisioned-throughput endpoint does have an ID and does need an
-  explicit grant:
+- Unity Catalog model services in `system.ai` (`system.ai.gpt-5-6-luna` and the
+  rest of the schema) are governed by `EXECUTE`, which all account users hold on
+  `system.ai` by default — an App service principal included. There is nothing
+  to grant. Verified on labs, where a freshly created App with no grants of its
+  own queried the judge successfully.
+- A model you serve yourself — a custom or provisioned-throughput endpoint —
+  does need an explicit grant. For a UC-resident model:
 
 ```bash
-databricks serving-endpoints set-permissions <judge-endpoint-id> --json '{
-  "access_control_list": [
-    {"service_principal_name": "<app-service-principal-application-id>",
-     "permission_level": "CAN_QUERY"}
+databricks grants update model_service <catalog>.<schema>.<model> --json '{
+  "changes": [
+    {"principal": "<app-service-principal-application-id>",
+     "add": ["EXECUTE"]}
   ]
 }'
 ```

@@ -208,7 +208,7 @@ Control Tower obligations:
 
 - `WORKSHOP_SMART_ROUTING=true` (shipped default).
 - Ensure the Omnigent App SP can query exactly the serving endpoint named by
-  `WORKSHOP_ROUTING_JUDGE_MODEL` (default `databricks-gpt-5-6-luna`). The
+  `WORKSHOP_ROUTING_JUDGE_MODEL` (default `system.ai.gpt-5-6-luna`). The
   default needs no action: pay-per-token foundation models are queryable by any
   principal with workspace access, and expose no endpoint ID to grant on.
   Pointing the setting at a custom endpoint does require `CAN_QUERY`.

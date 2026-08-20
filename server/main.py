@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from . import (
     agents,
+    cli_config,
     config,
     help as help_module,
     identity,
@@ -269,14 +270,21 @@ def model_comparison() -> list[dict]:
     harness command here we can promise works — see server/models for the whole
     story. Publishing the resolved set without a command keeps the UI honest
     instead of printing an invocation that exits non-zero in front of a room.
+
+    One endpoint serves the whole set now rather than one per model: the
+    gateway's unified chat-completions route takes the model in the body, so
+    what distinguishes the entries is the ``model`` field alone. That is also
+    what makes the exercise legible — the attendee changes one string and reads
+    the difference in the bill.
     """
     resolved = models.comparison_models()
+    endpoint = cli_config.unified_chat_url()
     return [
         {
             "profile": name,
             "model": resolved[name],
             "label": label,
-            "endpoint": f"{config.databricks_host()}/serving-endpoints/{resolved[name]}/invocations",
+            "endpoint": endpoint,
         }
         for name, (_default, label) in models.COMPARISON_MODELS.items()
         if name in resolved

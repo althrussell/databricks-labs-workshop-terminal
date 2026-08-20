@@ -98,19 +98,42 @@ def test_the_comparison_models_are_not_offered_as_codex_profiles(user):
 
 def test_failed_discovery_keeps_every_comparison_model_rather_than_none():
     """Empty availability means we could not ask, not that nothing is served."""
-    assert set(models.comparison_models(set())) == {"glm", "kimi", "gemini"}
-    assert set(models.comparison_models(None)) == {"glm", "kimi", "gemini"}
+    assert set(models.comparison_models(set())) == {"glm", "gemini", "qwen"}
+    assert set(models.comparison_models(None)) == {"glm", "gemini", "qwen"}
 
 
 def test_a_model_this_region_does_not_serve_is_not_published(user):
     resolved = models.comparison_models(
-        {"databricks-glm-5-2", "databricks-gpt-5-6-terra"}
+        {
+            "glm-5-2": frozenset({models.CHAT_COMPLETIONS}),
+            "gpt-5-6-terra": frozenset({models.OPENAI_RESPONSES}),
+        }
     )
 
     assert set(resolved) == {"glm"}
+    assert resolved["glm"] == "system.ai.glm-5-2"
+
+
+def test_a_model_served_on_the_wrong_wire_is_not_published(user):
+    """Served is not the same as usable. The comparison exercise sends chat
+    completions, so a model the gateway answers for on some other surface is a
+    404 waiting to happen and is left out."""
+    resolved = models.comparison_models(
+        {"glm-5-2": frozenset({models.OPENAI_RESPONSES})}
+    )
+
+    assert resolved == {}
 
 
 def test_a_withdrawn_endpoint_is_a_values_change_not_a_release(monkeypatch):
-    monkeypatch.setenv("CODEX_COMPARE_KIMI", "databricks-kimi-k4")
+    monkeypatch.setenv("CODEX_COMPARE_GLM", "glm-5-3")
 
-    assert models.comparison_models(set())["kimi"] == "databricks-kimi-k4"
+    assert models.comparison_models(set())["glm"] == "system.ai.glm-5-3"
+
+
+def test_an_override_written_fully_qualified_is_left_alone(monkeypatch):
+    """An operator reading the model names off the workspace UI writes them the
+    way the UI shows them, and qualifying twice would name nothing."""
+    monkeypatch.setenv("CODEX_COMPARE_GLM", "system.ai.glm-5-3")
+
+    assert models.comparison_models(set())["glm"] == "system.ai.glm-5-3"

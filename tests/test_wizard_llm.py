@@ -73,7 +73,7 @@ def test_an_invented_table_is_dropped(seeded, monkeypatch):
                     "demo_tables": ["healthcare.encounters", "healthcare.patients"],
                 },
             ],
-        }, "databricks-gpt-5-4-mini"
+        }, "system.ai.gpt-5-4-mini"
 
     monkeypatch.setattr(wizard_llm, "_ask_model", fake)
     result = wizard_llm.suggest("readmission", "healthcare")
@@ -100,7 +100,7 @@ def test_a_healthcare_card_cannot_cite_vehicle360(seeded, monkeypatch):
                     "demo_tables": ["automotive_mobility.vehicle360"],
                 }
             ],
-        }, "databricks-gpt-5-4-mini"
+        }, "system.ai.gpt-5-4-mini"
 
     monkeypatch.setattr(wizard_llm, "_ask_model", fake)
     result = wizard_llm.suggest("readmission", "healthcare")
@@ -114,7 +114,7 @@ def test_an_unseeded_inferred_industry_is_ignored(seeded, monkeypatch):
     monkeypatch.setattr(wizard_llm.config, "llm_wizard_enabled", lambda: True)
 
     def fake(*_a, **_k):
-        return {"industry": "media", "ideas": []}, "databricks-gpt-5-4-mini"
+        return {"industry": "media", "ideas": []}, "system.ai.gpt-5-4-mini"
 
     monkeypatch.setattr(wizard_llm, "_ask_model", fake)
     result = wizard_llm.suggest("a content dashboard", "healthcare")

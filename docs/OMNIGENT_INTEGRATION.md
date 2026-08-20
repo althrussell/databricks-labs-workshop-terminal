@@ -144,13 +144,13 @@ providers:
       base_url: https://<ws-id>.ai-gateway.cloud.databricks.com/anthropic
       auth_command: cat /app/python/source_code/data/users/<slug>/.config/workshop/gateway-token
       models:
-        default: databricks-claude-sonnet-5     # the `driver` role (server/models.py)
+        default: system.ai.claude-sonnet-5      # the `driver` role (server/models.py)
     openai:
       base_url: https://<ws-id>.ai-gateway.cloud.databricks.com/openai/v1
       wire_api: responses
       auth_command: cat /app/python/source_code/data/users/<slug>/.config/workshop/gateway-token
       models:
-        default: databricks-gpt-5-6-terra       # the `codex` role
+        default: system.ai.gpt-5-6-terra        # the `codex` role
 ```
 
 Schema notes (verified against omnigent `onboarding/provider_config.py`):
@@ -168,10 +168,13 @@ Schema notes (verified against omnigent `onboarding/provider_config.py`):
   through it with no further selection.
 - No `server:` key in the config → omnigent auto-spawns the per-user local
   server on first use.
-- When `gateway_host()` resolves empty, fall back to
-  `{databricks_host()}/serving-endpoints/anthropic` and
-  `{databricks_host()}/serving-endpoints` — mirroring `configure_claude` /
-  `configure_codex` exactly.
+- `gateway_host()` resolves `{databricks_host()}/ai-gateway` whenever nothing
+  more specific is configured, so the base URLs are `{gateway}/anthropic` and
+  `{gateway}/codex/v1` — mirroring `configure_claude` / `configure_codex`
+  exactly. There is no non-gateway fallback: the legacy
+  `/serving-endpoints/anthropic` surface was retired with the `databricks-*`
+  model endpoints and answers 404. Empty base URLs mean no workspace host is
+  configured at all.
 - Model defaults resolve the same named roles the Claude and Codex writers use,
   from `server/models.py`: `driver` for the Anthropic family, `codex` for the
   OpenAI one. That module is the single source of truth for model selection, and
@@ -339,9 +342,9 @@ exactly why measurement comes before code.
 
 **Unit tests (`tests/test_omnigent_config.py`):**
 
-- `configure_omnigent` writes parseable YAML; correct base URLs (gateway and
-  serving-endpoints fallback); `auth_command` carries the absolute per-user
-  path; token file is 0600.
+- `configure_omnigent` writes parseable YAML; correct gateway base URLs, and
+  empty ones when no host is configured; `auth_command` carries the absolute
+  per-user path; token file is 0600.
 - `update_tokens` rewrites the token file without touching `config.yaml`
   (mtime assertion); creates both via `configure_omnigent` when absent.
 - Installer: version stamp mismatch triggers reinstall; match short-circuits.
@@ -433,7 +436,7 @@ implementation; where this design and the source disagreed, the source won:
   on the Apps runtime image; omnigent installs from staged wheels; the
   pre-written config bypasses both the provider wizard and (with the `tui:`
   block) the theme picker; bare `omnigent` lands in polly on
-  `databricks-claude-opus-4-8` and completes a gateway round-trip through the
+  `system.ai.claude-opus-4-8` and completes a gateway round-trip through the
   rotating token file.
 - **Still open (needs longer-running E2E):** §6 memory measurement at 30
   attendees (moot under one-attendee-per-instance topology, P1-11a), and the

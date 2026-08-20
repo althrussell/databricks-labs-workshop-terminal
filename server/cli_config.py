@@ -39,10 +39,24 @@ def _probe(url: str) -> bool:
 
 
 def gateway_host() -> str:
-    """Resolve the AI Gateway host once per process.
+    """Resolve the Unity AI Gateway base once per process.
 
-    Explicit DATABRICKS_GATEWAY_HOST is trusted; otherwise auto-construct from
-    the workspace id (Azure: derivable from the host URL) and probe it.
+    Three sources, in order. An explicit ``DATABRICKS_GATEWAY_HOST`` is trusted
+    without a probe, because an operator naming a host is a decision and not a
+    guess. A ``DATABRICKS_WORKSPACE_ID`` (or an Azure ``adb-<digits>`` hostname
+    to derive one from) builds the dedicated-subdomain form and probes it.
+    Failing both, the workspace-hosted form ``<host>/ai-gateway``.
+
+    The workspace-hosted form is last in the list and first in preference for
+    everything that is not already configured: it needs no workspace id, works
+    on AWS ``dbc-...`` hostnames that match neither shape above, and is what
+    Databricks' own managed Claude Code settings point at. It is also not
+    optional any more. This used to fall through to
+    ``<host>/serving-endpoints/anthropic`` when no gateway could be found, and
+    that surface is gone — it answers 404 — so there is no longer a second
+    place to look. Returning the workspace-hosted base unprobed is therefore
+    strictly better than returning nothing: if the gateway is unreachable the
+    configs are wrong either way, and this way /readyz can say so.
     """
     global _gateway_resolved
     with _gateway_lock:
@@ -67,9 +81,18 @@ def gateway_host() -> str:
             if _probe(candidate):
                 _gateway_resolved = candidate
                 return candidate
-            logger.info("AI Gateway not reachable at %s — using serving-endpoints", candidate)
-        _gateway_resolved = ""
-        return ""
+            logger.info(
+                "dedicated AI Gateway not reachable at %s — using the "
+                "workspace-hosted gateway", candidate
+            )
+        _gateway_resolved = workspace_gateway()
+        return _gateway_resolved
+
+
+def workspace_gateway() -> str:
+    """The workspace-hosted Unity AI Gateway base, or empty with no host."""
+    host = config.databricks_host()
+    return f"{host}/ai-gateway" if host else ""
 
 
 # Mirrors ``omnigent/pi_native_credentials.py::_is_databricks_ai_gateway_url``
@@ -112,16 +135,15 @@ def beta_negotiation_env(gateway_backed: bool) -> dict:
     """How Claude Code should settle its ``anthropic-beta`` set.
 
     On the AI Gateway, Claude Code negotiates the beta set instead of sending
-    every flag blindly, so the betas can stay on. Off it, we keep the older
-    ``CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS`` workaround: the
-    ``/serving-endpoints/anthropic`` fallback is a different surface that has
-    not been shown to accept those flags, and a 400 "invalid beta flag" breaks
-    the session outright — a worse failure than the one we are avoiding.
+    every flag blindly, so the betas can stay on — and every deployment is on
+    the gateway now that it is the only surface serving these models, so this
+    is the branch that runs.
 
-    What we are avoiding is not cosmetic: disabling experimental betas also
-    disables MCP tool search, which rides on ``advanced-tool-use``. Without it
-    every MCP tool schema loads eagerly and inflates the context window.
-    Omnigent 0.9.0 launches its own Claude terminals with
+    The other branch is kept for the case where no host is configured at all
+    and there is no gateway URL to hand a CLI. Disabling experimental betas
+    also disables MCP tool search, which rides on ``advanced-tool-use``, and
+    without it every MCP tool schema loads eagerly and inflates the context
+    window. Omnigent 0.9.0 launches its own Claude terminals with
     ``CLAUDE_CODE_USE_GATEWAY=1`` for this reason, and re-adds the disable flag
     whenever it does not see that variable.
     """
@@ -131,29 +153,25 @@ def beta_negotiation_env(gateway_backed: bool) -> dict:
 
 
 def gateway_status() -> dict:
-    """How the AI Gateway resolved, and what an unresolved one costs.
+    """How the Unity AI Gateway resolved, and what an unresolved one costs.
 
-    Reported, never gating, and the cost is narrower than it looks. With no
-    gateway every config falls back to ``<host>/serving-endpoints``, which
-    serves every model an attendee needs: Claude at
-    ``/serving-endpoints/anthropic/v1/messages``, the newer GPT models at
-    ``/serving-endpoints/responses``, and the chat-completions-only models
-    (GLM and friends) at ``/serving-endpoints/chat/completions``. Omnigent's Pi
-    harness routes per model across exactly those surfaces, deriving the
-    ``/ai-gateway/codex/v1`` Responses path from the workspace host itself, so
-    it does not need this variable to reach any particular model.
+    Reported, never gating — but the cost is no longer narrow. This used to
+    describe a governance-only tradeoff, because a deployment with no gateway
+    fell back to ``<host>/serving-endpoints`` and still reached every model an
+    attendee needed. That fallback is gone: the legacy per-model endpoints have
+    been retired in favour of Unity Catalog model services, and
+    ``<host>/serving-endpoints/anthropic/v1/messages`` now answers 404. There
+    is one surface left, so an unresolved gateway is a broken event rather than
+    an ungoverned one.
 
-    What the fallback costs is governance: the gateway is where an event's
-    traffic meets gateway policy, usage tracking and rate limits, and
-    serving-endpoints bypasses all three. Worth reporting so an operator can
-    fix the deployment; never worth blocking a workshop.
-
-    Auto-construction cannot rescue this on AWS: the workspace id is read from
-    ``DATABRICKS_WORKSPACE_ID`` or, failing that, an ``adb-<digits>`` hostname —
-    which is Azure's shape. An AWS ``dbc-...`` workspace matches neither, so the
-    candidate URL is never even built, let alone probed. Those two variables are
-    therefore the deployment's only levers, and naming them here is what lets an
-    operator fix it before an attendee finds it.
+    What that changes in practice is which lever matters. ``resolved`` is now
+    false only when no workspace host is configured at all, since the
+    workspace-hosted form ``<host>/ai-gateway`` is derivable from the host
+    alone — no workspace id, no cloud-specific hostname shape, nothing an AWS
+    ``dbc-...`` deployment lacks. ``DATABRICKS_GATEWAY_HOST`` and
+    ``DATABRICKS_WORKSPACE_ID`` remain the levers for pointing an event at a
+    dedicated gateway subdomain instead, and are reported so an operator can
+    see which of the three sources answered.
     """
     resolved = gateway_host()
     # Judge the URL Omnigent is actually handed, not the configured root. With
@@ -166,10 +184,17 @@ def gateway_status() -> dict:
     workspace_id = bool(os.environ.get("DATABRICKS_WORKSPACE_ID", "").strip())
     host = os.environ.get("DATABRICKS_HOST", "")
     derivable = bool(re.match(r"(?:https?://)?adb-(\d+)\.", host or ""))
-    if resolved:
-        source = "explicit" if explicit else "constructed"
-    else:
+    # Three sources rather than two, because "constructed" no longer implies a
+    # dedicated subdomain: the workspace-hosted form is also constructed, needs
+    # none of the levers below, and is the one nearly every event will report.
+    if not resolved:
         source = "unresolved"
+    elif explicit:
+        source = "explicit"
+    elif resolved == workspace_gateway():
+        source = "workspace"
+    else:
+        source = "constructed"
     return {
         "resolved": bool(resolved),
         "source": source,
@@ -182,25 +207,70 @@ def gateway_status() -> dict:
     }
 
 
-def _discover_serving_endpoints(token: str) -> set[str]:
-    """READY serving-endpoint names — reflects in-geo model availability."""
+_MODEL_SERVICES_API = "/api/2.1/unity-catalog/model-services"
+# Names come back namespaced as `model-services/system.ai.claude-opus-5`; the
+# securable path prefix is Unity Catalog's, not part of the model's name.
+_SECURABLE_PREFIX = "model-services/"
+
+
+def discover_model_services(token: str) -> dict[str, frozenset[str]]:
+    """What this workspace serves: canonical short name -> wires it answers on.
+
+    Replaces discovery against ``/api/2.0/serving-endpoints``, which was not
+    merely obsolete but actively misleading. That endpoint reports legacy
+    foundation-model endpoints and went on reporting
+    ``databricks-claude-opus-4-7`` as ``READY`` after invoking it began
+    answering 501 ``no longer available``. Every consumer of it was therefore
+    "verifying" a chain against a list that could not tell a live model from a
+    retired one, which is how a resolved-and-verified config still broke a
+    live event.
+
+    Unity Catalog model services report ``supported_api_types`` instead of a
+    readiness flag. Presence in the list is the liveness signal, and the list
+    of wires is what lets :func:`server.models.resolve` refuse to put a
+    chat-only model behind a Responses-wire harness.
+
+    An empty result means the call failed, and callers read it that way: they
+    fall back to the head of each chain rather than concluding the workspace
+    serves nothing.
+    """
     host = config.databricks_host()
     if not host or not token:
-        return set()
+        return {}
+    services: dict[str, frozenset[str]] = {}
+    url = f"{host}{_MODEL_SERVICES_API}"
+    params: dict[str, str] = {}
     try:
-        resp = requests.get(
-            f"{host}/api/2.0/serving-endpoints",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=5,
-        )
-        resp.raise_for_status()
-        return {
-            ep["name"] for ep in resp.json().get("endpoints", [])
-            if ep.get("name") and ep.get("state", {}).get("ready") == "READY"
-        }
+        # Paginated defensively. Today every workspace we have seen returns its
+        # whole catalogue in one page and ignores max_results, but a caller that
+        # silently keeps the first page of a paginated API is a caller that
+        # quietly loses models the day that changes.
+        for _ in range(10):
+            resp = requests.get(
+                url,
+                headers={"Authorization": f"Bearer {token}"},
+                params=params or None,
+                timeout=5,
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            for service in body.get("model_services", []):
+                name = (service.get("name") or "").strip()
+                if name.startswith(_SECURABLE_PREFIX):
+                    name = name[len(_SECURABLE_PREFIX):]
+                if not name:
+                    continue
+                services[models.catalogue_key(name)] = frozenset(
+                    service.get("supported_api_types") or ()
+                )
+            token_next = body.get("next_page_token")
+            if not token_next:
+                break
+            params = {"page_token": token_next}
     except Exception as e:
-        logger.warning("serving-endpoint discovery failed: %s", e)
-        return set()
+        logger.warning("model service discovery failed: %s", e)
+        return {}
+    return services
 
 
 # -- per-user config writers --
@@ -210,7 +280,7 @@ def configure_claude(
     token: str,
     *,
     write_token: bool = True,
-    available: set[str] | None = None,
+    available: models.Catalogue | None = None,
 ) -> None:
     claude_dir = os.path.join(user.home, ".claude")
     os.makedirs(claude_dir, exist_ok=True)
@@ -223,15 +293,15 @@ def configure_claude(
         _write_gateway_token(user, token)
 
     gateway = gateway_host()
-    base_url = (
-        f"{gateway}/anthropic" if gateway
-        else f"{config.databricks_host()}/serving-endpoints/anthropic"
-    )
+    base_url = f"{gateway}/anthropic" if gateway else ""
 
-    # Which endpoint fills each of Claude Code's three model slots is a policy
-    # question, answered once in server/models.py for every CLI an event runs.
+    # Which model fills each of Claude Code's three slots is a policy question,
+    # answered once in server/models.py for every CLI an event runs. resolve()
+    # returns fully-qualified `system.ai.*` service names, which is what the
+    # gateway answers to and what Databricks' own managed Claude Code settings
+    # carry.
     if available is None:
-        available = _discover_serving_endpoints(token)
+        available = discover_model_services(token)
     settings_path = os.path.join(claude_dir, "settings.json")
     settings = _read_json(settings_path)
     env = settings.setdefault("env", {})
@@ -281,25 +351,27 @@ _CODEX_MODEL_PROVIDER = "databricks"
 _CODEX_PROVIDER_DISPLAY_NAME = "Databricks Model Serving"
 
 # Codex once carried a second provider on the plain chat-completions surface so
-# GLM, Kimi and Gemini — which answer on `<host>/serving-endpoints/chat/
-# completions` and nowhere else — were reachable as `codex --profile <name>`.
-# codex-cli 0.144.6 removed the chat wire: `responses` is now the only accepted
-# `wire_api`, and an unknown value does not degrade to a skipped provider, it
-# invalidates the WHOLE config. Codex then falls back to its default config,
-# which has no `databricks` provider, and every session dies at startup with
-# "Model provider `databricks` not found" — the Omnigent native terminal
-# included, since it copies this same file into its per-session CODEX_HOME.
+# GLM, Kimi and Gemini — which answer on chat completions and nowhere else —
+# were reachable as `codex --profile <name>`. codex-cli 0.144.6 removed the chat
+# wire: `responses` is now the only accepted `wire_api`, and an unknown value
+# does not degrade to a skipped provider, it invalidates the WHOLE config. Codex
+# then falls back to its default config, which has no `databricks` provider, and
+# every session dies at startup with "Model provider `databricks` not found" —
+# the Omnigent native terminal included, since it copies this same file into its
+# per-session CODEX_HOME.
 #
-# The gateway's Responses surface refuses those models too ("Responses API
-# passthrough is not supported for model databricks-glm-5-2"), so there is no
-# wire that both Codex speaks and they answer. The comparison exercise moved to
-# Omnigent, which still speaks chat — see models.COMPARISON_MODELS.
+# The gateway's Responses surface refuses those models too, which is now a fact
+# the resolver checks rather than a claim in a comment: a model service lists
+# the wires it answers on, and `system.ai.glm-5-2` does not list
+# `openai/v1/responses`. So there is no wire that both Codex speaks and they
+# answer. The comparison exercise moved to Omnigent, which still speaks chat —
+# see models.COMPARISON_MODELS.
 
 # What we key our entry under in ~/.omnigent/config.yaml. A separate name from
 # the codex table id above, and prefixed like `databricks-gateway`, because we
-# delete this key when it no longer applies: an unnamespaced `databricks` is
-# exactly what a hand-written `kind: databricks` provider would be called, and
-# we merge into a file whose other entries are not ours to remove.
+# merge into a file whose other entries are not ours to remove and an
+# unnamespaced `databricks` is exactly what a hand-written `kind: databricks`
+# provider would be called.
 _OMNIGENT_CODEX_PROVIDER = "databricks-codex"
 
 
@@ -307,18 +379,29 @@ def _codex_base_url() -> str:
     """The gateway's OpenAI Responses surface, spelled the way Omnigent parses.
 
     The gateway serves Responses under both `/ai-gateway/openai/v1` and
-    `/ai-gateway/codex/v1`. Omnigent only understands the second: it derives
-    Pi's Anthropic base by swapping a trailing `/codex/v1` for `/anthropic`, so
-    an `/openai/v1` base yields `/openai/v1/anthropic`, which routes nowhere.
+    `/ai-gateway/codex/v1` — both verified to answer `system.ai.*` model
+    services. Omnigent only understands the second: it derives Pi's Anthropic
+    base by swapping a trailing `/codex/v1` for `/anthropic`, so an
+    `/openai/v1` base yields `/openai/v1/anthropic`, which routes nowhere.
 
-    Without a gateway there is no AI Gateway path to name and we fall back to
-    serving-endpoints, which Omnigent will not recognise as Databricks — see
-    configure_omnigent.
+    Empty only when no workspace host is configured, in which case there is no
+    URL of any shape to write.
     """
     gateway = gateway_host()
-    if gateway:
-        return f"{gateway}/codex/v1"
-    return f"{config.databricks_host()}/serving-endpoints"
+    return f"{gateway}/codex/v1" if gateway else ""
+
+
+def unified_chat_url() -> str:
+    """The gateway's provider-agnostic chat-completions endpoint.
+
+    One URL for every model regardless of vendor, which is what the server-side
+    callers want: the wizard, the wrap summary and the model-comparison
+    exercise each send a single turn and care only that the answer comes back.
+    It replaces the per-model `<host>/serving-endpoints/<name>/invocations`
+    URLs those callers used to build, which died with the legacy endpoints.
+    """
+    gateway = gateway_host()
+    return f"{gateway}/mlflow/v1/chat/completions" if gateway else ""
 
 
 def configure_codex(
@@ -326,7 +409,7 @@ def configure_codex(
     token: str,
     *,
     write_token: bool = True,
-    available: set[str] | None = None,
+    available: models.Catalogue | None = None,
 ) -> None:
     codex_dir = os.path.join(user.home, ".codex")
     os.makedirs(codex_dir, exist_ok=True)
@@ -339,10 +422,12 @@ def configure_codex(
 
     base_url = _codex_base_url()
     # Codex used to take CODEX_MODEL or a hardcoded default with no regard for
-    # what the workspace actually serves, which is how it ended up pinned to an
-    # endpoint two generations old. It degrades like Claude does now.
+    # what the workspace actually serves, which is how it ended up pinned to a
+    # model two generations old. It degrades like Claude does now, and the
+    # Responses-wire filter means it can only degrade onto something Codex can
+    # actually talk to.
     if available is None:
-        available = _discover_serving_endpoints(token)
+        available = discover_model_services(token)
     model = models.resolve("codex", available)
 
     auto_mode = ""
@@ -402,7 +487,7 @@ def configure_omnigent(
     token: str,
     *,
     write_token: bool = True,
-    available: set[str] | None = None,
+    available: models.Catalogue | None = None,
 ) -> None:
     """Write ~/.omnigent/config.yaml: a default provider per model surface.
 
@@ -422,26 +507,24 @@ def configure_omnigent(
         _write_gateway_token(user, token)
 
     gateway = gateway_host()
-    anthropic_base = (
-        f"{gateway}/anthropic" if gateway
-        else f"{config.databricks_host()}/serving-endpoints/anthropic"
-    )
+    anthropic_base = f"{gateway}/anthropic" if gateway else ""
     openai_base = _codex_base_url()
 
     # The same roles the CLIs resolve, so `omnigent claude` and `claude` agree
     # about what an event runs. These chains were a copy of configure_claude's
     # under a comment claiming they were one source of truth; now they are.
     if available is None:
-        available = _discover_serving_endpoints(token)
+        available = discover_model_services(token)
     claude_model = models.resolve("driver", available)
     codex_model = models.resolve("codex", available)
 
     # auth_command uses the absolute token path: omnigent re-runs it inside
     # tmux sessions whose $HOME handling we don't control.
     auth_command = f"cat {_gateway_token_path(user)}"
-    # Omnigent recognises a Databricks AI Gateway by its URL, and the
-    # serving-endpoints fallback carries no `/ai-gateway/` path to recognise.
-    # There the single gateway entry keeps owning every surface, as before.
+    # Omnigent recognises a Databricks AI Gateway by its URL. Every resolved
+    # gateway now carries an `/ai-gateway/` path or an `ai-gateway` DNS label,
+    # so this is true whenever a host is configured at all; the branch survives
+    # only for the hostless case, where there is no URL to recognise.
     databricks_aware = bool(gateway)
     generated_provider = {
         "kind": "gateway",
@@ -460,12 +543,13 @@ def configure_omnigent(
     }
     # A `gateway` provider is, to omnigent, an anonymous OpenAI/Anthropic-shaped
     # proxy, so it resolves the Codex and Pi harnesses down the vendor-direct
-    # path. That path assumes vendor-native model ids and strips the
-    # `databricks-` prefix, which is why Pi asked the gateway for
-    # `claude-opus-4-8` and got "does not exist" — the endpoint is only served
-    # as `databricks-claude-opus-4-8`. The same misread makes Codex declare
-    # itself unlaunchable: seeing no Databricks provider to route through, it
-    # falls back to a `~/.codex/auth.json` that a workshop never writes.
+    # path. That path assumes vendor-native model ids and strips the qualifying
+    # prefix, which is why Pi asked the gateway for `claude-opus-4-8` and got
+    # "does not exist" — a bare short name is not a model service, and the
+    # gateway answers only `system.ai.claude-opus-4-8`. The same misread makes
+    # Codex declare itself unlaunchable: seeing no Databricks provider to route
+    # through, it falls back to a `~/.codex/auth.json` that a workshop never
+    # writes.
     #
     # Pinning the codex config table instead identifies the provider as a
     # Databricks AI Gateway, which keeps model ids intact and lets omnigent
@@ -674,7 +758,7 @@ def configure_all(user: User, token: str) -> None:
     # One discovery round-trip for every config this attendee gets. All three
     # writers resolve the same roles against the same workspace, and a room
     # signing in at once should not multiply that by the number of CLIs.
-    available = _discover_serving_endpoints(token)
+    available = discover_model_services(token)
     configure_claude(user, token, write_token=False, available=available)
     configure_codex(user, token, write_token=False, available=available)
     user.cli_ready.update({"claude", "codex", "databricks"})

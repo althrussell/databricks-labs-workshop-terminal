@@ -29,7 +29,7 @@ _TABLE_CAP = 24
 
 
 class ModelUnavailable(RuntimeError):
-    """No reachable serving endpoint, or it answered with something unusable."""
+    """No reachable model service, or it answered with something unusable."""
 
 
 def suggest(text: str, industry: str = "") -> dict[str, Any]:
@@ -236,21 +236,21 @@ def _extract_json(text: str) -> dict:
     return parsed
 
 
-def _ready_endpoints(token: str) -> set[str]:
-    from .cli_config import _discover_serving_endpoints
+def _served_models(token: str) -> dict[str, frozenset[str]]:
+    from .cli_config import discover_model_services
 
-    return _discover_serving_endpoints(token)
+    return discover_model_services(token)
 
 
 def _pick_model(token: str) -> str:
     pin = config.workshop_wizard_model()
     if pin:
-        return pin
-    available = _ready_endpoints(token)
+        return models.service_name(pin)
+    available = _served_models(token)
     for name in models.wizard_chain():
-        if name in available:
+        if models.serves(available, name, "wizard"):
             return name
-    raise ModelUnavailable("no wizard endpoint is READY in this workspace")
+    raise ModelUnavailable("no wizard model service is available in this workspace")
 
 
 def _ask_model(text: str, industry: str) -> tuple[dict, str]:
@@ -258,8 +258,10 @@ def _ask_model(text: str, industry: str) -> tuple[dict, str]:
 
     from .credentials import CredentialError, credential_manager
 
-    host = config.databricks_host()
-    if not host:
+    from .cli_config import unified_chat_url
+
+    url = unified_chat_url()
+    if not url:
         raise ModelUnavailable("no DATABRICKS_HOST configured")
     try:
         token = credential_manager.token()
@@ -269,9 +271,10 @@ def _ask_model(text: str, industry: str) -> tuple[dict, str]:
     model = _pick_model(token)
     try:
         resp = requests.post(
-            f"{host}/serving-endpoints/{model}/invocations",
+            url,
             headers={"Authorization": f"Bearer {token}"},
             json={
+                "model": model,
                 "messages": [
                     {"role": "user", "content": _prompt(text, industry)},
                 ],
@@ -281,13 +284,13 @@ def _ask_model(text: str, industry: str) -> tuple[dict, str]:
             timeout=_TIMEOUT_SECONDS,
         )
     except requests.RequestException as exc:
-        raise ModelUnavailable(f"serving endpoint unreachable: {exc}") from exc
+        raise ModelUnavailable(f"AI Gateway unreachable: {exc}") from exc
     if resp.status_code != 200:
-        raise ModelUnavailable(f"serving endpoint returned {resp.status_code}")
+        raise ModelUnavailable(f"AI Gateway returned {resp.status_code}")
     try:
         content_out = resp.json()["choices"][0]["message"]["content"]
     except (ValueError, KeyError, IndexError, TypeError) as exc:
-        raise ModelUnavailable(f"unexpected serving response shape: {exc}") from exc
+        raise ModelUnavailable(f"unexpected gateway response shape: {exc}") from exc
     if isinstance(content_out, list):
         content_out = "".join(
             block.get("text", "") for block in content_out if isinstance(block, dict)

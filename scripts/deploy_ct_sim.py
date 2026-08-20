@@ -25,8 +25,8 @@ the secret-free mutation plan without calling workspace APIs.
   export DATABRICKS_CONFIG_PROFILE=labs
   python scripts/deploy_ct_sim.py --name workshop-terminal-ct \
     --skills-ref v1.2.3 \
-    --anthropic-model databricks-claude-sonnet-5 \
-    --codex-model databricks-gpt-5-6-codex
+    --anthropic-model claude-sonnet-5 \
+    --codex-model gpt-5-6-terra
 
 Requires: databricks-sdk.
 """
@@ -73,6 +73,10 @@ SEMVER_RE = re.compile(rf"^{SEMVER_PATTERN}$")
 VERSION_TAG_RE = re.compile(rf"^v{SEMVER_PATTERN}$")
 MODEL_ENDPOINT_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 FLOATING_MODEL_WORDS = frozenset({"latest", "stable", "default", "auto", "current"})
+# Legacy per-model serving endpoints, retired in favour of Unity Catalog model
+# services. Nothing in the terminal will resolve one, so a pin naming one is a
+# deploy-time error rather than a runtime degradation.
+RETIRED_MODEL_PREFIX = "databricks-"
 
 
 def _log(step: str, msg: str) -> None:
@@ -129,9 +133,11 @@ def _parse_args(argv=None, *, environ=None):
     parser.add_argument("--skills-ref", required=True,
                         help="reviewed databricks-agent-skills tag or commit SHA (branch tips rejected)")
     parser.add_argument("--anthropic-model", required=True,
-                        help="exact reviewed Anthropic serving endpoint")
+                        help="exact reviewed Anthropic model, short (claude-sonnet-5) "
+                             "or fully qualified (system.ai.claude-sonnet-5)")
     parser.add_argument("--codex-model", required=True,
-                        help="exact reviewed Codex serving endpoint")
+                        help="exact reviewed Codex model, short (gpt-5-6-terra) "
+                             "or fully qualified (system.ai.gpt-5-6-terra)")
     parser.add_argument(
         "--model-profile",
         default="",
@@ -149,12 +155,11 @@ def _parse_args(argv=None, *, environ=None):
     parser.add_argument(
         "--gateway-host",
         default="",
-        help="DATABRICKS_GATEWAY_HOST for the AI Gateway. Prefer the "
-             "workspace-hosted form https://<workspace>.cloud.databricks.com/ai-gateway. "
-             "Set it to put the event's traffic through the governed gateway: on "
-             "AWS the workspace id cannot be derived from a dbc- hostname, so "
-             "nothing is auto-constructed and every CLI silently uses the "
-             "serving-endpoints fallback instead.",
+        help="DATABRICKS_GATEWAY_HOST for the Unity AI Gateway. Usually leave "
+             "empty: the workspace-hosted form "
+             "https://<workspace>.cloud.databricks.com/ai-gateway is derived "
+             "from DATABRICKS_HOST alone and works on every cloud. Set it only "
+             "to point the event at a dedicated gateway subdomain.",
     )
     parser.add_argument(
         "--toolchain-mirror",
@@ -288,6 +293,19 @@ def _validate_args(parser, args, environ):
                 f"--{field.replace('_', '-')} must be an explicit non-floating "
                 "model endpoint name"
             )
+        # The retired spelling is rejected rather than translated. A pin is
+        # qualified into `system.ai.` at the point the configs are written, so
+        # `databricks-claude-sonnet-5` would be handed to the gateway as
+        # `system.ai.databricks-claude-sonnet-5` and name nothing — and the
+        # failure would surface as every attendee's CLI 404ing mid-workshop
+        # rather than here, where someone is still watching.
+        if value.lower().startswith(RETIRED_MODEL_PREFIX):
+            parser.error(
+                f"--{field.replace('_', '-')} names a retired "
+                f"{RETIRED_MODEL_PREFIX!r} serving endpoint. Use the Unity "
+                f"Catalog model service, short ({value[len(RETIRED_MODEL_PREFIX):]}) "
+                f"or fully qualified (system.ai.{value[len(RETIRED_MODEL_PREFIX):]})"
+            )
     _validate_model_profile(parser, args.model_profile)
     _validate_gateway_host(parser, args.gateway_host)
     if args.dry_run and not args.attendee.strip():
@@ -336,10 +354,10 @@ GATEWAY_TRUSTED_SUFFIXES = (
 def _validate_gateway_host(parser, value):
     """Reject a gateway host Omnigent would decline to route.
 
-    Empty is allowed and means "not set": Workshop Terminal then falls back to
-    ``<host>/serving-endpoints``, which serves every model an attendee needs but
-    bypasses gateway policy, usage tracking and rate limits. That degradation is
-    reported as the soft ``model_gateway`` readiness check.
+    Empty is allowed and is the normal case: Workshop Terminal then derives the
+    workspace-hosted gateway ``<host>/ai-gateway`` from DATABRICKS_HOST, which
+    is a real gateway rather than a bypass of one. It is not a degradation and
+    the ``model_gateway`` readiness check reads green.
 
     The workspace-hosted form (``https://<workspace>.cloud.databricks.com/ai-gateway``)
     is preferred over a dedicated ``ai-gateway`` subdomain: on the subdomain form
@@ -613,10 +631,10 @@ def _event_settings(
         "OMNIGENT_VERSION": omnigent_version,
         "NODE_VERSION": node_version,
         "PI_CLI_VERSION": pi_cli_version,
-        # Empty is a supported state, not a hole: without it every CLI falls back
-        # to <host>/serving-endpoints, which serves every model the model-set
-        # variants use. What it costs is gateway policy, usage tracking and rate
-        # limits, so a real event should still set it.
+        # Empty is the reviewed default and what a real event should ship:
+        # Workshop Terminal derives <host>/ai-gateway from the workspace host,
+        # which is the governed surface and the only one serving these models.
+        # Set it only to name a dedicated gateway subdomain instead.
         "DATABRICKS_GATEWAY_HOST": gateway_host,
         # Empty is the reviewed default: the mirror is a speed optimisation, and
         # an event that does not stage one boots exactly as it always has, from

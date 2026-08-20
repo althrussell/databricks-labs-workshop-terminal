@@ -1,16 +1,19 @@
-"""AI Gateway resolution — and the AWS asymmetry that makes it a CT dependency.
+"""AI Gateway resolution — three sources, and no surface to fall back to.
 
-Without a gateway every CLI falls back to ``<host>/serving-endpoints``, which
-serves every model an attendee needs — Claude, the GPT Responses models, and the
-chat-completions-only models like GLM all answer there. That is exactly why the
-gap is easy to miss: the workshop runs. What the fallback costs is governance,
-since gateway policy, usage tracking and rate limits only apply on the gateway
-path.
+There is exactly one place the models an attendee needs now answer: Unity AI
+Gateway. The legacy ``<host>/serving-endpoints`` fallback these tests were
+originally written around has been retired along with the ``databricks-*``
+endpoints it served, and now 404s, so an unresolved gateway is a broken event
+rather than an ungoverned one.
 
-These tests pin the asymmetry that forces the deployment to inject the value:
-auto-construction reads the workspace id from DATABRICKS_WORKSPACE_ID or an
-``adb-<digits>`` hostname, which is Azure's shape. An AWS ``dbc-...`` workspace
-matches neither.
+That raised the stakes on an asymmetry these tests used to merely record:
+dedicated-subdomain construction reads the workspace id from
+DATABRICKS_WORKSPACE_ID or an ``adb-<digits>`` hostname, which is Azure's shape,
+and an AWS ``dbc-...`` workspace matches neither. What closes it is the
+workspace-hosted form ``<host>/ai-gateway``, which needs no id at all. The
+dedicated-subdomain path is still preferred where it is configured and reachable
+— it is what gateway policy and rate limits are attached to in those
+deployments — so these tests pin all three sources and the order between them.
 """
 
 import pytest
@@ -40,21 +43,58 @@ def probe(monkeypatch):
     return calls
 
 
-def test_aws_workspace_host_cannot_auto_construct_a_gateway(monkeypatch, probe):
-    """The finding: on AWS the probe is not merely failing, it never runs.
+def test_aws_workspace_host_resolves_without_a_workspace_id(monkeypatch, probe):
+    """The gap that used to need injecting, closed.
 
     The workspace id regex matches ``adb-<digits>`` only, so a dbc- host yields
-    no id, no candidate URL, and no probe — which is why this cannot be fixed by
-    making the gateway reachable. It has to be injected.
+    no id, no dedicated-subdomain candidate and no probe — and used to yield no
+    gateway either, leaving the deployment on a fallback that is now gone. The
+    workspace-hosted form is derived from the host alone, so nothing has to be
+    injected for an AWS event to reach a model.
     """
-    monkeypatch.setenv("DATABRICKS_HOST", "https://dbc-af3ed11d-d267.cloud.databricks.com")
+    monkeypatch.setenv(
+        "DATABRICKS_HOST", "https://dbc-af3ed11d-d267.cloud.databricks.com"
+    )
 
+    status = cli_config.gateway_status()
+
+    assert status["resolved"] is True
+    assert status["source"] == "workspace"
+    assert status["workspace_id_derivable"] is False
+    assert status["omnigent_gateway_form"] is True
+    assert probe == [], "no dedicated-subdomain candidate should have been built"
+    assert (
+        cli_config.gateway_host()
+        == "https://dbc-af3ed11d-d267.cloud.databricks.com/ai-gateway"
+    )
+
+
+def test_no_host_at_all_is_the_only_unresolved_case(monkeypatch, probe):
+    """The one lever left. With no workspace host there is nothing to derive a
+    gateway from and no second surface to try, which is what /readyz reports."""
     status = cli_config.gateway_status()
 
     assert status["resolved"] is False
     assert status["source"] == "unresolved"
-    assert status["workspace_id_derivable"] is False
-    assert probe == [], "no candidate URL should have been built to probe"
+    assert cli_config.gateway_host() == ""
+
+
+def test_an_unreachable_dedicated_subdomain_falls_back_to_the_workspace_form(
+    monkeypatch,
+):
+    """A workspace id that names a gateway subdomain nobody stood up must not
+    strand the event on the old fallback, because the old fallback is a 404."""
+    monkeypatch.setenv(
+        "DATABRICKS_HOST", "https://dbc-af3ed11d-d267.cloud.databricks.com"
+    )
+    monkeypatch.setenv("DATABRICKS_WORKSPACE_ID", "987654321")
+    monkeypatch.setattr(cli_config, "_probe", lambda url: False)
+
+    assert (
+        cli_config.gateway_host()
+        == "https://dbc-af3ed11d-d267.cloud.databricks.com/ai-gateway"
+    )
+    assert cli_config.gateway_status()["source"] == "workspace"
 
 
 def test_azure_workspace_host_auto_constructs_without_help(monkeypatch, probe):
@@ -132,8 +172,9 @@ def test_a_workspace_hosted_gateway_root_still_reports_green(monkeypatch, probe)
 
 
 def test_serving_endpoints_fallback_is_not_a_form_omnigent_accepts():
-    """The reason an unresolved gateway is not harmless: the fallback URL has
-    neither the DNS label nor the path, so Pi never treats it as a gateway."""
+    """Kept as a guard rather than a description of live behaviour: nothing
+    writes this URL any more, and if a regression reintroduced it Pi would
+    decline to route it — it carries neither the DNS label nor the path."""
     assert not cli_config._is_omnigent_gateway_form(
         "https://dbc-af3ed11d-d267.cloud.databricks.com/serving-endpoints/anthropic"
     )
@@ -173,10 +214,11 @@ def test_beta_negotiation_is_only_enabled_on_the_gateway():
     """Claude Code's beta set is settled differently on and off the gateway.
 
     On the gateway it negotiates, so the betas stay on and MCP tool search
-    (which rides on ``advanced-tool-use``) keeps loading schemas on demand. Off
-    it, the ``/serving-endpoints/anthropic`` fallback has not been shown to
-    accept those flags, and a 400 "invalid beta flag" would break the session —
-    so the older disable workaround stays in place there.
+    (which rides on ``advanced-tool-use``) keeps loading schemas on demand.
+    Every configured deployment is on the gateway now, so the other branch
+    covers only the no-host case — where there is no base URL to hand a CLI at
+    all, and disabling the experimental betas is the conservative default for
+    whatever the CLI falls back to on its own.
     """
     assert cli_config.beta_negotiation_env(True) == {"CLAUDE_CODE_USE_GATEWAY": "1"}
     assert cli_config.beta_negotiation_env(False) == {

@@ -17,16 +17,22 @@ env:
   # every decision — which is why this can now default true.
   - name: WORKSHOP_SMART_ROUTING
     value: "true"
-  # The judge model, and the only inference the App itself performs. Must be a
-  # serving endpoint the App service principal can query: pay-per-token
-  # foundation models need no grant, a custom endpoint needs CAN_QUERY.
+  # The judge model, and the only inference the App itself performs. A Unity
+  # Catalog model service, fully qualified: the App calls it through Unity AI
+  # Gateway, which answers `system.ai.<model>` and not a bare name. The App
+  # service principal needs EXECUTE on the service, which all account users hold
+  # on `system.ai` by default — so in practice this needs no grant, where the
+  # retired `databricks-gpt-5-6-luna` endpoint needed CAN_QUERY.
   - name: WORKSHOP_ROUTING_JUDGE_MODEL
-    value: "databricks-gpt-5-6-luna"
+    value: "system.ai.gpt-5-6-luna"
   # Optional overrides (empty = built-in defaults in smart_routing.py).
   - name: WORKSHOP_ROUTING_BASE_URL
     value: ""
   - name: WORKSHOP_ROUTING_ROUTER_NAME
     value: ""
+  # Left empty on purpose: upstream's default already spans `system.ai.` and the
+  # legacy `databricks-` prefix, and narrowing it here would only break the App
+  # against a workspace that still serves both.
   - name: WORKSHOP_ROUTING_MODEL_PREFIXES
     value: ""
   # The judge's candidate menu, cheapest-first, and the arms it may never pick.

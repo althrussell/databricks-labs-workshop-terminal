@@ -254,10 +254,11 @@ def test_all_hard_checks_green_is_ready(tmp_path):
 
 
 def test_absent_gateway_is_reported_amber_and_never_blocks_the_workshop(tmp_path):
-    """The serving-endpoints fallback serves every model an attendee needs, so an
-    unresolved gateway must not cost anyone their workshop. It is reported amber
-    because what the fallback does cost — gateway policy, usage tracking and rate
-    limits — appears in no log."""
+    """An unresolved gateway now means no model is reachable at all — the
+    serving-endpoints surface this used to fall back to has been retired with
+    the legacy endpoints it served. It stays soft anyway: gating a room out of a
+    workshop is a worse outcome than letting them in to find out, and the check
+    says which variable closes the gap."""
     report = _evaluate(tmp_path, gateway={"resolved": False, "source": "unresolved"})
 
     assert report["ready"] is True
@@ -265,9 +266,11 @@ def test_absent_gateway_is_reported_amber_and_never_blocks_the_workshop(tmp_path
     assert check["soft"] is True
     assert check["state"] == "amber"
     # Naming the levers is the point: an operator reading /readyz should not
-    # have to grep the source to learn which variable to set.
+    # have to grep the source to learn which variable to set. DATABRICKS_HOST
+    # leads now, because the workspace-hosted gateway is derived from it and a
+    # deployment missing it is missing the only thing that is not optional.
+    assert "DATABRICKS_HOST" in check["detail"]
     assert "DATABRICKS_GATEWAY_HOST" in check["detail"]
-    assert "DATABRICKS_WORKSPACE_ID" in check["detail"]
 
 
 def test_gateway_resolved_in_a_shape_omnigent_ignores_is_still_amber(tmp_path):

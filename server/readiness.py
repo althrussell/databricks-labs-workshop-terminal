@@ -501,14 +501,25 @@ def evaluate(
         else models.DEFAULT_PROFILE
     )
 
+    # What each role intends to run, as the head of its chain — which is what it
+    # resolves to when the workspace serves everything, and what a pin displaces
+    # when one is set. Computed without discovery on purpose: /readyz is not the
+    # place to add a network round-trip, and "what this deployment is asking
+    # for" is the question an operator reading it has. What the workspace
+    # actually served is visible per attendee in the generated configs.
+    intended_models = {
+        role: models.resolve(role, ())
+        for role in ("driver", "frontier", "standard", "fast", "codex", "insight")
+    }
+
     # What must be pinned is the code an attendee runs, so every binary boot
-    # installs belongs here. Model names deliberately do not: an endpoint is a
-    # service that changes under a deployment whether or not its name is written
-    # down, and requiring one contradicts the profile — WORKSHOP_MODEL_PROFILE
-    # exists so an event names a cost posture and lets role chains pick the
-    # endpoint. A required ANTHROPIC_MODEL would put a copy of a chain head in
-    # every event's deployment, to go stale there, which is the drift
-    # server/models.py was written to end. Pins are still reported below.
+    # installs belongs here. Model names deliberately do not: a model service is
+    # a service that changes under a deployment whether or not its name is
+    # written down, and requiring one contradicts the profile —
+    # WORKSHOP_MODEL_PROFILE exists so an event names a cost posture and lets
+    # role chains pick the model. A required ANTHROPIC_MODEL would put a copy of
+    # a chain head in every event's deployment, to go stale there, which is the
+    # drift server/models.py was written to end. Pins are still reported below.
     pin_names = [
         "CLAUDE_CODE_VERSION",
         "CODEX_CLI_VERSION",
@@ -793,19 +804,20 @@ def evaluate(
             missing=sorted(missing_pins),
             mismatched=sorted(mismatched_tools),
         ),
-        # Never a hard gate, and deliberately not red: the fallback works. With
-        # no gateway resolved every CLI is configured against
-        # <host>/serving-endpoints, which serves everything an attendee needs —
-        # Claude on /serving-endpoints/anthropic/v1/messages, the newer GPT
-        # models on /serving-endpoints/responses, GLM and friends on
-        # /serving-endpoints/chat/completions (all verified against a live
-        # workspace). So a workshop runs either way.
+        # This used to be a governance-only warning, on the grounds that a
+        # deployment with no gateway still reached every model through
+        # <host>/serving-endpoints. That is no longer true. The legacy
+        # per-model endpoints have been retired in favour of Unity Catalog
+        # model services, /serving-endpoints/anthropic/v1/messages answers 404,
+        # and the AI Gateway is the only surface left — so an unresolved gateway
+        # is now a broken event rather than an ungoverned one.
         #
-        # What the fallback costs is governance, not capability: the AI Gateway
-        # is where an event's traffic is subject to gateway policy, usage
-        # tracking and rate limits, and serving-endpoints bypasses all of it.
-        # Amber says "running, but outside the governed path" — worth a
-        # deployment fix, never worth failing an attendee over.
+        # It stays soft anyway, for the same reason it always was: /readyz
+        # gating an attendee out of a workshop is a worse outcome than letting
+        # them in to find out. What changed is the wording and the bar. Amber
+        # now means "resolved but Omnigent will not route through it", and
+        # unresolved means no workspace host is configured at all, since the
+        # workspace-hosted form is derivable from a host alone.
         "model_gateway": _soft(
             gateway_status.get("resolved") is True
             and gateway_status.get("omnigent_gateway_form") is True,
@@ -816,18 +828,18 @@ def evaluate(
                 else "amber"
             ),
             (
-                "AI Gateway resolved in the form Omnigent recognises"
+                "Unity AI Gateway resolved in the form Omnigent recognises"
                 if gateway_status.get("resolved")
                 and gateway_status.get("omnigent_gateway_form")
-                else "AI Gateway resolved, but not in a form Omnigent treats as "
-                "the gateway, so Omnigent derives its own paths from the "
-                "workspace host instead"
+                else "Unity AI Gateway resolved, but not in a form Omnigent "
+                "treats as the gateway, so Omnigent derives its own paths from "
+                "the workspace host instead"
                 if gateway_status.get("resolved")
-                else "no AI Gateway: models still serve via the "
-                "serving-endpoints fallback, but this event's traffic bypasses "
-                "gateway policy, usage tracking and rate limits. Set "
-                "DATABRICKS_GATEWAY_HOST (or DATABRICKS_WORKSPACE_ID) in the "
-                "deployment"
+                else "no Unity AI Gateway and no workspace host to derive one "
+                "from, so no model is reachable: the legacy serving-endpoints "
+                "models this used to fall back to have been retired. Set "
+                "DATABRICKS_HOST, or name a gateway with "
+                "DATABRICKS_GATEWAY_HOST"
             ),
             **{
                 key: gateway_status.get(key)
@@ -867,6 +879,10 @@ def evaluate(
                 for name in ("ANTHROPIC_MODEL", "CODEX_MODEL", "INSIGHT_SUMMARY_MODEL")
                 if (value := env.get(name, "").strip())
             },
+            # Fully-qualified model service names, so an operator can compare
+            # what this deployment intends against what the workspace lists
+            # without working the profile and the pins out by hand.
+            models=intended_models,
         ),
         # Never a hard gate: insight capture serves the sales follow-up, not the
         # attendee, and no attendee should lose a workshop over it.

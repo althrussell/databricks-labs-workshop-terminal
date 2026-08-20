@@ -171,13 +171,22 @@ Four **soft** checks ride alongside them, each carrying `"soft": true` and each
 excluded from the `ready` verdict. CT should surface a soft `red` to the
 operator, but must never treat any of them as an admission failure.
 
-`model_gateway` reports how the AI Gateway resolved. Amber means no gateway, or
-one in a shape Omnigent does not route through: every CLI then falls back to
-`<host>/serving-endpoints`, which serves every model an attendee needs, so this
-is never a reason to fail an instance. What the fallback costs is governance —
-gateway policy, usage tracking and rate limits — which is why it is reported at
-all. Setting `DATABRICKS_GATEWAY_HOST` to `https://<workspace-host>/ai-gateway`
-turns it green.
+`model_gateway` reports how Unity AI Gateway resolved, and the bar has moved.
+Green is the normal state without any configuration: the gateway resolves to
+`<host>/ai-gateway`, derived from `DATABRICKS_HOST` alone, on every cloud and
+hostname shape. Amber means either no workspace host at all, or a gateway in a
+shape Omnigent does not route through.
+
+Amber used to mean "running, but ungoverned", because a deployment with no
+gateway fell back to `<host>/serving-endpoints` and still reached every model.
+That fallback is gone — Databricks retired the legacy per-model endpoints in
+favour of Unity Catalog model services, and the old path 404s — so amber now
+means no model is reachable. It stays a soft check because gating an instance
+out is worse than letting an operator see the problem, but CT should treat it as
+urgent rather than advisory. `source` distinguishes the three ways it resolved:
+`workspace` (derived, the common case), `explicit`
+(`DATABRICKS_GATEWAY_HOST` set), and `constructed` (a dedicated subdomain built
+from `DATABRICKS_WORKSPACE_ID`).
 
 `model_profile` reports the active `WORKSHOP_MODEL_PROFILE` and any model pins
 that are set. Amber means the deployment asked for a profile name this release
@@ -361,17 +370,22 @@ take effect on restart with **no rebuild**. Set these per instance:
 | `WORKSHOP_ONBOARDING_WIZARD` | `true` *(CT fleet default; per-run opt-out)* | the opening wizard that asks what the attendee is here to build (§16). `false` lands attendees on Home with no modal, for a format that walks the room through the first build together |
 | `WORKSHOP_LLM_WIZARD` | `true` *(CT fleet default; per-run opt-out)* | LLM-powered idea cards inside the wizard (§16). A missing env is on, so an older Control Tower still gets generated cards. `false` keeps the static catalogue |
 | `WORKSHOP_DEFAULT_INDUSTRY` | empty *(attendee chooses)* | industry chip to preselect (§16). Empty is not automotive. Ignored when that schema is not seeded |
-| `WORKSHOP_WIZARD_MODEL` | empty *(wizard chain)* | pin for the wizard serving endpoint. Empty uses gpt-5-4-mini, then luna, haiku, gpt-oss-120b |
+| `WORKSHOP_WIZARD_MODEL` | empty *(wizard chain)* | pin for the wizard model. Empty uses gpt-5-4-mini, then luna, haiku, gpt-oss-120b |
 | `WORKSHOP_AGENTS` | empty *(all)*, or a subset of `omnigent,claude,codex` | the coding agents attendees may launch (§16). The plain Terminal is always offered and is never listed here. Deselecting Omnigent also skips its install, so a run that will not use it does not pay for the harness on cold boot |
 
 Model defaults can vary by event or attendee because CT applies overrides to
 each app instance independently. For example, set
-`ANTHROPIC_MODEL=databricks-claude-sonnet-5` for a standard workshop and
-`ANTHROPIC_MODEL=databricks-claude-opus-4-8` for a premium workshop. The value
-is a Databricks serving endpoint name, not an Anthropic public API model id.
-At attendee bootstrap the app prefers the requested READY endpoint, then
-degrades through its built-in model chain if endpoint discovery reports it
-unavailable. Leaving the override empty preserves the app defaults.
+`ANTHROPIC_MODEL=claude-sonnet-5` for a standard workshop and
+`ANTHROPIC_MODEL=claude-opus-4-8` for a premium workshop. The value names a
+Unity Catalog model service in `system.ai`, not an Anthropic public API model
+id; the short form shown here is qualified to `system.ai.<name>` before it
+reaches the gateway, and a fully-qualified value is passed through unchanged.
+The retired `databricks-` prefix is not accepted.
+
+At attendee bootstrap the app prefers the requested model, then degrades through
+its built-in chain when discovery does not list it — or lists it without the API
+type that role needs, which is what stops a chat-only model landing behind a
+Responses-wire CLI. Leaving the override empty preserves the app defaults.
 
 Keep `MAX_SESSIONS_GLOBAL <= MAX_SESSIONS_PER_USER` and
 `ALLOW_SHARED_TOPOLOGY=false`; the release contract is one attendee per app

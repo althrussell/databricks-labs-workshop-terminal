@@ -555,8 +555,8 @@ python scripts/pull_diagnostics.py errors  --urls ./instances.txt   # whole flee
 | `WORKSHOP_PHASE` | `intro` | Phase on (re)start |
 | `CONTENT_PACK_PATH` | *(unset)* | Alternate pack file inside the deployed source |
 | `BRAND_NAME` / `BRAND_LOGO_URL` / `BRAND_PRIMARY_COLOR` / `EVENT_NAME` | *(unset)* | Cobranding |
-| `DATABRICKS_GATEWAY_HOST` | auto-probed | AI Gateway override for CLI model traffic |
-| `ANTHROPIC_MODEL` / `CODEX_MODEL` | *(unset)* | Required event release pins for the CLI model endpoints; `/readyz` stays red until both are explicit |
+| `DATABRICKS_GATEWAY_HOST` | *(unset — derives `<host>/ai-gateway`)* | Override to name a dedicated Unity AI Gateway subdomain instead of the workspace-hosted one |
+| `ANTHROPIC_MODEL` / `CODEX_MODEL` | *(unset)* | Required event release pins for the CLI models, as Unity Catalog model service names — short (`claude-sonnet-5`) or fully qualified (`system.ai.claude-sonnet-5`); `/readyz` stays red until both are explicit |
 | `MAX_SESSIONS_PER_USER` / `MAX_SESSIONS_GLOBAL` | 3 / 3 | Terminal caps; global must not exceed per-user for the one-attendee topology |
 | `ALLOW_SHARED_TOPOLOGY` | `false` | Shared use is unsupported and fails `/readyz` |
 | `SESSION_IDLE_TIMEOUT_SECONDS` | 28800 | Idle PTY reap |
@@ -576,7 +576,7 @@ python scripts/pull_diagnostics.py errors  --urls ./instances.txt   # whole flee
 | `WORKSHOP_RUN_ID` | *(unset)* | CT lab run id (required with `WORKSHOP_UNIT_ID` for help push) |
 | `WORKSHOP_UNIT_ID` | *(unset)* | CT lab unit id for this attendee instance (required with `WORKSHOP_RUN_ID` for help push) |
 | `DISCOVERY_ENABLED` | `true` *(within capture)* | Whether the agent-elicited discovery tier runs. Subordinate to `WORKSHOP_INSIGHT_CAPTURE` — `false` keeps the derived behavioural signal and drops the conversational capture, for events where the anonymous rollup is in scope but attendee narrative isn't |
-| `INSIGHT_SUMMARY_MODEL` | *(unset)* | Serving endpoint for the wrap-phase edge summary. Empty discovers a READY endpoint, preferring the cheap tier — summarising one session is a small job and spending Opus on it competes with the attendees' own agent budget. Pin it when the workspace's default chain is unavailable in-region |
+| `INSIGHT_SUMMARY_MODEL` | *(unset)* | Model service for the wrap-phase edge summary. Empty discovers a served model, preferring the cheap tier — summarising one session is a small job and spending Opus on it competes with the attendees' own agent budget. Pin it when the workspace's default chain is unavailable in-region |
 
 All env is read at runtime — Control Tower `env_overrides` and in-place
 `app.yaml` edits take effect on restart with no rebuild.

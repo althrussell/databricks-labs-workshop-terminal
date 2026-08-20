@@ -101,9 +101,9 @@ def test_slow_first_configure_cannot_roll_back_newer_rotation(
         if token == "old-token":
             discovery_entered.set()
             assert release_discovery.wait(2)
-        return set()
+        return {}
 
-    monkeypatch.setattr(cli_config, "_discover_serving_endpoints", slow_discovery)
+    monkeypatch.setattr(cli_config, "discover_model_services", slow_discovery)
     configure = threading.Thread(
         target=cli_config.configure_all, args=(user, "old-token")
     )

@@ -152,7 +152,7 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
     assert env["WORKSHOP_SMART_ROUTING"]["value"] == "true"
     # The judge is the one model the App itself calls, so it is pinned rather
     # than left to a built-in default that could drift under us.
-    assert env["WORKSHOP_ROUTING_JUDGE_MODEL"]["value"] == "databricks-gpt-5-6-luna"
+    assert env["WORKSHOP_ROUTING_JUDGE_MODEL"]["value"] == "system.ai.gpt-5-6-luna"
     for name in allowed - {"WORKSHOP_SMART_ROUTING", "WORKSHOP_ROUTING_JUDGE_MODEL"}:
         assert env[name].get("value", "") == "", f"{name} must ship empty"
     assert not {
