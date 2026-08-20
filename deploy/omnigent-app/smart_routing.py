@@ -1,6 +1,6 @@
 """Build Omnigent Auto · smart routing for the workshop control plane.
 
-Omnigent 0.9.0 routes from two backends. The external client calls Databricks AI
+Omnigent 0.10.0 routes from two backends. The external client calls Databricks AI
 Gateway ``routes:select``; the built-in judge asks a small model instead.
 Upstream prefers the external one and falls back to the judge per request.
 
@@ -155,7 +155,7 @@ _DEFAULT_MODEL_ORDER = (
 _DEFAULT_MODEL_EXCLUDE = ("gpt-5-5", "gpt-5-5-pro", "claude-fable-5")
 
 # Models that answer only on chat-completions, per harness that cannot speak it.
-# codex-cli 0.147.0 is Responses-only and the gateway refuses these outright, so
+# codex-cli 0.148.0 is Responses-only and the gateway refuses these outright, so
 # a codex verdict naming one is dead before it is made. Not a global exclusion:
 # pi speaks chat and runs them fine.
 #

@@ -1,4 +1,4 @@
-# Fully pinned, hash-verified Omnigent 0.9.0 install set.
+# Fully pinned, hash-verified Omnigent 0.10.0 install set.
 # Regenerate with `uv export` from deploy/omnigent-app (same resolution as its uv.lock).
 aiohappyeyeballs==2.7.1 \
     --hash=sha256:065665c041c42a5938ed220bdcd7230f22527fbec085e1853d2402c8a3615d9d \
@@ -72,10 +72,6 @@ argon2-cffi-bindings==25.1.0 \
     --hash=sha256:c87b72589133f0346a1cb8d5ecca4b933e3c9b64656c9d175270a000e73b288d \
     --hash=sha256:d3e924cfc503018a714f94a49a149fdc0b644eaead5d1f089330399134fa028a
     # via argon2-cffi
-asgiref==3.12.1 \
-    --hash=sha256:59dcb51c272ad209d59bed5708a64a333083e86017d7fcdd67498eeab7784340 \
-    --hash=sha256:fe386d1c2bff7259ea95929266d12a8cf9a8b5a1c2598402967d8792e7a7c094
-    # via opentelemetry-instrumentation-asgi
 attrs==26.1.0 \
     --hash=sha256:c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309 \
     --hash=sha256:d03ceb89cb322a8fd706d4fb91940737b6642aa36998fe130a9bc96c985eff32
@@ -331,12 +327,6 @@ google-re2==1.1.20251105 \
     --hash=sha256:b30f09b4d63249c72e65ccae4cbf6b331b48c22fc7cb439f1d85f347b9d07ceb \
     --hash=sha256:d8424e63a9ec0fe5bde03d97876b2431f8a746af33eb475fa1ae39144bd05b2a
     # via cel-python
-googleapis-common-protos==1.75.0 \
-    --hash=sha256:53a062ff3c32552fbd62c11fe23768b78e4ddf0494d5e5fd97d3f4689c75fbbd \
-    --hash=sha256:961ed60399c457ceb0ee8f285a84c870aabc9c6a832b9d37bb281b5bebde43ed
-    # via
-    #   opentelemetry-exporter-otlp-proto-grpc
-    #   opentelemetry-exporter-otlp-proto-http
 graphene==3.4.3 \
     --hash=sha256:2a3786948ce75fe7e078443d37f609cbe5bb36ad8d6b828740ad3b95ed1a0aaa \
     --hash=sha256:820db6289754c181007a150db1f7fff544b94142b556d12e3ebc777a7bf36c71
@@ -366,19 +356,6 @@ griffelib==2.1.0 \
     --hash=sha256:762a186d2c6fd6794d4ea20d428d597ffb857cb56b66421651cbba15bdd5e813 \
     --hash=sha256:cc7b3d2d2865ad0b909fcc38086e3f554b5ea7acbaa7bbb7ecaa3f5dfb7d9f00
     # via openai-agents
-grpcio==1.83.0 \
-    --hash=sha256:1aa567f8c3f19850ffd5d2858c9a8ea7c80f0db6c01186b71eb31e923ec984f5 \
-    --hash=sha256:1c699bbb20f143c8f2bff219de578aa2dc1f919399d67dc702b038b986ee62df \
-    --hash=sha256:28f6c35ac8fcf10e4594f138e468f194360089dde40d126a7033e863fc479930 \
-    --hash=sha256:2b5e75c34842cd9c1b95285ca395c6a569664b81e3ffa6b714125922942abaaf \
-    --hash=sha256:33898e6a28e4ae598f1577cb1c4fec2a15c033d0ec52b9b45a09610dd045b9da \
-    --hash=sha256:62003babc444a606dcd1f009cd16391ce23669ae4ad6ec267a873da7937a69f5 \
-    --hash=sha256:6fb8a1dd0c6f0f931e69e9d0dc6d1c406ed2a44fa963414eafba07b7fb685d16 \
-    --hash=sha256:7674587248fbbb2ac6e4eecf83a8a0f3d91a928f941de571acfd3a2f007fbc24 \
-    --hash=sha256:aeb339838db07600481ef869507279b75326c75eac6d10f7afa62a0da1d2bcdd \
-    --hash=sha256:cb2906c61db4f9c64cc360054b5df70eeb81846228e9e56a4944bd415a63dadc \
-    --hash=sha256:f47d62808b4c0a97b78bff88a6d4ca283a2a492b9a04a87d814af95ca3b9c19c
-    # via opentelemetry-exporter-otlp-proto-grpc
 gunicorn==26.0.0 ; sys_platform != 'win32' \
     --hash=sha256:40233d26a5f0d1872916188c276e21641155111c2853f0c2cd55260aec0d24fc \
     --hash=sha256:ca9346f85e3a4aeeb64d491045c16b9a35647abd37ea15efe53080eb8b090baf
@@ -647,21 +624,21 @@ numpy==2.5.1 \
     #   scikit-learn
     #   scipy
     #   skops
-omnigent==0.9.0 \
-    --hash=sha256:75e371f521f269fd59364ab9fbcf1cd5f52278565ab2d228f0ddbb231cb41754 \
-    --hash=sha256:a68bcd3d70d98aac83f809d8730cc6ef64136e5d8287dfcebd8673eb682eb265
+omnigent==0.10.0 \
+    --hash=sha256:0a878ecee0a215b51218dbbfe79e994588a726ddd5246f2ed20cb76e383fbcc1 \
+    --hash=sha256:af159f62d34923972873223b73234f9300a312ad778062db56b831ebe7ac15da
     # via
     #   omnigent-client
     #   workshop-omnigent-app
-omnigent-client==0.9.0 \
-    --hash=sha256:354175e99cd9915ce884e2b39df00f5534f52c8d3d7573fa819c65599ce6cab3 \
-    --hash=sha256:f317c349ceddb0b53c617ae4c7212414c9176e0c96fbcf3f57ad73758eb43bd4
+omnigent-client==0.10.0 \
+    --hash=sha256:bc884f7e493559c62f8cffecac0f2fb1510a8d290a34dd242483bff745033943 \
+    --hash=sha256:9556e97e952ff0952067ad2afa00876956a38912be4e9352b9ffa352cd2f1410
     # via
     #   omnigent
     #   omnigent-ui-sdk
-omnigent-ui-sdk==0.9.0 \
-    --hash=sha256:c6be6bb71d8073fabc192864790b9dcdb283a0b19ee5df89a7b5c2897cd4ee54 \
-    --hash=sha256:eda17800d3efe24455e5257c1e7ed368f2cd99df32bdc3e178f4925e9b56f743
+omnigent-ui-sdk==0.10.0 \
+    --hash=sha256:36100a76e7e6c8d3717e11ec04820c6874e7a18e751fb86aba057b282dff17a8 \
+    --hash=sha256:4c3886e144047c72d86dd4ac5ac1b4b960ea7212f66f480818a45f032a48a5f7
     # via omnigent
 openai==2.44.0 \
     --hash=sha256:0a2a3ab2e29aeda368700f662ff9ba0f9df17ba4c54577a64e08b8115a3cc0ad \
@@ -679,68 +656,25 @@ opentelemetry-api==1.44.0 \
     # via
     #   mlflow-skinny
     #   mlflow-tracing
+    #   omnigent
     #   opentelemetry-distro
-    #   opentelemetry-exporter-otlp-proto-grpc
-    #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-instrumentation
-    #   opentelemetry-instrumentation-asgi
-    #   opentelemetry-instrumentation-fastapi
-    #   opentelemetry-instrumentation-httpx
-    #   opentelemetry-instrumentation-sqlalchemy
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
 opentelemetry-distro==0.65b0 \
     --hash=sha256:0e15bb1a54c638e6c361bc66bc43e9de9ead442e1ae06f8099a2c1d27b6ef845 \
     --hash=sha256:e2fef26fdf72978ab172530c13338aff367edae41ae8d90b7f6133efedde10ab
     # via omnigent
-opentelemetry-exporter-otlp-proto-common==1.44.0 \
-    --hash=sha256:9a9fe61bba73d802904bc989f1d6b4a7b1ee40f06c40e98d6f85af65aaebb694 \
-    --hash=sha256:dc87a5a5bc58f149a56d1547e4691588fa12994cdc3bc039a694ccb3375862ac
-    # via
-    #   opentelemetry-exporter-otlp-proto-grpc
-    #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-exporter-otlp-proto-grpc==1.44.0 \
-    --hash=sha256:40d1ae9e03fcc36de3cbac610cc99f35894938bff9cfd90fc4ec68bd85448463 \
-    --hash=sha256:6a1a645ea182a2f59440c51fa8301d309f3324a8f9d65f8395584b064b67ee4e
-    # via omnigent
-opentelemetry-exporter-otlp-proto-http==1.44.0 \
-    --hash=sha256:838592fce774c1c8bb7b9a0a7facbfa82e17be5a8a4e94cef10cb84ae026bae3 \
-    --hash=sha256:c633d7270ad6b57cd4cfbe8b0007a9e2e7c0cb50bd6c50fe2a7b245f721a09d8
-    # via omnigent
 opentelemetry-instrumentation==0.65b0 \
     --hash=sha256:071d9d9eced9bd6460444ec3b0c77229870ed05a881c22c84fdede58e4eed09b \
     --hash=sha256:ea967a72b9939b5fcfdad572753b4306c59dcb99e3f382d95dae04286805e137
-    # via
-    #   opentelemetry-distro
-    #   opentelemetry-instrumentation-asgi
-    #   opentelemetry-instrumentation-fastapi
-    #   opentelemetry-instrumentation-httpx
-    #   opentelemetry-instrumentation-sqlalchemy
-opentelemetry-instrumentation-asgi==0.65b0 \
-    --hash=sha256:3a845a8ebd1c4ef0d8263401e6545f5b219b2feee612090d50f578a87e71fd65 \
-    --hash=sha256:892bca67c56522ffa85a8a83cf934d7b50b3be2132e45cbee705825f0a5ba426
-    # via opentelemetry-instrumentation-fastapi
-opentelemetry-instrumentation-fastapi==0.65b0 \
-    --hash=sha256:10a3a95486036230413a58fe4fdf4a83fa6bba46918407e527476994bd92bd97 \
-    --hash=sha256:cda2610a0ec1b22d19886f33e4d861e9f5dbb886aeaa3a1263b47aff82c36943
-    # via omnigent
-opentelemetry-instrumentation-httpx==0.65b0 \
-    --hash=sha256:400f1b78afa4ee2332b5debe58e1ed1b317913d58812c952576be76660aeadb1 \
-    --hash=sha256:4627aa9c6bb99bf4462c8b565b0ef6aeb9ffad95c6c92868be1ef7895de112ee
-    # via omnigent
-opentelemetry-instrumentation-sqlalchemy==0.65b0 \
-    --hash=sha256:4d8a2e5afc7b505a48d05cb1fb6db5f8b31681814c1d7767bd6d4b5bdd3a3047 \
-    --hash=sha256:8ec2e79f1e00808c5dc639ab5b2cfcdf9dcdef55efd6442c6019707fe2894028
-    # via omnigent
+    # via opentelemetry-distro
 opentelemetry-proto==1.44.0 \
     --hash=sha256:898b155a0e1557afd867478fb6158e8122a46329ca0bb8dc53cc55e98f017f56 \
     --hash=sha256:c547a79c2f8c0c515d31509154682e5921c7cfd5ca67b70e1f9266e2c3e103f3
     # via
     #   mlflow-skinny
     #   mlflow-tracing
-    #   opentelemetry-exporter-otlp-proto-common
-    #   opentelemetry-exporter-otlp-proto-grpc
-    #   opentelemetry-exporter-otlp-proto-http
 opentelemetry-sdk==1.44.0 \
     --hash=sha256:cebe7f65dc12f26ead75c6064de12fd2a9052e5060c0272d402cfa203aae123b \
     --hash=sha256:df081c4c6bcfdb1211e3e86140376792643128a25f8d72d1d27675936e7e96ad
@@ -748,25 +682,12 @@ opentelemetry-sdk==1.44.0 \
     #   mlflow-skinny
     #   mlflow-tracing
     #   opentelemetry-distro
-    #   opentelemetry-exporter-otlp-proto-grpc
-    #   opentelemetry-exporter-otlp-proto-http
 opentelemetry-semantic-conventions==0.65b0 \
     --hash=sha256:1cacde7b0ad306f84c5ef08c3dbe1bbaf20165bba6f8bff43b670e555a086bcb \
     --hash=sha256:f9b2b81e9d5b64f11bc952075e7e9c7fb0aab075c7fd1c46d597f1b919852d60
     # via
     #   opentelemetry-instrumentation
-    #   opentelemetry-instrumentation-asgi
-    #   opentelemetry-instrumentation-fastapi
-    #   opentelemetry-instrumentation-httpx
-    #   opentelemetry-instrumentation-sqlalchemy
     #   opentelemetry-sdk
-opentelemetry-util-http==0.65b0 \
-    --hash=sha256:7553b606f963097cb190536dc30556cce85090692e471a422fff30ca29b04348 \
-    --hash=sha256:84f82d826978bba416ab453460ff6a7391cdc3534c93a786595e4068680016b7
-    # via
-    #   opentelemetry-instrumentation-asgi
-    #   opentelemetry-instrumentation-fastapi
-    #   opentelemetry-instrumentation-httpx
 packaging==25.0 \
     --hash=sha256:29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484 \
     --hash=sha256:d443872c98d677bf60f6a1f2f8c1cb748e8fe762d2bf9d3148b5599295b0fc4f
@@ -778,7 +699,6 @@ packaging==25.0 \
     #   mlflow-tracing
     #   omnigent
     #   opentelemetry-instrumentation
-    #   opentelemetry-instrumentation-sqlalchemy
     #   skops
 pandas==2.3.3 \
     --hash=sha256:371a4ab48e950033bcf52b6527eccb564f52dc826c02afd9a1bc0ab731bba084 \
@@ -821,7 +741,9 @@ pillow==12.3.0 \
     --hash=sha256:dbce0b29841537a2fa4a214c2bbf14de3587c9680caa9b4e217568472490b28f \
     --hash=sha256:e491916b378fba47242221bb9ead245211b70d504f495d105d17b14a24b4907c \
     --hash=sha256:ffd0c5368496f41b0944be820fcb7a838aa6e623d250b01acf2643939c3f99d7
-    # via matplotlib
+    # via
+    #   matplotlib
+    #   omnigent
 prettytable==3.18.0 \
     --hash=sha256:439217116152244369caf3d9f1caf2f9fe29b03bd79e88d2928c8e718c95d680 \
     --hash=sha256:b3346e0e6f79180833aebaac088ae926340586cf6d7d991b9eb125b65f72313a
@@ -866,7 +788,6 @@ protobuf==6.33.6 \
     --hash=sha256:e9db7e292e0ab79dd108d7f1a94fe31601ce1ee3f7b79e0692043423020b0593
     # via
     #   databricks-sdk
-    #   googleapis-common-protos
     #   mlflow-skinny
     #   mlflow-tracing
     #   omnigent
@@ -1074,7 +995,6 @@ requests==2.34.2 \
     #   docker
     #   mlflow-skinny
     #   openai-agents
-    #   opentelemetry-exporter-otlp-proto-http
     #   tiktoken
 rich==14.3.4 \
     --hash=sha256:07e7adb4690f68864777b1450859253bed81a99a31ac321ac1817b2313558952 \
@@ -1225,14 +1145,11 @@ typing-extensions==4.16.0 \
     #   databricks-ai-bridge
     #   fastapi
     #   graphene
-    #   grpcio
     #   mcp
     #   mlflow-skinny
     #   openai
     #   openai-agents
     #   opentelemetry-api
-    #   opentelemetry-exporter-otlp-proto-grpc
-    #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
     #   psycopg
@@ -1254,6 +1171,7 @@ tzdata==2026.3 \
     --hash=sha256:4a1518b8993086a7982523e071643f3c0e5f213e75b21318e78bcabfff9d1415 \
     --hash=sha256:dc096730c87af6cab1b171c9d532be840741ff5d459015e7f6947bd7d7e54931
     # via
+    #   omnigent
     #   pandas
     #   pendulum
     #   psycopg
@@ -1347,10 +1265,7 @@ wrapt==2.3.0 \
     --hash=sha256:d8c7ed08477429752b8c44991f40ad7838b18332a160698740a6bfbc10d998a2 \
     --hash=sha256:e5301c35cf75655eb33498f2bd6ae8703ca19940e3167dc9cdf740c712a39c60 \
     --hash=sha256:fb8e2e6704a1e0b1b989546c69e2688371ef4a07fa5f61bde3eb6211186f5ac1
-    # via
-    #   opentelemetry-instrumentation
-    #   opentelemetry-instrumentation-httpx
-    #   opentelemetry-instrumentation-sqlalchemy
+    # via opentelemetry-instrumentation
 yarl==1.24.5 \
     --hash=sha256:3363fcc96e665878946ad7a106b9a13eac0541766a690ef287c0232ac768b6ec \
     --hash=sha256:377fe3732edbaf78ee74efdf2c9f49f6e99f20e7f9d2649fda3eb4badd77d76e \

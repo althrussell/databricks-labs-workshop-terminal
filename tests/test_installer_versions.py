@@ -171,7 +171,7 @@ def test_status_exposes_secret_free_expected_and_actual_release_manifest():
     install._set(
         "claude",
         "complete",
-        expected_version="2.1.228",
+        expected_version=install.CLAUDE_VERSION,
         actual_version="2.1.215",
     )
 
@@ -182,7 +182,7 @@ def test_status_exposes_secret_free_expected_and_actual_release_manifest():
         for key in ("enabled", "expected", "actual", "match")
     } == {
         "enabled": True,
-        "expected": "2.1.228",
+        "expected": install.CLAUDE_VERSION,
         "actual": "2.1.215",
         "match": False,
     }
@@ -650,8 +650,8 @@ def test_omnigent_installs_from_the_hash_pinned_lock_alone(
     (prefix / "bin").mkdir(parents=True)
     lock = tmp_path / "omnigent.lock"
     lock.write_text(
-        "omnigent==0.9.0 --hash=sha256:" + "a" * 64 + "\n"
-        "omnigent-client==0.9.0 --hash=sha256:" + "b" * 64 + "\n"
+        f"omnigent=={install.OMNIGENT_VERSION} --hash=sha256:" + "a" * 64 + "\n"
+        f"omnigent-client=={install.OMNIGENT_VERSION} --hash=sha256:" + "b" * 64 + "\n"
     )
     uv_archive = _make_archive(tmp_path, "uv_binary", "uv-linux/uv")
     python_archive = _make_archive(
@@ -787,10 +787,10 @@ def test_omnigent_missing_staged_supply_chain_sets_installer_error(
 
 
 def test_all_release_candidate_defaults_are_exact():
-    assert install.CLAUDE_VERSION == "2.1.228"
-    assert install.CODEX_VERSION == "0.147.0"
+    assert install.CLAUDE_VERSION == "2.1.237"
+    assert install.CODEX_VERSION == "0.148.0"
     assert install.DATABRICKS_CLI_VERSION == "1.11.0"
-    assert install.OMNIGENT_VERSION == "0.9.0"
+    assert install.OMNIGENT_VERSION == "0.10.0"
 
 
 # Manifest artifact -> the app.yaml env var pinning the same release, and the

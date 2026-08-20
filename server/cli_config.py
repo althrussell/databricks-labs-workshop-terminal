@@ -96,7 +96,7 @@ def workspace_gateway() -> str:
 
 
 # Mirrors ``omnigent/pi_native_credentials.py::_is_databricks_ai_gateway_url``
-# (verified against the deployed 0.9.0 wheel, where it moved to
+# (verified against the deployed 0.10.0 wheel, where it moved to
 # ``omnigent/databricks_ai_gateway.py``). Omnigent routes a base URL as the
 # AI Gateway only when it is https, its hostname ends in a trusted
 # Databricks-owned suffix, AND either the hostname carries an ``ai-gateway`` DNS
@@ -143,7 +143,7 @@ def beta_negotiation_env(gateway_backed: bool) -> dict:
     and there is no gateway URL to hand a CLI. Disabling experimental betas
     also disables MCP tool search, which rides on ``advanced-tool-use``, and
     without it every MCP tool schema loads eagerly and inflates the context
-    window. Omnigent 0.9.0 launches its own Claude terminals with
+    window. Omnigent 0.10.0 launches its own Claude terminals with
     ``CLAUDE_CODE_USE_GATEWAY=1`` for this reason, and re-adds the disable flag
     whenever it does not see that variable.
     """

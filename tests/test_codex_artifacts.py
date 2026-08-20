@@ -5,7 +5,7 @@ import tarfile
 import pytest
 
 
-VERSION = "0.147.0"
+VERSION = "0.148.0"
 NATIVE_VERSION = f"{VERSION}-linux-x64"
 NATIVE_MEMBER = (
     "package/vendor/x86_64-unknown-linux-musl/bin/codex"
@@ -13,8 +13,8 @@ NATIVE_MEMBER = (
 
 
 def make_codex_tarballs(tmp_path):
-    launcher = tmp_path / "codex-npm-0.147.0.tgz"
-    native = tmp_path / "codex-npm-linux-x64-0.147.0.tgz"
+    launcher = tmp_path / "codex-npm-0.148.0.tgz"
+    native = tmp_path / "codex-npm-linux-x64-0.148.0.tgz"
     launcher_metadata = {
         "name": "@openai/codex",
         "version": VERSION,
@@ -22,22 +22,22 @@ def make_codex_tarballs(tmp_path):
         "type": "module",
         "optionalDependencies": {
             "@openai/codex-linux-x64": (
-                "npm:@openai/codex@0.147.0-linux-x64"
+                f"npm:@openai/codex@{VERSION}-linux-x64"
             ),
             "@openai/codex-linux-arm64": (
-                "npm:@openai/codex@0.147.0-linux-arm64"
+                f"npm:@openai/codex@{VERSION}-linux-arm64"
             ),
             "@openai/codex-darwin-x64": (
-                "npm:@openai/codex@0.147.0-darwin-x64"
+                f"npm:@openai/codex@{VERSION}-darwin-x64"
             ),
             "@openai/codex-darwin-arm64": (
-                "npm:@openai/codex@0.147.0-darwin-arm64"
+                f"npm:@openai/codex@{VERSION}-darwin-arm64"
             ),
             "@openai/codex-win32-x64": (
-                "npm:@openai/codex@0.147.0-win32-x64"
+                f"npm:@openai/codex@{VERSION}-win32-x64"
             ),
             "@openai/codex-win32-arm64": (
-                "npm:@openai/codex@0.147.0-win32-arm64"
+                f"npm:@openai/codex@{VERSION}-win32-arm64"
             ),
         },
     }
@@ -80,7 +80,7 @@ def test_validates_exact_01446_alias_and_native_layout(tmp_path):
     proof = validate_codex_tarballs(str(launcher), str(native), VERSION)
 
     assert proof["alias"] == "@openai/codex-linux-x64"
-    assert proof["alias_target"] == "npm:@openai/codex@0.147.0-linux-x64"
+    assert proof["alias_target"] == f"npm:@openai/codex@{VERSION}-linux-x64"
     assert proof["native_member"] == NATIVE_MEMBER
 
 

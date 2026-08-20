@@ -36,11 +36,11 @@ from .codex_artifacts import install_native_alias, validate_codex_tarballs
 logger = logging.getLogger(__name__)
 
 # Pinned versions — bump deliberately per release.
-CLAUDE_VERSION = os.environ.get("CLAUDE_CODE_VERSION", "2.1.228").strip()
-CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.147.0").strip()
+CLAUDE_VERSION = os.environ.get("CLAUDE_CODE_VERSION", "2.1.237").strip()
+CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.148.0").strip()
 DATABRICKS_CLI_VERSION = os.environ.get("DATABRICKS_CLI_VERSION", "1.11.0").strip()
-OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "0.9.0").strip()
-OMNIGENT_PROTOCOL_VERSION = "0.9.0"
+OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "0.10.0").strip()
+OMNIGENT_PROTOCOL_VERSION = "0.10.0"
 # Node 24 is the active LTS line; Node 22 is maintenance-only. Pi additionally
 # declares ``engines.node >= 22.19.0``, so the old 22.14.0 pin could not have
 # run it at all.
