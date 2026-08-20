@@ -293,12 +293,14 @@ def _validate_args(parser, args, environ):
                 f"--{field.replace('_', '-')} must be an explicit non-floating "
                 "model endpoint name"
             )
-        # The retired spelling is rejected rather than translated. A pin is
-        # qualified into `system.ai.` at the point the configs are written, so
-        # `databricks-claude-sonnet-5` would be handed to the gateway as
-        # `system.ai.databricks-claude-sonnet-5` and name nothing — and the
-        # failure would surface as every attendee's CLI 404ing mid-workshop
-        # rather than here, where someone is still watching.
+        # The retired spelling is rejected here even though the terminal folds
+        # it at runtime, because the two are answering different questions. At
+        # runtime the choice is between a working model and none, so folding
+        # wins. At deploy time nothing is at stake yet and someone is still
+        # watching, and the legacy and Unity Catalog catalogues are not the same
+        # set — a name that existed as an endpoint may not exist as a model
+        # service. Accepting it would turn "does this event's workspace serve
+        # what I asked for?" into a question nobody asks until the room fills.
         if value.lower().startswith(RETIRED_MODEL_PREFIX):
             parser.error(
                 f"--{field.replace('_', '-')} names a retired "

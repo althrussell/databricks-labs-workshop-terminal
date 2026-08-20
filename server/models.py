@@ -70,6 +70,11 @@ from dataclasses import dataclass
 SERVICE_SCHEMA = "system.ai"
 _SERVICE_PREFIX = SERVICE_SCHEMA + "."
 
+# The retired namespace. Kept only so a pin carrying it can be recognised and
+# folded to its canonical short name — see :func:`short_name`. Nothing here
+# ever writes this prefix.
+_RETIRED_PREFIX = "databricks-"
+
 # A trailing bracketed token selects a context-window variant of the same model
 # — ``system.ai.claude-sonnet-4-6[1m]`` is the million-token Sonnet 4.6. It is a
 # real convention (Databricks' own managed Claude Code settings use it) but it
@@ -96,13 +101,33 @@ def service_name(name: str) -> str:
     name = name.strip()
     if not name or name.startswith(_SERVICE_PREFIX):
         return name
-    return _SERVICE_PREFIX + name
+    return _SERVICE_PREFIX + short_name(name)
 
 
 def short_name(name: str) -> str:
-    """The canonical short name, with the schema prefix removed if present."""
+    """The canonical short name, with either namespace prefix removed.
+
+    A fully-qualified name is taken at its word and only loses the schema, so a
+    service whose own name happens to begin ``databricks-`` survives being
+    named explicitly. An *unqualified* ``databricks-`` prefix can only be the
+    retired endpoint spelling, because that prefix was the legacy namespace
+    marker and no short name inside ``system.ai`` carries it — so it is folded
+    away, and a stale ``ANTHROPIC_MODEL=databricks-claude-sonnet-5`` moves the
+    rung already in the chain instead of qualifying into
+    ``system.ai.databricks-claude-sonnet-5``, which names nothing.
+
+    Folding here and refusing the same spelling in ``scripts/deploy_ct_sim.py``
+    is deliberate rather than inconsistent. A deploy is where someone is still
+    watching and the two catalogues are not the same set, so an operator should
+    look at what this event's workspace serves. At runtime the choice is
+    between a name that cannot resolve and the model the chain would otherwise
+    have picked, which is the pin-degradation policy this module already
+    applies to a pin the workspace does not serve.
+    """
     name = name.strip()
-    return name[len(_SERVICE_PREFIX):] if name.startswith(_SERVICE_PREFIX) else name
+    if name.startswith(_SERVICE_PREFIX):
+        return name[len(_SERVICE_PREFIX):]
+    return name[len(_RETIRED_PREFIX):] if name.startswith(_RETIRED_PREFIX) else name
 
 
 def catalogue_key(name: str) -> str:

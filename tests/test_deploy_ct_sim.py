@@ -440,12 +440,11 @@ def test_model_names_reject_floating_or_non_endpoint_values(flag, value):
 def test_a_retired_serving_endpoint_name_is_refused_not_translated(flag, capsys):
     """The pin an operator would carry over from the last event.
 
-    A pin is qualified into ``system.ai.`` where the configs are written, so
-    ``databricks-claude-sonnet-5`` would reach the gateway as
-    ``system.ai.databricks-claude-sonnet-5`` and name nothing. Translating it
-    silently would be the friendlier-looking option and the wrong one: the two
-    catalogues are not the same set, so the right answer is for someone to look
-    at what this event's workspace actually serves.
+    The terminal folds this spelling at runtime, where the alternative is no
+    model at all. Here the alternative is a question, and the legacy and Unity
+    Catalog catalogues are not the same set — a name that existed as an endpoint
+    need not exist as a model service. Refusing makes someone check what this
+    event's workspace serves while there is still time to.
     """
     argv = _valid_argv()
     argv[argv.index(flag) + 1] = "databricks-claude-sonnet-5"

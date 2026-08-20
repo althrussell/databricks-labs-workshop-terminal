@@ -226,6 +226,58 @@ def test_qualifying_is_idempotent_and_reversible():
     assert models.short_name("claude-opus-5") == "claude-opus-5"
 
 
+def test_a_pin_left_over_from_the_retired_namespace_still_names_a_model():
+    """The pin a previous event's Control Tower already wrote.
+
+    `databricks-` was the legacy namespace marker and no short name inside
+    `system.ai` carries it, so an unqualified one can only be the retired
+    spelling. Qualifying it as written would produce
+    `system.ai.databricks-claude-sonnet-5`, which names nothing — and the
+    failure would land on every attendee's CLI rather than anywhere an operator
+    would look.
+    """
+    assert models.service_name("databricks-claude-sonnet-5") == (
+        "system.ai.claude-sonnet-5"
+    )
+    assert models.short_name("databricks-claude-sonnet-5") == "claude-sonnet-5"
+    assert models.catalogue_key("databricks-claude-sonnet-4-6[1m]") == (
+        "claude-sonnet-4-6"
+    )
+
+
+def test_a_retired_pin_moves_a_rung_rather_than_adding_a_second_spelling(monkeypatch):
+    """Folded before it is compared, so the chain does not carry the same model
+    twice under two names — which would spend the pin's precedence on a rung
+    the chain was going to reach anyway."""
+    monkeypatch.setenv("ANTHROPIC_MODEL", "databricks-claude-sonnet-5")
+    candidates = models.chain("driver")
+
+    assert candidates[0] == "claude-sonnet-5"
+    assert candidates.count("claude-sonnet-5") == 1
+
+
+def test_a_retired_pin_resolves_even_when_discovery_found_nothing(monkeypatch):
+    """The path that was broken. With a live catalogue the bad spelling failed
+    the serve check and degraded to the chain, so the fault only surfaced when
+    discovery failed — exactly when the pin is the one thing left to trust."""
+    monkeypatch.setenv("ANTHROPIC_MODEL", "databricks-claude-opus-5")
+
+    assert models.resolve("driver", {}) == "system.ai.claude-opus-5"
+
+
+def test_a_qualified_name_is_taken_at_its_word():
+    """Only the *unqualified* prefix is folded. A service whose own name begins
+    `databricks-` — the embedding models are spelled this way — must survive
+    being named in full, and the fold must not reach inside a qualified name to
+    second-guess it."""
+    assert models.service_name("system.ai.databricks-gte-large-en") == (
+        "system.ai.databricks-gte-large-en"
+    )
+    assert models.short_name("system.ai.databricks-gte-large-en") == (
+        "databricks-gte-large-en"
+    )
+
+
 def test_a_context_window_variant_survives_to_the_wire_but_matches_its_base():
     """`[1m]` selects a million-token variant of the same model. Discovery lists
     the base, so the suffix has to come off to match — and go back on for the
