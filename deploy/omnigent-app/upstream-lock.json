@@ -1,6 +1,6 @@
 {
-  "package": "omnigent[databricks]==0.9.0",
-  "release_commit": "cc4720a79fbdf9ccee56724bf571e7d48e1d9ac2",
-  "verified_main_commit": "a8f41cb997bf8e17b2e96f5967479521f9bf2a52",
-  "wheel_sha256": "75e371f521f269fd59364ab9fbcf1cd5f52278565ab2d228f0ddbb231cb41754"
+  "package": "omnigent[databricks]==0.10.0",
+  "release_commit": "40755dd8dddb07e1eb6e4055d1d9936e184ceb9b",
+  "verified_main_commit": "b08eb50f2ebe242cc64d5e289bc8d209567c5126",
+  "wheel_sha256": "0a878ecee0a215b51218dbbfe79e994588a726ddd5246f2ed20cb76e383fbcc1"
 }

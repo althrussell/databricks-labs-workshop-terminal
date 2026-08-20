@@ -227,7 +227,7 @@ def test_beta_negotiation_is_only_enabled_on_the_gateway():
 
 
 def test_the_two_beta_flags_are_never_sent_together():
-    """Omnigent 0.9.0 reads CLAUDE_CODE_USE_GATEWAY to decide whether to re-add
+    """Omnigent 0.10.0 reads CLAUDE_CODE_USE_GATEWAY to decide whether to re-add
     the disable flag. Sending both would be contradictory on either path."""
     for gateway_backed in (True, False):
         env = cli_config.beta_negotiation_env(gateway_backed)

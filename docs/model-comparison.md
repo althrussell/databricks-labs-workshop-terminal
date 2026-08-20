@@ -113,7 +113,7 @@ Workshop Polly economy/balanced/frontier agents were removed. Stock `polly`
 remains the default Omnigent agent. The new-chat picker offers **Auto · smart
 routing**, which picks harness + model from the live host catalog.
 
-Auto is on by default from Omnigent 0.9.0. Where the account has AI Gateway
+Auto is on by default from Omnigent 0.10.0. Where the account has AI Gateway
 `routes:select` the external router decides; everywhere else — labs included —
 the built-in judge does, calling the model pinned by
 `WORKSHOP_ROUTING_JUDGE_MODEL`.

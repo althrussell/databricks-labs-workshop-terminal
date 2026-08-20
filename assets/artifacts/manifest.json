@@ -2,26 +2,26 @@
   "//": "GENERATED FILE. Run `python3 scripts/build_artifact_manifest.py --write` to regenerate. See docs/artifact-manifest.md.",
   "artifacts": {
     "claude_binary": {
-      "sha256": "d535985e6941a3eb00179ccd7f52ceb0c6623a0305a518ebc4e6514f84a94c99",
-      "source": "https://downloads.claude.ai/claude-code-releases/2.1.228/linux-x64/claude",
-      "version": "2.1.228"
+      "sha256": "73975167f0108693cf6fd6614994781657ebb8456ebef5d247458734abfb3916",
+      "source": "https://downloads.claude.ai/claude-code-releases/2.1.237/linux-x64/claude",
+      "version": "2.1.237"
     },
     "claude_installer": {
       "sha256": "cde4f1702d3b1695f92b73d26888364e17bca476e17f0fd676484c951d36c125",
       "source": "claude-code-bootstrap.sh",
       "upstream": "https://claude.ai/install.sh",
-      "version": "2.1.228"
+      "version": "2.1.237"
     },
     "codex_native_package_linux_x64": {
-      "executable_sha256": "cb0a15567e9a60a5820d54b0f6ae86d504dc3805c1eab21a47f70e3eb7b73a40",
-      "sha256": "c969740cf8297e4c31905cd551efeb2c99af5080c12c236bdf825598b250139a",
-      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.147.0-linux-x64.tgz",
-      "version": "0.147.0-linux-x64"
+      "executable_sha256": "ac2cfed85fb647d61e0150b8548102b330e4799d9d81ad5d354de701edf6b074",
+      "sha256": "52f1b8f5cf66fe776d2bd5e68a32ef6884b7e466fd80614bf8858046dfa9012f",
+      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.148.0-linux-x64.tgz",
+      "version": "0.148.0-linux-x64"
     },
     "codex_npm_launcher_package": {
-      "sha256": "d28b4fd4bd9f07ea71083d0cc40c579595cebbd4c10bc8ca98a6d385432e7255",
-      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.147.0.tgz",
-      "version": "0.147.0"
+      "sha256": "74be73c8a50cc01bce978cc6fec9274564f529a50e9f256b3608a7012437cebe",
+      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.148.0.tgz",
+      "version": "0.148.0"
     },
     "databricks_agent_skills": {
       "commit": "3d79814688e28765db0153eddcf6ec74972c75b4",
@@ -51,10 +51,10 @@
       "version": "24.18.1"
     },
     "omnigent_lock": {
-      "lock_sha256": "44fa92817927c887c7dea3c7f64b7d7f549ebbef3f12ef3990e0676c516242e5",
-      "sha256": "44fa92817927c887c7dea3c7f64b7d7f549ebbef3f12ef3990e0676c516242e5",
-      "source": "omnigent-0.9.0.lock",
-      "version": "0.9.0"
+      "lock_sha256": "fbeaddef72f2f48c3719aca8ab7207d8e21dfb16485caafa11a681df438c2962",
+      "sha256": "fbeaddef72f2f48c3719aca8ab7207d8e21dfb16485caafa11a681df438c2962",
+      "source": "omnigent-0.10.0.lock",
+      "version": "0.10.0"
     },
     "pi_npm_package": {
       "sha256": "7097fe4b38762dda7ec78001e7b90430c849fbaf717325bfe8109744e32255e6",
