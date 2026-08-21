@@ -2019,7 +2019,7 @@ body {
   border: 0;
   background: none;
   font: inherit;
-  color: var(--accent);
+  color: var(--brand-primary);
   font-weight: 600;
   cursor: pointer;
   text-decoration: underline;

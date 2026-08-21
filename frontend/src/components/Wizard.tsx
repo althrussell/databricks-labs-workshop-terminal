@@ -266,7 +266,8 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
     }
   }
 
-  /** Accept the model's guess as the attendee's own answer.
+  /** Accept a suggested industry — the model's guess or the room's preselect —
+   * as the attendee's own answer.
    *
    * Offered in the note rather than only on the chip, because the model can
    * name an industry this deployment has no chip for. Told to tap a chip that
@@ -274,7 +275,7 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
    * and an unconfirmed industry is left out of the brief entirely — so the
    * agent was told nothing about an industry the wizard had shown them.
    */
-  function confirmInferred() {
+  function confirmIndustry() {
     setInferredIndustry(false);
     setIndustryChosen(true);
     setShowOther(false);
@@ -287,8 +288,8 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
     // offered, and an unconfirmed industry is dropped from the brief, so an
     // attendee who read "we think you're in retail" and pressed retail to say
     // yes would have got an agent told nothing about their industry.
-    if (industry === ind && inferredIndustry) {
-      confirmInferred();
+    if (industry === ind && !industryConfirmed) {
+      confirmIndustry();
       return;
     }
     // A chip and the free-text box are the same question. Leaving the box open
@@ -334,9 +335,7 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
         // is an industry the attendee stated. Recording either as stated puts
         // something other than the human into a discovery record whose whole
         // value is that the human said it.
-        industry_stated:
-          (Boolean(industry) && industryChosen && !inferredIndustry) ||
-          Boolean(ideaId),
+        industry_stated: industryConfirmed || Boolean(ideaId),
         intent,
         idea_id: ideaId,
         current_stack: stack,
@@ -378,6 +377,16 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
   // the notebook can seed, so falling back to it would badge every chip as
   // having demo data on a deployment with none.
   const seeded = new Set(state.seeded_industries ?? []);
+  /* The single question of whether the industry on screen is the attendee's.
+   *
+   * Deliberately one expression rather than two, because the note and the saved
+   * flag disagreeing is the failure this is here to prevent: an industry the
+   * room was preselected with, or one the model guessed, is left out of the
+   * brief entirely, and a note reading "using the retail demo data" over the
+   * top of that describes a room the attendee is not in. */
+  const industryConfirmed =
+    Boolean(industry) && industryChosen && !inferredIndustry;
+
   const industryName = (ind: string) =>
     state.industry_labels?.[ind] ?? humanIndustry(ind);
   // "Other" is selected whenever the attendee has an industry that is not one
@@ -492,18 +501,21 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
                 )}
                 {industry && (
                   <p className="wizard-industry-note">
-                    {inferredIndustry ? (
-                      // A guess is not yet an answer, and the difference is not
-                      // cosmetic: an industry the attendee never confirmed is
-                      // left out of the brief, so the agent is not told it and
-                      // the demo data is not scoped to it. Claiming the data was
-                      // in use described the confirmed case to someone standing
-                      // in the unconfirmed one.
+                    {!industryConfirmed ? (
+                      // A guess and a room preset are both suggestions, and the
+                      // difference from an answer is not cosmetic: an industry
+                      // the attendee never confirmed is left out of the brief,
+                      // so the agent is not told it and the demo data is not
+                      // scoped to it. Claiming the data was in use described the
+                      // confirmed case to someone standing in the other one.
                       <>
-                        Sounds like {industryName(industry)} —{" "}
+                        {inferredIndustry
+                          ? `Sounds like ${industryName(industry)}`
+                          : `This room is set up for ${industryName(industry)}`}{" "}
+                        —{" "}
                         <button
                           className="wizard-industry-confirm"
-                          onClick={confirmInferred}
+                          onClick={confirmIndustry}
                         >
                           yes, that's right
                         </button>
