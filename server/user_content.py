@@ -357,6 +357,12 @@ def _demo_data_overlay(user: User) -> str:
     scoped = brief.stated_industry
     manifest = demo_data.manifest(scoped)
     if not manifest:
+        # Nothing readable, so nothing to say — including the note below about
+        # generating rather than borrowing, which only guards against the agent
+        # reaching for a neighbouring industry's tables. Where there are no
+        # tables to reach for, generating is what it will do anyway, and an
+        # overlay describing a catalog we could not read sends it looking for
+        # schemas that may not exist.
         return ""
     with open(os.path.join(_ASSETS, "instructions", "demo_data.md")) as f:
         template = f.read()

@@ -549,6 +549,52 @@ def test_picking_a_retail_card_scopes_the_overlay_to_retail(user, seeded, monkey
     assert discovery.discovery_store.for_attendee(user.email)[0].industry == "retail"
 
 
+def test_an_industry_nobody_seeded_is_told_to_generate_not_to_borrow(user, seeded):
+    """The catalog holds automotive; the attendee builds for logistics. Left to
+    itself the agent pattern-matches onto whichever schema looks closest and
+    builds them a logistics demo out of car dealership tables — real data about
+    somebody else's business, which is worse than none."""
+    wizard.save(
+        user,
+        {
+            "what_building": "route planning across our depots",
+            "industry": "logistics",
+            "industry_stated": True,
+        },
+    )
+
+    overlay = user_content._demo_data_overlay(user)
+
+    assert "logistics" in overlay
+    assert "Generate the data you need" in overlay
+    assert "do not assume" not in overlay.lower()
+
+
+def test_a_catalog_that_cannot_be_read_promises_the_agent_nothing(user, monkeypatch):
+    """Silence is the point. The overlay's whole job is describing tables the
+    agent can query, and a catalog we could not read is one we cannot describe —
+    listing it anyway sends the agent looking for schemas that may not be there.
+    With nothing to borrow from, generating is what it will do regardless."""
+    monkeypatch.setattr(
+        demo_data.config, "workshop_demo_catalog", lambda: "workshop_demo"
+    )
+    monkeypatch.setattr(demo_data, "_cache", {})
+    monkeypatch.setattr(demo_data, "_cache_at", time.time())
+    monkeypatch.setattr(demo_data, "_cache_ok", False)
+    wizard.save(
+        user,
+        {
+            "what_building": "route planning across our depots",
+            "industry": "logistics",
+            "industry_stated": True,
+        },
+    )
+
+    assert user_content._demo_data_overlay(user) == ""
+
+    demo_data.reset_cache()
+
+
 def test_industry_aliases_resolve_to_the_seeded_schema(seeded):
     assert demo_data.normalize_industry("automotive mobility") == "automotive_mobility"
     assert demo_data.normalize_industry("Automotive-Mobility") == "automotive_mobility"
