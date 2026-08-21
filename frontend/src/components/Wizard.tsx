@@ -10,7 +10,12 @@ import {
 } from "lucide-react";
 import { api, AgentInfo, WizardIdea, WizardState } from "../api";
 import AgentCards, { SetupProgress, SetupSteps, SETUP_POLL_MS } from "./AgentCards";
-import { humanIndustry, industryOf, isGenericIdea } from "../wizard";
+import {
+  humanIndustry,
+  industryFromOther,
+  industryOf,
+  isGenericIdea,
+} from "../wizard";
 
 const INTENT_LABELS: Record<string, string> = {
   business_problem: "Solving a real problem from work",
@@ -328,12 +333,9 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
   const otherActive = Boolean(industry) && !industries.includes(industry);
   const otherOpen = showOther || otherActive;
 
-  // Blur fires on every click away, including onto a chip. Re-requesting the
-  // grid for an industry that has not changed would replace the cards under
-  // someone who was reading them.
   function commitOther(value: string) {
-    const next = value.trim();
-    if (next !== industry) refreshIdeas(next);
+    const next = industryFromOther(value, industry, otherActive);
+    if (next !== null) refreshIdeas(next);
   }
 
   return (
@@ -398,7 +400,10 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
                     onClick={() => {
                       if (otherOpen) {
                         setShowOther(false);
-                        refreshIdeas("");
+                        // Closing withdraws what was typed in the box and
+                        // nothing else. A chip chosen before the box was opened
+                        // is not the box's to clear.
+                        if (otherActive) refreshIdeas("");
                       } else {
                         setShowOther(true);
                       }

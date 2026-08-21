@@ -268,13 +268,25 @@ def industry_slug(value: str) -> str:
 def readable() -> bool:
     """Whether we have actually read this catalog, as opposed to failed to.
 
-    ``enabled`` says a name was configured. This says the name resolved to
-    something. The gap between them is a permission error, a cold warehouse or
-    a Unity Catalog blip — moments where the honest answer is "we do not know
-    what is here", which is not the same answer as "nothing is here" and must
-    not be treated as one.
+    ``enabled`` says a name was configured. This says the read against that name
+    succeeded. The gap between them is a permission error, a cold warehouse or a
+    Unity Catalog blip — moments where the honest answer is "we do not know what
+    is here", which is not the same answer as "nothing is here" and must not be
+    treated as one.
+
+    Answered from the read's own outcome rather than from whether it returned
+    anything, because a catalog that exists and is empty is a successful read.
+    Conflating the two put ``_buildable`` on the unreadable branch — where it
+    stops filtering, on the grounds that it cannot check — for a catalog it had
+    checked perfectly well and found nothing in, so cards naming tables that
+    demonstrably do not exist were offered without the ``data_ready`` badge that
+    would have warned anyone.
     """
-    return bool(inventory())
+    if not enabled():
+        return False
+    inventory()  # populates the cache, and with it the flag below
+    with _lock:
+        return _cache_ok
 
 
 def verify(tables: list[str]) -> bool:

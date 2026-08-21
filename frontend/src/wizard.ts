@@ -27,3 +27,25 @@ export function industryOf(idea: WizardIdea): string {
 export function isGenericIdea(idea: WizardIdea): boolean {
   return idea.industries.length === 0 && idea.demo_tables.length === 0;
 }
+
+/** What the free-text industry box should change the industry to, or null.
+ *
+ * Null means leave it alone, which is most of the time. The box commits on
+ * blur, and blur fires on every click away — including the click that lands on
+ * a chip — so the two cases it must stay quiet for are a value that has not
+ * changed, and an empty box while the industry belongs to a chip. Clearing on
+ * that second case took the attendee's selected industry away for the crime of
+ * opening the box to look at it.
+ *
+ * `ownedByOther` is whether the current industry was typed here rather than
+ * picked from a chip. Only then does emptying the box mean "remove it".
+ */
+export function industryFromOther(
+  value: string,
+  current: string,
+  ownedByOther: boolean,
+): string | null {
+  const next = value.trim();
+  if (!next && !ownedByOther) return null;
+  return next === current ? null : next;
+}

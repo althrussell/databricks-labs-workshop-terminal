@@ -622,6 +622,32 @@ def test_an_unreadable_catalog_does_not_withdraw_every_data_backed_card(
     assert all(i["data_ready"] is False for i in ideas)
 
 
+def test_a_catalog_that_reads_clean_and_holds_nothing_is_not_unreadable(
+    user, monkeypatch
+):
+    """An empty catalog is a successful read, and the two must not be conflated.
+
+    Inferring readability from whether the inventory came back non-empty put
+    this case on the unreadable branch, where ``_buildable`` stops filtering
+    because it cannot check — for a catalog it had checked perfectly well. Cards
+    naming tables that demonstrably did not exist were offered anyway.
+    """
+    monkeypatch.setattr(
+        demo_data.config, "workshop_demo_catalog", lambda: "workshop_demo"
+    )
+    monkeypatch.setattr(demo_data, "_load", lambda: {})
+    demo_data.reset_cache()
+
+    assert demo_data.readable() is True, "the read succeeded; it just found nothing"
+
+    ideas = wizard.state(user, "automotive_mobility")["ideas"]
+
+    assert ideas, "generic cards need no demo data and must survive"
+    assert not any(i["demo_tables"] for i in ideas), (
+        "a card naming tables this catalog does not have was still offered"
+    )
+
+
 def test_the_data_badge_is_a_fact_about_this_catalog(seeded, user):
     """Shown only for cards whose tables were verified against live inventory."""
     ideas = wizard.state(user, "automotive_mobility")["ideas"]
