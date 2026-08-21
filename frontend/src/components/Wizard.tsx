@@ -175,6 +175,9 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
     setIdeaId(idea.id);
     setWhat(idea.outcome);
     setShowIdeas(false);
+    // The card answers the industry question too, so leaving the free-text box
+    // open behind it shows two answers to it.
+    setShowOther(false);
     // Choosing a card is choosing the industry it is tagged with, which is why
     // this counts as the attendee's own where the operator's preselect does not.
     setIndustry(industryOf(idea));
@@ -263,6 +266,20 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
     }
   }
 
+  /** Accept the model's guess as the attendee's own answer.
+   *
+   * Offered in the note rather than only on the chip, because the model can
+   * name an industry this deployment has no chip for. Told to tap a chip that
+   * does not exist, an attendee had no way to accept a guess they agreed with,
+   * and an unconfirmed industry is left out of the brief entirely — so the
+   * agent was told nothing about an industry the wizard had shown them.
+   */
+  function confirmInferred() {
+    setInferredIndustry(false);
+    setIndustryChosen(true);
+    setShowOther(false);
+  }
+
   function toggleIndustry(ind: string) {
     // Pressing the chip of an industry the model guessed is the attendee
     // agreeing with it, not clearing it. Toggling off there would leave the
@@ -271,9 +288,7 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
     // attendee who read "we think you're in retail" and pressed retail to say
     // yes would have got an agent told nothing about their industry.
     if (industry === ind && inferredIndustry) {
-      setInferredIndustry(false);
-      setIndustryChosen(true);
-      setShowOther(false);
+      confirmInferred();
       return;
     }
     // A chip and the free-text box are the same question. Leaving the box open
@@ -485,9 +500,15 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
                       // in use described the confirmed case to someone standing
                       // in the unconfirmed one.
                       <>
-                        Sounds like {industryName(industry)} — tap it to confirm,
-                        or pick another. Until you do, your agent won't be told
-                        which industry it's building for.
+                        Sounds like {industryName(industry)} —{" "}
+                        <button
+                          className="wizard-industry-confirm"
+                          onClick={confirmInferred}
+                        >
+                          yes, that's right
+                        </button>
+                        , or pick another. Until you say so, your agent won't be
+                        told which industry it's building for.
                       </>
                     ) : seeded.has(industry) ? (
                       <>Using the {industryName(industry)} demo data.</>

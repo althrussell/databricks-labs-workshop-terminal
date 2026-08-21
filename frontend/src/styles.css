@@ -2010,6 +2010,26 @@ body {
   line-height: 1.45;
 }
 
+/* Sits inside the note, because the guess it confirms is what the note says.
+   A guess the attendee cannot accept where they read it is a guess they have
+   to go looking for a control for — and when the model names an industry with
+   no chip of its own, there is no control to find. */
+.wizard-industry-confirm {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.wizard-industry-confirm:hover {
+  color: var(--text);
+}
+
 .wizard-llm-status {
   display: inline-flex;
   align-items: center;
