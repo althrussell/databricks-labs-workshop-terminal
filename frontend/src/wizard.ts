@@ -44,10 +44,38 @@ export function industryFromOther(
   value: string,
   current: string,
   ownedByOther: boolean,
+  offered: readonly string[] = [],
 ): string | null {
-  const next = value.trim();
+  const next = slugifyIndustry(value, offered);
   if (!next && !ownedByOther) return null;
   return next === current ? null : next;
+}
+
+/** A typed industry as a schema slug, mirroring `demo_data.industry_slug`.
+ *
+ * The free-text box is the only place an industry enters as prose, and every
+ * consumer downstream compares slugs: the seeded set, the chip list, the label
+ * map. Keeping the raw text meant "Financial Services" matched none of them, so
+ * an attendee who typed the full name of a seeded industry was told there was
+ * no demo data for it and left sitting on Other next to the chip they had just
+ * described. The server slugs it too, and does so idempotently, so normalising
+ * here only decides what the attendee is shown.
+ */
+export function slugifyIndustry(
+  value: string,
+  offered: readonly string[] = [],
+): string {
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  if (!slug) return "";
+  const compact = slug.replace(/_/g, "");
+  for (const known of offered) {
+    if (known.replace(/_/g, "") === compact) return known;
+  }
+  return slug;
 }
 
 /** Marks the chip row, so a blur landing inside it can be recognised. */

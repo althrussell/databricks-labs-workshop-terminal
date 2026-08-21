@@ -75,6 +75,10 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
   const [installing, setInstalling] = useState(false);
   const [llmBusy, setLlmBusy] = useState(false);
   const [inferredIndustry, setInferredIndustry] = useState(false);
+  // Whether the industry in state came from the attendee rather than from the
+  // operator's preselect. Seeded from the brief on mount, so returning to a
+  // wizard they already answered does not downgrade what they said.
+  const [industryChosen, setIndustryChosen] = useState(false);
 
   // Held in a ref so the load effect below never lists it as a dependency.
   const onCloseRef = useRef(onClose);
@@ -101,6 +105,7 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
         setState(s);
         const locked = s.brief.industry || s.default_industry;
         setIndustry(locked);
+        setIndustryChosen(Boolean(s.brief.industry_stated));
         setIdeas(s.ideas);
         setWhat(s.brief.what_building);
         setIntent(s.brief.intent);
@@ -170,8 +175,11 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
     setIdeaId(idea.id);
     setWhat(idea.outcome);
     setShowIdeas(false);
+    // Choosing a card is choosing the industry it is tagged with, which is why
+    // this counts as the attendee's own where the operator's preselect does not.
     setIndustry(industryOf(idea));
     setInferredIndustry(false);
+    setIndustryChosen(Boolean(industryOf(idea)));
     // The card already knows why someone would build it, so carrying its intent
     // forward means optional context is a confirmation rather than another question.
     if (!intent && idea.intents.length > 0) setIntent(idea.intents[0]);
@@ -241,6 +249,11 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
   function refreshIdeas(nextIndustry: string) {
     setIndustry(nextIndustry);
     setInferredIndustry(false);
+    // Every caller is an attendee gesture: a chip, the free-text box, or
+    // clearing one of them. That is what separates this value from the
+    // operator's preselect, which arrives without anyone in the room touching
+    // it and must not be recorded as something they said.
+    setIndustryChosen(Boolean(nextIndustry));
     api
       .wizard(nextIndustry)
       .then((s) => setIdeas(s.ideas))
@@ -259,6 +272,7 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
     // yes would have got an agent told nothing about their industry.
     if (industry === ind && inferredIndustry) {
       setInferredIndustry(false);
+      setIndustryChosen(true);
       setShowOther(false);
       return;
     }
@@ -301,10 +315,13 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
       const res = await api.saveWizard({
         what_building: what,
         industry,
-        // An industry the model guessed and the attendee never touched is not
-        // one they stated. Recording it as stated puts a machine's inference
-        // into a discovery record whose whole value is that the human said it.
-        industry_stated: (Boolean(industry) && !inferredIndustry) || Boolean(ideaId),
+        // Neither an industry the model guessed nor one the operator preselected
+        // is an industry the attendee stated. Recording either as stated puts
+        // something other than the human into a discovery record whose whole
+        // value is that the human said it.
+        industry_stated:
+          (Boolean(industry) && industryChosen && !inferredIndustry) ||
+          Boolean(ideaId),
         intent,
         idea_id: ideaId,
         current_stack: stack,
@@ -341,7 +358,11 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
 
   const canContinue = what.trim().length > 0 || ideaId !== "";
   const industries = state.industries;
-  const seeded = new Set(state.seeded_industries ?? industries);
+  // Empty, not `industries`, when the field is missing. That fallback was
+  // written when `industries` *was* the seeded list; it is now every industry
+  // the notebook can seed, so falling back to it would badge every chip as
+  // having demo data on a deployment with none.
+  const seeded = new Set(state.seeded_industries ?? []);
   const industryName = (ind: string) =>
     state.industry_labels?.[ind] ?? humanIndustry(ind);
   // "Other" is selected whenever the attendee has an industry that is not one
@@ -350,7 +371,7 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
   const otherOpen = showOther || otherActive;
 
   function commitOther(value: string) {
-    const next = industryFromOther(value, industry, otherActive);
+    const next = industryFromOther(value, industry, otherActive, industries);
     if (next !== null) refreshIdeas(next);
   }
 
