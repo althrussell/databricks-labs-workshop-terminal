@@ -2,9 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   humanIndustry,
+  INDUSTRY_CHIPS_ATTR,
   industryFromOther,
   industryOf,
   isGenericIdea,
+  otherBlurCommits,
 } from "./wizard.ts";
 import type { WizardIdea } from "./api.ts";
 
@@ -66,6 +68,24 @@ test("a typed industry replaces whatever was selected", () => {
     industryFromOther("taxidermy", "automotive_mobility", false),
     "taxidermy"
   );
+});
+
+test("typing an industry then pressing a chip lets the chip win", () => {
+  // Blur runs before the click. Committing the abandoned text would put two
+  // industry requests in flight and let the network decide which one stuck.
+  const chip = {
+    closest: (selector: string) =>
+      selector === `[${INDUSTRY_CHIPS_ATTR}]` ? { tag: "div" } : null,
+  };
+  assert.equal(otherBlurCommits(chip), false);
+});
+
+test("blurring anywhere else still commits what was typed", () => {
+  // Clicking Continue, or into the textarea, is the ordinary commit path.
+  assert.equal(otherBlurCommits({ closest: () => null }), true);
+  assert.equal(otherBlurCommits(null), true);
+  // Clicking outside the document entirely reports no related target at all.
+  assert.equal(otherBlurCommits(undefined), true);
 });
 
 test("an unchanged value does not re-request the grid", () => {

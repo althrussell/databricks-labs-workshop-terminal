@@ -12,9 +12,11 @@ import { api, AgentInfo, WizardIdea, WizardState } from "../api";
 import AgentCards, { SetupProgress, SetupSteps, SETUP_POLL_MS } from "./AgentCards";
 import {
   humanIndustry,
+  INDUSTRY_CHIPS_ATTR,
   industryFromOther,
   industryOf,
   isGenericIdea,
+  otherBlurCommits,
 } from "../wizard";
 
 const INTENT_LABELS: Record<string, string> = {
@@ -249,6 +251,20 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
   }
 
   function toggleIndustry(ind: string) {
+    // Pressing the chip of an industry the model guessed is the attendee
+    // agreeing with it, not clearing it. Toggling off there would leave the
+    // guess impossible to accept: the chip it is shown on is the only control
+    // offered, and an unconfirmed industry is dropped from the brief, so an
+    // attendee who read "we think you're in retail" and pressed retail to say
+    // yes would have got an agent told nothing about their industry.
+    if (industry === ind && inferredIndustry) {
+      setInferredIndustry(false);
+      setShowOther(false);
+      return;
+    }
+    // A chip and the free-text box are the same question. Leaving the box open
+    // behind a chosen chip shows two active answers to it.
+    setShowOther(false);
     refreshIdeas(industry === ind ? "" : ind);
   }
 
@@ -381,7 +397,7 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
             {industries.length > 0 && (
               <div className="wizard-filter">
                 <span className="wizard-filter-label">Your industry</span>
-                <div className="wizard-chips">
+                <div className="wizard-chips" {...{ [INDUSTRY_CHIPS_ATTR]: "" }}>
                   {industries.map((ind) => (
                     <button
                       key={ind}
@@ -425,7 +441,10 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
                         commitOther(e.currentTarget.value);
                       }
                     }}
-                    onBlur={(e) => commitOther(e.target.value)}
+                    onBlur={(e) => {
+                      if (!otherBlurCommits(e.relatedTarget)) return;
+                      commitOther(e.target.value);
+                    }}
                   />
                 )}
                 {!industry && !state.demo_data_available && (
@@ -437,15 +456,23 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
                 )}
                 {industry && (
                   <p className="wizard-industry-note">
-                    {seeded.has(industry) ? (
+                    {inferredIndustry ? (
+                      // A guess is not yet an answer, and the difference is not
+                      // cosmetic: an industry the attendee never confirmed is
+                      // left out of the brief, so the agent is not told it and
+                      // the demo data is not scoped to it. Claiming the data was
+                      // in use described the confirmed case to someone standing
+                      // in the unconfirmed one.
                       <>
-                        Using the {industryName(industry)} demo data
-                        {inferredIndustry ? " — change it if that's wrong." : "."}
+                        Sounds like {industryName(industry)} — tap it to confirm,
+                        or pick another. Until you do, your agent won't be told
+                        which industry it's building for.
                       </>
+                    ) : seeded.has(industry) ? (
+                      <>Using the {industryName(industry)} demo data.</>
                     ) : (
                       <>
-                        Your agent will build for {industryName(industry)}
-                        {inferredIndustry ? " — change it if that's wrong." : "."}{" "}
+                        Your agent will build for {industryName(industry)}.
                         There's no ready-made {industryName(industry)} data here,
                         so it'll generate what it needs.
                       </>

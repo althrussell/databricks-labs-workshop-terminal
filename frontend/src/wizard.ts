@@ -49,3 +49,21 @@ export function industryFromOther(
   if (!next && !ownedByOther) return null;
   return next === current ? null : next;
 }
+
+/** Marks the chip row, so a blur landing inside it can be recognised. */
+export const INDUSTRY_CHIPS_ATTR = "data-industry-chips";
+
+/** Whether a blur out of the free-text box should commit what was typed.
+ *
+ * Not when the click that caused it is landing on a chip. Blur runs before the
+ * click, so typing an industry and then deciding against it by pressing a chip
+ * would otherwise commit the abandoned text first and the chip second: two
+ * industry requests in flight at once, settling in whichever order the network
+ * returned them. The chip is the later and more deliberate gesture, so the box
+ * stays quiet and lets it through.
+ */
+export function otherBlurCommits(relatedTarget: unknown): boolean {
+  const el = relatedTarget as { closest?: (selector: string) => unknown } | null;
+  if (!el || typeof el.closest !== "function") return true;
+  return el.closest(`[${INDUSTRY_CHIPS_ATTR}]`) == null;
+}
