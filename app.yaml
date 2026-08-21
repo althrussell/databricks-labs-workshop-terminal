@@ -128,10 +128,26 @@ env:
   - name: WORKSHOP_LLM_WIZARD
     value: "true"
   # Industry chip to preselect. Empty means the attendee chooses — never
-  # silently automotive. Wins over the content pack when set, and is ignored
-  # when that schema is not actually seeded.
+  # silently automotive. Wins over the content pack when set. Honoured for any
+  # industry the seed notebook knows (content/demo_seed_manifest.json), whether
+  # or not this metastore got it: the chip steers the agent and the discovery
+  # record, and only the demo tables need the data to exist.
   - name: WORKSHOP_DEFAULT_INDUSTRY
     value: ""
+  # The shared read-only demo catalog, one schema per industry, seeded once per
+  # metastore by Control Tower's seed/demo_data/seed_demo_data.py. Long-lived
+  # and independent of any run — teardown never touches it.
+  #
+  # Empty means this deployment advertises no demo data: the wizard still offers
+  # every industry and the agent still builds, it just generates its own
+  # fixtures instead of querying ready-made ones. What empty must NOT do is
+  # remove the industry question, which is what it used to do.
+  #
+  # The app verifies what is really behind this name before advertising any of
+  # it, so a stale or unseeded value costs a missing feature rather than a
+  # broken screen. Control Tower patches it per deployment.
+  - name: WORKSHOP_DEMO_CATALOG
+    value: "workshop_demo"
   # Pin for the wizard's model. Empty uses the wizard chain (gpt-5-4-mini, then
   # luna, haiku, gpt-oss-120b). Short or fully-qualified, as above.
   - name: WORKSHOP_WIZARD_MODEL

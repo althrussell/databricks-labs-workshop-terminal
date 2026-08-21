@@ -1900,6 +1900,24 @@ body {
   color: var(--text-dim);
 }
 
+/* Narrower than the "what will you build" box: this holds two or three words,
+   and a full-width field invites a sentence. */
+.wizard-other-input {
+  max-width: 280px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 7px 11px;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.wizard-other-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--brand-primary) 60%, var(--border));
+}
+
 .wizard-field-label em {
   text-transform: none;
   letter-spacing: 0;

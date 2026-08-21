@@ -386,16 +386,29 @@ def test_the_shipped_pack_covers_every_industry_it_names(seeded):
         assert len(shapes) >= 3, f"{industry} only offers {shapes}"
 
 
-def test_default_industry_is_ignored_when_it_is_not_seeded(seeded, monkeypatch):
-    """A pack naming an industry the notebook never created would otherwise
-    preselect a filter that quietly empties the grid."""
+def test_a_known_industry_is_preselected_even_when_this_catalog_lacks_it(
+    seeded, monkeypatch
+):
+    """It used to require live inventory, so an unseeded — or briefly
+    unreadable — catalog silently discarded the operator's choice. The chip
+    steers the agent and the discovery record; only the demo tables need the
+    data to exist, and those are filtered separately."""
     monkeypatch.setattr(content.content_service, "default_industry", lambda: "healthcare")
-    assert wizard.default_industry() == ""
+    assert wizard.default_industry() == "healthcare"
 
     monkeypatch.setattr(
         content.content_service, "default_industry", lambda: "automotive_mobility"
     )
     assert wizard.default_industry() == "automotive_mobility"
+
+
+def test_an_industry_no_notebook_has_ever_heard_of_is_still_ignored(
+    seeded, monkeypatch
+):
+    """Never silently automotive: a typo in the create form preselects nothing
+    rather than the nearest thing to it."""
+    monkeypatch.setattr(content.content_service, "default_industry", lambda: "halthcare")
+    assert wizard.default_industry() == ""
 
 
 # -- starter prompt ---------------------------------------------------------
@@ -552,27 +565,121 @@ def test_the_env_default_industry_wins_over_the_pack(seeded, monkeypatch):
     assert wizard.default_industry() == "cross_industry"
 
 
-def test_an_unseeded_env_default_is_ignored(seeded, monkeypatch):
+def test_an_unseeded_env_default_still_names_the_room(seeded, monkeypatch):
+    """The operator said the room is healthcare. Whether this metastore got the
+    healthcare schema is a separate question, answered by seeded_industries."""
     monkeypatch.setattr(content.content_service, "default_industry", lambda: "")
     monkeypatch.setattr(
         wizard.config, "workshop_default_industry", lambda: "healthcare"
     )
-    assert wizard.default_industry() == ""
+    assert wizard.default_industry() == "healthcare"
+
+
+def test_state_offers_every_known_industry_and_badges_the_seeded_ones(
+    seeded, user
+):
+    """The picker's whole failure mode was rendering only seeded schemas, so an
+    unset catalog removed the question instead of the answer."""
+    state = wizard.state(user)
+
+    assert "healthcare" in state["industries"], "known industries must be offered"
+    assert "healthcare" not in state["seeded_industries"]
+    assert "automotive_mobility" in state["seeded_industries"]
+    assert state["industry_labels"]["financial_services"] == "Financial services"
+
+
+def test_state_offers_industries_with_no_catalog_at_all(user, monkeypatch):
+    """The reported bug: WORKSHOP_DEMO_CATALOG unset meant zero chips."""
+    monkeypatch.setattr(demo_data.config, "workshop_demo_catalog", lambda: "")
+    demo_data.reset_cache()
+
+    state = wizard.state(user)
+
+    assert state["industries"] == list(demo_data.KNOWN_INDUSTRIES)
+    assert state["seeded_industries"] == []
+    assert state["demo_data_available"] is False
+
+
+def test_an_unreadable_catalog_does_not_withdraw_every_data_backed_card(
+    user, monkeypatch
+):
+    """A permission error or a cold warehouse used to read as "no tables exist",
+    which silently thinned the grid to generics with nothing saying why."""
+    monkeypatch.setattr(
+        demo_data.config, "workshop_demo_catalog", lambda: "workshop_demo"
+    )
+    # Configured, but every read fails — the transient case, not the unset one.
+    monkeypatch.setattr(demo_data, "_load", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    demo_data.reset_cache()
+
+    assert demo_data.enabled() is True
+    assert demo_data.readable() is False
+
+    ideas = wizard.state(user, "automotive_mobility")["ideas"]
+
+    assert any(i["demo_tables"] for i in ideas), "data-backed cards were withdrawn"
+    # ...but nothing claims the data is there, because nobody could check.
+    assert all(i["data_ready"] is False for i in ideas)
+
+
+def test_the_data_badge_is_a_fact_about_this_catalog(seeded, user):
+    """Shown only for cards whose tables were verified against live inventory."""
+    ideas = wizard.state(user, "automotive_mobility")["ideas"]
+    backed = [i for i in ideas if i["demo_tables"]]
+
+    assert backed, "expected at least one data-backed card for a seeded industry"
+    assert all(i["data_ready"] for i in backed)
+    # A card that needs no demo data makes no promise about it either.
+    assert all(not i["data_ready"] for i in ideas if not i["demo_tables"])
+
+
+def test_a_typed_industry_nobody_seeded_survives_into_the_brief(seeded, user):
+    """It used to be resolved against seeded schemas and dropped when it did not
+    match, which lost the single most useful field on the record for every
+    attendee whose industry the notebook had not created."""
+    wizard.save(
+        user,
+        {
+            "what_building": "a route planner",
+            "industry": "Shipping & Logistics",
+            "industry_stated": True,
+        },
+    )
+    brief = wizard.read_brief(user)
+
+    assert brief.industry == "shipping_logistics"
+    assert brief.stated_industry == "shipping_logistics"
+    assert wizard.to_discovery(brief)["industry"] == "shipping_logistics"
+
+
+def test_a_known_industry_still_normalises_to_its_schema(seeded, user):
+    """Free text must not fork the vocabulary: "Financial Services" typed into
+    the Other box is the same industry as the chip."""
+    wizard.save(user, {"what_building": "x", "industry": "Financial Services"})
+
+    assert wizard.read_brief(user).industry == "financial_services"
+
+
+def test_industry_slug_prefers_a_seeded_schema_then_a_known_one(seeded):
+    assert demo_data.industry_slug("automotive mobility") == "automotive_mobility"
+    assert demo_data.industry_slug("Financial-Services") == "financial_services"
+    assert demo_data.industry_slug("  ") == ""
+    assert demo_data.industry_slug("Deep Sea Mining") == "deep_sea_mining"
 
 
 def test_the_shipped_pack_names_only_seed_manifest_schemas():
     """Renaming a seed-notebook schema used to empty the grid with no error.
-    The fixture is the contract with that notebook: every pack demo_tables
+    The manifest is the contract with that notebook: every pack demo_tables
     schema must be in it."""
     import json
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1]
     pack = json.loads((root / "content" / "default_pack.json").read_text())
-    fixture = json.loads(
-        (root / "tests" / "fixtures" / "demo-seed-manifest.json").read_text()
+    manifest = json.loads(
+        (root / "content" / "demo_seed_manifest.json").read_text()
     )
-    allowed = {schema: set(tables) for schema, tables in fixture["schemas"].items()}
+    allowed = {schema: set(tables) for schema, tables in manifest["schemas"].items()}
     missing: list[str] = []
     for idea in pack["ideas"]:
         for ref in idea.get("demo_tables") or []:
@@ -581,6 +688,22 @@ def test_the_shipped_pack_names_only_seed_manifest_schemas():
                 missing.append(ref)
     assert missing == [], missing
     assert pack.get("default_industry", "") == ""
+
+
+def test_the_seed_manifest_ships_with_the_app():
+    """It moved out of tests/fixtures precisely so the running app can read it.
+    An empty KNOWN_INDUSTRIES means the asset did not make it into the deploy,
+    which downgrades the picker to the bug this list exists to fix."""
+    assert demo_data.KNOWN_INDUSTRIES, "seed manifest missing from content/"
+    assert "retail" in demo_data.KNOWN_INDUSTRIES
+    assert all(demo_data.industry_label(i) for i in demo_data.KNOWN_INDUSTRIES)
+
+
+def test_every_known_industry_has_a_human_label():
+    """The chips show the label; a slug leaking into the UI reads as a bug."""
+    assert demo_data.industry_label("financial_services") == "Financial services"
+    # Unknown slugs still render as something a person can read.
+    assert demo_data.industry_label("space_mining") == "Space Mining"
 
 
 def test_the_llm_wizard_is_on_by_default(client):
@@ -617,7 +740,13 @@ def test_the_wizard_ui_makes_industry_a_choice_and_does_not_skip_on_backdrop():
     from pathlib import Path
 
     src = (Path(__file__).resolve().parents[1] / "frontend" / "src" / "components" / "Wizard.tsx").read_text()
-    assert "This room's demo data is" in src
+    # The chips render on their own, not behind a length check on live
+    # inventory: that gate is what removed the picker on an unset catalog.
+    assert "industries.length > 0 && (" in src
+    assert "state.seeded_industries" in src
+    # An industry nobody seeded is still an industry someone works in.
+    assert "otherOpen" in src
+    assert "Tell us your industry" in src
     assert "industryOf(idea)" in src
     assert "works with any data" in src
     assert "A little context (optional)" in src
@@ -625,3 +754,8 @@ def test_the_wizard_ui_makes_industry_a_choice_and_does_not_skip_on_backdrop():
     assert 'className="modal-backdrop" onClick={skip}' not in src
     assert "wizardSuggest" in src
     assert "wizardSurprise" in src
+    # The reported bug: cards arrived and landed behind a collapsed panel, so
+    # the spinner was the only evidence the LLM path existed.
+    assert "if (reveal && res.ideas.length > 0) setShowIdeas(true);" in src
+    # The badge is a fact from the server, not an inference from card shape.
+    assert "idea.data_ready &&" in src

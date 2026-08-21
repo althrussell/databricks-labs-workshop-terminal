@@ -16,17 +16,36 @@ which is a missing feature rather than a broken promise.
 Reads are cached. The catalog changes when an operator reseeds between events,
 never during one, so a long TTL costs nothing and a per-request round trip to
 Unity Catalog on the wizard's critical path would cost a great deal.
+
+One thing here is deliberately *not* built on that rule: ``KNOWN_INDUSTRIES``.
+The industries a room can be told it is in are a property of the seed notebook,
+not of this deployment's luck with it, and gating the picker on live inventory
+meant an unset catalog removed the question entirely — the attendee was not told
+demo data was missing, they were told their industry did not exist. The list is
+shipped, always offered, and callers badge what is really seeded on top of it.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import re
 import threading
 import time
 
 from . import config, credentials
 
 logger = logging.getLogger(__name__)
+
+# Anything that is not a letter or digit separates words in an industry name,
+# so "Financial Services", "financial-services" and "financial services!" all
+# land on the same slug.
+_SLUG_SEPARATORS = re.compile(r"[^a-z0-9]+")
+
+_SEED_MANIFEST_PATH = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "content", "demo_seed_manifest.json")
+)
 
 # Long, because the underlying data is only allowed to change between events.
 _TTL_SECONDS = 900
@@ -43,6 +62,48 @@ _lock = threading.Lock()
 _cache: dict[str, set[str]] | None = None
 _cache_at = 0.0
 _cache_ok = False
+
+
+def _load_seed_manifest() -> tuple[dict[str, frozenset[str]], dict[str, str]]:
+    """The shipped contract with Control Tower's seed notebook.
+
+    Read once at import. A missing or malformed file is loud but not fatal:
+    the wizard falls back to whatever is actually seeded, which is the old
+    behaviour, and a deployment that lost the asset should not fail to boot
+    over a list of industry names.
+    """
+    try:
+        with open(_SEED_MANIFEST_PATH, encoding="utf-8") as fh:
+            raw = json.load(fh)
+        schemas = {
+            str(name): frozenset(str(t) for t in tables or ())
+            for name, tables in (raw.get("schemas") or {}).items()
+        }
+        labels = {str(k): str(v) for k, v in (raw.get("labels") or {}).items()}
+        return schemas, labels
+    except Exception as exc:  # noqa: BLE001 — an absent asset must not stop boot
+        logger.error(
+            "demo seed manifest unreadable at %s: %s — the wizard will offer only "
+            "industries this deployment has actually seeded",
+            _SEED_MANIFEST_PATH,
+            exc,
+        )
+        return {}, {}
+
+
+SEED_MANIFEST, _SEED_LABELS = _load_seed_manifest()
+
+# Every industry the seed notebook creates, whether or not this deployment got
+# it. The wizard offers all of these; ``industries()`` says which are real.
+KNOWN_INDUSTRIES: tuple[str, ...] = tuple(sorted(SEED_MANIFEST))
+
+
+def industry_label(industry: str) -> str:
+    """Human name for a schema slug, falling back to a readable form of it."""
+    slug = (industry or "").strip()
+    if not slug:
+        return ""
+    return _SEED_LABELS.get(slug) or slug.replace("_", " ").title()
 
 
 def catalog() -> str:
@@ -131,6 +192,17 @@ def industries() -> list[str]:
     return sorted(inventory())
 
 
+def offered_industries() -> list[str]:
+    """Every industry worth offering, seeded or not.
+
+    The shipped list first, then anything this deployment has seeded that the
+    manifest does not know about — a notebook that added a schema ahead of this
+    release should not have it hidden by a stale asset.
+    """
+    extra = sorted(set(inventory()) - set(KNOWN_INDUSTRIES))
+    return list(KNOWN_INDUSTRIES) + extra
+
+
 def has_industry(industry: str) -> bool:
     """Whether this name resolves to a schema that is actually seeded."""
     if not industry:
@@ -165,6 +237,46 @@ def normalize_industry(value: str) -> str:
     return ""
 
 
+def industry_slug(value: str) -> str:
+    """A stable slug for any industry, seeded or not. Empty only for empty input.
+
+    ``normalize_industry`` answers "which seeded schema is this?", and correctly
+    answers nothing when there is none. That is the wrong question for the brief,
+    the discovery record and the agent overlay, all of which want to carry what
+    the attendee actually said: an industry no notebook seeded is still the
+    industry they work in, and dropping it lost the single most useful field on
+    the record for every attendee who typed their own.
+
+    Prefers a seeded schema, then a known one, then the slug itself.
+    """
+    raw = (value or "").strip().lower()
+    if not raw:
+        return ""
+    slug = _SLUG_SEPARATORS.sub("_", raw).strip("_")
+    if not slug:
+        return ""
+    seeded = normalize_industry(slug)
+    if seeded:
+        return seeded
+    compact = slug.replace("_", "")
+    for known in KNOWN_INDUSTRIES:
+        if known.replace("_", "") == compact:
+            return known
+    return slug
+
+
+def readable() -> bool:
+    """Whether we have actually read this catalog, as opposed to failed to.
+
+    ``enabled`` says a name was configured. This says the name resolved to
+    something. The gap between them is a permission error, a cold warehouse or
+    a Unity Catalog blip — moments where the honest answer is "we do not know
+    what is here", which is not the same answer as "nothing is here" and must
+    not be treated as one.
+    """
+    return bool(inventory())
+
+
 def verify(tables: list[str]) -> bool:
     """Whether every ``schema.table`` in ``tables`` exists in the demo catalog.
 
@@ -172,6 +284,9 @@ def verify(tables: list[str]) -> bool:
     tables; showing it because three of them exist just moves the failure from
     the wizard into the terminal, where it costs the attendee their time instead
     of ours.
+
+    An unreadable catalog answers False for everything. Callers deciding whether
+    to *show* a card must check :func:`readable` first — see ``wizard._buildable``.
     """
     if not tables:
         return True  # needs no demo data, so nothing can be missing
@@ -183,6 +298,17 @@ def verify(tables: list[str]) -> bool:
         if not table or table not in inv.get(schema, ()):
             return False
     return True
+
+
+def data_ready(tables: list[str]) -> bool:
+    """Whether this card's demo tables are known to exist, for the badge.
+
+    Deliberately pessimistic where ``verify`` is permissive: a card naming no
+    tables gets no badge, because "Data ready" on a card that uses no data is a
+    claim about nothing. And an unreadable catalog gets no badge either — the
+    badge is a promise, and we cannot keep one we cannot check.
+    """
+    return bool(tables) and verify(tables)
 
 
 def _rank(table: str) -> tuple[int, str]:

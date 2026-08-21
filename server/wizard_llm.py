@@ -15,17 +15,122 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
+import time
 from typing import Any
 
 from . import config, content, demo_data, models, wizard
 
 logger = logging.getLogger(__name__)
 
-_TIMEOUT_SECONDS = 4.0
-_MAX_TOKENS = 1800
+# 4s against 1800 tokens of JSON was not a budget, it was a guarantee of
+# failure: every request timed out, every attendee got the static selector, and
+# because the fallback is silent nobody could see it happening. The fix is on
+# both sides — ask for less (four cards, short prompts) and wait longer for it.
+_TIMEOUT_SECONDS = 12.0
+_MAX_TOKENS = 1100
+# The model writes four; the selector pads to six. Two fewer cards is roughly a
+# third off the output, and the padding is drawn from the verified catalogue so
+# the grid is no thinner for it.
+_LLM_CARD_COUNT = 4
+# The per-card prompt is the whole output budget in one field. 2000 characters
+# is ~500 tokens a card, and the agent does not need an essay — it needs the
+# tables named and a first move.
+_MAX_PROMPT_CHARS = 500
 _ALLOWED_SHAPES = frozenset({"dashboard", "app", "pipeline", "ai", "ml"})
 _FEW_SHOT = 3
 _TABLE_CAP = 24
+
+# The workspace's model catalogue changes between releases, not between
+# keystrokes. This was being re-discovered on every debounce, adding a round
+# trip to a request that was already timing out.
+_DISCOVERY_TTL_SECONDS = 600
+# Short, because an empty result means the call failed and a workspace that has
+# just been fixed should not wait ten minutes to be believed.
+_DISCOVERY_FAILURE_TTL_SECONDS = 60
+
+_discovery_lock = threading.Lock()
+_discovery: dict[str, frozenset[str]] | None = None
+_discovery_at = 0.0
+_discovery_ok = False
+
+# An operator's mid-workshop swap, ahead of the deployed pin. Deliberately in
+# memory only: the deployed value is written to both the deployment env and
+# ``app.yaml`` precisely so a console redeploy cannot silently revert it, and a
+# persisted override would undo that — the process would come back from a crash
+# already disagreeing with the thing an operator can read. The cost is that a
+# restart drops the swap, which is why ``effective_model`` reports whether one
+# is active rather than leaving the revert invisible.
+_override_lock = threading.Lock()
+_model_override = ""
+
+# Models that answered 400 to a JSON schema. Remembered so the retry is paid
+# once per process rather than on every request.
+_structured_unsupported: set[str] = set()
+
+# Asking for JSON in the prompt and scanning the reply for braces is a
+# best-effort parse of a best-effort instruction: a model that opens with
+# "Here are six ideas:" or wraps the object in prose costs a whole request, and
+# the failure is silent because the fallback selector looks like a result. The
+# gateway will enforce the shape instead where the model supports it.
+_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "wizard_ideas",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "industry": {"type": "string"},
+                "ideas": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "label": {"type": "string"},
+                            "outcome": {"type": "string"},
+                            "prompt": {"type": "string"},
+                            "shape": {
+                                "type": "string",
+                                "enum": sorted(_ALLOWED_SHAPES),
+                            },
+                            "intents": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "products": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "technical": {"type": "boolean"},
+                            "demo_tables": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                        },
+                        # strict mode requires every property listed; the
+                        # coercer below already tolerates empty values.
+                        "required": [
+                            "id",
+                            "label",
+                            "outcome",
+                            "prompt",
+                            "shape",
+                            "intents",
+                            "products",
+                            "technical",
+                            "demo_tables",
+                        ],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["industry", "ideas"],
+            "additionalProperties": False,
+        },
+    },
+}
 
 
 class ModelUnavailable(RuntimeError):
@@ -39,28 +144,48 @@ def suggest(text: str, industry: str = "") -> dict[str, Any]:
     may replace it; an unseeded one is ignored. Every card that reaches the
     response has passed ``demo_data.verify``.
     """
-    kept = demo_data.normalize_industry(industry) if industry else ""
+    kept = demo_data.industry_slug(industry) if industry else ""
     fallback = _fallback(kept)
     if not config.llm_wizard_enabled():
         return fallback
     try:
-        raw, _model = _ask_model(text, kept)
+        raw, model = _ask_model(text, kept)
     except ModelUnavailable as exc:
         logger.info("wizard llm falling back to selector: %s", exc)
         return fallback
 
-    inferred = demo_data.normalize_industry(str(raw.get("industry") or ""))
+    inferred = demo_data.industry_slug(str(raw.get("industry") or ""))
     if inferred and (not demo_data.enabled() or demo_data.has_industry(inferred)):
         resolved = inferred
     else:
         resolved = kept
 
-    verified = _verified_ideas(raw.get("ideas"), resolved)
+    verified, offered = _verified_ideas(raw.get("ideas"), resolved)
+    dropped = offered - len(verified)
+    if dropped:
+        # The one number that makes a model swap an argument about evidence
+        # rather than taste: a model that writes six cards naming tables that do
+        # not exist and a model that writes four good ones look identical from
+        # the grid, because the selector silently pads both back to six.
+        logger.info(
+            "wizard llm: %s offered %d cards, %d dropped (industry=%s)",
+            model,
+            offered,
+            dropped,
+            resolved or "none",
+        )
     padded = _pad(verified, resolved)
     return {
         "industry": resolved,
-        "ideas": [i.model_dump() for i in padded],
+        "ideas": [wizard.idea_payload(i) for i in padded],
         "source": "llm" if verified else "selector",
+        # The model that actually answered, not the one that was configured.
+        # An operator who swaps the model mid-workshop needs to see the swap
+        # take effect, and a pin that silently fell through to the chain head
+        # is otherwise invisible.
+        "model": model,
+        "offered": offered,
+        "dropped": dropped,
     }
 
 
@@ -68,25 +193,31 @@ def _fallback(industry: str) -> dict[str, Any]:
     ideas = wizard.select_ideas(industry)
     return {
         "industry": industry,
-        "ideas": [i.model_dump() for i in ideas],
+        "ideas": [wizard.idea_payload(i) for i in ideas],
         "source": "selector",
+        "model": "",
+        "offered": 0,
+        "dropped": 0,
     }
 
 
-def _verified_ideas(raw: Any, industry: str) -> list[content.WizardIdea]:
+def _verified_ideas(raw: Any, industry: str) -> tuple[list[content.WizardIdea], int]:
+    """Cards that survived validation, and how many the model offered."""
     if not isinstance(raw, list):
-        return []
+        return [], 0
     out: list[content.WizardIdea] = []
     seen: set[str] = set()
+    offered = 0
     for item in raw:
+        offered += 1
         idea = _coerce_idea(item, industry)
         if idea is None or idea.id in seen:
             continue
         seen.add(idea.id)
         out.append(idea)
-        if len(out) >= wizard.IDEA_COUNT:
+        if len(out) >= _LLM_CARD_COUNT:
             break
-    return out
+    return out, offered
 
 
 def _coerce_idea(raw: Any, industry: str) -> content.WizardIdea | None:
@@ -109,7 +240,7 @@ def _coerce_idea(raw: Any, industry: str) -> content.WizardIdea | None:
         return None
     label = str(raw.get("label") or "").strip()[:80]
     outcome = str(raw.get("outcome") or "").strip()[:200]
-    prompt = str(raw.get("prompt") or "").strip()[:2000]
+    prompt = str(raw.get("prompt") or "").strip()[:_MAX_PROMPT_CHARS]
     if not (label and outcome and prompt):
         return None
     idea_id = re.sub(r"[^a-z0-9-]+", "-", str(raw.get("id") or label).lower())
@@ -199,7 +330,7 @@ def _prompt(text: str, industry: str) -> str:
     return (
         "You write idea cards for a Databricks workshop opening wizard.\n"
         "Return JSON only, no prose, of the form "
-        '{"industry": "slug", "ideas": [ ...6 cards... ]}.\n\n'
+        f'{{"industry": "slug", "ideas": [ ...{_LLM_CARD_COUNT} cards... ]}}.\n\n'
         "Rules:\n"
         "- Infer industry as a schema slug from the attendee sentence when you can.\n"
         "- If you cannot tell, keep the chip you were given (empty means none).\n"
@@ -207,7 +338,9 @@ def _prompt(text: str, industry: str) -> str:
         "- Every demo_tables value must be schema.table from that inventory.\n"
         "- All tables on one card share one schema.\n"
         "- Spread shapes across dashboard, app, pipeline, ai, ml. No fun cards.\n"
-        "- Prompts must name the tables they will use so the agent can start.\n"
+        "- Prompts must name the tables they will use so the agent can start, "
+        f"and must be under {_MAX_PROMPT_CHARS} characters. Two or three "
+        "sentences, not a specification.\n"
         "- Cards must be buildable in a two-hour workshop.\n\n"
         f"Attendee sentence:\n{text or '(they have not typed anything yet)'}\n\n"
         f"Current industry chip: {industry or '(none)'}\n\n"
@@ -237,17 +370,110 @@ def _extract_json(text: str) -> dict:
 
 
 def _served_models(token: str) -> dict[str, frozenset[str]]:
+    """The workspace's model catalogue, cached. Empty means discovery failed."""
+    global _discovery, _discovery_at, _discovery_ok
+
+    with _discovery_lock:
+        ttl = _DISCOVERY_TTL_SECONDS if _discovery_ok else _DISCOVERY_FAILURE_TTL_SECONDS
+        if _discovery is not None and time.time() - _discovery_at < ttl:
+            return _discovery
+
     from .cli_config import discover_model_services
 
-    return discover_model_services(token)
+    found = discover_model_services(token)
+    with _discovery_lock:
+        _discovery, _discovery_at, _discovery_ok = found, time.time(), bool(found)
+    return found
+
+
+def reset_discovery_cache() -> None:
+    """Drop the cached catalogue. For tests and the admin reload path."""
+    global _discovery, _discovery_at, _discovery_ok
+    with _discovery_lock:
+        _discovery, _discovery_at, _discovery_ok = None, 0.0, False
+
+
+class UnknownModel(ValueError):
+    """A swap named something this workspace demonstrably does not serve."""
+
+
+def model_override() -> str:
+    """The live override, or empty when the deployed value is in force."""
+    with _override_lock:
+        return _model_override
+
+
+def set_model_override(name: str) -> str:
+    """Swap the wizard's model for this process. Empty clears it.
+
+    Validated against discovery *when discovery succeeds*, and accepted when it
+    does not — the same rule as everywhere else in this module, because an empty
+    catalogue means the discovery call failed rather than that the workspace
+    serves nothing. Refusing a swap on a discovery blip would be refusing the
+    one action an operator has left at the moment the room is already unhappy.
+    """
+    wanted = models.service_name(name.strip()) if name.strip() else ""
+    if wanted:
+        from .credentials import CredentialError, credential_manager
+
+        try:
+            available = _served_models(credential_manager.token())
+        except CredentialError:
+            available = {}
+        if available and not models.serves(available, wanted, "wizard"):
+            raise UnknownModel(
+                f"{wanted} is not served on the wizard's wire in this workspace"
+            )
+    global _model_override
+    with _override_lock:
+        _model_override = wanted
+    logger.info("wizard model override %s", wanted or "cleared")
+    return wanted
+
+
+def effective_model() -> dict[str, Any]:
+    """What the wizard will ask next, and why — for ``/api/admin/state``.
+
+    An ephemeral override that a restart silently reverted is worse than no
+    override at all: the operator believes the room is on the model they picked.
+    So the reported value carries its own provenance rather than a bare string.
+    """
+    override = model_override()
+    pin = models.service_name(config.workshop_wizard_model().strip())
+    if override:
+        source = "override"
+    elif pin:
+        source = "deployed"
+    else:
+        source = "chain"
+    return {
+        "model": override or pin or "",
+        "source": source,
+        "override": override,
+        "deployed": pin,
+        "chain": list(models.wizard_chain()),
+        "llm_enabled": config.llm_wizard_enabled(),
+    }
 
 
 def _pick_model(token: str) -> str:
+    override = model_override()
+    if override:
+        return override
     pin = config.workshop_wizard_model()
     if pin:
         return models.service_name(pin)
+    chain = models.wizard_chain()
     available = _served_models(token)
-    for name in models.wizard_chain():
+    if not available:
+        # Empty is documented in ``discover_model_services`` as *the call
+        # failed*, not *the workspace serves nothing*. Reading it the second way
+        # took the entire idea grid down for a blip on an unrelated API, and did
+        # it silently, because the fallback to the static selector looks
+        # identical to a model that simply had no better ideas.
+        logger.info("model discovery unavailable; using the head of the wizard chain")
+        return chain[0]
+    for name in chain:
         if models.serves(available, name, "wizard"):
             return name
     raise ModelUnavailable("no wizard model service is available in this workspace")
@@ -269,22 +495,40 @@ def _ask_model(text: str, industry: str) -> tuple[dict, str]:
         raise ModelUnavailable(f"no workshop credential: {exc}") from exc
 
     model = _pick_model(token)
-    try:
-        resp = requests.post(
-            url,
-            headers={"Authorization": f"Bearer {token}"},
-            json={
-                "model": model,
-                "messages": [
-                    {"role": "user", "content": _prompt(text, industry)},
-                ],
-                "max_tokens": _MAX_TOKENS,
-                "temperature": 0.3,
-            },
-            timeout=_TIMEOUT_SECONDS,
-        )
-    except requests.RequestException as exc:
-        raise ModelUnavailable(f"AI Gateway unreachable: {exc}") from exc
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": [
+            {"role": "user", "content": _prompt(text, industry)},
+        ],
+        "max_tokens": _MAX_TOKENS,
+        "temperature": 0.3,
+    }
+    structured = model not in _structured_unsupported
+    if structured:
+        payload["response_format"] = _RESPONSE_FORMAT
+
+    def post() -> Any:
+        try:
+            return requests.post(
+                url,
+                headers={"Authorization": f"Bearer {token}"},
+                json=payload,
+                timeout=_TIMEOUT_SECONDS,
+            )
+        except requests.RequestException as exc:
+            raise ModelUnavailable(f"AI Gateway unreachable: {exc}") from exc
+
+    resp = post()
+    if resp.status_code == 400 and structured:
+        # Not every served model takes a JSON schema, and the gateway says so
+        # with a 400 rather than by degrading. Remember it per model so the
+        # retry is paid once rather than on every keystroke, and fall back to
+        # asking for JSON in the prompt — which is what this did before, brace
+        # scan and all.
+        logger.info("%s rejected response_format; retrying without it", model)
+        _structured_unsupported.add(model)
+        payload.pop("response_format", None)
+        resp = post()
     if resp.status_code != 200:
         raise ModelUnavailable(f"AI Gateway returned {resp.status_code}")
     try:
@@ -298,4 +542,4 @@ def _ask_model(text: str, industry: str) -> tuple[dict, str]:
     return _extract_json(str(content_out)), model
 
 
-__all__ = ["ModelUnavailable", "suggest"]
+__all__ = ["ModelUnavailable", "reset_discovery_cache", "suggest"]

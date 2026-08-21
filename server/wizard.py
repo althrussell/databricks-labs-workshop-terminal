@@ -205,8 +205,15 @@ def default_industry() -> str:
         config.workshop_default_industry().strip()
         or content.content_service.default_industry().strip()
     )
-    if configured and (not demo_data.enabled() or demo_data.has_industry(configured)):
-        return demo_data.normalize_industry(configured) or configured
+    if not configured:
+        return ""
+    slug = demo_data.industry_slug(configured)
+    # Honoured when the notebook knows the industry, even if this deployment's
+    # catalog is unseeded or briefly unreadable. It used to require live
+    # inventory, which meant an unreachable Unity Catalog silently discarded the
+    # operator's create-form choice and the room was told nothing.
+    if demo_data.has_industry(configured) or slug in demo_data.KNOWN_INDUSTRIES:
+        return slug
     return ""
 
 
@@ -218,10 +225,10 @@ def industry_of(idea: content.WizardIdea) -> str:
     *not* to steer the agent at a schema.
     """
     if idea.industries:
-        return demo_data.normalize_industry(idea.industries[0]) or idea.industries[0]
+        return demo_data.industry_slug(idea.industries[0])
     if idea.demo_tables:
         schema, _, _ = idea.demo_tables[0].partition(".")
-        return demo_data.normalize_industry(schema) or schema
+        return demo_data.industry_slug(schema)
     return ""
 
 
@@ -233,10 +240,31 @@ def _buildable(idea: content.WizardIdea) -> bool:
     exist, so filtering on them would empty the grid for the one attendee least
     able to recover from an empty grid. They get the full catalogue and an agent
     that will generate what it needs.
+
+    The same applies when a catalog is configured but unreadable — a permission
+    error, a cold warehouse, a Unity Catalog blip. That used to be treated as
+    "no tables exist", which silently withdrew every data-backed card from the
+    grid for the duration, and the attendee saw a thin list of generics with
+    nothing saying why. We do not know, so we do not filter; the ``data_ready``
+    badge is what carries the uncertainty to the card.
     """
-    if not demo_data.enabled():
+    if not demo_data.enabled() or not demo_data.readable():
         return True
     return demo_data.verify(idea.demo_tables)
+
+
+def idea_payload(idea: content.WizardIdea) -> dict[str, Any]:
+    """A card as the frontend reads it, with the data promise resolved here.
+
+    The badge used to be inferred in the browser from ``demo_tables`` being
+    non-empty, which was only correct while every unverified card was filtered
+    out server-side. Now that an unreadable catalog no longer empties the grid,
+    whether the data is really there has to travel with the card rather than be
+    guessed from its shape.
+    """
+    payload = idea.model_dump()
+    payload["data_ready"] = demo_data.data_ready(idea.demo_tables)
+    return payload
 
 
 def _score(idea: content.WizardIdea, industry: str, intent: str) -> int:
@@ -277,7 +305,11 @@ def select_ideas(
     if not buildable:
         return []
 
-    industry = demo_data.normalize_industry(industry) if industry else ""
+    # ``industry_slug``, not ``normalize_industry``: the latter answers with the
+    # seeded schema or nothing, so an unreadable catalog discarded the chip the
+    # attendee had just pressed and served them generics instead of their own
+    # industry's cards.
+    industry = demo_data.industry_slug(industry) if industry else ""
     generics = [i for i in buildable if not i.industries]
     if industry:
         tagged = [i for i in buildable if industry in i.industries]
@@ -413,7 +445,12 @@ def save(user: User, payload: dict[str, Any]) -> WizardBrief:
             brief.industry = industry_of(idea)
             brief.industry_stated = True
     elif "industry" in payload:
-        brief.industry = demo_data.normalize_industry(_clean_text(payload["industry"])[:64])
+        # ``industry_slug`` rather than ``normalize_industry``: an attendee who
+        # typed "shipping logistics" told us the most useful thing on the
+        # record, and resolving that against seeded schemas — which is what
+        # normalize does — discarded it for everyone whose industry the
+        # notebook had not created.
+        brief.industry = demo_data.industry_slug(_clean_text(payload["industry"])[:64])
         if "industry_stated" in payload:
             brief.industry_stated = bool(payload["industry_stated"])
         else:
@@ -473,6 +510,13 @@ def starter_prompt(brief: WizardBrief) -> str:
     )
 
 
+def _effective_model() -> str:
+    """The wizard model in force, override included."""
+    from . import wizard_llm
+
+    return str(wizard_llm.effective_model()["model"])
+
+
 def state(user: User, industry: str = "") -> dict[str, Any]:
     """Everything the frontend needs to render the wizard.
 
@@ -488,10 +532,12 @@ def state(user: User, industry: str = "") -> dict[str, Any]:
     does not all see the same six — without that cost.
     """
     brief = read_brief(user)
-    industry = demo_data.normalize_industry(_clean_text(industry)[:64]) or (
+    industry = demo_data.industry_slug(_clean_text(industry)[:64]) or (
         brief.stated_industry or default_industry()
     )
     enabled = config.onboarding_wizard_enabled()
+    seeded = demo_data.industries()
+    offered = demo_data.offered_industries()
     llm_on = config.llm_wizard_enabled()
     stacks = content.content_service.wizard_stacks() or _DEFAULT_STACKS
     intent_labels = content.content_service.wizard_intent_labels() or _DEFAULT_INTENT_LABELS
@@ -504,19 +550,29 @@ def state(user: User, industry: str = "") -> dict[str, Any]:
         # endpoint at once.
         "should_show": enabled and not brief.seen,
         "default_industry": default_industry(),
-        "industries": demo_data.industries(),
-        "demo_data_available": bool(demo_data.inventory()),
+        # Everything the notebook can seed, offered whether or not this
+        # deployment got it. ``seeded_industries`` is the subset that is really
+        # there, which the UI badges rather than filters on — an attendee whose
+        # industry is missing should be told the data is missing, not told their
+        # industry does not exist.
+        "industries": offered,
+        "industry_labels": {i: demo_data.industry_label(i) for i in offered},
+        "seeded_industries": seeded,
+        "demo_data_available": bool(seeded),
         "intents": list(INTENTS),
         "intent_labels": intent_labels,
         "stacks": stacks,
         "ideas": [
-            i.model_dump()
+            idea_payload(i)
             for i in select_ideas(industry, rng=random.Random(user.email))
         ],
         "capture_enabled": config.discovery_enabled(),
         "llm_wizard": {
             "enabled": llm_on,
-            "model": config.workshop_wizard_model(),
+            # Whatever is in force right now, which after a live swap is not the
+            # deployed pin. Imported here rather than at module scope because
+            # ``wizard_llm`` imports this module.
+            "model": _effective_model(),
         },
     }
 
@@ -528,6 +584,7 @@ __all__ = [
     "brief_path",
     "default_industry",
     "idea_by_id",
+    "idea_payload",
     "industry_of",
     "read_brief",
     "save",

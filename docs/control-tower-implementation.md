@@ -369,8 +369,9 @@ take effect on restart with **no rebuild**. Set these per instance:
 | `WORKSHOP_TOOLCHAIN_MIRROR_STRICT` | `false` | fail an artifact the mirror cannot serve instead of falling back to the internet. Air-gapped events only |
 | `WORKSHOP_ONBOARDING_WIZARD` | `true` *(CT fleet default; per-run opt-out)* | the opening wizard that asks what the attendee is here to build (§16). `false` lands attendees on Home with no modal, for a format that walks the room through the first build together |
 | `WORKSHOP_LLM_WIZARD` | `true` *(CT fleet default; per-run opt-out)* | LLM-powered idea cards inside the wizard (§16). A missing env is on, so an older Control Tower still gets generated cards. `false` keeps the static catalogue |
-| `WORKSHOP_DEFAULT_INDUSTRY` | empty *(attendee chooses)* | industry chip to preselect (§16). Empty is not automotive. Ignored when that schema is not seeded |
-| `WORKSHOP_WIZARD_MODEL` | empty *(wizard chain)* | pin for the wizard model. Empty uses gpt-5-4-mini, then luna, haiku, gpt-oss-120b |
+| `WORKSHOP_DEFAULT_INDUSTRY` | empty *(attendee chooses)* | industry chip to preselect (§16). Empty is not automotive. Honoured for any industry the seed notebook knows, seeded here or not — only a name no notebook has heard of is ignored |
+| `WORKSHOP_DEMO_CATALOG` | `workshop_demo` *(CT fleet setting, per target)* | the shared read-only demo catalog, one schema per industry, seeded once per metastore by `seed/demo_data/seed_demo_data.py` and never touched by teardown. Empty means this deployment advertises no demo data — the wizard still offers every industry and the agent generates its own fixtures. Must be set per target: `labs` and `labs-us` are separate metastores and each needs its own seeded catalog |
+| `WORKSHOP_WIZARD_MODEL` | empty *(wizard chain)* | pin for the wizard model. Empty uses gpt-5-4-mini, then luna, haiku, gpt-oss-120b. Set from the create form's model dropdown, and overridable mid-workshop via `POST /api/admin/wizard-model` |
 | `WORKSHOP_AGENTS` | empty *(all)*, or a subset of `omnigent,claude,codex` | the coding agents attendees may launch (§16). The plain Terminal is always offered and is never listed here. Deselecting Omnigent also skips its install, so a run that will not use it does not pay for the harness on cold boot |
 
 Model defaults can vary by event or attendee because CT applies overrides to
@@ -988,7 +989,17 @@ read at runtime, so a change plus a restart is enough — no rebuild.
 | Show the onboarding wizard | `WORKSHOP_ONBOARDING_WIZARD` | `true` |
 | LLM-powered idea grid | `WORKSHOP_LLM_WIZARD` | `true` (missing env is on) |
 | Room industry preselect | `WORKSHOP_DEFAULT_INDUSTRY` | empty (attendee chooses) |
+| Wizard idea model | `WORKSHOP_WIZARD_MODEL` | empty (wizard chain) |
 | Coding agents attendees can launch | `WORKSHOP_AGENTS` | empty (all) |
+
+**The industry picker offers every industry, not the seeded ones.** It used to
+render only schemas Unity Catalog reported, so a deployment with
+`WORKSHOP_DEMO_CATALOG` unset — or a metastore the seed notebook had not been
+run against — showed no chips at all. The attendee was not told the demo data
+was missing; they were told their industry did not exist. The list now comes
+from `content/demo_seed_manifest.json`, always renders, and includes an "Other"
+free-text option. `seeded_industries` on `GET /api/wizard` says which are really
+there, and the UI badges rather than filters on it.
 
 **The wizard.** On, an attendee's first arrival asks what they are here to build
 and hands the answer to their agent as a first prompt. Off, they land on Home

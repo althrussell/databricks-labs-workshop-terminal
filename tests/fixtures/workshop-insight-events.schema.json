@@ -20,7 +20,12 @@
     },
     "type": {
       "type": "string",
-      "enum": ["workshop.signal", "discovery.record", "insight.summary"]
+      "enum": [
+        "workshop.signal",
+        "discovery.record",
+        "insight.summary",
+        "attendee.identity"
+      ]
     },
     "occurred_at": {"type": "string", "minLength": 1},
     "idempotency_key": {"type": "string", "minLength": 1},
@@ -209,6 +214,52 @@
               },
               "prompt_count": {"type": "integer"},
               "redactions": {"type": "integer"}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {"type": {"const": "attendee.identity"}}
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "idempotency_key": {"type": "string", "pattern": "^identity:.+$"},
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["attendee", "names", "observed_at"],
+            "description": "The only event that names a human rather than a pooled lab account. Gated on WORKSHOP_INSIGHT_CAPTURE like everything else here.",
+            "properties": {
+              "attendee": {"type": "string", "minLength": 1},
+              "binding_source": {
+                "type": "string",
+                "enum": ["control-tower", "persisted", "self-bound", "unbound"],
+                "description": "How this instance came to believe it belongs to the attendee. The names are evidence about exactly this."
+              },
+              "observed_at": {"type": "string", "minLength": 1},
+              "names": {
+                "type": "array",
+                "description": "Append-only, oldest first. Two names is corroboration or two people — never a correction, which is why this is a list and not a full_name field.",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["name", "source"],
+                  "properties": {
+                    "name": {"type": "string", "minLength": 1, "maxLength": 60},
+                    "source": {
+                      "type": "string",
+                      "enum": ["wizard", "certificate"],
+                      "description": "Not equivalent evidence: a name typed onto a certificate is a stronger claim than one typed into an optional field."
+                    },
+                    "captured_at": {"type": "string"}
+                  }
+                }
+              }
             }
           }
         }

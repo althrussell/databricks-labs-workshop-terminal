@@ -35,9 +35,15 @@ EXAMPLE_NAMES = (
     "discovery-record-withdrawn.json",
     "insight-summary.json",
     "insight-summary-extraction.json",
+    "attendee-identity.json",
 )
 
-EVENT_TYPES = ("workshop.signal", "discovery.record", "insight.summary")
+EVENT_TYPES = (
+    "workshop.signal",
+    "discovery.record",
+    "insight.summary",
+    "attendee.identity",
+)
 
 
 @pytest.fixture(scope="module")
@@ -125,6 +131,7 @@ def test_rejects_missing_idempotency_key(schema: dict) -> None:
         ("workshop-signal.json", "signal:"),
         ("discovery-record.json", "discovery:"),
         ("insight-summary.json", "summary:"),
+        ("attendee-identity.json", "identity:"),
     ],
 )
 def test_idempotency_key_prefix_is_enforced(
@@ -443,6 +450,60 @@ def test_the_summary_idempotency_key_carries_the_generator_and_revision() -> Non
         assert event["idempotency_key"].endswith(
             f":{payload['generator']}:{payload['revision']}"
         )
+
+
+def test_what_the_name_capture_actually_emits_satisfies_the_schema(schema: dict) -> None:
+    from server import attendee_names
+
+    observations = [
+        attendee_names.NameObservation(
+            name="Priya Raman", source="wizard", captured_at="2026-07-30T09:04:02+00:00"
+        ),
+        attendee_names.NameObservation(
+            name="P. Raman",
+            source="certificate",
+            captured_at="2026-07-30T09:12:44+00:00",
+        ),
+    ]
+    event = _example("attendee-identity.json")
+    event["payload"] = attendee_names.payload("labuser017@example.com", observations)
+    assert_schema(event, schema)
+
+
+def test_the_identity_event_rejects_an_invented_name_source(schema: dict) -> None:
+    """Source is what makes one observation weigh more than another. Accepting a
+    free-text value would flatten a certificate name and an optional field into
+    the same evidence."""
+    event = _example("attendee-identity.json")
+    event["payload"]["names"][0]["source"] = "vibes"
+    with pytest.raises(AssertionError):
+        assert_schema(event, schema)
+
+
+def test_the_identity_event_carries_a_list_rather_than_a_full_name(schema: dict) -> None:
+    """Two names is corroboration or two people, never a correction — a scalar
+    field would render both as the second one winning."""
+    payloads = _payload_schemas(schema)["attendee.identity"]
+    assert payloads["properties"]["names"]["type"] == "array"
+    assert "full_name" not in payloads["properties"]
+
+
+def test_the_identity_idempotency_key_carries_the_observation_count() -> None:
+    """Each new name is a new logical event; a retried flush of the same picture
+    is a duplicate. Keying on the attendee alone would drop the second name."""
+    doc = CONTRACT_DOC.read_text()
+    assert "identity:{run_id}:{attendee}:{count}" in doc
+    event = _example("attendee-identity.json")
+    assert event["idempotency_key"].endswith(f":{len(event['payload']['names'])}")
+
+
+def test_the_contract_says_a_typed_name_is_gated(schema: dict) -> None:
+    """This is the first event carrying a real human name rather than a pooled
+    lab identity, so the doc has to say the capture flag governs it."""
+    doc = CONTRACT_DOC.read_text()
+    identity = doc.split("`attendee.identity`", 1)[1][:4000]
+    assert "WORKSHOP_INSIGHT_CAPTURE" in doc
+    assert "name" in identity.lower()
 
 
 def test_the_summary_id_does_not_vary_with_the_generator() -> None:

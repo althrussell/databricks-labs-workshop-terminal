@@ -41,6 +41,10 @@ Captured:
   why it was asking.
 - **Edge summary** — a summary derived from the attendee's prompts and the
   artifacts the agent wrote for them, regenerated as their session progresses.
+- **Self-declared name** — the display name an attendee typed into the opening
+  wizard or onto their certificate, with the source of each. New in this
+  version, and the only field here that identifies a human rather than a lab
+  account. See [`attendee.identity`](#attendeeidentity--self-declared-name).
 
 Never captured, by construction:
 
@@ -300,6 +304,52 @@ since the terminal cannot reach back into it. A record that is only blanked
 locally leaves the attendee looking at an empty pane while the brief still quotes
 them, which is worse than never offering the control.
 
+### `attendee.identity` — self-declared name
+
+Emitted when an attendee types their own name, from either of the two places
+that already ask for one: the optional field in the opening wizard, and the
+certificate. Re-emitted whenever a *new* observation is added, carrying the full
+list each time, so a consumer takes the latest event and needs no merge logic.
+
+**This is the only event that names a human.** Everything else in this contract
+describes a pooled lab account (`labuser017@…`), and a consumer that had been
+reasoning about "who" from those addresses was reasoning about a workspace. That
+makes this event new PII rather than a new field on existing PII, which is why
+it is gated on `WORKSHOP_INSIGHT_CAPTURE` like the rest and why an operator who
+has not arranged consent gets nothing by doing nothing.
+
+**Why it exists.** Control Tower assigns a workspace to a roster email, and that
+assignment is routinely wrong in the room: people arrive late and take whatever
+is free, share a laptop, or sign in with a personal address. Nothing in the
+system could previously tell an operator that the person on `labuser017@` is not
+who the roster says, so every downstream brief inherited the roster's guess with
+no way to check it.
+
+| Field | Type | Notes |
+|---|---|---|
+| `attendee` | string | The lab account the observations were made on. |
+| `binding_source` | enum | `control-tower` \| `persisted` \| `self-bound` \| `unbound` — how this instance came to believe it belongs to `attendee`. See `server/attendee.py`. |
+| `names` | object[] | `name`, `source`, `captured_at`. Append-only, oldest first. |
+| `observed_at` | RFC 3339 | When this picture was taken. |
+
+`names[].source` is `wizard` or `certificate`. They are not equivalent evidence
+and a consumer should not flatten them: a name typed to get a certificate with
+their own name on it is a stronger claim than one typed into an optional field
+on the way in.
+
+**Append, never overwrite, and the reason is the whole point.** Two names on one
+workspace is not a correction, it is either corroboration ("Priya Raman", then
+"P. Raman") or two people ("Priya Raman", then "Tom Weller"). The second is
+precisely what an operator needs to see, and a last-write-wins `full_name` field
+would render it identically to the first. The producer already de-duplicates an
+identical name from the same source, so a re-downloaded certificate adds
+nothing.
+
+**A name is evidence, not an identity.** Control Tower must not silently rebind
+a workspace to a roster entry because a name matched — an attendee typing
+"Priya" is not authentication. The reconciliation is presented to an operator
+who confirms it; see `docs/control-tower-implementation.md`.
+
 ### `insight.summary` — rolling edge summary
 
 **One per attendee, regenerated as their session progresses.** The producer runs it
@@ -376,6 +426,7 @@ whether repeated harvests accumulate or supersede:
 | `workshop.signal` | `signal:{run_id}:{attendee}:{bucket}` | One row per time bucket per attendee. Bounded growth; latest wins in reporting. |
 | `discovery.record` | `discovery:{run_id}:{attendee}:{record_id}:{revision}` | One row per revision; the projection keeps the highest. |
 | `insight.summary` | `summary:{run_id}:{attendee}:{generator}:{revision}` | One row per revision per generator; the projection keeps the highest revision, and `llm` supersedes `extraction` on the shared `summary_id` regardless of revision. Without `{revision}` every regeneration after the first would be discarded as a duplicate. |
+| `attendee.identity` | `identity:{run_id}:{attendee}:{count}` | One row per observation count, so each new name is a new logical event while a retried flush of the same picture is a duplicate. The projection keeps the longest list rather than the last arrival, because the retry buffer can flush out of order and a shorter list is always an older picture. |
 
 On the collect path `{run_id}` is empty, so these shapes collapse to
 `signal::labuser001@…:{bucket}` and friends. Because

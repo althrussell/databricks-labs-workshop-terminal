@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "run_id": "3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90",
+  "workspace_id": "4217334529551234",
+  "attendee": "labuser017@example.com",
+  "type": "attendee.identity",
+  "occurred_at": "2026-07-30T09:12:44.310000+00:00",
+  "idempotency_key": "identity:3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90:labuser017@example.com:2",
+  "payload": {
+    "attendee": "labuser017@example.com",
+    "binding_source": "self-bound",
+    "observed_at": "2026-07-30T09:12:44.310000+00:00",
+    "names": [
+      {
+        "name": "Priya Raman",
+        "source": "wizard",
+        "captured_at": "2026-07-30T09:04:02.008000+00:00"
+      },
+      {
+        "name": "P. Raman",
+        "source": "certificate",
+        "captured_at": "2026-07-30T09:12:44.302000+00:00"
+      }
+    ]
+  }
+}

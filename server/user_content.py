@@ -369,6 +369,17 @@ def _demo_data_overlay(user: User) -> str:
             "or any other schema — ask, or pick the one whose tables match "
             "what they described.\n"
         )
+    elif not demo_data.has_industry(scoped):
+        # A real industry that nobody seeded here. Saying nothing would leave
+        # the agent to pattern-match the attendee's industry onto whichever
+        # schema looked closest, and build a logistics demo out of retail.
+        text += (
+            f"\n\nTheir industry is **{scoped.replace('_', ' ')}**, and this "
+            "catalog has no schema for it. Generate the data you need rather "
+            "than substituting a different industry's tables — a plausible "
+            "synthetic table in their domain is worth more to them than a real "
+            "one in someone else's.\n"
+        )
     return text
 
 
