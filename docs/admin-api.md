@@ -160,6 +160,29 @@ with `TOPIC_DETECTION=false`.
 422 if the phase isn't defined by the live pack. All connected attendees
 refresh their nugget pane immediately (`/ws/events` push).
 
+### `POST /api/admin/wizard-model`
+```json
+{ "model": "system.ai.gpt-oss-20b" }
+```
+Swaps the model behind the onboarding wizard's idea grid for this instance,
+immediately. An empty `model` clears the swap. A bare name is qualified the same
+way a pin is, so an operator can send what the dropdown shows.
+
+Precedence is **override → deployed pin (`WORKSHOP_WIZARD_MODEL`) → the
+terminal's own chain**. 422 when the workspace demonstrably does not serve the
+model on the wizard's wire; accepted when discovery itself fails, because an
+empty discovery result means the call failed rather than that the workspace
+serves nothing — refusing there would withdraw the operator's only remaining
+action at the moment the room is already unhappy.
+
+**The override is ephemeral by decision.** Nothing is written to the state dir,
+so a restart reverts to the deployed value. That keeps `app.yaml` the thing that
+is always true after a restart, at the cost of the operator re-applying — which
+is why `GET /api/admin/state` reports `wizard_model` with its provenance
+(`source: "override" | "deployed" | "chain"`) rather than a bare string. The
+wizard's own suggest response carries the model that actually answered, so a
+swap can be confirmed rather than assumed.
+
 ### `POST /api/admin/broadcast`
 ```json
 { "message": "Labs close in 10 minutes — commit your work!", "level": "warning", "ttl_s": 600 }

@@ -47,6 +47,8 @@ class PhaseBody(BaseModel):
 
 @router.get("/state")
 def admin_state():
+    from . import wizard_llm
+
     pack = content_service.pack
     return {
         "phase": content_service.phase,
@@ -54,7 +56,37 @@ def admin_state():
         "nugget_count": len(pack.nuggets),
         "broadcast": (b.model_dump() if (b := content_service.active_broadcast()) else None),
         "started_at": content_service.started_at,
+        # An override lives in memory only, so a restart reverts it. Reporting
+        # the effective model here is what stops that revert being invisible to
+        # the operator who applied it.
+        "wizard_model": wizard_llm.effective_model(),
     }
+
+
+class WizardModelBody(BaseModel):
+    model: str = ""
+
+
+@router.post("/wizard-model")
+def set_wizard_model(body: WizardModelBody):
+    """Swap the model behind the idea grid, now, without a redeploy.
+
+    The deployed pin is the right shape for a decision made before the room
+    exists. It is the wrong shape for the failure it addresses, which is a model
+    answering badly with forty people already in front of you — that needs an
+    action measured in seconds, not in a redeploy.
+
+    Ephemeral by decision: a restart reverts to the deployed value, so the thing
+    written in ``app.yaml`` stays the thing that is always true after a restart.
+    ``/api/admin/state`` reports which is in force.
+    """
+    from . import wizard_llm
+
+    try:
+        applied = wizard_llm.set_model_override(body.model)
+    except wizard_llm.UnknownModel as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"status": "ok", **wizard_llm.effective_model(), "applied": applied}
 
 
 class AgentControlBody(BaseModel):

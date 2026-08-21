@@ -217,6 +217,18 @@ async def record_operational_http_status(request: Request, call_next):
 
 # ---- public API (attendee-scoped) ----
 
+def _effective_wizard_model() -> str:
+    """The wizard model in force now, override included.
+
+    Imported locally because ``wizard_llm`` imports ``wizard``, which imports
+    this module's dependencies — the same reason the suggest endpoint below
+    defers its import.
+    """
+    from . import wizard_llm
+
+    return str(wizard_llm.effective_model()["model"])
+
+
 @app.get("/api/config")
 def get_config(principal: Principal = Depends(get_current_user)):
     pack = content_service.pack
@@ -249,9 +261,12 @@ def get_config(principal: Principal = Depends(get_current_user)):
         # second request — the two look identical in `should_show`, and only one
         # of them should also hide the recap's way back in.
         "onboarding_wizard": {"enabled": config.onboarding_wizard_enabled()},
+        # The model actually in force, not the deployed pin: a live swap is
+        # ephemeral, so reporting the pin here would tell an operator the room
+        # is on a model it stopped using several minutes ago.
         "llm_wizard": {
             "enabled": config.llm_wizard_enabled(),
-            "model": config.workshop_wizard_model(),
+            "model": _effective_wizard_model(),
         },
         "entitlements": entitlement_manager.status(),
         # The model-comparison exercise, as the attendee runs it. Published from
@@ -541,6 +556,11 @@ class _WizardBody(BaseModel):
     current_stack: list[str] = Field(default_factory=list)
     persona: str = ""
     skipped: bool = False
+    # Optional, and the only field here that is about the person rather than
+    # what they are building. Attendees regularly land on a workspace nobody
+    # assigned to them, so the name they type is the first evidence we have of
+    # who is actually sitting there.
+    display_name: str = ""
 
 
 @app.get("/api/wizard")
@@ -567,14 +587,22 @@ def save_wizard(body: _WizardBody, principal: Principal = Depends(get_current_us
     a chosen idea card carries a prompt written to produce a good first build,
     and that text belongs with the catalogue rather than in the UI.
     """
-    from . import user_content, wizard
+    from . import attendee_names, user_content, wizard
     from .users import user_manager
 
     user = user_manager.get(principal.name)
+    payload = body.model_dump(exclude_unset=True)
+    if payload.get("display_name"):
+        attendee_names.capture(
+            principal.name,
+            user.home,
+            payload["display_name"],
+            attendee_names.SOURCE_WIZARD,
+        )
     # Only the keys the attendee actually sent: the dismissal path posts nothing
     # but ``skipped``, and the defaults on the model would otherwise read as an
     # instruction to blank every answer they had already given.
-    brief = wizard.save(user, body.model_dump(exclude_unset=True))
+    brief = wizard.save(user, payload)
     # The brief is inlined into the agent's instructions, so they have to be
     # rewritten now. Sessions are almost always launched from the wizard's last
     # step, after this call, so the first agent to start already has it.
@@ -613,7 +641,7 @@ def surprise_wizard(
     from . import wizard
 
     idea = wizard.surprise(industry)
-    return {"idea": idea.model_dump() if idea else None}
+    return {"idea": wizard.idea_payload(idea) if idea else None}
 
 
 @app.get("/api/agents")
@@ -875,13 +903,19 @@ def certificate(name: str, principal: Principal = Depends(get_current_user)):
     """Brag certificate PDF — downloads straight to the attendee's laptop."""
     from fastapi.responses import Response
 
+    from . import attendee_names
     from . import certificate as cert
     from . import stats
 
-    display_name = " ".join(name.split())[:60]
+    display_name = attendee_names.clean_name(name)
     if not display_name:
         raise HTTPException(status_code=422, detail="A display name is required")
     user = user_manager.get(principal.name)
+    # The strongest name evidence this system gets: nobody types someone else's
+    # name onto a certificate they are about to show people.
+    attendee_names.capture(
+        principal.name, user.home, display_name, attendee_names.SOURCE_CERTIFICATE
+    )
     pdf = cert.build_pdf(display_name, stats.gather(user))
     filename = "databricks-workshop-certificate.pdf"
     return Response(

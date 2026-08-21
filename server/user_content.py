@@ -357,6 +357,12 @@ def _demo_data_overlay(user: User) -> str:
     scoped = brief.stated_industry
     manifest = demo_data.manifest(scoped)
     if not manifest:
+        # Nothing readable, so nothing to say — including the note below about
+        # generating rather than borrowing, which only guards against the agent
+        # reaching for a neighbouring industry's tables. Where there are no
+        # tables to reach for, generating is what it will do anyway, and an
+        # overlay describing a catalog we could not read sends it looking for
+        # schemas that may not exist.
         return ""
     with open(os.path.join(_ASSETS, "instructions", "demo_data.md")) as f:
         template = f.read()
@@ -368,6 +374,17 @@ def _demo_data_overlay(user: User) -> str:
             "\n\nThey have not chosen an industry. Do not assume automotive "
             "or any other schema — ask, or pick the one whose tables match "
             "what they described.\n"
+        )
+    elif not demo_data.has_industry(scoped):
+        # A real industry that nobody seeded here. Saying nothing would leave
+        # the agent to pattern-match the attendee's industry onto whichever
+        # schema looked closest, and build a logistics demo out of retail.
+        text += (
+            f"\n\nTheir industry is **{scoped.replace('_', ' ')}**, and this "
+            "catalog has no schema for it. Generate the data you need rather "
+            "than substituting a different industry's tables — a plausible "
+            "synthetic table in their domain is worth more to them than a real "
+            "one in someone else's.\n"
         )
     return text
 

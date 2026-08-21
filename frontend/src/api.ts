@@ -30,6 +30,10 @@ export interface WizardIdea {
   shape: string;
   technical: boolean;
   demo_tables: string[];
+  /** The server verified these tables exist. Absent on an unreadable catalog,
+   * where the honest answer is that we do not know — never inferred from
+   * `demo_tables` being non-empty, which is a claim we cannot check. */
+  data_ready?: boolean;
 }
 
 export interface WizardBrief {
@@ -52,7 +56,14 @@ export interface WizardState {
   enabled: boolean;
   should_show: boolean;
   default_industry: string;
+  /** Every industry the seed notebook knows, offered whether or not this
+   * deployment has them. Gating the picker on live inventory is what made an
+   * unset catalog remove the question instead of the answer. */
   industries: string[];
+  industry_labels?: Record<string, string>;
+  /** The subset of `industries` with data actually seeded here. Badged, not
+   * filtered on. */
+  seeded_industries?: string[];
   demo_data_available: boolean;
   intents: string[];
   intent_labels?: Record<string, string>;
@@ -71,6 +82,7 @@ export interface WizardSave {
   current_stack?: string[];
   persona?: string;
   skipped?: boolean;
+  display_name?: string;
 }
 
 export interface CredentialStatus {
