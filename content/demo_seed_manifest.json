@@ -1,6 +1,6 @@
 {
   "catalog": "workshop_demo",
-  "comment": "The industries the Control Tower seed notebook creates, and the tables the shipped content pack's idea cards name. Two jobs: CI asserts the pack is a subset of this, and the wizard renders these industries as chips whether or not this deployment has them seeded. Extra tables in a real catalog are fine. Keep in step with seed/demo_data/seed_demo_data.py::ALL_INDUSTRIES in Control Tower.",
+  "comment": "The industries the Control Tower seed notebook creates, and the tables the shipped content pack's idea cards name. Three jobs: CI asserts the pack is a subset of this, the wizard renders these industries as chips whether or not this deployment has them seeded, and the labels here name them when the catalog cannot be read. Extra tables and extra industries in a real catalog are fine and are picked up live - the seed stamps each schema with a workshop.industry_label property, which beats the label here. Keep in step with seed/demo_data/seed_demo_data.py::INDUSTRY_REGISTRY in Control Tower; its tests/test_industry_vocabulary.py fails when the two drift.",
   "schemas": {
     "automotive_mobility": [
       "campaign_vehicles",
@@ -19,8 +19,11 @@
     "energy_utilities": ["customers", "meter_readings", "meters", "outages"],
     "financial_services": [
       "accounts",
+      "arrears",
+      "branches",
       "customers",
       "fraud_labels",
+      "loans",
       "merchants",
       "transactions"
     ],
@@ -33,20 +36,44 @@
       "view_events",
       "viewers"
     ],
+    "mining": [
+      "assets",
+      "failure_labels",
+      "production_daily",
+      "sensor_readings",
+      "sites"
+    ],
     "public_sector": ["budgets", "facilities", "permits", "service_requests"],
     "retail": ["inventory_daily", "order_items", "orders", "products", "stores"],
-    "telco": ["cdr", "churn_labels", "network_cells", "plans", "subscribers"]
+    "superannuation": [
+      "contributions",
+      "investment_options",
+      "member_holdings",
+      "members",
+      "rollout_labels"
+    ],
+    "telco": ["cdr", "churn_labels", "network_cells", "plans", "subscribers"],
+    "travel": [
+      "booking_items",
+      "bookings",
+      "cancellation_labels",
+      "customers",
+      "destinations"
+    ]
   },
   "labels": {
     "automotive_mobility": "Automotive / mobility",
     "cross_industry": "Cross-industry",
     "energy_utilities": "Energy / utilities",
-    "financial_services": "Financial services",
+    "financial_services": "Banking / financial services",
     "healthcare": "Healthcare",
     "manufacturing": "Manufacturing",
     "media": "Media",
+    "mining": "Mining",
     "public_sector": "Public sector",
     "retail": "Retail",
-    "telco": "Telco"
+    "superannuation": "Superannuation",
+    "telco": "Telco",
+    "travel": "Travel"
   }
 }

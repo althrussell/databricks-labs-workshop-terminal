@@ -23,6 +23,14 @@ not of this deployment's luck with it, and gating the picker on live inventory
 meant an unset catalog removed the question entirely — the attendee was not told
 demo data was missing, they were told their industry did not exist. The list is
 shipped, always offered, and callers badge what is really seeded on top of it.
+
+Labels are read from the catalog where it can answer. The seed stamps each
+industry's human name onto its schema as the ``workshop.industry_label``
+property, so a schema this build has never heard of still gets the name its
+author gave it rather than a slug or a guess — which is what makes adding an
+industry a seed run rather than a release of this app. The shipped manifest
+remains the fallback, because an unreachable catalog must not cost the chips
+their names.
 """
 
 from __future__ import annotations
@@ -33,6 +41,7 @@ import os
 import re
 import threading
 import time
+from typing import Any
 
 from . import config, credentials
 
@@ -60,8 +69,14 @@ _MANIFEST_TABLE_CAP = 14
 
 _lock = threading.Lock()
 _cache: dict[str, set[str]] | None = None
+_cache_labels: dict[str, str] = {}
 _cache_at = 0.0
 _cache_ok = False
+
+# Schema property the seed notebook writes each industry's human name into. The
+# same string appears in Control Tower's ``seed_demo_data.py``; changing it on
+# one side costs the chips their labels, not their industries.
+_LABEL_PROPERTY = "workshop.industry_label"
 
 
 def _load_seed_manifest() -> tuple[dict[str, frozenset[str]], dict[str, str]]:
@@ -99,11 +114,28 @@ KNOWN_INDUSTRIES: tuple[str, ...] = tuple(sorted(SEED_MANIFEST))
 
 
 def industry_label(industry: str) -> str:
-    """Human name for a schema slug, falling back to a readable form of it."""
+    """Human name for a schema slug.
+
+    Precedence is live catalog, then shipped manifest, then a readable form of
+    the slug, and that order is the point: the catalog's copy was written by
+    whatever seed notebook actually created these schemas, so it is the only one
+    guaranteed to be current. An industry added to the seed after this build was
+    cut gets its real name from there, which is what lets a new industry arrive
+    without releasing this app.
+
+    Falls through to the shipped names when the catalog is unreachable, because
+    a stopped warehouse must not rename every chip in the room. Never raises and
+    never returns a raw slug for a known industry.
+    """
     slug = (industry or "").strip()
     if not slug:
         return ""
-    return _SEED_LABELS.get(slug) or slug.replace("_", " ").title()
+    # Cached, and already warm by the time the wizard labels anything: it lists
+    # the industries before naming them, and both go through ``inventory``.
+    inventory()
+    with _lock:
+        live = _cache_labels.get(slug, "")
+    return live or _SEED_LABELS.get(slug) or slug.replace("_", " ").title()
 
 
 def catalog() -> str:
@@ -119,8 +151,14 @@ def enabled() -> bool:
     return bool(catalog())
 
 
-def _load() -> dict[str, set[str]]:
-    """schema -> table names, straight from Unity Catalog. Raises on failure."""
+def _load() -> tuple[dict[str, set[str]], dict[str, str]]:
+    """schema -> table names and schema -> label, from Unity Catalog.
+
+    Raises on failure. The labels come back on the same authenticated metadata
+    path as the tables, which is why they are read here rather than from the
+    seed's ``_meta.seed_manifest`` table: this app has no SQL warehouse, so a
+    table it cannot query is a label it would have to ship a copy of.
+    """
     client = credentials.workspace_client()
     if client is None:
         # Local dev, or before app identity is initialized. Not an error.
@@ -144,7 +182,30 @@ def _load() -> dict[str, set[str]]:
             # something an attendee should be pointed at.
             continue
         found.setdefault(schema, set()).add(table)
-    return found
+    return found, _load_labels(client, cat)
+
+
+def _load_labels(client: Any, cat: str) -> dict[str, str]:
+    """schema -> the label the seed stamped on it, for schemas that have one.
+
+    Never raises. A label is a nicety and the table inventory is not: failing
+    the whole read because a schema listing was refused would turn a cosmetic
+    gap into a room with no demo data. Callers fall back to the shipped names.
+    """
+    labels: dict[str, str] = {}
+    try:
+        for schema in client.schemas.list(catalog_name=cat):
+            name = (getattr(schema, "name", "") or "").strip()
+            if not name or name.startswith("_"):
+                continue
+            label = ((getattr(schema, "properties", None) or {}).get(
+                _LABEL_PROPERTY
+            ) or "").strip()
+            if label:
+                labels[name] = label
+    except Exception as exc:
+        logger.debug("demo data labels unavailable in %s: %s", cat, exc)
+    return labels
 
 
 def inventory(*, refresh: bool = False) -> dict[str, set[str]]:
@@ -154,7 +215,7 @@ def inventory(*, refresh: bool = False) -> dict[str, set[str]]:
     to open because Unity Catalog was briefly slow is a worse outcome than a
     wizard that shows generic ideas.
     """
-    global _cache, _cache_at, _cache_ok
+    global _cache, _cache_labels, _cache_at, _cache_ok
 
     if not enabled():
         return {}
@@ -166,17 +227,18 @@ def inventory(*, refresh: bool = False) -> dict[str, set[str]]:
             return _cache
 
     try:
-        found = _load()
+        found, labels = _load()
         ok = True
     except Exception as e:
         # Debug, not warning: in local dev there is no workspace client and this
         # is the expected path every time, so anything louder trains people to
         # ignore it.
         logger.debug("demo data catalog %s unavailable: %s", catalog(), e)
-        found, ok = {}, False
+        found, labels, ok = {}, {}, False
 
     with _lock:
-        _cache, _cache_at, _cache_ok = found, time.time(), ok
+        _cache, _cache_labels = found, labels
+        _cache_at, _cache_ok = time.time(), ok
     if ok:
         logger.info(
             "demo data catalog %s: %d schemas, %d tables",
@@ -389,6 +451,7 @@ def manifest(industry: str = "") -> str:
 
 def reset_cache() -> None:
     """Drop the cache. For tests and the admin reload path."""
-    global _cache, _cache_at, _cache_ok
+    global _cache, _cache_labels, _cache_at, _cache_ok
     with _lock:
-        _cache, _cache_at, _cache_ok = None, 0.0, False
+        _cache, _cache_labels = None, {}
+        _cache_at, _cache_ok = 0.0, False

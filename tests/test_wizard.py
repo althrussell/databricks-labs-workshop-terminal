@@ -631,7 +631,10 @@ def test_state_offers_every_known_industry_and_badges_the_seeded_ones(
     assert "healthcare" in state["industries"], "known industries must be offered"
     assert "healthcare" not in state["seeded_industries"]
     assert "automotive_mobility" in state["seeded_industries"]
-    assert state["industry_labels"]["financial_services"] == "Financial services"
+    assert (
+        state["industry_labels"]["financial_services"]
+        == "Banking / financial services"
+    )
 
 
 def test_state_offers_industries_with_no_catalog_at_all(user, monkeypatch):
@@ -681,7 +684,7 @@ def test_a_catalog_that_reads_clean_and_holds_nothing_is_not_unreadable(
     monkeypatch.setattr(
         demo_data.config, "workshop_demo_catalog", lambda: "workshop_demo"
     )
-    monkeypatch.setattr(demo_data, "_load", lambda: {})
+    monkeypatch.setattr(demo_data, "_load", lambda: ({}, {}))
     demo_data.reset_cache()
 
     assert demo_data.readable() is True, "the read succeeded; it just found nothing"
@@ -773,9 +776,139 @@ def test_the_seed_manifest_ships_with_the_app():
 
 def test_every_known_industry_has_a_human_label():
     """The chips show the label; a slug leaking into the UI reads as a bug."""
-    assert demo_data.industry_label("financial_services") == "Financial services"
+    assert (
+        demo_data.industry_label("financial_services")
+        == "Banking / financial services"
+    )
     # Unknown slugs still render as something a person can read.
     assert demo_data.industry_label("space_mining") == "Space Mining"
+
+
+def test_the_industries_the_seed_gained_are_offered_and_named():
+    """Three industries and a lending book, added for a five-customer event.
+
+    Named here rather than left to the generic subset check because the point of
+    adding them was that a banker, a super fund and a miner each see their own
+    industry — a chip labelled ``superannuation`` would have missed it.
+    """
+    for slug, label in (
+        ("superannuation", "Superannuation"),
+        ("travel", "Travel"),
+        ("mining", "Mining"),
+    ):
+        assert slug in demo_data.KNOWN_INDUSTRIES
+        assert demo_data.industry_label(slug) == label
+
+
+def test_the_catalogs_own_label_beats_the_one_this_app_ships(monkeypatch):
+    """The seed stamps the name onto the schema, and that copy is the current one.
+
+    This is what lets an industry added to the seed after this build was cut
+    arrive with its real name and no redeploy. If the shipped manifest won
+    instead, a rename would need a release of this app to be visible.
+    """
+    monkeypatch.setattr(
+        demo_data.config, "workshop_demo_catalog", lambda: "workshop_demo"
+    )
+    monkeypatch.setattr(
+        demo_data,
+        "_load",
+        lambda: (
+            {"retail": {"orders"}, "quantum_widgets": {"widgets"}},
+            {"retail": "Retail & consumer", "quantum_widgets": "Quantum widgets"},
+        ),
+    )
+    demo_data.reset_cache()
+
+    assert demo_data.industry_label("retail") == "Retail & consumer"
+    # An industry only the catalog knows about, named by whoever seeded it.
+    assert demo_data.industry_label("quantum_widgets") == "Quantum widgets"
+    assert "quantum_widgets" in demo_data.offered_industries()
+
+
+def test_an_unreachable_catalog_does_not_rename_every_chip(monkeypatch):
+    """The shipped labels are the fallback, and a stopped warehouse is common.
+
+    Falling through to the title-cased slug here would rename the whole room's
+    chips over a transient blip — "Financial Services" for an industry the
+    create form calls something else.
+    """
+    monkeypatch.setattr(
+        demo_data.config, "workshop_demo_catalog", lambda: "workshop_demo"
+    )
+    monkeypatch.setattr(
+        demo_data, "_load", lambda: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+    demo_data.reset_cache()
+
+    assert demo_data.readable() is False
+    assert (
+        demo_data.industry_label("financial_services")
+        == "Banking / financial services"
+    )
+
+
+def test_labels_are_read_off_the_schemas_own_properties(monkeypatch):
+    """The contract with the seed, exercised against the SDK's shape.
+
+    ``schemas.list`` is used rather than the seed's ``_meta.seed_manifest``
+    table because this app has no SQL warehouse. That makes the property name a
+    cross-repo contract, and this is the test that fails if it is renamed on
+    only one side.
+    """
+    schemas = [
+        types.SimpleNamespace(
+            name="mining", properties={"workshop.industry_label": "Mining"}
+        ),
+        # No properties at all: valid, and must not raise.
+        types.SimpleNamespace(name="retail", properties=None),
+        # Operator provenance, not an industry.
+        types.SimpleNamespace(
+            name="_meta", properties={"workshop.industry_label": "Meta"}
+        ),
+    ]
+    client = types.SimpleNamespace(
+        schemas=types.SimpleNamespace(list=lambda catalog_name: schemas)
+    )
+
+    labels = demo_data._load_labels(client, "workshop_demo")
+
+    assert labels == {"mining": "Mining"}
+
+
+def test_a_refused_schema_listing_costs_labels_not_the_inventory(monkeypatch):
+    """Tables are the point of the read; labels are a nicety.
+
+    Letting a refused ``schemas.list`` fail the whole load would turn a cosmetic
+    gap into a room with no demo data at all.
+    """
+    def boom(catalog_name):
+        raise RuntimeError("PERMISSION_DENIED")
+
+    client = types.SimpleNamespace(schemas=types.SimpleNamespace(list=boom))
+
+    assert demo_data._load_labels(client, "workshop_demo") == {}
+
+
+def test_a_schema_with_no_label_property_falls_back_rather_than_blanking(monkeypatch):
+    """A catalog seeded before the seed stamped labels, or a schema someone made.
+
+    The read succeeds and simply carries no label for that schema, which must
+    not beat the shipped name — an empty string winning would blank the chip.
+    """
+    monkeypatch.setattr(
+        demo_data.config, "workshop_demo_catalog", lambda: "workshop_demo"
+    )
+    monkeypatch.setattr(
+        demo_data, "_load", lambda: ({"financial_services": {"loans"}}, {})
+    )
+    demo_data.reset_cache()
+
+    assert demo_data.readable() is True
+    assert (
+        demo_data.industry_label("financial_services")
+        == "Banking / financial services"
+    )
 
 
 def test_the_llm_wizard_is_on_by_default(client):
