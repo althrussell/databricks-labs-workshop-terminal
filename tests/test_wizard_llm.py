@@ -121,6 +121,61 @@ def test_an_unseeded_inferred_industry_is_ignored(seeded, monkeypatch):
     assert result["industry"] == "healthcare"
 
 
+def test_empty_demo_tables_are_kept_as_net_new(seeded, monkeypatch):
+    """A sentence that is not in the demo schema is still a valid workshop idea.
+    Empty tables pass verify; that is how net-new cards reach the grid."""
+    monkeypatch.setattr(wizard_llm.config, "llm_wizard_enabled", lambda: True)
+
+    def fake(*_a, **_k):
+        return {
+            "industry": "healthcare",
+            "ideas": [
+                {
+                    "id": "hr-chatbot",
+                    "label": "HR policy assistant",
+                    "outcome": "An assistant over internal HR docs",
+                    "prompt": "Build a chatbot over HR policy PDFs.",
+                    "shape": "ai",
+                    "demo_tables": [],
+                }
+            ],
+        }, "system.ai.gpt-5-4-mini"
+
+    monkeypatch.setattr(wizard_llm, "_ask_model", fake)
+    result = wizard_llm.suggest("internal HR chatbot", "healthcare")
+    ids = [i["id"] for i in result["ideas"]]
+    assert "hr-chatbot" in ids
+    card = next(i for i in result["ideas"] if i["id"] == "hr-chatbot")
+    assert card["demo_tables"] == []
+    assert card["data_mode"] == "generate"
+    assert "healthcare" in card["industries"]
+
+
+def test_a_confirmed_chip_is_not_replaced_by_inference(seeded, monkeypatch):
+    monkeypatch.setattr(wizard_llm.config, "llm_wizard_enabled", lambda: True)
+
+    def fake(*_a, **_k):
+        return {"industry": "retail", "ideas": []}, "system.ai.gpt-5-4-mini"
+
+    monkeypatch.setattr(wizard_llm, "_ask_model", fake)
+    result = wizard_llm.suggest(
+        "store stockouts", "healthcare", industry_locked=True
+    )
+    assert result["industry"] == "healthcare"
+
+
+def test_an_empty_sentence_does_not_call_the_model(seeded, monkeypatch):
+    monkeypatch.setattr(wizard_llm.config, "llm_wizard_enabled", lambda: True)
+
+    def boom(*_a, **_k):
+        raise AssertionError("empty text must not hit the model")
+
+    monkeypatch.setattr(wizard_llm, "_ask_model", boom)
+    result = wizard_llm.suggest("", "healthcare")
+    assert result["source"] == "selector"
+    assert result["industry"] == "healthcare"
+
+
 # -- instrumentation --------------------------------------------------------
 
 def test_the_drop_rate_is_reported_so_a_model_swap_is_measurable(

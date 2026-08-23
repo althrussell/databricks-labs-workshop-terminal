@@ -137,16 +137,19 @@ class ModelUnavailable(RuntimeError):
     """No reachable model service, or it answered with something unusable."""
 
 
-def suggest(text: str, industry: str = "") -> dict[str, Any]:
+def suggest(
+    text: str, industry: str = "", *, industry_locked: bool = False
+) -> dict[str, Any]:
     """Industry + six buildable cards, from the model or the selector.
 
     ``industry`` is the chip the attendee currently has. A seeded inference
-    may replace it; an unseeded one is ignored. Every card that reaches the
-    response has passed ``demo_data.verify``.
+    may replace it unless ``industry_locked`` — a chip they confirmed is not
+    the model's to move. An unseeded inference is ignored. Every card that
+    reaches the response has passed ``demo_data.verify``.
     """
     kept = demo_data.industry_slug(industry) if industry else ""
-    fallback = _fallback(kept)
-    if not config.llm_wizard_enabled():
+    fallback = _fallback(kept, query=text)
+    if not text.strip() or not config.llm_wizard_enabled():
         return fallback
     try:
         raw, model = _ask_model(text, kept)
@@ -155,7 +158,9 @@ def suggest(text: str, industry: str = "") -> dict[str, Any]:
         return fallback
 
     inferred = demo_data.industry_slug(str(raw.get("industry") or ""))
-    if inferred and (not demo_data.enabled() or demo_data.has_industry(inferred)):
+    if industry_locked:
+        resolved = kept
+    elif inferred and (not demo_data.enabled() or demo_data.has_industry(inferred)):
         resolved = inferred
     else:
         resolved = kept
@@ -174,23 +179,19 @@ def suggest(text: str, industry: str = "") -> dict[str, Any]:
             dropped,
             resolved or "none",
         )
-    padded = _pad(verified, resolved)
+    padded = _pad(verified, resolved, query=text)
     return {
         "industry": resolved,
         "ideas": [wizard.idea_payload(i) for i in padded],
         "source": "llm" if verified else "selector",
-        # The model that actually answered, not the one that was configured.
-        # An operator who swaps the model mid-workshop needs to see the swap
-        # take effect, and a pin that silently fell through to the chain head
-        # is otherwise invisible.
         "model": model,
         "offered": offered,
         "dropped": dropped,
     }
 
 
-def _fallback(industry: str) -> dict[str, Any]:
-    ideas = wizard.select_ideas(industry)
+def _fallback(industry: str, query: str = "") -> dict[str, Any]:
+    ideas = wizard.select_ideas(industry, query=query)
     return {
         "industry": industry,
         "ideas": [wizard.idea_payload(i) for i in ideas],
@@ -266,13 +267,13 @@ def _coerce_idea(raw: Any, industry: str) -> content.WizardIdea | None:
 
 
 def _pad(
-    ideas: list[content.WizardIdea], industry: str
+    ideas: list[content.WizardIdea], industry: str, query: str = ""
 ) -> list[content.WizardIdea]:
     if len(ideas) >= wizard.IDEA_COUNT:
         return ideas[: wizard.IDEA_COUNT]
     picked = {i.id for i in ideas}
     labels = {i.label.lower() for i in ideas}
-    for extra in wizard.select_ideas(industry, limit=12):
+    for extra in wizard.select_ideas(industry, limit=12, query=query):
         if extra.id in picked or extra.label.lower() in labels:
             continue
         ideas.append(extra)
@@ -327,18 +328,30 @@ def _few_shot(industry: str) -> str:
 
 
 def _prompt(text: str, industry: str) -> str:
+    locked = (
+        "The attendee has confirmed this industry chip. Do not infer a "
+        "different industry. Keep it.\n"
+        if industry
+        else ""
+    )
     return (
         "You write idea cards for a Databricks workshop opening wizard.\n"
         "Return JSON only, no prose, of the form "
         f'{{"industry": "slug", "ideas": [ ...{_LLM_CARD_COUNT} cards... ]}}.\n\n'
         "Rules:\n"
-        "- Infer industry as a schema slug from the attendee sentence when you can.\n"
-        "- If you cannot tell, keep the chip you were given (empty means none).\n"
+        f"- {locked}"
+        "- If the industry chip is empty, infer a schema slug from the sentence "
+        "when you can; otherwise leave it empty.\n"
         "- Never invent a schema that is not in the inventory below.\n"
-        "- Every demo_tables value must be schema.table from that inventory.\n"
+        "- If the sentence can be built from the listed tables, every "
+        "demo_tables value must be schema.table from that inventory.\n"
+        "- If the sentence cannot be built from those tables, return cards with "
+        "empty demo_tables. That is net-new: the agent will generate data. "
+        "Still tag the card with the confirmed industry.\n"
         "- All tables on one card share one schema.\n"
         "- Spread shapes across dashboard, app, pipeline, ai, ml. No fun cards.\n"
-        "- Prompts must name the tables they will use so the agent can start, "
+        "- Prompts must name the tables they will use when demo_tables is not "
+        "empty, "
         f"and must be under {_MAX_PROMPT_CHARS} characters. Two or three "
         "sentences, not a specification.\n"
         "- Cards must be buildable in a two-hour workshop.\n\n"

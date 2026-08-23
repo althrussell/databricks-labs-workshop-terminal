@@ -2030,6 +2030,15 @@ body {
   color: var(--text);
 }
 
+.wizard-industry-confirm-primary {
+  display: inline-block;
+  margin: 0 2px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--brand-primary) 18%, transparent);
+  text-decoration: none;
+}
+
 .wizard-llm-status {
   display: inline-flex;
   align-items: center;

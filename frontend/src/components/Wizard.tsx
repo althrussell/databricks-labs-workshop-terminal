@@ -13,9 +13,9 @@ import AgentCards, { SetupProgress, SetupSteps, SETUP_POLL_MS } from "./AgentCar
 import {
   humanIndustry,
   INDUSTRY_CHIPS_ATTR,
+  ideaDataMode,
   industryFromOther,
   industryOf,
-  isGenericIdea,
   otherBlurCommits,
 } from "../wizard";
 
@@ -88,6 +88,8 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
   const suggestAbort = useRef<AbortController | null>(null);
   const industryRef = useRef(industry);
   industryRef.current = industry;
+  const whatRef = useRef<HTMLTextAreaElement | null>(null);
+  const industryConfirmedRef = useRef(false);
 
   /* Runs once, on mount, and must never run again.
    *
@@ -178,11 +180,15 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
     // The card answers the industry question too, so leaving the free-text box
     // open behind it shows two answers to it.
     setShowOther(false);
-    // Choosing a card is choosing the industry it is tagged with, which is why
-    // this counts as the attendee's own where the operator's preselect does not.
-    setIndustry(industryOf(idea));
-    setInferredIndustry(false);
-    setIndustryChosen(Boolean(industryOf(idea)));
+    const tagged = industryOf(idea);
+    if (tagged) {
+      // A tagged card is choosing that industry. A generic card must not
+      // clear a chip they already confirmed — "build a pipeline" is not
+      // "forget I said retail".
+      setIndustry(tagged);
+      setInferredIndustry(false);
+      setIndustryChosen(true);
+    }
     // The card already knows why someone would build it, so carrying its intent
     // forward means optional context is a confirmation rather than another question.
     if (!intent && idea.intents.length > 0) setIntent(idea.intents[0]);
@@ -226,16 +232,23 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
     suggestAbort.current = ctl;
     setLlmBusy(true);
     api
-      .wizardSuggest({ text: nextText, industry: nextIndustry }, ctl.signal)
+      .wizardSuggest(
+        {
+          text: nextText,
+          industry: nextIndustry,
+          industry_locked: industryConfirmedRef.current,
+        },
+        ctl.signal
+      )
       .then((res) => {
         if (ctl.signal.aborted) return;
         setIdeas(res.ideas);
-        // The reported bug: a spinner saying "Matching ideas", then nothing.
-        // The cards arrived and landed behind a collapsed panel, so the whole
-        // LLM path was invisible unless the attendee happened to press "show
-        // me ideas" afterwards.
         if (reveal && res.ideas.length > 0) setShowIdeas(true);
-        if (res.industry && res.industry !== industryRef.current) {
+        if (
+          res.industry &&
+          res.industry !== industryRef.current &&
+          !industryConfirmedRef.current
+        ) {
           setIndustry(res.industry);
           setInferredIndustry(true);
         }
@@ -258,7 +271,7 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
     // it and must not be recorded as something they said.
     setIndustryChosen(Boolean(nextIndustry));
     api
-      .wizard(nextIndustry)
+      .wizard(nextIndustry, what)
       .then((s) => setIdeas(s.ideas))
       .catch(() => undefined);
     if (state?.llm_wizard?.enabled) {
@@ -279,6 +292,7 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
     setInferredIndustry(false);
     setIndustryChosen(true);
     setShowOther(false);
+    window.setTimeout(() => whatRef.current?.focus(), 0);
   }
 
   function toggleIndustry(ind: string) {
@@ -370,7 +384,6 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
     );
   }
 
-  const canContinue = what.trim().length > 0 || ideaId !== "";
   const industries = state.industries;
   // Empty, not `industries`, when the field is missing. That fallback was
   // written when `industries` *was* the seeded list; it is now every industry
@@ -386,6 +399,10 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
    * top of that describes a room the attendee is not in. */
   const industryConfirmed =
     Boolean(industry) && industryChosen && !inferredIndustry;
+  industryConfirmedRef.current = industryConfirmed;
+  const canContinue =
+    (what.trim().length > 0 || ideaId !== "") &&
+    (industryConfirmed || ideaId !== "");
 
   const industryName = (ind: string) =>
     state.industry_labels?.[ind] ?? humanIndustry(ind);
@@ -417,27 +434,21 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
         {step === 1 && (
           <div className="wizard-body">
             <h2 className="wizard-title">
-              What will you <span className="hero-accent">build</span> today?
+              {industryConfirmed ? (
+                <>
+                  What will you <span className="hero-accent">build</span> today?
+                </>
+              ) : (
+                <>
+                  Which <span className="hero-accent">industry</span> are you in?
+                </>
+              )}
             </h2>
             <p className="wizard-sub">
-              One sentence is plenty. Your agent picks it up from here — you don't
-              need to know how any of it works.
+              {industryConfirmed
+                ? "One sentence is plenty. Your agent picks it up from here — you don't need to know how any of it works."
+                : "Pick one first so we know which demo data to use. Then tell us what you want to build."}
             </p>
-
-            <textarea
-              className="wizard-input"
-              rows={3}
-              autoFocus
-              placeholder="e.g. a dashboard showing which parts fail early across our fleet"
-              value={what}
-              onChange={(e) => {
-                const next = e.target.value;
-                setWhat(next);
-                // Typing over a picked card makes it theirs, not the card's.
-                if (ideaId) setIdeaId("");
-                if (state.llm_wizard?.enabled) queueSuggest(next, industry);
-              }}
-            />
 
             {industries.length > 0 && (
               <div className="wizard-filter">
@@ -461,9 +472,6 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
                     onClick={() => {
                       if (otherOpen) {
                         setShowOther(false);
-                        // Closing withdraws what was typed in the box and
-                        // nothing else. A chip chosen before the box was opened
-                        // is not the box's to clear.
                         if (otherActive) refreshIdeas("");
                       } else {
                         setShowOther(true);
@@ -502,19 +510,13 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
                 {industry && (
                   <p className="wizard-industry-note">
                     {!industryConfirmed ? (
-                      // A guess and a room preset are both suggestions, and the
-                      // difference from an answer is not cosmetic: an industry
-                      // the attendee never confirmed is left out of the brief,
-                      // so the agent is not told it and the demo data is not
-                      // scoped to it. Claiming the data was in use described the
-                      // confirmed case to someone standing in the other one.
                       <>
                         {inferredIndustry
                           ? `Sounds like ${industryName(industry)}`
                           : `This room is set up for ${industryName(industry)}`}{" "}
                         —{" "}
                         <button
-                          className="wizard-industry-confirm"
+                          className="wizard-industry-confirm wizard-industry-confirm-primary"
                           onClick={confirmIndustry}
                         >
                           yes, that's right
@@ -523,18 +525,36 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
                         told which industry it's building for.
                       </>
                     ) : seeded.has(industry) ? (
-                      <>Using the {industryName(industry)} demo data.</>
+                      <>
+                        Your agent will use the {industryName(industry)} demo
+                        data.
+                      </>
                     ) : (
                       <>
-                        Your agent will build for {industryName(industry)}.
-                        There's no ready-made {industryName(industry)} data here,
-                        so it'll generate what it needs.
+                        No ready-made {industryName(industry)} data here — it
+                        will generate what it needs. Do not substitute another
+                        industry's tables.
                       </>
                     )}
                   </p>
                 )}
               </div>
             )}
+
+            <textarea
+              className="wizard-input"
+              rows={3}
+              ref={whatRef}
+              autoFocus={industryConfirmed}
+              placeholder="e.g. a dashboard showing which parts fail early across our fleet"
+              value={what}
+              onChange={(e) => {
+                const next = e.target.value;
+                setWhat(next);
+                if (ideaId) setIdeaId("");
+                if (state.llm_wizard?.enabled) queueSuggest(next, industry);
+              }}
+            />
 
             <div className="wizard-actions-inline">
               <button
@@ -567,18 +587,14 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
                     >
                       <span className="wizard-idea-label">{idea.label}</span>
                       <span className="wizard-idea-outcome">{idea.outcome}</span>
-                      {isGenericIdea(idea) && (
-                        <span className="wizard-idea-generic">
-                          works with any data
-                        </span>
-                      )}
-                      {/* The server resolves this against live inventory, so
-                          it is a fact rather than a hope. Inferring it here
-                          from demo_tables being non-empty would turn an
-                          unreadable catalog into a promise we cannot keep. */}
                       {idea.data_ready && (
                         <span className="wizard-idea-badge">
                           <Database size={10} /> Data ready
+                        </span>
+                      )}
+                      {ideaDataMode(idea) === "generate" && !idea.data_ready && (
+                        <span className="wizard-idea-generic">
+                          We'll generate this
                         </span>
                       )}
                     </button>
@@ -659,6 +675,9 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
                   <span className="wizard-field-label">
                     What do you use today? <em>(optional)</em>
                   </span>
+                  <p className="wizard-industry-note">
+                    Helps your host follow up after the event.
+                  </p>
                   <div className="wizard-chips">
                     {stacks.map((item) => (
                       <button
