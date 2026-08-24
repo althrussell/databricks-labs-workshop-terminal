@@ -34,6 +34,8 @@ export interface WizardIdea {
    * where the honest answer is that we do not know — never inferred from
    * `demo_tables` being non-empty, which is a claim we cannot check. */
   data_ready?: boolean;
+  /** Whether this card uses seeded demo tables (`demo`) or generated data. */
+  data_mode?: "demo" | "generate";
 }
 
 export interface WizardBrief {
@@ -353,17 +355,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ persona }),
     }),
-  wizard: (industry?: string) =>
-    request<WizardState>(
-      industry ? `/api/wizard?industry=${encodeURIComponent(industry)}` : "/api/wizard"
-    ),
+  wizard: (industry?: string, query?: string) => {
+    const params = new URLSearchParams();
+    if (industry) params.set("industry", industry);
+    if (query) params.set("q", query);
+    const qs = params.toString();
+    return request<WizardState>(qs ? `/api/wizard?${qs}` : "/api/wizard");
+  },
   saveWizard: (body: WizardSave) =>
     request<{ brief: WizardBrief; starter_prompt: string }>("/api/wizard", {
       method: "POST",
       body: JSON.stringify(body),
     }),
   wizardSuggest: (
-    body: { text: string; industry: string },
+    body: { text: string; industry: string; industry_locked?: boolean },
     signal?: AbortSignal
   ) =>
     request<{ industry: string; ideas: WizardIdea[]; source: string }>(

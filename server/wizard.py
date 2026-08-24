@@ -30,6 +30,7 @@ import json
 import logging
 import os
 import random
+import re
 import threading
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -264,10 +265,23 @@ def idea_payload(idea: content.WizardIdea) -> dict[str, Any]:
     """
     payload = idea.model_dump()
     payload["data_ready"] = demo_data.data_ready(idea.demo_tables)
+    # Honest to the attendee: a card that names no tables will generate data,
+    # including generic padding. Do not infer "demo" from a non-empty list the
+    # catalog could not verify — ``data_ready`` is the promise, this is the mode.
+    payload["data_mode"] = "demo" if idea.demo_tables else "generate"
     return payload
 
 
-def _score(idea: content.WizardIdea, industry: str, intent: str) -> int:
+_TOKEN = re.compile(r"[a-z0-9]+")
+
+
+def _tokens(text: str) -> set[str]:
+    return {t for t in _TOKEN.findall(text.lower()) if len(t) > 2}
+
+
+def _score(
+    idea: content.WizardIdea, industry: str, intent: str, query: str = ""
+) -> int:
     score = 0
     if industry and industry in idea.industries:
         score += 100
@@ -275,6 +289,9 @@ def _score(idea: content.WizardIdea, industry: str, intent: str) -> int:
         score += 10  # generic: always plausible, never preferred over a match
     if intent and intent in idea.intents:
         score += 20
+    if query:
+        overlap = _tokens(query) & _tokens(f"{idea.label} {idea.outcome}")
+        score += 5 * len(overlap)
     return score
 
 
@@ -284,6 +301,7 @@ def select_ideas(
     limit: int = IDEA_COUNT,
     *,
     rng: random.Random | None = None,
+    query: str = "",
 ) -> list[content.WizardIdea]:
     """The cards to show someone who said they are not sure yet.
 
@@ -326,7 +344,7 @@ def select_ideas(
         pool = buildable
 
     rng.shuffle(pool)
-    pool.sort(key=lambda i: _score(i, industry, intent), reverse=True)
+    pool.sort(key=lambda i: _score(i, industry, intent, query), reverse=True)
 
     chosen: list[content.WizardIdea] = []
     seen_shapes: set[str] = set()
@@ -340,7 +358,7 @@ def select_ideas(
         picked = {i.id for i in chosen}
         chosen += [i for i in pool if i.id not in picked][: limit - len(chosen)]
 
-    chosen.sort(key=lambda i: _score(i, industry, intent), reverse=True)
+    chosen.sort(key=lambda i: _score(i, industry, intent, query), reverse=True)
     return chosen[:limit]
 
 
@@ -379,12 +397,20 @@ def to_discovery(brief: WizardBrief) -> dict[str, Any]:
     no authority over their employer's timeline, so a captured answer would be a
     guess that reads downstream as a commitment.
     """
+    idea = idea_by_id(brief.idea_id) if brief.idea_id else None
     title = brief.what_building.strip()
-    if brief.idea_id and not title:
-        idea = idea_by_id(brief.idea_id)
-        if idea:
-            title = idea.label
-    return {
+    if idea and not title:
+        title = idea.label
+    products = list(idea.products) if idea else []
+    if idea and idea.demo_tables:
+        signal = f"wizard_idea:{idea.id}"
+    elif idea:
+        signal = "wizard_mode:generate"
+    elif brief.what_building.strip():
+        signal = "wizard_mode:typed"
+    else:
+        signal = ""
+    out: dict[str, Any] = {
         "record_id": brief.record_id,
         "agent": "wizard",
         "confidence": "high",
@@ -395,6 +421,11 @@ def to_discovery(brief: WizardBrief) -> dict[str, Any]:
         "goal": brief.what_building.strip(),
         "current_stack": list(brief.current_stack),
     }
+    if products:
+        out["databricks_products"] = products
+    if signal:
+        out["interest_signals"] = [signal]
+    return out
 
 
 def save(user: User, payload: dict[str, Any]) -> WizardBrief:
@@ -436,14 +467,26 @@ def save(user: User, payload: dict[str, Any]) -> WizardBrief:
     if brief.intent not in INTENTS:
         brief.intent = ""
 
-    # A picked card owns the industry: its schema is a fact, the chip is a
-    # suggestion. A generic card is a choice *not* to steer, which is why an
-    # empty derived industry is still ``stated``.
+    # A tagged card owns the industry: its schema is a fact, the chip is a
+    # suggestion. A generic card must not wipe a chip the attendee already
+    # confirmed — picking "build a pipeline" is not a choice to forget they
+    # said retail. Only an empty derived industry *and* no chip in the payload
+    # is a choice not to steer.
     if "idea_id" in payload and brief.idea_id:
         idea = idea_by_id(brief.idea_id)
         if idea:
-            brief.industry = industry_of(idea)
-            brief.industry_stated = True
+            derived = industry_of(idea)
+            if derived:
+                brief.industry = derived
+                brief.industry_stated = True
+            elif "industry" in payload:
+                brief.industry = demo_data.industry_slug(
+                    _clean_text(payload["industry"])[:64]
+                )
+                if "industry_stated" in payload:
+                    brief.industry_stated = bool(payload["industry_stated"])
+                else:
+                    brief.industry_stated = bool(brief.industry)
     elif "industry" in payload:
         # ``industry_slug`` rather than ``normalize_industry``: an attendee who
         # typed "shipping logistics" told us the most useful thing on the
@@ -502,11 +545,25 @@ def starter_prompt(brief: WizardBrief) -> str:
     text = brief.what_building.strip()
     if not text:
         return ""
+    stated = brief.stated_industry
+    if stated and demo_data.enabled() and demo_data.has_industry(stated):
+        extra = (
+            f" Use the {stated.replace('_', ' ')} demo data already in this "
+            f"workspace (schema `{stated}`)."
+        )
+    elif stated:
+        extra = (
+            f" Their industry is {stated.replace('_', ' ')}; generate the data "
+            "you need rather than substituting another industry's tables."
+        )
+    else:
+        extra = ""
     return (
         f"{text}\n\n"
         "Start building this with me now. Ask me at most one question if you "
         "genuinely cannot start without the answer, otherwise make a sensible "
         "choice and tell me what you chose."
+        f"{extra}"
     )
 
 
@@ -517,7 +574,7 @@ def _effective_model() -> str:
     return str(wizard_llm.effective_model()["model"])
 
 
-def state(user: User, industry: str = "") -> dict[str, Any]:
+def state(user: User, industry: str = "", query: str = "") -> dict[str, Any]:
     """Everything the frontend needs to render the wizard.
 
     ``industry`` is the filter chip the attendee just pressed, which is not yet
@@ -564,7 +621,9 @@ def state(user: User, industry: str = "") -> dict[str, Any]:
         "stacks": stacks,
         "ideas": [
             idea_payload(i)
-            for i in select_ideas(industry, rng=random.Random(user.email))
+            for i in select_ideas(
+                industry, rng=random.Random(user.email), query=query
+            )
         ],
         "capture_enabled": config.discovery_enabled(),
         "llm_wizard": {

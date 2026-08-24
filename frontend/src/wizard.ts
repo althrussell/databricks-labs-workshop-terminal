@@ -28,6 +28,12 @@ export function isGenericIdea(idea: WizardIdea): boolean {
   return idea.industries.length === 0 && idea.demo_tables.length === 0;
 }
 
+/** How this card will get its data. Prefer the server's `data_mode`. */
+export function ideaDataMode(idea: WizardIdea): "demo" | "generate" {
+  if (idea.data_mode === "demo" || idea.data_mode === "generate") return idea.data_mode;
+  return idea.demo_tables.length > 0 ? "demo" : "generate";
+}
+
 /** What the free-text industry box should change the industry to, or null.
  *
  * Null means leave it alone, which is most of the time. The box commits on

@@ -953,7 +953,10 @@ def test_the_wizard_ui_makes_industry_a_choice_and_does_not_skip_on_backdrop():
     assert "otherOpen" in src
     assert "Tell us your industry" in src
     assert "industryOf(idea)" in src
-    assert "works with any data" in src
+    assert "We'll generate this" in src
+    assert "Which" in src and "industry" in src
+    assert "industry_locked" in src
+    assert "ideaDataMode" in src
     assert "A little context (optional)" in src
     assert "Press Enter to start" in src
     assert 'className="modal-backdrop" onClick={skip}' not in src
@@ -964,3 +967,105 @@ def test_the_wizard_ui_makes_industry_a_choice_and_does_not_skip_on_backdrop():
     assert "if (reveal && res.ideas.length > 0) setShowIdeas(true);" in src
     # The badge is a fact from the server, not an inference from card shape.
     assert "idea.data_ready &&" in src
+    # A generic card must not count as stating the industry on screen.
+    assert "industry_stated: industryConfirmed || Boolean(ideaId)" not in src
+    assert "industry_stated: industryConfirmed," in src
+
+
+def test_a_generic_card_keeps_a_confirmed_industry(user, seeded):
+    """Picking 'build a pipeline' is not a choice to forget they said retail."""
+    generic = next(
+        i
+        for i in content.content_service.ideas()
+        if not i.industries and not i.demo_tables
+    )
+    wizard.save(
+        user,
+        {
+            "what_building": generic.outcome,
+            "industry": "retail",
+            "industry_stated": True,
+            "idea_id": generic.id,
+        },
+    )
+    brief = wizard.read_brief(user)
+    assert brief.industry == "retail"
+    assert brief.stated_industry == "retail"
+
+
+def test_an_unconfirmed_default_is_still_omitted_from_discovery(user, seeded):
+    wizard.save(
+        user,
+        {
+            "what_building": "a dashboard",
+            "industry": "automotive_mobility",
+            "industry_stated": False,
+        },
+    )
+    payload = wizard.to_discovery(wizard.read_brief(user))
+    assert payload["industry"] == ""
+
+
+def test_a_generic_card_does_not_state_an_unconfirmed_industry(user, seeded):
+    """Picking 'build a pipeline' is not agreeing with a room preset or guess."""
+    generic = next(
+        i
+        for i in content.content_service.ideas()
+        if not i.industries and not i.demo_tables
+    )
+    wizard.save(
+        user,
+        {
+            "what_building": generic.outcome,
+            "industry": "automotive_mobility",
+            "industry_stated": False,
+            "idea_id": generic.id,
+        },
+    )
+    brief = wizard.read_brief(user)
+    assert brief.industry_stated is False
+    assert wizard.to_discovery(brief)["industry"] == ""
+
+
+def test_discovery_carries_products_and_a_data_mode_signal(user, seeded):
+    idea = next(
+        i for i in content.content_service.ideas() if i.demo_tables and i.products
+    )
+    wizard.save(
+        user,
+        {
+            "what_building": "",
+            "idea_id": idea.id,
+            "industry": idea.industries[0],
+            "industry_stated": True,
+        },
+    )
+    payload = wizard.to_discovery(wizard.read_brief(user))
+    assert payload["databricks_products"] == list(idea.products)
+    assert payload["interest_signals"] == [f"wizard_idea:{idea.id}"]
+    assert payload["use_case_title"] == idea.label
+
+
+def test_a_typed_sentence_in_a_seeded_industry_names_the_schema(user, seeded):
+    wizard.save(
+        user,
+        {
+            "what_building": "warranty claims by supplier",
+            "industry": "automotive_mobility",
+            "industry_stated": True,
+        },
+    )
+    prompt = wizard.starter_prompt(wizard.read_brief(user))
+    assert "automotive_mobility" in prompt
+    assert "demo data" in prompt
+
+
+def test_idea_payload_labels_generate_vs_demo(seeded):
+    tagged = next(i for i in content.content_service.ideas() if i.demo_tables)
+    generic = next(
+        i
+        for i in content.content_service.ideas()
+        if not i.industries and not i.demo_tables
+    )
+    assert wizard.idea_payload(tagged)["data_mode"] == "demo"
+    assert wizard.idea_payload(generic)["data_mode"] == "generate"

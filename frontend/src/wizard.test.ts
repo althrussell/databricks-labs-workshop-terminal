@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   humanIndustry,
   INDUSTRY_CHIPS_ATTR,
+  ideaDataMode,
   industryFromOther,
   industryOf,
   isGenericIdea,
@@ -125,4 +126,10 @@ test("an unchanged value does not re-request the grid", () => {
   // under someone who was reading them.
   assert.equal(industryFromOther("taxidermy", "taxidermy", true), null);
   assert.equal(industryFromOther("", "", false), null);
+});
+
+test("ideaDataMode prefers the server field then falls back to tables", () => {
+  assert.equal(ideaDataMode(idea({ data_mode: "generate", demo_tables: ["retail.orders"] })), "generate");
+  assert.equal(ideaDataMode(idea({ demo_tables: ["retail.orders"] })), "demo");
+  assert.equal(ideaDataMode(idea()), "generate");
 });

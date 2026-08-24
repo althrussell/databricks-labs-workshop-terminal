@@ -564,7 +564,11 @@ class _WizardBody(BaseModel):
 
 
 @app.get("/api/wizard")
-def get_wizard(industry: str = "", principal: Principal = Depends(get_current_user)):
+def get_wizard(
+    industry: str = "",
+    q: str = "",
+    principal: Principal = Depends(get_current_user),
+):
     """Wizard state: whether to show it, and the ideas to show if so.
 
     Ideas are selected server-side because only the server can see which demo
@@ -576,7 +580,7 @@ def get_wizard(industry: str = "", principal: Principal = Depends(get_current_us
     from . import wizard
     from .users import user_manager
 
-    return wizard.state(user_manager.get(principal.name), industry)
+    return wizard.state(user_manager.get(principal.name), industry, query=q)
 
 
 @app.post("/api/wizard")
@@ -616,6 +620,7 @@ def save_wizard(body: _WizardBody, principal: Principal = Depends(get_current_us
 class _WizardSuggestBody(BaseModel):
     text: str = ""
     industry: str = ""
+    industry_locked: bool = False
 
 
 @app.post("/api/wizard/suggest")
@@ -630,7 +635,9 @@ def suggest_wizard(
     """
     from . import wizard_llm
 
-    return wizard_llm.suggest(body.text, body.industry)
+    return wizard_llm.suggest(
+        body.text, body.industry, industry_locked=body.industry_locked
+    )
 
 
 @app.get("/api/wizard/surprise")
