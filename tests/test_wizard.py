@@ -967,6 +967,9 @@ def test_the_wizard_ui_makes_industry_a_choice_and_does_not_skip_on_backdrop():
     assert "if (reveal && res.ideas.length > 0) setShowIdeas(true);" in src
     # The badge is a fact from the server, not an inference from card shape.
     assert "idea.data_ready &&" in src
+    # A generic card must not count as stating the industry on screen.
+    assert "industry_stated: industryConfirmed || Boolean(ideaId)" not in src
+    assert "industry_stated: industryConfirmed," in src
 
 
 def test_a_generic_card_keeps_a_confirmed_industry(user, seeded):
@@ -1001,6 +1004,27 @@ def test_an_unconfirmed_default_is_still_omitted_from_discovery(user, seeded):
     )
     payload = wizard.to_discovery(wizard.read_brief(user))
     assert payload["industry"] == ""
+
+
+def test_a_generic_card_does_not_state_an_unconfirmed_industry(user, seeded):
+    """Picking 'build a pipeline' is not agreeing with a room preset or guess."""
+    generic = next(
+        i
+        for i in content.content_service.ideas()
+        if not i.industries and not i.demo_tables
+    )
+    wizard.save(
+        user,
+        {
+            "what_building": generic.outcome,
+            "industry": "automotive_mobility",
+            "industry_stated": False,
+            "idea_id": generic.id,
+        },
+    )
+    brief = wizard.read_brief(user)
+    assert brief.industry_stated is False
+    assert wizard.to_discovery(brief)["industry"] == ""
 
 
 def test_discovery_carries_products_and_a_data_mode_signal(user, seeded):

@@ -348,8 +348,10 @@ export default function Wizard({ agents, launching, onLaunch, onClose }: Props) 
         // Neither an industry the model guessed nor one the operator preselected
         // is an industry the attendee stated. Recording either as stated puts
         // something other than the human into a discovery record whose whole
-        // value is that the human said it.
-        industry_stated: industryConfirmed || Boolean(ideaId),
+        // value is that the human said it. A generic idea card is not that
+        // statement either — only a tagged card (which sets industryConfirmed
+        // in pickIdea) or an explicit chip/Other confirm is.
+        industry_stated: industryConfirmed,
         intent,
         idea_id: ideaId,
         current_stack: stack,

@@ -268,8 +268,13 @@ def test_choosing_is_optional():
     )
 
     assert "disabled={!persona}" not in wizard
-    # Continuing is gated on having said what they are building, never on this.
-    assert "const canContinue = what.trim().length > 0 || ideaId !== \"\"" in wizard
+    # Continuing is gated on having said what they are building and which
+    # industry they are in, never on this. Matched as the whole expression
+    # rather than one line of it, because a persona term added anywhere in it
+    # is the regression this test exists to catch.
+    can_continue = wizard.split("const canContinue =", 1)[1].split(";", 1)[0]
+    assert 'what.trim().length > 0 || ideaId !== ""' in can_continue
+    assert "persona" not in can_continue
     assert 'const [persona, setPersona] = useState("")' in wizard
 
 
