@@ -1162,6 +1162,150 @@
     },
 
     {
+      "id": "super-rollout",
+      "label": "Work out which members are about to leave",
+      "outcome": "A model that flags members likely to roll their balance to another fund",
+      "prompt": "Predict which members will roll out to another fund, using their balance, age, insurance cover and contribution history against rollout_labels. Tell me which signals give the earliest warning, and be careful about the class imbalance - very few members leave in any given period.",
+      "industries": ["superannuation"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["mlflow"],
+      "shape": "ml",
+      "technical": true,
+      "demo_tables": [
+        "superannuation.members",
+        "superannuation.rollout_labels",
+        "superannuation.contributions"
+      ]
+    },
+    {
+      "id": "super-member-questions",
+      "label": "Ask about members and where their money sits",
+      "outcome": "Somewhere you can ask about balances and investment options in plain English",
+      "prompt": "Set up a Genie space over members, their holdings and the investment options so I can ask things like which age groups are still in the default option, and how much of the fund sits in each option.",
+      "industries": ["superannuation"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["genie", "sql"],
+      "shape": "ai",
+      "technical": false,
+      "demo_tables": [
+        "superannuation.members",
+        "superannuation.member_holdings",
+        "superannuation.investment_options"
+      ]
+    },
+    {
+      "id": "super-contributions-pipeline",
+      "label": "Check employer contributions are arriving",
+      "outcome": "A pipeline that flags members whose employer has stopped paying",
+      "prompt": "Build a pipeline over the contributions data that works out each member's expected employer contribution rhythm and flags the ones where a payment looks late or missing. Check the data quality as it goes - I want to know if amounts are negative, dated in the future, or duplicated.",
+      "industries": ["superannuation"],
+      "intents": ["business_problem", "evaluation", "learning"],
+      "products": ["pipelines", "sql"],
+      "shape": "pipeline",
+      "technical": true,
+      "demo_tables": ["superannuation.contributions", "superannuation.members"]
+    },
+
+    {
+      "id": "travel-cancellations",
+      "label": "Work out which bookings will be cancelled",
+      "outcome": "A model that flags bookings at risk of cancellation",
+      "prompt": "Predict which bookings get cancelled, using lead time, product type, channel and the customer's loyalty tier against cancellation_labels. Show me how early the risk is visible and what it is worth - refunds are in the labels.",
+      "industries": ["travel"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["mlflow"],
+      "shape": "ml",
+      "technical": true,
+      "demo_tables": [
+        "travel.bookings",
+        "travel.cancellation_labels",
+        "travel.customers"
+      ]
+    },
+    {
+      "id": "travel-margin-dashboard",
+      "label": "See which trips are actually worth selling",
+      "outcome": "A dashboard showing margin by destination, product and channel",
+      "prompt": "Build a dashboard over the bookings: gross value and margin by destination, product type and channel over time. Margin is thin on flights and better on packages, so make it obvious where the money really comes from rather than where the volume is.",
+      "industries": ["travel"],
+      "intents": ["business_problem"],
+      "products": ["dashboards", "sql"],
+      "shape": "dashboard",
+      "technical": false,
+      "demo_tables": ["travel.bookings", "travel.destinations"]
+    },
+    {
+      "id": "travel-reconciliation-pipeline",
+      "label": "Reconcile bookings against what was actually sold",
+      "outcome": "A pipeline that surfaces bookings whose components do not add up",
+      "prompt": "Build a medallion pipeline that joins bookings to their booking_items and checks the components reconcile against the booking value. Flag the ones that do not, and the unconfirmed items. Tell me how big the gap is rather than silently dropping the rows.",
+      "industries": ["travel"],
+      "intents": ["business_problem", "evaluation", "learning"],
+      "products": ["pipelines", "sql"],
+      "shape": "pipeline",
+      "technical": true,
+      "demo_tables": ["travel.bookings", "travel.booking_items"]
+    },
+
+    {
+      "id": "mining-failure-prediction",
+      "label": "Work out which machines are about to fail",
+      "outcome": "A model that flags assets heading for unplanned downtime",
+      "prompt": "Predict unplanned asset failures from the sensor readings and operating hours against failure_labels. Bearing temperature and vibration are the ones to watch. Failures are rare, so tell me what the model is worth in downtime hours avoided rather than just its accuracy.",
+      "industries": ["mining"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["mlflow"],
+      "shape": "ml",
+      "technical": true,
+      "demo_tables": [
+        "mining.sensor_readings",
+        "mining.assets",
+        "mining.failure_labels"
+      ]
+    },
+    {
+      "id": "mining-production-dashboard",
+      "label": "See how the sites are producing",
+      "outcome": "A dashboard covering tonnes, grade and equipment availability by site",
+      "prompt": "Build a dashboard over the daily production data: tonnes mined and shipped, head grade against target, equipment availability and unplanned downtime per site. Different sites produce different commodities at very different tonnages, so make the comparison fair.",
+      "industries": ["mining"],
+      "intents": ["business_problem"],
+      "products": ["dashboards", "sql"],
+      "shape": "dashboard",
+      "technical": false,
+      "demo_tables": ["mining.production_daily", "mining.sites"]
+    },
+    {
+      "id": "mining-telemetry-pipeline",
+      "label": "Turn raw sensor data into something usable",
+      "outcome": "A pipeline that aggregates asset telemetry and catches bad readings",
+      "prompt": "Build a medallion pipeline over the sensor readings: raw through to hourly aggregates per asset, with data quality checks that catch impossible values and sensors that have gone quiet. I want to see how many readings get quarantined and why.",
+      "industries": ["mining"],
+      "intents": ["business_problem", "evaluation", "learning"],
+      "products": ["pipelines", "sql"],
+      "shape": "pipeline",
+      "technical": true,
+      "demo_tables": ["mining.sensor_readings", "mining.assets"]
+    },
+
+    {
+      "id": "fs-arrears-dashboard",
+      "label": "See which loans are going bad",
+      "outcome": "A dashboard ranking arrears by product, branch and vintage",
+      "prompt": "Build a dashboard over the loan book and arrears snapshots: arrears rate and balance by product, branch and origination vintage. The snapshots are monthly, so show me which segments are getting worse rather than just which are worst today, and flag the hardship accounts separately.",
+      "industries": ["financial_services"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["dashboards", "sql"],
+      "shape": "dashboard",
+      "technical": false,
+      "demo_tables": [
+        "financial_services.loans",
+        "financial_services.arrears",
+        "financial_services.branches"
+      ]
+    },
+
+    {
       "id": "cross-revenue-dashboard",
       "label": "See how the business is doing",
       "outcome": "A revenue dashboard you can slice by product and time",
