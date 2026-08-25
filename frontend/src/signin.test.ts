@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { OboStatus } from "./api";
-import { SOON_MINUTES, signInNotice } from "./signin";
+import { signInNotice } from "./signin";
 
 function obo(overrides: Partial<OboStatus> = {}): OboStatus {
   return {
@@ -43,14 +43,8 @@ test("a deployment with no Omnigent plane says nothing at all", () => {
   assert.equal(signInNotice(true, undefined).kind, "none");
 });
 
-test("an approaching renewal is flagged before it becomes a failure", () => {
-  const state = signInNotice(true, obo({ expires_in: (SOON_MINUTES - 1) * 60 }));
-  assert.equal(state.kind, "rule");
-  assert.ok(state.kind === "rule" && state.soon);
-});
-
-test("a healthy sign-in is not dressed up as a warning", () => {
-  const state = signInNotice(true, obo({ expires_in: (SOON_MINUTES + 30) * 60 }));
-  assert.ok(state.kind === "rule" && !state.soon);
-  assert.ok(state.kind === "rule" && state.minutes === SOON_MINUTES + 30);
+test("a sign-in close to renewal still reads as the plain rule", () => {
+  // Renewal happens on its own and needs nothing from the attendee, so the
+  // last minutes of a token are not an event worth escalating.
+  assert.equal(signInNotice(true, obo({ expires_in: 60 })).kind, "rule");
 });
