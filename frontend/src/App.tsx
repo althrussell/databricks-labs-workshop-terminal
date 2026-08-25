@@ -9,6 +9,7 @@ import {
   MessageSquare,
   Rocket,
   ShieldCheck,
+  Sparkles,
   SquareTerminal,
   X,
 } from "lucide-react";
@@ -66,6 +67,7 @@ const LINK_ICONS: Record<string, typeof LinkIcon> = {
   "book-open": BookOpen,
   "graduation-cap": GraduationCap,
   rocket: Rocket,
+  sparkles: Sparkles,
   link: LinkIcon,
 };
 
@@ -491,7 +493,7 @@ export default function App() {
               title="Open the Databricks workspace"
             >
               <LinkIcon size={14} />
-              Open Workspace
+              Workspace
             </a>
           )}
           {config?.omnigent_remote?.enabled && config.omnigent_remote.url && (
@@ -502,7 +504,7 @@ export default function App() {
               title="Open the dedicated Omnigent app"
             >
               <Rocket size={14} />
-              Open Omnigent
+              Omnigent
             </a>
           )}
           {/* 3. Actions, then the promoted CTA at the far right */}

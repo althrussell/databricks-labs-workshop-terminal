@@ -387,16 +387,6 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
-.tab-rule-soon {
-  color: var(--warning);
-}
-
-.tab-rule-clock {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-
 .banner .icon-btn {
   margin-left: auto;
 }

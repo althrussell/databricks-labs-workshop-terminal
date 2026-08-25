@@ -62,11 +62,10 @@ on every screen:
 > Keep this tab open — it is what keeps your Databricks sign-in alive for
 > Omnigent agents.
 
-with the sign-in's remaining life on the right. It is not dismissible, because
-people join late, take breaks and forget, and the rule applies for the whole
-event. As renewal approaches it turns amber and reads *Renewing shortly* — a
-countdown that resets is not something to act on, and saying so stops it looking
-like a failure in progress.
+Nothing else — no clock. It is not dismissible, because people join late, take
+breaks and forget, and the rule applies for the whole event. It carries no time
+remaining either: renewal happens on its own, so a countdown gives an attendee
+nothing to act on and reads like a failure in progress while they watch it.
 
 Implemented in `frontend/src/components/SignInNotice.tsx`; hidden entirely on
 deployments with no Omnigent plane, where the rule does not apply.

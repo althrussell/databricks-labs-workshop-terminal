@@ -7,18 +7,16 @@
 // tabs. So the rule is stated on screen for as long as it applies, and stated
 // unmissably the moment it is broken.
 //
-// Kept apart from the component so the wording and the thresholds can be tested
-// as facts rather than through a rendered tree.
+// Kept apart from the component so which notice applies can be tested as a fact
+// rather than through a rendered tree.
+//
+// No time remaining is shown. A countdown that renews on its own is not
+// something an attendee can act on, and watching it tick reads as a failure in
+// progress; the rule holds for the whole event either way.
 
 import type { OboStatus } from "./api";
 
-/** Minutes of remaining sign-in below which the quiet notice starts warning. */
-export const SOON_MINUTES = 10;
-
-export type SignInNoticeState =
-  | { kind: "none" }
-  | { kind: "rule"; minutes: number | null; soon: boolean }
-  | { kind: "expired" };
+export type SignInNoticeState = { kind: "none" } | { kind: "rule" } | { kind: "expired" };
 
 /**
  * Which notice belongs on screen, if any.
@@ -35,8 +33,7 @@ export function signInNotice(
   // Never captured is not expired. A tab that has not yet handed over a token
   // is the normal state for the first second of the event, and telling someone
   // their sign-in expired before they have one reads as a broken product.
-  if (!obo.present) return { kind: "rule", minutes: null, soon: false };
-  const minutes = obo.expires_in == null ? null : Math.round(obo.expires_in / 60);
-  if (!obo.fresh || (minutes !== null && minutes <= 0)) return { kind: "expired" };
-  return { kind: "rule", minutes, soon: minutes !== null && minutes <= SOON_MINUTES };
+  if (!obo.present) return { kind: "rule" };
+  if (!obo.fresh || (obo.expires_in !== null && obo.expires_in <= 0)) return { kind: "expired" };
+  return { kind: "rule" };
 }

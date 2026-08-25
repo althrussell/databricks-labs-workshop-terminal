@@ -40,18 +40,11 @@ export default function SignInNotice({ omnigentEnabled, obo, onReload }: Props) 
   }
 
   return (
-    <div className={`tab-rule ${state.soon ? "tab-rule-soon" : ""}`}>
+    <div className="tab-rule">
       <span>
         Keep this tab open — it is what keeps your Databricks sign-in alive for
         Omnigent agents.
       </span>
-      {state.minutes !== null && (
-        <span className="tab-rule-clock">
-          {state.soon
-            ? `Renewing shortly (${Math.max(0, state.minutes)}m left)`
-            : `${state.minutes}m of sign-in left`}
-        </span>
-      )}
     </div>
   );
 }
