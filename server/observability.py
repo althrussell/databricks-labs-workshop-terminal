@@ -87,14 +87,35 @@ def redact_text(value: object) -> str:
 class RedactionFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         try:
-            message = redact_text(record.getMessage())
+            # Uvicorn's access formatter does not format ``msg`` in the usual
+            # logging way.  It unpacks the five structured arguments to add
+            # colour and status metadata.  Flattening those arguments into an
+            # already-rendered message makes every access log raise
+            # ``ValueError: not enough values to unpack``.  Preserve the
+            # contract while still redacting the request path and other string
+            # fields before any handler (including OTel) can see them.
+            structured_access_log = (
+                record.name == "uvicorn.access"
+                and isinstance(record.args, tuple)
+                and len(record.args) == 5
+            )
+            if structured_access_log:
+                record.msg = redact_text(record.msg)
+                record.args = tuple(
+                    redact_text(value) if isinstance(value, str) else value
+                    for value in record.args
+                )
+            else:
+                record.msg = redact_text(record.getMessage())
+                record.args = ()
             if record.exc_info:
                 formatter = logging.Formatter()
                 exception_text = redact_text(
                     formatter.formatException(record.exc_info)
                 )
                 if exception_text:
-                    message = f"{message}\n{exception_text}"
+                    record.msg = f"{record.getMessage()}\n{exception_text}"
+                    record.args = ()
                 # OTel and custom handlers may format ``exc_info`` themselves,
                 # bypassing ``exc_text``. Flatten only its redacted rendering
                 # into the message and remove the raw exception tuple.
@@ -102,8 +123,6 @@ class RedactionFilter(logging.Filter):
                 record.exc_text = exception_text
             if record.stack_info:
                 record.stack_info = redact_text(record.stack_info)
-            record.msg = message
-            record.args = ()
         except Exception:  # noqa: BLE001 - logging must never break the app
             record.msg = "[REDACTION_FAILED]"
             record.args = ()
