@@ -25,8 +25,8 @@ def _single_attendee_topology(monkeypatch, tmp_path):
     from server import config, topology
 
     monkeypatch.delenv("ALLOW_SHARED_TOPOLOGY", raising=False)
-    monkeypatch.setenv("MAX_SESSIONS_GLOBAL", "3")
-    monkeypatch.setenv("MAX_SESSIONS_PER_USER", "3")
+    monkeypatch.setenv("MAX_SESSIONS_GLOBAL", "1")
+    monkeypatch.setenv("MAX_SESSIONS_PER_USER", "1")
     monkeypatch.setenv("WORKSHOP_ATTENDEE_EMAIL", "alice@example.com")
     monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
 

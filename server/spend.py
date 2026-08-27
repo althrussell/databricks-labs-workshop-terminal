@@ -57,9 +57,8 @@ def reset() -> None:
 
 
 def is_llm_agent(agent: dict) -> bool:
-    """An agent that spends model tokens needs a CLI binary (``requires``);
-    bash has none and is always free."""
-    return bool(agent.get("requires")) and agent.get("id") != "bash"
+    """Every supported launch surface is a metered coding agent."""
+    return bool(agent.get("requires"))
 
 
 def agent_launches(user) -> int:
@@ -70,21 +69,20 @@ def agent_launches(user) -> int:
 def check_can_launch(user, agent: dict) -> None:
     """Enforce the kill-switch + per-attendee budget for an LLM-agent launch.
 
-    No-op for bash. Raises :class:`SpendBlocked` (403 kill-switch, 429 budget).
+    Raises :class:`SpendBlocked` (403 kill-switch, 429 budget).
     """
     if not is_llm_agent(agent):
         return
     if not agents_enabled():
         raise SpendBlocked(
-            "Coding agents are paused by the workshop operator. "
-            "The bash terminal is still available.",
+            "Coding agents are paused by the workshop operator.",
             status=403,
         )
     cap = config.max_agent_launches_per_user()
     if cap > 0 and agent_launches(user) >= cap:
         raise SpendBlocked(
             f"You've used your {cap} coding-agent sessions for this workshop. "
-            "Use the bash terminal, or ask your host to extend it.",
+            "Ask your host to extend it.",
             status=429,
         )
 

@@ -30,27 +30,29 @@ export interface SessionLike {
  * nothing.
  */
 export function ideaAgentId(agents: readonly AgentInfo[]): string {
-  const coding = agents.filter((agent) => agent.id !== "bash");
+  const supported = agents.filter((agent) =>
+    ["omnigent", "claude", "codex"].includes(agent.id)
+  );
   const preferred = (choices: readonly AgentInfo[]) =>
     choices.find((agent) => agent.id === "claude") ?? choices[0];
-  const launchable = coding.filter((agent) => agent.ready && !agent.blocked);
-  return (preferred(launchable) ?? preferred(coding))?.id ?? "";
+  const launchable = supported.filter((agent) => agent.ready && !agent.blocked);
+  return (preferred(launchable) ?? preferred(supported))?.id ?? "";
 }
 
 /** The open session an ideation prompt should be typed into, if there is one.
  *
- * Prefers the agent we would have launched, then any other coding session, then
- * a plain terminal — an attendee who has one thing open wants the text there
- * rather than a second tab appearing beside it.
+ * Prefers the agent we would have launched, then the sole live agent. An
+ * attendee who has one thing open wants the text there rather than a switch.
  */
 export function ideaSession<T extends SessionLike>(
   sessions: readonly T[],
   agentId: string
 ): T | undefined {
-  const live = sessions.filter((session) => !session.exited);
+  const live = sessions.filter(
+    (session) =>
+      !session.exited && ["omnigent", "claude", "codex"].includes(session.agent_id)
+  );
   return (
-    live.find((session) => session.agent_id === agentId) ??
-    live.find((session) => session.agent_id !== "bash") ??
-    live[0]
+    live.find((session) => session.agent_id === agentId) ?? live[0]
   );
 }

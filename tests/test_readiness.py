@@ -12,8 +12,8 @@ EXPECTED_SCOPES = (
 def _good_inputs(tmp_path):
     state_path = tmp_path / "sessions.json"
     env = {
-        "MAX_SESSIONS_PER_USER": "3",
-        "MAX_SESSIONS_GLOBAL": "3",
+        "MAX_SESSIONS_PER_USER": "1",
+        "MAX_SESSIONS_GLOBAL": "1",
         "ALLOW_SHARED_TOPOLOGY": "false",
         "DATABRICKS_CLIENT_ID": "app-client",
         "WORKSHOP_ATTENDEE_EMAIL": "alice@example.com",

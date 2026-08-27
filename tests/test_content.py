@@ -120,8 +120,8 @@ def test_shell_config_served_to_attendees(client, as_admin):
     assert cfg["shell"]["links"][0]["label"] == "Academy"
 
 
-def test_presence_lists_attendees(client, as_admin):
-    client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE)
+def test_presence_lists_attendees(client, as_admin, launchable_agents):
+    client.post("/api/sessions", json={"agent_id": "claude"}, headers=ALICE)
     presence = client.get("/api/admin/presence", headers=ADMIN).json()
     emails = [u["email"] for u in presence["users"]]
     assert "alice@example.com" in emails

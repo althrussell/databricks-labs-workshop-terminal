@@ -213,7 +213,7 @@ def test_chaos_a_host_killed_mid_turn_is_woken_rather_than_left_waiting(
 
 
 def test_chaos_a_renewal_that_never_comes_degrades_instead_of_failing_open(
-    client, watched, monkeypatch
+    client, watched, monkeypatch, launchable_agents
 ):
     """The tab is gone for good. Every Omnigent surface must refuse cleanly and
     the bare tier must be untouched — this is the shape of the incident."""
@@ -231,11 +231,10 @@ def test_chaos_a_renewal_that_never_comes_degrades_instead_of_failing_open(
     catalog = agents(client)
     assert catalog["omnigent"]["ready"] is False
     assert catalog["claude"]["ready"] is True
-    assert catalog["bash"]["ready"] is True
     refused = client.post("/api/sessions", json={"agent_id": "omnigent"}, headers=ALICE)
     assert refused.status_code == 503
     assert "Reload this tab" in refused.json()["detail"]
-    assert client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE).status_code == 200
+    assert client.post("/api/sessions", json={"agent_id": "claude"}, headers=ALICE).status_code == 200
 
 
 def test_chaos_leaves_one_health_transition_per_state_not_a_storm(

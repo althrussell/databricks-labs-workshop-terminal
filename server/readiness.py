@@ -328,13 +328,12 @@ def evaluate(
         "detail": "",
         **(workspace_sync or {}),
     }
-    per_user = _int(env, "MAX_SESSIONS_PER_USER", 3)
-    global_cap = _int(env, "MAX_SESSIONS_GLOBAL", 30)
+    per_user = _int(env, "MAX_SESSIONS_PER_USER", 1)
+    global_cap = _int(env, "MAX_SESSIONS_GLOBAL", 1)
     topology_ok = (
         not _bool(env, "ALLOW_SHARED_TOPOLOGY")
-        and per_user > 0
-        and global_cap > 0
-        and global_cap <= per_user
+        and per_user == 1
+        and global_cap == 1
     )
     # The effective binding, which may be self-bound rather than injected by
     # Control Tower; the raw env var is only the hint.
@@ -617,7 +616,9 @@ def evaluate(
     checks = {
         "topology": _check(
             topology_ok,
-            "single-attendee limits enforced" if topology_ok else "configuration permits shared use",
+            "single-session limits enforced"
+            if topology_ok
+            else "MAX_SESSIONS_PER_USER and MAX_SESSIONS_GLOBAL must both equal 1",
             max_sessions_per_user=per_user,
             max_sessions_global=global_cap,
         ),

@@ -21,7 +21,7 @@ Omnigent agent then fails, with a message about a terminal that would not start.
 Nothing about that error suggests "your tab was closed", which is why attendees
 who hit it ask an operator instead of fixing it themselves.
 
-Bare Claude, Codex and Terminal are unaffected: they run on the app's own
+Bare Claude and Codex are unaffected: they run on the app's own
 credential, which the server rotates regardless of who is looking at what.
 
 ---
@@ -40,7 +40,7 @@ Say this during the intro, right before the first launch. Thirty seconds.
 > and you will not lose your work — your session is still running on the
 > machine.
 >
-> And if an agent ever fails on you, Claude Code, Codex and Terminal on the home
+> And if an agent ever fails on you, Claude Code and Codex on the home
 > screen always work. Grab one of those and flag me."
 
 Repeat the one-liner after any break, when people have closed things down. That
@@ -76,10 +76,10 @@ The moment the sign-in actually goes stale, the strip is replaced by a
 full-width banner in the danger colour with a **Reload** button:
 
 > **Your Databricks sign-in has expired.** Reload this tab to sign in again — it
-> takes a second and you will not lose any work. Claude, Codex and Terminal keep
+> takes a second and you will not lose any work. Claude and Codex keep
 > working meanwhile.
 
-Deliberately not a modal. Bare Claude, Codex and Terminal still work at that
+Deliberately not a modal. Bare Claude and Codex still work at that
 moment, and covering the screen would take away the one thing that does.
 
 ---

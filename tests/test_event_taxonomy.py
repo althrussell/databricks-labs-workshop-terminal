@@ -59,28 +59,27 @@ def test_a_paused_launch_says_why_it_was_refused(client, emitted, monkeypatch):
 
 
 def test_hitting_the_session_cap_is_visible_to_an_operator(
-    client, emitted, monkeypatch
+    client, emitted, monkeypatch, launchable_agents
 ):
-    monkeypatch.setenv("MAX_SESSIONS_GLOBAL", "1")
     client.post(
         "/api/sessions",
-        json={"agent_id": "bash"},
+        json={"agent_id": "claude"},
         headers={"X-Forwarded-Email": "alice@example.com"},
     )
     resp = client.post(
         "/api/sessions",
-        json={"agent_id": "bash"},
+        json={"agent_id": "codex"},
         headers={"X-Forwarded-Email": "bob@example.com"},
     )
 
-    assert resp.status_code == 429
-    assert _payload(emitted, "session.create_failed")["code"] == "session_limit"
+    assert resp.status_code == 409
+    assert _payload(emitted, "session.create_failed")["code"] == "session_conflict"
 
 
-def test_closing_a_terminal_records_how_it_ended(client, emitted):
+def test_closing_an_agent_records_how_it_ended(client, emitted, launchable_agents):
     created = client.post(
         "/api/sessions",
-        json={"agent_id": "bash"},
+        json={"agent_id": "claude"},
         headers={"X-Forwarded-Email": "alice@example.com"},
     ).json()["session"]
 
@@ -91,16 +90,16 @@ def test_closing_a_terminal_records_how_it_ended(client, emitted):
 
     payload = _payload(emitted, "session.exited")
     assert payload["code"] == "closed"
-    assert payload["agent"] == "bash"
+    assert payload["agent"] == "claude"
     assert payload["session_id"] == created["id"]
 
 
-def test_a_session_is_only_reported_as_ended_once(client, emitted):
+def test_a_session_is_only_reported_as_ended_once(client, emitted, launchable_agents):
     from server.sessions import session_manager
 
     created = client.post(
         "/api/sessions",
-        json={"agent_id": "bash"},
+        json={"agent_id": "claude"},
         headers={"X-Forwarded-Email": "alice@example.com"},
     ).json()["session"]
     session = session_manager.get(created["id"], "alice@example.com")
@@ -179,5 +178,5 @@ def test_telemetry_never_raises_into_a_caller(monkeypatch):
 
     monkeypatch.setattr(emitter_module.event_emitter, "emit", explode)
 
-    telemetry.session_create_failed("alice@example.com", "claude", "session_limit")
+    telemetry.session_create_failed("alice@example.com", "claude", "session_conflict")
     telemetry.attendee_error_seen("alice@example.com", "turn_failed")

@@ -154,7 +154,7 @@ env:
     value: ""
   # Coding agents offered to attendees, chosen when the workshop was created:
   # a comma-separated subset of "omnigent,claude,codex". Empty means all of
-  # them. The plain Terminal is always available and is not listed here.
+  # them. Other IDs are rejected by the server allowlist.
   - name: WORKSHOP_AGENTS
     value: ""
 
@@ -315,9 +315,9 @@ env:
 
   # --- Limits ---
   - name: MAX_SESSIONS_PER_USER
-    value: "3"
+    value: "1"
   - name: MAX_SESSIONS_GLOBAL
-    value: "3"
+    value: "1"
   # The security boundary is one attendee per app instance. Shared topology is
   # not release-ready even when explicitly acknowledged.
   - name: ALLOW_SHARED_TOPOLOGY

@@ -13,7 +13,7 @@ test("the harness codes an attendee cannot act on become sentences they can", ()
     assert.equal(friendly.action, "recover");
     assert.equal(friendly.actionLabel, "Recover");
     // The fallbacks are the point: the attendee is not blocked, only Omnigent is.
-    assert.match(friendly.message, /Claude, Codex and Terminal/);
+    assert.match(friendly.message, /Claude and Codex/);
   }
 });
 

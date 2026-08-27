@@ -68,8 +68,8 @@ test("a coding session wins over a plain terminal, whichever is open", () => {
   assert.equal(ideaSession(sessions, "codex")?.id, "s2");
 });
 
-test("a terminal is better than nowhere when it is all there is", () => {
-  assert.equal(ideaSession([session("s1", "bash")], "claude")?.id, "s1");
+test("an unsupported raw terminal is never used", () => {
+  assert.equal(ideaSession([session("s1", "bash")], "claude"), undefined);
 });
 
 test("an exited session is not somewhere to type", () => {

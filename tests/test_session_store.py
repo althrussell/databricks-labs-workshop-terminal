@@ -168,7 +168,9 @@ def test_manager_without_store_is_inert(store):
     mgr._persist_exit("nope", "closed")
 
 
-def test_create_journals_live_session_and_terminate_removes_it(client, store):
+def test_create_journals_live_session_and_terminate_removes_it(
+    client, store, launchable_agents
+):
     # Attach the journal to the real (global) manager used by the API, then
     # drive the actual PTY create/terminate path.
     from .conftest import ALICE
@@ -177,7 +179,7 @@ def test_create_journals_live_session_and_terminate_removes_it(client, store):
     prev = session_manager._store
     session_manager._store = store
     try:
-        resp = client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE)
+        resp = client.post("/api/sessions", json={"agent_id": "claude"}, headers=ALICE)
         sid = resp.json()["session"]["id"]
         # The live session is journaled (so a restart would surface it).
         journaled = store.load()

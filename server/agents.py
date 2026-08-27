@@ -19,35 +19,23 @@ from . import config
 logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
+SUPPORTED_AGENT_IDS = frozenset({"omnigent", "claude", "codex"})
 # The operator's "demote Omnigent" lever. None means nobody has pulled it.
 _demoted: bool = False
 
 _DEFAULT_CATALOG = os.path.join(os.path.dirname(__file__), "..", "content", "agents.json")
 
-# bash needs no install and is always launchable.
-_BASH = {
-    "id": "bash",
-    "label": "Terminal",
-    "description": "Plain bash shell with the Databricks CLI pre-authenticated.",
-    "icon": "terminal",
-    "command": "bash",
-    "requires": [],
-    "order": 99,
-}
-
-
 def offered_agent_ids() -> list[str] | None:
     """The operator's agent selection, or ``None`` when they made none.
 
-    Separate from ``config.workshop_agents`` so the "bash is not a choice" rule
-    lives with the catalog rather than with the env parsing: bash is the escape
-    hatch the runbook sends people to, and an operator picking coding agents is
-    not being asked whether attendees may open a shell.
+    Unsupported legacy IDs are discarded here as well as in ``load_catalog``.
+    The server allowlist is the enforcement boundary; the catalogue is only
+    presentation and may be overridden by an operator-controlled file.
     """
     selected = config.workshop_agents()
     if selected is None:
         return None
-    return [*selected, "bash"]
+    return [agent_id for agent_id in selected if agent_id in SUPPORTED_AGENT_IDS]
 
 
 def load_catalog() -> list[dict]:
@@ -57,9 +45,8 @@ def load_catalog() -> list[dict]:
         with open(path) as f:
             agents = json.load(f)
     except (OSError, json.JSONDecodeError) as e:
-        logger.error("agent catalog unreadable at %s: %s — bash only", path, e)
-    if not any(a.get("id") == "bash" for a in agents):
-        agents.append(_BASH)
+        logger.error("agent catalog unreadable at %s: %s", path, e)
+    agents = [a for a in agents if a.get("id") in SUPPORTED_AGENT_IDS]
     # The workshop's own selection, made when the run was created. Applied
     # before the Omnigent gate below so the two compose: an operator who picked
     # Omnigent still loses it on an instance where the feature is off.
@@ -106,7 +93,7 @@ def set_omnigent_demoted(demoted: bool) -> None:
 
     The lever an operator reaches for when the Omnigent plane is failing across
     a room and waiting is not working: one call moves everyone to bare Claude,
-    Codex and bash, which run on the app credential and cannot be taken out by
+    Claude and Codex, which run on the app credential and cannot be taken out by
     an attendee's expired sign-in. Deliberately separate from the spend
     kill-switch, which pauses *all* agents — demoting is the move that keeps a
     workshop running rather than stopping it.
@@ -133,9 +120,8 @@ def launch_block(agent: dict, email: str) -> str:
     the attendee cannot act on. Refusing up front is the difference between an
     explained wait and a room full of identical unexplained failures.
 
-    Bare Claude, Codex and bash are deliberately not consulted here: they are
-    the fallback the runbook sends people to, so they must never be gated by
-    credential state on a plane they do not use.
+    Bare Claude and Codex are deliberately not consulted here: they must never
+    be gated by credential state on a plane they do not use.
     """
     if not is_omnigent_backed(agent):
         return ""
@@ -158,16 +144,20 @@ def launch_block(agent: dict, email: str) -> str:
 
 
 def launch_command(agent: dict) -> list[str]:
-    """PTY command for an agent: run the CLI inside a login-ish bash so the
-    attendee lands back in a shell when the agent exits.
+    """PTY command for an agent. Exiting the CLI exits the PTY as well.
 
     Note: no prompt injection here — coaching context belongs in the agent's
     memory files (~/.claude/CLAUDE.md, written by user_content), never in a
     fabricated user message."""
-    cmd = agent.get("command", "bash")
-    if cmd == "bash":
-        return ["/bin/bash"]
-    return ["/bin/bash", "-c", f"{cmd}; exec /bin/bash"]
+    if agent.get("id") not in SUPPORTED_AGENT_IDS:
+        raise ValueError(f"Unsupported agent '{agent.get('id', '')}'")
+    cmd = str(agent.get("command") or "").strip()
+    if not cmd:
+        raise ValueError(f"Agent '{agent['id']}' has no launch command")
+    # The catalogue command may contain reviewed arguments, so retain a shell
+    # for parsing but replace it with the CLI. There is no shell to reveal when
+    # the agent exits.
+    return ["/bin/bash", "-c", f"exec {cmd}"]
 
 
 def quoted(cmd: str) -> str:

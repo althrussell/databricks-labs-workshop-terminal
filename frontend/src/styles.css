@@ -614,35 +614,23 @@ body {
   }
 }
 
-/* ---- tabs ---- */
+/* ---- active agent ---- */
 
-.tabs {
-  display: flex;
-  gap: 4px;
-  overflow-x: auto;
-}
-
-.tab {
+.active-agent {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
   border-radius: 8px;
   font-size: 13px;
-  color: var(--text-dim);
-  cursor: pointer;
-  border: 1px solid transparent;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
   white-space: nowrap;
 }
 
-.tab:hover {
-  background: var(--bg-panel);
-}
-
-.tab-active {
-  background: var(--bg-panel);
-  border-color: var(--border);
-  color: var(--text);
+.active-agent .icon-btn {
+  margin-left: 2px;
 }
 
 .coach-hint {
@@ -1707,6 +1695,37 @@ body {
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 22px 24px;
+}
+
+dialog.modal {
+  color: var(--text);
+  box-shadow: 0 24px 80px rgb(0 0 0 / 45%);
+}
+
+dialog.modal::backdrop {
+  background: rgba(5, 8, 12, 0.7);
+  backdrop-filter: blur(2px);
+}
+
+.agent-switch-dialog {
+  max-width: calc(100vw - 32px);
+}
+
+.agent-switch-error {
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  color: var(--text);
+}
+
+.agent-switch-dialog button:focus-visible,
+.launch-btn:focus-visible,
+.hero-card:focus-visible,
+.operator-toggle:focus-visible,
+.icon-btn:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
 }
 
 .modal h2 {

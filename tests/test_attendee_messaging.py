@@ -37,7 +37,7 @@ def test_the_floor_script_gives_the_fix_as_well_as_the_rule(script):
 
 
 def test_the_floor_script_names_the_tier_that_keeps_working(script):
-    assert "Claude Code, Codex and Terminal" in script or "Claude, Codex and Terminal" in script
+    assert "Claude Code and Codex" in script or "Claude and Codex" in script
 
 
 def test_the_script_does_not_ask_for_something_attendees_cannot_give(script):
@@ -61,7 +61,7 @@ def test_the_banner_never_covers_the_tier_that_still_works():
     """A modal would hide the bare CLIs — the only thing working at that moment."""
     notice = NOTICE.read_text()
     assert "modal" not in notice.lower() or "Never a modal" in notice
-    assert "Claude, Codex and Terminal keep working" in notice
+    assert "Claude and Codex keep working" in notice
 
 
 def test_the_notice_is_actually_mounted():

@@ -359,42 +359,49 @@ class SessionManager:
         with self._lock:
             return list(self._sessions.values())
 
+    def active(self) -> Session | None:
+        """The app's sole live session, if the slot is occupied."""
+        with self._lock:
+            return next(iter(self._sessions.values()), None)
+
     # -- lifecycle --
 
     def create(self, user: User, agent_id: str, command: list[str], label: str) -> Session:
-        """Spawn a PTY for `user`. Caps re-checked under the registry lock."""
+        """Atomically claim the app's sole PTY slot and spawn its process."""
         per_user = config.max_sessions_per_user()
         global_cap = config.max_sessions_global()
-        with self._lock:
-            if sum(1 for s in self._sessions.values() if s.owner_email == user.email) >= per_user:
-                raise SessionLimitError(f"You already have {per_user} open terminals — close one first.")
-            if len(self._sessions) >= global_cap:
-                raise SessionLimitError("The workshop instance is at capacity — try again shortly.")
+        if per_user != 1 or global_cap != 1:
+            raise SessionConfigurationError(
+                "Workshop Terminal requires MAX_SESSIONS_PER_USER=1 and "
+                "MAX_SESSIONS_GLOBAL=1"
+            )
 
-        master_fd, slave_fd = pty.openpty()
-        env = user.shell_env()
-        cwd = os.path.join(user.home, "projects")
-        os.makedirs(cwd, exist_ok=True)
-        try:
-            pid = subprocess.Popen(
-                command,
-                stdin=slave_fd, stdout=slave_fd, stderr=slave_fd,
-                preexec_fn=os.setsid, env=env, cwd=cwd,
-            ).pid
-        finally:
-            os.close(slave_fd)
-
-        session = Session(user.email, agent_id, label, master_fd, pid)
         with self._lock:
-            # Authoritative re-check under the same lock as insertion (TOCTOU).
-            owned = sum(1 for s in self._sessions.values() if s.owner_email == user.email)
-            if owned >= per_user or len(self._sessions) >= global_cap:
+            active = next(iter(self._sessions.values()), None)
+            if active is not None:
+                raise SessionConflictError(active)
+
+            # Hold the registry lock through process creation and insertion.
+            # A reservation flag would introduce a second state to recover from;
+            # this short critical section guarantees a losing request never
+            # creates a child process at all.
+            master_fd, slave_fd = pty.openpty()
+            env = user.shell_env()
+            cwd = os.path.join(user.home, "projects")
+            os.makedirs(cwd, exist_ok=True)
+            try:
+                pid = subprocess.Popen(
+                    command,
+                    stdin=slave_fd, stdout=slave_fd, stderr=slave_fd,
+                    preexec_fn=os.setsid, env=env, cwd=cwd,
+                ).pid
+            except Exception:
                 os.close(master_fd)
-                try:
-                    os.kill(pid, signal.SIGKILL)
-                except OSError:
-                    pass
-                raise SessionLimitError("Terminal limit reached — close one first.")
+                raise
+            finally:
+                os.close(slave_fd)
+
+            session = Session(user.email, agent_id, label, master_fd, pid)
             self._sessions[session.id] = session
 
         self._persist(session)
@@ -552,8 +559,20 @@ class SessionManager:
                         self._persist(session)
 
 
-class SessionLimitError(Exception):
-    pass
+class SessionConflictError(Exception):
+    """A create lost the single-session admission race."""
+
+    def __init__(self, active: Session):
+        self.active_session = {
+            "id": active.id,
+            "agent_id": active.agent_id,
+            "label": active.label,
+        }
+        super().__init__(f"{active.label} is already open — close it before switching agents")
+
+
+class SessionConfigurationError(Exception):
+    """The deployment attempted to override the fixed one-session invariant."""
 
 
 session_manager = SessionManager()

@@ -2,6 +2,23 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as apiModule from "./api.ts";
 
+test("structured single-session conflicts retain the active agent metadata", () => {
+  const conflict = apiModule.sessionConflictFrom(
+    new apiModule.ApiError(409, {
+      code: "session_conflict",
+      message: "Claude Code is already open",
+      active_session: { id: "one", agent_id: "claude", label: "Claude Code" },
+    })
+  );
+
+  assert.deepEqual(conflict?.active_session, {
+    id: "one",
+    agent_id: "claude",
+    label: "Claude Code",
+  });
+  assert.equal(apiModule.sessionConflictFrom(new Error("409")), null);
+});
+
 test("restart ghosts remain separate from websocket-attachable live sessions", () => {
   const result = apiModule.splitSessionPayload({
     sessions: [

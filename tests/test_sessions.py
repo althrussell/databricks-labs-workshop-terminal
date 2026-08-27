@@ -1,11 +1,36 @@
 """Ownership isolation, caps, and lifecycle."""
 
 import json
+import os
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
+
+import pytest
 
 from .conftest import ALICE, BOB
 
 
-def _create(client, headers, agent="bash"):
+@pytest.fixture(autouse=True)
+def _test_agent_process(monkeypatch):
+    """Use a controllable shell as the process behind a supported test agent."""
+    import server.main as main
+
+    original_launch_command = main.agents.launch_command
+    monkeypatch.setattr(main, "ensure_user_credentials", lambda _user: None)
+    monkeypatch.setattr(main.user_content, "provision", lambda _user: None)
+    monkeypatch.setattr(main.identity, "observe", lambda _user: None)
+    monkeypatch.setattr(
+        main.install,
+        "ready",
+        lambda: {"claude": True, "codex": True, "omnigent": True},
+    )
+    monkeypatch.setattr(main.agents, "launch_command", lambda _agent: ["/bin/bash"])
+    return original_launch_command
+
+
+def _create(client, headers, agent="claude"):
     resp = client.post("/api/sessions", json={"agent_id": agent}, headers=headers)
     assert resp.status_code == 200, resp.text
     return resp.json()["session"]
@@ -48,23 +73,48 @@ def test_ws_nonexistent_session_closes_4404_after_accept(client):
     assert exc.value.code == 4404
 
 
-def test_per_user_session_cap(client, monkeypatch):
+def test_unsafe_session_cap_override_is_rejected(client, monkeypatch):
     monkeypatch.setenv("MAX_SESSIONS_PER_USER", "2")
     monkeypatch.setenv("MAX_SESSIONS_GLOBAL", "4")
-    monkeypatch.setenv("ALLOW_SHARED_TOPOLOGY", "true")
-    _create(client, ALICE)
-    _create(client, ALICE)
-    resp = client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE)
-    assert resp.status_code == 429
-    # Other users are unaffected by Alice's cap.
-    _create(client, BOB)
+    resp = client.post("/api/sessions", json={"agent_id": "claude"}, headers=ALICE)
+    assert resp.status_code == 503
+    assert "MAX_SESSIONS_PER_USER=1" in resp.json()["detail"]
 
 
-def test_global_session_cap(client, monkeypatch):
-    monkeypatch.setenv("MAX_SESSIONS_GLOBAL", "1")
-    _create(client, ALICE)
-    resp = client.post("/api/sessions", json={"agent_id": "bash"}, headers=BOB)
-    assert resp.status_code == 429
+def test_single_app_session_conflict_is_structured(client):
+    active = _create(client, ALICE)
+    resp = client.post("/api/sessions", json={"agent_id": "codex"}, headers=BOB)
+    assert resp.status_code == 409
+    detail = resp.json()["detail"]
+    assert detail == {
+        "code": "session_conflict",
+        "message": "Claude Code is already open — close it before switching agents",
+        "active_session": {
+            "id": active["id"],
+            "agent_id": "claude",
+            "label": "Claude Code",
+        },
+    }
+    assert "pid" not in resp.text
+    assert "owner" not in resp.text
+
+
+def test_conflict_precedes_target_readiness_and_credentials(client, monkeypatch):
+    import server.main as main
+
+    active = _create(client, ALICE)
+    monkeypatch.setattr(main.install, "ready", lambda: {"codex": False})
+    monkeypatch.setattr(
+        main,
+        "ensure_user_credentials",
+        lambda _user: (_ for _ in ()).throw(AssertionError("must not run")),
+    )
+
+    response = client.post(
+        "/api/sessions", json={"agent_id": "codex"}, headers=ALICE
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["active_session"]["id"] == active["id"]
 
 
 def test_terminal_io_and_replay(client):
@@ -97,6 +147,8 @@ def test_per_user_home_isolation(client):
     from server.users import user_manager
 
     _create(client, ALICE)
+    active = client.get("/api/sessions", headers=ALICE).json()["sessions"][0]
+    client.delete(f"/api/sessions/{active['id']}", headers=ALICE)
     _create(client, BOB)
     alice_home = user_manager.get("alice@example.com").home
     bob_home = user_manager.get("bob@example.com").home
@@ -111,6 +163,22 @@ def test_unknown_agent_404(client):
     assert resp.status_code == 404
 
 
+@pytest.mark.parametrize("agent_id", ["bash", "pi"])
+def test_legacy_raw_session_types_are_rejected(client, agent_id):
+    resp = client.post("/api/sessions", json={"agent_id": agent_id}, headers=ALICE)
+    assert resp.status_code == 404
+
+
+def test_omnigent_obeys_the_same_single_session_contract(client):
+    active = _create(client, ALICE, "omnigent")
+    assert active["agent_id"] == "omnigent"
+    conflict = client.post(
+        "/api/sessions", json={"agent_id": "claude"}, headers=ALICE
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"]["active_session"]["agent_id"] == "omnigent"
+
+
 def test_reaper_terminates_idle_sessions(client, monkeypatch):
     from server.sessions import session_manager
 
@@ -120,8 +188,6 @@ def test_reaper_terminates_idle_sessions(client, monkeypatch):
     session_obj.last_activity -= 99999  # simulate long idle
     monkeypatch.setenv("SESSION_IDLE_TIMEOUT_SECONDS", "3600")
 
-    import time
-
     stale = [
         s for s in session_manager.snapshot()
         if time.time() - s.last_activity > 3600
@@ -129,3 +195,69 @@ def test_reaper_terminates_idle_sessions(client, monkeypatch):
     assert session_obj in stale
     session_manager.terminate(session_obj)
     assert session_manager.list_for("alice@example.com") == []
+
+
+def test_concurrent_creates_spawn_exactly_one_child(monkeypatch, tmp_path):
+    from server import sessions as sessions_module
+    from server.sessions import SessionConflictError, SessionManager
+
+    manager = SessionManager()
+    user = SimpleNamespace(
+        email="alice@example.com",
+        home=str(tmp_path),
+        shell_env=lambda: os.environ.copy(),
+    )
+    real_popen = sessions_module.subprocess.Popen
+    popen_calls = 0
+    calls_lock = threading.Lock()
+
+    def counted_popen(*args, **kwargs):
+        nonlocal popen_calls
+        with calls_lock:
+            popen_calls += 1
+        return real_popen(*args, **kwargs)
+
+    monkeypatch.setattr(sessions_module.subprocess, "Popen", counted_popen)
+    monkeypatch.setattr(sessions_module, "GRACEFUL_SHUTDOWN_WAIT", 0)
+    gate = threading.Barrier(2)
+
+    def create(agent_id):
+        gate.wait()
+        try:
+            return manager.create(
+                user,
+                agent_id,
+                ["/bin/sh", "-c", "sleep 30"],
+                agent_id.title(),
+            )
+        except SessionConflictError as error:
+            return error
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(create, ["claude", "codex"]))
+
+    assert popen_calls == 1
+    assert len([result for result in results if hasattr(result, "pid")]) == 1
+    assert len([result for result in results if isinstance(result, SessionConflictError)]) == 1
+    manager.terminate(manager.snapshot()[0])
+
+
+def test_agent_exit_ends_the_session_without_a_shell_fallback(
+    monkeypatch, tmp_path, _test_agent_process
+):
+    from server.sessions import SessionManager
+
+    manager = SessionManager()
+    user = SimpleNamespace(
+        email="alice@example.com",
+        home=str(tmp_path),
+        shell_env=lambda: os.environ.copy(),
+    )
+    command = _test_agent_process({"id": "claude", "command": "printf agent-done"})
+    assert command[-1] == "exec printf agent-done"
+    manager.create(user, "claude", command, "Claude Code")
+
+    deadline = time.time() + 2
+    while manager.count_all() and time.time() < deadline:
+        time.sleep(0.01)
+    assert manager.count_all() == 0

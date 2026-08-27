@@ -5,6 +5,19 @@ import pytest
 from server import topology
 
 
+def test_single_session_validator_rejects_any_override(monkeypatch):
+    monkeypatch.setenv("MAX_SESSIONS_GLOBAL", "3")
+    monkeypatch.setenv("MAX_SESSIONS_PER_USER", "3")
+    with pytest.raises(ValueError, match="must.*MAX_SESSIONS_PER_USER=1|requires MAX_SESSIONS_PER_USER=1"):
+        topology.validate_single_session()
+
+
+def test_single_session_validator_accepts_exactly_one(monkeypatch):
+    monkeypatch.setenv("MAX_SESSIONS_GLOBAL", "1")
+    monkeypatch.setenv("MAX_SESSIONS_PER_USER", "1")
+    topology.validate_single_session()
+
+
 def test_config_permits_multi_attendee():
     # global > per-user → a second attendee could also get sessions.
     assert topology.config_permits_multi_attendee(30, 3) is True

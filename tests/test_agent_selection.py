@@ -29,35 +29,36 @@ def _ids(monkeypatch, selection: str | None) -> list[str]:
 
 
 def test_an_unconfigured_deployment_offers_everything(monkeypatch):
-    """Empty means "nobody chose", not "choose nothing". A terminal deployed
-    without Control Tower has to come up with a full launcher rather than one
-    holding a single bash card."""
-    assert set(_ids(monkeypatch, None)) >= {"omnigent", "claude", "codex", "bash"}
-    assert set(_ids(monkeypatch, "")) >= {"omnigent", "claude", "codex", "bash"}
+    """Empty means "nobody chose", so all three supported agents are offered."""
+    assert set(_ids(monkeypatch, None)) == {"omnigent", "claude", "codex"}
+    assert set(_ids(monkeypatch, "")) == {"omnigent", "claude", "codex"}
 
 
 def test_an_agent_the_operator_did_not_pick_is_not_offered(monkeypatch):
-    assert _ids(monkeypatch, "claude") == ["claude", "bash"]
+    assert _ids(monkeypatch, "claude") == ["claude"]
 
 
-def test_the_plain_terminal_survives_any_selection(monkeypatch):
-    """Bash is where the runbook sends a room when an agent plane fails, so it
-    is not an operator's to remove — and the create form never offered it as a
-    choice, so its absence from the list is not an instruction to drop it."""
-    assert "bash" in _ids(monkeypatch, "claude,codex")
-    assert "bash" in _ids(monkeypatch, "omnigent")
+def test_legacy_raw_terminal_and_pi_are_never_offered(monkeypatch, tmp_path):
+    catalog = tmp_path / "agents.json"
+    catalog.write_text(
+        '[{"id":"bash","order":1},{"id":"pi","order":2},'
+        '{"id":"claude","label":"Claude","description":"Claude",'
+        '"icon":"sparkles","command":"claude","requires":["claude"],"order":3}]'
+    )
+    monkeypatch.setenv("AGENT_CATALOG_PATH", str(catalog))
+    assert _ids(monkeypatch, None) == ["claude"]
 
 
 def test_an_unrecognised_id_does_not_narrow_the_rest(monkeypatch):
     """Control Tower and this app ship separately. A CT that has learned a new
     agent id must not have the operator's whole selection second-guessed by an
     older terminal that has not."""
-    assert _ids(monkeypatch, "claude,someagent") == ["claude", "bash"]
+    assert _ids(monkeypatch, "claude,someagent") == ["claude"]
     assert config.workshop_agents() == ["claude", "someagent"]
 
 
 def test_selection_is_case_and_whitespace_forgiving(monkeypatch):
-    assert _ids(monkeypatch, " Claude , CODEX ") == ["claude", "codex", "bash"]
+    assert _ids(monkeypatch, " Claude , CODEX ") == ["claude", "codex"]
 
 
 def test_a_deselected_agent_cannot_be_launched(client, monkeypatch):
@@ -68,7 +69,7 @@ def test_a_deselected_agent_cannot_be_launched(client, monkeypatch):
     monkeypatch.setenv("WORKSHOP_AGENTS", "claude")
 
     listed = client.get("/api/agents", headers=ALICE).json()["agents"]
-    assert [a["id"] for a in listed] == ["claude", "bash"]
+    assert [a["id"] for a in listed] == ["claude"]
 
     resp = client.post("/api/sessions", headers=ALICE, json={"agent_id": "codex"})
     assert resp.status_code == 404
