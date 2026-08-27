@@ -41,17 +41,24 @@ def _production_files():
 
 
 def _without_retirement_migration(path: Path, source: str) -> str:
-    if path != ROOT / "server" / "bootstrap" / "install.py":
-        return source
-    start = source.index("def _remove_retired_pi_install()")
-    end = source.index("\ndef _ready_from", start)
-    migration = source[start:end]
-    # These are the only retired names allowed in runtime code. They exist
-    # solely to remove files left in the persistent prefix by an older release.
-    assert migration.count('"pi"') == 1
-    assert migration.count('"pi-coding-agent"') == 1
-    assert migration.count('"pi.install.json"') == 1
-    return source[:start] + source[end:]
+    if path == ROOT / "server" / "bootstrap" / "install.py":
+        start = source.index("def _remove_retired_pi_install()")
+        end = source.index("\ndef _ready_from", start)
+        migration = source[start:end]
+        # These are the only retired package names allowed in runtime code.
+        assert migration.count('"pi"') == 1
+        assert migration.count('"pi-coding-agent"') == 1
+        assert migration.count('"pi.install.json"') == 1
+        return source[:start] + source[end:]
+    if path == ROOT / "server" / "users.py":
+        start = source.index("def _remove_retired_binary_links(")
+        end = source.index("\n    def _write_databricks_cli_wrapper", start)
+        migration = source[start:end]
+        # User-home cleanup is quarantined here so the broader runtime scan
+        # still rejects every selectable or installable harness reference.
+        assert migration.count('"pi"') == 1
+        return source[:start] + source[end:]
+    return source
 
 
 def test_retired_pi_harness_cannot_return_to_runtime_or_artifacts():
@@ -76,3 +83,28 @@ def test_retired_pi_release_contract_cannot_return():
         # segments in the one-time cleanup, so its installable spelling must
         # never return to source, manifests, locks, or deployment configuration.
         assert retired_name not in source
+
+
+def test_returning_attendee_loses_retired_home_launcher(monkeypatch, tmp_path):
+    from server import config
+    from server.users import User
+
+    shared = tmp_path / "shared"
+    shared_bin = shared / "bin"
+    shared_bin.mkdir(parents=True)
+    retired_source = shared_bin / "pi"
+    retired_source.write_text("retired")
+    (shared_bin / "codex").write_text("supported")
+    monkeypatch.setattr(config, "shared_prefix", lambda: str(shared))
+    monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
+
+    user = User("returning@example.com")
+    local_bin = Path(user.home) / ".local" / "bin"
+    local_bin.mkdir(parents=True)
+    (local_bin / "pi").symlink_to(retired_source)
+
+    user.bootstrap_home()
+
+    assert not (local_bin / "pi").exists()
+    assert not (local_bin / "pi").is_symlink()
+    assert (local_bin / "codex").is_symlink()
