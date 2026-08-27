@@ -21,8 +21,9 @@ operator admin panel.
 
 ## What attendees get
 
-- **Launch buttons** for Claude Code, Codex, and a plain terminal — the agent
-  catalog is config-driven (`content/agents.json`), extensible per event.
+- **Launch buttons** for Omnigent, Claude Code, and Codex. The server allowlist
+  rejects legacy Pi and raw-shell sessions even if an overridden catalogue
+  contains them.
 - **Zero-touch auth**: Databricks Apps injects auto-refreshing app-SP OAuth
   credentials; the server creates one explicit `oauth-m2m` SDK client, removes
   duplicate client-secret environment variables, makes the production Linux
@@ -135,7 +136,7 @@ Apps OBO remains separate and powers attendee-governed reads through `[me]`;
 the app OAuth bearer powers reliable builds through `[DEFAULT]`. See
 [docs/admin-api.md](docs/admin-api.md) for the full contract and
 credential-health alerting. Without either credential the app
-serves plain terminals and shows a clear banner, but agent CLIs can't
+shows a clear banner and refuses agent launches because their CLIs cannot
 authenticate.
 
 For events, set `WORKSHOP_ATTENDEE_EMAIL` to the identity assigned to this

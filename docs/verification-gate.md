@@ -16,7 +16,7 @@ Closes the tab (stops handing over fresh tokens, lets the mirror expire), waits
 out the credential, then reopens it.
 
 Passes when: Omnigent is withdrawn with `credential_stale` rather than failing
-at launch, bare Claude / Codex / Terminal stay ready throughout, and reopening
+at launch, bare Claude / Codex stay ready throughout, and reopening
 the tab re-mirrors the token, wakes the host and restores the Omnigent cards
 with no operator involvement.
 

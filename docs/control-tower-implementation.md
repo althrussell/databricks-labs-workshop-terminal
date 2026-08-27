@@ -730,12 +730,12 @@ python scripts/ct_fleet.py --inventory inventory.json repush \
 ```
 
 The fleet kill switch is `POST /api/admin/agent-controls` with
-`{"enabled": false}`. It pauses new paid-agent launches only; bash and already
-running sessions remain available. Resume with `{"enabled": true}`.
+`{"enabled": false}`. It pauses every new agent launch; already running
+sessions remain available. Resume with `{"enabled": true}`.
 
 A narrower lever sits beside it: `POST /api/admin/omnigent-tier` with
 `{"enabled": false}` withdraws only the Omnigent-backed cards and leaves bare
-Claude, Codex and Terminal running. That is the right move when the Omnigent
+Claude and Codex running. That is the right move when the Omnigent
 credential plane is failing across a room, because the kill switch would stop
 the workshop while this one keeps it going. The ladder for choosing between them
 is [`operator-runbook.md`](./operator-runbook.md); `POST /api/admin/recover` is

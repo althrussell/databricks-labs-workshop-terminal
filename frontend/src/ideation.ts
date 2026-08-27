@@ -56,3 +56,25 @@ export function ideaSession<T extends SessionLike>(
     live.find((session) => session.agent_id === agentId) ?? live[0]
   );
 }
+
+export type IdeaPromptAction =
+  | { action: "unavailable" }
+  | { action: "type"; sessionId: string; prompt: string }
+  | {
+      action: "request";
+      agentId: string;
+      starterPrompt: string;
+    };
+
+/** Route a clicked idea without losing it during session reconciliation. */
+export function ideaPromptAction(
+  agents: readonly AgentInfo[],
+  sessions: readonly SessionLike[],
+  prompt: string
+): IdeaPromptAction {
+  const agentId = ideaAgentId(agents);
+  const target = ideaSession(sessions, agentId);
+  if (target) return { action: "type", sessionId: target.id, prompt };
+  if (!agentId) return { action: "unavailable" };
+  return { action: "request", agentId, starterPrompt: prompt };
+}

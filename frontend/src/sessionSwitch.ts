@@ -2,12 +2,46 @@ import { ApiError, type SessionInfo } from "./api";
 
 export type AgentSelection = "launch" | "focus" | "confirm";
 
+export type SessionConflictResolution =
+  | { action: "missing" }
+  | { action: "focus"; active: SessionInfo }
+  | {
+      action: "confirm";
+      active: SessionInfo;
+      requestedAgentId: string;
+      starterPrompt: string;
+    };
+
 export function agentSelection(
   active: SessionInfo | null,
   requestedAgentId: string
 ): AgentSelection {
   if (!active) return "launch";
   return active.agent_id === requestedAgentId ? "focus" : "confirm";
+}
+
+/** Decide what to do after create reports that the one session slot is busy.
+ *
+ * A same-agent conflict is a successful reconciliation from the attendee's
+ * perspective: callers must receive the live session so they can still deliver
+ * a starter prompt. A different agent needs confirmation, with that prompt
+ * retained until the replacement session is ready.
+ */
+export function resolveSessionConflict(
+  active: SessionInfo | null,
+  requestedAgentId: string,
+  starterPrompt: string
+): SessionConflictResolution {
+  if (!active) return { action: "missing" };
+  if (active.agent_id === requestedAgentId) {
+    return { action: "focus", active };
+  }
+  return {
+    action: "confirm",
+    active,
+    requestedAgentId,
+    starterPrompt,
+  };
 }
 
 export interface SwitchOperations {

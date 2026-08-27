@@ -39,13 +39,14 @@ import ToastHost from "./components/ToastHost";
 import TerminalView from "./components/TerminalView";
 import AgentSwitchDialog from "./components/AgentSwitchDialog";
 import { bindIdentityRefresh, onAppEvent } from "./events";
-import { ideaAgentId, ideaSession } from "./ideation";
+import { ideaPromptAction } from "./ideation";
 import { friendlyError, type RecoveryAction } from "./errors";
 import { codeFromMessage, postAttendeeError, reportAttendeeError } from "./telemetry";
 import {
   ActiveSessionChanged,
   agentSelection,
   closeThenCreate,
+  resolveSessionConflict,
 } from "./sessionSwitch";
 
 // The escape hatch for an attendee facing an empty prompt. Deliberately a real
@@ -250,8 +251,9 @@ export default function App() {
 
   async function launch(
     agentId: string,
-    retried = false,
-    starterPrompt = ""
+    repairRetried = false,
+    starterPrompt = "",
+    conflictRetried = false
   ): Promise<SessionInfo | null> {
     setLaunching(agentId);
     setError("");
@@ -266,13 +268,29 @@ export default function App() {
       if (conflict) {
         try {
           const active = await refreshSessions();
-          if (active) {
-            if (active.agent_id === agentId) {
-              setView("agent");
-            } else {
-              setSwitchError("");
-              setPendingSwitch({ agentId, starterPrompt });
+          const resolution = resolveSessionConflict(active, agentId, starterPrompt);
+          if (resolution.action === "focus") {
+            setView("agent");
+            return resolution.active;
+          }
+          if (resolution.action === "confirm") {
+            setSwitchError("");
+            setPendingSwitch({
+              agentId: resolution.requestedAgentId,
+              starterPrompt: resolution.starterPrompt,
+            });
+          }
+          if (resolution.action === "missing") {
+            // The conflicting session ended between POST and refresh. Retry
+            // once: the slot is now free and the attendee's prompt still
+            // belongs to this launch. A bound avoids spinning if another tab
+            // keeps winning and closing the slot.
+            if (!conflictRetried) {
+              return await launch(agentId, repairRetried, starterPrompt, true);
             }
+            setError(
+              "The active agent changed while this one was opening. Try again."
+            );
           }
         } catch (refreshError) {
           setError(
@@ -292,7 +310,9 @@ export default function App() {
         message,
         { agentId }
       );
-      if (canRetry && !retried) return launch(agentId, true, starterPrompt);
+      if (canRetry && !repairRetried) {
+        return await launch(agentId, true, starterPrompt, conflictRetried);
+      }
       setError(message);
       return null;
     } finally {
@@ -379,33 +399,29 @@ export default function App() {
   // operator may have withheld, which failed and left the attendee with an error
   // where the sentence they clicked should have been.
   async function ideaToSession(prompt: string) {
-    const agentId = ideaAgentId(agents);
-    let target: SessionInfo | undefined = ideaSession(session ? [session] : [], agentId);
-    let fresh = false;
-    if (!target) {
-      if (!agentId) {
-        // Nothing open and nothing to open it with. Only reachable on a
-        // workshop whose agent selection matched nothing in the catalogue, but
-        // a chip that quietly does nothing when clicked is worse than saying so.
-        if (agents.length > 0) {
-          setError(
-            "This workshop offers no coding agent to type that into — choose an agent first."
-          );
-        }
-        return;
+    const action = ideaPromptAction(agents, session ? [session] : [], prompt);
+    if (action.action === "unavailable") {
+      // Nothing open and nothing to open it with. Only reachable on a
+      // workshop whose agent selection matched nothing in the catalogue, but
+      // a chip that quietly does nothing when clicked is worse than saying so.
+      if (agents.length > 0) {
+        setError(
+          "This workshop offers no coding agent to type that into — choose an agent first."
+        );
       }
-      target = (await launch(agentId)) ?? undefined;
-      fresh = true;
-      if (!target) return;
-    } else {
-      setView("agent");
+      return;
     }
-    try {
-      if (fresh) {
-        await typeWhenSessionReady(target.id, prompt);
-      } else {
-        await api.typeIntoSession(target.id, prompt);
+    if (action.action === "request") {
+      try {
+        await requestAgent(action.agentId, action.starterPrompt);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
       }
+      return;
+    }
+    setView("agent");
+    try {
+      await api.typeIntoSession(action.sessionId, action.prompt);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -474,6 +490,17 @@ export default function App() {
       if (active?.agent_id === requested.agentId) {
         setPendingSwitch(null);
         setView("agent");
+        if (requested.starterPrompt) {
+          try {
+            await typeWhenSessionReady(active.id, requested.starterPrompt);
+          } catch (promptFailure) {
+            setError(
+              promptFailure instanceof Error
+                ? promptFailure.message
+                : String(promptFailure)
+            );
+          }
+        }
       } else if (active) {
         setSwitchError(
           `${active.label} is still running. Close it before opening ${agentLabel(requested.agentId)}.`

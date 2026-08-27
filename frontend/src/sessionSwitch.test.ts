@@ -6,6 +6,7 @@ import {
   ActiveSessionChanged,
   agentSelection,
   closeThenCreate,
+  resolveSessionConflict,
 } from "./sessionSwitch.ts";
 
 function session(id: string, agent_id: string, label = agent_id): SessionInfo {
@@ -17,6 +18,34 @@ test("the active agent focuses while another agent requires confirmation", () =>
   assert.equal(agentSelection(active, "claude"), "focus");
   assert.equal(agentSelection(active, "codex"), "confirm");
   assert.equal(agentSelection(null, "codex"), "launch");
+});
+
+test("a same-agent conflict returns the live session so its prompt is not dropped", () => {
+  const active = session("one", "claude", "Claude Code");
+  assert.deepEqual(
+    resolveSessionConflict(active, "claude", "Build a dashboard"),
+    { action: "focus", active }
+  );
+});
+
+test("a cross-agent conflict carries the prompt into confirmation", () => {
+  const active = session("one", "claude", "Claude Code");
+  assert.deepEqual(
+    resolveSessionConflict(active, "codex", "Build a dashboard"),
+    {
+      action: "confirm",
+      active,
+      requestedAgentId: "codex",
+      starterPrompt: "Build a dashboard",
+    }
+  );
+});
+
+test("a conflict whose active session just ended is safe to retry", () => {
+  assert.deepEqual(
+    resolveSessionConflict(null, "codex", "Build a dashboard"),
+    { action: "missing" }
+  );
 });
 
 test("a confirmed switch closes, refreshes, then creates", async () => {
