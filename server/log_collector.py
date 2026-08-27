@@ -428,6 +428,11 @@ class AppErrorJournal(logging.Handler):
         lines: list[str] = []
         if record.exc_info:
             lines = _FORMATTER.formatException(record.exc_info).splitlines()[:200]
+        elif record.exc_text:
+            # The process-wide OTel redaction layer deliberately discards raw
+            # exception tuples so an exporter cannot reformat and leak them.
+            # Its already-redacted rendering preserves this operator detail.
+            lines = str(record.exc_text).splitlines()[:200]
         parsed = _Record(
             level=record.levelname,
             logger_name=record.name,

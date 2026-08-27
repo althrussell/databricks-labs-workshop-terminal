@@ -94,6 +94,31 @@ def test_closing_an_agent_records_how_it_ended(client, emitted, launchable_agent
     assert payload["session_id"] == created["id"]
 
 
+def test_confirmed_agent_switch_has_an_explicit_operational_event(
+    client, emitted, launchable_agents
+):
+    created = client.post(
+        "/api/sessions",
+        json={"agent_id": "claude"},
+        headers={"X-Forwarded-Email": "alice@example.com"},
+    ).json()["session"]
+    client.delete(
+        f"/api/sessions/{created['id']}",
+        headers={"X-Forwarded-Email": "alice@example.com"},
+    )
+
+    replacement = client.post(
+        "/api/sessions",
+        json={"agent_id": "codex", "replaces_agent_id": "claude"},
+        headers={"X-Forwarded-Email": "alice@example.com"},
+    )
+
+    assert replacement.status_code == 200
+    payload = _payload(emitted, "session.switched")
+    assert payload["previous_agent"] == "claude"
+    assert payload["next_agent"] == "codex"
+
+
 def test_a_session_is_only_reported_as_ended_once(client, emitted, launchable_agents):
     from server.sessions import session_manager
 

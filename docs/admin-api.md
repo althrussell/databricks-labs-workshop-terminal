@@ -598,6 +598,8 @@ python scripts/pull_diagnostics.py errors  --urls ./instances.txt   # whole flee
 | `CONTROL_TOWER_URL` | *(unset)* | Control Tower app base URL for app→app help raise/lower push |
 | `WORKSHOP_RUN_ID` | *(unset)* | CT lab run id (required with `WORKSHOP_UNIT_ID` for help push) |
 | `WORKSHOP_UNIT_ID` | *(unset)* | CT lab unit id for this attendee instance (required with `WORKSHOP_RUN_ID` for help push) |
+| `WORKSHOP_RELEASE_SHA` | *(unset)* | Immutable WT release digest used as the `workshop.release_sha` OTel resource attribute |
+| `OTEL_TRACES_SAMPLER` | `always_on` | Trace sampler recommended by Databricks Apps telemetry; endpoint, protocol, service name, resource attributes, and batching remain platform-injected |
 | `DISCOVERY_ENABLED` | `true` *(within capture)* | Whether the agent-elicited discovery tier runs. Subordinate to `WORKSHOP_INSIGHT_CAPTURE` — `false` keeps the derived behavioural signal and drops the conversational capture, for events where the anonymous rollup is in scope but attendee narrative isn't |
 | `INSIGHT_SUMMARY_MODEL` | *(unset)* | Model service for the wrap-phase edge summary. Empty discovers a served model, preferring the cheap tier — summarising one session is a small job and spending Opus on it competes with the attendees' own agent budget. Pin it when the workspace's default chain is unavailable in-region |
 

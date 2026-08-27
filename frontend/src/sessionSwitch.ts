@@ -47,7 +47,7 @@ export function resolveSessionConflict(
 export interface SwitchOperations {
   close: (sessionId: string) => Promise<unknown>;
   refresh: () => Promise<SessionInfo | null>;
-  create: (agentId: string) => Promise<SessionInfo>;
+  create: (agentId: string, replacesAgentId: string) => Promise<SessionInfo>;
 }
 
 export class ActiveSessionChanged extends Error {
@@ -78,5 +78,5 @@ export async function closeThenCreate(
 
   const active = await operations.refresh();
   if (active) throw new ActiveSessionChanged(active);
-  return operations.create(requestedAgentId);
+  return operations.create(requestedAgentId, current.agent_id);
 }

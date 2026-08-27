@@ -53,11 +53,14 @@ test("a confirmed switch closes, refreshes, then creates", async () => {
   const created = await closeThenCreate(session("one", "claude"), "codex", {
     close: async (id) => { calls.push(`close:${id}`); },
     refresh: async () => { calls.push("refresh"); return null; },
-    create: async (id) => { calls.push(`create:${id}`); return session("two", id); },
+    create: async (id, previous) => {
+      calls.push(`create:${id}:replaces:${previous}`);
+      return session("two", id);
+    },
   });
 
   assert.equal(created.agent_id, "codex");
-  assert.deepEqual(calls, ["close:one", "refresh", "create:codex"]);
+  assert.deepEqual(calls, ["close:one", "refresh", "create:codex:replaces:claude"]);
 });
 
 test("a close already completed by another tab can continue", async () => {

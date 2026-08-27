@@ -261,3 +261,59 @@ def test_agent_exit_ends_the_session_without_a_shell_fallback(
     while manager.count_all() and time.time() < deadline:
         time.sleep(0.01)
     assert manager.count_all() == 0
+
+
+def test_agent_crash_reports_its_process_exit_code(monkeypatch, tmp_path):
+    from server import telemetry
+    from server.sessions import SessionManager
+
+    observed = []
+    monkeypatch.setattr(
+        telemetry,
+        "session_exited",
+        lambda *args, **kwargs: observed.append((args, kwargs)),
+    )
+    manager = SessionManager()
+    user = SimpleNamespace(
+        email="alice@example.com",
+        home=str(tmp_path),
+        shell_env=lambda: os.environ.copy(),
+    )
+
+    manager.create(user, "codex", ["/bin/sh", "-c", "exit 17"], "Codex")
+    deadline = time.time() + 2
+    while manager.count_all() and time.time() < deadline:
+        time.sleep(0.01)
+
+    assert manager.count_all() == 0
+    assert observed
+    assert observed[0][0][2] == "process_error"
+    assert observed[0][1]["exit_code"] == 17
+
+
+def test_signalled_agent_reports_the_process_signal(monkeypatch, tmp_path):
+    from server import telemetry
+    from server.sessions import SessionManager
+
+    observed = []
+    monkeypatch.setattr(
+        telemetry,
+        "session_exited",
+        lambda *args, **kwargs: observed.append((args, kwargs)),
+    )
+    manager = SessionManager()
+    user = SimpleNamespace(
+        email="alice@example.com",
+        home=str(tmp_path),
+        shell_env=lambda: os.environ.copy(),
+    )
+
+    manager.create(user, "codex", ["/bin/sh", "-c", "kill -TERM $$"], "Codex")
+    deadline = time.time() + 2
+    while manager.count_all() and time.time() < deadline:
+        time.sleep(0.01)
+
+    assert manager.count_all() == 0
+    assert observed
+    assert observed[0][0][2] == "process_signal"
+    assert observed[0][1]["process_signal"] == 15

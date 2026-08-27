@@ -467,7 +467,8 @@ export default function App() {
       const created = await closeThenCreate(current, requested.agentId, {
         close: api.closeSession,
         refresh: refreshSessions,
-        create: async (agentId) => (await api.createSession(agentId)).session,
+        create: async (agentId, replacesAgentId) =>
+          (await api.createSession(agentId, replacesAgentId)).session,
       });
       setSession(created);
       setHintSessionId(created.id);

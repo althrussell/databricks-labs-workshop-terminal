@@ -1,13 +1,41 @@
 command:
-  - uvicorn
-  - server.main:app
-  - --workers
-  - "1"
+  # This wrapper merges Control Tower identity with Databricks-provided OTel
+  # resource attributes before auto-instrumentation imports the FastAPI app.
+  # With telemetry disabled it execs uvicorn directly, so this release remains
+  # safe before CT enables the Public Preview destination.
+  - python
+  - -m
+  - server.otel_bootstrap
 
 env:
   # PTY fds and session state are process-local: this app MUST run single-worker.
   - name: HOME
     value: /app/python/source_code/data/apphome
+
+  # --- Databricks Apps telemetry identity ---
+  # Databricks injects the OTLP endpoint, protocol, service name, platform
+  # resource attributes, and batch settings only when telemetry is configured
+  # on the App resource. Never set a collector URL or credential here.
+  - name: OTEL_TRACES_SAMPLER
+    value: always_on
+  # Request headers are not captured by default. Keep credentials sanitized if
+  # a future platform setting enables header capture for diagnostics.
+  - name: OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SANITIZE_FIELDS
+    value: authorization,cookie,set-cookie,x-api-key
+  # FastAPI's default server spans include the URL query. These two GET routes
+  # can carry attendee-authored text, so leave them out of auto-instrumentation;
+  # WT's own fixed operational events remain available without that content.
+  - name: OTEL_PYTHON_FASTAPI_EXCLUDED_URLS
+    value: /api/wizard.*,/api/certificate.*
+  # Control Tower patches these stable, non-PII values per seat. The startup
+  # wrapper merges them into OTEL_RESOURCE_ATTRIBUTES without replacing the
+  # workspace.id/app.name attributes Databricks supplied.
+  - name: WORKSHOP_RUN_ID
+    value: ""
+  - name: WORKSHOP_UNIT_ID
+    value: ""
+  - name: WORKSHOP_RELEASE_SHA
+    value: ""
 
   # --- Attendee CLI credential ---
   # PREFERRED: Databricks Apps injects the app service principal's auto-refreshing

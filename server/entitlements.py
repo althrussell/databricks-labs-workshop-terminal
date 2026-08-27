@@ -456,6 +456,17 @@ class EntitlementManager:
                 self.reconcile()
             except Exception as e:  # noqa: BLE001 — the loop must never die
                 logger.error("entitlement reconcile failed unexpectedly: %s", e)
+                from . import telemetry
+
+                telemetry.emit(
+                    "background.task_failed",
+                    "system",
+                    {
+                        "code": "unhandled_exception",
+                        "source": "entitlements",
+                        "exception_type": type(e).__name__,
+                    },
+                )
 
     def reconcile(self, email: str | None = None) -> dict:
         """Idempotently make SP-created resources usable by the labuser(s).
@@ -466,11 +477,27 @@ class EntitlementManager:
         """
         if not config.entitlements_enabled():
             return {"enabled": False}
+        started_at = time.monotonic()
         self._last_run_at = time.time()
 
         from .users import user_manager
 
         source = "on_demand" if email else "background"
+
+        def finish(result: dict, reason: str) -> dict:
+            errors = [str(error) for error in result.get("errors", [])]
+            rate_limited = any("429" in error for error in errors)
+            from . import telemetry
+
+            telemetry.entitlement_reconcile(
+                source=source,
+                outcome="ok" if not errors else "degraded",
+                reason="rate_limited" if rate_limited else reason,
+                duration_ms=(time.monotonic() - started_at) * 1000,
+                rate_limited=rate_limited,
+            )
+            return result
+
         if email:
             emails = [email]
         else:
@@ -498,7 +525,7 @@ class EntitlementManager:
             msg = "no attendee available for entitlement verification"
             self._record(False, msg)
             result["errors"] = [msg]
-            return result
+            return finish(result, "no_attendee")
 
         bearer = _sp_bearer()
         host = config.databricks_host()
@@ -506,7 +533,7 @@ class EntitlementManager:
             msg = "no app service-principal bearer/host — cannot reconcile entitlements"
             self._record(False, msg)
             result["errors"] = [msg]
-            return result
+            return finish(result, "credential_unavailable")
 
         errors: list[str] = []
         catalog = config.workshop_catalog()
@@ -573,7 +600,7 @@ class EntitlementManager:
         self._record(not errors, "; ".join(errors[:5]) if errors else None)
         result["errors"] = errors
         result["handoff"] = self._handoff_snapshot()
-        return result
+        return finish(result, "reconcile_failed" if errors else "complete")
 
     def _handoff_resources(
         self,
