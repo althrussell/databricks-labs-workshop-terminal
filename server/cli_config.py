@@ -178,7 +178,7 @@ def gateway_status() -> dict:
     # the workspace-hosted shape the root is `<host>/ai-gateway`, whose path
     # lacks the trailing slash upstream requires — so validating the root would
     # report amber for a deployment that works. `<root>/anthropic` is the value
-    # configure_omnigent writes, and the surface Pi speaks natively.
+    # configure_omnigent writes for its Anthropic provider.
     anthropic_base = f"{resolved}/anthropic" if resolved else ""
     explicit = bool(os.environ.get("DATABRICKS_GATEWAY_HOST", "").strip())
     workspace_id = bool(os.environ.get("DATABRICKS_WORKSPACE_ID", "").strip())
@@ -380,9 +380,9 @@ def _codex_base_url() -> str:
 
     The gateway serves Responses under both `/ai-gateway/openai/v1` and
     `/ai-gateway/codex/v1` — both verified to answer `system.ai.*` model
-    services. Omnigent only understands the second: it derives Pi's Anthropic
-    base by swapping a trailing `/codex/v1` for `/anthropic`, so an
-    `/openai/v1` base yields `/openai/v1/anthropic`, which routes nowhere.
+    services. Omnigent's Databricks-aware Codex provider expects the second;
+    using `/openai/v1` would make it derive an invalid Anthropic base at
+    `/openai/v1/anthropic`.
 
     Empty only when no workspace host is configured, in which case there is no
     URL of any shape to write.
@@ -492,7 +492,7 @@ def configure_omnigent(
     """Write ~/.omnigent/config.yaml: a default provider per model surface.
 
     Two entries, because omnigent reads the Claude surface differently from the
-    Codex and Pi ones. `databricks-gateway` declares the Anthropic family
+    Codex one. `databricks-gateway` declares the Anthropic family
     inline; `databricks-codex` points at the codex config table, which is what
     marks the endpoint as a Databricks AI Gateway rather than an anonymous
     proxy (see the note beside cli_config_provider below).
@@ -542,14 +542,12 @@ def configure_omnigent(
         },
     }
     # A `gateway` provider is, to omnigent, an anonymous OpenAI/Anthropic-shaped
-    # proxy, so it resolves the Codex and Pi harnesses down the vendor-direct
-    # path. That path assumes vendor-native model ids and strips the qualifying
-    # prefix, which is why Pi asked the gateway for `claude-opus-4-8` and got
-    # "does not exist" — a bare short name is not a model service, and the
-    # gateway answers only `system.ai.claude-opus-4-8`. The same misread makes
-    # Codex declare itself unlaunchable: seeing no Databricks provider to route
-    # through, it falls back to a `~/.codex/auth.json` that a workshop never
-    # writes.
+    # proxy, so it resolves Codex down the vendor-direct path. That path assumes
+    # vendor-native model ids and strips the qualifying `system.ai.` prefix.
+    # The gateway only serves fully-qualified model-service names. The same
+    # misread makes Codex declare itself unlaunchable: seeing no Databricks
+    # provider to route through, it falls back to a `~/.codex/auth.json` that a
+    # workshop never writes.
     #
     # Pinning the codex config table instead identifies the provider as a
     # Databricks AI Gateway, which keeps model ids intact and lets omnigent
@@ -561,7 +559,7 @@ def configure_omnigent(
         "cli": "codex",
         "model_provider": _CODEX_MODEL_PROVIDER,
         "display_name": _CODEX_PROVIDER_DISPLAY_NAME,
-        "default": ["openai", "pi"],
+        "default": ["openai"],
     } if databricks_aware else None
     omnigent_dir = os.path.join(user.home, ".omnigent")
     os.makedirs(omnigent_dir, exist_ok=True)

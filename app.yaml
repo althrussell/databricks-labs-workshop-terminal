@@ -197,10 +197,10 @@ env:
   # Set this only to point an event at a DEDICATED gateway subdomain. That shape
   # is materially more fragile: Omnigent cannot infer the workspace hostname
   # from it (stripping `ai-gateway.` gives an NXDOMAIN), so it falls back to
-  # resolving ~/.databrickscfg DEFAULT. If that resolution fails, Pi lists no
-  # models AND the openai-completions provider is dropped entirely — which is
-  # precisely the provider GLM routes through. The workspace-hosted form has no
-  # such dependency: the gateway hostname IS the workspace hostname.
+  # resolving ~/.databrickscfg DEFAULT. If that resolution fails, Omnigent
+  # cannot discover models and drops the openai-completions provider entirely.
+  # The workspace-hosted form has no such dependency: the gateway hostname IS
+  # the workspace hostname.
   - name: DATABRICKS_GATEWAY_HOST
     value: ""
   # Also optional, and no longer a rescue lever. This auto-constructs the
@@ -247,14 +247,9 @@ env:
     value: "0.148.0"
   - name: DATABRICKS_CLI_VERSION
     value: "1.11.0"
-  # Node 24 is the active LTS line. It is also a floor, not just a preference:
-  # Pi requires node >= 22.19.0.
+  # Node 24 is the active LTS line used by Codex.
   - name: NODE_VERSION
     value: "24.18.1"
-  # Pi is Omnigent's any-gateway-model harness — the only one that will drive
-  # GLM / Luna / Qwen as a Polly brain or worker.
-  - name: PI_CLI_VERSION
-    value: "0.83.0"
   # OPTIONAL mirror override. The reviewed contract (source + SHA-256 for every
   # installer/archive/package, plus the skills commit/content digest) ships in
   # the image at assets/artifacts/manifest.json, so boot needs nothing here.

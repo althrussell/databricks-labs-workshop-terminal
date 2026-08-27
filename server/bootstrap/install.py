@@ -16,7 +16,6 @@ import platform
 import re
 import shutil
 import subprocess
-import tarfile
 import tempfile
 import threading
 import time
@@ -41,28 +40,8 @@ CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.148.0").strip()
 DATABRICKS_CLI_VERSION = os.environ.get("DATABRICKS_CLI_VERSION", "1.11.0").strip()
 OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "0.10.0").strip()
 OMNIGENT_PROTOCOL_VERSION = "0.10.0"
-# Node 24 is the active LTS line; Node 22 is maintenance-only. Pi additionally
-# declares ``engines.node >= 22.19.0``, so the old 22.14.0 pin could not have
-# run it at all.
+# Node 24 is the active LTS line; Node 22 is maintenance-only.
 NODE_VERSION = os.environ.get("NODE_VERSION", "24.18.1").strip()
-# Pi is Omnigent's any-model harness. claude-sdk speaks only the Anthropic wire
-# API and codex-native only the Responses API, so each rejects everything
-# outside its family; pi instead picks a wire per model — Anthropic Messages for
-# Claude, Responses for the newer GPT models, chat/completions for models like
-# GLM that support nothing else. That makes it the only way to put GLM or Luna
-# behind a Polly brain, and it gives those models a real terminal an attendee can
-# take over. Omnigent's own floor is 0.79.0, for the non-interactive
-# ``--approve`` flag (``onboarding/harness_install.py``).
-PI_VERSION = os.environ.get("PI_CLI_VERSION", "0.83.0").strip()
-PI_MIN_VERSION = "0.79.0"
-# Binaries the prewarm proof inspects and reports, but does not let veto the
-# aggregate. ``reusable`` hard-gates /readyz through the ``supply_chain`` check,
-# and a harness we deliberately keep out of ``required_steps`` and out of the
-# ``omnigent`` ready bit must not become fatal by that back door: an attendee
-# without pi loses the cheap-model Polly variants, not the workshop. The per
-# binary entry still says so, so a prewarm that silently stopped shipping pi is
-# visible rather than implied.
-ADVISORY_BINARIES = frozenset({"pi"})
 CLAUDE_INSTALLER_URL = os.environ.get(
     "CLAUDE_INSTALLER_URL", "https://claude.ai/install.sh"
 )
@@ -350,15 +329,55 @@ def _release_specs() -> dict[str, tuple[bool, str]]:
         "codex": (True, CODEX_VERSION),
         "databricks": (True, DATABRICKS_CLI_VERSION),
         # Node is a release input like the CLIs, not just their prerequisite:
-        # it is the runtime two of them execute in, and /readyz cannot call
+        # it is the runtime Codex executes in, and /readyz cannot call
         # NODE_VERSION a fact about the running terminal without an installed
         # version to hold it against.
         "node": (True, NODE_VERSION),
-        # Pi is only reachable as an Omnigent harness, so it follows Omnigent's
-        # enablement rather than being installed unconditionally.
-        "pi": (config.omnigent_offered(), PI_VERSION),
         "omnigent": (config.omnigent_offered(), OMNIGENT_VERSION),
     }
+
+
+def _remove_retired_pi_install() -> None:
+    """Remove the retired harness from a prefix created by an older release.
+
+    The shared prefix survives an App redeploy. Merely removing the installer
+    would therefore leave the old executable discoverable by Omnigent and keep
+    its dependency tree on disk indefinitely.
+    """
+    prefix = os.path.abspath(config.shared_prefix())
+    real_prefix = os.path.realpath(prefix)
+    targets = (
+        os.path.join("bin", "pi"),
+        os.path.join(
+            "lib", "node_modules", "@earendil-works", "pi-coding-agent"
+        ),
+        "pi.install.json",
+    )
+    removed: list[str] = []
+    for relative in targets:
+        path = os.path.abspath(os.path.join(prefix, relative))
+        if os.path.commonpath((prefix, path)) != prefix:
+            raise RuntimeError(f"retired harness path escapes shared prefix: {path}")
+        # Unlink a final symlink without following it. For every other target,
+        # resolve the full path first so a symlinked parent cannot redirect the
+        # recursive package removal outside the persistent install prefix.
+        if os.path.islink(path):
+            os.unlink(path)
+            removed.append(relative)
+            continue
+        real_path = os.path.realpath(path)
+        if os.path.commonpath((real_prefix, real_path)) != real_prefix:
+            raise RuntimeError(
+                f"retired harness path resolves outside shared prefix: {path}"
+            )
+        if os.path.isfile(path):
+            os.unlink(path)
+            removed.append(relative)
+        elif os.path.isdir(path):
+            shutil.rmtree(path)
+            removed.append(relative)
+    if removed:
+        logger.info("removed retired harness files: %s", ", ".join(removed))
 
 
 def _ready_from(steps: dict) -> dict:
@@ -366,10 +385,6 @@ def _ready_from(steps: dict) -> dict:
         "bash": True,
         "claude": steps.get("claude", {}).get("status") == "complete",
         "codex": steps.get("codex", {}).get("status") == "complete",
-        # Reported so an operator can see the harness landed, but deliberately
-        # not folded into ``omnigent`` below: a missing pi costs an attendee the
-        # cheap-model Polly variants, not the whole meta-harness.
-        "pi": steps.get("pi", {}).get("status") == "complete",
         # Both the meta-harness and tmux (its terminal backend) must land
         # before any omnigent session type is launchable.
         "omnigent": (
@@ -386,7 +401,6 @@ STEPS_BY_BINARY = {
     "claude": ("claude",),
     "codex": ("codex",),
     "omnigent": ("omnigent", "tmux"),
-    "pi": ("pi",),
 }
 
 
@@ -525,7 +539,6 @@ def _prewarm_status_unlocked() -> dict:
     }
     if config.omnigent_offered():
         expected_versions["omnigent"] = OMNIGENT_VERSION
-        expected_versions["pi"] = PI_VERSION
 
     binaries: dict[str, dict] = {}
     artifact_names = {
@@ -537,7 +550,6 @@ def _prewarm_status_unlocked() -> dict:
         "claude": "claude_installer",
         "codex": "codex_npm_launcher_package",
         "databricks": "databricks_cli_archive_linux_x64",
-        "pi": "pi_npm_package",
         "omnigent": "uv_binary",
     }
     for name, expected in expected_versions.items():
@@ -555,10 +567,6 @@ def _prewarm_status_unlocked() -> dict:
                 prefix,
                 contract.entry("codex_npm_launcher_package"),
                 contract.entry("codex_native_package_linux_x64"),
-            )
-        if name == "pi" and contract:
-            artifact_ok = _pi_install_reusable(
-                prefix, contract.entry("pi_npm_package")
             )
         if name == "omnigent" and contract:
             artifact_ok = _omnigent_install_reusable(
@@ -635,14 +643,7 @@ def _prewarm_status_unlocked() -> dict:
         "source": "persistent",
         "reusable": skills_reusable,
     }
-    reusable = (
-        all(
-            entry["reusable"]
-            for name, entry in binaries.items()
-            if name not in ADVISORY_BINARIES
-        )
-        and skills_reusable
-    )
+    reusable = all(entry["reusable"] for entry in binaries.values()) and skills_reusable
     return {
         "reusable": reusable,
         "manifest": {
@@ -1194,167 +1195,6 @@ def _install_codex() -> None:
         "error",
         error,
         expected_version=CODEX_VERSION,
-        actual_version=actual,
-    )
-
-
-_PI_PACKAGE = "@earendil-works/pi-coding-agent"
-
-
-def _pi_package_root(prefix: str) -> str:
-    return os.path.join(prefix, "lib", "node_modules", *_PI_PACKAGE.split("/"))
-
-
-def _validate_pi_tarball(path: str, version: str) -> None:
-    """Confirm the verified tarball is the pinned Pi and is fully hash-pinned.
-
-    Pi is a pure-JS package with a large dependency tree, so unlike Codex it
-    cannot be installed from one offline tarball. What makes that safe is
-    ``npm-shrinkwrap.json``: Pi publishes it *inside* the tarball, pinning every
-    transitive package to an exact version and ``integrity`` hash. Since the
-    tarball itself is SHA-256 verified against the reviewed manifest, the
-    shrinkwrap it carries is covered by that same checksum -- so the resolve npm
-    performs is pinned end to end rather than floating on ``latest``.
-    """
-    with tarfile.open(path) as archive:
-        try:
-            manifest = archive.extractfile("package/package.json")
-            shrinkwrap = archive.extractfile("package/npm-shrinkwrap.json")
-            if manifest is None or shrinkwrap is None:
-                raise KeyError("package/npm-shrinkwrap.json")
-            declared = json.loads(manifest.read())
-            locked = json.loads(shrinkwrap.read())
-        except (KeyError, ValueError) as error:
-            raise RuntimeError(f"Pi tarball layout is invalid: {error}") from error
-    if declared.get("name") != _PI_PACKAGE or declared.get("version") != version:
-        raise RuntimeError(
-            f"Pi tarball is {declared.get('name')}@{declared.get('version')}, "
-            f"expected {_PI_PACKAGE}@{version}"
-        )
-    packages = locked.get("packages")
-    if not isinstance(packages, dict) or not packages:
-        raise RuntimeError("Pi tarball carries no npm-shrinkwrap package set")
-    floating = sorted(
-        name
-        for name, entry in packages.items()
-        if name
-        and isinstance(entry, dict)
-        and entry.get("resolved")
-        and not entry.get("integrity")
-    )
-    # Pi's three first-party siblings (pi-agent-core, pi-ai, pi-tui) ship
-    # version-pinned but without an integrity hash. They are recorded rather
-    # than rejected, so the gap is visible in logs instead of implied by a
-    # blanket "fully pinned" claim.
-    if floating:
-        logger.info(
-            "pi: %d shrinkwrap entries are version-pinned without integrity: %s",
-            len(floating),
-            ", ".join(floating),
-        )
-
-
-def _pi_install_reusable(prefix: str, artifact: dict) -> bool:
-    launcher = os.path.join(prefix, "bin", "pi")
-    stamp = _read_json(os.path.join(prefix, "pi.install.json"))
-    tree = os.path.normpath(
-        os.path.join(prefix, str(stamp.get("tree_relative_path") or ""))
-    )
-    if not tree.startswith(os.path.abspath(prefix) + os.sep):
-        return False
-    launcher_checksum = _file_checksum(launcher)
-    tree_checksum = _directory_checksum(tree)
-    return bool(
-        launcher_checksum
-        and tree_checksum
-        and stamp.get("package_sha256") == artifact["sha256"]
-        and stamp.get("launcher_sha256") == launcher_checksum
-        and stamp.get("tree_sha256") == tree_checksum
-    )
-
-
-def _install_pi() -> None:
-    """Install the Pi CLI from the reviewed npm tarball.
-
-    Unlike Codex this install is *not* ``--offline``: Pi's dependency tree is
-    fetched from the registry, pinned by the ``npm-shrinkwrap.json`` inside the
-    checksum-verified tarball. ``--ignore-scripts`` is Pi's own documented
-    install form and keeps third-party lifecycle scripts out of boot.
-    """
-    package_path, artifact = _verified_artifact("pi_npm_package")
-    _validate_pi_tarball(package_path, PI_VERSION)
-    _set("pi", "running", expected_version=PI_VERSION, source="network")
-    prefix = config.shared_prefix()
-    pi_bin = os.path.join(prefix, "bin", "pi")
-    actual = _read_cli_version(pi_bin) if os.path.exists(pi_bin) else None
-    if actual == PI_VERSION and _pi_install_reusable(prefix, artifact):
-        _set(
-            "pi",
-            "complete",
-            expected_version=PI_VERSION,
-            actual_version=actual,
-            source="prewarmed",
-        )
-        return
-    env = _install_env()
-    npm = os.path.join(prefix, "bin", "npm")
-    if not os.path.exists(npm):
-        npm = "npm"
-    error = "pi install did not run"
-    for attempt in range(1, 4):
-        try:
-            result = subprocess.run(
-                [
-                    npm,
-                    "install",
-                    "-g",
-                    "--ignore-scripts",
-                    "--no-audit",
-                    "--no-fund",
-                    f"--prefix={prefix}",
-                    package_path,
-                ],
-                capture_output=True, text=True, timeout=600, env=env,
-            )
-        except (subprocess.TimeoutExpired, OSError) as e:
-            error = str(e)
-        else:
-            error = (result.stderr or result.stdout)[-500:]
-            if result.returncode == 0 and os.path.exists(pi_bin):
-                actual = _read_cli_version(pi_bin)
-                if actual == PI_VERSION:
-                    launcher_checksum = _file_checksum(pi_bin)
-                    tree = _pi_package_root(prefix)
-                    _write_json_atomic(
-                        os.path.join(prefix, "pi.install.json"),
-                        {
-                            "package_sha256": artifact["sha256"],
-                            "launcher_sha256": launcher_checksum,
-                            "tree_sha256": _directory_checksum(tree),
-                            "tree_relative_path": os.path.relpath(tree, prefix),
-                        },
-                    )
-                    _set(
-                        "pi",
-                        "complete",
-                        expected_version=PI_VERSION,
-                        actual_version=actual,
-                        source=_install_source("staged", "pi_npm_package"),
-                        expected_checksum=artifact["sha256"],
-                        actual_checksum=launcher_checksum,
-                    )
-                    return
-                error = (
-                    f"pi version mismatch: expected {PI_VERSION}, "
-                    f"got {actual or 'unknown'}"
-                )
-        logger.warning("pi install attempt %d/3 failed: %s", attempt, error)
-        time.sleep(5)
-    _set(
-        "pi",
-        "error",
-        error,
-        expected_version=PI_VERSION,
         actual_version=actual,
     )
 
@@ -1951,7 +1791,6 @@ _install_claude = _guard_installer(
 _install_codex = _guard_installer(
     "codex", _install_codex, expected_version=CODEX_VERSION
 )
-_install_pi = _guard_installer("pi", _install_pi, expected_version=PI_VERSION)
 _install_tmux = _guard_installer("tmux", _install_tmux)
 _install_omnigent = _guard_installer(
     "omnigent", _install_omnigent, expected_version=OMNIGENT_VERSION
@@ -1983,12 +1822,18 @@ def run_in_background() -> None:
     omnigent = config.omnigent_offered()
     steps = ["node", "claude", "codex", "databricks", "skills"]
     if omnigent:
-        steps += ["tmux", "omnigent", "pi"]
+        steps += ["tmux", "omnigent"]
     for step in steps:
         _set(step, "pending")
 
     def orchestrate_locked():
         os.makedirs(os.path.join(config.shared_prefix(), "bin"), exist_ok=True)
+        try:
+            _remove_retired_pi_install()
+        except (OSError, RuntimeError) as error:
+            for step in steps:
+                _set(step, "error", f"retired harness cleanup failed: {error}")
+            return
         try:
             _artifact_contract()
         except ArtifactManifestError as error:
@@ -2013,10 +1858,10 @@ def run_in_background() -> None:
 
             return run
 
-        # Only codex and pi need node. Installing it to completion first left
-        # claude, omnigent, databricks, skills and tmux idle through its
+        # Only Codex needs Node. Installing it to completion first left Claude,
+        # Omnigent, Databricks, skills and tmux idle through its
         # download and xz extract, for no dependency reason -- so everything is
-        # submitted at once and just those two wait on the node future.
+        # submitted at once and only Codex waits on the node future.
         independent = [
             ("claude", _install_claude),
             ("databricks", _install_databricks_cli),
@@ -2028,7 +1873,6 @@ def run_in_background() -> None:
                 ("tmux", _install_tmux),
                 ("omnigent", _install_omnigent),
             ])
-            dependent.append(("pi", _install_pi))
 
         # Every task gets its own worker: the node-gated ones block inside the
         # pool, so a smaller pool could deadlock waiting on a node install that

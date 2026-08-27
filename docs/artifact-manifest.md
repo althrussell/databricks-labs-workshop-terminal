@@ -27,7 +27,6 @@ Version 1, `reviewed: true`, plus an `artifacts` object. Every entry requires
 - `tmux_linux_x64`
 - `claude_installer` and `claude_binary`
 - `codex_npm_launcher_package` and `codex_native_package_linux_x64`
-- `pi_npm_package`
 - `databricks_cli_installer` and `databricks_cli_archive_linux_x64`
 - `uv_binary` and `python_3_12_runtime`
 - `omnigent_lock`
@@ -49,29 +48,9 @@ package name remains `@openai/codex`. Bootstrap installs only the launcher via
 offline npm, explicitly extracts the verified native tarball under the alias
 directory, and validates `vendor/x86_64-unknown-linux-musl/bin/codex`.
 
-## Pi
-
-Pi is the one npm install that is **not** offline, and the reason is its shape:
-where the Codex launcher is dependency-free, `@earendil-works/pi-coding-agent`
-pulls a ~140-package tree, so no single tarball can satisfy it. What keeps that
-reviewed is `npm-shrinkwrap.json`, which Pi publishes *inside* its tarball,
-pinning every transitive package to an exact version and `integrity` hash. The
-tarball is SHA-256 verified against this manifest first, so the shrinkwrap npm
-then resolves against is covered by that same checksum — the install is pinned
-end to end rather than floating on `latest`. Boot additionally asserts the
-tarball's own `name`/`version` and refuses one carrying no shrinkwrap.
-
-Three entries (Pi's first-party `pi-agent-core`, `pi-ai`, `pi-tui` siblings) are
-version-pinned but published without an integrity hash. Boot logs them by name
-rather than rejecting them, so the gap is visible instead of implied.
-
-Pi's `engines.node` is a real floor, not a preference: 0.79.0 raised it to
-22.19.0, which the previously pinned Node 22.14.0 did not meet. npm only *warns*
-on `EBADENGINE`, so the generator asserts `NODE_VERSION` satisfies the pinned
-Pi's declared floor — otherwise a Pi bump would install cleanly at boot and then
-fail in front of an attendee. `NODE_VERSION` tracks the active LTS line for the
-same reason CI does; `test_frontend_ci_matches_deployed_node_pin` derives the
-workflow's pin from `install.NODE_VERSION` so the two cannot drift.
+`NODE_VERSION` tracks the active LTS line used by Codex. The frontend CI test
+derives its Node pin from `install.NODE_VERSION` so build and deployed runtime
+cannot drift.
 
 `claude_installer` and `databricks_cli_installer` point at scripts vendored into
 `assets/artifacts/`, not at their upstream URLs. Both upstreams publish from a
@@ -241,9 +220,9 @@ runs. Regeneration needs outbound access to nodejs.org, github.com,
 downloads.claude.ai, and registry.npmjs.org; partial regeneration is not
 accepted, because the manifest is what attendees install.
 
-Both npm artifacts (Codex and Pi) go through `_npm_entry`, which downloads the
-tarball and verifies it against the `dist.integrity` SHA-512 npm publishes for
-that exact version, so a stale or hostile mirror cannot substitute bytes.
+Both Codex npm artifacts go through `_npm_entry`, which downloads each tarball
+and verifies it against the `dist.integrity` SHA-512 npm publishes for that
+exact version, so a stale or hostile mirror cannot substitute bytes.
 
 Node and tmux checksums are additionally asserted in code
 (`NODE_LINUX_X64_SHA256`, `TMUX_LINUX_X64_SHA256`) so an independently verified

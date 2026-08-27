@@ -43,7 +43,7 @@ test("reporting posts the code and never throws when the network is gone", () =>
     return Promise.reject(new Error("offline"));
   }) as unknown as typeof fetch;
   try {
-    reportAttendeeError("websocket_lost", "reconnect_exhausted", { agentId: "pi" });
+    reportAttendeeError("websocket_lost", "reconnect_exhausted", { agentId: "codex" });
   } finally {
     globalThis.fetch = original;
   }
@@ -53,7 +53,7 @@ test("reporting posts the code and never throws when the network is gone", () =>
   assert.deepEqual(calls[0].body, {
     code: "websocket_lost",
     detail: "reconnect_exhausted",
-    agent_id: "pi",
+    agent_id: "codex",
     session_id: "",
   });
 });

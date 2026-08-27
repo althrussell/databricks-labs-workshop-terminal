@@ -130,9 +130,15 @@ class User:
         shared_bin = os.path.join(config.shared_prefix(), "bin")
         local_bin = os.path.join(self.home, ".local", "bin")
         os.makedirs(local_bin, exist_ok=True)
+        retired = self._remove_retired_binary_links(local_bin)
         if not os.path.isdir(shared_bin):
             return
         for name in os.listdir(shared_bin):
+            # Bootstrap installation runs in the background, so a returning
+            # attendee can reach this loop before shared-prefix cleanup. Never
+            # recreate a retired launcher during that race.
+            if name in retired:
+                continue
             source = os.path.join(shared_bin, name)
             target = os.path.join(local_bin, name)
             if os.path.lexists(target):
@@ -141,6 +147,16 @@ class User:
                 os.symlink(os.path.realpath(source), target)
             except OSError:
                 pass
+
+    @staticmethod
+    def _remove_retired_binary_links(local_bin: str) -> frozenset[str]:
+        """Remove user-home launchers left by retired shared binaries."""
+        retired = frozenset({"pi"})
+        for name in retired:
+            target = os.path.join(local_bin, name)
+            if os.path.islink(target) or os.path.isfile(target):
+                os.unlink(target)
+        return retired
 
     def _write_databricks_cli_wrapper(self) -> None:
         """Give the agent's CLI the same identity in Omnigent as in a WT shell.

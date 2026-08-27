@@ -418,7 +418,7 @@ def evaluate(
     agents_ready = installer_status.get("ready")
     agents_ready = agents_ready if isinstance(agents_ready, Mapping) else {}
     installed_harnesses = [
-        name for name in ("claude", "codex", "pi") if agents_ready.get(name) is True
+        name for name in ("claude", "codex") if agents_ready.get(name) is True
     ]
     artifact_manifest = installer_status.get("artifact_manifest")
     artifact_manifest = (
@@ -527,9 +527,7 @@ def evaluate(
     ]
     omnigent_enabled = _bool(env, "OMNIGENT_ENABLED", True)
     if omnigent_enabled:
-        # Both are Omnigent's: pi is installed only for it, and an unpinned
-        # harness version is the same reproducibility hole as an unpinned CLI.
-        pin_names += ["OMNIGENT_VERSION", "PI_CLI_VERSION"]
+        pin_names.append("OMNIGENT_VERSION")
     missing_pins = [name for name in pin_names if not env.get(name, "").strip()]
     # Unset is the expected state: the reviewed tag is repo-owned. Only an
     # explicitly configured branch tip is a missing pin.
@@ -552,11 +550,10 @@ def evaluate(
         "codex": "CODEX_CLI_VERSION",
         "databricks": "DATABRICKS_CLI_VERSION",
         "node": "NODE_VERSION",
-        "pi": "PI_CLI_VERSION",
         "omnigent": "OMNIGENT_VERSION",
         "databricks_agent_skills": "SKILLS_REF",
     }
-    omnigent_tools = {"omnigent", "pi"}
+    omnigent_tools = {"omnigent"}
     for tool, env_name in env_names.items():
         entry = raw_manifest.get(tool)
         entry = entry if isinstance(entry, Mapping) else {}

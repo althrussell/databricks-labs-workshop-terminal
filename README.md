@@ -22,8 +22,8 @@ operator admin panel.
 ## What attendees get
 
 - **Launch buttons** for Omnigent, Claude Code, and Codex. The server allowlist
-  rejects legacy Pi and raw-shell sessions even if an overridden catalogue
-  contains them.
+  rejects raw-shell, retired Pi, and unsupported sessions even if an overridden
+  catalogue contains them.
 - **Zero-touch auth**: Databricks Apps injects auto-refreshing app-SP OAuth
   credentials; the server creates one explicit `oauth-m2m` SDK client, removes
   duplicate client-secret environment variables, makes the production Linux

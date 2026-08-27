@@ -102,21 +102,21 @@ def fake_omnigent(monkeypatch):
     _module("omnigent.runtime.caps", RuntimeCaps=_FakeRuntimeCaps)
     _module("omnigent.server")
     _module("omnigent.server.routing_backend", RoutingBackends=_FakeRoutingBackends)
-    _module(
+    smart_routing_module = _module(
         "omnigent.server.smart_routing",
         RoutingSettings=_FakeRoutingSettings,
         ExternalRoutingClient=_external,
         LLMRoutingClient=object,
         harness_bars_model=_fake_harness_bars_model,
+        _AUTO_ROUTING_HARNESSES=("claude-sdk", "codex", "unsupported"),
     )
+    built["smart_routing_module"] = smart_routing_module
     return built
 
 
-# Upstream's SMART_ROUTING_PI_EXCLUDED, folded the way upstream folds it: under
-# pi the harness gateway 400s on every gpt-5.5/5.6 reasoning arm and on Claude
-# Haiku. This is the guard the external path applies and the judge does not.
-_PI_EXCLUDED = (
-    "system.ai.claude-haiku-4-5",
+# Representative upstream harness exclusions, folded the way upstream folds
+# them. The external path applies this guard and the judge does not.
+_CLAUDE_EXCLUDED = (
     "system.ai.gpt-5-5",
     "system.ai.gpt-5-5-pro",
     "system.ai.gpt-5-6-luna",
@@ -126,10 +126,10 @@ _PI_EXCLUDED = (
 
 
 def _fake_harness_bars_model(harness, model, **_kwargs):
-    if harness != "pi":
+    if harness != "claude-sdk":
         return False
     fold = smart_routing._bare_model_id
-    return fold(model) in {fold(m) for m in _PI_EXCLUDED}
+    return fold(model) in {fold(m) for m in _CLAUDE_EXCLUDED}
 
 
 # --- Enablement and configuration -----------------------------------------
@@ -295,6 +295,10 @@ def test_build_runtime_caps_attaches_both_backends(fake_omnigent):
     assert kwargs["base_url"] == "https://x.cloud.databricks.com/ai-gateway/routing/v1"
     assert kwargs["router_name"] == "task_v1"
     assert kwargs["model_prefixes"] == ["databricks-", "system.ai."]
+    assert fake_omnigent["smart_routing_module"]._AUTO_ROUTING_HARNESSES == (
+        "claude-sdk",
+        "codex",
+    )
 
 
 def test_build_runtime_caps_still_routes_when_the_external_router_cannot_be_built(
@@ -336,34 +340,44 @@ def test_workspace_client_bearer_auth_sets_authorization():
 
 
 def test_the_judge_cannot_pick_a_model_the_harness_bars(fake_omnigent):
-    """The screenshot failure: "No available harness can run gpt-5.6-luna".
-
-    Upstream filters the external verdict through the pi bar but hands the
-    judge the raw catalog, so the judge answered with a pi/gpt pair that was
-    impossible at the moment it was made.
-    """
+    """The judge must receive the same harness-compatible menu as the router."""
     shaped = smart_routing.shape_judge_menu(
         {
-            "pi": [
+            "claude-sdk": [
                 "system.ai.gpt-5.6-luna",
                 "system.ai.gpt-5.6-sol",
-                "system.ai.glm-5-2",
+                "system.ai.claude-sonnet-5",
             ]
         },
         env={},
     )
 
-    assert shaped == {"pi": ["system.ai.glm-5-2"]}
+    assert shaped == {"claude-sdk": ["system.ai.claude-sonnet-5"]}
 
 
 def test_a_harness_with_nothing_left_is_dropped_not_offered_empty(fake_omnigent):
     shaped = smart_routing.shape_judge_menu(
-        {"pi": ["system.ai.gpt-5.6-luna"], "codex": ["system.ai.gpt-5.6-luna"]},
+        {
+            "claude-sdk": ["system.ai.gpt-5.6-luna"],
+            "codex": ["system.ai.gpt-5.6-luna"],
+        },
         env={},
     )
 
-    assert "pi" not in shaped
+    assert "claude-sdk" not in shaped
     assert shaped["codex"] == ["system.ai.gpt-5.6-luna"]
+
+
+def test_an_unshipped_harness_is_never_offered_to_either_router(fake_omnigent):
+    shaped = smart_routing.shape_judge_menu(
+        {
+            "unsupported": ["system.ai.gpt-5.6-luna"],
+            "codex": ["system.ai.gpt-5.6-luna"],
+        },
+        env={},
+    )
+
+    assert shaped == {"codex": ["system.ai.gpt-5.6-luna"]}
 
 
 def test_candidates_are_ordered_cheapest_first(fake_omnigent):
@@ -386,23 +400,11 @@ def test_candidates_are_ordered_cheapest_first(fake_omnigent):
     ]
 
 
-def test_a_trivial_prompt_on_pi_does_not_buy_the_flagship(fake_omnigent):
-    """The regression that reached a live workshop, in full.
-
-    pi bars every GPT arm and Haiku, so its menu is Claude-only. While the cost
-    order named the GPT arms alone, every survivor landed in the unranked bucket
-    where the sole tiebreak is the model id -- and ``claude-fable-5``, the
-    dearest endpoint the workspace serves, sorts ahead of opus and sonnet on the
-    letter F. The judge reads position as price, so "hi" bought the flagship.
-
-    Both halves of the fix are asserted here because either alone still fails:
-    ordering Claude without excluding fable leaves it reachable as the "no cheap
-    branch holds" fallback, and excluding fable without ordering Claude leaves
-    opus-5 at the head on the same alphabetical accident.
-    """
+def test_a_trivial_prompt_does_not_buy_the_flagship(fake_omnigent):
+    """Claude candidates are ordered by cost and the out-of-scope tier is barred."""
     shaped = smart_routing.shape_judge_menu(
         {
-            "pi": [
+            "claude-sdk": [
                 "system.ai.claude-opus-5",
                 "system.ai.claude-fable-5",
                 "system.ai.claude-sonnet-5",
@@ -413,7 +415,11 @@ def test_a_trivial_prompt_on_pi_does_not_buy_the_flagship(fake_omnigent):
         env={},
     )
 
-    assert shaped["pi"] == ["system.ai.claude-sonnet-5", "system.ai.claude-opus-5"]
+    assert shaped["claude-sdk"] == [
+        "system.ai.claude-haiku-4-5",
+        "system.ai.claude-sonnet-5",
+        "system.ai.claude-opus-5",
+    ]
 
 
 def test_the_dearest_endpoint_is_barred_from_every_harness(fake_omnigent):
@@ -424,13 +430,13 @@ def test_the_dearest_endpoint_is_barred_from_every_harness(fake_omnigent):
     """
     shaped = smart_routing.shape_judge_menu(
         {
-            "pi": ["system.ai.claude-fable-5"],
+            "codex": ["system.ai.claude-fable-5"],
             "claude-sdk": ["system.ai.claude-fable-5", "system.ai.claude-sonnet-5"],
         },
         env={},
     )
 
-    # pi keeps no candidate at all, so it is dropped rather than offered empty.
+    # Codex keeps no candidate at all, so it is dropped rather than offered empty.
     assert shaped == {"claude-sdk": ["system.ai.claude-sonnet-5"]}
 
 
@@ -503,7 +509,9 @@ def test_a_judge_with_no_runnable_candidate_returns_no_verdict(fake_omnigent, mo
     monkeypatch.setitem(sys.modules, "omnigent.spec.types", types_module)
 
     judge = smart_routing.AppServicePrincipalJudge(_client(), "system.ai.judge", env={})
-    result = asyncio.run(judge.route("do a thing", {"pi": ["system.ai.gpt-5.6-luna"]}))
+    result = asyncio.run(
+        judge.route("do a thing", {"codex": ["system.ai.glm-5-2"]})
+    )
 
     assert result is None
     assert "harness bars" in judge.last_error
@@ -537,18 +545,19 @@ def test_a_broken_shaper_costs_the_routing_not_the_turn(fake_omnigent, monkeypat
 
     judge = smart_routing.AppServicePrincipalJudge(_client(), "system.ai.judge", env={})
     result = asyncio.run(
-        judge.route("do a thing", {"pi": ["system.ai.claude-sonnet-5"]})
+        judge.route("do a thing", {"claude-sdk": ["system.ai.claude-sonnet-5"]})
     )
 
     assert result is None
     assert "could not shape the judge menu" in judge.last_error
 
 
-def test_codex_is_never_offered_a_chat_only_model(fake_omnigent):
-    """glm-5-2 is upstream's first task_v1 codex arm and codex cannot run it.
+def test_supported_harnesses_are_never_offered_a_chat_only_model(fake_omnigent):
+    """glm-5-2 is upstream's first task_v1 Codex arm, but neither supported
+    coding harness can run it.
 
-    Responses-only CLI, and the gateway refuses the passthrough, so the pick is
-    dead before it is made — this is the "glm in the codex model list" report.
+    Codex is Responses-only and Claude uses Anthropic Messages, so the pick is
+    dead before it is made.
     """
     shaped = smart_routing.shape_judge_menu(
         {
@@ -560,16 +569,14 @@ def test_codex_is_never_offered_a_chat_only_model(fake_omnigent):
                 # lookup where a missing one hangs a turn.
                 "databricks-kimi-k3",
                 "system.ai.gpt-5.6-luna",
-            ]
+            ],
+            "claude-sdk": [
+                "system.ai.glm-5-2",
+                "system.ai.claude-sonnet-5",
+            ],
         },
         env={},
     )
 
     assert shaped["codex"] == ["system.ai.gpt-5.6-luna"]
-
-
-def test_a_harness_that_speaks_chat_keeps_those_models(fake_omnigent):
-    """The bar is per harness, not global: pi runs glm fine."""
-    shaped = smart_routing.shape_judge_menu({"pi": ["system.ai.glm-5-2"]}, env={})
-
-    assert shaped["pi"] == ["system.ai.glm-5-2"]
+    assert shaped["claude-sdk"] == ["system.ai.claude-sonnet-5"]

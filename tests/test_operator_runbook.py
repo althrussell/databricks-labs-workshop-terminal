@@ -1,8 +1,8 @@
 """The runbook has to be right about one thing above all others.
 
 Omnigent's Claude and Codex share the runner's single credential with every
-other Omnigent harness, so they fail together. A runbook that offers them as a
-refuge from a failing Pi sends an operator in a circle mid-event, and the second
+other Omnigent harness, so they fail together. A runbook that offers one as a
+refuge from the other sends an operator in a circle mid-event, and the second
 failure reads as an unrelated bug. That error was in the docs once; these tests
 exist so it cannot come back quietly.
 """

@@ -56,11 +56,6 @@
       "source": "omnigent-0.10.0.lock",
       "version": "0.10.0"
     },
-    "pi_npm_package": {
-      "sha256": "7097fe4b38762dda7ec78001e7b90430c849fbaf717325bfe8109744e32255e6",
-      "source": "https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-0.83.0.tgz",
-      "version": "0.83.0"
-    },
     "python_3_12_runtime": {
       "executable_relative_path": "python/bin/python3.12",
       "kind": "archive",

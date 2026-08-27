@@ -184,31 +184,26 @@
     },
     {
       "id": "omnigent-model-sets",
-      "title": "Three Pollys, three price tags",
-      "markdown": "**Polly Economy**, **Polly Balanced** and **Polly Frontier** are the same orchestrator with different models underneath. Economy's workers are GPT-5.6 Luna and GLM-5.2; Frontier's are Opus 5 and GPT-5.6 Sol. Every tier keeps three different vendors on its workers so a diff is always reviewed by someone who did not write it. Same prompt, same worktrees, same cross-review — only the models change. Pick one and note which you used.",
+      "title": "Polly coordinates Claude and Codex",
+      "markdown": "Stock **Polly** is Omnigent's orchestrator. In this workshop it dispatches only Claude and Codex workers, each in its own worktree, so one agent can implement while the other reviews. Give Polly a clear task and ask it to report which worker did each part.",
       "phases": [
         "build"
       ],
       "triggers": [
-        "omnigent_active",
-        "omnigent-economy_active",
-        "omnigent-balanced_active",
-        "omnigent-frontier_active"
+        "omnigent_active"
       ],
       "weight": 8
     },
     {
       "id": "omnigent-cost-compare",
       "title": "Try it: what did that actually cost?",
-      "markdown": "Build something small on **Polly Economy**, then open the Omnigent app and read the session's token usage and per-model breakdown. Now launch **Polly Frontier** and give it *the exact same prompt*. Compare three things: total tokens, how many turns each needed, and whether the cheaper output actually needed fixing.\n\nCompare **tokens** rather than dollars. The newest models — including the ones Economy runs — have no published price in the catalog yet, so Omnigent honestly reports tokens with no cost figure instead of inventing a zero. Where a price exists you get both.",
+      "markdown": "Build something small with **Polly**, then open the Omnigent app and read the session's token usage and per-model breakdown. Ask Polly to send one focused review to its other worker and compare three things: total tokens, how many turns each needed, and whether the review found something worth fixing.\n\nCompare **tokens** rather than assuming an unpublished price is zero. Where the catalog publishes a price, Omnigent shows both.",
       "phases": [
         "build",
         "wrap"
       ],
       "triggers": [
-        "omnigent-economy_active",
-        "omnigent-balanced_active",
-        "omnigent-frontier_active"
+        "omnigent_active"
       ],
       "weight": 7
     },

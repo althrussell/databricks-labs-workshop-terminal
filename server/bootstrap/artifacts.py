@@ -37,7 +37,6 @@ REQUIRED_ARTIFACTS = frozenset({
     "claude_binary",
     "codex_npm_launcher_package",
     "codex_native_package_linux_x64",
-    "pi_npm_package",
     "databricks_cli_installer",
     "databricks_cli_archive_linux_x64",
     "uv_binary",

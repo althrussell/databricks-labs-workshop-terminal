@@ -44,7 +44,6 @@ def test_uploaded_yaml_patch_sets_current_event_contract_without_mutating_repo()
         databricks_cli_version="1.11.0",
         omnigent_version="0.10.0",
         node_version="24.18.1",
-        pi_cli_version="0.83.0",
         gateway_host="https://dbc-af3ed11d-d267.cloud.databricks.com/ai-gateway",
         workshop_pat="",
     )
@@ -144,22 +143,6 @@ def test_a_gateway_host_carrying_a_provider_suffix_is_rejected():
     _gateway_error(
         "https://dbc-af3ed11d-d267.cloud.databricks.com/ai-gateway/anthropic"
     )
-
-
-def test_the_pi_cli_version_reaches_the_deployment_env():
-    """It sits in EXACT_DEFAULTS, but a default that is never patched into the
-    app's env leaves the installer pinning whatever the image happened to ship."""
-    args = deploy_ct_sim._parse_args(_valid_argv())
-    settings = deploy_ct_sim._event_settings_from_args(args, args.attendee, "")
-
-    assert settings["PI_CLI_VERSION"] == deploy_ct_sim.EXACT_DEFAULTS["pi_cli_version"]
-
-
-def test_a_floating_pi_cli_version_is_rejected():
-    """Every other CLI pin is validated as an exact semver; an unvalidated one
-    would let a workshop drift onto an untested Pi mid-event."""
-    with pytest.raises(SystemExit):
-        deploy_ct_sim._parse_args(_valid_argv() + ["--pi-cli-version", "latest"])
 
 
 def test_uploaded_yaml_patch_preserves_comments_order_and_unrelated_bytes():

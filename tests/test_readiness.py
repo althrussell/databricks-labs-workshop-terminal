@@ -30,7 +30,6 @@ def _good_inputs(tmp_path):
         "OMNIGENT_VERSION": "0.9.0",
         "DATABRICKS_CLI_VERSION": "1.8.0",
         "NODE_VERSION": "24.18.1",
-        "PI_CLI_VERSION": "0.83.0",
     }
     credential = {
         "configured": True,
@@ -84,7 +83,6 @@ def _good_inputs(tmp_path):
                 "codex": "0.144.6",
                 "databricks": "1.8.0",
                 "node": "24.18.1",
-                "pi": "0.83.0",
                 "omnigent": "0.9.0",
             }.items()
         } | {
@@ -429,20 +427,13 @@ def test_a_workshop_that_kept_omnigent_still_waits_for_it(tmp_path):
     assert "omnigent" in report["checks"]["installers"]["missing"]
 
 
-def test_readiness_reports_which_harnesses_this_instance_actually_has(tmp_path):
-    """The Omnigent App advertises polly workers from its own container and
-    cannot see this one. Pi is advisory here — the instance is ready without it
-    — so the App has no way to know a pi worker would dispatch into nothing
-    unless this instance says so."""
+def test_readiness_reports_supported_harnesses_this_instance_has(tmp_path):
     _, _, installer, _, _, _ = _good_inputs(tmp_path)
 
-    without_pi = _evaluate(tmp_path, installer=installer)
-    installer["ready"]["pi"] = True
-    with_pi = _evaluate(tmp_path, installer=installer)
+    report = _evaluate(tmp_path, installer=installer)
 
-    assert without_pi["checks"]["installers"]["harnesses"] == ["claude", "codex"]
-    assert without_pi["checks"]["installers"]["ok"] is True
-    assert with_pi["checks"]["installers"]["harnesses"] == ["claude", "codex", "pi"]
+    assert report["checks"]["installers"]["harnesses"] == ["claude", "codex"]
+    assert report["checks"]["installers"]["ok"] is True
 
 
 def test_degraded_skills_fail_readiness_and_are_named_separately(tmp_path):
@@ -741,21 +732,14 @@ def test_release_pins_require_fixed_ref_cli_versions_and_models(tmp_path):
     assert "CLAUDE_CODE_VERSION" in missing["checks"]["release_pins"]["missing"]
 
 
-def test_every_binary_boot_installs_has_to_be_pinned(tmp_path):
-    """Node and pi count as release inputs, same as the CLIs they run.
-
-    Node arrived as a pin nobody checked, and pi shipped later on the same
-    footing: an event could deploy with either unset, install whatever the
-    installer defaulted to that week, and pass readiness. The versions attendees
-    run are the reproducibility claim, so the check has to cover all of them.
-    """
-    for name in ("NODE_VERSION", "PI_CLI_VERSION"):
-        report = _evaluate(
-            tmp_path, mutate_env=lambda env, n=name: env.update({n: ""})
-        )
-        pins = report["checks"]["release_pins"]
-        assert pins["ok"] is False, name
-        assert name in pins["missing"], name
+def test_node_boot_runtime_has_to_be_pinned(tmp_path):
+    """Node is a release input just like the CLI it runs."""
+    report = _evaluate(
+        tmp_path, mutate_env=lambda env: env.update({"NODE_VERSION": ""})
+    )
+    pins = report["checks"]["release_pins"]
+    assert pins["ok"] is False
+    assert "NODE_VERSION" in pins["missing"]
 
 
 def test_a_raised_pin_without_a_reinstall_is_a_mismatch_not_a_green(tmp_path):
@@ -765,28 +749,25 @@ def test_a_raised_pin_without_a_reinstall_is_a_mismatch_not_a_green(tmp_path):
     on disk stays where it was. Without pairing each pin against the installed
     version, /readyz would report the new number while attendees ran the old one.
     """
-    for env_name, tool in (("NODE_VERSION", "node"), ("PI_CLI_VERSION", "pi")):
-        report = _evaluate(
-            tmp_path,
-            mutate_env=lambda env, n=env_name: env.update({n: "99.99.99"}),
-        )
-        pins = report["checks"]["release_pins"]
-        assert pins["ok"] is False, tool
-        assert tool in pins["mismatched"], tool
-        assert report["release_manifest"][tool]["match"] is False, tool
+    report = _evaluate(
+        tmp_path,
+        mutate_env=lambda env: env.update({"NODE_VERSION": "99.99.99"}),
+    )
+    pins = report["checks"]["release_pins"]
+    assert pins["ok"] is False
+    assert "node" in pins["mismatched"]
+    assert report["release_manifest"]["node"]["match"] is False
 
 
-def test_pi_is_only_a_required_pin_when_omnigent_is_on(tmp_path):
-    """Pi is installed for Omnigent alone, so it is a pin for Omnigent alone."""
+def test_omnigent_is_only_a_required_pin_when_it_is_on(tmp_path):
     report = _evaluate(
         tmp_path,
         mutate_env=lambda env: env.update(
-            {"OMNIGENT_ENABLED": "false", "PI_CLI_VERSION": "", "OMNIGENT_VERSION": ""}
+            {"OMNIGENT_ENABLED": "false", "OMNIGENT_VERSION": ""}
         ),
     )
 
     missing = report["checks"]["release_pins"]["missing"]
-    assert "PI_CLI_VERSION" not in missing
     assert "OMNIGENT_VERSION" not in missing
 
 

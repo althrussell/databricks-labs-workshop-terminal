@@ -38,12 +38,13 @@ def test_an_agent_the_operator_did_not_pick_is_not_offered(monkeypatch):
     assert _ids(monkeypatch, "claude") == ["claude"]
 
 
-def test_legacy_raw_terminal_and_pi_are_never_offered(monkeypatch, tmp_path):
+def test_unsupported_catalogue_entries_are_never_offered(monkeypatch, tmp_path):
     catalog = tmp_path / "agents.json"
     catalog.write_text(
         '[{"id":"bash","order":1},{"id":"pi","order":2},'
+        '{"id":"legacy-agent","order":3},'
         '{"id":"claude","label":"Claude","description":"Claude",'
-        '"icon":"sparkles","command":"claude","requires":["claude"],"order":3}]'
+        '"icon":"sparkles","command":"claude","requires":["claude"],"order":4}]'
     )
     monkeypatch.setenv("AGENT_CATALOG_PATH", str(catalog))
     assert _ids(monkeypatch, None) == ["claude"]
@@ -76,14 +77,13 @@ def test_a_deselected_agent_cannot_be_launched(client, monkeypatch):
 
 
 def test_a_workshop_without_omnigent_does_not_install_it(monkeypatch):
-    """Cold boot fetches the harness, tmux and pi. A run that will never launch
+    """Cold boot fetches the harness and tmux. A run that will never launch
     Omnigent should not spend an attendee's first minutes on it."""
     monkeypatch.setenv("WORKSHOP_AGENTS", "claude,codex")
 
     assert config.omnigent_offered() is False
     specs = install._release_specs()
     assert specs["omnigent"][0] is False
-    assert specs["pi"][0] is False
 
 
 def test_picking_omnigent_does_not_override_the_platform_switch(monkeypatch):

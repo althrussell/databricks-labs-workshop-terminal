@@ -56,7 +56,6 @@ EXACT_DEFAULTS = {
     "databricks_cli_version": "1.11.0",
     "omnigent_version": "0.10.0",
     "node_version": "24.18.1",
-    "pi_cli_version": "0.83.0",
 }
 SEMVER_PATTERN = (
     r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
@@ -151,7 +150,6 @@ def _parse_args(argv=None, *, environ=None):
     parser.add_argument("--databricks-cli-version", default=EXACT_DEFAULTS["databricks_cli_version"])
     parser.add_argument("--omnigent-version", default=EXACT_DEFAULTS["omnigent_version"])
     parser.add_argument("--node-version", default=EXACT_DEFAULTS["node_version"])
-    parser.add_argument("--pi-cli-version", default=EXACT_DEFAULTS["pi_cli_version"])
     parser.add_argument(
         "--gateway-host",
         default="",
@@ -274,7 +272,6 @@ def _validate_args(parser, args, environ):
         "databricks_cli_version",
         "omnigent_version",
         "node_version",
-        "pi_cli_version",
     ):
         value = getattr(args, field)
         if not SEMVER_RE.fullmatch(value):
@@ -598,7 +595,6 @@ def _event_settings(
     databricks_cli_version,
     omnigent_version,
     node_version,
-    pi_cli_version,
     gateway_host,
     workshop_pat,
     enable_obo=True,
@@ -632,7 +628,6 @@ def _event_settings(
         "DATABRICKS_CLI_VERSION": databricks_cli_version,
         "OMNIGENT_VERSION": omnigent_version,
         "NODE_VERSION": node_version,
-        "PI_CLI_VERSION": pi_cli_version,
         # Empty is the reviewed default and what a real event should ship:
         # Workshop Terminal derives <host>/ai-gateway from the workspace host,
         # which is the governed surface and the only one serving these models.
@@ -663,7 +658,6 @@ def _event_settings_from_args(args, attendee, workshop_pat):
         databricks_cli_version=args.databricks_cli_version,
         omnigent_version=args.omnigent_version,
         node_version=args.node_version,
-        pi_cli_version=args.pi_cli_version,
         gateway_host=args.gateway_host.strip(),
         workshop_pat=workshop_pat,
         enable_obo=not args.no_obo,
