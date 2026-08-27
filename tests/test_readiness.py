@@ -130,7 +130,7 @@ def _good_inputs(tmp_path):
 
 def _evaluate(tmp_path, *, mutate_env=None, credential=None, installer=None,
               entitlements=None, obo=None, secret_protection=None,
-              delivery=None, gateway=None, writable=True, now=1000.0):
+              delivery=None, gateway=None, otel=None, writable=True, now=1000.0):
     readiness = importlib.import_module("server.readiness")
     (
         env,
@@ -151,9 +151,34 @@ def _evaluate(tmp_path, *, mutate_env=None, credential=None, installer=None,
         secret_protection_status=secret_protection or good_secret_protection,
         delivery_status=delivery,
         gateway_status=gateway,
+        otel_status=otel,
         writable_probe=lambda _: writable,
         now=now,
     )
+
+
+def test_app_telemetry_health_is_visible_but_never_gates_attendees(tmp_path):
+    disabled = _evaluate(tmp_path)
+    configured = _evaluate(
+        tmp_path,
+        otel={
+            "enabled": True,
+            "configured": True,
+            "state": "green",
+            "protocol": "grpc",
+            "collector_endpoint_present": True,
+            "service_name_present": True,
+            "required_resource_attributes": ["workshop.run_id"],
+            "missing_resource_attributes": [],
+        },
+    )
+
+    assert disabled["checks"]["app_telemetry"]["soft"] is True
+    assert disabled["checks"]["app_telemetry"]["state"] == "amber"
+    assert disabled["ready"] is True
+    assert configured["checks"]["app_telemetry"]["state"] == "green"
+    assert configured["checks"]["app_telemetry"]["protocol"] == "grpc"
+    assert "endpoint" not in configured["checks"]["app_telemetry"]
 
 
 def test_production_readiness_requires_numeric_verified_app_sp_binding(tmp_path):
@@ -245,6 +270,7 @@ def test_all_hard_checks_green_is_ready(tmp_path):
     assert all(check["ok"] for check in hard.values())
     assert set(report["checks"]) - set(hard) == {
         "insight_capture",
+        "app_telemetry",
         "model_gateway",
         "model_profile",
         "workspace_sync",

@@ -28,6 +28,7 @@ from . import (
     identity,
     models,
     obo,
+    observability,
     operational,
     readiness,
     selfheal,
@@ -55,6 +56,7 @@ from .users import user_manager
 from .ws import router as ws_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+observability.install_logging_redaction()
 logger = logging.getLogger("workshop-terminal")
 
 _STATIC_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "static"))
@@ -122,6 +124,7 @@ def _stop_control_tower_threads(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
+    previous_asyncio_handler = observability.install_asyncio_exception_handler(loop)
     from . import topology
 
     # A multi-session override makes the UI lie and reintroduces the process
@@ -195,6 +198,7 @@ async def lifespan(app: FastAPI):
         logger.info("workshop terminal up (phase=%s)", content_service.phase)
         yield
     finally:
+        loop.set_exception_handler(previous_asyncio_handler)
         if emitter_stop is not None:
             _stop_control_tower_threads(emitter_stop, emitter_threads)
         log_collector.stop()
@@ -680,6 +684,7 @@ def list_agents(principal: Principal = Depends(get_current_user)):
 
 class CreateSessionBody(BaseModel):
     agent_id: str
+    replaces_agent_id: str | None = Field(default=None, max_length=32)
 
 
 @app.get("/api/sessions")
@@ -825,8 +830,14 @@ def create_session(body: CreateSessionBody, principal: Principal = Depends(get_c
         )
         raise HTTPException(status_code=503, detail=str(e))
     user.sessions_launched[agent["id"]] = user.sessions_launched.get(agent["id"], 0) + 1
-    # C3b: emit a session.started event (no-op unless CT ingest is configured).
-    event_emitter.emit("session.started", principal.name, {"agent": agent["id"]})
+    telemetry.session_started(principal.name, agent["id"], session.id)
+    if body.replaces_agent_id and body.replaces_agent_id != agent["id"]:
+        telemetry.session_switched(
+            principal.name,
+            body.replaces_agent_id,
+            agent["id"],
+            session.id,
+        )
     # Record which principal each CLI surface resolves to on each plane, so a
     # resource created during this session can be attributed later. Backgrounded
     # and TTL'd — it must never be in the launch path.
@@ -967,7 +978,9 @@ def healthz():
 
 @app.get("/readyz")
 def readyz():
+    started_at = time.monotonic()
     report = readiness.evaluate_runtime()
+    telemetry.readiness_result(report, started_at)
     return JSONResponse(report, status_code=200 if report["ready"] else 503)
 
 

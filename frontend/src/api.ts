@@ -366,10 +366,13 @@ export const api = {
   agents: () =>
     request<{ agents: AgentInfo[]; credential: CredentialStatus }>("/api/agents"),
   sessions: () => request<SessionPayload>("/api/sessions"),
-  createSession: (agentId: string) =>
+  createSession: (agentId: string, replacesAgentId?: string) =>
     request<{ session: SessionInfo }>("/api/sessions", {
       method: "POST",
-      body: JSON.stringify({ agent_id: agentId }),
+      body: JSON.stringify({
+        agent_id: agentId,
+        ...(replacesAgentId ? { replaces_agent_id: replacesAgentId } : {}),
+      }),
     }),
   closeSession: (id: string) => request(`/api/sessions/${id}`, { method: "DELETE" }),
   ackPriorSession: (id: string) =>

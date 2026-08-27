@@ -313,14 +313,22 @@ def _set(
                 else (None if clear_release else previous.get("actual_checksum"))
             ),
         }
+        current = dict(_state[step])
         changed = previous.get("status") != status
     # An install step that ends badly is the reason an attendee's agent never
     # becomes launchable. Reported once per transition, outside the state lock,
     # so it reaches an operator before the attendee reports a stuck spinner.
-    if changed and status in ("error", "degraded"):
+    if changed and status in TERMINAL_STATUSES:
         from .. import telemetry
 
-        telemetry.install_step_failed(step, status, error or "")
+        telemetry.bootstrap_phase(
+            step,
+            status,
+            current.get("duration_ms") or 0,
+            str(current.get("source") or current.get("release_source") or "unknown"),
+        )
+        if status in ("error", "degraded"):
+            telemetry.install_step_failed(step, status, error or "")
 
 
 def _release_specs() -> dict[str, tuple[bool, str]]:

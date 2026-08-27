@@ -8,6 +8,8 @@ anyio==4.14.2
     # via
     #   starlette
     #   watchfiles
+asgiref==3.12.1
+    # via opentelemetry-instrumentation-asgi
 certifi==2026.6.17
     # via requests
 cffi==2.1.0
@@ -26,6 +28,10 @@ fastapi==0.139.0
     # via -r requirements.in
 google-auth==2.56.0
     # via databricks-sdk
+googleapis-common-protos==1.75.1
+    # via opentelemetry-exporter-otlp-proto-grpc
+grpcio==1.83.0
+    # via opentelemetry-exporter-otlp-proto-grpc
 h11==0.16.0
     # via uvicorn
 httptools==0.8.0
@@ -34,12 +40,59 @@ idna==3.18
     # via
     #   anyio
     #   requests
+opentelemetry-api==1.44.0
+    # via
+    #   opentelemetry-distro
+    #   opentelemetry-exporter-otlp-proto-grpc
+    #   opentelemetry-instrumentation
+    #   opentelemetry-instrumentation-asgi
+    #   opentelemetry-instrumentation-fastapi
+    #   opentelemetry-sdk
+    #   opentelemetry-semantic-conventions
+opentelemetry-distro==0.65b0
+    # via -r requirements.in
+opentelemetry-exporter-otlp-proto-common==1.44.0
+    # via opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-exporter-otlp-proto-grpc==1.44.0
+    # via -r requirements.in
+opentelemetry-instrumentation==0.65b0
+    # via
+    #   opentelemetry-distro
+    #   opentelemetry-instrumentation-asgi
+    #   opentelemetry-instrumentation-fastapi
+opentelemetry-instrumentation-asgi==0.65b0
+    # via opentelemetry-instrumentation-fastapi
+opentelemetry-instrumentation-fastapi==0.65b0
+    # via -r requirements.in
+opentelemetry-proto==1.44.0
+    # via
+    #   opentelemetry-exporter-otlp-proto-common
+    #   opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-sdk==1.44.0
+    # via
+    #   opentelemetry-distro
+    #   opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-semantic-conventions==0.65b0
+    # via
+    #   opentelemetry-instrumentation
+    #   opentelemetry-instrumentation-asgi
+    #   opentelemetry-instrumentation-fastapi
+    #   opentelemetry-sdk
+opentelemetry-util-http==0.65b0
+    # via
+    #   opentelemetry-instrumentation-asgi
+    #   opentelemetry-instrumentation-fastapi
+packaging==26.3
+    # via opentelemetry-instrumentation
 pillow==11.3.0
     # via
     #   -r requirements.in
     #   reportlab
 protobuf==6.33.6
-    # via databricks-sdk
+    # via
+    #   databricks-sdk
+    #   googleapis-common-protos
+    #   opentelemetry-proto
 pyasn1==0.6.4
     # via pyasn1-modules
 pyasn1-modules==0.4.2
@@ -68,6 +121,11 @@ typing-extensions==4.16.0
     # via
     #   anyio
     #   fastapi
+    #   grpcio
+    #   opentelemetry-api
+    #   opentelemetry-exporter-otlp-proto-grpc
+    #   opentelemetry-sdk
+    #   opentelemetry-semantic-conventions
     #   pydantic
     #   pydantic-core
     #   starlette
@@ -88,3 +146,5 @@ watchfiles==1.2.0
     # via uvicorn
 websockets==16.1
     # via uvicorn
+wrapt==2.3.0
+    # via opentelemetry-instrumentation

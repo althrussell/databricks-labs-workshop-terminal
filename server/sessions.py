@@ -139,6 +139,8 @@ class Session:
         self.created_at = time.time()
         self.last_activity = time.time()
         self.exited = False
+        self.exit_code: int | None = None
+        self.exit_signal: int | None = None
         # Live websocket subscribers: asyncio queues drained by ws handlers.
         self.subscribers: set[asyncio.Queue] = set()
 
@@ -431,13 +433,16 @@ class SessionManager:
         if not claimed:
             return
         try:
-            os.kill(session.pid, signal.SIGHUP)
-            time.sleep(GRACEFUL_SHUTDOWN_WAIT)
-            try:
-                os.kill(session.pid, 0)
-                os.kill(session.pid, signal.SIGKILL)
-            except OSError:
-                pass
+            # A captured wait status means the reader already reaped the agent;
+            # signalling that PID again risks hitting a rapidly reused PID.
+            if session.exit_code is None and session.exit_signal is None:
+                os.kill(session.pid, signal.SIGHUP)
+                time.sleep(GRACEFUL_SHUTDOWN_WAIT)
+                try:
+                    os.kill(session.pid, 0)
+                    os.kill(session.pid, signal.SIGKILL)
+                except OSError:
+                    pass
             os.close(session.master_fd)
         except OSError:
             pass
@@ -457,6 +462,8 @@ class SessionManager:
             reason,
             session_id=session.id,
             duration_s=time.time() - session.created_at,
+            exit_code=session.exit_code,
+            process_signal=session.exit_signal,
         )
 
     # -- internals --
@@ -464,6 +471,13 @@ class SessionManager:
     def _read_pty(self, session: Session) -> None:
         fd = session.master_fd
         decoder = Utf8StreamDecoder()
+
+        def capture_wait_status(status: int) -> None:
+            exit_value = os.waitstatus_to_exitcode(status)
+            if exit_value < 0:
+                session.exit_signal = -exit_value
+            else:
+                session.exit_code = exit_value
 
         def handle_output(decoded: str) -> None:
             if not decoded:
@@ -488,7 +502,9 @@ class SessionManager:
                     handle_output(decoder.decode(output))
                 else:
                     try:
-                        if os.waitpid(session.pid, os.WNOHANG)[0] != 0:
+                        waited_pid, wait_status = os.waitpid(session.pid, os.WNOHANG)
+                        if waited_pid != 0:
+                            capture_wait_status(wait_status)
                             break
                     except ChildProcessError:
                         break
@@ -496,9 +512,23 @@ class SessionManager:
                 break
 
         handle_output(decoder.flush())
+        if session.exit_code is None and session.exit_signal is None:
+            try:
+                waited_pid, wait_status = os.waitpid(session.pid, os.WNOHANG)
+                if waited_pid != 0:
+                    capture_wait_status(wait_status)
+            except (ChildProcessError, OSError):
+                pass
         session.exited = True
         self._fanout(session, {"t": "exit"})
-        self.terminate(session, reason="exited")
+        reason = (
+            "process_signal"
+            if session.exit_signal is not None
+            else "process_error"
+            if session.exit_code not in (None, 0)
+            else "exited"
+        )
+        self.terminate(session, reason=reason)
 
     def _fanout(self, session: Session, message: dict) -> None:
         loop = self._loop

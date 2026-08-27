@@ -306,6 +306,7 @@ def evaluate(
     delivery_status: Mapping[str, object] | None = None,
     gateway_status: Mapping[str, object] | None = None,
     workspace_sync: Mapping[str, object] | None = None,
+    otel_status: Mapping[str, object] | None = None,
     writable_probe: Callable[[str], bool] = _path_writable,
     obo_renewing: bool | None = None,
     now: float | None = None,
@@ -321,6 +322,16 @@ def evaluate(
         credential_status, env, event_remaining, obo_renewing=obo_renewing
     )
     gateway_status = gateway_status or {}
+    otel_status = otel_status or {
+        "enabled": False,
+        "configured": False,
+        "state": "amber",
+        "protocol": None,
+        "collector_endpoint_present": False,
+        "service_name_present": False,
+        "required_resource_attributes": [],
+        "missing_resource_attributes": [],
+    }
     sync = {
         "state": "never",
         "at": None,
@@ -915,6 +926,31 @@ def evaluate(
             pending=insight["pending"],
             dropped=insight["dropped"],
         ),
+        # Native Apps telemetry is configured on the App resource by Control
+        # Tower, not by this process. Missing export remains soft so a preview
+        # outage never blocks an attendee after fleet preflight; the exact
+        # secret-free state is still visible to CT on every readiness sweep.
+        "app_telemetry": _soft(
+            otel_status.get("configured") is True,
+            str(otel_status.get("state") or "amber"),
+            (
+                "Databricks Apps OTLP export and workshop identity are configured"
+                if otel_status.get("configured") is True
+                else "Databricks Apps OTLP export is disabled or missing workshop identity"
+            ),
+            enabled=otel_status.get("enabled") is True,
+            configured=otel_status.get("configured") is True,
+            protocol=otel_status.get("protocol"),
+            collector_endpoint_present=otel_status.get("collector_endpoint_present")
+            is True,
+            service_name_present=otel_status.get("service_name_present") is True,
+            required_resource_attributes=otel_status.get(
+                "required_resource_attributes", []
+            ),
+            missing_resource_attributes=otel_status.get(
+                "missing_resource_attributes", []
+            ),
+        ),
         # Soft because the container's copy under DATA_ROOT is not lost when
         # this fails -- what is lost is the attendee's ability to reach their
         # work from outside the terminal. Refusing to serve would cost them the
@@ -985,6 +1021,7 @@ def evaluate_runtime() -> dict:
     from .entitlements import entitlement_manager
     from .event_emitter import event_emitter
     from .obo import obo_manager, obo_watcher
+    from .telemetry import otel_health
 
     return evaluate(
         env=os.environ,
@@ -997,6 +1034,7 @@ def evaluate_runtime() -> dict:
         attendee_binding=attendee.binding(),
         delivery_status=event_emitter.delivery_status(),
         workspace_sync=_bound_workspace_sync(),
+        otel_status=otel_health(os.environ),
         obo_renewing=obo_watcher.running,
     )
 

@@ -160,6 +160,16 @@ binary checksum. `ARTIFACT_MANIFEST_PATH` is an optional override for mirrored
 events that may redirect `source` only — see
 [docs/artifact-manifest.md](docs/artifact-manifest.md).
 
+### Observability
+
+When Control Tower configures a Databricks Apps telemetry destination, WT uses
+the platform-supplied OTLP collector to emit structured operational logs,
+traces, and metrics. Startup merges run, unit, event, workspace, app, and
+release identity without replacing Databricks resource attributes. Telemetry is
+fail-soft and redacts credentials, prompts, terminal I/O, configuration files,
+and attendee email. See [docs/observability.md](docs/observability.md) for the
+cross-repository contract and metric/event taxonomy.
+
 ### Via Control Tower
 
 Add a `WorkshopApp` row pointing at this repo (`git_url`, branch `main`).

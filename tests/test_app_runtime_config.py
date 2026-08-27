@@ -8,14 +8,13 @@ from server import config as runtime_config
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_app_command_uses_native_uvicorn_runtime_env_and_one_worker():
+def test_app_command_prepares_otel_before_importing_fastapi():
     config = yaml.safe_load((ROOT / "app.yaml").read_text())
 
     assert config["command"] == [
-        "uvicorn",
-        "server.main:app",
-        "--workers",
-        "1",
+        "python",
+        "-m",
+        "server.otel_bootstrap",
     ]
 
 
@@ -34,18 +33,36 @@ def test_runtime_config_reads_app_service_principal_id_at_call_time(monkeypatch)
     assert runtime_config.workshop_app_sp_id() == "67890"
 
 
-def test_list_form_app_command_never_passes_literal_port_substitution():
+def test_bootstrap_resolves_runtime_port_and_keeps_one_worker():
+    from server.otel_bootstrap import uvicorn_command
+
     command = yaml.safe_load((ROOT / "app.yaml").read_text())["command"]
 
     assert "${DATABRICKS_APP_PORT}" not in command, (
         "Invalid value for '--port': '${DATABRICKS_APP_PORT}' "
         "is not a valid integer."
     )
-    assert "--host" not in command
-    assert "--port" not in command
-    assert command.count("--workers") == 1
-    workers_index = command.index("--workers")
-    assert command[workers_index + 1] == "1"
+    runtime = uvicorn_command({"DATABRICKS_APP_PORT": "8123"})
+    assert runtime[runtime.index("--host") + 1] == "0.0.0.0"
+    assert runtime[runtime.index("--port") + 1] == "8123"
+    assert runtime.count("--workers") == 1
+    assert runtime[runtime.index("--workers") + 1] == "1"
+
+
+def test_app_yaml_declares_the_cross_repo_telemetry_identity_contract():
+    config = yaml.safe_load((ROOT / "app.yaml").read_text())
+    env = {item["name"]: item.get("value", "") for item in config["env"]}
+
+    assert env["OTEL_TRACES_SAMPLER"] == "always_on"
+    assert "authorization" in env[
+        "OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SANITIZE_FIELDS"
+    ]
+    assert "/api/wizard" in env["OTEL_PYTHON_FASTAPI_EXCLUDED_URLS"]
+    assert "/api/certificate" in env["OTEL_PYTHON_FASTAPI_EXCLUDED_URLS"]
+    assert env["WORKSHOP_RUN_ID"] == ""
+    assert env["WORKSHOP_UNIT_ID"] == ""
+    assert env["WORKSHOP_RELEASE_SHA"] == ""
+    assert "OTEL_EXPORTER_OTLP_ENDPOINT" not in env
 
 
 def test_runtime_dependencies_are_explicit_and_exactly_pinned():

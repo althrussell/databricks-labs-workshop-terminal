@@ -353,6 +353,8 @@ take effect on restart with **no rebuild**. Set these per instance:
 | `WORKSHOP_CODEX_COMPARE` | the profiles `scripts/smoke_models.py` passed | drop a comparison model that cannot hold a tool call, without a release ([model comparison](model-comparison.md)). CT passes through `CONTROL_TOWER_WORKSHOP_CODEX_COMPARE`, so a measurement reaches a fleet without a WT release |
 | `WORKSHOP_EVENT_ENDS_AT` | epoch seconds when the event ends | the `credential_durability` gate has nothing to compare a credential lifetime against without it, so a static credential expiring mid-session is admitted. CT derives it from the run's own `termination_at` rather than asking an operator for a number it already knows |
 | `WORKSHOP_RUN_ID` | CT's run id for this attendee | event attribution on ingested events |
+| `WORKSHOP_UNIT_ID` | CT's unit id for this attendee instance | seat attribution in events and OTel resource attributes |
+| `WORKSHOP_RELEASE_SHA` | immutable WT release digest | release attribution in OTel resource attributes |
 | `DATABRICKS_WORKSPACE_ID` | the workspace id | event attribution |
 | `CONTROL_TOWER_INGEST_URL` | *(optional)* CT ingest base URL | enable the additive push path (§5); unnecessary for delivery, which is by collection |
 | `CONTROL_TOWER_INGEST_TOKEN` | *(optional)* shared `X-Ingest-Token` | auth for the push path only |

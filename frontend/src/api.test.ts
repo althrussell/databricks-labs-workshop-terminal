@@ -190,6 +190,29 @@ test("prior-session acknowledgement uses the owner-scoped delete API", async () 
   assert.equal(request?.init?.method, "DELETE");
 });
 
+test("a confirmed switch identifies the replaced agent without sending prompts", async () => {
+  const { input, init } = await captureRequest(
+    () => apiModule.api.createSession("codex", "claude"),
+    {
+      session: {
+        id: "two",
+        agent_id: "codex",
+        label: "Codex",
+        created_at: 1,
+        last_activity: 1,
+        exited: false,
+      },
+    }
+  );
+
+  assert.equal(input, "/api/sessions");
+  assert.deepEqual(JSON.parse(String(init?.body)), {
+    agent_id: "codex",
+    replaces_agent_id: "claude",
+  });
+  assert.equal(String(init?.body).includes("prompt"), false);
+});
+
 async function captureRequest<T>(
   call: () => Promise<T>,
   body: unknown

@@ -120,6 +120,9 @@ class ToolchainMirror:
                     continue
                 return self._miss(f"{type(error).__name__}: {error}")
             self.hits += 1
+            from .. import telemetry
+
+            telemetry.mirror_fetch("served", "hit", 1.0)
             return True
         return self._miss("retries exhausted")
 
@@ -127,6 +130,23 @@ class ToolchainMirror:
         self.misses += 1
         self.last_error = reason
         logger.info("toolchain mirror miss (%s) - falling back to source", reason)
+        lowered = reason.lower()
+        reason_code = (
+            "not_staged"
+            if "not staged" in lowered
+            else "permission_denied"
+            if "permission" in lowered or "forbidden" in lowered
+            else "retry_exhausted"
+            if "retries exhausted" in lowered
+            else "read_failed"
+        )
+        from .. import telemetry
+
+        telemetry.mirror_fetch(
+            "failed" if self.strict else "bypassed",
+            reason_code,
+            0.0,
+        )
         return False
 
     def _download(self, remote: str, destination: str) -> None:
@@ -166,7 +186,13 @@ def from_environment() -> ToolchainMirror | None:
             f"/Volumes/<catalog>/<schema>/<volume> address, got {raw!r}"
         )
         if strict:
+            from .. import telemetry
+
+            telemetry.mirror_fetch("failed", "invalid_configuration", 0.0)
             raise ToolchainMirrorError(message)
+        from .. import telemetry
+
+        telemetry.mirror_fetch("bypassed", "invalid_configuration", 0.0)
         logger.error("%s - ignoring the mirror and downloading from source", message)
         return None
     client = credentials.workspace_client()
@@ -176,7 +202,13 @@ def from_environment() -> ToolchainMirror | None:
             "unavailable, so the Files API cannot be reached"
         )
         if strict:
+            from .. import telemetry
+
+            telemetry.mirror_fetch("failed", "credential_unavailable", 0.0)
             raise ToolchainMirrorError(message)
+        from .. import telemetry
+
+        telemetry.mirror_fetch("bypassed", "credential_unavailable", 0.0)
         logger.error("%s - downloading from source", message)
         return None
     return ToolchainMirror(path, client, strict=strict)
