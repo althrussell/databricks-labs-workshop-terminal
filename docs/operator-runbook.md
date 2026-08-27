@@ -22,7 +22,7 @@ die the same way, one step later.
 Sending an attendee from Omnigent's Pi to Omnigent's Claude is sending them in a
 circle. It will look like a second, unrelated bug.
 
-**The real fallback is the bare tier: Claude Code, Codex and Terminal.** Those
+**The real fallback is the bare tier: Claude Code and Codex.** Those
 run directly in the attendee's container on the app service principal's
 credential, which the server rotates on its own schedule and which no browser
 tab can invalidate. They cannot fail the way the Omnigent plane fails. The
@@ -34,8 +34,8 @@ The model-comparison exercise is the exception: it no longer has a bare-tier
 form. Those models answer only on chat-completions, and codex-cli dropped that
 wire, so there is no Codex profile behind them any more. The endpoints
 themselves are still live — `/api/config` publishes the URL under
-`model_comparison` — but reaching them means an HTTP call from Terminal, not a
-harness. See [`model-comparison.md`](./model-comparison.md).
+`model_comparison` — but reaching them means asking a bare agent to make the
+HTTP call. See [`model-comparison.md`](./model-comparison.md).
 
 ---
 
@@ -62,7 +62,7 @@ If the tab was closed, reopening it is the same fix.
 **When:** rung 1 did not take, or the attendee is mid-task and cannot afford to
 retry.
 
-Tell them to use **Claude Code**, **Codex** or **Terminal**. All three are on
+Tell them to use **Claude Code** or **Codex**. Both are on
 the same home screen and need no sign-in of their own. If they were doing the
 model-comparison exercise, move them to a different exercise rather than a
 different harness — there is no bare-tier form of that one to fall back to (see
@@ -102,7 +102,7 @@ holding. Typically: many attendees, same error, recovery not sticking.
 Operator panel → **Omnigent plane** → **Demote Omnigent (fleet)**.
 
 Every Omnigent-backed card is withdrawn for everyone, immediately — open tabs
-are pushed the change, they do not need to reload. Claude, Codex and Terminal
+are pushed the change, they do not need to reload. Claude and Codex
 stay exactly as they were. Attendees see *paused by your host* on the withdrawn
 cards rather than an error they cannot act on.
 

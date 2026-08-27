@@ -28,7 +28,7 @@ export default function LaunchBar({ agents, launching, onLaunch }: Props) {
         return (
           <button
             key={agent.id}
-            className={`launch-btn ${agent.id === "bash" ? "launch-btn-plain" : ""}`}
+            className="launch-btn"
             disabled={!agent.ready || busy}
             title={agent.ready ? agent.description : `${agent.label} is installing…`}
             onClick={() => onLaunch(agent.id)}

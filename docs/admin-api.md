@@ -510,7 +510,7 @@ sign-in freshness and host state.
 This is the rung-4 lever in [`operator-runbook.md`](./operator-runbook.md): the
 Omnigent harnesses share one credential plane and fail together, so when that
 plane is down the useful move is to withdraw them and leave the bare tier —
-Claude, Codex and Terminal — which runs on the app credential and cannot fail
+Claude and Codex — which runs on the app credential and cannot fail
 the same way. Distinct from the spend kill-switch (`agent-controls`), which
 pauses *every* agent and stops the workshop.
 

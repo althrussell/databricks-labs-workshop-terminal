@@ -75,7 +75,7 @@ export default function OperatorPanel() {
       setStatus(
         next.enabled
           ? "Omnigent restored — cards return on the attendees' next poll."
-          : "Omnigent demoted fleet-wide. Everyone keeps Claude, Codex and Terminal."
+          : "Omnigent demoted fleet-wide. Everyone keeps Claude and Codex."
       );
     } finally {
       setWorking("");
@@ -137,7 +137,7 @@ export default function OperatorPanel() {
           <p className="op-note">
             Every Omnigent harness shares one credential plane, so they fail
             together. Demoting withdraws those cards for everyone and leaves
-            bare Claude, Codex and Terminal, which run on the app credential and
+            bare Claude and Codex, which run on the app credential and
             cannot fail this way.
           </p>
           <div className="op-actions">

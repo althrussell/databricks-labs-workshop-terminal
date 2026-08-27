@@ -56,7 +56,7 @@ def test_the_fallback_tier_survives_a_demotion(client, as_admin, omnigent_instal
     client.post("/api/admin/omnigent-tier", json={"enabled": False})
 
     catalog = {a["id"]: a for a in client.get("/api/agents").json()["agents"]}
-    for agent_id in ("claude", "codex", "bash"):
+    for agent_id in ("claude", "codex"):
         if agent_id in catalog:
             assert not catalog[agent_id]["blocked"], f"{agent_id} must stay launchable"
 

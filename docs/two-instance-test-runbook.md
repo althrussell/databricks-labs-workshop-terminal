@@ -1,7 +1,7 @@
 # Two-instance event-readiness runbook
 
 Use this template for exactly two independently provisioned app instances. The
-helper creates/closes test terminals but does not deploy, grant, restart, wait,
+helper creates/closes test agent sessions but does not deploy, grant, restart, wait,
 create real resources, or delete infrastructure.
 
 ## Evidence and credentials

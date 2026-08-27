@@ -18,6 +18,18 @@ from __future__ import annotations
 from . import config
 
 
+def validate_single_session() -> None:
+    """Reject deployment overrides that weaken the one-PTY app invariant."""
+    per_user = config.max_sessions_per_user()
+    global_cap = config.max_sessions_global()
+    if per_user != 1 or global_cap != 1:
+        raise ValueError(
+            "Workshop Terminal requires MAX_SESSIONS_PER_USER=1 and "
+            "MAX_SESSIONS_GLOBAL=1 "
+            f"(got {per_user} and {global_cap})"
+        )
+
+
 def config_permits_multi_attendee(global_cap: int, per_user_cap: int) -> bool:
     """True if the session caps allow a second distinct attendee to run sessions.
 
@@ -84,6 +96,7 @@ def second_attendee_warning(distinct_attendees: int) -> str | None:
 
 __all__ = [
     "config_permits_multi_attendee",
+    "validate_single_session",
     "validate_remote_omnigent",
     "startup_warning",
     "second_attendee_warning",

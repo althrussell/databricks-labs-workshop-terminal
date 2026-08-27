@@ -94,7 +94,6 @@ def test_a_stale_mirror_withdraws_omnigent_and_leaves_the_fallbacks_alone(
     # The whole point of the fallback tier: it does not touch this plane.
     assert agents["claude"]["ready"] is True
     assert agents["codex"]["ready"] is True
-    assert agents["bash"]["ready"] is True
 
 
 def test_no_captured_token_is_reported_as_absent_not_as_installing(
@@ -134,7 +133,7 @@ def test_launching_omnigent_stale_is_refused_with_the_working_alternatives(
     assert response.status_code == 503
     detail = response.json()["detail"]
     assert "Reload this tab" in detail
-    assert "Claude, Codex and Terminal" in detail
+    assert "Claude and Codex" in detail
     failure = next(
         payload for kind, _who, payload in emitted if kind == "session.create_failed"
     )
@@ -143,11 +142,11 @@ def test_launching_omnigent_stale_is_refused_with_the_working_alternatives(
 
 
 def test_the_fallback_clis_still_launch_while_the_mirror_is_stale(
-    client, remote_omnigent, monkeypatch
+    client, remote_omnigent, monkeypatch, launchable_agents
 ):
     _capture(monkeypatch, expires_in=5)
 
-    response = client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE)
+    response = client.post("/api/sessions", json={"agent_id": "claude"}, headers=ALICE)
 
     assert response.status_code == 200
 

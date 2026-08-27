@@ -1320,6 +1320,28 @@ def _live_session_ids(payload: dict) -> set[str]:
     }
 
 
+def _probe_agent_id(payload: dict) -> str | None:
+    """Pick a ready agent the deployed app actually offers.
+
+    Raw Bash and Pi sessions are intentionally rejected. Prefer the bare agents
+    for acceptance work so an optional Omnigent credential plane is not used
+    merely to prove the Workshop Terminal session lifecycle.
+    """
+    agents = payload.get("agents")
+    agents = agents if isinstance(agents, list) else []
+    ready = {
+        str(agent.get("id")): agent
+        for agent in agents
+        if isinstance(agent, dict)
+        and agent.get("ready") is True
+        and not agent.get("blocked")
+    }
+    for agent_id in ("claude", "codex", "omnigent"):
+        if agent_id in ready:
+            return agent_id
+    return None
+
+
 def _cleanup_session(
     request: Callable,
     *,
@@ -1403,6 +1425,7 @@ def collect_baseline(
     normalized = _runtime_apps(apps)
     expected = _manifest_by_name(resource_manifest, normalized)
     results: list[dict] = []
+    probe_agent_ids: dict[str, str] = {}
     unresolved: dict[str, list[str]] = {app["name"]: [] for app in normalized}
     for app in normalized:
         base = app["url"].rstrip("/")
@@ -1480,6 +1503,9 @@ def collect_baseline(
         )
         config_status, config = call("GET", "/api/config")
         agents_status, agents_payload = call("GET", "/api/agents")
+        probe_agent_id = _probe_agent_id(agents_payload)
+        if probe_agent_id:
+            probe_agent_ids[app["name"]] = probe_agent_id
         reconcile_status, reconcile = call(
             "POST",
             "/api/entitlements/reconcile",
@@ -1497,8 +1523,10 @@ def collect_baseline(
         try:
             if pre_list_status != 200:
                 raise RuntimeError("session snapshot unavailable")
+            if not probe_agent_id:
+                raise RuntimeError("no ready supported agent")
             create_status, created = call(
-                "POST", "/api/sessions", body={"agent_id": "bash"}
+                "POST", "/api/sessions", body={"agent_id": probe_agent_id}
             )
             session = created.get("session")
             session_id = (
@@ -1647,7 +1675,7 @@ def collect_baseline(
                 f"{app['url'].rstrip('/')}/api/sessions",
                 headers={"Authorization": f"Bearer {app['attendee_token']}"},
                 timeout=timeout,
-                body={"agent_id": "bash"},
+                body={"agent_id": probe_agent_ids.get(app["name"])},
             )
             session = payload.get("session")
             session_id = (

@@ -98,11 +98,11 @@ def shared_prefix() -> str:
 
 
 def max_sessions_per_user() -> int:
-    return _env_int("MAX_SESSIONS_PER_USER", 3)
+    return _env_int("MAX_SESSIONS_PER_USER", 1)
 
 
 def max_sessions_global() -> int:
-    return _env_int("MAX_SESSIONS_GLOBAL", max_sessions_per_user())
+    return _env_int("MAX_SESSIONS_GLOBAL", 1)
 
 
 def allow_shared_topology() -> bool:

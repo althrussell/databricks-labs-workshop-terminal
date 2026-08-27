@@ -30,11 +30,11 @@ def _seed_repo(home: str) -> None:
         subprocess.run(cmd, cwd=repo, env=env, check=True, capture_output=True)
 
 
-def test_certificate_downloads_pdf_with_stats(client, monkeypatch):
+def test_certificate_downloads_pdf_with_stats(client, monkeypatch, launchable_agents):
     from server.users import user_manager
 
     monkeypatch.setenv("WORKSHOP_PAT", "dapi-test-token")
-    client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE)
+    client.post("/api/sessions", json={"agent_id": "claude"}, headers=ALICE)
     _seed_repo(user_manager.get("alice@example.com").home)
 
     resp = client.get("/api/certificate", params={"name": "Ada Lovelace"}, headers=ALICE)
@@ -50,12 +50,12 @@ def test_certificate_requires_name(client):
     assert resp.status_code == 422
 
 
-def test_stats_gathering(client, monkeypatch):
+def test_stats_gathering(client, monkeypatch, launchable_agents):
     from server import stats
     from server.users import user_manager
 
     monkeypatch.delenv("WORKSHOP_PAT", raising=False)  # census skipped cleanly
-    client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE)
+    client.post("/api/sessions", json={"agent_id": "claude"}, headers=ALICE)
     user = user_manager.get("alice@example.com")
     _seed_repo(user.home)
     user.topics["lakebase"] = 1.0
@@ -95,11 +95,11 @@ def test_wrap_phase_has_certificate_card(client):
     assert cert and cert[0]["pinned"] and cert[0]["link"]["url"] == "#certificate"
 
 
-def test_type_into_session_owner_gated(client, monkeypatch):
+def test_type_into_session_owner_gated(client, monkeypatch, launchable_agents):
     from .conftest import BOB
 
     monkeypatch.setenv("WORKSHOP_PAT", "dapi-test-token")
-    resp = client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE)
+    resp = client.post("/api/sessions", json={"agent_id": "claude"}, headers=ALICE)
     sid = resp.json()["session"]["id"]
 
     # Bob can't type into Alice's session.
@@ -126,9 +126,9 @@ def test_nuggets_include_phase_prompts(client, as_admin):
     assert "What can you do here?" in labels  # "all" prompts always included
 
 
-def test_admin_stats_harvest(client, as_admin, monkeypatch):
+def test_admin_stats_harvest(client, as_admin, monkeypatch, launchable_agents):
     monkeypatch.setenv("WORKSHOP_PAT", "dapi-test-token")
-    client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE)
+    client.post("/api/sessions", json={"agent_id": "claude"}, headers=ALICE)
     data = client.get("/api/admin/stats",
                       headers={"X-Forwarded-Email": "op@example.com"}).json()
     assert "instance" in data and "phase" in data["instance"]

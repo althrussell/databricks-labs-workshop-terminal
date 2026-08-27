@@ -50,7 +50,7 @@ from .event_emitter import event_emitter, flush_loop
 from .events import event_hub
 from .log_collector import install_app_error_journal, log_collector
 from .omnigent_remote import remote_host_manager
-from .sessions import SessionLimitError, session_manager
+from .sessions import SessionConfigurationError, SessionConflictError, session_manager
 from .users import user_manager
 from .ws import router as ws_router
 
@@ -122,6 +122,11 @@ def _stop_control_tower_threads(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
+    from . import topology
+
+    # A multi-session override makes the UI lie and reintroduces the process
+    # races this release removes. Fail the deployment before serving traffic.
+    topology.validate_single_session()
     # P1-11: if a state path is configured, attach the metadata journal so
     # sessions survive a restart as surfaced ghosts (the live PTYs cannot).
     state_path = config.session_state_path()
@@ -184,8 +189,6 @@ async def lifespan(app: FastAPI):
             )
         else:
             logger.info("LOCAL_DEV=1 — skipping CLI installers and credential rotation")
-        from . import topology
-
         topo_warning = topology.startup_warning()
         if topo_warning:
             logger.warning("topology: %s", topo_warning)
@@ -676,7 +679,7 @@ def list_agents(principal: Principal = Depends(get_current_user)):
 
 
 class CreateSessionBody(BaseModel):
-    agent_id: str = "bash"
+    agent_id: str
 
 
 @app.get("/api/sessions")
@@ -716,13 +719,29 @@ def create_session(body: CreateSessionBody, principal: Principal = Depends(get_c
         telemetry.session_create_failed(principal.name, body.agent_id, "unknown_agent")
         raise HTTPException(status_code=404, detail=f"Unknown agent '{body.agent_id}'")
 
+    # Refuse an occupied slot before install, credential, or provisioning work.
+    # The SessionManager repeats this check atomically at insertion for races.
+    if active := session_manager.active():
+        conflict = SessionConflictError(active)
+        telemetry.session_create_failed(
+            principal.name, agent["id"], "session_conflict", str(conflict)
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "session_conflict",
+                "message": str(conflict),
+                "active_session": conflict.active_session,
+            },
+        )
+
     user = user_manager.get(principal.name)
     user.last_seen = time.time()
     if not user.first_seen:
         user.first_seen = time.time()
 
-    # P1-16: operator kill-switch + per-attendee budget for LLM agents (bash is
-    # always free). Gate first — a paused or over-budget attendee gets a clear,
+    # P1-16: operator kill-switch + per-attendee budget. Gate first — a paused
+    # or over-budget attendee gets a clear,
     # cheap refusal before any readiness/credential/provision work, and isn't
     # told an agent is "still installing" when it's actually paused.
     try:
@@ -766,23 +785,20 @@ def create_session(body: CreateSessionBody, principal: Principal = Depends(get_c
             status_code=503,
             detail=(
                 f"{agent['label']} is waiting for your Databricks sign-in to refresh. "
-                "Reload this tab; Claude, Codex and Terminal work in the meantime."
+                "Reload this tab; Claude and Codex work in the meantime."
             ),
         )
 
-    # Write/refresh this user's CLI configs from the vended credential. Agent
-    # CLIs hard-require it; bash degrades gracefully (shell works, databricks
-    # CLI just isn't authenticated until the credential is configured).
+    # Write/refresh this user's CLI configs from the vended credential. Every
+    # supported CLI requires it.
     try:
         ensure_user_credentials(user)
     except CredentialError as e:
-        if requires:
-            user.errors += 1  # P1-14: failed agent launch (no credential)
-            telemetry.session_create_failed(
-                principal.name, agent["id"], "credential_unavailable", str(e)
-            )
-            raise HTTPException(status_code=503, detail=str(e))
-        logger.warning("bash session for %s without credentials: %s", principal.name, e)
+        user.errors += 1  # P1-14: failed agent launch (no credential)
+        telemetry.session_create_failed(
+            principal.name, agent["id"], "credential_unavailable", str(e)
+        )
+        raise HTTPException(status_code=503, detail=str(e))
 
     # Instructions, subagents, skills links, git identity, workspace-sync hook.
     user_content.provision(user)
@@ -791,11 +807,23 @@ def create_session(body: CreateSessionBody, principal: Principal = Depends(get_c
         session = session_manager.create(
             user, agent["id"], agents.launch_command(agent), agent["label"],
         )
-    except SessionLimitError as e:
+    except SessionConflictError as e:
         telemetry.session_create_failed(
-            principal.name, agent["id"], "session_limit", str(e)
+            principal.name, agent["id"], "session_conflict", str(e)
         )
-        raise HTTPException(status_code=429, detail=str(e))
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "session_conflict",
+                "message": str(e),
+                "active_session": e.active_session,
+            },
+        )
+    except SessionConfigurationError as e:
+        telemetry.session_create_failed(
+            principal.name, agent["id"], "session_configuration", str(e)
+        )
+        raise HTTPException(status_code=503, detail=str(e))
     user.sessions_launched[agent["id"]] = user.sessions_launched.get(agent["id"], 0) + 1
     # C3b: emit a session.started event (no-op unless CT ingest is configured).
     event_emitter.emit("session.started", principal.name, {"agent": agent["id"]})

@@ -28,14 +28,19 @@ def test_token_serves_vended_pat(client, monkeypatch):
     assert credentials.credential_manager.status()["configured"] is True
 
 
-def test_bash_session_works_without_credential(client, monkeypatch):
+def test_agent_session_requires_a_credential(client, monkeypatch):
+    import server.main as main
+
     monkeypatch.delenv("WORKSHOP_PAT", raising=False)
-    resp = client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE)
-    assert resp.status_code == 200
+    monkeypatch.setattr(main.install, "ready", lambda: {"claude": True})
+    resp = client.post("/api/sessions", json={"agent_id": "claude"}, headers=ALICE)
+    assert resp.status_code == 503
+    assert "credential" in resp.json()["detail"].lower()
 
 
 def test_session_create_writes_cli_configs(client, monkeypatch):
     from server import credentials
+    import server.main as main
     from server.users import user_manager
 
     monkeypatch.setenv("WORKSHOP_PAT", "dapi-test-token")
@@ -44,7 +49,9 @@ def test_session_create_writes_cli_configs(client, monkeypatch):
         "get",
         lambda *args, **kwargs: _Resp(200),
     )
-    resp = client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE)
+    monkeypatch.setattr(main.install, "ready", lambda: {"claude": True})
+    monkeypatch.setattr(main.agents, "launch_command", lambda _agent: ["/bin/bash"])
+    resp = client.post("/api/sessions", json={"agent_id": "claude"}, headers=ALICE)
     assert resp.status_code == 200
 
     home = user_manager.get("alice@example.com").home

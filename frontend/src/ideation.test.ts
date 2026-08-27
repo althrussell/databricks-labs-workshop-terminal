@@ -1,7 +1,12 @@
 // Run: node --test src/ideation.test.ts   (Node strips TS types natively)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ideaAgentId, ideaSession, type SessionLike } from "./ideation.ts";
+import {
+  ideaAgentId,
+  ideaPromptAction,
+  ideaSession,
+  type SessionLike,
+} from "./ideation.ts";
 import type { AgentInfo } from "./api.ts";
 
 function agent(
@@ -68,11 +73,33 @@ test("a coding session wins over a plain terminal, whichever is open", () => {
   assert.equal(ideaSession(sessions, "codex")?.id, "s2");
 });
 
-test("a terminal is better than nowhere when it is all there is", () => {
-  assert.equal(ideaSession([session("s1", "bash")], "claude")?.id, "s1");
+test("an unsupported raw terminal is never used", () => {
+  assert.equal(ideaSession([session("s1", "bash")], "claude"), undefined);
 });
 
 test("an exited session is not somewhere to type", () => {
   const sessions = [session("s1", "claude", true)];
   assert.equal(ideaSession(sessions, "claude"), undefined);
+});
+
+test("an idea requests a new agent with the clicked prompt attached", () => {
+  assert.deepEqual(
+    ideaPromptAction([agent("codex")], [], "Build a dashboard"),
+    {
+      action: "request",
+      agentId: "codex",
+      starterPrompt: "Build a dashboard",
+    }
+  );
+});
+
+test("an idea types directly into the open coding session", () => {
+  assert.deepEqual(
+    ideaPromptAction(
+      [agent("claude")],
+      [session("s1", "codex")],
+      "Build a dashboard"
+    ),
+    { action: "type", sessionId: "s1", prompt: "Build a dashboard" }
+  );
 });

@@ -89,7 +89,9 @@ def test_the_attendee_is_never_shown_a_harness_code_for_a_closed_tab(client, wor
         assert code not in detail
 
 
-def test_the_workshop_is_still_usable_two_hours_later(client, workshop):
+def test_the_workshop_is_still_usable_two_hours_later(
+    client, workshop, launchable_agents
+):
     """Degrading cleanly means the attendee can still do the workshop."""
     close_the_tab(workshop)
 
@@ -97,8 +99,7 @@ def test_the_workshop_is_still_usable_two_hours_later(client, workshop):
 
     assert catalog["claude"]["ready"] is True
     assert catalog["codex"]["ready"] is True
-    assert catalog["bash"]["ready"] is True
-    assert client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE).status_code == 200
+    assert client.post("/api/sessions", json={"agent_id": "claude"}, headers=ALICE).status_code == 200
 
 
 def test_the_dead_card_is_withdrawn_rather_than_left_to_fail_on_click(client, workshop):

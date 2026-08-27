@@ -77,3 +77,23 @@ def as_non_admin(monkeypatch):
     from server import auth
 
     monkeypatch.setattr(auth, "get_groups", lambda principal: set())
+
+
+@pytest.fixture()
+def launchable_agents(monkeypatch):
+    """Run supported agent IDs on a harmless shell for endpoint tests.
+
+    Production still executes the real CLIs. Tests that are about session
+    ownership, presence, or metering should not need those binaries or a live
+    workspace credential merely to keep a PTY open.
+    """
+    import server.main as main
+
+    monkeypatch.setattr(
+        main.install,
+        "ready",
+        lambda: {"claude": True, "codex": True, "omnigent": True},
+    )
+    monkeypatch.setattr(main, "ensure_user_credentials", lambda _user: None)
+    monkeypatch.setattr(main.agents, "launch_command", lambda _agent: ["/bin/bash"])
+    monkeypatch.setattr(main.identity, "observe", lambda _user: None)

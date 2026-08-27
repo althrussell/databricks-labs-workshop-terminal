@@ -25,14 +25,5 @@
     "command": "codex",
     "requires": ["codex"],
     "order": 6
-  },
-  {
-    "id": "bash",
-    "label": "Terminal",
-    "description": "Plain bash shell with the Databricks CLI pre-authenticated.",
-    "icon": "terminal",
-    "command": "bash",
-    "requires": [],
-    "order": 99
   }
 ]

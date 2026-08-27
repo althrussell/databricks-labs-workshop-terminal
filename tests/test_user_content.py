@@ -39,21 +39,28 @@ RETIRED_SKILL_NAMES = (
 
 def _provisioned_home(client, monkeypatch):
     from server import credentials, user_content
+    import server.main as main
     from server.users import user_manager
 
     monkeypatch.setenv("WORKSHOP_PAT", "dapi-test-token")
     # A provisioned HOME is only fully written when the credential manager can
     # hand over a token: the files that carry one — `.claude/settings.json`
-    # among them — are skipped otherwise, and a bash session degrades rather
-    # than failing. Serving the token directly makes that deterministic.
+    # among them — are skipped otherwise. Serving the token directly makes
+    # that deterministic.
     # Without it the outcome depends on whether an earlier test left a
     # validated credential cached on the module singleton, which is how
     # test_auto_mode_defaults came to pass in a full run and fail on its own.
     monkeypatch.setattr(
         credentials.credential_manager, "token", lambda: "dapi-test-token"
     )
+    monkeypatch.setattr(
+        main.install,
+        "ready",
+        lambda: {"claude": True, "codex": True, "omnigent": True},
+    )
+    monkeypatch.setattr(main.agents, "launch_command", lambda _agent: ["/bin/bash"])
     user_content._provisioned.discard("alice@example.com")
-    resp = client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE)
+    resp = client.post("/api/sessions", json={"agent_id": "claude"}, headers=ALICE)
     assert resp.status_code == 200
     return user_manager.get("alice@example.com").home
 
@@ -784,14 +791,14 @@ def test_claude_json_mcp_opt_in(client, monkeypatch):
     assert "deepwiki" in data["mcpServers"] and "exa" in data["mcpServers"]
 
 
-def test_launch_never_injects_prompts(client, monkeypatch):
+def test_launch_never_injects_prompts(monkeypatch):
     # Coaching context belongs in memory files, never in a fabricated user
     # message — the launch command must be the bare CLI.
     from server import agents
 
     agent = agents.get_agent("claude")
     assert "greeting" not in agent
-    assert agents.launch_command(agent)[-1] == "claude; exec /bin/bash"
+    assert agents.launch_command(agent) == ["/bin/bash", "-c", "exec claude"]
 
 
 def test_auto_mode_defaults(client, monkeypatch):
@@ -824,8 +831,7 @@ def test_topic_detection_flags_user(client, monkeypatch):
     from server.sessions import session_manager
     from server.users import user_manager
 
-    monkeypatch.setenv("WORKSHOP_PAT", "dapi-test-token")
-    resp = client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE)
+    _provisioned_home(client, monkeypatch)
     session = session_manager.list_for("alice@example.com")[0]
 
     assert "lakebase" in content_service.scan_topics(
@@ -914,8 +920,7 @@ def test_topic_detection_opt_out(client, monkeypatch):
     from server.users import user_manager
 
     monkeypatch.setenv("TOPIC_DETECTION", "false")
-    monkeypatch.setenv("WORKSHOP_PAT", "dapi-test-token")
-    client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE)
+    _provisioned_home(client, monkeypatch)
     session = session_manager.list_for("alice@example.com")[0]
     user = user_manager.get("alice@example.com")
     user.topics.clear()

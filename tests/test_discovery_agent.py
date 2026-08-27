@@ -24,12 +24,22 @@ PROJECT_MEMORY = os.path.join(".config", "workshop", "project-memory.md")
 
 
 def _provisioned_home(client, monkeypatch):
-    from server import user_content
+    from server import credentials, user_content
+    import server.main as main
     from server.users import user_manager
 
     monkeypatch.setenv("WORKSHOP_PAT", "dapi-test-token")
+    monkeypatch.setattr(
+        credentials.credential_manager, "token", lambda: "dapi-test-token"
+    )
+    monkeypatch.setattr(
+        main.install,
+        "ready",
+        lambda: {"claude": True, "codex": True, "omnigent": True},
+    )
+    monkeypatch.setattr(main.agents, "launch_command", lambda _agent: ["/bin/bash"])
     user_content._provisioned.discard("alice@example.com")
-    resp = client.post("/api/sessions", json={"agent_id": "bash"}, headers=ALICE)
+    resp = client.post("/api/sessions", json={"agent_id": "claude"}, headers=ALICE)
     assert resp.status_code == 200
     return user_manager.get("alice@example.com").home
 

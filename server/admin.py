@@ -470,7 +470,7 @@ def set_omnigent_tier(body: OmnigentTierBody):
     The lever for the failure this whole plan is about: every Omnigent harness
     shares one credential plane, so when that plane is failing they fail
     together, and no amount of retrying by individual attendees helps. Demoting
-    withdraws those cards fleet-wide and leaves bare Claude, Codex and bash —
+    withdraws those cards fleet-wide and leaves bare Claude and Codex —
     which run on the app credential — so a room keeps working instead of
     queueing at the help desk.
 

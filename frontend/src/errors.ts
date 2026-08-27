@@ -25,7 +25,7 @@ export interface FriendlyError {
   raw: string;
 }
 
-const FALLBACKS = "Claude, Codex and Terminal are unaffected.";
+const FALLBACKS = "Claude and Codex are unaffected.";
 
 const MESSAGES: Partial<
   Record<AttendeeErrorCode, { message: string; action: RecoveryAction; actionLabel: string }>
@@ -104,7 +104,7 @@ export function friendlyError(
     message:
       cleaned && !isBareCode
         ? cleaned
-        : "Something went wrong starting that agent. Try again, or use Terminal.",
+        : "Something went wrong starting that agent. Try again or choose another agent.",
     action: "none",
     actionLabel: "",
   };

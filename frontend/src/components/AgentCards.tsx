@@ -59,7 +59,7 @@ function cardState(agent: AgentInfo): { text: string; kind: string; title?: stri
       text: "paused by your host",
       kind: "is-blocked",
       title:
-        "Your host has paused this agent for now. Claude, Codex and Terminal are unaffected.",
+        "Your host has paused this agent for now. Claude and Codex are unaffected.",
     };
   }
   if (agent.blocked) {
@@ -67,16 +67,16 @@ function cardState(agent: AgentInfo): { text: string; kind: string; title?: stri
       text: "reload to sign in",
       kind: "is-blocked",
       title:
-        "Your Databricks sign-in needs refreshing — reload this tab. Claude, Codex and Terminal still work.",
+        "Your Databricks sign-in needs refreshing — reload this tab. Claude and Codex still work.",
     };
   }
   if (agent.install_error) {
-    // Terminal: nothing retries a failed install step, so the spinner this
+    // Nothing retries a failed install step, so the spinner this
     // replaces would have run until the attendee gave up and asked.
     return {
       text: "install failed",
       kind: "is-failed",
-      title: `${agent.install_error} — tell your host; use Claude, Codex or Terminal meanwhile.`,
+      title: `${agent.install_error} — tell your host; use another available agent meanwhile.`,
     };
   }
   return { text: "installing", kind: "" };
@@ -98,11 +98,7 @@ interface Props {
 export default function AgentCards({ agents, launching, onLaunch }: Props) {
   return (
     <div className="hero-cards">
-      {/* The home screen sells the AI agents; the plain bash terminal
-          stays reachable from the in-session LaunchBar toolbar. */}
-      {agents
-        .filter((agent) => agent.id !== "bash")
-        .map((agent, i) => {
+      {agents.map((agent, i) => {
           const Icon = ICONS[agent.icon] ?? SquareTerminal;
           const imageIcon = IMAGE_ICONS[agent.icon];
           const busy = launching === agent.id;
@@ -151,7 +147,7 @@ export default function AgentCards({ agents, launching, onLaunch }: Props) {
               </span>
             </button>
           );
-        })}
+      })}
     </div>
   );
 }

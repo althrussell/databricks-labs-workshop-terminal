@@ -17,7 +17,7 @@ interface Props {
  * — quietly and permanently while things are fine, and unmissably the moment
  * the sign-in actually goes stale.
  *
- * Never a modal. Bare Claude, Codex and Terminal keep working through all of
+ * Never a modal. Bare Claude and Codex keep working through all of
  * this, and covering them would take away the one thing that still does.
  */
 export default function SignInNotice({ omnigentEnabled, obo, onReload }: Props) {
@@ -30,7 +30,7 @@ export default function SignInNotice({ omnigentEnabled, obo, onReload }: Props) 
         <span>
           <strong>Your Databricks sign-in has expired.</strong> Reload this tab to
           sign in again — it takes a second and you will not lose any work.
-          Claude, Codex and Terminal keep working meanwhile.
+          Claude and Codex keep working meanwhile.
         </span>
         <button className="banner-action" onClick={onReload}>
           <RefreshCw size={13} /> Reload

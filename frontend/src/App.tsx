@@ -10,17 +10,19 @@ import {
   Rocket,
   ShieldCheck,
   Sparkles,
-  SquareTerminal,
+  Bot,
   X,
 } from "lucide-react";
 import {
   api,
   AgentInfo,
+  ApiError,
   AppConfig,
   PriorSessionInfo,
   SessionInfo,
   WizardBrief,
   relaunchAndAcknowledge,
+  sessionConflictFrom,
   splitSessionPayload,
 } from "./api";
 import databricksLogo from "./assets/databricks-logo.svg";
@@ -35,10 +37,17 @@ import RaiseHandButton from "./components/RaiseHandButton";
 import HelpChatPanel from "./components/HelpChatPanel";
 import ToastHost from "./components/ToastHost";
 import TerminalView from "./components/TerminalView";
+import AgentSwitchDialog from "./components/AgentSwitchDialog";
 import { bindIdentityRefresh, onAppEvent } from "./events";
-import { ideaAgentId, ideaSession } from "./ideation";
+import { ideaPromptAction } from "./ideation";
 import { friendlyError, type RecoveryAction } from "./errors";
 import { codeFromMessage, postAttendeeError, reportAttendeeError } from "./telemetry";
+import {
+  ActiveSessionChanged,
+  agentSelection,
+  closeThenCreate,
+  resolveSessionConflict,
+} from "./sessionSwitch";
 
 // The escape hatch for an attendee facing an empty prompt. Deliberately a real
 // build request rather than a greeting: the coach is told to build immediately
@@ -74,11 +83,16 @@ const LINK_ICONS: Record<string, typeof LinkIcon> = {
 export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
-  const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [session, setSession] = useState<SessionInfo | null>(null);
   const [priorSessions, setPriorSessions] = useState<PriorSessionInfo[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [launching, setLaunching] = useState<string | null>(null);
   const [hintSessionId, setHintSessionId] = useState<string | null>(null);
+  const [pendingSwitch, setPendingSwitch] = useState<{
+    agentId: string;
+    starterPrompt?: string;
+  } | null>(null);
+  const [switching, setSwitching] = useState(false);
+  const [switchError, setSwitchError] = useState("");
   const [certOpen, setCertOpen] = useState(false);
   const [certName, setCertName] = useState("");
   const [certBusy, setCertBusy] = useState(false);
@@ -94,12 +108,21 @@ export default function App() {
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const helpChatOpenRef = useRef(false);
   const wizardChecked = useRef(false);
-  const [view, setView] = useState<"home" | "terminals" | "operator">(
+  const [view, setView] = useState<"home" | "agent" | "operator">(
     location.pathname.startsWith("/operator") ? "operator" : "home"
   );
 
   const refreshAgents = useCallback(() => {
     api.agents().then((data) => setAgents(data.agents)).catch(() => undefined);
+  }, []);
+
+  const refreshSessions = useCallback(async (): Promise<SessionInfo | null> => {
+    const data = await api.sessions();
+    const { live, prior } = splitSessionPayload(data);
+    const active = live[0] ?? null;
+    setSession(active);
+    setPriorSessions(prior);
+    return active;
   }, []);
 
   /* Stable across renders, because the wizard treats a changed prop identity as
@@ -146,13 +169,7 @@ export default function App() {
     refresh();
     const stopIdentityRefresh = bindIdentityRefresh(refresh);
 
-    api.sessions()
-      .then((data) => {
-        const { live, prior } = splitSessionPayload(data);
-        setSessions(live);
-        setPriorSessions(prior);
-        if (live.length > 0) setActiveId(live[0].id);
-      })
+    refreshSessions()
       .catch((e) => setError(
         e instanceof Error ? e.message : String(e)
       ))
@@ -168,7 +185,7 @@ export default function App() {
       clearInterval(interval);
       stopIdentityRefresh();
     };
-  }, [refreshAgents, refreshIdentity]);
+  }, [refreshAgents, refreshIdentity, refreshSessions]);
 
   useEffect(() => {
     helpChatOpenRef.current = helpChatOpen;
@@ -197,12 +214,12 @@ export default function App() {
       .wizard()
       .then((state) => {
         setBrief(state.brief);
-        if (state.enabled && state.should_show && sessions.length === 0) {
+        if (state.enabled && state.should_show && !session) {
           setWizardOpen(true);
         }
       })
       .catch(() => undefined);
-  }, [sessionsLoaded, sessions.length]);
+  }, [sessionsLoaded, session]);
 
   useEffect(() => {
     if (config?.help) setHelpRaised(config.help.raised);
@@ -232,17 +249,56 @@ export default function App() {
     if (allReady) refreshAgents();
   }, [allReady, refreshAgents]);
 
-  async function launch(agentId: string, retried = false): Promise<SessionInfo | null> {
+  async function launch(
+    agentId: string,
+    repairRetried = false,
+    starterPrompt = "",
+    conflictRetried = false
+  ): Promise<SessionInfo | null> {
     setLaunching(agentId);
     setError("");
     try {
-      const { session } = await api.createSession(agentId);
-      setSessions((prev) => [...prev, session]);
-      setActiveId(session.id);
-      setView("terminals");
-      if (agentId !== "bash") setHintSessionId(session.id);
-      return session;
+      const { session: created } = await api.createSession(agentId);
+      setSession(created);
+      setView("agent");
+      setHintSessionId(created.id);
+      return created;
     } catch (e) {
+      const conflict = sessionConflictFrom(e);
+      if (conflict) {
+        try {
+          const active = await refreshSessions();
+          const resolution = resolveSessionConflict(active, agentId, starterPrompt);
+          if (resolution.action === "focus") {
+            setView("agent");
+            return resolution.active;
+          }
+          if (resolution.action === "confirm") {
+            setSwitchError("");
+            setPendingSwitch({
+              agentId: resolution.requestedAgentId,
+              starterPrompt: resolution.starterPrompt,
+            });
+          }
+          if (resolution.action === "missing") {
+            // The conflicting session ended between POST and refresh. Retry
+            // once: the slot is now free and the attendee's prompt still
+            // belongs to this launch. A bound avoids spinning if another tab
+            // keeps winning and closing the slot.
+            if (!conflictRetried) {
+              return await launch(agentId, repairRetried, starterPrompt, true);
+            }
+            setError(
+              "The active agent changed while this one was opening. Try again."
+            );
+          }
+        } catch (refreshError) {
+          setError(
+            refreshError instanceof Error ? refreshError.message : String(refreshError)
+          );
+        }
+        return null;
+      }
       const message = e instanceof Error ? e.message : String(e);
       // Same string on both sides of the glass: what the attendee reads here
       // is what an operator finds in diagnostics, without waiting to be told.
@@ -254,7 +310,9 @@ export default function App() {
         message,
         { agentId }
       );
-      if (canRetry && !retried) return launch(agentId, true);
+      if (canRetry && !repairRetried) {
+        return await launch(agentId, true, starterPrompt, conflictRetried);
+      }
       setError(message);
       return null;
     } finally {
@@ -298,17 +356,24 @@ export default function App() {
     }
   }
 
-  // Home-screen cards: an attendee clicking the agent they already have open
-  // wants to get back to it, not open a duplicate — and at the session cap a
-  // failed launch from Home would otherwise leave no way back to the tabs.
-  function openOrLaunch(agentId: string) {
-    const existing = sessions.find((s) => s.agent_id === agentId && !s.exited);
-    if (existing) {
-      setActiveId(existing.id);
-      setView("terminals");
+  async function requestAgent(agentId: string, starterPrompt = "") {
+    const selection = agentSelection(session, agentId);
+    if (selection === "focus") {
+      setView("agent");
+      if (starterPrompt && session) {
+        await api.typeIntoSession(session.id, starterPrompt);
+      }
       return;
     }
-    launch(agentId);
+    if (selection === "confirm") {
+      setSwitchError("");
+      setPendingSwitch({ agentId, starterPrompt });
+      return;
+    }
+    const created = await launch(agentId, false, starterPrompt);
+    if (created && starterPrompt) {
+      await typeWhenSessionReady(created.id, starterPrompt);
+    }
   }
 
   /** Launch from the wizard's last step, carrying the first prompt in.
@@ -321,10 +386,8 @@ export default function App() {
    */
   async function launchFromWizard(agentId: string, starterPrompt: string) {
     setWizardOpen(false);
-    const session = await launch(agentId);
-    if (!session || !starterPrompt) return;
     try {
-      await typeWhenSessionReady(session.id, starterPrompt);
+      await requestAgent(agentId, starterPrompt);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -336,34 +399,29 @@ export default function App() {
   // operator may have withheld, which failed and left the attendee with an error
   // where the sentence they clicked should have been.
   async function ideaToSession(prompt: string) {
-    const agentId = ideaAgentId(agents);
-    let target: SessionInfo | undefined = ideaSession(sessions, agentId);
-    let fresh = false;
-    if (!target) {
-      if (!agentId) {
-        // Nothing open and nothing to open it with. Only reachable on a
-        // workshop whose agent selection matched nothing in the catalogue, but
-        // a chip that quietly does nothing when clicked is worse than saying so.
-        if (agents.length > 0) {
-          setError(
-            "This workshop offers no coding agent to type that into — open a terminal and ask there."
-          );
-        }
-        return;
+    const action = ideaPromptAction(agents, session ? [session] : [], prompt);
+    if (action.action === "unavailable") {
+      // Nothing open and nothing to open it with. Only reachable on a
+      // workshop whose agent selection matched nothing in the catalogue, but
+      // a chip that quietly does nothing when clicked is worse than saying so.
+      if (agents.length > 0) {
+        setError(
+          "This workshop offers no coding agent to type that into — choose an agent first."
+        );
       }
-      target = (await launch(agentId)) ?? undefined;
-      fresh = true;
-      if (!target) return;
-    } else {
-      setActiveId(target.id);
-      setView("terminals");
+      return;
     }
-    try {
-      if (fresh) {
-        await typeWhenSessionReady(target.id, prompt);
-      } else {
-        await api.typeIntoSession(target.id, prompt);
+    if (action.action === "request") {
+      try {
+        await requestAgent(action.agentId, action.starterPrompt);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
       }
+      return;
+    }
+    setView("agent");
+    try {
+      await api.typeIntoSession(action.sessionId, action.prompt);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -372,19 +430,92 @@ export default function App() {
   async function closeSession(id: string) {
     try {
       await api.closeSession(id);
-    } catch {
-      /* already gone server-side */
+      removeSession(id);
+    } catch (closeFailure) {
+      if (closeFailure instanceof ApiError && closeFailure.status === 404) {
+        removeSession(id);
+        return;
+      }
+      try {
+        await refreshSessions();
+      } catch {
+        /* Keep the visible session; a reload remains an honest recovery. */
+      }
+      setError(
+        closeFailure instanceof Error ? closeFailure.message : String(closeFailure)
+      );
     }
-    removeSession(id);
   }
 
   const removeSession = useCallback((id: string) => {
-    setSessions((prev) => {
-      const next = prev.filter((s) => s.id !== id);
-      setActiveId((current) => (current === id ? next[0]?.id ?? null : current));
-      return next;
+    setSession((current) => {
+      if (current?.id !== id) return current;
+      setView((currentView) => (currentView === "agent" ? "home" : currentView));
+      setHintSessionId(null);
+      return null;
     });
   }, []);
+
+  async function confirmSwitch() {
+    if (!session || !pendingSwitch) return;
+    const current = session;
+    const requested = pendingSwitch;
+    setSwitching(true);
+    setSwitchError("");
+    setError("");
+    try {
+      const created = await closeThenCreate(current, requested.agentId, {
+        close: api.closeSession,
+        refresh: refreshSessions,
+        create: async (agentId) => (await api.createSession(agentId)).session,
+      });
+      setSession(created);
+      setHintSessionId(created.id);
+      setView("agent");
+      setPendingSwitch(null);
+      if (requested.starterPrompt) {
+        await typeWhenSessionReady(created.id, requested.starterPrompt);
+      }
+    } catch (switchFailure) {
+      let active: SessionInfo | null = null;
+      try {
+        active = await refreshSessions();
+      } catch {
+        /* Keep the current screen until the attendee can retry or reload. */
+      }
+      if (switchFailure instanceof ActiveSessionChanged) {
+        active = switchFailure.active;
+        setSession(active);
+      }
+      if (active?.agent_id === requested.agentId) {
+        setPendingSwitch(null);
+        setView("agent");
+        if (requested.starterPrompt) {
+          try {
+            await typeWhenSessionReady(active.id, requested.starterPrompt);
+          } catch (promptFailure) {
+            setError(
+              promptFailure instanceof Error
+                ? promptFailure.message
+                : String(promptFailure)
+            );
+          }
+        }
+      } else if (active) {
+        setSwitchError(
+          `${active.label} is still running. Close it before opening ${agentLabel(requested.agentId)}.`
+        );
+      } else {
+        setPendingSwitch(null);
+        setView("home");
+        setError(
+          switchFailure instanceof Error ? switchFailure.message : String(switchFailure)
+        );
+      }
+    } finally {
+      setSwitching(false);
+    }
+  }
 
   function openCertificate() {
     if (!certName && config) {
@@ -425,6 +556,8 @@ export default function App() {
   const shellLinks = config?.shell.links ?? [];
   const showNuggets = config?.shell.features.nuggets_pane !== false;
   const isAdmin = config?.user.is_admin ?? false;
+  const agentLabel = (agentId: string) =>
+    agents.find((agent) => agent.id === agentId)?.label ?? agentId;
 
   return (
     <div className="app">
@@ -448,25 +581,25 @@ export default function App() {
           <button
             className={`operator-toggle ${view === "home" ? "operator-toggle-active" : ""}`}
             onClick={() => setView("home")}
-            title="Back to Home — your sessions keep running"
+            title={session ? `Back to Home — ${session.label} keeps running` : "Back to Home"}
           >
             <House size={14} />
             Home
           </button>
-          {sessions.length > 0 && (
+          {session && (
             <button
-              className={`operator-toggle ${view === "terminals" ? "operator-toggle-active" : ""}`}
-              onClick={() => setView("terminals")}
-              title="Back to your open terminals"
+              className={`operator-toggle ${view === "agent" ? "operator-toggle-active" : ""}`}
+              onClick={() => setView("agent")}
+              title={`Back to ${session.label}`}
             >
-              <SquareTerminal size={14} />
-              Terminals ({sessions.length})
+              <Bot size={14} />
+              {session.label}
             </button>
           )}
           {isAdmin && (
             <button
               className={`operator-toggle ${view === "operator" ? "operator-toggle-active" : ""}`}
-              onClick={() => setView(view === "operator" ? "terminals" : "operator")}
+              onClick={() => setView(view === "operator" ? (session ? "agent" : "home") : "operator")}
             >
               <ShieldCheck size={14} />
               Operator
@@ -573,8 +706,7 @@ export default function App() {
         <div className="banner banner-warning">
           <span>
             Workshop credential not configured — the Databricks Apps runtime has not
-            provided a valid app-identity OAuth bearer. Plain terminals work; coding
-            agents can't authenticate yet.
+            provided a valid app-identity OAuth bearer. Agents can't authenticate yet.
           </span>
         </div>
       )}
@@ -621,33 +753,24 @@ export default function App() {
       ) : (
         <div className="main">
           <div className="work-area">
-            {sessions.length > 0 && view === "terminals" && (
-            <div className="toolbar">
-              <LaunchBar agents={agents} launching={launching} onLaunch={launch} />
-              <div className="tabs">
-                {sessions.map((session) => (
-                  <div
-                    key={session.id}
-                    className={`tab ${session.id === activeId ? "tab-active" : ""}`}
-                    onClick={() => setActiveId(session.id)}
+            {session && view === "agent" && (
+              <div className="toolbar">
+                <LaunchBar agents={agents} launching={launching} onLaunch={requestAgent} />
+                <div className="active-agent">
+                  <span>{session.label} is running</span>
+                  <button
+                    className="icon-btn"
+                    aria-label={`Close ${session.label}`}
+                    title={`Close ${session.label}`}
+                    onClick={() => closeSession(session.id)}
                   >
-                    <span>{session.label}</span>
-                    <button
-                      className="icon-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        closeSession(session.id);
-                      }}
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                ))}
+                    <X size={12} />
+                  </button>
+                </div>
               </div>
-            </div>
             )}
 
-            {hintSessionId && hintSessionId === activeId && (
+            {session && hintSessionId === session.id && view === "agent" && (
               <div className="coach-hint">
                 <span>
                   👋 Your coach is ready — tell it what you'd like to build.
@@ -667,7 +790,7 @@ export default function App() {
               </div>
             )}
             <div className="terminal-stage">
-              {priorSessions.length > 0 && (view === "home" || sessions.length === 0) && (
+              {priorSessions.length > 0 && (view === "home" || !session) && (
                 <section className="prior-sessions" aria-label="Sessions ended on restart">
                   <h2>Sessions ended when the workshop restarted</h2>
                   {priorSessions.map((prior) => (
@@ -691,29 +814,29 @@ export default function App() {
                   ))}
                 </section>
               )}
-              {(view === "home" || sessions.length === 0) && (
+              {(view === "home" || !session) && (
                 <Hero
                   agents={agents}
                   eventName={branding?.event_name ?? ""}
                   workspaceUrl={config?.workspace_url ?? ""}
                   workspaceLinks={config?.shell.workspace_links ?? []}
-                  hasSessions={sessions.length > 0}
+                  hasSessions={!!session}
                   launching={launching}
                   brief={brief}
                   canEditBrief={wizardAvailable}
-                  onLaunch={openOrLaunch}
+                  onLaunch={requestAgent}
                   onIdea={ideaToSession}
                   onEditBrief={openWizard}
                 />
               )}
-              {sessions.map((session) => (
+              {session && (
                 <TerminalView
                   key={session.id}
                   sessionId={session.id}
-                  active={view === "terminals" && session.id === activeId}
+                  active={view === "agent"}
                   onExit={removeSession}
                 />
-              ))}
+              )}
             </div>
           </div>
 
@@ -734,6 +857,20 @@ export default function App() {
           launching={launching}
           onLaunch={launchFromWizard}
           onClose={closeWizard}
+        />
+      )}
+
+      {pendingSwitch && session && (
+        <AgentSwitchDialog
+          currentLabel={session.label}
+          requestedLabel={agentLabel(pendingSwitch.agentId)}
+          busy={switching}
+          error={switchError}
+          onCancel={() => {
+            setPendingSwitch(null);
+            setSwitchError("");
+          }}
+          onConfirm={confirmSwitch}
         />
       )}
 
@@ -777,4 +914,3 @@ export default function App() {
     </div>
   );
 }
-

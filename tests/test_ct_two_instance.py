@@ -1072,7 +1072,7 @@ def _request_fake(
                 },
             })
         if url.endswith("/api/agents"):
-            return Response(200, {"agents": [{"id": "bash", "ready": True}]})
+            return Response(200, {"agents": [{"id": "claude", "ready": True}]})
         if url.endswith("/api/entitlements/reconcile"):
             return Response(200, {
                 "catalog": "event_catalog",
@@ -1170,6 +1170,13 @@ def test_baseline_uses_api_backed_exact_resource_handoff_evidence():
         if "/unity-catalog/catalogs/" in url
     }
     assert catalog_auth == {"Bearer admin", "Bearer attendee"}
+    session_creates = [
+        kwargs["json"]
+        for method, url, kwargs in calls
+        if method == "POST" and url.endswith("/api/sessions")
+    ]
+    assert session_creates
+    assert all(body == {"agent_id": "claude"} for body in session_creates)
 
 
 def test_baseline_independent_proof_does_not_trust_app_handoff_boolean():

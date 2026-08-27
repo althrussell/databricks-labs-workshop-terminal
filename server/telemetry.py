@@ -33,7 +33,8 @@ SESSION_CREATE_CODES = frozenset(
         "agent_installing",
         "credential_unavailable",
         "obo_stale",
-        "session_limit",
+        "session_conflict",
+        "session_configuration",
     }
 )
 

@@ -194,6 +194,12 @@ export interface SessionPayload {
   prior_sessions?: PriorSessionInfo[];
 }
 
+export interface SessionConflict {
+  code: "session_conflict";
+  message: string;
+  active_session: Pick<SessionInfo, "id" | "agent_id" | "label">;
+}
+
 export function splitSessionPayload(payload: SessionPayload): {
   live: SessionInfo[];
   prior: PriorSessionInfo[];
@@ -297,12 +303,39 @@ export interface PresenceUser {
   sessions: SessionInfo[];
 }
 
-class ApiError extends Error {
+export class ApiError extends Error {
   status: number;
-  constructor(status: number, detail: string) {
-    super(detail);
+  detail: unknown;
+
+  constructor(status: number, detail: unknown) {
+    const message =
+      typeof detail === "string"
+        ? detail
+        : typeof detail === "object" && detail !== null && "message" in detail
+          ? String(detail.message)
+          : `Request failed (${status})`;
+    super(message);
     this.status = status;
+    this.detail = detail;
   }
+}
+
+export function sessionConflictFrom(error: unknown): SessionConflict | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null;
+  const detail = error.detail;
+  if (!detail || typeof detail !== "object") return null;
+  const candidate = detail as Partial<SessionConflict>;
+  const active = candidate.active_session;
+  if (
+    candidate.code !== "session_conflict" ||
+    !active ||
+    typeof active.id !== "string" ||
+    typeof active.agent_id !== "string" ||
+    typeof active.label !== "string"
+  ) {
+    return null;
+  }
+  return candidate as SessionConflict;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -311,7 +344,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   if (!resp.ok) {
-    let detail = resp.statusText;
+    let detail: unknown = resp.statusText;
     try {
       detail = (await resp.json()).detail ?? detail;
     } catch {
@@ -439,5 +472,3 @@ export const api = {
       body: JSON.stringify({ message_id: messageId }),
     }),
 };
-
-export { ApiError };

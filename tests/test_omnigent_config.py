@@ -623,7 +623,6 @@ def test_catalog_gates_omnigent_entries(client, monkeypatch):
         "omnigent",
         "claude",
         "codex",
-        "bash",
     ]
 
 
@@ -635,7 +634,7 @@ def test_feature_flag_off_hides_omnigent_everywhere(client, monkeypatch):
     from server import agents as agents_mod
     ids = [a["id"] for a in agents_mod.load_catalog()]
     assert "omnigent" not in ids
-    assert ids == ["claude", "codex", "bash"]
+    assert ids == ["claude", "codex"]
     assert agents_mod.get_agent("omnigent") is None
 
     # API surface: omnigent not offered.
