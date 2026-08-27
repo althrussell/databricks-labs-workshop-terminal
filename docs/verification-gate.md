@@ -3,8 +3,8 @@
 Nothing ships to an event on assertion. This is the list of things that must
 have been *run*, what each one proves, and what a failure means.
 
-The incident that produced this gate looked like a Pi bug for a day and a half.
-It was a tab-bound credential going stale, every Omnigent harness dying the
+The incident that produced this gate looked like a harness bug for a day and a
+half. It was a tab-bound credential going stale, every Omnigent harness dying the
 same way, and no operator able to see it. Each check below exists because some
 part of that was invisible.
 

@@ -152,7 +152,7 @@ The hard checks are:
    whether to hand it over. See the admission rule below.
 13. `release_pins`: `SKILLS_REF` is not a branch tip; exact Claude Code,
    Codex CLI, Databricks CLI, and Node version pins are present, plus Omnigent
-   and Pi CLI when Omnigent is enabled; and each of those pins equals the version
+   when it is enabled; and each of those pins equals the version
    bootstrap actually installed. Both halves are needed — raising a pin does not
    reinstall anything, so a pin alone would report a version no attendee is
    running. Bootstrap also resolves the fetched `SKILLS_REF`
@@ -1031,10 +1031,10 @@ full launcher rather than an empty one. Unknown ids are carried, not dropped, so
 a CT that has learned a new agent id is not silently narrowed by an older
 terminal.
 
-The plain **Terminal** (bash) is never listed. It is the fallback the runbook
-sends a room to when an agent plane fails, so it is not an operator's to remove.
+The plain **Terminal** (bash) is never listed or launchable. Bare Claude Code
+and Codex are the fallback tier when the Omnigent plane fails.
 
-Deselecting Omnigent also skips the Omnigent, tmux and pi installs and writes no
+Deselecting Omnigent also skips the Omnigent and tmux installs and writes no
 per-attendee Omnigent config — a workshop that will not launch the harness
 should not pay for it on cold boot. It composes with `OMNIGENT_ENABLED`: either
 one being off is enough to withdraw the card.

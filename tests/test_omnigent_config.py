@@ -61,15 +61,12 @@ def test_gateway_urls_and_auth_command(user, monkeypatch):
     assert os.path.isabs(_token_path(user))
 
 
-def test_codex_and_pi_resolve_through_a_databricks_aware_provider(user, monkeypatch):
+def test_codex_resolves_through_a_databricks_aware_provider(user, monkeypatch):
     """Omnigent must see a Databricks AI Gateway, not an anonymous proxy.
 
-    Read as a plain `gateway`, omnigent sends Codex and Pi down its
-    vendor-direct path, which strips the qualifying prefix off model ids — the
-    gateway answers `system.ai.claude-opus-4-8` and Pi asked for
-    `claude-opus-4-8`, which is not a model service, so every message 404'd.
-    Codex fell over on the same misread, reporting itself unlaunchable because
-    it found no Databricks provider and no `auth.json` behind it.
+    Read as a plain `gateway`, omnigent sends Codex down its vendor-direct path,
+    which strips the qualifying prefix off model ids. Codex then reports itself
+    unlaunchable because it finds no Databricks provider and no `auth.json`.
     """
     monkeypatch.setattr(
         cli_config, "gateway_host", lambda: "https://ws.cloud.databricks.com/ai-gateway"
@@ -82,16 +79,15 @@ def test_codex_and_pi_resolve_through_a_databricks_aware_provider(user, monkeypa
     assert pinned["cli"] == "codex"
     # Names the [model_providers.X] table configure_codex writes.
     assert pinned["model_provider"] == "databricks"
-    assert pinned["default"] == ["openai", "pi"]
+    assert pinned["default"] == ["openai"]
     # Exactly one provider owns each surface, or omnigent rejects the config.
     assert providers["databricks-gateway"]["default"] == ["anthropic"]
 
 
 def test_codex_base_url_is_the_spelling_omnigent_can_rewrite(user, monkeypatch):
     """The gateway serves Responses at /openai/v1 and /codex/v1 alike; omnigent
-    only parses the second. It derives Pi's Anthropic base by swapping a
-    trailing `/codex/v1` for `/anthropic`, so an `/openai/v1` base would leave
-    Pi pointed at `/openai/v1/anthropic`, which routes nowhere."""
+    only parses the second when identifying its Databricks-aware Codex
+    provider."""
     monkeypatch.setattr(
         cli_config, "gateway_host", lambda: "https://ws.cloud.databricks.com/ai-gateway"
     )
@@ -121,8 +117,8 @@ def test_without_a_gateway_the_single_provider_still_owns_every_surface(
 
 
 def test_a_pinned_provider_is_dropped_when_the_gateway_goes_away(user, monkeypatch):
-    """Left behind, it would default the openai and pi surfaces to a codex
-    table that no longer names a gateway."""
+    """Left behind, it would default the OpenAI surface to a Codex table that
+    no longer names a gateway."""
     monkeypatch.setattr(
         cli_config, "gateway_host", lambda: "https://ws.cloud.databricks.com/ai-gateway"
     )

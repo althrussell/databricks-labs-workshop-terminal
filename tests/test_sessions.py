@@ -164,7 +164,7 @@ def test_unknown_agent_404(client):
 
 
 @pytest.mark.parametrize("agent_id", ["bash", "pi"])
-def test_legacy_raw_session_types_are_rejected(client, agent_id):
+def test_retired_and_raw_session_types_are_rejected(client, agent_id):
     resp = client.post("/api/sessions", json={"agent_id": agent_id}, headers=ALICE)
     assert resp.status_code == 404
 

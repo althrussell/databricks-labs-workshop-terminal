@@ -122,7 +122,7 @@ def test_the_mirror_is_reported_even_when_it_is_not_being_enforced():
 
 def test_require_mirror_fails_an_otherwise_healthy_app_that_used_the_internet():
     report = _verify_with_mirror(
-        _mirror(served=4, from_network=["pi_npm_package"])
+        _mirror(served=4, from_network=["codex_npm_launcher_package"])
     )
 
     assert report["exit_code"] == 1

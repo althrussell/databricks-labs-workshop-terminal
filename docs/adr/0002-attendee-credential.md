@@ -107,5 +107,5 @@ directory can be narrowed or removed.
 **Fallback if the spike fails: an opt-in manual PAT entry box.** Validated at
 entry, health-checked, degrading to the SP rather than hard-failing. It buys
 correct ownership at creation with no reconciler, and it costs the
-zero-friction start. It does **not** help Omnigent or Pi, because of ceiling 4 —
+zero-friction start. It does **not** help Omnigent, because of ceiling 4 —
 so it is an alternate CLI identity, never a fix for the harnesses.

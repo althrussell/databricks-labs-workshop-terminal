@@ -1323,7 +1323,7 @@ def _live_session_ids(payload: dict) -> set[str]:
 def _probe_agent_id(payload: dict) -> str | None:
     """Pick a ready agent the deployed app actually offers.
 
-    Raw Bash and Pi sessions are intentionally rejected. Prefer the bare agents
+    Raw Bash sessions are intentionally rejected. Prefer the bare agents
     for acceptance work so an optional Omnigent credential plane is not used
     merely to prove the Workshop Terminal session lifecycle.
     """

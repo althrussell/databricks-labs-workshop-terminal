@@ -21,7 +21,7 @@ types, and the bare CLIs kept alongside.
 > "demoted fallbacks", and §5 below repeated the idea. That framing is wrong in
 > a way that matters on a workshop floor. Every harness inside Omnigent shares
 > one runner credential, so they fail *together*: `omnigent claude` is not a
-> refuge from a failing `pi`. The bare tier is the only real fallback, because
+> refuge from `omnigent codex`. The bare tier is the only real fallback, because
 > it runs on the app service principal in the attendee's own container and no
 > browser tab can invalidate it. Recovery procedure lives in
 > [`operator-runbook.md`](./operator-runbook.md); do not use this design doc as

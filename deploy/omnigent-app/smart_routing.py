@@ -34,6 +34,10 @@ logger = logging.getLogger("omnigent-workshop-app.smart_routing")
 
 _DEFAULT_JUDGE_MODEL = "system.ai.gpt-5-6-luna"
 _ROUTING_PATH = "/ai-gateway/routing/v1"
+_SUPPORTED_AUTO_ROUTING_HARNESSES = ("claude-sdk", "codex")
+_SUPPORTED_ROUTING_HARNESSES = frozenset(
+    (*_SUPPORTED_AUTO_ROUTING_HARNESSES, "claude-native", "codex-native")
+)
 
 
 def smart_routing_enabled(env: dict[str, str] | None = None) -> bool:
@@ -49,6 +53,20 @@ def smart_routing_enabled(env: dict[str, str] | None = None) -> bool:
 def judge_model(env: dict[str, str] | None = None) -> str:
     source = env if env is not None else os.environ
     return source.get("WORKSHOP_ROUTING_JUDGE_MODEL", "").strip() or _DEFAULT_JUDGE_MODEL
+
+
+def restrict_upstream_auto_routing_harnesses() -> None:
+    """Limit Omnigent Auto to the harnesses shipped by Workshop Terminal.
+
+    Omnigent's static fallback can offer a harness even when its executable is
+    absent from a runner catalog. Pinning the upstream candidate tuple prevents
+    either routing backend from selecting a retired or unshipped harness.
+    """
+    from omnigent.server import smart_routing as upstream
+
+    if not hasattr(upstream, "_AUTO_ROUTING_HARNESSES"):
+        raise RuntimeError("Omnigent Auto harness contract changed")
+    upstream._AUTO_ROUTING_HARNESSES = _SUPPORTED_AUTO_ROUTING_HARNESSES
 
 
 def routing_base_url(
@@ -121,17 +139,15 @@ class WorkspaceClientBearerAuth:
 
 # Cheapest first. GPT is priced in DBU per output token — luna 28, terra 282,
 # sol 642 — and Claude runs haiku, then sonnet, then opus. The two families are
-# interleaved by tier rather than by a common price, which costs nothing in
-# practice: a harness bar almost always leaves one family standing (pi bars
-# every GPT arm, codex serves no Claude), so the interleave only breaks ties
-# that a real menu rarely presents.
+# interleaved by tier rather than by a common price. Harness compatibility
+# normally leaves one family standing, so the interleave only breaks ties that
+# a real menu rarely presents.
 #
 # Naming both families matters more than the interleave. The judge reads this
 # list as cheapest-first, and anything absent from it lands in the unranked
-# bucket, where the only tiebreak is the model id. Under pi, where every
-# candidate was a Claude arm and none were named here, that tiebreak sorted
-# ``claude-fable-5`` ahead of haiku, opus and sonnet on the letter F alone --
-# so "hi" bought the flagship.
+# bucket, where the only tiebreak is the model id. That can sort an expensive
+# model ahead of haiku, opus and sonnet by spelling alone, so a cheap prompt can
+# buy the flagship.
 _DEFAULT_MODEL_ORDER = (
     "claude-haiku-4-5",
     "gpt-5-6-luna",
@@ -154,10 +170,9 @@ _DEFAULT_MODEL_ORDER = (
 # cheap branch holds.
 _DEFAULT_MODEL_EXCLUDE = ("gpt-5-5", "gpt-5-5-pro", "claude-fable-5")
 
-# Models that answer only on chat-completions, per harness that cannot speak it.
-# codex-cli 0.148.0 is Responses-only and the gateway refuses these outright, so
-# a codex verdict naming one is dead before it is made. Not a global exclusion:
-# pi speaks chat and runs them fine.
+# Models that answer only on chat-completions. Neither supported coding harness
+# can speak that wire: Codex is Responses-only and Claude uses Anthropic
+# Messages. A verdict naming one is therefore dead before it is made.
 #
 # Every entry is confirmed against a live catalogue rather than inferred from an
 # error message: each of these model services lists
@@ -171,24 +186,21 @@ _DEFAULT_MODEL_EXCLUDE = ("gpt-5-5", "gpt-5-5-pro", "claude-fable-5")
 # turn. gemini-3-5-flash-lite and qwen35-122b-a10b are their replacements in the
 # comparison set and are chat-only on the same evidence.
 #
-# This cannot be fixed by trimming the router's menu, which is why it is a
-# judge-side list. glm-5-2 is the first entry in SMART_ROUTING_TASK_V1_CODEX_ARMS
-# and task_v1 requires that menu in full, so upstream injects the arm whether or
-# not the workspace can serve it.
+# This cannot be fixed by trimming the external router's menu: glm-5-2 is the
+# first entry in SMART_ROUTING_TASK_V1_CODEX_ARMS and task_v1 requires that menu
+# in full. The upstream Auto candidate restriction prevents that router from
+# choosing an unshipped harness; this list keeps the local judge equally strict.
 #
 # Hardcoded because the judge is handed bare model ids. The catalog knows the
-# real answer -- entries carry ``wire_apis``, and the rule is "codex needs
-# OPENAI_RESPONSES" -- so if this list ever needs another entry, fetch the
-# catalog instead of extending it.
-_HARNESS_CHAT_ONLY_BARS: dict[str, tuple[str, ...]] = {
-    "codex": (
-        "glm-5-2",
-        "gemini-3-5-flash-lite",
-        "qwen35-122b-a10b",
-        "kimi-k3",
-        "gemini-3-6-flash",
-    ),
-}
+# real answer through ``wire_apis``; if this list ever needs another entry,
+# fetch the catalog instead of extending it.
+_CHAT_ONLY_MODELS = (
+    "glm-5-2",
+    "gemini-3-5-flash-lite",
+    "qwen35-122b-a10b",
+    "kimi-k3",
+    "gemini-3-6-flash",
+)
 
 
 def _bare_model_id(model: str) -> str:
@@ -233,9 +245,9 @@ def shape_judge_menu(
       sorted, which is what put a three-word prompt on the most expensive arm
       in the workspace.
     - **Deprecated arms.** See :data:`_DEFAULT_MODEL_EXCLUDE`.
-    - **Wire mismatches.** See :data:`_HARNESS_CHAT_ONLY_BARS`. This is the gap
-      that bites hardest: ``_HARNESS_EXCLUDED_MODELS`` upstream covers pi only,
-      so nothing stops a codex verdict naming an arm codex cannot speak to.
+    - **Wire mismatches.** See :data:`_CHAT_ONLY_MODELS`. This is the gap
+      that bites hardest: upstream exclusions do not cover this Codex wire
+      mismatch, so nothing stops a verdict naming an arm Codex cannot speak to.
     - **Harness bars**, which ``route_turn`` already applies to ``available``
       before either backend sees it. Re-applied here because that filter is
       keyed on the harness having an exclusion entry at all, and because this
@@ -261,6 +273,7 @@ def shape_judge_menu(
     excluded = set(
         _configured_ids(source, "WORKSHOP_ROUTING_MODEL_EXCLUDE", _DEFAULT_MODEL_EXCLUDE)
     )
+    chat_only = set(_CHAT_ONLY_MODELS)
 
     def rank(model: str) -> tuple[int, str]:
         bare = _bare_model_id(model)
@@ -270,7 +283,8 @@ def shape_judge_menu(
 
     shaped: dict[str, list[str]] = {}
     for harness, candidates in available_models.items():
-        chat_only = set(_HARNESS_CHAT_ONLY_BARS.get(harness, ()))
+        if harness not in _SUPPORTED_ROUTING_HARNESSES:
+            continue
         kept = [
             model
             for model in candidates
@@ -495,6 +509,7 @@ def build_runtime_caps(
         return RuntimeCaps()
 
     try:
+        restrict_upstream_auto_routing_harnesses()
         from omnigent.server.routing_backend import RoutingBackends
     except Exception:  # noqa: BLE001
         logger.warning("Routing backend imports failed; routing stays off", exc_info=True)

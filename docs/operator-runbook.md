@@ -12,15 +12,13 @@ Read the ladder first. Everything else is detail.
 **Omnigent's Claude and Omnigent's Codex are not a fallback.**
 
 Every harness inside Omnigent — the TUI, `omnigent claude`, `omnigent codex`,
-`pi`, every polly worker — reaches the workshop through one runner process with
+and every polly worker — reaches the workshop through one runner process with
 one credential (`_RunnerDatabricksAuth`, built once in the runner's entrypoint).
 When that credential is stale, the runner fails *before* it gets as far as
-choosing a harness. Pi surfaced it first at our last event only because native
-terminals make one extra launch-config call; Claude and Codex through Omnigent
-die the same way, one step later.
+choosing a harness. Claude and Codex through Omnigent therefore die together.
 
-Sending an attendee from Omnigent's Pi to Omnigent's Claude is sending them in a
-circle. It will look like a second, unrelated bug.
+Sending an attendee from Omnigent's Claude to Omnigent's Codex is sending them
+in a circle. It will look like a second, unrelated bug.
 
 **The real fallback is the bare tier: Claude Code and Codex.** Those
 run directly in the attendee's container on the app service principal's
@@ -175,7 +173,6 @@ never leaves the attendee's container.
 - [`auth-identity-model.md`](./auth-identity-model.md) — why the credential is
   tab-bound and what each plane can do.
 - [`admin-api.md`](./admin-api.md) — the full operator API.
-- [`model-comparison.md`](./model-comparison.md) — the Pi-free comparison
-  exercise.
+- [`model-comparison.md`](./model-comparison.md) — the model comparison exercise.
 - [`control-tower-implementation.md`](./control-tower-implementation.md) —
   fleet-level operations and admission.

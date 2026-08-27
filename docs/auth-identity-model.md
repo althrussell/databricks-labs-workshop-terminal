@@ -370,8 +370,7 @@ pre-approved for a group — and it is explicitly out of scope for event week.
 A manual PAT entry box is the fallback shape: opt-in, validated at entry,
 health-checked, degrading to the SP rather than hard-failing. It gives correct
 ownership at creation with no reconciler, but it costs the zero-friction start
-and it does not help Omnigent or Pi at all, because the proxy rejects PATs on
-the runner hop.
+and it does not help Omnigent, because the proxy rejects PATs on the runner hop.
 
 The decision, what it retires, and the three questions that gate the spike are
 recorded in [ADR 0002](adr/0002-attendee-credential.md). Two designs are retired

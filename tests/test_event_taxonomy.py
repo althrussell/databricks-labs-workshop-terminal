@@ -113,14 +113,18 @@ def test_a_session_is_only_reported_as_ended_once(client, emitted, launchable_ag
 def test_the_attendee_reports_what_their_screen_said(client, emitted):
     resp = client.post(
         "/api/telemetry/error",
-        json={"code": "native_terminal_start_failed", "detail": "Pi died", "agent_id": "pi"},
+        json={
+            "code": "native_terminal_start_failed",
+            "detail": "Codex exited",
+            "agent_id": "codex",
+        },
         headers={"X-Forwarded-Email": "alice@example.com"},
     )
 
     assert resp.status_code == 200
     payload = _payload(emitted, "attendee.error_seen")
     assert payload["code"] == "native_terminal_start_failed"
-    assert payload["agent"] == "pi"
+    assert payload["agent"] == "codex"
 
 
 def test_a_code_nobody_has_seen_before_is_bucketed_but_never_dropped(client, emitted):

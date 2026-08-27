@@ -173,7 +173,7 @@ def test_a_workspace_hosted_gateway_root_still_reports_green(monkeypatch, probe)
 
 def test_serving_endpoints_fallback_is_not_a_form_omnigent_accepts():
     """Kept as a guard rather than a description of live behaviour: nothing
-    writes this URL any more, and if a regression reintroduced it Pi would
+    writes this URL any more, and if a regression reintroduced it Omnigent would
     decline to route it — it carries neither the DNS label nor the path."""
     assert not cli_config._is_omnigent_gateway_form(
         "https://dbc-af3ed11d-d267.cloud.databricks.com/serving-endpoints/anthropic"
