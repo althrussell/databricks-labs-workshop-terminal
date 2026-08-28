@@ -22,6 +22,7 @@ from opentelemetry.sdk.trace.export import (
     SpanExportResult,
 )
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from uvicorn.logging import AccessFormatter
 
 from server import observability
 
@@ -208,6 +209,32 @@ def test_redaction_is_idempotent_across_factory_and_handler_filters():
     )
 
     assert observability.redact_text(once) == once
+
+
+def test_redaction_preserves_uvicorn_access_log_arguments_and_redacts_query():
+    record = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        1,
+        '%s - "%s %s HTTP/%s" %d',
+        (
+            "10.0.0.1:1234",
+            "GET",
+            "/readyz?name=Ada%20Lovelace&q=private-plan",
+            "1.1",
+            503,
+        ),
+        None,
+    )
+
+    assert observability.RedactionFilter().filter(record)
+    rendered = AccessFormatter().format(record)
+
+    assert "GET /readyz?name=[REDACTED]&q=[REDACTED] HTTP/1.1" in rendered
+    assert "Ada%20Lovelace" not in rendered
+    assert "private-plan" not in rendered
+    assert len(record.args) == 5
 
 
 def test_health_never_returns_the_collector_endpoint_or_credentials():
