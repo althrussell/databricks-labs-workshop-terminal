@@ -1,3 +1,5 @@
 -r requirements.in
+# Compatibility list for source test tooling. Canonical versions live in the
+# ``dev`` dependency group in pyproject.toml and uv.lock.
 httpx==0.28.1
 pytest==9.0.3

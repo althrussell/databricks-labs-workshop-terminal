@@ -1,5 +1,6 @@
-# Direct runtime dependencies. Compile with:
-#   uv pip compile requirements.in --output-file requirements.txt
+# Compatibility list for source deployment. Keep exactly aligned with
+# ``project.dependencies`` in pyproject.toml; export requirements.txt from the
+# canonical uv.lock (the CI contract carries the exact command).
 databricks-sdk==0.121.0
 fastapi==0.139.0
 opentelemetry-distro==0.65b0

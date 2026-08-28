@@ -8,7 +8,7 @@ with a vended credential injected as WORKSHOP_PAT in the uploaded app.yaml
   export DATABRICKS_CONFIG_PROFILE=my-dev-workspace   # or DATABRICKS_HOST/TOKEN
   python scripts/deploy_dev.py [--name workshop-terminal-dev] [--no-pat]
 
-Requires: databricks-sdk (pip install databricks-sdk).
+Requires the uv-locked project environment (``uv sync --frozen``).
 """
 
 from __future__ import annotations

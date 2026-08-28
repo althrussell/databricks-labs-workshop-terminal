@@ -1,15 +1,14 @@
-.PHONY: dev dev-backend dev-frontend build-frontend test install
+.PHONY: dev dev-backend dev-frontend build-frontend build-release test install
 
 install:
-	python3 -m venv .venv 2>/dev/null || true
-	.venv/bin/pip install -r requirements.txt pytest httpx
-	cd frontend && npm install
+	uv sync --frozen
+	cd frontend && npm ci
 
 # Local dev loop: backend with fake identity headers + Vite dev proxy.
 dev-backend:
 	LOCAL_DEV=1 DEV_FAKE_EMAIL=dev@example.com DEV_GROUPS=platform_admins \
 	DATA_ROOT=/tmp/workshop-terminal-dev \
-	.venv/bin/uvicorn server.main:app --reload --port 8000
+	uv run --frozen uvicorn server.main:app --reload --port 8000
 
 dev-frontend:
 	cd frontend && npm run dev
@@ -24,4 +23,7 @@ build-frontend:
 	cd frontend && npm run build
 
 test:
-	.venv/bin/python -m pytest tests/ -q
+	uv run --frozen python -m pytest tests/ -q
+
+build-release:
+	uv run --frozen --no-group dev --group release python scripts/build_release.py

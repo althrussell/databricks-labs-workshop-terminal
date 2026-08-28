@@ -1,5 +1,7 @@
 # static/ is COMMITTED on purpose — Control Tower deploys with no build step.
 .venv/
+dist/
+dist-repro/
 __pycache__/
 *.pyc
 node_modules/

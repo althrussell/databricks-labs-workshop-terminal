@@ -116,11 +116,9 @@ operator admin panel.
 
 ## Deploying
 
-`app.yaml` starts Uvicorn with exactly one worker and no explicit host or port
-arguments. In the observed failed deployment, list-form
-`${DATABRICKS_APP_PORT}` reached Uvicorn literally and was rejected as an
-invalid integer. This app deliberately relies instead on the documented
-auto-injected `UVICORN_HOST=0.0.0.0` and `UVICORN_PORT`.
+`app.yaml` starts `server.otel_bootstrap`, which resolves the injected app port
+and starts exactly one Uvicorn worker. The same early-OTel entry point is baked
+into the packaged runtime.
 
 ### Prerequisite: the attendee CLI credential
 
@@ -184,12 +182,25 @@ attendee/app-SP grants afterward. Post-deploy acceptance also requires an
 attendee OAuth token (the deployer token is reused only when identities match)
 to call `/api/config`, reconcile entitlements, and prove `/readyz` green.
 
+### Immutable runtime release
+
+Tagged releases publish `workshop-terminal.pex` and `release-manifest.json`.
+The Linux x86_64 CPython 3.11 PEX contains the server, uv-locked runtime
+dependencies, committed frontend, content, instructions, vendored skills, and
+the reviewed toolchain manifest. It does not contain the attendee CLI binaries;
+those continue through the separate checksum-verified toolchain mirror.
+
+Control Tower pins and stages a specific manifest digest. It never resolves a
+`latest` release during provisioning. See
+[docs/release-artifact.md](docs/release-artifact.md) for the build, verification,
+and rollback contract.
+
 ### Dev smoke test
 
 ```bash
-pip install databricks-sdk
+uv sync --frozen
 export DATABRICKS_CONFIG_PROFILE=my-dev-workspace
-python scripts/deploy_dev.py
+uv run --frozen python scripts/deploy_dev.py
 ```
 
 Then: launch Claude → run `databricks current-user me` in the terminal →
@@ -199,10 +210,11 @@ they can't see your tabs.
 ## Local development
 
 ```bash
-make install        # venv + pip + npm
+make install        # uv-locked Python env + deterministic npm install
 make dev-backend    # uvicorn on :8000 with fake identity (dev@example.com, platform_admins)
 make dev-frontend   # Vite on :5173, proxies /api and /ws
 make test           # pytest: isolation, authz, caps, triggers, replay
+make build-release  # Linux x86_64 CPython 3.11 only
 ```
 
 Before committing UI changes: `make build-frontend` and commit `static/`.
