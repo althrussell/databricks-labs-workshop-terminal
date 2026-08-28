@@ -30,6 +30,16 @@ jobs:
           version: "0.11.15"
       - name: Verify immutable tag checkout
         run: test "$(git rev-list -n 1 "${GITHUB_REF_NAME}")" = "${GITHUB_SHA}"
+      - name: Validate uv lock and source-deployment exports
+        run: |
+          uv lock --check
+          uv export --frozen --no-dev --no-group release --no-hashes --no-emit-project --output-file requirements.txt
+          uv export --frozen --no-group release --no-hashes --no-emit-project --output-file requirements-dev.txt
+          git diff --exit-code -- pyproject.toml uv.lock requirements.txt requirements-dev.txt
+      - name: Install backend test dependencies
+        run: uv sync --frozen --no-group release
+      - name: Run backend tests
+        run: uv run --frozen --no-group release python -m pytest tests/ -q
       - name: Verify committed frontend
         working-directory: frontend
         env:

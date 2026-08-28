@@ -81,7 +81,25 @@ def test_tag_release_publishes_only_a_tested_pex_and_manifest():
     publish = next(
         step for step in steps if step.get("uses", "").startswith("softprops/action-gh-release@")
     )
+    backend_test_command = "uv run --frozen --no-group release python -m pytest tests/ -q"
+    backend_test_index = next(
+        index
+        for index, step in enumerate(steps)
+        if backend_test_command in step.get("run", "")
+    )
+    build_index = next(
+        index
+        for index, step in enumerate(steps)
+        if "python scripts/build_release.py" in step.get("run", "")
+    )
+    publish_index = steps.index(publish)
 
+    assert "uv lock --check" in commands
+    assert "uv export --frozen" in commands
+    assert "git diff --exit-code -- pyproject.toml uv.lock requirements.txt requirements-dev.txt" in commands
+    assert "uv sync --frozen --no-group release" in commands
+    assert backend_test_command in commands
+    assert backend_test_index < build_index < publish_index
     assert "scripts/smoke_release_container.sh dist" in commands
     assert "cmp dist/workshop-terminal.pex dist-repro/workshop-terminal.pex" in commands
     assert "dist/workshop-terminal.pex" in publish["with"]["files"]
