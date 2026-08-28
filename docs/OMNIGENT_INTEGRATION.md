@@ -6,7 +6,7 @@
 ## 1. Context
 
 Omnigent is Databricks' agent meta-harness, now GA on public PyPI
-(`uv tool install omnigent` / `pip install omnigent`; the sibling deps
+(`uv tool install omnigent`; the sibling deps
 `omnigent-client` / `omnigent-ui-sdk` resolve transitively). It wraps coding
 agents — Claude Code, Codex, and YAML-declared custom agents — in managed
 sessions: a TUI, a local FastAPI server, session persistence, sub-agent

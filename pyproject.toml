@@ -1,0 +1,34 @@
+[project]
+name = "databricks-workshop-terminal"
+version = "0.0.0"
+description = "One-attendee Databricks Workshop Terminal runtime"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+  "databricks-sdk==0.121.0",
+  "fastapi==0.139.0",
+  "opentelemetry-distro==0.65b0",
+  "opentelemetry-exporter-otlp-proto-grpc==1.44.0",
+  "opentelemetry-instrumentation-fastapi==0.65b0",
+  "pillow==11.3.0",
+  "pydantic==2.13.4",
+  "reportlab==4.5.1",
+  "requests==2.34.2",
+  "uvicorn[standard]==0.51.0",
+]
+
+[dependency-groups]
+dev = [
+  "httpx==0.28.1",
+  "pytest==9.0.3",
+]
+release = [
+  "pex==2.70.0",
+]
+
+[tool.uv]
+package = false
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+default = true

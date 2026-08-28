@@ -1,0 +1,67 @@
+name: Release runtime
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: build-test-publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.18.1"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.15"
+      - name: Verify immutable tag checkout
+        run: test "$(git rev-list -n 1 "${GITHUB_REF_NAME}")" = "${GITHUB_SHA}"
+      - name: Verify committed frontend
+        working-directory: frontend
+        env:
+          npm_config_registry: "https://registry.npmjs.org/"
+          npm_config_replace_registry_host: "always"
+          npm_config_fetch_timeout: "60000"
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npm run build
+          git -C .. diff --exit-code -- static
+      - name: Materialize the uv-locked build environment
+        run: uv sync --frozen --no-group dev --group release
+      - name: Build immutable release assets
+        run: >-
+          uv run --frozen --no-group dev --group release
+          python scripts/build_release.py
+          --output-dir dist
+          --release-tag "${GITHUB_REF_NAME}"
+          --git-sha "${GITHUB_SHA}"
+      - name: Rebuild and verify reproducibility
+        run: |
+          uv run --frozen --no-group dev --group release python scripts/build_release.py --output-dir dist-repro --release-tag "${GITHUB_REF_NAME}" --git-sha "${GITHUB_SHA}"
+          cmp dist/workshop-terminal.pex dist-repro/workshop-terminal.pex
+          cmp dist/release-manifest.json dist-repro/release-manifest.json
+      - name: Smoke in clean Linux without a network
+        run: scripts/smoke_release_container.sh dist
+      - name: Publish PEX and manifest
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/workshop-terminal.pex
+            dist/release-manifest.json
+          fail_on_unmatched_files: true
+          generate_release_notes: true

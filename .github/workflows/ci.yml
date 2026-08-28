@@ -24,15 +24,16 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           version: "0.11.15"
-      - name: Validate requirements lock
+      - name: Validate uv lock and source-deployment exports
         run: |
-          uv pip compile requirements.in --output-file requirements.txt
-          uv pip compile requirements-dev.in --output-file requirements-dev.txt
-          git diff --exit-code -- requirements.txt requirements-dev.txt
+          uv lock --check
+          uv export --frozen --no-dev --no-group release --no-hashes --no-emit-project --output-file requirements.txt
+          uv export --frozen --no-group release --no-hashes --no-emit-project --output-file requirements-dev.txt
+          git diff --exit-code -- pyproject.toml uv.lock requirements.txt requirements-dev.txt
       - name: Install dependencies
-        run: pip install -r requirements-dev.txt
+        run: uv sync --frozen --no-group release
       - name: Run tests
-        run: python -m pytest tests/ -q
+        run: uv run --frozen --no-group release python -m pytest tests/ -q
 
   frontend:
     name: test-and-build
@@ -62,3 +63,38 @@ jobs:
         run: |
           git diff --exit-code -- static
           test -z "$(git status --porcelain -- static)"
+
+  package:
+    name: packaged-runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.15"
+      - name: Materialize the uv-locked build environment
+        run: uv sync --frozen --no-group dev --group release
+      - name: Build the release twice
+        run: |
+          uv run --frozen --no-group dev --group release python scripts/build_release.py --output-dir dist --git-sha "${GITHUB_SHA}"
+          uv run --frozen --no-group dev --group release python scripts/build_release.py --output-dir dist-repro --git-sha "${GITHUB_SHA}"
+      - name: Verify byte reproducibility
+        run: |
+          cmp dist/workshop-terminal.pex dist-repro/workshop-terminal.pex
+          cmp dist/release-manifest.json dist-repro/release-manifest.json
+      - name: Smoke in clean Linux without a network
+        run: scripts/smoke_release_container.sh dist
+      - name: Publish CI evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: workshop-terminal-${{ github.sha }}
+          path: |
+            dist/workshop-terminal.pex
+            dist/release-manifest.json
+            dist/release-benchmark.json
+          if-no-files-found: error
+          retention-days: 7

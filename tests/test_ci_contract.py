@@ -28,7 +28,7 @@ def test_frontend_ci_is_blocking_and_deterministic():
     assert "git status --porcelain -- static" in commands
 
 
-def test_backend_ci_runs_full_suite_and_reproduces_requirements_lock():
+def test_backend_ci_runs_full_suite_from_the_uv_lock():
     workflow = _workflow()
     job = workflow["jobs"]["backend"]
     commands = "\n".join(
@@ -37,19 +37,56 @@ def test_backend_ci_runs_full_suite_and_reproduces_requirements_lock():
         if isinstance(step, dict)
     )
 
-    assert "python -m pytest tests/ -q" in commands
-    assert "uv pip compile requirements.in --output-file requirements.txt" in commands
-    assert (
-        "uv pip compile requirements-dev.in --output-file requirements-dev.txt"
-        in commands
-    )
-    assert "git diff --exit-code -- requirements.txt requirements-dev.txt" in commands
-    assert "pip install -r requirements-dev.txt" in commands
-    assert "pip install -r requirements.txt pytest httpx" not in commands
+    assert "uv run --frozen --no-group release python -m pytest tests/ -q" in commands
+    assert "uv lock --check" in commands
+    assert "uv export --frozen" in commands
+    assert "git diff --exit-code -- pyproject.toml uv.lock" in commands
+    assert "uv sync --frozen --no-group release" in commands
+    assert "pip install" not in commands
     assert workflow["jobs"]["backend"]["strategy"]["matrix"]["python-version"] == [
         "3.11",
         "3.12",
     ]
+
+
+def test_packaged_ci_is_linux_cp311_reproducible_and_offline_smoked():
+    workflow = _workflow()
+    job = workflow["jobs"]["package"]
+    commands = "\n".join(
+        step.get("run", "") for step in job["steps"] if isinstance(step, dict)
+    )
+
+    assert job["runs-on"] == "ubuntu-24.04"
+    assert 'python-version": "3.11"' not in commands  # setup-python owns the ABI
+    setup = next(
+        step
+        for step in job["steps"]
+        if step.get("uses", "").startswith("actions/setup-python@")
+    )
+    assert setup["with"]["python-version"] == "3.11"
+    assert commands.count("scripts/build_release.py") == 2
+    assert "cmp dist/workshop-terminal.pex dist-repro/workshop-terminal.pex" in commands
+    assert "scripts/smoke_release_container.sh dist" in commands
+    assert "pip install" not in commands
+
+
+def test_tag_release_publishes_only_a_tested_pex_and_manifest():
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "release.yml").read_text()
+    )
+    steps = workflow["jobs"]["release"]["steps"]
+    commands = "\n".join(
+        step.get("run", "") for step in steps if isinstance(step, dict)
+    )
+    publish = next(
+        step for step in steps if step.get("uses", "").startswith("softprops/action-gh-release@")
+    )
+
+    assert "scripts/smoke_release_container.sh dist" in commands
+    assert "cmp dist/workshop-terminal.pex dist-repro/workshop-terminal.pex" in commands
+    assert "dist/workshop-terminal.pex" in publish["with"]["files"]
+    assert "dist/release-manifest.json" in publish["with"]["files"]
+    assert "latest" not in commands.lower()
 
 
 def test_frontend_ci_matches_deployed_node_pin():
