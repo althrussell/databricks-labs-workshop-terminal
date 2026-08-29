@@ -20,6 +20,8 @@ export const ATTENDEE_ERROR_CODES = [
   "obo_stale",
   "websocket_lost",
   "install_incomplete",
+  "gateway_rate_limited",
+  "gateway_allowance_exhausted",
 ] as const;
 
 export type AttendeeErrorCode = (typeof ATTENDEE_ERROR_CODES)[number];

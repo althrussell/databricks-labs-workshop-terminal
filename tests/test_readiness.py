@@ -266,6 +266,7 @@ def test_all_hard_checks_green_is_ready(tmp_path):
         "entitlements",
         "obo",
         "release_pins",
+        "governed_model_services",
     }
     assert all(check["ok"] for check in hard.values())
     assert set(report["checks"]) - set(hard) == {

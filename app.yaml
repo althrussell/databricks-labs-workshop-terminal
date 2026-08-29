@@ -238,6 +238,24 @@ env:
   # you specifically want that subdomain.
   - name: DATABRICKS_WORKSPACE_ID
     value: ""
+  # Versioned CT-PR9 contract for event-scoped model services. `required`
+  # makes /readyz fail closed until CT has pushed a model-policy revision and
+  # the app SP can discover every custom service on its required wire. These
+  # names must be custom UC services; system.ai is never accepted here.
+  - name: WORKSHOP_AI_GATEWAY_MODE
+    value: "optional"
+  - name: WORKSHOP_AI_GATEWAY_CONFIG_SCHEMA
+    value: ""
+  - name: WORKSHOP_CLAUDE_DRIVER_SERVICE
+    value: ""
+  - name: WORKSHOP_CLAUDE_OPUS_SERVICE
+    value: ""
+  - name: WORKSHOP_CLAUDE_SONNET_SERVICE
+    value: ""
+  - name: WORKSHOP_CLAUDE_HAIKU_SERVICE
+    value: ""
+  - name: WORKSHOP_CODEX_SERVICE
+    value: ""
   # An event's cost posture, in one word. Empty means "balanced", which is what
   # every event ran before this knob existed: a Sonnet 5 driver with Opus still
   # reachable via /model, and Codex on the balanced GPT tier.

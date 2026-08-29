@@ -721,7 +721,7 @@ emit deterministic JSON, and support `--dry-run`:
 # Readiness/setup/phase/launch-control rollup
 python scripts/ct_fleet.py --inventory inventory.json status
 
-# Pause or resume new LLM-agent launches fleet-wide (existing PTYs continue)
+# Pause or resume new LLM-agent launches fleet-wide
 python scripts/ct_fleet.py --inventory inventory.json --dry-run pause
 python scripts/ct_fleet.py --inventory inventory.json pause
 python scripts/ct_fleet.py --inventory inventory.json resume
@@ -732,8 +732,10 @@ python scripts/ct_fleet.py --inventory inventory.json repush \
 ```
 
 The fleet kill switch is `POST /api/admin/agent-controls` with
-`{"enabled": false}`. It pauses every new agent launch; already running
-sessions remain available. Resume with `{"enabled": true}`.
+`{"enabled": false, "terminate_active": true, "reason": "incident"}`. It
+pauses every new agent launch and, when `terminate_active` is true, closes the
+one running session. Omit that flag to let the current session continue. Resume
+with `{"enabled": true}`.
 
 A narrower lever sits beside it: `POST /api/admin/omnigent-tier` with
 `{"enabled": false}` withdraws only the Omnigent-backed cards and leaves bare

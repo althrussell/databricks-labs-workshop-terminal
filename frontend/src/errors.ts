@@ -71,6 +71,16 @@ const MESSAGES: Partial<
     action: "none",
     actionLabel: "",
   },
+  gateway_rate_limited: {
+    message: "The workshop model is temporarily rate limited. Wait briefly, then try again.",
+    action: "none",
+    actionLabel: "",
+  },
+  gateway_allowance_exhausted: {
+    message: "This event's model allowance is exhausted. Ask your workshop host before trying again.",
+    action: "none",
+    actionLabel: "",
+  },
 };
 
 /** Remove the parts of a server message that point at something unreachable. */

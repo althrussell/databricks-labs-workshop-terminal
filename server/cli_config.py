@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 import requests
 import yaml
 
-from . import config, models
+from . import config, model_policy, models
 from .users import User
 
 logger = logging.getLogger(__name__)
@@ -273,6 +273,28 @@ def discover_model_services(token: str) -> dict[str, frozenset[str]]:
     return services
 
 
+def current_model_catalogue(token: str) -> dict[str, frozenset[str]]:
+    """CT's live policy when present, otherwise workspace discovery.
+
+    A policy revision is authoritative even when it contains no models for WT.
+    Treating that empty set as a discovery failure would restore every default
+    ``system.ai`` model precisely when CT intended to deny all of them.
+    """
+    governed = model_policy.direct_catalogue()
+    if governed is not None:
+        return governed
+    return discover_model_services(token)
+
+
+def _governed_services() -> model_policy.GatewayServiceConfig | None:
+    services = model_policy.gateway_service_config()
+    if services.errors:
+        if services.required or services.version is not None:
+            raise ValueError("; ".join(services.errors))
+        return None
+    return services if services.configured and services.mode != "disabled" else None
+
+
 # -- per-user config writers --
 
 def configure_claude(
@@ -300,18 +322,33 @@ def configure_claude(
     # returns fully-qualified `system.ai.*` service names, which is what the
     # gateway answers to and what Databricks' own managed Claude Code settings
     # carry.
+    governed = _governed_services()
     if available is None:
-        available = discover_model_services(token)
+        available = current_model_catalogue(token)
+    resolved = (
+        governed.claude_services()
+        if governed is not None
+        else {
+            "driver": models.resolve("driver", available),
+            "frontier": models.resolve("frontier", available),
+            "standard": models.resolve("standard", available),
+            "fast": models.resolve("fast", available),
+        }
+    )
+    tag_header = model_policy.request_tags("claude")
     settings_path = os.path.join(claude_dir, "settings.json")
     settings = _read_json(settings_path)
     env = settings.setdefault("env", {})
     env.update({
         "ANTHROPIC_BASE_URL": base_url,
-        "ANTHROPIC_MODEL": models.resolve("driver", available),
-        "ANTHROPIC_DEFAULT_OPUS_MODEL": models.resolve("frontier", available),
-        "ANTHROPIC_DEFAULT_SONNET_MODEL": models.resolve("standard", available),
-        "ANTHROPIC_DEFAULT_HAIKU_MODEL": models.resolve("fast", available),
-        "ANTHROPIC_CUSTOM_HEADERS": "x-databricks-use-coding-agent-mode: true",
+        "ANTHROPIC_MODEL": resolved["driver"],
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": resolved["frontier"],
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": resolved["standard"],
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": resolved["fast"],
+        "ANTHROPIC_CUSTOM_HEADERS": (
+            "x-databricks-use-coding-agent-mode: true\n"
+            f"Databricks-Ai-Gateway-Request-Tags: {tag_header}"
+        ),
         **beta_negotiation_env(bool(gateway)),
         # The CLI install is shared across attendees — never self-update.
         "DISABLE_AUTOUPDATER": "1",
@@ -426,9 +463,11 @@ def configure_codex(
     # model two generations old. It degrades like Claude does now, and the
     # Responses-wire filter means it can only degrade onto something Codex can
     # actually talk to.
+    governed = _governed_services()
     if available is None:
-        available = discover_model_services(token)
-    model = models.resolve("codex", available)
+        available = current_model_catalogue(token)
+    model = governed.codex if governed is not None else models.resolve("codex", available)
+    tag_header = model_policy.request_tags("codex")
 
     auto_mode = ""
     if config.auto_mode_enabled():
@@ -456,6 +495,12 @@ def configure_codex(
         f'name = "{_CODEX_PROVIDER_DISPLAY_NAME}"\n'
         f'base_url = "{base_url}"\n'
         'wire_api = "responses"\n'
+        f'http_headers = {{"Databricks-Ai-Gateway-Request-Tags" = {json.dumps(tag_header)}}}\n'
+        # A Gateway 429 is an enforced boundary, not an invitation to multiply
+        # traffic. One retry covers a transient connection without defeating
+        # requester QPM/TPM policy.
+        'request_max_retries = 1\n'
+        'stream_max_retries = 1\n'
         "\n"
         f"[model_providers.{_CODEX_MODEL_PROVIDER}.auth]\n"
         'command = "cat"\n'
@@ -463,8 +508,7 @@ def configure_codex(
         "timeout_ms = 5000\n"
         "refresh_interval_ms = 240000\n"
     )
-    with open(os.path.join(codex_dir, "config.toml"), "w") as f:
-        f.write(config_toml)
+    _atomic_write_text(os.path.join(codex_dir, "config.toml"), config_toml)
 
 
 def _gateway_token_path(user: User) -> str:
@@ -513,10 +557,19 @@ def configure_omnigent(
     # The same roles the CLIs resolve, so `omnigent claude` and `claude` agree
     # about what an event runs. These chains were a copy of configure_claude's
     # under a comment claiming they were one source of truth; now they are.
+    governed = _governed_services()
     if available is None:
-        available = discover_model_services(token)
-    claude_model = models.resolve("driver", available)
-    codex_model = models.resolve("codex", available)
+        available = current_model_catalogue(token)
+    claude_model = (
+        governed.claude_driver
+        if governed is not None
+        else models.resolve("driver", available)
+    )
+    codex_model = (
+        governed.codex
+        if governed is not None
+        else models.resolve("codex", available)
+    )
 
     # auth_command uses the absolute token path: omnigent re-runs it inside
     # tmux sessions whose $HOME handling we don't control.
@@ -532,12 +585,23 @@ def configure_omnigent(
         "anthropic": {
             "base_url": anthropic_base,
             "auth_command": auth_command,
+            "headers": {
+                "Databricks-Ai-Gateway-Request-Tags": model_policy.request_tags(
+                    "omnigent-claude"
+                )
+            },
             "models": {"default": claude_model},
         },
         "openai": {
             "base_url": openai_base,
             "wire_api": "responses",
             "auth_command": auth_command,
+            "headers": {
+                "Databricks-Ai-Gateway-Request-Tags": model_policy.request_tags(
+                    "omnigent-codex"
+                )
+            },
+            "request_max_retries": 1,
             "models": {"default": codex_model},
         },
     }
@@ -756,7 +820,7 @@ def configure_all(user: User, token: str) -> None:
     # One discovery round-trip for every config this attendee gets. All three
     # writers resolve the same roles against the same workspace, and a room
     # signing in at once should not multiply that by the number of CLIs.
-    available = discover_model_services(token)
+    available = current_model_catalogue(token)
     configure_claude(user, token, write_token=False, available=available)
     configure_codex(user, token, write_token=False, available=available)
     user.cli_ready.update({"claude", "codex", "databricks"})
@@ -767,6 +831,23 @@ def configure_all(user: User, token: str) -> None:
         user.cli_ready.add("omnigent")
     with user.lock:
         _commit_core_credentials_locked(user, token, revision)
+
+
+def refresh_model_configs(user: User) -> None:
+    """Rewrite configs for the next session without touching the live process.
+
+    Existing Claude/Codex/Omnigent processes retain the configuration they
+    started with.  This operation only changes files read by a later launch,
+    which makes a CT policy fanout immediate without silently rerouting a turn
+    already in flight.
+    """
+    available = current_model_catalogue("")
+    if os.path.exists(os.path.join(user.home, ".claude", "settings.json")):
+        configure_claude(user, "", write_token=False, available=available)
+    if os.path.exists(os.path.join(user.home, ".codex", "config.toml")):
+        configure_codex(user, "", write_token=False, available=available)
+    if os.path.exists(os.path.join(user.home, ".omnigent", "config.yaml")):
+        configure_omnigent(user, "", write_token=False, available=available)
 
 
 def update_tokens(user: User, token: str) -> None:
@@ -847,6 +928,4 @@ def _read_json(path: str) -> dict:
 
 
 def _write_json(path: str, data: dict) -> None:
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
-    os.chmod(path, 0o600)
+    _atomic_write_text(path, json.dumps(data, indent=2) + "\n")

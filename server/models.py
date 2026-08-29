@@ -284,7 +284,9 @@ def comparison_supported() -> frozenset[str] | None:
     return frozenset(part.strip().lower() for part in raw.split(",") if part.strip())
 
 
-def comparison_models(available: Catalogue | None = None) -> dict[str, str]:
+def comparison_models(
+    available: Catalogue | None = None, *, strict: bool = False
+) -> dict[str, str]:
     """Profile name -> model service for every comparison model an attendee can use.
 
     Filtered two ways. Against discovery, so a region a release behind advertises
@@ -302,7 +304,9 @@ def comparison_models(available: Catalogue | None = None) -> dict[str, str]:
         if supported is not None and name not in supported:
             continue
         model = os.environ.get(f"CODEX_COMPARE_{name.upper()}", "").strip() or default
-        if not catalogue or _serves(catalogue, model, CHAT_COMPLETIONS):
+        if (not strict and not catalogue) or _serves(
+            catalogue, model, CHAT_COMPLETIONS
+        ):
             resolved[name] = service_name(model)
     return resolved
 

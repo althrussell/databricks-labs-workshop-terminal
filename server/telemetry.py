@@ -30,7 +30,6 @@ SESSION_CREATE_CODES = frozenset(
     {
         "unknown_agent",
         "agents_paused",
-        "agent_budget_exhausted",
         "agent_installing",
         "credential_unavailable",
         "obo_stale",
@@ -57,6 +56,8 @@ ATTENDEE_ERROR_CODES = frozenset(
         "obo_stale",
         "websocket_lost",
         "install_incomplete",
+        "gateway_rate_limited",
+        "gateway_allowance_exhausted",
     }
 )
 

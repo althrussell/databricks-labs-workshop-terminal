@@ -13,7 +13,7 @@ import re
 import tempfile
 import time
 
-from . import models
+from . import model_policy, models
 from .obo import FRESH_MARGIN as OBO_FRESH_MARGIN
 
 
@@ -305,6 +305,7 @@ def evaluate(
     attendee_binding: Mapping[str, str] | None = None,
     delivery_status: Mapping[str, object] | None = None,
     gateway_status: Mapping[str, object] | None = None,
+    governed_model_status: Mapping[str, object] | None = None,
     workspace_sync: Mapping[str, object] | None = None,
     otel_status: Mapping[str, object] | None = None,
     writable_probe: Callable[[str], bool] = _path_writable,
@@ -322,6 +323,9 @@ def evaluate(
         credential_status, env, event_remaining, obo_renewing=obo_renewing
     )
     gateway_status = gateway_status or {}
+    governed_model_status = governed_model_status or model_policy.governed_status(
+        env, None
+    )
     otel_status = otel_status or {
         "enabled": False,
         "configured": False,
@@ -861,6 +865,32 @@ def evaluate(
                 )
             },
         ),
+        # Required governed mode is intentionally fail-closed. A global
+        # ``system.ai`` service is not a rollback target: without the custom
+        # event service the requester limits and event attribution do not
+        # exist, even if a model happens to answer.
+        "governed_model_services": _check(
+            governed_model_status.get("required") is not True
+            or governed_model_status.get("verified") is True,
+            (
+                "event model services, policy revision, wires, and request tags are verified"
+                if governed_model_status.get("verified") is True
+                else "governed AI is optional for this deployment"
+                if governed_model_status.get("required") is not True
+                else "required event model services are absent, inaccessible, on the wrong wire, or policy has not synced"
+            ),
+            required=governed_model_status.get("required") is True,
+            mode=governed_model_status.get("mode"),
+            config_version=governed_model_status.get("config_version"),
+            policy_revision=governed_model_status.get("policy_revision", 0),
+            services=governed_model_status.get("services", []),
+            missing_services=governed_model_status.get("missing_services", []),
+            wrong_wire_services=governed_model_status.get(
+                "wrong_wire_services", []
+            ),
+            missing_identity=governed_model_status.get("missing_identity", []),
+            configuration_errors=governed_model_status.get("errors", []),
+        ),
         # Reported so an operator can see which cost posture an event is running
         # without reading the deployment, and amber on a name we don't know
         # because that is the one case where what an operator asked for and what
@@ -1016,16 +1046,26 @@ def _bound_workspace_sync() -> dict | None:
 def evaluate_runtime() -> dict:
     from . import attendee
     from .bootstrap import install
-    from .cli_config import gateway_status
-    from .credentials import credential_manager, secret_protection_status
+    from .cli_config import discover_model_services, gateway_status
+    from .credentials import CredentialError, credential_manager, secret_protection_status
     from .entitlements import entitlement_manager
     from .event_emitter import event_emitter
     from .obo import obo_manager, obo_watcher
     from .telemetry import otel_health
 
+    governed_config = model_policy.gateway_service_config(os.environ)
+    available = None
+    if governed_config.required or governed_config.configured:
+        try:
+            available = discover_model_services(credential_manager.token())
+        except CredentialError:
+            available = None
+    governed = model_policy.governed_status(os.environ, available)
+
     return evaluate(
         env=os.environ,
         gateway_status=gateway_status(),
+        governed_model_status=governed,
         credential_status=credential_manager.status(),
         installer_status=install.status(include_proof=True),
         entitlement_status=entitlement_manager.status(),

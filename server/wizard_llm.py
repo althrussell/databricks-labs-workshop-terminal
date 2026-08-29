@@ -386,6 +386,12 @@ def _served_models(token: str) -> dict[str, frozenset[str]]:
     """The workspace's model catalogue, cached. Empty means discovery failed."""
     global _discovery, _discovery_at, _discovery_ok
 
+    from . import model_policy
+
+    governed = model_policy.direct_catalogue()
+    if governed is not None:
+        return governed
+
     with _discovery_lock:
         ttl = _DISCOVERY_TTL_SECONDS if _discovery_ok else _DISCOVERY_FAILURE_TTL_SECONDS
         if _discovery is not None and time.time() - _discovery_at < ttl:
@@ -433,7 +439,12 @@ def set_model_override(name: str) -> str:
             available = _served_models(credential_manager.token())
         except CredentialError:
             available = {}
-        if available and not models.serves(available, wanted, "wizard"):
+        from . import model_policy
+
+        policy_active = model_policy.direct_catalogue() is not None
+        if (available or policy_active) and not models.serves(
+            available, wanted, "wizard"
+        ):
             raise UnknownModel(
                 f"{wanted} is not served on the wizard's wire in this workspace"
             )
@@ -475,10 +486,20 @@ def _pick_model(token: str) -> str:
         return override
     pin = config.workshop_wizard_model()
     if pin:
-        return models.service_name(pin)
+        wanted = models.service_name(pin)
+        from . import model_policy
+
+        if (
+            model_policy.direct_catalogue() is not None
+            and not model_policy.direct_service_allowed(wanted, "chat")
+        ):
+            raise ModelUnavailable(f"{wanted} is not enabled by the current model policy")
+        return wanted
     chain = models.wizard_chain()
     available = _served_models(token)
-    if not available:
+    from . import model_policy
+
+    if not available and model_policy.direct_catalogue() is None:
         # Empty is documented in ``discover_model_services`` as *the call
         # failed*, not *the workspace serves nothing*. Reading it the second way
         # took the entire idea grid down for a blip on an unrelated API, and did
@@ -497,7 +518,9 @@ def _ask_model(text: str, industry: str) -> tuple[dict, str]:
 
     from .credentials import CredentialError, credential_manager
 
+    from . import model_policy
     from .cli_config import unified_chat_url
+    from .gateway_errors import describe
 
     url = unified_chat_url()
     if not url:
@@ -524,7 +547,12 @@ def _ask_model(text: str, industry: str) -> tuple[dict, str]:
         try:
             return requests.post(
                 url,
-                headers={"Authorization": f"Bearer {token}"},
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Databricks-Ai-Gateway-Request-Tags": model_policy.request_tags(
+                        "wizard"
+                    ),
+                },
                 json=payload,
                 timeout=_TIMEOUT_SECONDS,
             )
@@ -543,7 +571,7 @@ def _ask_model(text: str, industry: str) -> tuple[dict, str]:
         payload.pop("response_format", None)
         resp = post()
     if resp.status_code != 200:
-        raise ModelUnavailable(f"AI Gateway returned {resp.status_code}")
+        raise ModelUnavailable(describe(resp))
     try:
         content_out = resp.json()["choices"][0]["message"]["content"]
     except (ValueError, KeyError, IndexError, TypeError) as exc:
