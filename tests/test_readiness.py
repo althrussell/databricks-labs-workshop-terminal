@@ -130,7 +130,8 @@ def _good_inputs(tmp_path):
 
 def _evaluate(tmp_path, *, mutate_env=None, credential=None, installer=None,
               entitlements=None, obo=None, secret_protection=None,
-              delivery=None, gateway=None, otel=None, writable=True, now=1000.0):
+              delivery=None, gateway=None, governed_model_status=None, otel=None,
+              writable=True, now=1000.0):
     readiness = importlib.import_module("server.readiness")
     (
         env,
@@ -151,6 +152,7 @@ def _evaluate(tmp_path, *, mutate_env=None, credential=None, installer=None,
         secret_protection_status=secret_protection or good_secret_protection,
         delivery_status=delivery,
         gateway_status=gateway,
+        governed_model_status=governed_model_status,
         otel_status=otel,
         writable_probe=lambda _: writable,
         now=now,
@@ -276,6 +278,72 @@ def test_all_hard_checks_green_is_ready(tmp_path):
         "model_profile",
         "workspace_sync",
     }
+
+
+def test_partial_optional_governed_configuration_fails_closed(tmp_path):
+    report = _evaluate(
+        tmp_path,
+        mutate_env=lambda env: env.update(WORKSHOP_AI_GATEWAY_CONFIG_SCHEMA="1"),
+    )
+
+    check = report["checks"]["governed_model_services"]
+    assert report["ready"] is False
+    assert check["ok"] is False
+    assert check["state"] == "red"
+    assert check["mode"] == "optional"
+    assert check["detail"] == "governed AI deployment configuration is invalid"
+    assert "governed service for codex is missing" in check["configuration_errors"]
+
+
+def test_invalid_governed_mode_fails_closed(tmp_path):
+    report = _evaluate(
+        tmp_path,
+        mutate_env=lambda env: env.update(WORKSHOP_AI_GATEWAY_MODE="optionl"),
+    )
+
+    check = report["checks"]["governed_model_services"]
+    assert report["ready"] is False
+    assert check["ok"] is False
+    assert check["configuration_errors"] == [
+        "WORKSHOP_AI_GATEWAY_MODE must be disabled, optional, or required"
+    ]
+
+
+def test_optional_governed_runtime_degradation_remains_admitted(tmp_path):
+    report = _evaluate(
+        tmp_path,
+        governed_model_status={
+            "required": False,
+            "mode": "optional",
+            "config_version": 1,
+            "configured": True,
+            "policy_revision": 1,
+            "services": ["main.wt_services.event_codex"],
+            "missing_services": ["main.wt_services.event_codex"],
+            "wrong_wire_services": [],
+            "missing_identity": [],
+            "errors": [],
+            "verified": False,
+        },
+    )
+
+    check = report["checks"]["governed_model_services"]
+    assert report["ready"] is True
+    assert check["ok"] is True
+    assert check["detail"] == "governed AI is optional for this deployment"
+
+
+def test_valid_disabled_governed_mode_remains_admitted(tmp_path):
+    report = _evaluate(
+        tmp_path,
+        mutate_env=lambda env: env.update(WORKSHOP_AI_GATEWAY_MODE="disabled"),
+    )
+
+    check = report["checks"]["governed_model_services"]
+    assert report["ready"] is True
+    assert check["ok"] is True
+    assert check["mode"] == "disabled"
+    assert check["configuration_errors"] == []
 
 
 def test_absent_gateway_is_reported_amber_and_never_blocks_the_workshop(tmp_path):

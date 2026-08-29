@@ -865,16 +865,24 @@ def evaluate(
                 )
             },
         ),
-        # Required governed mode is intentionally fail-closed. A global
-        # ``system.ai`` service is not a rollback target: without the custom
-        # event service the requester limits and event attribution do not
-        # exist, even if a model happens to answer.
+        # Governed configuration errors are always fail-closed, regardless of
+        # mode. Optional mode tolerates a legitimate runtime verification
+        # failure, but it must not turn malformed or partially supplied
+        # deployment configuration into a ready app. A global ``system.ai``
+        # service is not a rollback target: without the custom event service
+        # the requester limits and event attribution do not exist, even if a
+        # model happens to answer.
         "governed_model_services": _check(
-            governed_model_status.get("required") is not True
-            or governed_model_status.get("verified") is True,
+            not governed_model_status.get("errors")
+            and (
+                governed_model_status.get("required") is not True
+                or governed_model_status.get("verified") is True
+            ),
             (
                 "event model services, policy revision, wires, and request tags are verified"
                 if governed_model_status.get("verified") is True
+                else "governed AI deployment configuration is invalid"
+                if governed_model_status.get("errors")
                 else "governed AI is optional for this deployment"
                 if governed_model_status.get("required") is not True
                 else "required event model services are absent, inaccessible, on the wrong wire, or policy has not synced"
