@@ -183,6 +183,29 @@ is why `GET /api/admin/state` reports `wizard_model` with its provenance
 wizard's own suggest response carries the model that actually answered, so a
 swap can be confirmed rather than assumed.
 
+### `PUT /api/admin/model-policy`
+
+Control Tower's authenticated, monotonic live-sync seam. It applies the complete
+capability-filtered WT-SP pool plus denied models, persists the revision
+atomically, refreshes direct inference and future-session configuration, and
+never restarts an existing process. See
+[`governed-ai-gateway.md`](./governed-ai-gateway.md#live-model-policy).
+
+### `POST /api/admin/agent-controls`
+
+```json
+{
+  "enabled": false,
+  "terminate_active": true,
+  "reason": "Gateway incident 142"
+}
+```
+
+Pauses new agent launches immediately. `terminate_active` also closes the sole
+active session. Repeating the same state is idempotent. `GET` returns the switch
+state, audit reason, and launch activity; it never labels launch count as token,
+dollar, or remaining budget.
+
 ### `POST /api/admin/broadcast`
 ```json
 { "message": "Labs close in 10 minutes — commit your work!", "level": "warning", "ttl_s": 600 }
@@ -579,8 +602,12 @@ python scripts/pull_diagnostics.py errors  --urls ./instances.txt   # whole flee
 | `CONTENT_PACK_PATH` | *(unset)* | Alternate pack file inside the deployed source |
 | `BRAND_NAME` / `BRAND_LOGO_URL` / `BRAND_PRIMARY_COLOR` / `EVENT_NAME` | *(unset)* | Cobranding |
 | `DATABRICKS_GATEWAY_HOST` | *(unset — derives `<host>/ai-gateway`)* | Override to name a dedicated Unity AI Gateway subdomain instead of the workspace-hosted one |
-| `ANTHROPIC_MODEL` / `CODEX_MODEL` | *(unset)* | Required event release pins for the CLI models, as Unity Catalog model service names — short (`claude-sonnet-5`) or fully qualified (`system.ai.claude-sonnet-5`); `/readyz` stays red until both are explicit |
-| `MAX_SESSIONS_PER_USER` / `MAX_SESSIONS_GLOBAL` | 3 / 3 | Terminal caps; global must not exceed per-user for the one-attendee topology |
+| `WORKSHOP_AI_GATEWAY_MODE` | `optional` | Set `required` for CT-managed event services; required mode has no `system.ai` fallback |
+| `WORKSHOP_AI_GATEWAY_CONFIG_SCHEMA` | *(unset)* | Version of the cross-repo governed service contract; `1` is required when configured |
+| `WORKSHOP_CLAUDE_DRIVER_SERVICE` / `WORKSHOP_CLAUDE_OPUS_SERVICE` / `WORKSHOP_CLAUDE_SONNET_SERVICE` / `WORKSHOP_CLAUDE_HAIKU_SERVICE` | *(unset)* | Exact custom event service for each Claude role; must not be in `system.ai` |
+| `WORKSHOP_CODEX_SERVICE` | *(unset)* | Exact custom event service for Codex Responses traffic; must not be in `system.ai` |
+| `ANTHROPIC_MODEL` / `CODEX_MODEL` | *(unset)* | Legacy optional direct-service pins used only outside configured governed mode |
+| `MAX_SESSIONS_PER_USER` / `MAX_SESSIONS_GLOBAL` | 1 / 1 | Fixed one-session admission invariant |
 | `ALLOW_SHARED_TOPOLOGY` | `false` | Shared use is unsupported and fails `/readyz` |
 | `SESSION_IDLE_TIMEOUT_SECONDS` | 28800 | Idle PTY reap |
 | `SESSION_STATE_PATH` | `/app/python/source_code/data/sessions.json` in `app.yaml` | Mode-0600 metadata-only journal for relaunchable "ended on restart" ghosts. Raw terminal output is never persisted. `/readyz` exercises atomic sibling write/read semantics without touching the real journal |
@@ -601,7 +628,7 @@ python scripts/pull_diagnostics.py errors  --urls ./instances.txt   # whole flee
 | `WORKSHOP_RELEASE_SHA` | *(unset)* | Immutable WT release digest used as the `workshop.release_sha` OTel resource attribute |
 | `OTEL_TRACES_SAMPLER` | `always_on` | Trace sampler recommended by Databricks Apps telemetry; endpoint, protocol, service name, resource attributes, and batching remain platform-injected |
 | `DISCOVERY_ENABLED` | `true` *(within capture)* | Whether the agent-elicited discovery tier runs. Subordinate to `WORKSHOP_INSIGHT_CAPTURE` — `false` keeps the derived behavioural signal and drops the conversational capture, for events where the anonymous rollup is in scope but attendee narrative isn't |
-| `INSIGHT_SUMMARY_MODEL` | *(unset)* | Model service for the wrap-phase edge summary. Empty discovers a served model, preferring the cheap tier — summarising one session is a small job and spending Opus on it competes with the attendees' own agent budget. Pin it when the workspace's default chain is unavailable in-region |
+| `INSIGHT_SUMMARY_MODEL` | *(unset)* | Model service for the wrap-phase edge summary. With a live CT policy, the pin must be enabled for WT chat calls |
 
 All env is read at runtime — Control Tower `env_overrides` and in-place
 `app.yaml` edits take effect on restart with no rebuild.

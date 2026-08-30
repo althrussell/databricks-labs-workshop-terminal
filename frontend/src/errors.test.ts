@@ -77,3 +77,16 @@ test("the operator's code survives the rewrite", () => {
     "boom"
   );
 });
+
+test("gateway limits distinguish retryable pressure from exhausted allowance", () => {
+  const temporary = friendlyError("gateway_rate_limited", "gateway_rate_limited");
+  const exhausted = friendlyError(
+    "gateway_allowance_exhausted",
+    "gateway_allowance_exhausted"
+  );
+
+  assert.match(temporary.message, /temporarily rate limited/);
+  assert.match(temporary.message, /try again/);
+  assert.match(exhausted.message, /allowance is exhausted/);
+  assert.match(exhausted.message, /workshop host/);
+});

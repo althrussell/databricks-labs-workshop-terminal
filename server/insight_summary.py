@@ -314,9 +314,9 @@ class ModelUnavailable(RuntimeError):
 
 
 def _served_models(token: str) -> dict[str, frozenset[str]]:
-    from .cli_config import discover_model_services
+    from .cli_config import current_model_catalogue
 
-    return discover_model_services(token)
+    return current_model_catalogue(token)
 
 
 def _pick_model(token: str) -> str:
@@ -329,7 +329,15 @@ def _pick_model(token: str) -> str:
     """
     pinned = config.insight_summary_model()
     if pinned:
-        return models.service_name(pinned)
+        wanted = models.service_name(pinned)
+        from . import model_policy
+
+        if (
+            model_policy.direct_catalogue() is not None
+            and not model_policy.direct_service_allowed(wanted, "chat")
+        ):
+            raise ModelUnavailable(f"{wanted} is not enabled by the current model policy")
+        return wanted
     available = _served_models(token)
     for name in models.chain("insight"):
         if models.serves(available, name, "insight"):
@@ -367,7 +375,9 @@ def _ask_model(harvest: artifacts.Harvest, signal: dict | None) -> tuple[dict, s
 
     from .credentials import CredentialError, credential_manager
 
+    from . import model_policy
     from .cli_config import unified_chat_url
+    from .gateway_errors import describe
 
     url = unified_chat_url()
     if not url:
@@ -381,7 +391,12 @@ def _ask_model(harvest: artifacts.Harvest, signal: dict | None) -> tuple[dict, s
     try:
         resp = requests.post(
             url,
-            headers={"Authorization": f"Bearer {token}"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Databricks-Ai-Gateway-Request-Tags": model_policy.request_tags(
+                    "insight-summary"
+                ),
+            },
             json={
                 "model": model,
                 "messages": [
@@ -398,7 +413,7 @@ def _ask_model(harvest: artifacts.Harvest, signal: dict | None) -> tuple[dict, s
     except requests.RequestException as exc:
         raise ModelUnavailable(f"AI Gateway unreachable: {exc}") from exc
     if resp.status_code != 200:
-        raise ModelUnavailable(f"AI Gateway returned {resp.status_code}")
+        raise ModelUnavailable(describe(resp))
     try:
         content = resp.json()["choices"][0]["message"]["content"]
     except (ValueError, KeyError, IndexError, TypeError) as exc:

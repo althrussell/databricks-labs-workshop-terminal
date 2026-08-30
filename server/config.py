@@ -255,16 +255,6 @@ def workshop_agents() -> list[str] | None:
     return [i for i in ids if i]
 
 
-def max_agent_launches_per_user() -> int:
-    """Per-attendee lifetime cap on coding-agent launches; 0 = unlimited (P1-16).
-
-    WT can't see model-serving tokens (agents run as CLI subprocesses in PTYs),
-    so the controllable spend proxy is how many LLM-agent sessions an attendee
-    starts. Bash sessions are free and never counted.
-    """
-    return _env_int("MAX_AGENT_LAUNCHES_PER_USER", 0)
-
-
 def omnigent_enabled() -> bool:
     """Whether the Omnigent meta-harness session type is offered (default ON).
 

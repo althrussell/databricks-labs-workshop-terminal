@@ -15,7 +15,15 @@ from pydantic import BaseModel
 
 from . import agents
 from . import attendee as attendee_binding
-from . import config, help as help_module, obo, readiness, spend, user_content
+from . import (
+    config,
+    help as help_module,
+    model_policy,
+    obo,
+    readiness,
+    spend,
+    user_content,
+)
 from .auth import require_admin
 from .content import Broadcast, ContentPack, content_service
 from .credentials import credential_manager
@@ -50,6 +58,7 @@ def admin_state():
     from . import wizard_llm
 
     pack = content_service.pack
+    policy = model_policy.store.snapshot()
     return {
         "phase": content_service.phase,
         "phases": pack.phases,
@@ -60,6 +69,80 @@ def admin_state():
         # the effective model here is what stops that revert being invisible to
         # the operator who applied it.
         "wizard_model": wizard_llm.effective_model(),
+        "model_policy": {
+            "revision": policy.revision,
+            "positive_checks": list(policy.allowed_services()),
+            "negative_checks": list(policy.denied_models),
+        },
+    }
+
+
+@router.put("/model-policy")
+def set_model_policy(body: model_policy.ModelPolicyRequest):
+    """Apply CT's complete WT-SP model pool without restarting an agent."""
+    try:
+        snapshot, changed = model_policy.store.apply(body)
+    except model_policy.StalePolicy as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "stale_model_policy",
+                "current_revision": exc.current_revision,
+            },
+        ) from exc
+    except model_policy.RevisionConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "model_policy_revision_conflict",
+                "current_revision": exc.current_revision,
+            },
+        ) from exc
+
+    # Drop server-side selection caches first, then rewrite only files that
+    # already exist. A running process retains its start-time configuration;
+    # the next session sees the new policy immediately.
+    from . import cli_config, telemetry, wizard_llm
+
+    wizard_llm.reset_discovery_cache()
+    try:
+        for user in user_manager.all():
+            cli_config.refresh_model_configs(user)
+    except Exception as exc:
+        logger.warning("model policy config refresh failed", exc_info=True)
+        telemetry.emit(
+            "model_policy.applied",
+            "system",
+            {
+                "outcome": "refresh_failed",
+                "code": type(exc).__name__,
+            },
+        )
+        # The durable policy is already applied. Return a retriable failure so
+        # CT sends the same revision again; idempotent replay reruns the refresh.
+        raise HTTPException(
+            status_code=503,
+            detail="model policy applied but new-session config refresh failed",
+        ) from exc
+
+    positive = list(snapshot.allowed_services())
+    negative = list(snapshot.denied_models)
+    telemetry.emit(
+        "model_policy.applied",
+        "system",
+        {
+            "outcome": "changed" if changed else "idempotent",
+            "code": "model_policy_applied",
+        },
+    )
+    return {
+        "revision": snapshot.revision,
+        "applied": True,
+        "changed": changed,
+        "verified": True,
+        "positive_checks": positive,
+        "negative_checks": negative,
+        "processes_restarted": False,
     }
 
 
@@ -91,18 +174,15 @@ def set_wizard_model(body: WizardModelBody):
 
 class AgentControlBody(BaseModel):
     enabled: bool
+    terminate_active: bool = False
+    reason: str = "operator control"
 
 
 @router.get("/agent-controls")
 def agent_controls():
-    """P1-16: kill-switch state + per-attendee LLM-agent spend metering.
-
-    Lets an operator see who's consuming agent sessions and pause new launches
-    fleet-wide if spend runs hot. Bash sessions are free and excluded.
-    """
+    """Emergency state plus per-attendee launch activity."""
     return {
-        "agents_enabled": spend.agents_enabled(),
-        "max_agent_launches_per_user": config.max_agent_launches_per_user(),
+        **spend.control_state(),
         "attendees": sorted(
             (spend.metering(u) for u in user_manager.all()),
             key=lambda m: m["agent_launches"],
@@ -113,10 +193,33 @@ def agent_controls():
 
 @router.post("/agent-controls")
 def set_agent_controls(body: AgentControlBody):
-    """Operator kill-switch: pause (``enabled=false``) or resume new LLM-agent
-    launches across the whole instance, effective immediately."""
-    spend.set_kill_switch(killed=not body.enabled)
-    return {"agents_enabled": spend.agents_enabled()}
+    """Pause/resume launches and optionally terminate the sole live session."""
+    from . import telemetry
+
+    changed = spend.set_kill_switch(
+        killed=not body.enabled,
+        reason=body.reason,
+    )
+    terminated = False
+    if not body.enabled and body.terminate_active:
+        active = session_manager.active()
+        if active is not None:
+            session_manager.terminate(active, reason="operator_disabled_agents")
+            terminated = True
+    telemetry.emit(
+        "agent_control.changed",
+        "system",
+        {
+            "outcome": "enabled" if body.enabled else "disabled",
+            "code": "operator_control",
+        },
+    )
+    event_hub.publish({"t": "agents_changed"})
+    return {
+        **spend.control_state(),
+        "changed": changed,
+        "terminated_active": terminated,
+    }
 
 
 @router.post("/content-pack")

@@ -299,7 +299,13 @@ def model_comparison() -> list[dict]:
     what makes the exercise legible — the attendee changes one string and reads
     the difference in the bill.
     """
-    resolved = models.comparison_models()
+    from . import model_policy
+
+    policy_catalogue = model_policy.direct_catalogue()
+    resolved = models.comparison_models(
+        policy_catalogue,
+        strict=policy_catalogue is not None,
+    )
     endpoint = cli_config.unified_chat_url()
     return [
         {
@@ -745,17 +751,14 @@ def create_session(body: CreateSessionBody, principal: Principal = Depends(get_c
     if not user.first_seen:
         user.first_seen = time.time()
 
-    # P1-16: operator kill-switch + per-attendee budget. Gate first — a paused
-    # or over-budget attendee gets a clear,
-    # cheap refusal before any readiness/credential/provision work, and isn't
-    # told an agent is "still installing" when it's actually paused.
+    # Emergency pause gate first, before credential or provisioning work.
     try:
         spend.check_can_launch(user, agent)
     except spend.SpendBlocked as e:
         telemetry.session_create_failed(
             principal.name,
             agent["id"],
-            "agents_paused" if e.status == 403 else "agent_budget_exhausted",
+            "agents_paused",
             e.message,
         )
         raise HTTPException(status_code=e.status, detail=e.message)
@@ -809,9 +812,15 @@ def create_session(body: CreateSessionBody, principal: Principal = Depends(get_c
     user_content.provision(user)
 
     try:
-        session = session_manager.create(
-            user, agent["id"], agents.launch_command(agent), agent["label"],
+        with spend.launch_guard(user, agent):
+            session = session_manager.create(
+                user, agent["id"], agents.launch_command(agent), agent["label"],
+            )
+    except spend.SpendBlocked as e:
+        telemetry.session_create_failed(
+            principal.name, agent["id"], "agents_paused", e.message
         )
+        raise HTTPException(status_code=e.status, detail=e.message)
     except SessionConflictError as e:
         telemetry.session_create_failed(
             principal.name, agent["id"], "session_conflict", str(e)

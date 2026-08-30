@@ -54,6 +54,36 @@ def _isolate_user_registry():
 
 
 @pytest.fixture(autouse=True)
+def _isolate_model_policy():
+    """A live policy is process-global and must never leak into another test."""
+    from server import cli_config, config, model_policy
+
+    path = os.path.join(config.data_root(), "model-policy-v1.json")
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+    model_policy.store.reset_for_tests()
+    cli_config._gateway_resolved = None
+    yield
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+    model_policy.store.reset_for_tests()
+    cli_config._gateway_resolved = None
+
+
+@pytest.fixture(autouse=True)
+def _isolate_agent_control():
+    from server import spend
+
+    spend.reset()
+    yield
+    spend.reset()
+
+
+@pytest.fixture(autouse=True)
 def _restore_content_state():
     """Content service is a module singleton — restore pack/phase per test."""
     from server.content import content_service

@@ -1,28 +1,20 @@
-"""Per-attendee LLM agent spend controls (P1-16): kill-switch, budget, metering.
+"""Emergency coding-agent control and launch activity.
 
-Workshop Terminal launches coding agents (Claude/Codex) as CLI subprocesses in
-PTYs, so it can't observe model-serving token counts directly. The controllable
-proxy for spend is **how many LLM-agent sessions an attendee starts** (and how
-many run): we meter that, cap it per attendee (budget), and give operators a
-fleet-wide **kill-switch** to halt all new agent launches mid-event if spend
-runs hot. Bash sessions involve no model spend and are always free.
-
-The kill-switch is in-memory runtime state (operators flip it live via the admin
-API); it overrides the deploy-time ``AGENTS_ENABLED`` default. The per-attendee
-launch count already lives on ``User.sessions_launched`` and is surfaced to
-Control Tower via the stats harvest (``agent_sessions``), so spend is visible in
-the operator's fleet view without new plumbing.
+Launch count is an activity metric, not a proxy for tokens, dollars, or budget.
+Actual consumption limits belong to the event-scoped Unity AI Gateway service.
 """
 
 from __future__ import annotations
 
 import threading
+from contextlib import contextmanager
 
 from . import config
 
 _lock = threading.Lock()
 # None → follow the deploy-time config default; True/False → operator override.
 _kill_override: bool | None = None
+_reason = ""
 
 
 class SpendBlocked(Exception):
@@ -42,18 +34,39 @@ def agents_enabled() -> bool:
     return config.agents_enabled_default()
 
 
-def set_kill_switch(killed: bool) -> None:
-    """Operator control: halt (or resume) all new LLM-agent launches fleet-wide."""
-    global _kill_override
+def set_kill_switch(killed: bool, reason: str = "operator control") -> bool:
+    """Halt or resume launches; return whether effective state changed."""
+    global _kill_override, _reason
     with _lock:
+        before = (
+            not _kill_override
+            if _kill_override is not None
+            else config.agents_enabled_default()
+        )
         _kill_override = killed
+        _reason = reason.strip()[:300]
+        return before != (not killed)
 
 
 def reset() -> None:
     """Clear the operator override (revert to the config default). For tests."""
-    global _kill_override
+    global _kill_override, _reason
     with _lock:
         _kill_override = None
+        _reason = ""
+
+
+def control_state() -> dict:
+    with _lock:
+        override = _kill_override
+        reason = _reason
+    return {
+        "agents_enabled": (
+            (not override) if override is not None else config.agents_enabled_default()
+        ),
+        "override": override is not None,
+        "reason": reason,
+    }
 
 
 def is_llm_agent(agent: dict) -> bool:
@@ -67,10 +80,7 @@ def agent_launches(user) -> int:
 
 
 def check_can_launch(user, agent: dict) -> None:
-    """Enforce the kill-switch + per-attendee budget for an LLM-agent launch.
-
-    Raises :class:`SpendBlocked` (403 kill-switch, 429 budget).
-    """
+    """Fail fast when the emergency switch has paused new agent launches."""
     if not is_llm_agent(agent):
         return
     if not agents_enabled():
@@ -78,23 +88,39 @@ def check_can_launch(user, agent: dict) -> None:
             "Coding agents are paused by the workshop operator.",
             status=403,
         )
-    cap = config.max_agent_launches_per_user()
-    if cap > 0 and agent_launches(user) >= cap:
-        raise SpendBlocked(
-            f"You've used your {cap} coding-agent sessions for this workshop. "
-            "Ask your host to extend it.",
-            status=429,
+
+
+@contextmanager
+def launch_guard(user, agent: dict):
+    """Linearize final launch admission with the emergency switch.
+
+    The admin path takes this same lock before terminating the active session.
+    Therefore a concurrent create either sees the pause, or finishes spawning
+    first and is then found and terminated by the admin operation.
+    """
+    if not is_llm_agent(agent):
+        yield
+        return
+    with _lock:
+        enabled = (
+            not _kill_override
+            if _kill_override is not None
+            else config.agents_enabled_default()
         )
+        if not enabled:
+            raise SpendBlocked(
+                "Coding agents are paused by the workshop operator.", status=403
+            )
+        yield
 
 
 def metering(user) -> dict:
-    """Per-attendee agent-usage snapshot for the operator/cost view."""
-    cap = config.max_agent_launches_per_user()
+    """Per-attendee launch activity; deliberately carries no budget fields."""
     used = agent_launches(user)
     return {
         "email": user.email,
         "agent_launches": used,
-        "budget": cap or None,
-        "remaining": (max(cap - used, 0) if cap > 0 else None),
-        "by_agent": {aid: n for aid, n in user.sessions_launched.items() if aid != "bash"},
+        "by_agent": {
+            aid: n for aid, n in user.sessions_launched.items() if aid != "bash"
+        },
     }

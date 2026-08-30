@@ -168,6 +168,12 @@ fail-soft and redacts credentials, prompts, terminal I/O, configuration files,
 and attendee email. See [docs/observability.md](docs/observability.md) for the
 cross-repository contract and metric/event taxonomy.
 
+For governed events, Control Tower can also route every agent through
+event-scoped Unity AI Gateway model services with fail-closed readiness,
+requester/service limits, and live policy synchronization. See
+[docs/governed-ai-gateway.md](docs/governed-ai-gateway.md) for the versioned
+deployment and admin API contract.
+
 ### Via Control Tower
 
 Add a `WorkshopApp` row pointing at this repo (`git_url`, branch `main`).
