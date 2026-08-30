@@ -274,6 +274,10 @@ class PolicyStore:
 store = PolicyStore()
 
 
+class ModelPolicyConfigurationError(ValueError):
+    """An applied policy cannot provide a model required by a WT role."""
+
+
 def request_tags(agent: str, env: Mapping[str, str] | None = None) -> str:
     """JSON value required by ``Databricks-Ai-Gateway-Request-Tags``."""
     env = os.environ if env is None else env
@@ -321,7 +325,7 @@ def resolve_service(role_name: str, available: models.Catalogue) -> str:
     for service_name in snapshot.allowed_services(capability):
         if models.serves(catalogue, service_name, role_name):
             return service_name
-    raise ValueError(
+    raise ModelPolicyConfigurationError(
         f"current model policy has no approved {capability} service for {role_name}"
     )
 
@@ -329,6 +333,7 @@ def resolve_service(role_name: str, available: models.Catalogue) -> str:
 __all__ = [
     "ModelPolicyRequest",
     "PolicyEntry",
+    "ModelPolicyConfigurationError",
     "RevisionConflict",
     "StalePolicy",
     "direct_catalogue",

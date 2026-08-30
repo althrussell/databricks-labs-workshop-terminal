@@ -32,6 +32,8 @@ SESSION_CREATE_CODES = frozenset(
         "agents_paused",
         "agent_installing",
         "credential_unavailable",
+        "model_policy_pending",
+        "model_policy_configuration",
         "obo_stale",
         "session_conflict",
         "session_configuration",

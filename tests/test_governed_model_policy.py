@@ -111,6 +111,76 @@ def test_ct_managed_terminal_does_not_discover_models_before_policy(monkeypatch)
         wizard_llm._pick_model("unused")
 
 
+def test_direct_discovery_returns_applied_policy_without_workspace_request(
+    client, as_admin, monkeypatch
+):
+    _apply(client, _body())
+    monkeypatch.setattr(
+        cli_config.requests,
+        "get",
+        lambda *_args, **_kwargs: pytest.fail(
+            "workspace discovery must not run around an applied CT policy"
+        ),
+    )
+
+    assert cli_config.discover_model_services("secret-token") == (
+        model_policy.direct_catalogue()
+    )
+
+
+def test_direct_discovery_fails_closed_while_required_policy_is_pending(monkeypatch):
+    monkeypatch.setenv("WORKSHOP_MODEL_POLICY_REQUIRED", "true")
+    monkeypatch.setattr(
+        cli_config.requests,
+        "get",
+        lambda *_args, **_kwargs: pytest.fail(
+            "workspace discovery must not run while CT policy is pending"
+        ),
+    )
+
+    assert cli_config.discover_model_services("secret-token") == {}
+
+
+def test_policy_without_agent_capability_returns_controlled_launch_refusal(
+    client, as_admin, monkeypatch, tmp_path
+):
+    from server import event_emitter, main
+
+    body = _body()
+    body["pool"] = [
+        entry for entry in body["pool"] if "claude" not in entry["capabilities"]
+    ]
+    _apply(client, body)
+    monkeypatch.setattr("server.config.users_root", lambda: str(tmp_path / "users"))
+    monkeypatch.setattr(
+        main.install,
+        "ready",
+        lambda: {"claude": True, "codex": True, "omnigent": True},
+    )
+    monkeypatch.setattr(main.credential_manager, "token", lambda: "secret-token")
+    emitted: list[dict] = []
+    monkeypatch.setattr(
+        event_emitter.event_emitter,
+        "emit",
+        lambda event_type, attendee, payload: emitted.append(
+            {"type": event_type, "attendee": attendee, "payload": payload}
+        ),
+    )
+
+    response = client.post(
+        "/api/sessions", json={"agent_id": "claude"}, headers=ALICE
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == (
+        "Workshop model permissions are incomplete — ask the workshop facilitator"
+    )
+    failure = next(event for event in emitted if event["type"] == "session.create_failed")
+    assert failure["payload"]["code"] == "model_policy_configuration"
+    assert failure["payload"]["raw_code"] == "model_policy_configuration"
+    assert "no approved claude service" in failure["payload"]["detail"]
+
+
 def test_stale_and_same_revision_drift_are_conflicts(client, as_admin):
     _apply(client, _body(2))
 

@@ -836,6 +836,21 @@ def create_session(
     # supported CLI requires it.
     try:
         ensure_user_credentials(user)
+    except model_policy.ModelPolicyConfigurationError as e:
+        user.errors += 1
+        telemetry.session_create_failed(
+            principal.name,
+            agent["id"],
+            "model_policy_configuration",
+            str(e),
+        )
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Workshop model permissions are incomplete — ask the workshop "
+                "facilitator"
+            ),
+        ) from e
     except CredentialError as e:
         user.errors += 1  # P1-14: failed agent launch (no credential)
         telemetry.session_create_failed(

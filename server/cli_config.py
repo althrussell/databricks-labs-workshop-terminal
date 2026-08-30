@@ -232,10 +232,19 @@ def discover_model_services(token: str) -> dict[str, frozenset[str]]:
     of wires is what lets :func:`server.models.resolve` refuse to put a
     chat-only model behind a Responses-wire harness.
 
-    An empty result means the call failed, and callers read it that way: they
-    fall back to the head of each chain rather than concluding the workspace
-    serves nothing.
+    CT's policy is authoritative when present.  Return its catalogue before
+    consulting the workspace API so direct callers cannot bypass an applied
+    policy.  The required-but-pending state is an authoritative empty mapping,
+    which also fails closed without making a discovery request.
+
+    In an unmanaged deployment, an empty result means the call failed, and
+    callers read it that way: they fall back to the head of each chain rather
+    than concluding the workspace serves nothing.
     """
+    governed = model_policy.direct_catalogue()
+    if governed is not None:
+        return governed
+
     host = config.databricks_host()
     if not host or not token:
         return {}
