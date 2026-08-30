@@ -1,12 +1,7 @@
 import importlib
 
 
-EXPECTED_SCOPES = (
-    "catalog.catalogs:read,"
-    "catalog.schemas:read,"
-    "catalog.tables:read,"
-    "sql"
-)
+EXPECTED_SCOPES = "catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql"
 
 
 def _good_inputs(tmp_path):
@@ -85,7 +80,8 @@ def _good_inputs(tmp_path):
                 "node": "24.18.1",
                 "omnigent": "0.9.0",
             }.items()
-        } | {
+        }
+        | {
             "databricks_agent_skills": {
                 "enabled": True,
                 "expected": "v1.2.3",
@@ -128,10 +124,21 @@ def _good_inputs(tmp_path):
     return env, credential, installer, entitlements, obo, secret_protection
 
 
-def _evaluate(tmp_path, *, mutate_env=None, credential=None, installer=None,
-              entitlements=None, obo=None, secret_protection=None,
-              delivery=None, gateway=None, governed_model_status=None, otel=None,
-              writable=True, now=1000.0):
+def _evaluate(
+    tmp_path,
+    *,
+    mutate_env=None,
+    credential=None,
+    installer=None,
+    entitlements=None,
+    obo=None,
+    secret_protection=None,
+    delivery=None,
+    gateway=None,
+    otel=None,
+    writable=True,
+    now=1000.0,
+):
     readiness = importlib.import_module("server.readiness")
     (
         env,
@@ -152,7 +159,6 @@ def _evaluate(tmp_path, *, mutate_env=None, credential=None, installer=None,
         secret_protection_status=secret_protection or good_secret_protection,
         delivery_status=delivery,
         gateway_status=gateway,
-        governed_model_status=governed_model_status,
         otel_status=otel,
         writable_probe=lambda _: writable,
         now=now,
@@ -250,9 +256,7 @@ def test_all_hard_checks_green_is_ready(tmp_path):
     assert report["ready"] is True
     assert report["status"] == "ready"
     hard = {
-        name: check
-        for name, check in report["checks"].items()
-        if not check.get("soft")
+        name: check for name, check in report["checks"].items() if not check.get("soft")
     }
     assert set(hard) == {
         "topology",
@@ -268,7 +272,6 @@ def test_all_hard_checks_green_is_ready(tmp_path):
         "entitlements",
         "obo",
         "release_pins",
-        "governed_model_services",
     }
     assert all(check["ok"] for check in hard.values())
     assert set(report["checks"]) - set(hard) == {
@@ -278,72 +281,6 @@ def test_all_hard_checks_green_is_ready(tmp_path):
         "model_profile",
         "workspace_sync",
     }
-
-
-def test_partial_optional_governed_configuration_fails_closed(tmp_path):
-    report = _evaluate(
-        tmp_path,
-        mutate_env=lambda env: env.update(WORKSHOP_AI_GATEWAY_CONFIG_SCHEMA="1"),
-    )
-
-    check = report["checks"]["governed_model_services"]
-    assert report["ready"] is False
-    assert check["ok"] is False
-    assert check["state"] == "red"
-    assert check["mode"] == "optional"
-    assert check["detail"] == "governed AI deployment configuration is invalid"
-    assert "governed service for codex is missing" in check["configuration_errors"]
-
-
-def test_invalid_governed_mode_fails_closed(tmp_path):
-    report = _evaluate(
-        tmp_path,
-        mutate_env=lambda env: env.update(WORKSHOP_AI_GATEWAY_MODE="optionl"),
-    )
-
-    check = report["checks"]["governed_model_services"]
-    assert report["ready"] is False
-    assert check["ok"] is False
-    assert check["configuration_errors"] == [
-        "WORKSHOP_AI_GATEWAY_MODE must be disabled, optional, or required"
-    ]
-
-
-def test_optional_governed_runtime_degradation_remains_admitted(tmp_path):
-    report = _evaluate(
-        tmp_path,
-        governed_model_status={
-            "required": False,
-            "mode": "optional",
-            "config_version": 1,
-            "configured": True,
-            "policy_revision": 1,
-            "services": ["main.wt_services.event_codex"],
-            "missing_services": ["main.wt_services.event_codex"],
-            "wrong_wire_services": [],
-            "missing_identity": [],
-            "errors": [],
-            "verified": False,
-        },
-    )
-
-    check = report["checks"]["governed_model_services"]
-    assert report["ready"] is True
-    assert check["ok"] is True
-    assert check["detail"] == "governed AI is optional for this deployment"
-
-
-def test_valid_disabled_governed_mode_remains_admitted(tmp_path):
-    report = _evaluate(
-        tmp_path,
-        mutate_env=lambda env: env.update(WORKSHOP_AI_GATEWAY_MODE="disabled"),
-    )
-
-    check = report["checks"]["governed_model_services"]
-    assert report["ready"] is True
-    assert check["ok"] is True
-    assert check["mode"] == "disabled"
-    assert check["configuration_errors"] == []
 
 
 def test_absent_gateway_is_reported_amber_and_never_blocks_the_workshop(tmp_path):
@@ -674,7 +611,7 @@ def test_entitlements_report_app_grants_clean_when_none_failed(tmp_path):
 
 
 def test_obo_says_which_condition_failed(tmp_path):
-    """"Required scopes are missing" was printed when none were.
+    """ "Required scopes are missing" was printed when none were.
 
     Every servco instance reported that after the event, with an empty missing
     list, because the real cause was a validation older than the max age. It
@@ -684,9 +621,7 @@ def test_obo_says_which_condition_failed(tmp_path):
     good_obo = _good_inputs(tmp_path)[4]
 
     stale = _evaluate(tmp_path, obo={**good_obo, "validated_at": 1.0})
-    unverified = _evaluate(
-        tmp_path, obo={**good_obo, "validation_state": "pending"}
-    )
+    unverified = _evaluate(tmp_path, obo={**good_obo, "validation_state": "pending"})
     short_scopes = _evaluate(
         tmp_path,
         obo={**good_obo, "verified_scopes": ["sql"]},
@@ -787,14 +722,16 @@ def test_a_fresh_instance_is_only_red_on_the_check_its_attendee_must_turn_green(
     ]
     assert blocking == [], blocking
     assert report["checks"]["obo"]["attendee_dependent"] is True
-    assert "no attendee has opened this instance yet" in report["checks"]["obo"]["detail"]
+    assert (
+        "no attendee has opened this instance yet" in report["checks"]["obo"]["detail"]
+    )
     # Still not `ready`: an instance whose attendee has arrived and whose OBO is
     # broken must fail, and one bit cannot say both things.
     assert report["ready"] is False
 
 
 def test_a_disabled_or_misscoped_obo_says_which_it_is(tmp_path):
-    """"OBO is disabled or required scopes are missing" made an operator check
+    """ "OBO is disabled or required scopes are missing" made an operator check
     both, and neither answer was in the report."""
     disabled = _evaluate(
         tmp_path,
@@ -957,14 +894,15 @@ def test_release_pins_require_fetched_skills_ref_not_vendored_fallback(tmp_path)
 
     assert report["checks"]["release_pins"]["ok"] is False
     assert "databricks_agent_skills" in report["checks"]["release_pins"]["mismatched"]
-    assert report["release_manifest"]["databricks_agent_skills"]["source"] == "vendored_fallback"
+    assert (
+        report["release_manifest"]["databricks_agent_skills"]["source"]
+        == "vendored_fallback"
+    )
 
 
 def test_release_pins_accept_an_unset_skills_ref_because_the_repo_owns_it(tmp_path):
     """CT sets no skills ref; the reviewed tag lives in the repo's manifest."""
-    unset = _evaluate(
-        tmp_path, mutate_env=lambda env: env.update({"SKILLS_REF": ""})
-    )
+    unset = _evaluate(tmp_path, mutate_env=lambda env: env.update({"SKILLS_REF": ""}))
     disagreeing = _evaluate(
         tmp_path, mutate_env=lambda env: env.update({"SKILLS_REF": "v9.9.9"})
     )
@@ -974,8 +912,7 @@ def test_release_pins_accept_an_unset_skills_ref_because_the_repo_owns_it(tmp_pa
     # Setting it still has to agree with what bootstrap actually installed.
     assert disagreeing["checks"]["release_pins"]["ok"] is False
     assert (
-        "databricks_agent_skills"
-        in disagreeing["checks"]["release_pins"]["mismatched"]
+        "databricks_agent_skills" in disagreeing["checks"]["release_pins"]["mismatched"]
     )
 
 
@@ -1010,7 +947,7 @@ def test_real_journal_probe_rejects_directory_and_leaves_no_files(tmp_path):
 
 
 def test_journal_probe_allows_read_only_existing_file_when_parent_replace_works(
-    tmp_path
+    tmp_path,
 ):
     readiness = importlib.import_module("server.readiness")
     journal = tmp_path / "sessions.json"
@@ -1102,9 +1039,7 @@ def test_capture_without_push_configuration_is_the_normal_posture(tmp_path):
     settings at all and collects the buffer on its harvest instead. Reporting this
     as red — which it did while push looked like the only route — would have every
     real workshop showing a red check for the feature that was working."""
-    report = _evaluate(
-        tmp_path, mutate_env=_capture_env(CONTROL_TOWER_INGEST_TOKEN="")
-    )
+    report = _evaluate(tmp_path, mutate_env=_capture_env(CONTROL_TOWER_INGEST_TOKEN=""))
     check = report["checks"]["insight_capture"]
 
     assert check["ok"] is True
@@ -1132,7 +1067,10 @@ def test_capture_reports_whether_anything_has_actually_collected(tmp_path):
         delivery={"delivery": "pull", "collections": 7, "pending": 2, "dropped": 0},
     )
 
-    assert "awaiting Control Tower's first collection" in fresh["checks"]["insight_capture"]["detail"]
+    assert (
+        "awaiting Control Tower's first collection"
+        in fresh["checks"]["insight_capture"]["detail"]
+    )
     assert fresh["checks"]["insight_capture"]["collected"] is False
     assert "collected 7 times" in collecting["checks"]["insight_capture"]["detail"]
     assert collecting["checks"]["insight_capture"]["collected"] is True

@@ -13,7 +13,7 @@ import re
 import tempfile
 import time
 
-from . import model_policy, models
+from . import models
 from .obo import FRESH_MARGIN as OBO_FRESH_MARGIN
 
 
@@ -305,7 +305,6 @@ def evaluate(
     attendee_binding: Mapping[str, str] | None = None,
     delivery_status: Mapping[str, object] | None = None,
     gateway_status: Mapping[str, object] | None = None,
-    governed_model_status: Mapping[str, object] | None = None,
     workspace_sync: Mapping[str, object] | None = None,
     otel_status: Mapping[str, object] | None = None,
     writable_probe: Callable[[str], bool] = _path_writable,
@@ -323,9 +322,6 @@ def evaluate(
         credential_status, env, event_remaining, obo_renewing=obo_renewing
     )
     gateway_status = gateway_status or {}
-    governed_model_status = governed_model_status or model_policy.governed_status(
-        env, None
-    )
     otel_status = otel_status or {
         "enabled": False,
         "configured": False,
@@ -346,9 +342,7 @@ def evaluate(
     per_user = _int(env, "MAX_SESSIONS_PER_USER", 1)
     global_cap = _int(env, "MAX_SESSIONS_GLOBAL", 1)
     topology_ok = (
-        not _bool(env, "ALLOW_SHARED_TOPOLOGY")
-        and per_user == 1
-        and global_cap == 1
+        not _bool(env, "ALLOW_SHARED_TOPOLOGY") and per_user == 1 and global_cap == 1
     )
     # The effective binding, which may be self-bound rather than injected by
     # Control Tower; the raw env var is only the hint.
@@ -442,8 +436,7 @@ def evaluate(
     artifact_proof = installer_status.get("artifact_proof")
     artifact_proof = artifact_proof if isinstance(artifact_proof, Mapping) else {}
     supply_chain_ok = (
-        artifact_manifest.get("ok") is True
-        and artifact_proof.get("reusable") is True
+        artifact_manifest.get("ok") is True and artifact_proof.get("reusable") is True
     )
     # Reported, never gated on: falling back to the internet is checksum-verified
     # and therefore safe, just slow. It fails an event, not a readiness probe.
@@ -475,13 +468,13 @@ def evaluate(
         and entitlement_recent
         and reconciler_available
     )
-    catalog_ok = bool(catalog) and attendee_verified and catalog_verified and entitlement_recent
+    catalog_ok = (
+        bool(catalog) and attendee_verified and catalog_verified and entitlement_recent
+    )
     app_sp_grants = _app_service_principal_grants(entitlement_status)
 
     configured_scopes = {
-        scope.strip()
-        for scope in env.get("OBO_SCOPES", "").split(",")
-        if scope.strip()
+        scope.strip() for scope in env.get("OBO_SCOPES", "").split(",") if scope.strip()
     }
     observed_scopes = {
         str(scope)
@@ -511,7 +504,8 @@ def evaluate(
     requested_profile = env.get("WORKSHOP_MODEL_PROFILE", "").strip().lower()
     profile_known = not requested_profile or requested_profile in models.PROFILES
     active_profile = (
-        requested_profile if profile_known and requested_profile
+        requested_profile
+        if profile_known and requested_profile
         else models.DEFAULT_PROFILE
     )
 
@@ -572,9 +566,12 @@ def evaluate(
     for tool, env_name in env_names.items():
         entry = raw_manifest.get(tool)
         entry = entry if isinstance(entry, Mapping) else {}
-        enabled = bool(entry.get("enabled", tool not in omnigent_tools or _bool(
-            env, "OMNIGENT_ENABLED", True
-        )))
+        enabled = bool(
+            entry.get(
+                "enabled",
+                tool not in omnigent_tools or _bool(env, "OMNIGENT_ENABLED", True),
+            )
+        )
         expected = str(entry.get("expected") or "")
         actual = str(entry.get("actual") or "")
         configured_expected = env.get(env_name, "").strip()
@@ -605,9 +602,7 @@ def evaluate(
         }
         if tool == "databricks_agent_skills":
             release_manifest[tool]["source"] = entry.get("source")
-            release_manifest[tool]["resolved_commit"] = entry.get(
-                "resolved_commit"
-            )
+            release_manifest[tool]["resolved_commit"] = entry.get("resolved_commit")
             release_manifest[tool]["checksum"] = entry.get("checksum")
         if enabled and not match:
             mismatched_tools.append(tool)
@@ -681,9 +676,7 @@ def evaluate(
             observed_application_id=observed_app_client_id or None,
             expected_service_principal_id=expected_app_sp_id or None,
             observed_service_principal_id=observed_app_sp_id or None,
-            validation_result=str(
-                validation_diagnostic.get("result") or "unverified"
-            ),
+            validation_result=str(validation_diagnostic.get("result") or "unverified"),
         ),
         "secret_protection": _check(
             secret_protection_ok,
@@ -865,40 +858,6 @@ def evaluate(
                 )
             },
         ),
-        # Governed configuration errors are always fail-closed, regardless of
-        # mode. Optional mode tolerates a legitimate runtime verification
-        # failure, but it must not turn malformed or partially supplied
-        # deployment configuration into a ready app. A global ``system.ai``
-        # service is not a rollback target: without the custom event service
-        # the requester limits and event attribution do not exist, even if a
-        # model happens to answer.
-        "governed_model_services": _check(
-            not governed_model_status.get("errors")
-            and (
-                governed_model_status.get("required") is not True
-                or governed_model_status.get("verified") is True
-            ),
-            (
-                "event model services, policy revision, wires, and request tags are verified"
-                if governed_model_status.get("verified") is True
-                else "governed AI deployment configuration is invalid"
-                if governed_model_status.get("errors")
-                else "governed AI is optional for this deployment"
-                if governed_model_status.get("required") is not True
-                else "required event model services are absent, inaccessible, on the wrong wire, or policy has not synced"
-            ),
-            required=governed_model_status.get("required") is True,
-            mode=governed_model_status.get("mode"),
-            config_version=governed_model_status.get("config_version"),
-            policy_revision=governed_model_status.get("policy_revision", 0),
-            services=governed_model_status.get("services", []),
-            missing_services=governed_model_status.get("missing_services", []),
-            wrong_wire_services=governed_model_status.get(
-                "wrong_wire_services", []
-            ),
-            missing_identity=governed_model_status.get("missing_identity", []),
-            configuration_errors=governed_model_status.get("errors", []),
-        ),
         # Reported so an operator can see which cost posture an event is running
         # without reading the deployment, and amber on a name we don't know
         # because that is the one case where what an operator asked for and what
@@ -997,7 +956,9 @@ def evaluate(
         # file in a container nobody can open.
         "workspace_sync": _soft(
             sync["state"] != "failed",
-            "green" if sync["state"] == "ok" else "amber"
+            "green"
+            if sync["state"] == "ok"
+            else "amber"
             if sync["state"] == "never"
             else "red",
             (
@@ -1014,9 +975,7 @@ def evaluate(
             exit_code=sync["exit"],
         ),
     }
-    ready = all(
-        check["ok"] for check in checks.values() if not check.get("soft")
-    )
+    ready = all(check["ok"] for check in checks.values() if not check.get("soft"))
     return {
         "status": "ready" if ready else "not_ready",
         "ready": ready,
@@ -1054,26 +1013,16 @@ def _bound_workspace_sync() -> dict | None:
 def evaluate_runtime() -> dict:
     from . import attendee
     from .bootstrap import install
-    from .cli_config import discover_model_services, gateway_status
-    from .credentials import CredentialError, credential_manager, secret_protection_status
+    from .cli_config import gateway_status
+    from .credentials import credential_manager, secret_protection_status
     from .entitlements import entitlement_manager
     from .event_emitter import event_emitter
     from .obo import obo_manager, obo_watcher
     from .telemetry import otel_health
 
-    governed_config = model_policy.gateway_service_config(os.environ)
-    available = None
-    if governed_config.required or governed_config.configured:
-        try:
-            available = discover_model_services(credential_manager.token())
-        except CredentialError:
-            available = None
-    governed = model_policy.governed_status(os.environ, available)
-
     return evaluate(
         env=os.environ,
         gateway_status=gateway_status(),
-        governed_model_status=governed,
         credential_status=credential_manager.status(),
         installer_status=install.status(include_proof=True),
         entitlement_status=entitlement_manager.status(),
