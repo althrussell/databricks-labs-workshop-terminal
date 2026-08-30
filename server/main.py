@@ -27,6 +27,7 @@ from . import (
     help as help_module,
     identity,
     models,
+    model_policy,
     obo,
     observability,
     operational,
@@ -55,7 +56,9 @@ from .sessions import SessionConfigurationError, SessionConflictError, session_m
 from .users import user_manager
 from .ws import router as ws_router
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s"
+)
 observability.install_logging_redaction()
 logger = logging.getLogger("workshop-terminal")
 
@@ -224,6 +227,7 @@ async def record_operational_http_status(request: Request, call_next):
 
 # ---- public API (attendee-scoped) ----
 
+
 def _effective_wizard_model() -> str:
     """The wizard model in force now, override included.
 
@@ -245,7 +249,9 @@ def get_config(principal: Principal = Depends(get_current_user)):
         "workspace_url": config.databricks_host(),
         "shell": pack.shell.model_dump(),
         "phase": content_service.phase,
-        "broadcast": (b.model_dump() if (b := content_service.active_broadcast()) else None),
+        "broadcast": (
+            b.model_dump() if (b := content_service.active_broadcast()) else None
+        ),
         "limits": {
             "max_sessions_per_user": config.max_sessions_per_user(),
         },
@@ -407,7 +413,9 @@ def _callback_identity(body: _EmailBody, request: Request) -> Principal:
     principal = get_current_user(request)
     requested = (body.email or "").strip().lower()
     if requested and requested != principal.name:
-        raise HTTPException(status_code=403, detail="callback email does not match caller")
+        raise HTTPException(
+            status_code=403, detail="callback email does not match caller"
+        )
     return principal
 
 
@@ -438,7 +446,9 @@ def recover(principal: Principal = Depends(get_current_user)):
     have something to press that is not "reload and hope", and because pressing
     it is the fastest signal we get that somebody is stuck.
     """
-    result = selfheal.self_healer.recover(principal.name, "attendee pressed Recover", force=True)
+    result = selfheal.self_healer.recover(
+        principal.name, "attendee pressed Recover", force=True
+    )
     return {
         "recovered": bool(result.get("credential_fresh")),
         "actions": result.get("actions", []),
@@ -507,7 +517,9 @@ def my_discovery(principal: Principal = Depends(get_current_user)):
         return {"enabled": False, "records": []}
     return {
         "enabled": True,
-        "records": [r.payload() for r in discovery.discovery_store.for_attendee(principal.name)],
+        "records": [
+            r.payload() for r in discovery.discovery_store.for_attendee(principal.name)
+        ],
     }
 
 
@@ -678,13 +690,17 @@ def list_agents(principal: Principal = Depends(get_current_user)):
         # An install step that ended badly never retries, so the card would spin
         # for the rest of the workshop. Say what failed instead.
         install_error = "" if installed else install.failure_for(requires)
-        catalog.append({
-            **{k: agent[k] for k in ("id", "label", "description", "icon", "order")},
-            "ready": installed and not blocked,
-            "blocked": blocked,
-            "install_error": install_error,
-            "needs_credentials": bool(requires),
-        })
+        catalog.append(
+            {
+                **{
+                    k: agent[k] for k in ("id", "label", "description", "icon", "order")
+                },
+                "ready": installed and not blocked,
+                "blocked": blocked,
+                "install_error": install_error,
+                "needs_credentials": bool(requires),
+            }
+        )
     return {"agents": catalog, "credential": credential_manager.status()}
 
 
@@ -724,11 +740,22 @@ def acknowledge_prior_session(
 
 
 @app.post("/api/sessions")
-def create_session(body: CreateSessionBody, principal: Principal = Depends(get_current_user)):
+def create_session(
+    body: CreateSessionBody, principal: Principal = Depends(get_current_user)
+):
     agent = agents.get_agent(body.agent_id)
     if agent is None:
         telemetry.session_create_failed(principal.name, body.agent_id, "unknown_agent")
         raise HTTPException(status_code=404, detail=f"Unknown agent '{body.agent_id}'")
+
+    if config.model_policy_required() and not model_policy.store.snapshot().revision:
+        telemetry.session_create_failed(
+            principal.name, agent["id"], "model_policy_pending"
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Workshop model permissions are still syncing — try again shortly",
+        )
 
     # Refuse an occupied slot before install, credential, or provisioning work.
     # The SessionManager repeats this check atomically at insertion for races.
@@ -771,9 +798,15 @@ def create_session(body: CreateSessionBody, principal: Principal = Depends(get_c
         # operator sees which dependency is holding the room up, not just that
         # somebody's launch bounced.
         telemetry.session_create_failed(
-            principal.name, agent["id"], "agent_installing", f"missing: {','.join(missing)}"
+            principal.name,
+            agent["id"],
+            "agent_installing",
+            f"missing: {','.join(missing)}",
         )
-        raise HTTPException(status_code=409, detail=f"{agent['label']} is still installing — try again in a moment")
+        raise HTTPException(
+            status_code=409,
+            detail=f"{agent['label']} is still installing — try again in a moment",
+        )
 
     # Refuse rather than fail: every Omnigent session started behind a stale
     # mirror dies with an auth error the attendee cannot act on, and the bare
@@ -788,7 +821,9 @@ def create_session(body: CreateSessionBody, principal: Principal = Depends(get_c
         )
         blocked = agents.launch_block(agent, principal.name)
     if blocked:
-        telemetry.session_create_failed(principal.name, agent["id"], "obo_stale", blocked)
+        telemetry.session_create_failed(
+            principal.name, agent["id"], "obo_stale", blocked
+        )
         raise HTTPException(
             status_code=503,
             detail=(
@@ -814,7 +849,10 @@ def create_session(body: CreateSessionBody, principal: Principal = Depends(get_c
     try:
         with spend.launch_guard(user, agent):
             session = session_manager.create(
-                user, agent["id"], agents.launch_command(agent), agent["label"],
+                user,
+                agent["id"],
+                agents.launch_command(agent),
+                agent["label"],
             )
     except spend.SpendBlocked as e:
         telemetry.session_create_failed(
@@ -859,8 +897,9 @@ class TypeBody(BaseModel):
 
 
 @app.post("/api/sessions/{session_id}/type")
-def type_into_session(session_id: str, body: TypeBody,
-                      principal: Principal = Depends(get_current_user)):
+def type_into_session(
+    session_id: str, body: TypeBody, principal: Principal = Depends(get_current_user)
+):
     """Type text into the attendee's own PTY, UNSENT — the visible, user-
     initiated channel for ideation chips and insight-card prompts. The
     attendee presses Enter; we never submit on their behalf."""
@@ -937,7 +976,9 @@ def get_nuggets(principal: Principal = Depends(get_current_user)):
     live_topics: set[str] = set()
     idle_minutes = 0.0
     if user:
-        live_topics = {t for t, at in user.topics.items() if now - at < TOPIC_TTL_SECONDS}
+        live_topics = {
+            t for t, at in user.topics.items() if now - at < TOPIC_TTL_SECONDS
+        }
         # True idle = no input AND no terminal output. Session activity covers
         # both (the reader thread touches it on output), so an agent working
         # away on the attendee's behalf never counts as idle.
@@ -996,7 +1037,11 @@ def readyz():
 # ---- static frontend (committed Vite build) ----
 
 if os.path.isdir(os.path.join(_STATIC_DIR, "assets")):
-    app.mount("/assets", StaticFiles(directory=os.path.join(_STATIC_DIR, "assets")), name="assets")
+    app.mount(
+        "/assets",
+        StaticFiles(directory=os.path.join(_STATIC_DIR, "assets")),
+        name="assets",
+    )
 
 
 @app.get("/{path:path}")
@@ -1007,4 +1052,6 @@ async def spa(path: str):
     index = os.path.join(_STATIC_DIR, "index.html")
     if os.path.isfile(index):
         return FileResponse(index)
-    return JSONResponse({"error": "frontend build missing — run make build-frontend"}, status_code=503)
+    return JSONResponse(
+        {"error": "frontend build missing — run make build-frontend"}, status_code=503
+    )

@@ -1,4 +1,4 @@
-"""Live, versioned model policy and governed AI Gateway service contract.
+"""Live, versioned policy for direct access to approved ``system.ai`` models.
 
 Control Tower owns the desired model pool.  Workshop Terminal keeps the last
 successfully applied revision in ``DATA_ROOT`` so a process restart cannot make
@@ -25,12 +25,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from . import config, models
 
 POLICY_SCHEMA_VERSION = 1
-GATEWAY_CONFIG_VERSION = 1
 
 _SYSTEM_SERVICE = re.compile(r"system\.ai\.[a-z0-9][a-z0-9._-]*")
-_CUSTOM_SERVICE = re.compile(
-    r"[a-z0-9][a-z0-9_-]*\.[a-z0-9][a-z0-9_-]*\.[a-z0-9][a-z0-9._-]*"
-)
 _CAPABILITIES = frozenset({"claude", "codex", "chat", "embedding"})
 _PRINCIPAL_CLASSES = frozenset({"lab_user", "wt_sp", "helper_sp"})
 
@@ -56,7 +52,9 @@ class PolicyEntry(BaseModel):
         if value != value.strip() or value != value.lower():
             raise ValueError("service_name must be trimmed lowercase")
         if not _SYSTEM_SERVICE.fullmatch(value):
-            raise ValueError("service_name must be fully qualified as system.ai.<model>")
+            raise ValueError(
+                "service_name must be fully qualified as system.ai.<model>"
+            )
         return value
 
     @field_validator("capabilities", "principal_classes")
@@ -276,85 +274,6 @@ class PolicyStore:
 store = PolicyStore()
 
 
-@dataclass(frozen=True)
-class GatewayServiceConfig:
-    mode: str
-    version: int | None
-    claude_driver: str
-    claude_frontier: str
-    claude_standard: str
-    claude_fast: str
-    codex: str
-    errors: tuple[str, ...]
-
-    @property
-    def required(self) -> bool:
-        return self.mode == "required"
-
-    @property
-    def configured(self) -> bool:
-        return not self.errors and self.version == GATEWAY_CONFIG_VERSION
-
-    def claude_services(self) -> dict[str, str]:
-        return {
-            "driver": self.claude_driver,
-            "frontier": self.claude_frontier,
-            "standard": self.claude_standard,
-            "fast": self.claude_fast,
-        }
-
-
-def gateway_service_config(
-    env: Mapping[str, str] | None = None,
-) -> GatewayServiceConfig:
-    env = os.environ if env is None else env
-    mode = (env.get("WORKSHOP_AI_GATEWAY_MODE") or "optional").strip().lower()
-    errors: list[str] = []
-    if mode not in {"disabled", "optional", "required"}:
-        errors.append("WORKSHOP_AI_GATEWAY_MODE must be disabled, optional, or required")
-    raw_version = (env.get("WORKSHOP_AI_GATEWAY_CONFIG_SCHEMA") or "").strip()
-    try:
-        version = int(raw_version) if raw_version else None
-    except ValueError:
-        version = None
-        errors.append("WORKSHOP_AI_GATEWAY_CONFIG_SCHEMA must be an integer")
-    if version not in {None, GATEWAY_CONFIG_VERSION}:
-        errors.append(
-            f"unsupported governed service config version {version}; expected "
-            f"{GATEWAY_CONFIG_VERSION}"
-        )
-
-    names = {
-        "claude_driver": (env.get("WORKSHOP_CLAUDE_DRIVER_SERVICE") or "").strip(),
-        "claude_frontier": (env.get("WORKSHOP_CLAUDE_OPUS_SERVICE") or "").strip(),
-        "claude_standard": (env.get("WORKSHOP_CLAUDE_SONNET_SERVICE") or "").strip(),
-        "claude_fast": (env.get("WORKSHOP_CLAUDE_HAIKU_SERVICE") or "").strip(),
-        "codex": (env.get("WORKSHOP_CODEX_SERVICE") or "").strip(),
-    }
-    any_names = any(names.values())
-    if mode == "required" or any_names or version is not None:
-        if version != GATEWAY_CONFIG_VERSION:
-            errors.append(
-                f"WORKSHOP_AI_GATEWAY_CONFIG_SCHEMA={GATEWAY_CONFIG_VERSION} is required"
-            )
-        for role, name in names.items():
-            if not name:
-                errors.append(f"governed service for {role} is missing")
-                continue
-            if name != name.lower() or not _CUSTOM_SERVICE.fullmatch(name):
-                errors.append(f"governed service for {role} must be a lowercase UC name")
-            elif name.startswith("system.ai."):
-                errors.append(
-                    f"governed service for {role} must not use the global system.ai schema"
-                )
-    return GatewayServiceConfig(
-        mode=mode,
-        version=version,
-        errors=tuple(errors),
-        **names,
-    )
-
-
 def request_tags(agent: str, env: Mapping[str, str] | None = None) -> str:
     """JSON value required by ``Databricks-Ai-Gateway-Request-Tags``."""
     env = os.environ if env is None else env
@@ -372,7 +291,13 @@ def request_tags(agent: str, env: Mapping[str, str] | None = None) -> str:
 
 def direct_catalogue() -> dict[str, frozenset[str]] | None:
     snapshot = store.snapshot()
-    return snapshot.catalogue() if snapshot.revision else None
+    if snapshot.revision:
+        return snapshot.catalogue()
+    # A CT-managed terminal must not fall back to workspace-wide discovery
+    # while its policy is still in flight. Returning an authoritative empty
+    # catalogue makes wizard, summary, comparison, and config writers fail
+    # closed; the session endpoint also returns the attendee-facing 503.
+    return {} if config.model_policy_required() else None
 
 
 def direct_service_allowed(service_name: str, capability: str) -> bool:
@@ -380,71 +305,35 @@ def direct_service_allowed(service_name: str, capability: str) -> bool:
     return service_name in store.snapshot().allowed_services(capability)
 
 
-def governed_status(
-    env: Mapping[str, str],
-    available: models.Catalogue | None,
-) -> dict[str, object]:
-    service_config = gateway_service_config(env)
+def resolve_service(role_name: str, available: models.Catalogue) -> str:
+    """Resolve a CLI role without ever escaping an applied CT policy."""
+
     snapshot = store.snapshot()
-    missing: list[str] = []
-    wrong_wire: list[str] = []
-    catalogue = {
-        models.catalogue_key(name): wires for name, wires in (available or {}).items()
-    }
-    expected = {
-        **{
-            service: models.ANTHROPIC_MESSAGES
-            for service in service_config.claude_services().values()
-            if service
-        },
-        **({service_config.codex: models.OPENAI_RESPONSES} if service_config.codex else {}),
-    }
-    for service, wire in expected.items():
-        key = models.catalogue_key(service)
-        if key not in catalogue:
-            missing.append(service)
-        elif wire not in (catalogue[key] or frozenset()):
-            wrong_wire.append(service)
-    identity_missing = [
-        name
-        for name in ("WORKSHOP_RUN_ID", "WORKSHOP_UNIT_ID", "WORKSHOP_RELEASE_SHA")
-        if not (env.get(name) or "").strip()
-    ]
-    ok = (
-        not service_config.errors
-        and service_config.configured
-        and snapshot.revision > 0
-        and available is not None
-        and not missing
-        and not wrong_wire
-        and not identity_missing
+    if not snapshot.revision:
+        return models.resolve(role_name, available)
+
+    catalogue = snapshot.catalogue()
+    for candidate in models.chain(role_name):
+        if models.serves(catalogue, candidate, role_name):
+            return models.service_name(candidate)
+
+    capability = "codex" if role_name == "codex" else "claude"
+    for service_name in snapshot.allowed_services(capability):
+        if models.serves(catalogue, service_name, role_name):
+            return service_name
+    raise ValueError(
+        f"current model policy has no approved {capability} service for {role_name}"
     )
-    return {
-        "required": service_config.required,
-        "mode": service_config.mode,
-        "config_version": service_config.version,
-        "configured": service_config.configured,
-        "policy_revision": snapshot.revision,
-        "services": sorted(expected),
-        "missing_services": sorted(missing),
-        "wrong_wire_services": sorted(wrong_wire),
-        "missing_identity": identity_missing,
-        "errors": list(service_config.errors),
-        "verified": ok,
-    }
 
 
 __all__ = [
-    "GATEWAY_CONFIG_VERSION",
-    "GatewayServiceConfig",
     "ModelPolicyRequest",
     "PolicyEntry",
     "RevisionConflict",
     "StalePolicy",
     "direct_catalogue",
     "direct_service_allowed",
-    "gateway_service_config",
-    "governed_status",
+    "resolve_service",
     "request_tags",
     "store",
 ]

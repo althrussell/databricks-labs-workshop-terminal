@@ -1,35 +1,35 @@
-# Governed AI Gateway contract
+# Unity AI Gateway governance contract
 
-Workshop Terminal supports a fail-closed, event-scoped model-service mode owned
-by Control Tower. It never changes routing on the global `system.ai` services.
+Workshop Terminal calls only the approved Databricks-hosted model services in
+`system.ai`. Control Tower does not create per-event or per-terminal model
+services.
 
-## Deployment configuration
+Control Tower applies `control_tower_workshop_allowed=true` to every approved
+model service. Event budgets match that model-service tag together with the
+event workspace IDs. Request tags remain diagnostic only and do not affect
+budget matching.
 
-Control Tower sets the following values together:
+The enforcement layers are deliberately separate:
 
-| Variable | Value |
-|---|---|
-| `WORKSHOP_AI_GATEWAY_MODE` | `required` for governed events |
-| `WORKSHOP_AI_GATEWAY_CONFIG_SCHEMA` | `1` |
-| `WORKSHOP_CLAUDE_DRIVER_SERVICE` | fully qualified custom model service |
-| `WORKSHOP_CLAUDE_OPUS_SERVICE` | fully qualified custom model service |
-| `WORKSHOP_CLAUDE_SONNET_SERVICE` | fully qualified custom model service |
-| `WORKSHOP_CLAUDE_HAIKU_SERVICE` | fully qualified custom model service |
-| `WORKSHOP_CODEX_SERVICE` | fully qualified custom model service |
+1. Control Tower removes broad `system.ai` access and grants `EXECUTE` only on
+   approved models to the event's lab-user and Workshop Terminal service-
+   principal groups.
+2. Control Tower pushes the same revisioned model pool to each Workshop
+   Terminal. WT uses it immediately for server inference and rewrites future
+   Claude, Codex, and Omnigent session configuration without restarting an
+   active agent.
+3. An account-level Unity AI Gateway budget is scoped to the event workspace
+   IDs. Its per-user threshold uses **Block usage**, so one attendee exhausting
+   their allowance does not block other attendees.
 
-Every service must be a lowercase three-part Unity Catalog name outside
-`system.ai`. Claude slots must expose `anthropic/v1/messages`; Codex must expose
-`openai/v1/responses`.
-
-Generated Claude, Codex, and Omnigent configuration uses these exact names and
-the rotating app-service-principal bearer. Discovery validates the services but
-cannot replace one with a discovered global service. Each wire sends
-`Databricks-Ai-Gateway-Request-Tags` as a JSON object containing
-`workshop_run_id`, `workshop_unit_id`, `agent`, and `wt_release`.
+Budget matching does not depend on request tags. WT still sends
+`Databricks-Ai-Gateway-Request-Tags` containing `workshop_run_id`,
+`workshop_unit_id`, `agent`, and `wt_release` for diagnostics and usage
+attribution.
 
 ## Live model policy
 
-CT pushes its complete WT-SP policy to authenticated endpoint
+CT pushes its complete WT service-principal policy to authenticated endpoint
 `PUT /api/admin/model-policy`:
 
 ```json
@@ -52,9 +52,13 @@ CT pushes its complete WT-SP policy to authenticated endpoint
 Revisions are monotonic. Replaying identical content at the current revision is
 successful and idempotent; a stale revision or different content at the same
 revision returns 409. Invalid or overlapping names return 422. The snapshot is
-atomically persisted under `DATA_ROOT`, direct server inference changes
-immediately, and configs for future sessions are rewritten. A running agent is
-never restarted or silently rerouted.
+atomically persisted under `DATA_ROOT`. An applied revision is authoritative,
+including an empty pool: WT never falls back to workspace discovery when CT has
+intentionally allowed no models.
+
+For CT-managed deployments, `WORKSHOP_MODEL_POLICY_REQUIRED=true` rejects agent
+launches until the first policy revision is durably applied. This closes the
+deployment window before exact model grants and WT routing have converged.
 
 The response reports the exact policy evidence CT verifies:
 
@@ -70,17 +74,18 @@ The response reports the exact policy evidence CT verifies:
 }
 ```
 
-## Admission and emergency control
+## Budget and emergency control
 
-In required mode, `/readyz` remains red until a policy revision is present,
-stable request-tag identity is configured, and the app SP discovers every
-custom service on the expected wire. There is no direct `system.ai` fallback.
+The budget is owned by Control Tower/account administration, not WT. It uses
+the Unity AI Gateway resource type, the exact event workspace IDs, a monthly
+per-user threshold, and **Block usage**. Enforcement is near-real-time and
+approximate; active requests are not interrupted.
 
 `POST /api/admin/agent-controls` accepts `enabled`, an audit `reason`, and
 optional `terminate_active`. Disabling is linearized with session creation: a
-concurrent launch is either refused or is found and terminated. Launch counts
-remain an activity metric only; Gateway QPM/TPM and allowance controls own cost.
+concurrent launch is either refused or found and terminated. This emergency
+control does not replace the Gateway budget or Unity Catalog permissions.
 
-Gateway 429s distinguish temporary rate limits (with bounded retry guidance)
-from exhausted event allowance. Generated Codex/Omnigent configuration limits
-automatic request retries so it cannot fight the configured Gateway boundary.
+Gateway 429s distinguish temporary rate limits from exhausted budget allowance.
+Generated Codex and Omnigent configuration limits automatic retries so clients
+do not fight an enforced Gateway boundary.

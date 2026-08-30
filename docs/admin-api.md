@@ -602,11 +602,8 @@ python scripts/pull_diagnostics.py errors  --urls ./instances.txt   # whole flee
 | `CONTENT_PACK_PATH` | *(unset)* | Alternate pack file inside the deployed source |
 | `BRAND_NAME` / `BRAND_LOGO_URL` / `BRAND_PRIMARY_COLOR` / `EVENT_NAME` | *(unset)* | Cobranding |
 | `DATABRICKS_GATEWAY_HOST` | *(unset — derives `<host>/ai-gateway`)* | Override to name a dedicated Unity AI Gateway subdomain instead of the workspace-hosted one |
-| `WORKSHOP_AI_GATEWAY_MODE` | `optional` | Set `required` for CT-managed event services; required mode has no `system.ai` fallback |
-| `WORKSHOP_AI_GATEWAY_CONFIG_SCHEMA` | *(unset)* | Version of the cross-repo governed service contract; `1` is required when configured |
-| `WORKSHOP_CLAUDE_DRIVER_SERVICE` / `WORKSHOP_CLAUDE_OPUS_SERVICE` / `WORKSHOP_CLAUDE_SONNET_SERVICE` / `WORKSHOP_CLAUDE_HAIKU_SERVICE` | *(unset)* | Exact custom event service for each Claude role; must not be in `system.ai` |
-| `WORKSHOP_CODEX_SERVICE` | *(unset)* | Exact custom event service for Codex Responses traffic; must not be in `system.ai` |
-| `ANTHROPIC_MODEL` / `CODEX_MODEL` | *(unset)* | Legacy optional direct-service pins used only outside configured governed mode |
+| `ANTHROPIC_MODEL` / `CODEX_MODEL` | *(unset)* | Optional direct `system.ai` pins; when a CT model policy is active, each pin must be in its approved capability pool |
+| `WORKSHOP_MODEL_POLICY_REQUIRED` | `false` | CT sets `true` for managed workshops; agent launch waits for a synchronized model-policy revision |
 | `MAX_SESSIONS_PER_USER` / `MAX_SESSIONS_GLOBAL` | 1 / 1 | Fixed one-session admission invariant |
 | `ALLOW_SHARED_TOPOLOGY` | `false` | Shared use is unsupported and fails `/readyz` |
 | `SESSION_IDLE_TIMEOUT_SECONDS` | 28800 | Idle PTY reap |

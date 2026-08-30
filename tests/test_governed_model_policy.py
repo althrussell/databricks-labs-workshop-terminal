@@ -8,7 +8,7 @@ import tomllib
 import pytest
 import yaml
 
-from server import cli_config, gateway_errors, model_policy, models, spend, wizard_llm
+from server import cli_config, gateway_errors, model_policy, spend, wizard_llm
 from server.users import User, user_manager
 from .conftest import ALICE
 
@@ -83,6 +83,34 @@ def test_non_admin_cannot_apply_policy(client, as_non_admin):
     assert model_policy.store.snapshot().revision == 0
 
 
+def test_ct_managed_terminal_blocks_launch_until_policy_arrives(
+    client, launchable_agents, monkeypatch
+):
+    monkeypatch.setenv("WORKSHOP_MODEL_POLICY_REQUIRED", "true")
+
+    response = client.post("/api/sessions", json={"agent_id": "claude"}, headers=ALICE)
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == (
+        "Workshop model permissions are still syncing — try again shortly"
+    )
+
+
+def test_ct_managed_terminal_does_not_discover_models_before_policy(monkeypatch):
+    monkeypatch.setenv("WORKSHOP_MODEL_POLICY_REQUIRED", "true")
+    monkeypatch.delenv("WORKSHOP_WIZARD_MODEL", raising=False)
+    monkeypatch.setattr(
+        cli_config,
+        "discover_model_services",
+        lambda _token: pytest.fail("managed WT must not discover around CT policy"),
+    )
+
+    assert model_policy.direct_catalogue() == {}
+    assert cli_config.current_model_catalogue("unused") == {}
+    with pytest.raises(wizard_llm.ModelUnavailable, match="no wizard model service"):
+        wizard_llm._pick_model("unused")
+
+
 def test_stale_and_same_revision_drift_are_conflicts(client, as_admin):
     _apply(client, _body(2))
 
@@ -147,15 +175,8 @@ def test_live_policy_changes_direct_wizard_selection_without_restart(
 
 
 @pytest.fixture
-def governed_env(monkeypatch):
+def model_policy_env(monkeypatch):
     values = {
-        "WORKSHOP_AI_GATEWAY_MODE": "required",
-        "WORKSHOP_AI_GATEWAY_CONFIG_SCHEMA": "1",
-        "WORKSHOP_CLAUDE_DRIVER_SERVICE": "main.wt_services.event_claude",
-        "WORKSHOP_CLAUDE_OPUS_SERVICE": "main.wt_services.event_claude",
-        "WORKSHOP_CLAUDE_SONNET_SERVICE": "main.wt_services.event_claude",
-        "WORKSHOP_CLAUDE_HAIKU_SERVICE": "main.wt_services.event_claude",
-        "WORKSHOP_CODEX_SERVICE": "main.wt_services.event_codex",
         "WORKSHOP_RUN_ID": "run-1",
         "WORKSHOP_UNIT_ID": "unit-2",
         "WORKSHOP_RELEASE_SHA": "a" * 40,
@@ -168,18 +189,16 @@ def governed_env(monkeypatch):
     return values
 
 
-def test_generated_configs_use_only_custom_services_and_json_request_tags(
-    governed_env, monkeypatch, tmp_path
+def test_generated_configs_use_only_policy_approved_system_models(
+    client, as_admin, model_policy_env, monkeypatch, tmp_path
 ):
     monkeypatch.setattr("server.config.users_root", lambda: str(tmp_path / "users"))
     monkeypatch.setattr(
         cli_config,
         "discover_model_services",
-        lambda _token: {
-            "system.ai.claude-opus-4-8": frozenset({models.ANTHROPIC_MESSAGES}),
-            "system.ai.gpt-5-6-terra": frozenset({models.OPENAI_RESPONSES}),
-        },
+        lambda _token: pytest.fail("the applied policy is authoritative"),
     )
+    _apply(client, _body())
     user = User("alice@example.com")
     user.bootstrap_home()
 
@@ -193,19 +212,19 @@ def test_generated_configs_use_only_custom_services_and_json_request_tags(
         omnigent = yaml.safe_load(handle)
 
     claude_env = claude["env"]
-    assert claude_env["ANTHROPIC_MODEL"] == "main.wt_services.event_claude"
-    assert claude_env["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "main.wt_services.event_claude"
-    assert "system.ai." not in json.dumps(claude)
-    assert codex["model"] == "main.wt_services.event_codex"
-    assert "system.ai." not in json.dumps(codex)
+    assert claude_env["ANTHROPIC_MODEL"] == "system.ai.claude-sonnet-5"
+    assert claude_env["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "system.ai.claude-sonnet-5"
+    assert "main.wt_services" not in json.dumps(claude)
+    assert codex["model"] == "system.ai.gpt-5-6-terra"
+    assert "main.wt_services" not in json.dumps(codex)
     providers = omnigent["providers"]
     assert (
         providers["databricks-gateway"]["anthropic"]["models"]["default"]
-        == "main.wt_services.event_claude"
+        == "system.ai.claude-sonnet-5"
     )
     assert (
         providers["databricks-gateway"]["openai"]["models"]["default"]
-        == "main.wt_services.event_codex"
+        == "system.ai.gpt-5-6-terra"
     )
 
     header = codex["model_providers"]["databricks"]["http_headers"][
@@ -221,9 +240,10 @@ def test_generated_configs_use_only_custom_services_and_json_request_tags(
 
 
 def test_policy_replay_refreshes_existing_agent_configs(
-    client, as_admin, governed_env, monkeypatch, tmp_path
+    client, as_admin, model_policy_env, monkeypatch, tmp_path
 ):
     monkeypatch.setattr("server.config.users_root", lambda: str(tmp_path / "users"))
+    _apply(client, _body())
     user = user_manager.get("alice@example.com")
     user.bootstrap_home()
     cli_config.configure_all(user, "secret-token")
@@ -235,54 +255,24 @@ def test_policy_replay_refreshes_existing_agent_configs(
     with open(claude_path, "w", encoding="utf-8") as handle:
         json.dump({"env": {"ANTHROPIC_MODEL": "stale-service"}}, handle)
 
-    _apply(client, _body())
+    _apply(client, _body(2))
 
     with open(codex_path, "rb") as handle:
         codex = tomllib.load(handle)
     with open(claude_path, encoding="utf-8") as handle:
         claude = json.load(handle)
-    assert codex["model"] == "main.wt_services.event_codex"
-    assert claude["env"]["ANTHROPIC_MODEL"] == "main.wt_services.event_claude"
+    assert codex["model"] == "system.ai.gpt-5-6-terra"
+    assert claude["env"]["ANTHROPIC_MODEL"] == "system.ai.claude-sonnet-5"
 
     # An idempotent replay is also the recovery path after a partial config
     # refresh failure, so it must run the fanout again instead of returning
     # early merely because the durable revision already exists.
     with open(codex_path, "w", encoding="utf-8") as handle:
         handle.write('model = "stale-again"\n')
-    replay = _apply(client, _body())
+    replay = _apply(client, _body(2))
     with open(codex_path, "rb") as handle:
-        assert tomllib.load(handle)["model"] == "main.wt_services.event_codex"
+        assert tomllib.load(handle)["model"] == "system.ai.gpt-5-6-terra"
     assert replay["changed"] is False
-
-
-def test_required_governed_readiness_checks_policy_services_and_wires(
-    client, as_admin, governed_env
-):
-    _apply(client, _body())
-    available = {
-        "main.wt_services.event_claude": frozenset({models.ANTHROPIC_MESSAGES}),
-        "main.wt_services.event_codex": frozenset({models.OPENAI_RESPONSES}),
-    }
-    healthy = model_policy.governed_status(os.environ, available)
-    wrong = model_policy.governed_status(
-        os.environ,
-        {
-            **available,
-            "main.wt_services.event_codex": frozenset({models.CHAT_COMPLETIONS}),
-        },
-    )
-    assert healthy["verified"] is True
-    assert healthy["policy_revision"] == 1
-    assert wrong["verified"] is False
-    assert wrong["wrong_wire_services"] == ["main.wt_services.event_codex"]
-
-
-def test_global_system_service_is_never_accepted_as_governed(
-    governed_env, monkeypatch
-):
-    monkeypatch.setenv("WORKSHOP_CODEX_SERVICE", "system.ai.gpt-5-6-terra")
-    service_config = model_policy.gateway_service_config()
-    assert any("must not use" in error for error in service_config.errors)
 
 
 def test_production_system_model_names_are_confined_to_policy_adapters():
@@ -334,9 +324,7 @@ def test_emergency_disable_can_terminate_the_only_active_session(
     client, as_admin, launchable_agents
 ):
     spend.reset()
-    launched = client.post(
-        "/api/sessions", json={"agent_id": "claude"}, headers=ALICE
-    )
+    launched = client.post("/api/sessions", json={"agent_id": "claude"}, headers=ALICE)
     assert launched.status_code == 200
 
     stopped = client.post(

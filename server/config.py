@@ -112,7 +112,12 @@ def allow_shared_topology() -> bool:
     attendee. See server/topology.py.
     """
     return _env("ALLOW_SHARED_TOPOLOGY").strip().lower() in {
-        "1", "true", "yes", "on", "enabled", "enable",
+        "1",
+        "true",
+        "yes",
+        "on",
+        "enabled",
+        "enable",
     }
 
 
@@ -187,6 +192,12 @@ def agents_enabled_default() -> bool:
     The operator kill-switch (see server/spend.py) overrides this at runtime.
     """
     return _env("AGENTS_ENABLED", "true").lower() not in ("false", "0", "no", "off")
+
+
+def model_policy_required() -> bool:
+    """Whether agent launches must wait for Control Tower's model policy."""
+
+    return _env_bool("WORKSHOP_MODEL_POLICY_REQUIRED", False)
 
 
 def onboarding_wizard_enabled() -> bool:
@@ -281,9 +292,7 @@ def omnigent_offered() -> bool:
     return omnigent_enabled() and (selected is None or "omnigent" in selected)
 
 
-def normalize_omnigent_app_url(
-    raw: str, *, allow_loopback_http: bool = False
-) -> str:
+def normalize_omnigent_app_url(raw: str, *, allow_loopback_http: bool = False) -> str:
     """Validate and canonicalize an Omnigent server URL."""
     raw = raw.strip()
     if not raw:
@@ -315,9 +324,7 @@ def normalize_omnigent_app_url(
         scheme == "http" and port == 80
     )
     netloc = (
-        host_for_netloc
-        if not port or default_port
-        else f"{host_for_netloc}:{port}"
+        host_for_netloc if not port or default_port else f"{host_for_netloc}:{port}"
     )
     path = parsed.path.rstrip("/")
     return urlunsplit((scheme, netloc, path, "", ""))

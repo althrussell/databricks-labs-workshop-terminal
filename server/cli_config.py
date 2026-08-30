@@ -30,6 +30,7 @@ _gateway_resolved: str | None = None  # None = never probed; "" = no gateway
 
 # -- gateway / model discovery --
 
+
 def _probe(url: str) -> bool:
     try:
         requests.get(url, timeout=2.0, allow_redirects=False)
@@ -83,7 +84,8 @@ def gateway_host() -> str:
                 return candidate
             logger.info(
                 "dedicated AI Gateway not reachable at %s — using the "
-                "workspace-hosted gateway", candidate
+                "workspace-hosted gateway",
+                candidate,
             )
         _gateway_resolved = workspace_gateway()
         return _gateway_resolved
@@ -257,7 +259,7 @@ def discover_model_services(token: str) -> dict[str, frozenset[str]]:
             for service in body.get("model_services", []):
                 name = (service.get("name") or "").strip()
                 if name.startswith(_SECURABLE_PREFIX):
-                    name = name[len(_SECURABLE_PREFIX):]
+                    name = name[len(_SECURABLE_PREFIX) :]
                 if not name:
                     continue
                 services[models.catalogue_key(name)] = frozenset(
@@ -286,16 +288,8 @@ def current_model_catalogue(token: str) -> dict[str, frozenset[str]]:
     return discover_model_services(token)
 
 
-def _governed_services() -> model_policy.GatewayServiceConfig | None:
-    services = model_policy.gateway_service_config()
-    if services.errors:
-        if services.required or services.version is not None:
-            raise ValueError("; ".join(services.errors))
-        return None
-    return services if services.configured and services.mode != "disabled" else None
-
-
 # -- per-user config writers --
+
 
 def configure_claude(
     user: User,
@@ -322,42 +316,37 @@ def configure_claude(
     # returns fully-qualified `system.ai.*` service names, which is what the
     # gateway answers to and what Databricks' own managed Claude Code settings
     # carry.
-    governed = _governed_services()
     if available is None:
         available = current_model_catalogue(token)
-    resolved = (
-        governed.claude_services()
-        if governed is not None
-        else {
-            "driver": models.resolve("driver", available),
-            "frontier": models.resolve("frontier", available),
-            "standard": models.resolve("standard", available),
-            "fast": models.resolve("fast", available),
-        }
-    )
+    resolved = {
+        role: model_policy.resolve_service(role, available)
+        for role in ("driver", "frontier", "standard", "fast")
+    }
     tag_header = model_policy.request_tags("claude")
     settings_path = os.path.join(claude_dir, "settings.json")
     settings = _read_json(settings_path)
     env = settings.setdefault("env", {})
-    env.update({
-        "ANTHROPIC_BASE_URL": base_url,
-        "ANTHROPIC_MODEL": resolved["driver"],
-        "ANTHROPIC_DEFAULT_OPUS_MODEL": resolved["frontier"],
-        "ANTHROPIC_DEFAULT_SONNET_MODEL": resolved["standard"],
-        "ANTHROPIC_DEFAULT_HAIKU_MODEL": resolved["fast"],
-        "ANTHROPIC_CUSTOM_HEADERS": (
-            "x-databricks-use-coding-agent-mode: true\n"
-            f"Databricks-Ai-Gateway-Request-Tags: {tag_header}"
-        ),
-        **beta_negotiation_env(bool(gateway)),
-        # The CLI install is shared across attendees — never self-update.
-        "DISABLE_AUTOUPDATER": "1",
-        # Re-run apiKeyHelper on this cadence (ms) so a live process always picks
-        # up a changed app OAuth bearer every four minutes (matching the
-        # omnigent harness refresh window). A 401 also forces an
-        # immediate re-run, so a mid-flight rotation self-heals either way.
-        "CLAUDE_CODE_API_KEY_HELPER_TTL_MS": "240000",
-    })
+    env.update(
+        {
+            "ANTHROPIC_BASE_URL": base_url,
+            "ANTHROPIC_MODEL": resolved["driver"],
+            "ANTHROPIC_DEFAULT_OPUS_MODEL": resolved["frontier"],
+            "ANTHROPIC_DEFAULT_SONNET_MODEL": resolved["standard"],
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL": resolved["fast"],
+            "ANTHROPIC_CUSTOM_HEADERS": (
+                "x-databricks-use-coding-agent-mode: true\n"
+                f"Databricks-Ai-Gateway-Request-Tags: {tag_header}"
+            ),
+            **beta_negotiation_env(bool(gateway)),
+            # The CLI install is shared across attendees — never self-update.
+            "DISABLE_AUTOUPDATER": "1",
+            # Re-run apiKeyHelper on this cadence (ms) so a live process always picks
+            # up a changed app OAuth bearer every four minutes (matching the
+            # omnigent harness refresh window). A 401 also forces an
+            # immediate re-run, so a mid-flight rotation self-heals either way.
+            "CLAUDE_CODE_API_KEY_HELPER_TTL_MS": "240000",
+        }
+    )
     # A static ANTHROPIC_AUTH_TOKEN in the env block would take precedence over
     # apiKeyHelper (making the helper dormant) and reintroduce the stale-token
     # 401. Drop it so the dynamic helper is the sole credential source.
@@ -463,20 +452,16 @@ def configure_codex(
     # model two generations old. It degrades like Claude does now, and the
     # Responses-wire filter means it can only degrade onto something Codex can
     # actually talk to.
-    governed = _governed_services()
     if available is None:
         available = current_model_catalogue(token)
-    model = governed.codex if governed is not None else models.resolve("codex", available)
+    model = model_policy.resolve_service("codex", available)
     tag_header = model_policy.request_tags("codex")
 
     auto_mode = ""
     if config.auto_mode_enabled():
         # Workshop "auto mode": codex runs without approval prompts inside the
         # attendee's isolated container HOME.
-        auto_mode = (
-            'approval_policy = "never"\n'
-            'sandbox_mode = "danger-full-access"\n'
-        )
+        auto_mode = 'approval_policy = "never"\nsandbox_mode = "danger-full-access"\n'
 
     # A provider `auth` command is Codex's apiKeyHelper equivalent: Codex re-runs
     # it every refresh_interval_ms (and on a 401) and uses its stdout as the
@@ -499,8 +484,8 @@ def configure_codex(
         # A Gateway 429 is an enforced boundary, not an invitation to multiply
         # traffic. One retry covers a transient connection without defeating
         # requester QPM/TPM policy.
-        'request_max_retries = 1\n'
-        'stream_max_retries = 1\n'
+        "request_max_retries = 1\n"
+        "stream_max_retries = 1\n"
         "\n"
         f"[model_providers.{_CODEX_MODEL_PROVIDER}.auth]\n"
         'command = "cat"\n'
@@ -557,19 +542,10 @@ def configure_omnigent(
     # The same roles the CLIs resolve, so `omnigent claude` and `claude` agree
     # about what an event runs. These chains were a copy of configure_claude's
     # under a comment claiming they were one source of truth; now they are.
-    governed = _governed_services()
     if available is None:
         available = current_model_catalogue(token)
-    claude_model = (
-        governed.claude_driver
-        if governed is not None
-        else models.resolve("driver", available)
-    )
-    codex_model = (
-        governed.codex
-        if governed is not None
-        else models.resolve("codex", available)
-    )
+    claude_model = model_policy.resolve_service("driver", available)
+    codex_model = model_policy.resolve_service("codex", available)
 
     # auth_command uses the absolute token path: omnigent re-runs it inside
     # tmux sessions whose $HOME handling we don't control.
@@ -618,13 +594,17 @@ def configure_omnigent(
     # enumerate the workspace's live model list rather than one default. The
     # gateway entry stays for the Claude surface, narrowed to `anthropic` so
     # exactly one provider owns each surface.
-    cli_config_provider = {
-        "kind": "cli-config",
-        "cli": "codex",
-        "model_provider": _CODEX_MODEL_PROVIDER,
-        "display_name": _CODEX_PROVIDER_DISPLAY_NAME,
-        "default": ["openai"],
-    } if databricks_aware else None
+    cli_config_provider = (
+        {
+            "kind": "cli-config",
+            "cli": "codex",
+            "model_provider": _CODEX_MODEL_PROVIDER,
+            "display_name": _CODEX_PROVIDER_DISPLAY_NAME,
+            "default": ["openai"],
+        }
+        if databricks_aware
+        else None
+    )
     omnigent_dir = os.path.join(user.home, ".omnigent")
     os.makedirs(omnigent_dir, exist_ok=True)
     config_path = os.path.join(omnigent_dir, "config.yaml")
@@ -746,9 +726,7 @@ def _write_databrickscfg_profile(user: User, profile: str, token: str) -> None:
         _write_databrickscfg_profile_locked(user, profile, token)
 
 
-def _write_databrickscfg_profile_locked(
-    user: User, profile: str, token: str
-) -> None:
+def _write_databrickscfg_profile_locked(user: User, profile: str, token: str) -> None:
     path = _databrickscfg_path(user)
     host = config.databricks_host()
     parser = configparser.ConfigParser()
@@ -805,9 +783,7 @@ def update_me_profile(user: User, obo_token: str) -> None:
 
 def update_me_profile_locked(user: User, obo_token: str) -> None:
     """Caller already holds ``user.lock``; avoid recursive lock acquisition."""
-    _write_databrickscfg_profile_locked(
-        user, config.obo_profile_name(), obo_token
-    )
+    _write_databrickscfg_profile_locked(user, config.obo_profile_name(), obo_token)
     _write_omnigent_profile_locked(user, obo_token)
 
 
@@ -889,9 +865,7 @@ def _next_credential_revision_locked(user: User) -> int:
     return user._credential_revision
 
 
-def _commit_core_credentials_locked(
-    user: User, token: str, revision: int
-) -> bool:
+def _commit_core_credentials_locked(user: User, token: str, revision: int) -> bool:
     if revision != user._credential_revision:
         return False
     _write_databrickscfg_profile_locked(user, "DEFAULT", token)
