@@ -524,6 +524,8 @@ class EntitlementManager:
         self._wake_event = threading.Event()
         self._lock = threading.Lock()
         self._reconcile_lock = threading.Lock()
+        self._wake_generation = 0
+        self._last_wake_reason = "not_started"
         self._run_started_at = (
             run_started_at if run_started_at is not None else self._clock()
         )
@@ -533,6 +535,7 @@ class EntitlementManager:
         self._baseline_retry_pending = False
         self._ledger: dict[tuple[str, str, str], dict] = {}
         self._enumeration_cache: dict[str, _EnumerationCacheEntry] = {}
+        self._cache_invalidations: dict[str, int] = {}
         self._cache_retry_at: dict[str, float] = {}
         self._last_run_at = 0.0
         self._last_reconcile = 0.0
@@ -627,9 +630,12 @@ class EntitlementManager:
         label = self._resource_label(resource_type)
         now = self._clock()
         with self._lock:
+            self._wake_generation += 1
+            self._last_wake_reason = reason
             if label:
                 self._enumeration_cache.pop(label, None)
                 self._cache_retry_at.pop(label, None)
+                self._cache_invalidations[label] = self._wake_generation
             self._idle = False
             if self._convergence_started_at is None:
                 self._convergence_started_at = now
@@ -811,8 +817,14 @@ class EntitlementManager:
         stats = _request_stats.get()
         with self._lock:
             cached = self._enumeration_cache.get(spec.label)
+            invalidation = self._cache_invalidations.get(spec.label)
             retry_at = self._cache_retry_at.get(spec.label, 0.0)
-            if not force and cached and cached.expires_at > now:
+            if (
+                not force
+                and invalidation is None
+                and cached
+                and cached.expires_at > now
+            ):
                 if stats:
                     stats.cache_hits += 1
                 return copy.deepcopy(cached.items)
@@ -840,11 +852,18 @@ class EntitlementManager:
             raise
         expires_at = now + self._cache_lifetime()
         with self._lock:
-            self._enumeration_cache[spec.label] = _EnumerationCacheEntry(
-                items=copy.deepcopy(items),
-                refreshed_at=now,
-                expires_at=expires_at,
-            )
+            current_invalidation = self._cache_invalidations.get(spec.label)
+            # A resource notification can land while the list request is in
+            # flight. Its response may predate that resource, so do not let it
+            # refill the cache or consume the newer invalidation.
+            if current_invalidation in (None, invalidation):
+                self._enumeration_cache[spec.label] = _EnumerationCacheEntry(
+                    items=copy.deepcopy(items),
+                    refreshed_at=now,
+                    expires_at=expires_at,
+                )
+                if current_invalidation is not None:
+                    self._cache_invalidations.pop(spec.label, None)
             self._cache_retry_at.pop(spec.label, None)
         return items
 
@@ -983,6 +1002,7 @@ class EntitlementManager:
         with self._lock:
             self._last_run_at = now
             self._last_attempt_at = now
+            attempt_wake_generation = self._wake_generation
             prior_ok = self._ok
             before_signature = self._ledger_signature_locked()
             before_ledger = copy.deepcopy(self._ledger)
@@ -1032,6 +1052,7 @@ class EntitlementManager:
                         "; ".join(errors[:5]) if errors else None,
                         verified_no_change=no_change,
                     )
+                    self._schedule_pending_wake(attempt_wake_generation)
                     backoff_seconds = 0.0
                     outcome = "ok" if not errors else "degraded"
                     reason_code = reason
@@ -1725,6 +1746,42 @@ class EntitlementManager:
             self._emit_health(ok, error)
         self._wake_event.set()
         return convergence_ms
+
+    def _schedule_pending_wake(self, attempt_wake_generation: int) -> None:
+        """Preserve notifications that arrived while an attempt was running.
+
+        ``_record`` chooses the normal active/idle cadence. A concurrent wake
+        must win over that choice, otherwise its event has already been set but
+        the loop observes a future deadline and quietly discards the request.
+        Targeted invalidations that failed for a non-rate-limit reason retain
+        their per-adapter retry deadline instead of spinning immediately.
+        """
+        now = self._clock()
+        with self._lock:
+            generation_changed = self._wake_generation != attempt_wake_generation
+            pending_deadline = min(
+                (
+                    self._cache_retry_at.get(label, now)
+                    for label in self._cache_invalidations
+                ),
+                default=None,
+            )
+            if not generation_changed and pending_deadline is None:
+                return
+            deadline = (
+                max(now, pending_deadline)
+                if pending_deadline is not None
+                else now
+            )
+            if not self._next_attempt_at or deadline < self._next_attempt_at:
+                self._next_attempt_at = deadline
+                self._next_attempt_reason = (
+                    self._last_wake_reason
+                    if generation_changed
+                    else "resource_refresh"
+                )
+            self._idle = False
+        self._wake_event.set()
 
     def _emit_health(self, ok: bool, error: str | None) -> None:
         try:

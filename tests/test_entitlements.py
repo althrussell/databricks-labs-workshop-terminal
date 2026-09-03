@@ -1236,6 +1236,51 @@ def test_background_cache_refresh_is_targeted_and_session_start_wakes_idle(
     assert mgr.status()["next_attempt_reason"] == "session_start"
 
 
+def test_resource_wake_during_list_is_not_lost_or_recached(monkeypatch, enabled):
+    from server import entitlements
+
+    fake = _fake_with_resources()
+    clock = _Clock()
+    mgr = _scheduled_mgr(monkeypatch, fake, clock)
+    assert mgr.reconcile("alice@example.com")["errors"] == []
+
+    mgr.notify_resource_created("apps")
+    original_enumerate = entitlements._enumerate
+    notified = False
+
+    def enumerate_with_concurrent_wake(host, bearer, spec):
+        nonlocal notified
+        items = original_enumerate(host, bearer, spec)
+        if spec.label == "apps" and not notified:
+            notified = True
+            mgr.notify_resource_created("apps")
+        return items
+
+    monkeypatch.setattr(entitlements, "_enumerate", enumerate_with_concurrent_wake)
+    first = mgr.reconcile("alice@example.com", source="background")
+
+    status = mgr.status()
+    assert first["errors"] == []
+    assert status["idle"] is False
+    assert status["next_attempt_at"] == clock()
+    assert status["next_attempt_reason"] == "resource_created"
+    assert status["cache"]["apps"]["cached"] is False
+
+    fake.calls.clear()
+    second = mgr.reconcile("alice@example.com", source="background")
+    resource_lists = [
+        call[1]
+        for call in fake.calls
+        if call[0] == "GET"
+        and any(
+            call[1].endswith(spec.list_path) for spec in entitlements._RESOURCE_SPECS
+        )
+    ]
+    assert second["errors"] == []
+    assert resource_lists == ["https://test.cloud.databricks.com/api/2.0/apps"]
+    assert mgr.status()["cache"]["apps"]["cached"] is True
+
+
 def test_hundred_instance_schedule_stays_under_request_budget(monkeypatch):
     """Default cadence remains inside the measured fleet planning envelope."""
     from server import config, entitlements
