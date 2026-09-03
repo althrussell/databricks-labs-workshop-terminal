@@ -51,12 +51,17 @@ having stopped serving traffic.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+import copy
 import logging
 import os
+import random
 import threading
 import time
+from collections.abc import Callable
+from contextvars import ContextVar
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 import requests
 
@@ -64,8 +69,128 @@ from . import config
 
 logger = logging.getLogger(__name__)
 
-HEARTBEAT = 30                # loop wake interval (seconds)
+HEARTBEAT = 30  # loop wake interval (seconds)
 ALERT_REEMIT_INTERVAL = 1800  # re-emit a degraded health event at most every 30 min
+
+
+class EntitlementApiError(Exception):
+    """Structured Databricks API failure retained through reconciliation."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        error_code: str | None = None,
+        retry_after: float | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.error_code = (error_code or "").strip().upper() or None
+        self.retry_after = retry_after
+
+    @property
+    def rate_limit_reason(self) -> str | None:
+        if self.error_code == "RESOURCE_EXHAUSTED":
+            return "resource_exhausted"
+        if self.status_code == 429:
+            return "http_429"
+        return None
+
+
+@dataclass
+class _RequestStats:
+    requests: int = 0
+    rate_limits: int = 0
+    http_429s: int = 0
+    cache_hits: int = 0
+    cache_misses: int = 0
+    retry_after: float = 0.0
+    rate_limit_reason: str | None = None
+    blocked_error: EntitlementApiError | None = None
+
+
+@dataclass
+class _EnumerationCacheEntry:
+    items: list[dict]
+    refreshed_at: float
+    expires_at: float
+
+
+_request_stats: ContextVar[_RequestStats | None] = ContextVar(
+    "entitlement_request_stats", default=None
+)
+
+
+def _retry_after_seconds(response, now: float | None = None) -> float | None:
+    raw = str(getattr(response, "headers", {}).get("Retry-After", "") or "").strip()
+    if not raw:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        try:
+            instant = parsedate_to_datetime(raw).timestamp()
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return max(0.0, instant - (time.time() if now is None else now))
+
+
+def _response_error_code(response) -> str | None:
+    try:
+        payload = response.json()
+    except (TypeError, ValueError):
+        payload = None
+    if not isinstance(payload, dict):
+        return None
+    direct = payload.get("error_code") or payload.get("code")
+    nested = payload.get("error")
+    if not direct and isinstance(nested, dict):
+        direct = nested.get("error_code") or nested.get("code") or nested.get("status")
+    return str(direct).strip().upper() if direct else None
+
+
+def _api_error(response) -> EntitlementApiError:
+    status = int(getattr(response, "status_code", 0) or 0) or None
+    code = _response_error_code(response)
+    text = str(getattr(response, "text", "") or "")[:200]
+    if not code and "RESOURCE_EXHAUSTED" in text.upper():
+        code = "RESOURCE_EXHAUSTED"
+    message = " ".join(
+        part for part in (str(status or "request failed"), code, text) if part
+    )
+    return EntitlementApiError(
+        message,
+        status_code=status,
+        error_code=code,
+        retry_after=_retry_after_seconds(response),
+    )
+
+
+def _before_request() -> EntitlementApiError | None:
+    stats = _request_stats.get()
+    if stats is None:
+        return None
+    if stats.blocked_error is not None:
+        return stats.blocked_error
+    stats.requests += 1
+    return None
+
+
+def _observe_error(error: EntitlementApiError) -> None:
+    reason = error.rate_limit_reason
+    stats = _request_stats.get()
+    if stats is None or reason is None:
+        return
+    stats.rate_limits += 1
+    if error.status_code == 429:
+        stats.http_429s += 1
+    stats.rate_limit_reason = reason
+    stats.retry_after = max(stats.retry_after, error.retry_after or 0.0)
+    # Once the platform has asked us to stop, do not walk the remaining APIs in
+    # the same reconcile and amplify one 429 into a control-plane storm.
+    stats.blocked_error = error
+
 
 @dataclass(frozen=True)
 class ResourceSpec:
@@ -152,21 +277,29 @@ def _sp_bearer() -> str | None:
     return app_identity_bearer() or (vended_pat() or None)
 
 
-def _patch(url: str, bearer: str, body: dict) -> tuple[bool, str | None]:
+def _patch(
+    url: str, bearer: str, body: dict
+) -> tuple[bool, EntitlementApiError | None]:
+    if deferred := _before_request():
+        return False, deferred
     try:
         resp = requests.patch(
             url, headers={"Authorization": f"Bearer {bearer}"}, json=body, timeout=30
         )
     except requests.RequestException as e:
-        return False, str(e)
+        return False, EntitlementApiError(str(e))
     if 200 <= resp.status_code < 300:
         return True, None
-    return False, f"{resp.status_code} {resp.text[:200]}"
+    error = _api_error(resp)
+    _observe_error(error)
+    return False, error
 
 
 def _get_json(
     url: str, bearer: str, params: dict | None = None
-) -> tuple[dict | None, str | None]:
+) -> tuple[dict | None, EntitlementApiError | None]:
+    if deferred := _before_request():
+        return None, deferred
     try:
         resp = requests.get(
             url,
@@ -175,21 +308,23 @@ def _get_json(
             timeout=30,
         )
     except requests.RequestException as e:
-        return None, str(e)
+        return None, EntitlementApiError(str(e))
     if resp.status_code != 200:
-        return None, f"{resp.status_code} {resp.text[:200]}"
+        error = _api_error(resp)
+        _observe_error(error)
+        return None, error
     try:
         payload = resp.json()
     except ValueError as e:
-        return None, f"invalid JSON: {e}"
+        return None, EntitlementApiError(f"invalid JSON: {e}")
     if not isinstance(payload, dict):
-        return None, "response was not an object"
+        return None, EntitlementApiError("response was not an object")
     return payload, None
 
 
 def _grant_catalog_all_privileges(
     host: str, bearer: str, catalog: str, principal: str
-) -> tuple[bool, str | None]:
+) -> tuple[bool, EntitlementApiError | None]:
     """Grant the labuser ALL_PRIVILEGES on the catalog (inherited downward)."""
     url = f"{host}/api/2.1/unity-catalog/permissions/catalog/{catalog}"
     body = {"changes": [{"principal": principal, "add": ["ALL_PRIVILEGES"]}]}
@@ -211,7 +346,7 @@ APP_SP_CATALOG_PRIVILEGES = (
 
 def _grant_catalog_privileges(
     host: str, bearer: str, catalog: str, principal: str, privileges: tuple[str, ...]
-) -> tuple[bool, str | None]:
+) -> tuple[bool, EntitlementApiError | None]:
     url = f"{host}/api/2.1/unity-catalog/permissions/catalog/{catalog}"
     body = {"changes": [{"principal": principal, "add": list(privileges)}]}
     return _patch(url, bearer, body)
@@ -219,7 +354,7 @@ def _grant_catalog_privileges(
 
 def _catalog_privileges_for(
     host: str, bearer: str, catalog: str, principal: str
-) -> tuple[set[str] | None, str | None]:
+) -> tuple[set[str] | None, EntitlementApiError | None]:
     payload, error = _get_json(
         f"{host}/api/2.1/unity-catalog/permissions/catalog/{catalog}", bearer
     )
@@ -237,7 +372,7 @@ def _catalog_privileges_for(
 
 def _set_catalog_owner(
     host: str, bearer: str, catalog: str, principal: str
-) -> tuple[bool, str | None]:
+) -> tuple[bool, EntitlementApiError | None]:
     """Optionally transfer catalog ownership to the labuser (off by default)."""
     url = f"{host}/api/2.1/unity-catalog/catalogs/{catalog}"
     return _patch(url, bearer, {"owner": principal})
@@ -245,7 +380,7 @@ def _set_catalog_owner(
 
 def _verify_catalog_access(
     host: str, bearer: str, catalog: str, principal: str, *, require_owner: bool = False
-) -> tuple[bool, str | None]:
+) -> tuple[bool, EntitlementApiError | str | None]:
     """Prove the attendee can use ``catalog``.
 
     ``require_owner`` mirrors ``ENTITLEMENT_TRANSFER_OWNERSHIP``: ownership only
@@ -291,7 +426,7 @@ def _enumerate(host: str, bearer: str, spec: ResourceSpec) -> list[dict]:
             params["page_token"] = page_token
         payload, error = _get_json(f"{host}{spec.list_path}", bearer, params)
         if error:
-            raise RuntimeError(error)
+            raise error
         assert payload is not None
         page_items = payload.get(spec.items_key, []) or []
         items.extend(item for item in page_items if isinstance(item, dict))
@@ -373,23 +508,56 @@ def _field_value(item: dict, path: str) -> object | None:
 class EntitlementManager:
     """Background reconciliation loop + on-demand trigger."""
 
-    def __init__(self, *, run_started_at: float | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        run_started_at: float | None = None,
+        clock: Callable[[], float] | None = None,
+        monotonic: Callable[[], float] | None = None,
+        jitter: Callable[[], float] | None = None,
+    ) -> None:
+        self._clock = clock or time.time
+        self._monotonic = monotonic or time.monotonic
+        self._jitter = jitter or random.random
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
+        self._wake_event = threading.Event()
         self._lock = threading.Lock()
-        self._run_started_at = run_started_at if run_started_at is not None else time.time()
+        self._reconcile_lock = threading.Lock()
+        self._run_started_at = (
+            run_started_at if run_started_at is not None else self._clock()
+        )
         self._baseline: dict[str, set[str]] = {}
         self._baseline_ready: set[str] = set()
+        self._baseline_capture_attempted = False
+        self._baseline_retry_pending = False
         self._ledger: dict[tuple[str, str, str], dict] = {}
+        self._enumeration_cache: dict[str, _EnumerationCacheEntry] = {}
+        self._cache_retry_at: dict[str, float] = {}
         self._last_run_at = 0.0
         self._last_reconcile = 0.0
+        self._last_attempt_at = 0.0
         self._ok: bool | None = None
+        self._health_state = "pending"
         self._last_error: str | None = None
         self._last_alert_at = 0.0
         self._last_verified_at = 0.0
         self._verified_email: str | None = None
         self._verified_catalog: str | None = None
         self._verification_source: str | None = None
+        self._next_attempt_at = 0.0
+        self._next_attempt_reason = "not_started"
+        self._backoff_attempt = 0
+        self._backoff_seconds = 0.0
+        self._deferred_reason: str | None = None
+        self._idle = False
+        self._last_request_count = 0
+        self._last_rate_limit_count = 0
+        self._last_http_429_count = 0
+        self._cache_hits = 0
+        self._cache_misses = 0
+        self._convergence_started_at: float | None = self._clock()
+        self._last_convergence_ms: float | None = None
         # client_id -> catalog it has been proven readable on. Keeps the app-SP
         # grant a one-shot per app rather than a per-sweep re-grant.
         self._app_sp_grants: dict[str, str] = {}
@@ -401,9 +569,18 @@ class EntitlementManager:
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
+        self._wake_event.clear()
         # Capture pre-existing IDs before any attendee session can create
         # resources. Failure is fail-closed for adapters without create_time.
         self.capture_baseline()
+        now = self._clock()
+        # App fleets tend to start in one burst.  Keep baseline capture eager
+        # (it is the security boundary for timestamp-less resources), but spread
+        # the first full scan over the normal cadence.
+        with self._lock:
+            if not self._deferred_reason:
+                self._next_attempt_at = now + self._startup_delay()
+                self._next_attempt_reason = "startup_jitter"
         self._thread = threading.Thread(
             target=self._loop, daemon=True, name="entitlement-reconcile"
         )
@@ -416,6 +593,68 @@ class EntitlementManager:
 
     def stop(self) -> None:
         self._stop.set()
+        self._wake_event.set()
+
+    @staticmethod
+    def _resource_label(value: str | None) -> str | None:
+        raw = (value or "").strip().lower().replace("_", "-")
+        if not raw:
+            return None
+        aliases = {
+            "job": "jobs",
+            "pipeline": "pipelines",
+            "serving-endpoint": "serving-endpoints",
+            "endpoint": "serving-endpoints",
+            "app": "apps",
+            "database-instance": "database-instances",
+            "lakebase": "database-instances",
+            "database-project": "database-projects",
+            "warehouse": "warehouses",
+            "dashboard": "dashboards",
+        }
+        label = aliases.get(raw, raw)
+        if label not in {spec.label for spec in _RESOURCE_SPECS}:
+            raise ValueError(f"unknown entitlement resource type: {value}")
+        return label
+
+    def wake(self, reason: str, *, resource_type: str | None = None) -> None:
+        """Leave idle cadence for a session or known resource event.
+
+        A known resource invalidates only its adapter.  Backoff remains a hard
+        floor: a launch can make reconciliation urgent, but it must not ignore a
+        platform request to stop sending calls.
+        """
+        label = self._resource_label(resource_type)
+        now = self._clock()
+        with self._lock:
+            if label:
+                self._enumeration_cache.pop(label, None)
+                self._cache_retry_at.pop(label, None)
+            self._idle = False
+            if self._convergence_started_at is None:
+                self._convergence_started_at = now
+            if not self._deferred_reason or now >= self._next_attempt_at:
+                self._next_attempt_at = now
+                self._next_attempt_reason = reason
+        self._wake_event.set()
+
+    def notify_resource_created(self, resource_type: str) -> None:
+        self.wake("resource_created", resource_type=resource_type)
+
+    def _jittered_delay(self, minimum: float, maximum: float) -> float:
+        fraction = max(0.0, min(1.0, float(self._jitter())))
+        return minimum + fraction * max(0.0, maximum - minimum)
+
+    def _startup_delay(self) -> float:
+        active = max(HEARTBEAT * 2, config.entitlement_reconcile_interval())
+        return self._jittered_delay(min(active, HEARTBEAT * 2), active)
+
+    def _cache_lifetime(self) -> float:
+        maximum = float(config.entitlement_cache_ttl())
+        minimum = min(
+            maximum, max(float(HEARTBEAT), config.entitlement_reconcile_interval())
+        )
+        return self._jittered_delay(minimum, maximum)
 
     def capture_baseline(self) -> dict:
         """Snapshot APIs that cannot prove creation time.
@@ -426,31 +665,123 @@ class EntitlementManager:
         host = config.databricks_host()
         bearer = _sp_bearer()
         result = {"captured": [], "errors": []}
+        started_at = self._monotonic()
+        with self._lock:
+            self._baseline_capture_attempted = True
+            self._baseline_retry_pending = True
         if not host or not bearer:
             result["errors"].append("no app service-principal bearer/host")
             return result
-        for spec in _RESOURCE_SPECS:
-            if not spec.requires_baseline:
-                continue
-            try:
-                items = _enumerate(host, bearer, spec)
-                ids = {
-                    str(item[spec.id_field])
-                    for item in items
-                    if item.get(spec.id_field) is not None
-                }
-            except Exception as e:  # noqa: BLE001 — fail closed per adapter
-                result["errors"].append(f"{spec.label}: {e}")
-                continue
+        stats = _RequestStats()
+        token = _request_stats.set(stats)
+        try:
+            for spec in _RESOURCE_SPECS:
+                if not spec.requires_baseline:
+                    continue
+                try:
+                    items = self._enumerate_resources(host, bearer, spec, force=True)
+                    ids = {
+                        str(item[spec.id_field])
+                        for item in items
+                        if item.get(spec.id_field) is not None
+                    }
+                except Exception as e:  # noqa: BLE001 — fail closed per adapter
+                    result["errors"].append(f"{spec.label}: {e}")
+                    if isinstance(e, EntitlementApiError) and e.rate_limit_reason:
+                        break
+                    continue
+                with self._lock:
+                    self._baseline[spec.label] = ids
+                    self._baseline_ready.add(spec.label)
+                result["captured"].append(spec.label)
+        finally:
+            _request_stats.reset(token)
+        backoff_seconds = 0.0
+        if stats.rate_limits:
             with self._lock:
-                self._baseline[spec.label] = ids
-                self._baseline_ready.add(spec.label)
-            result["captured"].append(spec.label)
+                previous_ledger = copy.deepcopy(self._ledger)
+            backoff_seconds = self._defer_backoff(stats, previous_ledger)
+            result["deferred"] = True
+            result["next_attempt_at"] = self.status()["next_attempt_at"]
+        result["requests"] = stats.requests
+        with self._lock:
+            self._baseline_retry_pending = any(
+                spec.requires_baseline and spec.label not in self._baseline_ready
+                for spec in _RESOURCE_SPECS
+            )
+        from . import telemetry
+
+        telemetry.entitlement_reconcile(
+            source="baseline",
+            outcome=(
+                "degraded_backoff"
+                if stats.rate_limits
+                else "degraded" if result["errors"] else "ok"
+            ),
+            reason=(
+                stats.rate_limit_reason
+                or ("baseline_failed" if result["errors"] else "baseline_complete")
+            ),
+            duration_ms=(self._monotonic() - started_at) * 1000,
+            rate_limited=bool(stats.rate_limits),
+            request_count=stats.requests,
+            rate_limit_count=stats.rate_limits,
+            http_429_count=stats.http_429s,
+            backoff_seconds=backoff_seconds,
+            cache_hits=stats.cache_hits,
+            cache_misses=stats.cache_misses,
+            convergence_ms=0,
+        )
         return result
 
+    def _capture_missing_baselines(self, host: str, bearer: str) -> list[str]:
+        """Retry fail-closed startup baselines before normal reconciliation."""
+        with self._lock:
+            if not self._baseline_capture_attempted or not self._baseline_retry_pending:
+                return []
+        errors: list[str] = []
+        for spec in _RESOURCE_SPECS:
+            with self._lock:
+                ready = spec.label in self._baseline_ready
+            if not spec.requires_baseline or ready:
+                continue
+            try:
+                items = self._enumerate_resources(host, bearer, spec, force=True)
+            except Exception as exc:  # noqa: BLE001 — fail closed per adapter
+                errors.append(f"{spec.label} baseline: {exc}")
+                if isinstance(exc, EntitlementApiError) and exc.rate_limit_reason:
+                    break
+                continue
+            identifiers = {
+                str(item[spec.id_field])
+                for item in items
+                if item.get(spec.id_field) is not None
+            }
+            with self._lock:
+                self._baseline[spec.label] = identifiers
+                self._baseline_ready.add(spec.label)
+        with self._lock:
+            self._baseline_retry_pending = any(
+                spec.requires_baseline and spec.label not in self._baseline_ready
+                for spec in _RESOURCE_SPECS
+            )
+        return errors
+
     def _loop(self) -> None:
-        while not self._stop.wait(timeout=HEARTBEAT):
-            if time.time() - self._last_run_at < config.entitlement_reconcile_interval():
+        while not self._stop.is_set():
+            now = self._clock()
+            with self._lock:
+                deadline = self._next_attempt_at
+            timeout = (
+                min(HEARTBEAT, max(0.0, deadline - now)) if deadline else HEARTBEAT
+            )
+            self._wake_event.wait(timeout=timeout)
+            self._wake_event.clear()
+            if self._stop.is_set():
+                return
+            with self._lock:
+                due = self._next_attempt_at <= self._clock()
+            if not due:
                 continue
             try:
                 self.reconcile()
@@ -468,7 +799,77 @@ class EntitlementManager:
                     },
                 )
 
-    def reconcile(self, email: str | None = None) -> dict:
+    def _enumerate_resources(
+        self,
+        host: str,
+        bearer: str,
+        spec: ResourceSpec,
+        *,
+        force: bool = False,
+    ) -> list[dict]:
+        now = self._clock()
+        stats = _request_stats.get()
+        with self._lock:
+            cached = self._enumeration_cache.get(spec.label)
+            retry_at = self._cache_retry_at.get(spec.label, 0.0)
+            if not force and cached and cached.expires_at > now:
+                if stats:
+                    stats.cache_hits += 1
+                return copy.deepcopy(cached.items)
+            if not force and retry_at > now:
+                raise EntitlementApiError(
+                    f"resource enumeration retry deferred until {retry_at:.3f}"
+                )
+        if stats:
+            stats.cache_misses += 1
+        try:
+            items = _enumerate(host, bearer, spec)
+        except Exception as exc:
+            if isinstance(exc, EntitlementApiError) and exc.rate_limit_reason:
+                # The retry must exercise the endpoint that throttled us. If an
+                # explicit refresh left an older entry behind, accepting that
+                # entry would report recovery without proving the list API did.
+                with self._lock:
+                    self._enumeration_cache.pop(spec.label, None)
+                    self._cache_retry_at.pop(spec.label, None)
+            else:
+                with self._lock:
+                    self._cache_retry_at[spec.label] = now + max(
+                        HEARTBEAT, config.entitlement_reconcile_interval()
+                    )
+            raise
+        expires_at = now + self._cache_lifetime()
+        with self._lock:
+            self._enumeration_cache[spec.label] = _EnumerationCacheEntry(
+                items=copy.deepcopy(items),
+                refreshed_at=now,
+                expires_at=expires_at,
+            )
+            self._cache_retry_at.pop(spec.label, None)
+        return items
+
+    def _next_cache_expiry(self, now: float) -> float | None:
+        deadlines: list[float] = []
+        with self._lock:
+            for label, entry in self._enumeration_cache.items():
+                if entry.expires_at > now:
+                    deadlines.append(entry.expires_at)
+                else:
+                    deadlines.append(self._cache_retry_at.get(label, now))
+            deadlines.extend(
+                retry_at
+                for label, retry_at in self._cache_retry_at.items()
+                if label not in self._enumeration_cache
+            )
+        return min(deadlines) if deadlines else None
+
+    def reconcile(
+        self,
+        email: str | None = None,
+        resource_type: str | None = None,
+        *,
+        source: str | None = None,
+    ) -> dict:
         """Idempotently make SP-created resources usable by the labuser(s).
 
         With ``email`` set, reconciles just that attendee (the on-demand
@@ -477,26 +878,195 @@ class EntitlementManager:
         """
         if not config.entitlements_enabled():
             return {"enabled": False}
-        started_at = time.monotonic()
-        self._last_run_at = time.time()
 
-        from .users import user_manager
-
-        source = "on_demand" if email else "background"
-
-        def finish(result: dict, reason: str) -> dict:
-            errors = [str(error) for error in result.get("errors", [])]
-            rate_limited = any("429" in error for error in errors)
+        label = self._resource_label(resource_type)
+        source = source or ("on_demand" if email else "background")
+        deferred, backoff_remaining = self._backoff_response()
+        if deferred is not None:
             from . import telemetry
 
             telemetry.entitlement_reconcile(
                 source=source,
-                outcome="ok" if not errors else "degraded",
-                reason="rate_limited" if rate_limited else reason,
-                duration_ms=(time.monotonic() - started_at) * 1000,
-                rate_limited=rate_limited,
+                outcome="degraded_backoff",
+                reason="backoff_active",
+                duration_ms=0,
+                rate_limited=False,
+                request_count=0,
+                rate_limit_count=0,
+                backoff_seconds=backoff_remaining,
+                cache_hits=0,
+                cache_misses=0,
+                convergence_ms=0,
             )
-            return result
+            return deferred
+
+        with self._reconcile_lock:
+            # The first check can race with a caller already reconciling. Check
+            # again after serialization so a queued caller cannot immediately
+            # undo a 429 backoff chosen by the request ahead of it.
+            deferred, backoff_remaining = self._backoff_response()
+            if deferred is not None:
+                from . import telemetry
+
+                telemetry.entitlement_reconcile(
+                    source=source,
+                    outcome="degraded_backoff",
+                    reason="backoff_active",
+                    duration_ms=0,
+                    rate_limited=False,
+                    backoff_seconds=backoff_remaining,
+                )
+                return deferred
+            try:
+                return self._reconcile_once(email, label=label, source=source)
+            except Exception as exc:  # noqa: BLE001 — public reconcile is fail-soft
+                # ``finish`` normally restores the ContextVar. Keep an
+                # unexpected adapter exception from poisoning this worker's
+                # next request before the outer loop reports the failure.
+                stats = _request_stats.get() or _RequestStats()
+                _request_stats.set(None)
+                message = f"unexpected {type(exc).__name__}: {exc}"
+                self._record(False, message)
+                from . import telemetry
+
+                telemetry.entitlement_reconcile(
+                    source=source,
+                    outcome="degraded",
+                    reason="unhandled_exception",
+                    duration_ms=0,
+                    rate_limited=False,
+                    request_count=stats.requests,
+                    rate_limit_count=stats.rate_limits,
+                    cache_hits=stats.cache_hits,
+                    cache_misses=stats.cache_misses,
+                )
+                telemetry.emit(
+                    "background.task_failed",
+                    "system",
+                    {
+                        "code": "unhandled_exception",
+                        "source": "entitlements",
+                        "exception_type": type(exc).__name__,
+                    },
+                )
+                return {
+                    "enabled": True,
+                    "errors": [message],
+                    "handoff": self._handoff_snapshot(),
+                }
+
+    def _backoff_response(self) -> tuple[dict | None, float]:
+        now = self._clock()
+        with self._lock:
+            if not self._deferred_reason or now >= self._next_attempt_at:
+                return None, 0.0
+            return (
+                {
+                    "enabled": True,
+                    "deferred": True,
+                    "state": "degraded_backoff",
+                    "reason": self._deferred_reason,
+                    "next_attempt_at": self._next_attempt_at,
+                    "errors": [],
+                    "handoff": self._handoff_snapshot_locked(),
+                },
+                self._next_attempt_at - now,
+            )
+
+    def _reconcile_once(
+        self, email: str | None, *, label: str | None, source: str
+    ) -> dict:
+        started_at = self._monotonic()
+        now = self._clock()
+        stats = _RequestStats()
+        stats_token = _request_stats.set(stats)
+        with self._lock:
+            self._last_run_at = now
+            self._last_attempt_at = now
+            prior_ok = self._ok
+            before_signature = self._ledger_signature_locked()
+            before_ledger = copy.deepcopy(self._ledger)
+            before_app_sp_grants = dict(self._app_sp_grants)
+            before_verification = (
+                self._last_verified_at,
+                self._verified_email,
+                self._verified_catalog,
+                self._verification_source,
+            )
+            if source != "background" and self._convergence_started_at is None:
+                self._convergence_started_at = now
+
+        from .users import user_manager
+
+        def finish(result: dict, reason: str) -> dict:
+            try:
+                errors = [str(error) for error in result.get("errors", [])]
+                with self._lock:
+                    after_signature = self._ledger_signature_locked()
+                no_change = (
+                    not errors
+                    and prior_ok is True
+                    and before_signature == after_signature
+                )
+                if stats.rate_limits:
+                    backoff_seconds = self._defer_backoff(
+                        stats,
+                        before_ledger,
+                        before_verification,
+                        before_app_sp_grants,
+                    )
+                    outcome = "degraded_backoff"
+                    reason_code = stats.rate_limit_reason or "rate_limited"
+                    convergence_ms = 0.0
+                    result.update(
+                        {
+                            "deferred": True,
+                            "state": "degraded_backoff",
+                            "reason": reason_code,
+                            "next_attempt_at": self.status()["next_attempt_at"],
+                        }
+                    )
+                else:
+                    convergence_ms = self._record(
+                        not errors,
+                        "; ".join(errors[:5]) if errors else None,
+                        verified_no_change=no_change,
+                    )
+                    backoff_seconds = 0.0
+                    outcome = "ok" if not errors else "degraded"
+                    reason_code = reason
+                with self._lock:
+                    self._last_request_count = stats.requests
+                    self._last_rate_limit_count = stats.rate_limits
+                    self._last_http_429_count = stats.http_429s
+                    self._cache_hits += stats.cache_hits
+                    self._cache_misses += stats.cache_misses
+                result["requests"] = {
+                    "count": stats.requests,
+                    "rate_limited": stats.rate_limits,
+                    "http_429": stats.http_429s,
+                    "cache_hits": stats.cache_hits,
+                    "cache_misses": stats.cache_misses,
+                }
+                from . import telemetry
+
+                telemetry.entitlement_reconcile(
+                    source=source,
+                    outcome=outcome,
+                    reason=reason_code,
+                    duration_ms=(self._monotonic() - started_at) * 1000,
+                    rate_limited=bool(stats.rate_limits),
+                    request_count=stats.requests,
+                    rate_limit_count=stats.rate_limits,
+                    http_429_count=stats.http_429s,
+                    backoff_seconds=backoff_seconds,
+                    cache_hits=stats.cache_hits,
+                    cache_misses=stats.cache_misses,
+                    convergence_ms=convergence_ms,
+                )
+                return result
+            finally:
+                _request_stats.reset(stats_token)
 
         if email:
             emails = [email]
@@ -523,7 +1093,6 @@ class EntitlementManager:
         }
         if not emails:
             msg = "no attendee available for entitlement verification"
-            self._record(False, msg)
             result["errors"] = [msg]
             return finish(result, "no_attendee")
 
@@ -531,11 +1100,10 @@ class EntitlementManager:
         host = config.databricks_host()
         if not bearer or not host:
             msg = "no app service-principal bearer/host — cannot reconcile entitlements"
-            self._record(False, msg)
             result["errors"] = [msg]
             return finish(result, "credential_unavailable")
 
-        errors: list[str] = []
+        errors = self._capture_missing_baselines(host, bearer)
         catalog = config.workshop_catalog()
         if not catalog:
             # Not an error: an event can run entitlements on without handing out
@@ -579,7 +1147,7 @@ class EntitlementManager:
                     )
                 else:
                     with self._lock:
-                        self._last_verified_at = time.time()
+                        self._last_verified_at = self._clock()
                         self._verified_email = em
                         self._verified_catalog = catalog
                         self._verification_source = source
@@ -592,12 +1160,17 @@ class EntitlementManager:
                 if "@" not in em:
                     continue
                 counts, errs = self._handoff_resources(
-                    host, bearer, em, identities, catalog
+                    host,
+                    bearer,
+                    em,
+                    identities,
+                    catalog,
+                    force_all=source != "background" and label is None,
+                    force_label=label,
                 )
                 result["non_uc"][em] = counts
                 errors.extend(errs)
 
-        self._record(not errors, "; ".join(errors[:5]) if errors else None)
         result["errors"] = errors
         result["handoff"] = self._handoff_snapshot()
         return finish(result, "reconcile_failed" if errors else "complete")
@@ -609,18 +1182,31 @@ class EntitlementManager:
         principal: str,
         sp_identities: set[str],
         catalog: str | None = None,
+        *,
+        force_all: bool = False,
+        force_label: str | None = None,
     ) -> tuple[dict[str, int], list[str]]:
         counts: dict[str, int] = {}
         errors: list[str] = []
         for spec in _RESOURCE_SPECS:
+            if force_label and spec.label != force_label:
+                continue
             try:
-                items = _enumerate(host, bearer, spec)
+                items = self._enumerate_resources(
+                    host,
+                    bearer,
+                    spec,
+                    force=force_all or force_label == spec.label,
+                )
             except Exception as e:  # noqa: BLE001 — isolate API failures
                 message = f"{spec.label} list: {e}"
                 errors.append(message)
-                self._transition(
-                    principal, spec.label, "<discovery>", "failed", error=message
-                )
+                if not isinstance(e, EntitlementApiError) or not e.rate_limit_reason:
+                    self._transition(
+                        principal, spec.label, "<discovery>", "failed", error=message
+                    )
+                if isinstance(e, EntitlementApiError) and e.rate_limit_reason:
+                    break
                 continue
             granted = 0
             for item in items:
@@ -995,11 +1581,14 @@ class EntitlementManager:
             entry["error"] = error
             if permission_level:
                 entry["permission_level"] = permission_level
-            entry["updated_at"] = time.time()
+            entry["updated_at"] = self._clock()
 
     def _handoff_snapshot(self) -> dict:
         with self._lock:
-            details = [dict(entry) for entry in self._ledger.values()]
+            return self._handoff_snapshot_locked()
+
+    def _handoff_snapshot_locked(self) -> dict:
+        details = [copy.deepcopy(entry) for entry in self._ledger.values()]
         summary = {
             state: sum(1 for entry in details if entry["state"] == state)
             for state in (
@@ -1022,13 +1611,111 @@ class EntitlementManager:
             ),
         }
 
-    def _record(self, ok: bool, error: str | None) -> None:
-        now = time.time()
+    def _ledger_signature_locked(self) -> tuple:
+        return tuple(
+            sorted(
+                (
+                    key,
+                    entry.get("state"),
+                    entry.get("error"),
+                    entry.get("permission_level"),
+                )
+                for key, entry in self._ledger.items()
+            )
+        )
+
+    def _defer_backoff(
+        self,
+        stats: _RequestStats,
+        previous_ledger: dict,
+        previous_verification: tuple[float, str | None, str | None, str | None]
+        | None = None,
+        previous_app_sp_grants: dict[str, str] | None = None,
+    ) -> float:
+        now = self._clock()
+        with self._lock:
+            self._ledger = previous_ledger
+            if previous_verification is not None:
+                (
+                    self._last_verified_at,
+                    self._verified_email,
+                    self._verified_catalog,
+                    self._verification_source,
+                ) = previous_verification
+            if previous_app_sp_grants is not None:
+                self._app_sp_grants = previous_app_sp_grants
+            self._backoff_attempt += 1
+            window = min(
+                float(config.entitlement_backoff_cap()),
+                float(config.entitlement_backoff_base())
+                * (2 ** min(self._backoff_attempt - 1, 16)),
+            )
+            jittered = self._jittered_delay(1.0, max(1.0, window))
+            delay = min(
+                float(config.entitlement_backoff_cap()),
+                max(jittered, stats.retry_after),
+            )
+            self._backoff_seconds = delay
+            self._deferred_reason = stats.rate_limit_reason or "rate_limited"
+            self._health_state = "degraded_backoff"
+            self._next_attempt_at = now + delay
+            self._next_attempt_reason = self._deferred_reason
+            self._idle = False
+            if self._convergence_started_at is None:
+                self._convergence_started_at = now
+        logger.warning(
+            "entitlement reconcile deferred for %.1fs (%s)",
+            delay,
+            stats.rate_limit_reason or "rate_limited",
+        )
+        self._wake_event.set()
+        return delay
+
+    def _record(
+        self, ok: bool, error: str | None, *, verified_no_change: bool = False
+    ) -> float:
+        now = self._clock()
+        cache_expiry = self._next_cache_expiry(now)
+        convergence_ms = 0.0
         with self._lock:
             changed = ok != self._ok
             self._ok = ok
             self._last_error = error
             self._last_reconcile = now
+            self._deferred_reason = None
+            self._backoff_attempt = 0
+            self._backoff_seconds = 0.0
+            if ok:
+                self._health_state = "healthy"
+                self._idle = verified_no_change
+                if self._convergence_started_at is not None:
+                    convergence_ms = max(
+                        0.0, (now - self._convergence_started_at) * 1000
+                    )
+                    self._last_convergence_ms = convergence_ms
+                    self._convergence_started_at = None
+                cadence = (
+                    config.entitlement_idle_interval()
+                    if self._idle
+                    else config.entitlement_reconcile_interval()
+                )
+                self._next_attempt_reason = (
+                    "cache_expiry" if cache_expiry and cache_expiry < now + cadence
+                    else "idle_cadence" if self._idle
+                    else "active_cadence"
+                )
+                self._next_attempt_at = min(
+                    now + cadence, cache_expiry or float("inf")
+                )
+            else:
+                self._health_state = "unhealthy"
+                self._idle = False
+                self._next_attempt_at = now + max(
+                    HEARTBEAT, config.entitlement_reconcile_interval()
+                )
+                self._next_attempt_reason = "failed_verification"
+                if self._convergence_started_at is None:
+                    self._convergence_started_at = now
         if not ok:
             logger.warning("entitlement reconcile degraded: %s", error)
         elif changed:
@@ -1036,6 +1723,8 @@ class EntitlementManager:
         if changed or (not ok and now - self._last_alert_at > ALERT_REEMIT_INTERVAL):
             self._last_alert_at = now
             self._emit_health(ok, error)
+        self._wake_event.set()
+        return convergence_ms
 
     def _emit_health(self, ok: bool, error: str | None) -> None:
         try:
@@ -1058,12 +1747,48 @@ class EntitlementManager:
             verified_email = self._verified_email
             verified_catalog = self._verified_catalog
             verification_source = self._verification_source
+            health_state = self._health_state
+            last_attempt_at = self._last_attempt_at
+            next_attempt_at = self._next_attempt_at
+            next_attempt_reason = self._next_attempt_reason
+            deferred_reason = self._deferred_reason
+            backoff_seconds = self._backoff_seconds
+            backoff_attempt = self._backoff_attempt
+            idle = self._idle
+            last_request_count = self._last_request_count
+            last_rate_limit_count = self._last_rate_limit_count
+            last_http_429_count = self._last_http_429_count
+            cache_hits = self._cache_hits
+            cache_misses = self._cache_misses
+            convergence_ms = self._last_convergence_ms
+            baseline_ready = sorted(self._baseline_ready)
+            baseline_retry_pending = self._baseline_retry_pending
+            handoff = self._handoff_snapshot_locked()
+            cache = {
+                spec.label: {
+                    "cached": spec.label in self._enumeration_cache,
+                    "refreshed_at": (
+                        self._enumeration_cache[spec.label].refreshed_at
+                        if spec.label in self._enumeration_cache
+                        else None
+                    ),
+                    "expires_at": (
+                        self._enumeration_cache[spec.label].expires_at
+                        if spec.label in self._enumeration_cache
+                        else None
+                    ),
+                    "retry_at": self._cache_retry_at.get(spec.label),
+                }
+                for spec in _RESOURCE_SPECS
+            }
         return {
             "enabled": config.entitlements_enabled(),
             "catalog": config.workshop_catalog() or None,
             "schema": config.workshop_schema() or None,
             "ok": ok,
+            "state": health_state,
             "last_reconcile": last_reconcile or None,
+            "last_attempt_at": last_attempt_at or None,
             "last_error": last_error,
             "thread_alive": bool(self._thread and self._thread.is_alive()),
             "last_verified_at": last_verified_at or None,
@@ -1071,9 +1796,29 @@ class EntitlementManager:
             "verified_catalog": verified_catalog,
             "verification_source": verification_source,
             "interval": config.entitlement_reconcile_interval(),
+            "idle_interval": config.entitlement_idle_interval(),
+            "cache_ttl_cap": config.entitlement_cache_ttl(),
+            "backoff_cap": config.entitlement_backoff_cap(),
+            "fleet_request_budget_per_minute": (
+                config.entitlement_fleet_request_budget_per_minute()
+            ),
+            "idle": idle,
+            "next_attempt_at": next_attempt_at or None,
+            "next_attempt_reason": next_attempt_reason,
+            "deferred_reason": deferred_reason,
+            "backoff_seconds": backoff_seconds,
+            "backoff_attempt": backoff_attempt,
+            "last_request_count": last_request_count,
+            "last_rate_limit_count": last_rate_limit_count,
+            "last_http_429_count": last_http_429_count,
+            "cache_hits": cache_hits,
+            "cache_misses": cache_misses,
+            "cache": cache,
+            "last_convergence_ms": convergence_ms,
             "run_started_at": self._run_started_at,
-            "baseline_ready": sorted(self._baseline_ready),
-            "handoff": self._handoff_snapshot(),
+            "baseline_ready": baseline_ready,
+            "baseline_retry_pending": baseline_retry_pending,
+            "handoff": handoff,
         }
 
 

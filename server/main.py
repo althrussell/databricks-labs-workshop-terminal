@@ -390,6 +390,10 @@ class _EmailBody(BaseModel):
     email: str | None = None
 
 
+class _EntitlementReconcileBody(_EmailBody):
+    resource_type: str | None = None
+
+
 def _callback_identity(body: _EmailBody, request: Request) -> Principal:
     """Authenticate a browser proxy call or attendee helper capability."""
     capability = (request.headers.get("x-workshop-capability") or "").strip()
@@ -457,12 +461,17 @@ def recover(principal: Principal = Depends(get_current_user)):
 
 
 @app.post("/api/entitlements/reconcile")
-def reconcile_entitlements(body: _EmailBody, request: Request):
+def reconcile_entitlements(body: _EntitlementReconcileBody, request: Request):
     """On-demand entitlement reconcile (the ``workshop-grant-me`` path): makes a
     just-created app/job/Lakebase instance usable by the labuser immediately
     instead of waiting for the next sweep."""
     principal = _callback_identity(body, request)
-    return entitlement_manager.reconcile(email=principal.name)
+    try:
+        return entitlement_manager.reconcile(
+            email=principal.name, resource_type=body.resource_type
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 class _DiscoveryBody(_EmailBody):
@@ -893,6 +902,7 @@ def create_session(
         raise HTTPException(status_code=503, detail=str(e))
     user.sessions_launched[agent["id"]] = user.sessions_launched.get(agent["id"], 0) + 1
     telemetry.session_started(principal.name, agent["id"], session.id)
+    entitlement_manager.wake("session_start")
     if body.replaces_agent_id and body.replaces_agent_id != agent["id"]:
         telemetry.session_switched(
             principal.name,

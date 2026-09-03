@@ -1,15 +1,19 @@
 """SP-driven entitlement reconciler: UC catalog grant + non-UC CAN_MANAGE sweep,
 idempotency, disabled-flag skip, and fail-soft health on error."""
 
+import random
+from collections import Counter
+
 import pytest
 import requests
 
 
 class _Resp:
-    def __init__(self, status, payload=None, text=""):
+    def __init__(self, status, payload=None, text="", headers=None):
         self.status_code = status
         self._payload = payload or {}
         self.text = text
+        self.headers = headers or {}
 
     def json(self):
         return self._payload
@@ -35,8 +39,10 @@ class _StrictRequests:
     def _params(params):
         return tuple(sorted((params or {}).items()))
 
-    def register_get(self, url, params, payload, status=200, text=""):
-        self.gets[(url, self._params(params))] = _Resp(status, payload, text)
+    def register_get(self, url, params, payload, status=200, text="", headers=None):
+        self.gets[(url, self._params(params))] = _Resp(
+            status, payload, text, headers
+        )
 
     def register_patch(self, url, levels, responses=None):
         self.patches[url] = {
@@ -1011,3 +1017,274 @@ def test_foreign_app_principal_is_left_alone(monkeypatch, enabled):
 
     assert result["errors"] == []
     assert not _catalog_grant_calls(fake, "app-sp-99")
+
+
+# --- Fleet-safe reconciliation scheduling -----------------------------------
+
+
+class _Clock:
+    def __init__(self, value=10_000.0):
+        self.value = float(value)
+
+    def __call__(self):
+        return self.value
+
+    def advance(self, seconds):
+        self.value += seconds
+
+
+def _scheduled_mgr(monkeypatch, fake, clock, *, jitter=lambda: 0.5):
+    from server import entitlements
+
+    monkeypatch.setenv("DATABRICKS_CLIENT_ID", "app-client-id")
+    monkeypatch.setattr(entitlements, "requests", fake)
+    monkeypatch.setattr(entitlements, "_sp_bearer", lambda: "sp-bearer")
+    return entitlements.EntitlementManager(
+        run_started_at=1_000,
+        clock=clock,
+        monotonic=clock,
+        jitter=jitter,
+    )
+
+
+def test_resource_exhausted_enters_full_jitter_backoff_and_keeps_last_good(
+    monkeypatch, enabled
+):
+    fake = _fake_with_resources()
+    clock = _Clock()
+    mgr = _scheduled_mgr(monkeypatch, fake, clock, jitter=lambda: 0.5)
+    assert mgr.reconcile("alice@example.com")["errors"] == []
+    last_good = mgr.status()["handoff"]
+
+    host = "https://test.cloud.databricks.com"
+    fake.register_get(
+        f"{host}/api/2.2/jobs/list",
+        {"limit": 100},
+        {"error_code": "RESOURCE_EXHAUSTED"},
+        status=429,
+        text="RESOURCE_EXHAUSTED",
+        headers={"Retry-After": "4"},
+    )
+    calls_before_limit = len(fake.calls)
+    limited = mgr.reconcile("alice@example.com")
+
+    status = mgr.status()
+    assert limited["state"] == "degraded_backoff"
+    assert limited["reason"] == "resource_exhausted"
+    assert limited["requests"]["rate_limited"] == 1
+    assert limited["requests"]["http_429"] == 1
+    assert limited["requests"]["count"] == 5
+    assert status["state"] == "degraded_backoff"
+    assert status["ok"] is True
+    assert status["handoff"] == last_good
+    assert status["backoff_attempt"] == 1
+    assert status["backoff_seconds"] == 4
+    assert status["next_attempt_at"] == clock() + 4
+
+    # Session/admin pressure cannot turn a Retry-After into a tight loop.
+    calls_after_limit = len(fake.calls)
+    mgr.wake("session_start")
+    deferred = mgr.reconcile("alice@example.com")
+    assert deferred["deferred"] is True
+    assert len(fake.calls) == calls_after_limit
+    assert calls_after_limit > calls_before_limit
+
+    clock.advance(4)
+    fake.register_get(
+        f"{host}/api/2.2/jobs/list",
+        {"limit": 100},
+        {
+            "jobs": [
+                {
+                    "job_id": 11,
+                    "creator_user_name": "app-sp",
+                    "created_time": 1_100_000,
+                }
+            ]
+        },
+    )
+    recovered = mgr.reconcile("alice@example.com", source="background")
+    assert recovered["errors"] == []
+    assert mgr.status()["state"] == "healthy"
+    assert mgr.status()["backoff_attempt"] == 0
+
+
+def test_plain_429_and_resource_exhausted_have_distinct_reasons(monkeypatch, enabled):
+    from server import entitlements
+
+    plain = entitlements._api_error(_Resp(429, {}, "too many requests"))
+    exhausted = entitlements._api_error(
+        _Resp(503, {"error_code": "RESOURCE_EXHAUSTED"}, "capacity")
+    )
+    assert plain.rate_limit_reason == "http_429"
+    assert exhausted.rate_limit_reason == "resource_exhausted"
+
+
+def test_exponential_backoff_is_capped(monkeypatch):
+    from server import entitlements
+
+    monkeypatch.setenv("ENTITLEMENT_BACKOFF_BASE", "5")
+    monkeypatch.setenv("ENTITLEMENT_BACKOFF_CAP", "300")
+    clock = _Clock()
+    manager = entitlements.EntitlementManager(clock=clock, jitter=lambda: 1.0)
+    stats = entitlements._RequestStats(
+        rate_limits=1,
+        http_429s=1,
+        rate_limit_reason="http_429",
+    )
+    delays = []
+    for _ in range(10):
+        delay = manager._defer_backoff(stats, {})
+        delays.append(delay)
+        clock.advance(delay)
+
+    assert delays[:7] == [5, 10, 20, 40, 80, 160, 300]
+    assert delays[7:] == [300, 300, 300]
+
+
+def test_baseline_429_stops_enumeration_and_is_not_overwritten_at_start(
+    monkeypatch, enabled
+):
+    from server import entitlements
+
+    fake = _strict_fake()
+    host = "https://test.cloud.databricks.com"
+    fake.register_get(
+        f"{host}/api/2.0/pipelines",
+        {"max_results": 100},
+        {},
+        status=429,
+        text="rate limited",
+    )
+    clock = _Clock()
+    mgr = _scheduled_mgr(monkeypatch, fake, clock, jitter=lambda: 0.5)
+
+    mgr.start()
+    try:
+        status = mgr.status()
+        assert status["state"] == "degraded_backoff"
+        assert status["next_attempt_reason"] == "http_429"
+        assert status["next_attempt_at"] == clock() + 3
+        resource_gets = [
+            call
+            for call in fake.calls
+            if call[0] == "GET"
+            and any(
+                call[1].endswith(spec.list_path)
+                for spec in entitlements._RESOURCE_SPECS
+            )
+        ]
+        assert len(resource_gets) == 1
+
+        clock.advance(3)
+        fake.register_get(
+            f"{host}/api/2.0/pipelines",
+            {"max_results": 100},
+            {"statuses": []},
+        )
+        recovered = mgr.reconcile("alice@example.com", source="background")
+        assert recovered["errors"] == []
+        assert mgr.status()["baseline_ready"] == ["pipelines", "warehouses"]
+        assert mgr.status()["state"] == "healthy"
+    finally:
+        mgr.stop()
+
+
+def test_background_cache_refresh_is_targeted_and_session_start_wakes_idle(
+    monkeypatch, enabled
+):
+    from server import entitlements
+
+    fake = _fake_with_resources()
+    clock = _Clock()
+    mgr = _scheduled_mgr(monkeypatch, fake, clock)
+    mgr.reconcile("alice@example.com")
+
+    fake.calls.clear()
+    unchanged = mgr.reconcile("alice@example.com", source="background")
+    list_calls = [
+        call
+        for call in fake.calls
+        if call[0] == "GET"
+        and "/permissions/" not in call[1]
+        and not call[1].endswith("/Me")
+        and "/catalogs/" not in call[1]
+    ]
+    assert list_calls == []
+    assert unchanged["requests"]["cache_hits"] == len(entitlements._RESOURCE_SPECS)
+    assert mgr.status()["idle"] is True
+
+    mgr.notify_resource_created("app")
+    fake.calls.clear()
+    targeted = mgr.reconcile("alice@example.com", source="background")
+    resource_lists = [
+        call[1]
+        for call in fake.calls
+        if call[0] == "GET"
+        and any(
+            call[1].endswith(spec.list_path) for spec in entitlements._RESOURCE_SPECS
+        )
+    ]
+    assert resource_lists == ["https://test.cloud.databricks.com/api/2.0/apps"]
+    assert targeted["requests"]["cache_misses"] == 1
+
+    mgr.reconcile("alice@example.com", source="background")
+    assert mgr.status()["idle"] is True
+    mgr.wake("session_start")
+    assert mgr.status()["idle"] is False
+    assert mgr.status()["next_attempt_at"] == clock()
+    assert mgr.status()["next_attempt_reason"] == "session_start"
+
+
+def test_hundred_instance_schedule_stays_under_request_budget(monkeypatch):
+    """Default cadence remains inside the measured fleet planning envelope."""
+    from server import config, entitlements
+
+    monkeypatch.setenv("ENTITLEMENT_RECONCILE_INTERVAL", "300")
+    monkeypatch.setenv("ENTITLEMENT_CACHE_TTL", "1800")
+    monkeypatch.setenv("ENTITLEMENT_FLEET_REQUEST_BUDGET_PER_MINUTE", "400")
+    rng = random.Random(20260825)
+    scheduled: list[tuple[float, int]] = []
+    baseline_specs = sum(
+        spec.requires_baseline for spec in entitlements._RESOURCE_SPECS
+    )
+    base_requests = 4  # catalog grant/readback plus service-principal identity
+
+    retry_delays = {
+        entitlements.EntitlementManager(
+            jitter=lambda fraction=fraction: fraction
+        )._jittered_delay(1, 5)
+        for fraction in (index / 99 for index in range(100))
+    }
+    assert len(retry_delays) == 100
+
+    for _ in range(100):
+        manager = entitlements.EntitlementManager(jitter=rng.random)
+        # Baseline capture is eager and security-sensitive, but only touches the
+        # two APIs that have no trustworthy creation timestamp.
+        scheduled.append((0.0, baseline_specs))
+        expiries = [manager._cache_lifetime() for _ in range(baseline_specs)]
+        startup = manager._startup_delay()
+        scheduled.append(
+            (
+                startup,
+                base_requests + len(entitlements._RESOURCE_SPECS) - baseline_specs,
+            )
+        )
+        expiries.extend(
+            startup + manager._cache_lifetime()
+            for _ in range(len(entitlements._RESOURCE_SPECS) - baseline_specs)
+        )
+        for expiry in expiries:
+            while expiry < 3600:
+                # One staggered cache miss plus catalog/identity verification.
+                scheduled.append((expiry, base_requests + 1))
+                expiry += manager._cache_lifetime()
+
+    requests_by_minute = Counter({minute: 0 for minute in range(60)})
+    for instant, request_total in scheduled:
+        requests_by_minute[int(instant // 60)] += request_total
+
+    assert max(requests_by_minute.values()) <= (
+        config.entitlement_fleet_request_budget_per_minute()
+    )

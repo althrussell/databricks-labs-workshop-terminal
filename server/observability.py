@@ -57,6 +57,12 @@ _SAFE_FIELD_MAP = {
     "signal": "process.signal",
     "rate_limited": "entitlement.rate_limited",
     "backoff_seconds": "operation.backoff_seconds",
+    "request_count": "operation.request_count",
+    "rate_limit_count": "entitlement.rate_limit_count",
+    "http_429_count": "entitlement.http_429_count",
+    "cache_hits": "entitlement.cache_hits",
+    "cache_misses": "entitlement.cache_misses",
+    "convergence_ms": "operation.convergence_ms",
     "coverage": "mirror.coverage",
     "failed_checks": "readiness.failed_checks",
     "exception_type": "exception.type",
@@ -245,8 +251,23 @@ class WorkshopTelemetry:
         self.entitlement_rate_limits = self._meter.create_counter(
             "workshop.entitlement.rate_limits", unit="{response}"
         )
+        self.entitlement_http_429 = self._meter.create_counter(
+            "workshop.entitlement.http_429", unit="{response}"
+        )
+        self.entitlement_requests = self._meter.create_counter(
+            "workshop.entitlement.requests", unit="{request}"
+        )
         self.entitlement_duration = self._meter.create_histogram(
             "workshop.entitlement.reconcile.duration", unit="ms"
+        )
+        self.entitlement_backoff_duration = self._meter.create_histogram(
+            "workshop.entitlement.backoff.duration", unit="s"
+        )
+        self.entitlement_cache_accesses = self._meter.create_counter(
+            "workshop.entitlement.cache.accesses", unit="{access}"
+        )
+        self.entitlement_convergence_latency = self._meter.create_histogram(
+            "workshop.entitlement.convergence.latency", unit="ms"
         )
         self.mirror_coverage = self._meter.create_histogram(
             "workshop.mirror.coverage", unit="1"
@@ -314,8 +335,37 @@ class WorkshopTelemetry:
             self.entitlement_duration.record(
                 float(attributes.get("operation.duration_ms", 0)), metric_attributes
             )
-            if attributes.get("entitlement.rate_limited") is True:
-                self.entitlement_rate_limits.add(1, metric_attributes)
+            request_count = int(attributes.get("operation.request_count", 0))
+            rate_limit_count = int(
+                attributes.get("entitlement.rate_limit_count", 0)
+            )
+            if not rate_limit_count and attributes.get("entitlement.rate_limited") is True:
+                rate_limit_count = 1
+            cache_hits = int(attributes.get("entitlement.cache_hits", 0))
+            cache_misses = int(attributes.get("entitlement.cache_misses", 0))
+            http_429_count = int(attributes.get("entitlement.http_429_count", 0))
+            if request_count:
+                self.entitlement_requests.add(request_count, metric_attributes)
+            if rate_limit_count:
+                self.entitlement_rate_limits.add(rate_limit_count, metric_attributes)
+            if http_429_count:
+                self.entitlement_http_429.add(http_429_count, metric_attributes)
+            if cache_hits:
+                self.entitlement_cache_accesses.add(
+                    cache_hits, {**metric_attributes, "cache.result": "hit"}
+                )
+            if cache_misses:
+                self.entitlement_cache_accesses.add(
+                    cache_misses, {**metric_attributes, "cache.result": "miss"}
+                )
+            backoff = float(attributes.get("operation.backoff_seconds", 0))
+            if backoff:
+                self.entitlement_backoff_duration.record(backoff, metric_attributes)
+            convergence = float(attributes.get("operation.convergence_ms", 0))
+            if convergence:
+                self.entitlement_convergence_latency.record(
+                    convergence, metric_attributes
+                )
         elif name == "mirror.fetch":
             self.mirror_coverage.record(
                 float(attributes.get("mirror.coverage", 0)), metric_attributes

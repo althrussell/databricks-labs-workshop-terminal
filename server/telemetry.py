@@ -201,10 +201,20 @@ def mirror_fetch(outcome: str, reason: str, coverage: float) -> None:
 
 
 def entitlement_reconcile(
-    *, source: str, outcome: str, reason: str, duration_ms: float, rate_limited: bool
+    *,
+    source: str,
+    outcome: str,
+    reason: str,
+    duration_ms: float,
+    rate_limited: bool,
+    request_count: int = 0,
+    rate_limit_count: int = 0,
+    http_429_count: int = 0,
+    backoff_seconds: float = 0,
+    cache_hits: int = 0,
+    cache_misses: int = 0,
+    convergence_ms: float = 0,
 ) -> None:
-    from . import config
-
     emit(
         "entitlement.reconcile",
         "system",
@@ -214,9 +224,13 @@ def entitlement_reconcile(
             "code": reason,
             "duration_ms": max(0, round(duration_ms)),
             "rate_limited": rate_limited,
-            "backoff_seconds": config.entitlement_reconcile_interval()
-            if rate_limited
-            else 0,
+            "request_count": max(0, int(request_count)),
+            "rate_limit_count": max(0, int(rate_limit_count)),
+            "http_429_count": max(0, int(http_429_count)),
+            "backoff_seconds": max(0, round(backoff_seconds, 3)),
+            "cache_hits": max(0, int(cache_hits)),
+            "cache_misses": max(0, int(cache_misses)),
+            "convergence_ms": max(0, round(convergence_ms)),
         },
     )
 

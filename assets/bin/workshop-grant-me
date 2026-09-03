@@ -11,12 +11,26 @@ set -uo pipefail
 
 APP="${WORKSHOP_APP_URL:-http://localhost:8000}"
 EMAIL="${WORKSHOP_USER_EMAIL:-}"
+RESOURCE_TYPE="${1:-}"
 CAPABILITY_FILE="$HOME/.config/workshop/callback-capability"
+
+case "$RESOURCE_TYPE" in
+  ""|job|jobs|pipeline|pipelines|serving-endpoint|serving-endpoints|endpoint|app|apps|database-instance|database-instances|lakebase|database-project|database-projects|warehouse|warehouses|dashboard|dashboards) ;;
+  *)
+    echo "Unknown resource type '$RESOURCE_TYPE'. Omit it to refresh every type." >&2
+    exit 2
+    ;;
+esac
+
+DATA="{\"email\":\"${EMAIL}\"}"
+if [[ -n "$RESOURCE_TYPE" ]]; then
+  DATA="{\"email\":\"${EMAIL}\",\"resource_type\":\"${RESOURCE_TYPE}\"}"
+fi
 
 if curl -fsS -X POST "$APP/api/entitlements/reconcile" \
      -H 'Content-Type: application/json' \
      -H "X-Workshop-Capability: $(<"$CAPABILITY_FILE")" \
-     -d "{\"email\":\"${EMAIL}\"}"; then
+     -d "$DATA"; then
   echo ""
   echo "Requested a verified entitlement handoff for resources created during this workshop run."
 else

@@ -449,8 +449,17 @@ def evaluate(
 
     entitlement_enabled = _bool(env, "ENABLE_ENTITLEMENTS")
     last_verified_at = entitlement_status.get("last_verified_at")
+    # A verified no-change pass deliberately enters a longer idle cadence.
+    # Keep that last-known-good proof valid through one idle window plus a
+    # capped rate-limit retry; otherwise /readyz would turn red merely because
+    # the reconciler successfully became quiet.
+    proof_max_age = max(
+        ENTITLEMENT_PROOF_MAX_AGE,
+        int(entitlement_status.get("idle_interval") or 0)
+        + max(300, int(entitlement_status.get("backoff_seconds") or 0)),
+    )
     entitlement_recent = isinstance(last_verified_at, (int, float)) and (
-        0 <= current_time - float(last_verified_at) <= ENTITLEMENT_PROOF_MAX_AGE
+        0 <= current_time - float(last_verified_at) <= proof_max_age
     )
     attendee_verified = bool(entitlement_status.get("verified_email"))
     catalog_verified = entitlement_status.get("verified_catalog") == catalog
@@ -752,6 +761,9 @@ def evaluate(
             ),
             enabled=entitlement_enabled,
             healthy=entitlement_status.get("ok") is True,
+            state=entitlement_status.get("state"),
+            deferred_reason=entitlement_status.get("deferred_reason"),
+            next_attempt_at=entitlement_status.get("next_attempt_at"),
             thread_alive=entitlement_status.get("thread_alive") is True,
             last_verified_at=last_verified_at,
             verification_source=entitlement_status.get("verification_source"),

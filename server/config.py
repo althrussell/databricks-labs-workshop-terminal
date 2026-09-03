@@ -621,7 +621,43 @@ def workshop_demo_catalog() -> str:
 
 def entitlement_reconcile_interval() -> int:
     """Seconds between SP-driven entitlement reconciliation sweeps."""
-    return _env_int("ENTITLEMENT_RECONCILE_INTERVAL", 300)
+    return max(30, min(3600, _env_int("ENTITLEMENT_RECONCILE_INTERVAL", 300)))
+
+
+def entitlement_idle_interval() -> int:
+    """Maximum seconds between reconciles after a verified no-change pass."""
+    active = max(30, entitlement_reconcile_interval())
+    return max(active, min(3600, _env_int("ENTITLEMENT_IDLE_INTERVAL", 1800)))
+
+
+def entitlement_cache_ttl() -> int:
+    """Upper bound for a resource-list cache entry.
+
+    Entries receive independently jittered expiries between the active cadence
+    and this cap.  The cap prevents a bad environment value from leaving a new
+    resource undiscoverable for the life of an event.
+    """
+    return max(60, min(1800, _env_int("ENTITLEMENT_CACHE_TTL", 1800)))
+
+
+def entitlement_backoff_base() -> int:
+    """First entitlement rate-limit retry window, before full jitter."""
+    return max(1, min(60, _env_int("ENTITLEMENT_BACKOFF_BASE", 5)))
+
+
+def entitlement_backoff_cap() -> int:
+    """Maximum entitlement rate-limit retry delay."""
+    base = entitlement_backoff_base()
+    return max(base, min(900, _env_int("ENTITLEMENT_BACKOFF_CAP", 300)))
+
+
+def entitlement_fleet_request_budget_per_minute() -> int:
+    """Acceptance budget used by the deterministic 100-instance rehearsal.
+
+    This is a fleet planning guardrail, not a distributed runtime rate limiter;
+    each Workshop Terminal App is intentionally autonomous.
+    """
+    return max(1, _env_int("ENTITLEMENT_FLEET_REQUEST_BUDGET_PER_MINUTE", 400))
 
 
 def entitlement_transfer_ownership() -> bool:
