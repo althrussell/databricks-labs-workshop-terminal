@@ -534,6 +534,7 @@ class EntitlementManager:
         self._baseline_capture_attempted = False
         self._baseline_retry_pending = False
         self._ledger: dict[tuple[str, str, str], dict] = {}
+        self._adapter_errors: dict[tuple[str, str], tuple[str, ...]] = {}
         self._enumeration_cache: dict[str, _EnumerationCacheEntry] = {}
         self._cache_invalidations: dict[str, int] = {}
         self._cache_retry_at: dict[str, float] = {}
@@ -623,19 +624,26 @@ class EntitlementManager:
     def wake(self, reason: str, *, resource_type: str | None = None) -> None:
         """Leave idle cadence for a session or known resource event.
 
-        A known resource invalidates only its adapter.  Backoff remains a hard
-        floor: a launch can make reconciliation urgent, but it must not ignore a
-        platform request to stop sending calls.
+        A known resource invalidates only its adapter. Session start invalidates
+        every adapter so its wake cannot be satisfied entirely from a cache
+        populated before the attendee arrived. Backoff remains a hard floor: a
+        launch can make reconciliation urgent, but it must not ignore a platform
+        request to stop sending calls.
         """
         label = self._resource_label(resource_type)
         now = self._clock()
         with self._lock:
             self._wake_generation += 1
             self._last_wake_reason = reason
-            if label:
-                self._enumeration_cache.pop(label, None)
-                self._cache_retry_at.pop(label, None)
-                self._cache_invalidations[label] = self._wake_generation
+            invalidated = [label] if label else []
+            if reason == "session_start" and not invalidated:
+                invalidated = [spec.label for spec in _RESOURCE_SPECS]
+            for invalidated_label in invalidated:
+                self._enumeration_cache.pop(invalidated_label, None)
+                self._cache_retry_at.pop(invalidated_label, None)
+                self._cache_invalidations[invalidated_label] = (
+                    self._wake_generation
+                )
             self._idle = False
             if self._convergence_started_at is None:
                 self._convergence_started_at = now
@@ -819,6 +827,10 @@ class EntitlementManager:
             cached = self._enumeration_cache.get(spec.label)
             invalidation = self._cache_invalidations.get(spec.label)
             retry_at = self._cache_retry_at.get(spec.label, 0.0)
+            if not force and retry_at > now:
+                raise EntitlementApiError(
+                    f"resource enumeration retry deferred until {retry_at:.3f}"
+                )
             if (
                 not force
                 and invalidation is None
@@ -828,21 +840,25 @@ class EntitlementManager:
                 if stats:
                     stats.cache_hits += 1
                 return copy.deepcopy(cached.items)
-            if not force and retry_at > now:
-                raise EntitlementApiError(
-                    f"resource enumeration retry deferred until {retry_at:.3f}"
-                )
         if stats:
             stats.cache_misses += 1
         try:
             items = _enumerate(host, bearer, spec)
         except Exception as exc:
-            if isinstance(exc, EntitlementApiError) and exc.rate_limit_reason:
+            rate_limited = (
+                isinstance(exc, EntitlementApiError)
+                and exc.rate_limit_reason is not None
+            )
+            with self._lock:
+                # Once a live refresh fails, its older list is no longer proof
+                # that enumeration is healthy. Never let a forced failure fall
+                # back to that stale entry on the next background pass.
+                self._enumeration_cache.pop(spec.label, None)
+            if rate_limited:
                 # The retry must exercise the endpoint that throttled us. If an
                 # explicit refresh left an older entry behind, accepting that
                 # entry would report recovery without proving the list API did.
                 with self._lock:
-                    self._enumeration_cache.pop(spec.label, None)
                     self._cache_retry_at.pop(spec.label, None)
             else:
                 with self._lock:
@@ -1006,6 +1022,7 @@ class EntitlementManager:
             prior_ok = self._ok
             before_signature = self._ledger_signature_locked()
             before_ledger = copy.deepcopy(self._ledger)
+            before_adapter_errors = copy.deepcopy(self._adapter_errors)
             before_app_sp_grants = dict(self._app_sp_grants)
             before_verification = (
                 self._last_verified_at,
@@ -1034,6 +1051,7 @@ class EntitlementManager:
                         before_ledger,
                         before_verification,
                         before_app_sp_grants,
+                        before_adapter_errors,
                     )
                     outcome = "degraded_backoff"
                     reason_code = stats.rate_limit_reason or "rate_limited"
@@ -1192,6 +1210,12 @@ class EntitlementManager:
                 result["non_uc"][em] = counts
                 errors.extend(errs)
 
+        # A targeted pass proves only the adapter it visited. Preserve failures
+        # from every untouched adapter so a narrow success cannot turn global
+        # readiness green or move the reconciler into idle cadence.
+        for unresolved in self._adapter_error_messages():
+            if unresolved not in errors:
+                errors.append(unresolved)
         result["errors"] = errors
         result["handoff"] = self._handoff_snapshot()
         return finish(result, "reconcile_failed" if errors else "complete")
@@ -1212,6 +1236,7 @@ class EntitlementManager:
         for spec in _RESOURCE_SPECS:
             if force_label and spec.label != force_label:
                 continue
+            adapter_error_start = len(errors)
             try:
                 items = self._enumerate_resources(
                     host,
@@ -1226,9 +1251,13 @@ class EntitlementManager:
                     self._transition(
                         principal, spec.label, "<discovery>", "failed", error=message
                     )
+                self._replace_adapter_errors(
+                    principal, spec.label, errors[adapter_error_start:]
+                )
                 if isinstance(e, EntitlementApiError) and e.rate_limit_reason:
                     break
                 continue
+            self._clear_stale_adapter_failures(principal, spec, items)
             granted = 0
             for item in items:
                 if spec.skip_states and str(
@@ -1342,6 +1371,9 @@ class EntitlementManager:
                         error=message,
                     )
             counts[spec.label] = granted
+            self._replace_adapter_errors(
+                principal, spec.label, errors[adapter_error_start:]
+            )
         return counts, errors
 
     def _grant_app_sp_catalog_access(
@@ -1604,6 +1636,53 @@ class EntitlementManager:
                 entry["permission_level"] = permission_level
             entry["updated_at"] = self._clock()
 
+    def _replace_adapter_errors(
+        self, principal: str, resource_type: str, errors: list[str]
+    ) -> None:
+        """Replace the current failure proof for one principal/adapter pass."""
+        key = (principal, resource_type)
+        with self._lock:
+            if errors:
+                self._adapter_errors[key] = tuple(errors)
+            else:
+                self._adapter_errors.pop(key, None)
+
+    def _adapter_error_messages(self) -> list[str]:
+        """Return unresolved failures from adapters not visited by this pass."""
+        with self._lock:
+            return [
+                message
+                for messages in self._adapter_errors.values()
+                for message in messages
+            ]
+
+    def _clear_stale_adapter_failures(
+        self, principal: str, spec: ResourceSpec, items: list[dict]
+    ) -> None:
+        """Remove failed ledger entries disproven by a successful fresh list.
+
+        A discovery failure is resolved by any successful list. A failed
+        resource that no longer appears has been deleted and is no longer an
+        operational entitlement failure. Entries still present are updated by
+        the normal verification loop below.
+        """
+        current_ids = {
+            str(item[spec.id_field])
+            for item in items
+            if item.get(spec.id_field) is not None
+        }
+        with self._lock:
+            stale = [
+                key
+                for key, entry in self._ledger.items()
+                if key[0] == principal
+                and key[1] == spec.label
+                and entry.get("state") == "failed"
+                and (key[2] == "<discovery>" or key[2] not in current_ids)
+            ]
+            for key in stale:
+                self._ledger.pop(key, None)
+
     def _handoff_snapshot(self) -> dict:
         with self._lock:
             return self._handoff_snapshot_locked()
@@ -1652,6 +1731,8 @@ class EntitlementManager:
         previous_verification: tuple[float, str | None, str | None, str | None]
         | None = None,
         previous_app_sp_grants: dict[str, str] | None = None,
+        previous_adapter_errors: dict[tuple[str, str], tuple[str, ...]]
+        | None = None,
     ) -> float:
         now = self._clock()
         with self._lock:
@@ -1665,6 +1746,8 @@ class EntitlementManager:
                 ) = previous_verification
             if previous_app_sp_grants is not None:
                 self._app_sp_grants = previous_app_sp_grants
+            if previous_adapter_errors is not None:
+                self._adapter_errors = previous_adapter_errors
             self._backoff_attempt += 1
             window = min(
                 float(config.entitlement_backoff_cap()),

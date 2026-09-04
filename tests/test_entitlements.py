@@ -1190,6 +1190,99 @@ def test_baseline_429_stops_enumeration_and_is_not_overwritten_at_start(
         mgr.stop()
 
 
+def test_failed_forced_refresh_drops_stale_cache_until_retry(monkeypatch, enabled):
+    from server import config
+
+    fake = _fake_with_resources()
+    host = "https://test.cloud.databricks.com"
+    clock = _Clock()
+    mgr = _scheduled_mgr(monkeypatch, fake, clock)
+    assert mgr.reconcile("alice@example.com")["errors"] == []
+
+    fake.register_get(
+        f"{host}/api/2.2/jobs/list",
+        {"limit": 100},
+        {"error_code": "INTERNAL_ERROR"},
+        status=500,
+        text="temporary list failure",
+    )
+    failed = mgr.reconcile("alice@example.com", resource_type="jobs")
+    status = mgr.status()
+
+    assert any("temporary list failure" in error for error in failed["errors"])
+    assert status["cache"]["jobs"]["cached"] is False
+    assert status["cache"]["jobs"]["retry_at"] == (
+        clock() + config.entitlement_reconcile_interval()
+    )
+
+    fake.calls.clear()
+    deferred = mgr.reconcile("alice@example.com", source="background")
+    assert any("retry deferred" in error for error in deferred["errors"])
+    assert not [
+        call
+        for call in fake.calls
+        if call[0] == "GET" and call[1].endswith("/api/2.2/jobs/list")
+    ]
+
+    clock.advance(config.entitlement_reconcile_interval())
+    fake.register_get(
+        f"{host}/api/2.2/jobs/list",
+        {"limit": 100},
+        {
+            "jobs": [
+                {
+                    "job_id": 11,
+                    "creator_user_name": "app-sp",
+                    "created_time": 1_100_000,
+                }
+            ]
+        },
+    )
+    recovered = mgr.reconcile("alice@example.com", source="background")
+    assert recovered["errors"] == []
+    assert mgr.status()["cache"]["jobs"]["cached"] is True
+
+
+def test_targeted_success_preserves_unresolved_adapter_failure(monkeypatch, enabled):
+    fake = _fake_with_resources()
+    host = "https://test.cloud.databricks.com"
+    clock = _Clock()
+    mgr = _scheduled_mgr(monkeypatch, fake, clock)
+    fake.register_get(
+        f"{host}/api/2.2/jobs/list",
+        {"limit": 100},
+        {"error_code": "INTERNAL_ERROR"},
+        status=500,
+        text="jobs unavailable",
+    )
+
+    failed = mgr.reconcile("alice@example.com")
+    assert any("jobs unavailable" in error for error in failed["errors"])
+    assert mgr.status()["ok"] is False
+
+    fake.register_get(
+        f"{host}/api/2.2/jobs/list",
+        {"limit": 100},
+        {
+            "jobs": [
+                {
+                    "job_id": 11,
+                    "creator_user_name": "app-sp",
+                    "created_time": 1_100_000,
+                }
+            ]
+        },
+    )
+    apps_only = mgr.reconcile("alice@example.com", resource_type="apps")
+    assert any("jobs unavailable" in error for error in apps_only["errors"])
+    assert mgr.status()["ok"] is False
+    assert mgr.status()["idle"] is False
+
+    jobs_only = mgr.reconcile("alice@example.com", resource_type="jobs")
+    assert jobs_only["errors"] == []
+    assert mgr.status()["ok"] is True
+
+
 def test_background_cache_refresh_is_targeted_and_session_start_wakes_idle(
     monkeypatch, enabled
 ):
@@ -1234,6 +1327,25 @@ def test_background_cache_refresh_is_targeted_and_session_start_wakes_idle(
     assert mgr.status()["idle"] is False
     assert mgr.status()["next_attempt_at"] == clock()
     assert mgr.status()["next_attempt_reason"] == "session_start"
+    assert all(
+        not entry["cached"] for entry in mgr.status()["cache"].values()
+    )
+
+    fake.calls.clear()
+    woken = mgr.reconcile("alice@example.com", source="background")
+    resource_lists = {
+        call[1]
+        for call in fake.calls
+        if call[0] == "GET"
+        and any(
+            call[1].endswith(spec.list_path) for spec in entitlements._RESOURCE_SPECS
+        )
+    }
+    assert resource_lists == {
+        f"https://test.cloud.databricks.com{spec.list_path}"
+        for spec in entitlements._RESOURCE_SPECS
+    }
+    assert woken["requests"]["cache_misses"] == len(entitlements._RESOURCE_SPECS)
 
 
 def test_resource_wake_during_list_is_not_lost_or_recached(monkeypatch, enabled):
