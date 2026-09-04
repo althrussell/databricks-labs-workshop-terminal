@@ -392,6 +392,31 @@ def test_cli_submission_failure_returns_bounded_progress_detail(tmp_path):
     assert result["message"] == "validation complete"
 
 
+def test_dead_submit_worker_without_status_fails_immediately(tmp_path):
+    env, project = _env(tmp_path)
+    backend = FakeBackend(app_states=[_app()])
+    backend.submit_code = None
+
+    result = _controller(env, backend).deploy(project_path=str(project))
+
+    assert result["status"] == "failed"
+    assert result["reason"] == "cli_failed"
+    assert result["attempts"] == 1
+    assert result["message"] == deploy_tool.MISSING_SUBMIT_STATUS_MESSAGE
+
+
+def test_dead_submit_worker_still_follows_discovered_deployment(tmp_path):
+    env, project = _env(tmp_path)
+    backend = FakeBackend()
+    backend.submit_code = None
+
+    result = _controller(env, backend).deploy(project_path=str(project))
+
+    assert result["status"] == "succeeded"
+    assert result["deployment_id"] == "new"
+    assert backend.deployment_reads == 1
+
+
 def test_transient_poll_error_is_retried(tmp_path):
     env, project = _env(tmp_path)
     backend = FakeBackend(
@@ -665,6 +690,9 @@ def test_mcp_server_exposes_exactly_the_governed_deploy_tool(tmp_path):
     assert [tool["name"] for tool in tools] == ["deploy_databricks_app"]
     assert tools[0]["inputSchema"]["required"] == ["project_path"]
     assert tools[0]["inputSchema"]["additionalProperties"] is False
+    project_schema = tools[0]["inputSchema"]["properties"]["project_path"]
+    assert "default" not in project_schema
+    assert "Absolute" in project_schema["description"]
 
 
 @pytest.mark.parametrize(
@@ -672,7 +700,14 @@ def test_mcp_server_exposes_exactly_the_governed_deploy_tool(tmp_path):
     [
         ({}, "project_path is required"),
         ({"project_path": ".", "profile": "admin"}, "Unknown tool argument"),
-        ({"project_path": ".", "timeout_seconds": "120"}, "must be an integer"),
+        ({"project_path": "."}, "must be an absolute path"),
+        (
+            {
+                "project_path": "/home/user/projects/demo",
+                "timeout_seconds": "120",
+            },
+            "must be an integer",
+        ),
     ],
 )
 def test_mcp_server_enforces_input_schema_at_runtime(capsys, arguments, message):

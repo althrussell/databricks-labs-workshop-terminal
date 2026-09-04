@@ -312,7 +312,8 @@ attendee choose rather than defaulting to an app.
    `npx @databricks/appkit docs <section>` — invented shapes fail `tsc`. Never
    write `as unknown as <T>`.
 2. **Deploy with the `deploy_databricks_app` Workshop MCP tool.** Pass the
-   project directory and target (`default` unless the project says otherwise).
+   absolute project directory (resolve it with `pwd`) and target (`default`
+   unless the project says otherwise). Relative MCP project paths are rejected.
    It runs the supported `databricks apps deploy -t <target>` pipeline, polls
    `databricks apps get` and the exact deployment internally, and returns only
    after the deployment is `SUCCEEDED` and the app is `RUNNING`/`ACTIVE`.

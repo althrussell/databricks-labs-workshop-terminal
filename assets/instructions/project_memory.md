@@ -109,7 +109,8 @@ they want, then proceed. Otherwise it is always AppKit.
    `npx @databricks/appkit docs <section>` before writing against them, and
    never write `as unknown as <T>`.
 2. **Deploy with the `deploy_databricks_app` Workshop MCP tool**, passing this
-   project directory and target. It uses `databricks apps deploy`, polls
+   project's absolute directory (resolve it with `pwd`) and target. Relative
+   MCP project paths are rejected. It uses `databricks apps deploy`, polls
    `databricks apps get`, waits for the exact deployment and app compute, and
    returns the live URL. Do not substitute bare `databricks bundle deploy` or
    arbitrary `sleep`/log-tail loops. If MCP is unavailable, run

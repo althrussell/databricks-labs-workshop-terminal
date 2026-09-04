@@ -43,6 +43,9 @@ MAX_TIMEOUT_SECONDS = 60 * 60
 DEFAULT_POLL_SECONDS = 2.0
 MAX_PROGRESS_CHARS = 320
 MAX_LOG_BYTES = 1024 * 1024
+MISSING_SUBMIT_STATUS_MESSAGE = (
+    "Deploy submission worker exited without reporting status"
+)
 TERMINAL_PHASES = frozenset({"succeeded", "failed"})
 TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 TOKEN_RE = re.compile(
@@ -733,6 +736,10 @@ class DeployController:
             self._observe_app(state, project)
             store.save(state)
             if done:
+                if code is None:
+                    code = 1
+                    state["last_submit_message"] = MISSING_SUBMIT_STATUS_MESSAGE
+                    progress(MISSING_SUBMIT_STATUS_MESSAGE)
                 submit_code = code
                 state["submit_exit_code"] = code
                 state["submission_finished_at"] = self.wall_time()
@@ -1066,8 +1073,9 @@ class McpServer:
                 "properties": {
                     "project_path": {
                         "type": "string",
-                        "description": "App project directory under ~/projects.",
-                        "default": ".",
+                        "description": (
+                            "Absolute App project directory under ~/projects."
+                        ),
                     },
                     "target": {
                         "type": "string",
@@ -1139,6 +1147,14 @@ class McpServer:
         project_path = arguments.get("project_path")
         if not isinstance(project_path, str) or not project_path.strip():
             self._error(request_id, -32602, "project_path is required")
+            return
+        project_path = project_path.strip()
+        if not Path(project_path).is_absolute():
+            self._error(
+                request_id,
+                -32602,
+                "project_path must be an absolute path",
+            )
             return
         target = arguments.get("target", "default")
         if not isinstance(target, str):

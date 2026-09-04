@@ -3,8 +3,11 @@
 Workshop Terminal registers one local MCP server named `workshop` for Claude
 Code and Codex. It exposes exactly one tool: `deploy_databricks_app`.
 
-The tool accepts a project directory below `~/projects`, a bundle target, and a
-30–3600 second timeout. It runs the supported project deployment pipeline:
+The tool accepts an absolute project directory below `~/projects`, a bundle
+target, and a 30–3600 second timeout. Agents resolve the current project path
+before calling MCP; relative paths are rejected so the MCP server cannot deploy
+a tree selected by its own process working directory. It runs the supported
+project deployment pipeline:
 
 ```text
 databricks apps deploy --target <target> --auto-approve --no-wait
@@ -19,9 +22,9 @@ duration, poll count, and whether an interrupted operation was resumed.
 
 Every CLI subprocess removes ambient Databricks host/token/client-secret values
 and re-reads the attendee home's rotating `[DEFAULT]` profile. Credentials never
-enter MCP arguments, process arguments, progress, state, or telemetry. Project
-paths are resolved and constrained below `~/projects`; target names are
-validated and subprocesses never use a shell.
+enter MCP arguments, process arguments, progress, state, or telemetry. MCP
+project paths must be absolute and all project paths are constrained below
+`~/projects`; target names are validated and subprocesses never use a shell.
 
 State and bounded CLI progress are stored with mode `0600` below
 `~/.config/workshop/app-deploy/`. One file lock serializes deployment of the
@@ -56,6 +59,9 @@ The same controller is available when an MCP client cannot start:
 ```bash
 workshop-app-deploy --project "$PWD" --target default
 ```
+
+The CLI fallback resolves relative paths from the caller's shell working
+directory; this differs intentionally from the MCP boundary.
 
 Use `--json` for one machine-readable result. `SIGINT`/`SIGTERM` follows the same
 cancellation contract as MCP cancellation.
