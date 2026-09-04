@@ -563,6 +563,11 @@ access to them. Provision a per-attendee catalog so usability is automatic:
   **non-UC** resources (apps, jobs, pipelines, database instances, serving
   endpoints), granting the labuser `CAN_MANAGE` (these don't inherit). All calls
   run as the app SP, are idempotent, and emit `entitlements.health` on failure.
+  Enumeration is cached with independently staggered expiries; a verified
+  no-change pass enters a 30-minute idle cadence. Session launch, an explicit
+  reconcile, a known resource type, cache expiry, or failed verification wakes
+  it. Platform 429/`RESOURCE_EXHAUSTED` responses use capped full-jitter backoff
+  and preserve the last verified health/ledger as `degraded_backoff`.
 
 Grant payloads the app issues (the app SP uses catalog-scoped `MANAGE`; it does
 not need ownership or metastore-wide `MANAGE`):

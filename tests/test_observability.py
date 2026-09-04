@@ -84,6 +84,13 @@ def test_in_memory_exporters_receive_resource_spans_metrics_and_trace_ids():
             "code": "rate_limited",
             "rate_limited": True,
             "duration_ms": 42,
+            "request_count": 5,
+            "rate_limit_count": 1,
+            "http_429_count": 1,
+            "backoff_seconds": 4,
+            "cache_hits": 7,
+            "cache_misses": 1,
+            "convergence_ms": 1200,
         },
     )
 
@@ -109,6 +116,11 @@ def test_in_memory_exporters_receive_resource_spans_metrics_and_trace_ids():
         "workshop.session.active",
         "workshop.agent.exits",
         "workshop.entitlement.rate_limits",
+        "workshop.entitlement.http_429",
+        "workshop.entitlement.requests",
+        "workshop.entitlement.backoff.duration",
+        "workshop.entitlement.cache.accesses",
+        "workshop.entitlement.convergence.latency",
         "workshop.entitlement.reconcile.duration",
     } <= _metric_names(metrics)
 

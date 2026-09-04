@@ -49,6 +49,24 @@ def admin_prewarm_status():
     return install.prewarm_status()
 
 
+class EntitlementReconcileBody(BaseModel):
+    email: str | None = None
+    resource_type: str | None = None
+
+
+@router.post("/entitlements/reconcile")
+def reconcile_entitlements(body: EntitlementReconcileBody):
+    """Force a verified pass, optionally refreshing one known resource type."""
+    try:
+        return entitlement_manager.reconcile(
+            email=(body.email or "").strip().lower() or None,
+            resource_type=body.resource_type,
+            source="admin",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 class PhaseBody(BaseModel):
     phase: str
 

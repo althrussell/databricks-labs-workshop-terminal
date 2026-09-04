@@ -332,14 +332,26 @@ reconciler that makes SP-created resources usable by the labuser:
 
 ```json
 { "enabled": true, "catalog": "wsh_alice", "schema": null, "ok": true,
-  "last_reconcile": 1750000000, "last_error": null, "interval": 300 }
+  "state": "healthy", "last_reconcile": 1750000000, "last_error": null,
+  "interval": 300, "idle_interval": 1800, "idle": true,
+  "next_attempt_at": 1750001200, "next_attempt_reason": "cache_expiry",
+  "deferred_reason": null, "backoff_seconds": 0 }
 ```
 
 `ok: false` with a `last_error` means a grant is failing (commonly the app SP
 lacks permission on `WORKSHOP_CATALOG`, or the catalog name is wrong). The
 reconciler also emits an `entitlements.health` event to Control Tower (same
 envelope as `credential.health`) so a drifted/missing grant alerts ahead of the
-event.
+event. `state: degraded_backoff` means a 429 or `RESOURCE_EXHAUSTED` response
+deferred verification until `next_attempt_at`; `ok` and the handoff ledger keep
+their last verified values during that bounded delay.
+
+`POST /api/admin/entitlements/reconcile` forces a verified pass for every bound
+attendee or the optional `email`. An optional `resource_type` refreshes only
+that adapter (`apps`, `jobs`, `pipelines`, `serving-endpoints`,
+`database-instances`, `database-projects`, `warehouses`, or `dashboards`). A
+request made during platform backoff returns the deferred status without making
+another Databricks API call.
 
 ### App callback endpoints (not admin-gated)
 
@@ -351,7 +363,8 @@ them, and both no-op cleanly when the feature is disabled:
   `me` profile and nudges the tab (the `databricks-me` 401 self-heal path).
 - `POST /api/entitlements/reconcile` — runs an immediate entitlement reconcile
   for the attendee (the `workshop-grant-me` path), returning the per-resource
-  grant summary.
+  grant summary. The optional `resource_type` body field performs a targeted
+  refresh; the helper accepts the same value as its first argument.
 - `POST /api/discovery` — records one agent-elicited discovery record (the
   `workshop-discovery` path, contract C6). Only `record_id` is meaningful as a
   key; every other field is optional, unknown fields are ignored, and free text

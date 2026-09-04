@@ -59,6 +59,11 @@ Metric names are stable:
 - `workshop.agent.exits`
 - `workshop.bootstrap.duration`
 - `workshop.entitlement.rate_limits`
+- `workshop.entitlement.http_429`
+- `workshop.entitlement.requests`
+- `workshop.entitlement.backoff.duration`
+- `workshop.entitlement.cache.accesses` (`cache.result=hit|miss`)
+- `workshop.entitlement.convergence.latency`
 - `workshop.entitlement.reconcile.duration`
 - `workshop.mirror.coverage`
 - `workshop.readiness.latency`
