@@ -47,9 +47,10 @@ Attendee email is deliberately retained only in WT's authenticated Control
 Tower collection buffer and is not copied into the shared OTel record.
 
 Operational events cover session start/refusal/switch/exit, bootstrap phases,
-mirror serve/bypass, entitlement reconciliation and rate limiting, readiness
-state changes, OBO/Omnigent health, attendee-visible error codes, and uncaught
-async task failures.
+mirror serve/bypass, App deploy outcomes, entitlement reconciliation and rate
+limiting, readiness state changes, OBO/Omnigent health, attendee-visible error
+codes, and uncaught async task failures. `app.deploy` carries only bounded
+duration, outcome, reason, attempts, resume state, and MCP/CLI source.
 
 Metric names are stable:
 
@@ -58,6 +59,7 @@ Metric names are stable:
 - `workshop.session.active` (bounded to 0 or 1)
 - `workshop.agent.exits`
 - `workshop.bootstrap.duration`
+- `workshop.app.deploy.duration`
 - `workshop.entitlement.rate_limits`
 - `workshop.entitlement.http_429`
 - `workshop.entitlement.requests`

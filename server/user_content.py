@@ -13,7 +13,8 @@ Runs once per user (on their first session) after their HOME is bootstrapped:
                               (reviewed databricks-agent-skills, fetched at boot);
                               ~/.codex/skills gets the same set, which is where
                               Codex and Omnigent's Codex worker discover them
-- ~/.claude.json            — onboarding skipped + MCP servers (DeepWiki, Exa)
+- ~/.claude.json            — onboarding skipped + the local deploy MCP tool;
+                              optional public MCP servers remain opt-in
 - ~/.gitconfig + hooks      — attendee git identity and a post-commit hook that
                               syncs ~/projects repos to the attendee's
                               Workspace home (survives an app restart, not the
@@ -476,6 +477,9 @@ def _install_cli_helpers(user: User) -> None:
       ``captured: false`` when capture is off, and a helper that exists but
       declines is a much better failure than ``command not found`` mid-session
       if an operator enables capture on a running instance.
+    - ``workshop-app-deploy``: the sole governed app deploy-and-wait command and
+      the stdio MCP server registered with Claude and Codex. It uses the rotated
+      default profile, persists resumable state, and exposes no generic shell.
 
     There is deliberately no design-gate helper. Design quality is applied while
     the components are written, not audited afterwards by a command the attendee
@@ -487,6 +491,7 @@ def _install_cli_helpers(user: User) -> None:
         "databricks-me",
         "workshop-grant-me",
         "workshop-discovery",
+        "workshop-app-deploy",
     ):
         src = os.path.join(_ASSETS, "bin", name)
         if not os.path.isfile(src):
@@ -636,7 +641,15 @@ def _write_claude_json(user: User) -> None:
     # P1-21: public MCP servers are an indirect prompt-injection egress path for
     # the autonomous, token-bearing agent. Off by default; operators opt in per
     # event via ENABLE_PUBLIC_MCP. When off, the agent has no external MCP egress.
-    mcp_servers = {}
+    mcp_servers = {
+        "workshop": {
+            "type": "stdio",
+            "command": os.path.join(
+                user.home, ".local", "bin", "workshop-app-deploy"
+            ),
+            "args": ["--mcp"],
+        }
+    }
     if config.enable_public_mcp():
         deepwiki = os.environ.get("DEEPWIKI_MCP_URL", DEFAULT_DEEPWIKI_MCP).strip()
         exa = os.environ.get("EXA_MCP_URL", DEFAULT_EXA_MCP).strip()

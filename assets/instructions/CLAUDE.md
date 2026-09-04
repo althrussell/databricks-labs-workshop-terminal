@@ -311,21 +311,20 @@ attendee choose rather than defaulting to an app.
    against an AppKit API, check the real signature with
    `npx @databricks/appkit docs <section>` — invented shapes fail `tsc`. Never
    write `as unknown as <T>`.
-2. **Deploy with `databricks apps deploy -t <target>`** (`default` unless the
-   project says otherwise), then open the URL once to confirm it responds.
-   Use that command — not a hand-built `--source-code-path`, and not a bare
-   `databricks bundle deploy`, which uploads the code but leaves the app
-   stopped with no URL.
+2. **Deploy with the `deploy_databricks_app` Workshop MCP tool.** Pass the
+   project directory and target (`default` unless the project says otherwise).
+   It runs the supported `databricks apps deploy -t <target>` pipeline, polls
+   `databricks apps get` and the exact deployment internally, and returns only
+   after the deployment is `SUCCEEDED` and the app is `RUNNING`/`ACTIVE`.
+   It also requests the attendee entitlement handoff. Use this tool — not a
+   hand-built `--source-code-path`, not arbitrary `sleep`/log-tail loops, and
+   not a bare `databricks bundle deploy`, which uploads code but leaves the app
+   stopped with no URL. If MCP is unavailable, use the identical local command:
+   `workshop-app-deploy --project "$PWD" --target <target>`.
 
-   A first deploy starts cold app compute and takes minutes, well past a
-   foreground command timeout, so run it in the background and poll:
-   ```bash
-   databricks apps get <app-name> -o json \
-     | python3 -c 'import json,sys; print(json.load(sys.stdin)["compute_status"]["state"])'
-   ```
-   Wait for `ACTIVE`. A timeout on the deploy command is not a failed deploy;
-   check the state before assuming anything is wrong or retrying. Repeated
-   `App is starting...` lines are the normal shape of a cold start, not a hang.
+   A first deploy starts cold app compute and takes minutes. A timeout on the deploy command is not a failed deploy; the next tool call resumes the
+   accepted deployment rather than submitting another. Repeated starting states
+   are normal. Never print credentials while diagnosing deployment.
 3. **Give the attendee the URL** and keep improving against it.
 
 <!-- discovery-anchor -->

@@ -365,12 +365,20 @@ def configure_claude(
     settings["apiKeyHelper"] = f"cat {_gateway_token_path(user)}"
     # Workshop "auto mode": zero permission prompts inside the attendee's
     # isolated container HOME. WORKSHOP_AUTO_MODE=false restores safe prompts.
+    permissions = settings.setdefault("permissions", {})
+    # This is the only local MCP capability Workshop Terminal injects. Name it
+    # explicitly even in auto mode so switching that mode off later does not
+    # turn a multi-minute deploy into an approval deadlock.
+    deploy_permission = "mcp__workshop__deploy_databricks_app"
+    allowed = permissions.setdefault("allow", [])
+    if deploy_permission not in allowed:
+        allowed.append(deploy_permission)
     if config.auto_mode_enabled():
-        settings.setdefault("permissions", {})["defaultMode"] = "bypassPermissions"
+        permissions["defaultMode"] = "bypassPermissions"
         # One-time "are you sure?" prompt is honored from user-scope settings.
         settings["skipDangerousModePermissionPrompt"] = True
     else:
-        settings.get("permissions", {}).pop("defaultMode", None)
+        permissions.pop("defaultMode", None)
         settings.pop("skipDangerousModePermissionPrompt", None)
     _write_json(settings_path, settings)
 
@@ -501,6 +509,13 @@ def configure_codex(
         f'args = ["{token_path}"]\n'
         "timeout_ms = 5000\n"
         "refresh_interval_ms = 240000\n"
+        "\n"
+        "[mcp_servers.workshop]\n"
+        f"command = {json.dumps(os.path.join(user.home, '.local', 'bin', 'workshop-app-deploy'))}\n"
+        'args = ["--mcp"]\n'
+        'enabled_tools = ["deploy_databricks_app"]\n'
+        "startup_timeout_sec = 10\n"
+        "tool_timeout_sec = 3600\n"
     )
     _atomic_write_text(os.path.join(codex_dir, "config.toml"), config_toml)
 
