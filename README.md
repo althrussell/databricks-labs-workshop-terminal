@@ -49,6 +49,11 @@ operator admin panel.
   `ALLOW_SHARED_TOPOLOGY=true` to acknowledge the shared-credential caveat.
 - **Resilient terminals**: PTYs survive page refreshes and wifi blips —
   reconnect and your scrollback replays.
+- **A governed App deploy-and-wait tool** shared by Claude and Codex. It runs
+  the supported project deployment, survives MCP process restarts, waits for
+  the exact Apps deployment and compute state, returns the live URL, and asks
+  for the attendee entitlement handoff. See
+  [docs/app-deploy-tool.md](docs/app-deploy-tool.md).
 - **Insight nuggets**: a collapsible pane of docs, best practices, and
   marketing-grade product cards that follows the workshop phase, reacts to
   activity signals, and **watches the terminal for topics** — mention

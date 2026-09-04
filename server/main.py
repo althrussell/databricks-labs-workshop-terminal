@@ -12,6 +12,7 @@ import os
 import threading
 import time
 from contextlib import asynccontextmanager
+from typing import Literal
 
 import asyncio
 
@@ -394,6 +395,15 @@ class _EntitlementReconcileBody(_EmailBody):
     resource_type: str | None = None
 
 
+class _AppDeployEventBody(_EmailBody):
+    outcome: Literal["succeeded", "failed", "cancelled", "timed_out"]
+    reason: str = Field(min_length=1, max_length=64)
+    duration_ms: float = Field(ge=0, le=3_600_000)
+    attempts: int = Field(ge=0, le=10_000)
+    resumed: bool = False
+    source: Literal["mcp", "cli"] = "mcp"
+
+
 def _callback_identity(body: _EmailBody, request: Request) -> Principal:
     """Authenticate a browser proxy call or attendee helper capability."""
     capability = (request.headers.get("x-workshop-capability") or "").strip()
@@ -472,6 +482,26 @@ def reconcile_entitlements(body: _EntitlementReconcileBody, request: Request):
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/tools/app-deploy/event")
+def record_app_deploy_event(body: _AppDeployEventBody, request: Request):
+    """Receive the local helper's bounded result and bridge it into OTel/CT.
+
+    The callback capability binds the record to this attendee. The request has
+    deliberately no app name, URL, command output, project path, or credential.
+    """
+    principal = _callback_identity(body, request)
+    telemetry.app_deploy(
+        principal.name,
+        outcome=body.outcome,
+        reason=body.reason,
+        duration_ms=body.duration_ms,
+        attempts=body.attempts,
+        resumed=body.resumed,
+        source=body.source,
+    )
+    return {"recorded": True}
 
 
 class _DiscoveryBody(_EmailBody):

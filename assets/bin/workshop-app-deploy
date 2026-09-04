@@ -1,0 +1,1319 @@
+#!/usr/bin/env python3
+"""Deploy one Databricks App and wait for the exact deployment to become live.
+
+The executable has two front doors over the same controller:
+
+* a small command-line interface for an agent or attendee; and
+* a stdio MCP server exposing only ``deploy_databricks_app``.
+
+It intentionally shells out to the supported Databricks CLI project deploy
+pipeline.  Credentials never enter argv or MCP traffic: every CLI subprocess
+re-reads the rotating ``[DEFAULT]`` profile in the attendee's private HOME.
+"""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import fcntl
+import hashlib
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import urllib.error
+import urllib.request
+import uuid
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable
+
+
+TOOL_NAME = "deploy_databricks_app"
+SERVER_NAME = "workshop-app-deploy"
+SERVER_VERSION = "1"
+DEFAULT_TIMEOUT_SECONDS = 20 * 60
+MIN_TIMEOUT_SECONDS = 30
+MAX_TIMEOUT_SECONDS = 60 * 60
+DEFAULT_POLL_SECONDS = 2.0
+MAX_PROGRESS_CHARS = 320
+MAX_LOG_BYTES = 1024 * 1024
+MISSING_SUBMIT_STATUS_MESSAGE = (
+    "Deploy submission worker exited without reporting status"
+)
+TERMINAL_PHASES = frozenset({"succeeded", "failed"})
+TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+TOKEN_RE = re.compile(
+    r"(?i)(bearer\s+|token[=:]\s*|secret[=:]\s*)[A-Za-z0-9._~+/=-]{8,}"
+)
+DATABRICKS_TOKEN_RE = re.compile(r"\b(?:dapi|dkea)[A-Za-z0-9._-]{8,}\b")
+JWT_RE = re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")
+EMAIL_RE = re.compile(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b")
+
+
+class DeployError(RuntimeError):
+    """A controlled, attendee-readable deploy refusal."""
+
+
+class CliError(DeployError):
+    def __init__(self, message: str, *, returncode: int | None = None):
+        super().__init__(message)
+        self.returncode = returncode
+
+
+class LockWaitStopped(RuntimeError):
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def _safe_line(value: object) -> str:
+    text = str(value).replace("\x00", " ").replace("\r", " ").strip()
+    text = TOKEN_RE.sub(lambda match: f"{match.group(1)}[REDACTED]", text)
+    text = DATABRICKS_TOKEN_RE.sub("[REDACTED_TOKEN]", text)
+    text = JWT_RE.sub("[REDACTED_TOKEN]", text)
+    text = EMAIL_RE.sub("[REDACTED_EMAIL]", text)
+    return text[:MAX_PROGRESS_CHARS]
+
+
+def _state_root(env: dict[str, str]) -> Path:
+    configured = env.get("WORKSHOP_APP_DEPLOY_STATE_DIR", "").strip()
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return (Path(env["HOME"]) / ".config" / "workshop" / "app-deploy").resolve()
+
+
+def _project_root(env: dict[str, str]) -> Path:
+    configured = env.get("WORKSHOP_PROJECTS_ROOT", "").strip()
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return (Path(env["HOME"]) / "projects").resolve()
+
+
+def resolve_project_path(raw: str, env: dict[str, str], cwd: Path | None = None) -> Path:
+    root = _project_root(env)
+    candidate = Path((raw or ".").strip()).expanduser()
+    if not candidate.is_absolute():
+        base = (cwd or Path.cwd()).resolve()
+        candidate = (base / candidate).resolve()
+        if not (candidate / "databricks.yml").is_file():
+            candidate = (root / raw).resolve()
+    else:
+        candidate = candidate.resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise DeployError(
+            f"project_path must stay inside the workshop projects directory: {root}"
+        ) from exc
+    if not (candidate / "databricks.yml").is_file():
+        raise DeployError(f"No databricks.yml found in {candidate}")
+    return candidate
+
+
+def validate_target(value: str) -> str:
+    target = (value or "default").strip()
+    if not TARGET_RE.fullmatch(target):
+        raise DeployError(
+            "target must contain only letters, numbers, dot, underscore, or hyphen"
+        )
+    return target
+
+
+def validate_timeout(value: object) -> int:
+    try:
+        timeout = int(value)
+    except (TypeError, ValueError) as exc:
+        raise DeployError("timeout_seconds must be an integer") from exc
+    if not MIN_TIMEOUT_SECONDS <= timeout <= MAX_TIMEOUT_SECONDS:
+        raise DeployError(
+            f"timeout_seconds must be between {MIN_TIMEOUT_SECONDS} and "
+            f"{MAX_TIMEOUT_SECONDS}"
+        )
+    return timeout
+
+
+class StateStore:
+    def __init__(self, project: Path, target: str, env: dict[str, str]):
+        digest = hashlib.sha256(
+            f"{project}\0{target}".encode("utf-8")
+        ).hexdigest()
+        self.root = _state_root(env)
+        self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(self.root, 0o700)
+        self.path = self.root / f"{digest}.json"
+        self.lock_path = self.root / f"{digest}.lock"
+
+    @contextlib.contextmanager
+    def lock(
+        self,
+        *,
+        cancel: threading.Event,
+        deadline: float,
+        monotonic: Callable[[], float],
+    ):
+        fd = os.open(self.lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+        acquired = False
+        waited = False
+        try:
+            while True:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    acquired = True
+                    break
+                except BlockingIOError:
+                    waited = True
+                    if cancel.is_set():
+                        raise LockWaitStopped("cancelled")
+                    remaining = deadline - monotonic()
+                    if remaining <= 0:
+                        raise LockWaitStopped("timed_out")
+                    cancel.wait(min(0.1, remaining))
+            yield waited
+        finally:
+            if acquired:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+
+    def load(self) -> dict[str, Any]:
+        try:
+            with self.path.open(encoding="utf-8") as handle:
+                value = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def save(self, value: dict[str, Any]) -> None:
+        fd, temporary = tempfile.mkstemp(prefix=".deploy-", dir=self.root)
+        try:
+            os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(value, handle, sort_keys=True)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, self.path)
+            os.chmod(self.path, 0o600)
+        finally:
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(temporary)
+
+
+def _cli_env(env: dict[str, str]) -> dict[str, str]:
+    clean = dict(env)
+    for key in (
+        "DATABRICKS_TOKEN",
+        "DATABRICKS_CLIENT_ID",
+        "DATABRICKS_CLIENT_SECRET",
+        "DATABRICKS_HOST",
+        "DATABRICKS_AUTH_TYPE",
+    ):
+        clean.pop(key, None)
+    clean["DATABRICKS_CONFIG_FILE"] = str(
+        Path(clean["HOME"]) / ".databrickscfg"
+    )
+    clean["DATABRICKS_CONFIG_PROFILE"] = "DEFAULT"
+    return clean
+
+
+def _json_from_output(output: str) -> dict[str, Any]:
+    text = output.strip()
+    candidates = [text]
+    if "{" in text:
+        candidates.append(text[text.find("{") :])
+    for candidate in candidates:
+        try:
+            value = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            return value
+    raise CliError(f"Databricks CLI returned non-JSON output: {_safe_line(text)}")
+
+
+class CliBackend:
+    """Small, replaceable boundary around the Databricks CLI."""
+
+    def __init__(self, env: dict[str, str]):
+        self.env = env
+
+    def _json(self, args: list[str], cwd: Path, timeout: int = 30) -> dict[str, Any]:
+        try:
+            completed = subprocess.run(
+                ["databricks", *args, "--output", "json"],
+                cwd=cwd,
+                env=_cli_env(self.env),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=timeout,
+            )
+        except FileNotFoundError as exc:
+            raise CliError("The Databricks CLI is not installed") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise CliError(f"Databricks CLI timed out while running {args[0]}") from exc
+        if completed.returncode:
+            detail = _safe_line(completed.stderr or completed.stdout or "CLI failed")
+            raise CliError(detail, returncode=completed.returncode)
+        return _json_from_output(completed.stdout)
+
+    def bundle_summary(self, project: Path, target: str) -> dict[str, Any]:
+        return self._json(["bundle", "summary", "--target", target], project, 60)
+
+    def bundle_validate(self, project: Path, target: str) -> dict[str, Any]:
+        return self._json(["bundle", "validate", "--target", target], project, 60)
+
+    def get_app(self, project: Path, app_name: str) -> dict[str, Any]:
+        return self._json(["apps", "get", app_name], project)
+
+    def get_deployment(
+        self, project: Path, app_name: str, deployment_id: str
+    ) -> dict[str, Any]:
+        return self._json(
+            ["apps", "get-deployment", app_name, deployment_id], project
+        )
+
+    def start_submit(self, state: dict[str, Any]) -> None:
+        root = Path(state["state_root"])
+        log_path = root / f"{state['operation_id']}.log"
+        exit_path = root / f"{state['operation_id']}.exit.json"
+        for path in (log_path, exit_path):
+            with contextlib.suppress(FileNotFoundError):
+                path.unlink()
+        token = uuid.uuid4().hex
+        command = [
+            sys.executable,
+            os.path.abspath(__file__),
+            "--submit-worker",
+            "--project",
+            state["project_path"],
+            "--target",
+            state["target"],
+            "--log-path",
+            str(log_path),
+            "--exit-path",
+            str(exit_path),
+            "--worker-token",
+            token,
+        ]
+        process = subprocess.Popen(
+            command,
+            env=self.env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        state.update(
+            {
+                "submit_pid": process.pid,
+                "submit_token": token,
+                "submit_log_path": str(log_path),
+                "submit_exit_path": str(exit_path),
+                "log_offset": 0,
+            }
+        )
+
+    def submission_status(self, state: dict[str, Any]) -> tuple[bool, int | None]:
+        exit_path = Path(state.get("submit_exit_path", ""))
+        try:
+            with exit_path.open(encoding="utf-8") as handle:
+                code = int(json.load(handle)["exit_code"])
+            return True, code
+        except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+            pass
+        pid = int(state.get("submit_pid") or 0)
+        return (False, None) if _pid_alive(pid) else (True, None)
+
+    def progress_lines(self, state: dict[str, Any]) -> list[str]:
+        path = Path(state.get("submit_log_path", ""))
+        offset = max(0, int(state.get("log_offset") or 0))
+        try:
+            with path.open("rb") as handle:
+                handle.seek(offset)
+                chunk = handle.read(16 * 1024)
+                state["log_offset"] = handle.tell()
+        except OSError:
+            return []
+        lines = chunk.decode("utf-8", errors="replace").splitlines()
+        return [_safe_line(line) for line in lines[-20:] if line.strip()]
+
+    def cancel_submission(self, state: dict[str, Any]) -> bool:
+        pid = int(state.get("submit_pid") or 0)
+        if not _pid_alive(pid) or not _worker_matches(pid, state.get("submit_token", "")):
+            return False
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(pid, signal.SIGTERM)
+        deadline = time.monotonic() + 2.0
+        while _pid_alive(pid) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        if _pid_alive(pid):
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(pid, signal.SIGKILL)
+        return True
+
+    def cleanup_submission(self, state: dict[str, Any]) -> None:
+        for key in ("submit_log_path", "submit_exit_path"):
+            raw = str(state.get(key) or "")
+            if not raw:
+                continue
+            path = Path(raw)
+            # Both names were generated inside this private state directory.
+            # Re-check that invariant before unlinking a value read from disk.
+            try:
+                path.resolve().relative_to(Path(state["state_root"]).resolve())
+            except (KeyError, ValueError):
+                continue
+            with contextlib.suppress(FileNotFoundError, OSError):
+                path.unlink()
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except (ProcessLookupError, ValueError):
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _worker_matches(pid: int, token: str) -> bool:
+    if not token:
+        return False
+    proc = Path(f"/proc/{pid}/cmdline")
+    if not proc.exists():
+        return True
+    try:
+        return token.encode("utf-8") in proc.read_bytes().split(b"\0")
+    except OSError:
+        return False
+
+
+def _app_candidates(summary: dict[str, Any]) -> list[dict[str, str]]:
+    resources = summary.get("resources")
+    candidates: list[dict[str, str]] = []
+    if isinstance(resources, dict):
+        apps = resources.get("apps")
+        if isinstance(apps, dict):
+            for key, value in apps.items():
+                if not isinstance(value, dict):
+                    continue
+                name = str(value.get("name") or value.get("id") or "").strip()
+                if name:
+                    candidates.append(
+                        {
+                            "resource_key": str(key),
+                            "name": name,
+                            "url": str(value.get("url") or "").strip(),
+                        }
+                    )
+        for key, value in resources.items():
+            if not str(key).startswith("apps.") or not isinstance(value, dict):
+                continue
+            name = str(value.get("name") or value.get("id") or "").strip()
+            if name:
+                candidates.append(
+                    {
+                        "resource_key": str(key).split(".", 1)[-1],
+                        "name": name,
+                        "url": str(value.get("url") or "").strip(),
+                    }
+                )
+    unique = {item["name"]: item for item in candidates}
+    return sorted(unique.values(), key=lambda item: item["name"])
+
+
+def _deployment_id(value: object) -> str:
+    return str(value or "").strip()
+
+
+def _snapshot(app: dict[str, Any]) -> dict[str, str]:
+    active = app.get("active_deployment") or {}
+    pending = app.get("pending_deployment") or {}
+    app_status = app.get("app_status") or {}
+    compute_status = app.get("compute_status") or {}
+    return {
+        "active_deployment_id": _deployment_id(active.get("deployment_id")),
+        "active_deployment_state": str((active.get("status") or {}).get("state") or ""),
+        "pending_deployment_id": _deployment_id(pending.get("deployment_id")),
+        "pending_deployment_state": str((pending.get("status") or {}).get("state") or ""),
+        "app_state": str(app_status.get("state") or ""),
+        "compute_state": str(compute_status.get("state") or ""),
+        "url": str(app.get("url") or "").strip(),
+    }
+
+
+def _new_deployment_id(snapshot: dict[str, str], baseline: set[str]) -> str:
+    pending = snapshot["pending_deployment_id"]
+    active = snapshot["active_deployment_id"]
+    if pending and pending not in baseline:
+        return pending
+    if active and active not in baseline:
+        return active
+    return ""
+
+
+def _healthy(snapshot: dict[str, str]) -> bool:
+    return snapshot["app_state"] == "RUNNING" and snapshot["compute_state"] == "ACTIVE"
+
+
+@dataclass
+class LocalReporter:
+    env: dict[str, str]
+
+    def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        app = self.env.get("WORKSHOP_APP_URL", "").strip()
+        email = self.env.get("WORKSHOP_USER_EMAIL", "").strip()
+        capability_path = Path(self.env["HOME"]) / ".config" / "workshop" / "callback-capability"
+        if not app or not email:
+            return None
+        try:
+            capability = capability_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
+        body = json.dumps({"email": email, **payload}).encode("utf-8")
+        request = urllib.request.Request(
+            f"{app.rstrip('/')}{path}",
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "X-Workshop-Capability": capability,
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                value = json.loads(response.read().decode("utf-8"))
+            return value if isinstance(value, dict) else {}
+        except (OSError, urllib.error.URLError, json.JSONDecodeError):
+            return None
+
+    def __call__(self, result: dict[str, Any], source: str) -> None:
+        if result["status"] == "succeeded":
+            handoff = self._post(
+                "/api/entitlements/reconcile", {"resource_type": "apps"}
+            )
+            result["entitlement_handoff"] = (
+                "requested" if handoff is not None else "unavailable"
+            )
+        self._post(
+            "/api/tools/app-deploy/event",
+            {
+                "outcome": result["status"],
+                "reason": result["reason"],
+                "duration_ms": min(
+                    MAX_TIMEOUT_SECONDS * 1000,
+                    max(0, float(result["duration_ms"])),
+                ),
+                "attempts": min(10_000, max(0, int(result["attempts"]))),
+                "resumed": result["resumed"],
+                "source": source,
+            },
+        )
+
+
+class DeployController:
+    def __init__(
+        self,
+        env: dict[str, str] | None = None,
+        *,
+        backend: Any | None = None,
+        reporter: Callable[[dict[str, Any], str], None] | None = None,
+        monotonic: Callable[[], float] = time.monotonic,
+        wall_time: Callable[[], float] = time.time,
+        poll_seconds: float | None = None,
+    ):
+        self.env = dict(os.environ if env is None else env)
+        if not self.env.get("HOME"):
+            raise DeployError("HOME is required")
+        self.backend = backend or CliBackend(self.env)
+        self.reporter = reporter or LocalReporter(self.env)
+        self.monotonic = monotonic
+        self.wall_time = wall_time
+        configured_poll = self.env.get("WORKSHOP_APP_DEPLOY_POLL_SECONDS", "")
+        self.poll_seconds = (
+            float(configured_poll)
+            if poll_seconds is None and configured_poll
+            else (DEFAULT_POLL_SECONDS if poll_seconds is None else poll_seconds)
+        )
+
+    def deploy(
+        self,
+        *,
+        project_path: str = ".",
+        target: str = "default",
+        timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+        cancel: threading.Event | None = None,
+        progress: Callable[[str], None] | None = None,
+        source: str = "cli",
+        cwd: Path | None = None,
+    ) -> dict[str, Any]:
+        project = resolve_project_path(project_path, self.env, cwd)
+        target = validate_target(target)
+        timeout = validate_timeout(timeout_seconds)
+        cancel = cancel or threading.Event()
+        progress = progress or (lambda _message: None)
+        store = StateStore(project, target, self.env)
+        call_started = self.monotonic()
+        deadline = call_started + timeout
+
+        try:
+            with store.lock(
+                cancel=cancel,
+                deadline=deadline,
+                monotonic=self.monotonic,
+            ) as waited_for_lock:
+                if waited_for_lock and (
+                    stopped := self._stop_reason(cancel, deadline)
+                ):
+                    raise LockWaitStopped(stopped)
+                state = store.load()
+                same_operation = bool(
+                    state
+                    and state.get("project_path") == str(project)
+                    and state.get("target") == target
+                )
+                if (
+                    waited_for_lock
+                    and same_operation
+                    and state.get("phase") in TERMINAL_PHASES
+                ):
+                    # A concurrent duplicate call waited behind the owner of
+                    # this operation. Return that operation's terminal result;
+                    # do not interpret lock release as a request to deploy again.
+                    result = self._result(
+                        state,
+                        state["phase"],
+                        str(state.get("reason") or state["phase"]),
+                        True,
+                        call_started,
+                    )
+                else:
+                    resumed = bool(
+                        same_operation
+                        and state.get("phase") not in TERMINAL_PHASES
+                    )
+                    if resumed:
+                        progress(
+                            f"Resuming deployment for {state.get('app_name', 'the app')}"
+                        )
+                        # A process can disappear after the durable intent is written
+                        # but before the detached submit worker's pid is committed.
+                        # Recreate the worker only in that pre-submit state; once a pid
+                        # or deployment id exists, polling is the duplicate-safe path.
+                        if (
+                            state.get("phase") == "submitting"
+                            and not state.get("submit_pid")
+                            and not state.get("deployment_id")
+                        ):
+                            self.backend.start_submit(state)
+                            store.save(state)
+                    else:
+                        if state:
+                            cleanup = getattr(self.backend, "cleanup_submission", None)
+                            if cleanup is not None:
+                                cleanup(state)
+                        state = self._start(project, target, store, progress)
+                    result = self._wait(
+                        state,
+                        store,
+                        deadline=deadline,
+                        cancel=cancel,
+                        progress=progress,
+                        resumed=resumed,
+                        call_started=call_started,
+                    )
+        except LockWaitStopped as exc:
+            state = store.load()
+            result = self._result(
+                state,
+                exc.reason,
+                f"lock_{exc.reason}",
+                bool(state),
+                call_started,
+                remote_may_continue=True,
+            )
+        try:
+            self.reporter(result, source)
+        except Exception:
+            pass
+        return result
+
+    def _start(
+        self,
+        project: Path,
+        target: str,
+        store: StateStore,
+        progress: Callable[[str], None],
+    ) -> dict[str, Any]:
+        summary_error: CliError | None = None
+        try:
+            bundle = self.backend.bundle_summary(project, target)
+            apps = _app_candidates(bundle)
+        except CliError as exc:
+            # ``bundle summary`` reads deployed bundle state, which may not
+            # exist on an attendee's first deployment. Validation resolves the
+            # local bundle configuration and is therefore the correct fallback.
+            summary_error = exc
+            apps = []
+        if not apps:
+            validate = getattr(self.backend, "bundle_validate", None)
+            if validate is None:
+                if summary_error is not None:
+                    raise summary_error
+            else:
+                bundle = validate(project, target)
+                apps = _app_candidates(bundle)
+        if len(apps) != 1:
+            names = ", ".join(item["name"] for item in apps) or "none"
+            raise DeployError(
+                "The deploy tool requires exactly one Databricks App resource; "
+                f"bundle summary reported {names}"
+            )
+        app = apps[0]
+        baseline: set[str] = set()
+        try:
+            snapshot = _snapshot(self.backend.get_app(project, app["name"]))
+            baseline.update(
+                value
+                for value in (
+                    snapshot["active_deployment_id"],
+                    snapshot["pending_deployment_id"],
+                )
+                if value
+            )
+            if snapshot["url"]:
+                app["url"] = snapshot["url"]
+        except CliError:
+            pass  # first deployment: the app may not exist yet
+        state: dict[str, Any] = {
+            "schema_version": 1,
+            "operation_id": uuid.uuid4().hex,
+            "phase": "submitting",
+            "project_path": str(project),
+            "target": target,
+            "app_name": app["name"],
+            "app_url": app["url"],
+            "baseline_deployment_ids": sorted(baseline),
+            "deployment_id": "",
+            "created_at": self.wall_time(),
+            "attempts": 0,
+            "state_root": str(store.root),
+        }
+        store.save(state)
+        self.backend.start_submit(state)
+        store.save(state)
+        progress(f"Submitting {app['name']} with databricks apps deploy")
+        return state
+
+    def _wait(
+        self,
+        state: dict[str, Any],
+        store: StateStore,
+        *,
+        deadline: float,
+        cancel: threading.Event,
+        progress: Callable[[str], None],
+        resumed: bool,
+        call_started: float,
+    ) -> dict[str, Any]:
+        project = Path(state["project_path"])
+        submit_code: int | None = state.get("submit_exit_code")
+        while state.get("phase") == "submitting":
+            for line in self.backend.progress_lines(state):
+                state["last_submit_message"] = line
+                progress(line)
+            done, code = self.backend.submission_status(state)
+            self._observe_app(state, project)
+            store.save(state)
+            if done:
+                if code is None:
+                    code = 1
+                    state["last_submit_message"] = MISSING_SUBMIT_STATUS_MESSAGE
+                    progress(MISSING_SUBMIT_STATUS_MESSAGE)
+                submit_code = code
+                state["submit_exit_code"] = code
+                state["submission_finished_at"] = self.wall_time()
+                state["phase"] = "polling"
+                store.save(state)
+                break
+            stopped = self._stop_reason(cancel, deadline)
+            if stopped:
+                killed = self.backend.cancel_submission(state)
+                self._observe_app(state, project)
+                if state.get("deployment_id"):
+                    state["phase"] = "polling"
+                    store.save(state)
+                else:
+                    state["phase"] = "failed"
+                    state["reason"] = f"submit_{stopped}"
+                    store.save(state)
+                return self._result(
+                    state,
+                    stopped,
+                    f"submit_{stopped}",
+                    resumed,
+                    call_started,
+                    remote_may_continue=bool(state.get("deployment_id") or not killed),
+                )
+            self._pause(cancel, deadline)
+
+        last_progress = ""
+        while True:
+            stopped = self._stop_reason(cancel, deadline)
+            if stopped:
+                state["phase"] = "polling"
+                state["last_outcome"] = stopped
+                store.save(state)
+                return self._result(
+                    state,
+                    stopped,
+                    stopped,
+                    resumed,
+                    call_started,
+                    remote_may_continue=True,
+                )
+            state["attempts"] = int(state.get("attempts") or 0) + 1
+            try:
+                app = self.backend.get_app(project, state["app_name"])
+                snapshot = _snapshot(app)
+                if snapshot["url"]:
+                    state["app_url"] = snapshot["url"]
+                if not state.get("deployment_id"):
+                    state["deployment_id"] = _new_deployment_id(
+                        snapshot, set(state.get("baseline_deployment_ids") or [])
+                    )
+                deployment_state = ""
+                deployment_message = ""
+                if state.get("deployment_id"):
+                    deployment = self.backend.get_deployment(
+                        project, state["app_name"], state["deployment_id"]
+                    )
+                    status = deployment.get("status") or {}
+                    deployment_state = str(status.get("state") or "")
+                    deployment_message = _safe_line(status.get("message") or "")
+                state.update(
+                    {
+                        "deployment_state": deployment_state,
+                        "app_state": snapshot["app_state"],
+                        "compute_state": snapshot["compute_state"],
+                    }
+                )
+                status_line = (
+                    f"deployment={deployment_state or 'discovering'} "
+                    f"app={snapshot['app_state'] or 'unknown'} "
+                    f"compute={snapshot['compute_state'] or 'unknown'}"
+                )
+                if status_line != last_progress:
+                    progress(status_line)
+                    last_progress = status_line
+                if deployment_state in {"FAILED", "CANCELLED"}:
+                    return self._finish(
+                        state,
+                        store,
+                        "failed",
+                        deployment_state.lower(),
+                        resumed,
+                        call_started,
+                        message=deployment_message,
+                    )
+                if deployment_state == "SUCCEEDED" and _healthy(snapshot):
+                    return self._finish(
+                        state,
+                        store,
+                        "succeeded",
+                        "deployment_succeeded",
+                        resumed,
+                        call_started,
+                    )
+                if deployment_state == "SUCCEEDED" and (
+                    snapshot["app_state"] == "CRASHED"
+                    or snapshot["compute_state"] == "ERROR"
+                ):
+                    # App-level state can describe the previous deployment
+                    # while the exact new deployment is still IN_PROGRESS.
+                    # Treat it as terminal only after the target deployment
+                    # itself has completed.
+                    return self._finish(
+                        state,
+                        store,
+                        "failed",
+                        "app_unhealthy",
+                        resumed,
+                        call_started,
+                    )
+                if submit_code not in (None, 0) and not state.get("deployment_id"):
+                    return self._finish(
+                        state,
+                        store,
+                        "failed",
+                        "cli_failed",
+                        resumed,
+                        call_started,
+                        message=state.get("last_submit_message", ""),
+                    )
+            except CliError as exc:
+                state["last_poll_error"] = _safe_line(exc)
+                progress(f"Transient status check failed: {_safe_line(exc)}")
+                if submit_code not in (None, 0) and not state.get("deployment_id"):
+                    return self._finish(
+                        state,
+                        store,
+                        "failed",
+                        "cli_failed",
+                        resumed,
+                        call_started,
+                        message=state.get("last_submit_message") or _safe_line(exc),
+                    )
+            store.save(state)
+            self._pause(cancel, deadline)
+
+    def _observe_app(self, state: dict[str, Any], project: Path) -> None:
+        try:
+            snapshot = _snapshot(self.backend.get_app(project, state["app_name"]))
+        except CliError:
+            return
+        if snapshot["url"]:
+            state["app_url"] = snapshot["url"]
+        if not state.get("deployment_id"):
+            state["deployment_id"] = _new_deployment_id(
+                snapshot, set(state.get("baseline_deployment_ids") or [])
+            )
+
+    def _pause(self, cancel: threading.Event, deadline: float) -> None:
+        remaining = max(0.0, deadline - self.monotonic())
+        cancel.wait(min(max(0.01, self.poll_seconds), remaining))
+
+    def _stop_reason(self, cancel: threading.Event, deadline: float) -> str:
+        if cancel.is_set():
+            return "cancelled"
+        if self.monotonic() >= deadline:
+            return "timed_out"
+        return ""
+
+    def _finish(
+        self,
+        state: dict[str, Any],
+        store: StateStore,
+        status: str,
+        reason: str,
+        resumed: bool,
+        call_started: float,
+        *,
+        message: str = "",
+    ) -> dict[str, Any]:
+        state["phase"] = status
+        state["reason"] = reason
+        state["finished_at"] = self.wall_time()
+        store.save(state)
+        result = self._result(
+            state, status, reason, resumed, call_started, message=message
+        )
+        cleanup = getattr(self.backend, "cleanup_submission", None)
+        if cleanup is not None:
+            cleanup(state)
+        return result
+
+    def _result(
+        self,
+        state: dict[str, Any],
+        status: str,
+        reason: str,
+        resumed: bool,
+        call_started: float,
+        *,
+        message: str = "",
+        remote_may_continue: bool = False,
+    ) -> dict[str, Any]:
+        return {
+            "status": status,
+            "reason": reason,
+            "app_name": state.get("app_name", ""),
+            "app_url": state.get("app_url", ""),
+            "deployment_id": state.get("deployment_id", ""),
+            "deployment_state": state.get("deployment_state", ""),
+            "app_state": state.get("app_state", ""),
+            "compute_state": state.get("compute_state", ""),
+            "duration_ms": max(0, round((self.monotonic() - call_started) * 1000)),
+            "attempts": int(state.get("attempts") or 0),
+            "resumed": resumed,
+            "remote_may_continue": remote_may_continue,
+            "message": _safe_line(message),
+        }
+
+
+def _write_bounded(handle, line: str, written: int, truncated: bool) -> tuple[int, bool]:
+    encoded = line.encode("utf-8", errors="replace")
+    if written + len(encoded) <= MAX_LOG_BYTES:
+        handle.write(encoded)
+        handle.flush()
+        return written + len(encoded), truncated
+    if not truncated:
+        marker = b"\n[workshop-app-deploy output truncated]\n"
+        handle.write(marker)
+        handle.flush()
+        return written + len(marker), True
+    return written, truncated
+
+
+def submit_worker(args: argparse.Namespace, env: dict[str, str] | None = None) -> int:
+    current_env = dict(os.environ if env is None else env)
+    project = resolve_project_path(args.project, current_env)
+    target = validate_target(args.target)
+    log_path = Path(args.log_path).resolve()
+    exit_path = Path(args.exit_path).resolve()
+    log_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    code = 127
+    with log_path.open("ab", buffering=0) as log:
+        os.chmod(log_path, 0o600)
+        written = log.tell()
+        truncated = False
+        command = [
+            "databricks",
+            "apps",
+            "deploy",
+            "--target",
+            target,
+            "--auto-approve",
+            "--no-wait",
+            "--output",
+            "json",
+        ]
+        try:
+            process = subprocess.Popen(
+                command,
+                cwd=project,
+                env=_cli_env(current_env),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+            assert process.stdout is not None
+            for raw in iter(process.stdout.readline, b""):
+                safe = _safe_line(raw.decode("utf-8", "replace"))
+                written, truncated = _write_bounded(
+                    log, f"{safe}\n", written, truncated
+                )
+            code = process.wait()
+        except FileNotFoundError:
+            written, truncated = _write_bounded(
+                log, "The Databricks CLI is not installed\n", written, truncated
+            )
+        except Exception as exc:
+            _write_bounded(log, f"Deploy submission failed: {_safe_line(exc)}\n", written, truncated)
+    payload = {"exit_code": code, "worker_token": args.worker_token}
+    fd, temporary = tempfile.mkstemp(prefix=".exit-", dir=exit_path.parent)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+            handle.write("\n")
+        os.replace(temporary, exit_path)
+        os.chmod(exit_path, 0o600)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temporary)
+    return code
+
+
+class McpServer:
+    def __init__(self, controller: DeployController):
+        self.controller = controller
+        self._write_lock = threading.Lock()
+        self._calls_lock = threading.Lock()
+        self._calls: dict[object, threading.Event] = {}
+
+    def _send(self, value: dict[str, Any]) -> None:
+        with self._write_lock:
+            sys.stdout.write(json.dumps(value, separators=(",", ":")) + "\n")
+            sys.stdout.flush()
+
+    def _result(self, request_id: object, result: object) -> None:
+        self._send({"jsonrpc": "2.0", "id": request_id, "result": result})
+
+    def _error(self, request_id: object, code: int, message: str) -> None:
+        self._send(
+            {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "error": {"code": code, "message": _safe_line(message)},
+            }
+        )
+
+    def _progress(self, token: object, message: str) -> None:
+        if token is None:
+            return
+        self._send(
+            {
+                "jsonrpc": "2.0",
+                "method": "notifications/progress",
+                "params": {"progressToken": token, "progress": 0, "message": _safe_line(message)},
+            }
+        )
+
+    def _tool(self) -> dict[str, Any]:
+        return {
+            "name": TOOL_NAME,
+            "title": "Deploy Databricks App",
+            "description": (
+                "Deploy the single Databricks App in a workshop project, wait for "
+                "the exact deployment and compute to become ready, and return its URL."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project_path": {
+                        "type": "string",
+                        "description": (
+                            "Absolute App project directory under ~/projects."
+                        ),
+                    },
+                    "target": {
+                        "type": "string",
+                        "description": "Databricks bundle target.",
+                        "default": "default",
+                    },
+                    "timeout_seconds": {
+                        "type": "integer",
+                        "minimum": MIN_TIMEOUT_SECONDS,
+                        "maximum": MAX_TIMEOUT_SECONDS,
+                        "default": DEFAULT_TIMEOUT_SECONDS,
+                    },
+                },
+                "required": ["project_path"],
+                "additionalProperties": False,
+            },
+            "outputSchema": {
+                "type": "object",
+                "required": ["status", "reason", "app_name", "app_url", "resumed"],
+                "properties": {
+                    "status": {"type": "string"},
+                    "reason": {"type": "string"},
+                    "app_name": {"type": "string"},
+                    "app_url": {"type": "string"},
+                    "deployment_id": {"type": "string"},
+                    "deployment_state": {"type": "string"},
+                    "app_state": {"type": "string"},
+                    "compute_state": {"type": "string"},
+                    "duration_ms": {"type": "integer"},
+                    "attempts": {"type": "integer"},
+                    "resumed": {"type": "boolean"},
+                    "remote_may_continue": {"type": "boolean"},
+                    "message": {"type": "string"},
+                    "entitlement_handoff": {"type": "string"},
+                },
+            },
+            "annotations": {
+                "title": "Deploy Databricks App",
+                "readOnlyHint": False,
+                "destructiveHint": False,
+                "idempotentHint": True,
+                "openWorldHint": True,
+            },
+        }
+
+    def _call_tool(self, message: dict[str, Any]) -> None:
+        request_id = message.get("id")
+        params = message.get("params") or {}
+        if not isinstance(params, dict):
+            self._error(request_id, -32602, "Tool parameters must be an object")
+            return
+        name = params.get("name")
+        if name != TOOL_NAME:
+            self._error(request_id, -32602, f"Unknown tool: {name}")
+            return
+        arguments = params.get("arguments") or {}
+        if not isinstance(arguments, dict):
+            self._error(request_id, -32602, "Tool arguments must be an object")
+            return
+        allowed_arguments = {"project_path", "target", "timeout_seconds"}
+        unknown_arguments = sorted(set(arguments) - allowed_arguments)
+        if unknown_arguments:
+            self._error(
+                request_id,
+                -32602,
+                f"Unknown tool argument: {unknown_arguments[0]}",
+            )
+            return
+        project_path = arguments.get("project_path")
+        if not isinstance(project_path, str) or not project_path.strip():
+            self._error(request_id, -32602, "project_path is required")
+            return
+        project_path = project_path.strip()
+        if not Path(project_path).is_absolute():
+            self._error(
+                request_id,
+                -32602,
+                "project_path must be an absolute path",
+            )
+            return
+        target = arguments.get("target", "default")
+        if not isinstance(target, str):
+            self._error(request_id, -32602, "target must be a string")
+            return
+        timeout_seconds = arguments.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS)
+        if not isinstance(timeout_seconds, int) or isinstance(timeout_seconds, bool):
+            self._error(request_id, -32602, "timeout_seconds must be an integer")
+            return
+        cancel = threading.Event()
+        with self._calls_lock:
+            self._calls[request_id] = cancel
+        meta = params.get("_meta") or {}
+        token = meta.get("progressToken") if isinstance(meta, dict) else None
+        try:
+            result = self.controller.deploy(
+                project_path=project_path,
+                target=target,
+                timeout_seconds=timeout_seconds,
+                cancel=cancel,
+                progress=lambda message: self._progress(token, message),
+                source="mcp",
+            )
+            payload = json.dumps(result, sort_keys=True)
+            self._result(
+                request_id,
+                {
+                    "content": [{"type": "text", "text": payload}],
+                    "structuredContent": result,
+                    "isError": result["status"] != "succeeded",
+                },
+            )
+        except DeployError as exc:
+            result = {
+                "status": "failed",
+                "reason": "invalid_request",
+                "message": _safe_line(exc),
+                "app_name": "",
+                "app_url": "",
+                "resumed": False,
+            }
+            self._result(
+                request_id,
+                {
+                    "content": [{"type": "text", "text": json.dumps(result)}],
+                    "structuredContent": result,
+                    "isError": True,
+                },
+            )
+        except Exception as exc:
+            self._error(request_id, -32603, f"Deploy tool failed: {_safe_line(exc)}")
+        finally:
+            with self._calls_lock:
+                self._calls.pop(request_id, None)
+
+    def serve(self) -> int:
+        workers: list[threading.Thread] = []
+        for raw in sys.stdin:
+            try:
+                message = json.loads(raw)
+            except json.JSONDecodeError:
+                self._error(None, -32700, "Invalid JSON")
+                continue
+            method = message.get("method")
+            request_id = message.get("id")
+            if method == "initialize":
+                requested = (message.get("params") or {}).get("protocolVersion")
+                self._result(
+                    request_id,
+                    {
+                        "protocolVersion": requested or "2025-06-18",
+                        "capabilities": {"tools": {"listChanged": False}},
+                        "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
+                        "instructions": f"Use only {TOOL_NAME} for Databricks App deployment.",
+                    },
+                )
+            elif method in {"notifications/initialized", "initialized"}:
+                continue
+            elif method == "ping":
+                self._result(request_id, {})
+            elif method == "tools/list":
+                self._result(request_id, {"tools": [self._tool()]})
+            elif method == "tools/call":
+                thread = threading.Thread(
+                    target=self._call_tool,
+                    args=(message,),
+                    daemon=True,
+                    name=f"mcp-deploy-{request_id}",
+                )
+                workers.append(thread)
+                thread.start()
+            elif method == "notifications/cancelled":
+                params = message.get("params") or {}
+                with self._calls_lock:
+                    event = self._calls.get(params.get("requestId"))
+                if event is not None:
+                    event.set()
+            elif request_id is not None:
+                self._error(request_id, -32601, f"Unknown method: {method}")
+        with self._calls_lock:
+            for event in self._calls.values():
+                event.set()
+        for worker in workers:
+            worker.join(timeout=2.0)
+        return 0
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Deploy one Databricks App and wait until its URL is live."
+    )
+    parser.add_argument("--mcp", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--project", default=".")
+    parser.add_argument("--target", default="default")
+    parser.add_argument("--timeout-seconds", type=int, default=DEFAULT_TIMEOUT_SECONDS)
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--submit-worker", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--log-path", default="", help=argparse.SUPPRESS)
+    parser.add_argument("--exit-path", default="", help=argparse.SUPPRESS)
+    parser.add_argument("--worker-token", default="", help=argparse.SUPPRESS)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
+    if args.submit_worker:
+        return submit_worker(args)
+    if args.mcp:
+        return McpServer(DeployController()).serve()
+    cancel = threading.Event()
+
+    def stop(_signum, _frame):
+        cancel.set()
+
+    signal.signal(signal.SIGINT, stop)
+    signal.signal(signal.SIGTERM, stop)
+    try:
+        result = DeployController().deploy(
+            project_path=args.project,
+            target=args.target,
+            timeout_seconds=args.timeout_seconds,
+            cancel=cancel,
+            progress=(lambda message: None) if args.json else print,
+            source="cli",
+        )
+    except DeployError as exc:
+        result = {"status": "failed", "reason": "invalid_request", "message": _safe_line(exc)}
+    if args.json:
+        print(json.dumps(result, sort_keys=True))
+    elif result["status"] == "succeeded":
+        print(f"App is live: {result['app_url']}")
+    else:
+        print(
+            f"Deploy {result['status']}: {result['reason']} "
+            f"{result.get('message', '')}".rstrip(),
+            file=sys.stderr,
+        )
+    return 0 if result["status"] == "succeeded" else (130 if result["status"] == "cancelled" else 1)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

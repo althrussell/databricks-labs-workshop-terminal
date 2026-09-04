@@ -209,3 +209,25 @@ def test_telemetry_never_raises_into_a_caller(monkeypatch):
 
     telemetry.session_create_failed("alice@example.com", "claude", "session_conflict")
     telemetry.attendee_error_seen("alice@example.com", "turn_failed")
+
+
+def test_app_deploy_uses_fixed_reason_codes_and_no_cli_detail(emitted):
+    telemetry.app_deploy(
+        "alice@example.com",
+        outcome="failed",
+        reason="some-new-cli-error",
+        duration_ms=123.4,
+        attempts=2,
+        resumed=True,
+        source="mcp",
+    )
+
+    payload = _payload(emitted, "app.deploy")
+    assert payload == {
+        "outcome": "failed",
+        "code": "unknown",
+        "duration_ms": 123,
+        "attempts": 2,
+        "resumed": True,
+        "source": "mcp",
+    }

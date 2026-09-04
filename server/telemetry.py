@@ -63,6 +63,22 @@ ATTENDEE_ERROR_CODES = frozenset(
     }
 )
 
+APP_DEPLOY_CODES = frozenset(
+    {
+        "deployment_succeeded",
+        "failed",
+        "cancelled",
+        "timed_out",
+        "cli_failed",
+        "app_unhealthy",
+        "submit_cancelled",
+        "submit_timed_out",
+        "lock_cancelled",
+        "lock_timed_out",
+        "invalid_request",
+    }
+)
+
 UNKNOWN = "unknown"
 
 
@@ -253,6 +269,32 @@ def readiness_result(report: dict, started_at: float) -> None:
         logger.debug("readiness telemetry failed", exc_info=True)
 
 
+def app_deploy(
+    attendee: str,
+    *,
+    outcome: str,
+    reason: str,
+    duration_ms: float,
+    attempts: int,
+    resumed: bool,
+    source: str,
+) -> None:
+    """One bounded result from the local deploy tool; no CLI output or URL."""
+    bucketed, _raw = normalize(reason, APP_DEPLOY_CODES)
+    emit(
+        "app.deploy",
+        attendee,
+        {
+            "outcome": outcome,
+            "code": bucketed,
+            "duration_ms": max(0, round(duration_ms)),
+            "attempts": max(0, int(attempts)),
+            "resumed": bool(resumed),
+            "source": source if source in {"mcp", "cli"} else "unknown",
+        },
+    )
+
+
 def otel_health(env) -> dict:
     try:
         from .observability import health
@@ -305,11 +347,13 @@ def attendee_error_seen(attendee: str, code: str, detail: dict | None = None) ->
 
 
 __all__ = [
+    "APP_DEPLOY_CODES",
     "ATTENDEE_ERROR_CODES",
     "SESSION_CREATE_CODES",
     "SESSION_EXIT_CODES",
     "UNKNOWN",
     "attendee_error_seen",
+    "app_deploy",
     "bootstrap_phase",
     "emit",
     "entitlement_reconcile",

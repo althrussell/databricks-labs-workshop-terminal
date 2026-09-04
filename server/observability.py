@@ -63,6 +63,7 @@ _SAFE_FIELD_MAP = {
     "cache_hits": "entitlement.cache_hits",
     "cache_misses": "entitlement.cache_misses",
     "convergence_ms": "operation.convergence_ms",
+    "resumed": "operation.resumed",
     "coverage": "mirror.coverage",
     "failed_checks": "readiness.failed_checks",
     "exception_type": "exception.type",
@@ -269,6 +270,9 @@ class WorkshopTelemetry:
         self.entitlement_convergence_latency = self._meter.create_histogram(
             "workshop.entitlement.convergence.latency", unit="ms"
         )
+        self.app_deploy_duration = self._meter.create_histogram(
+            "workshop.app.deploy.duration", unit="ms"
+        )
         self.mirror_coverage = self._meter.create_histogram(
             "workshop.mirror.coverage", unit="1"
         )
@@ -318,6 +322,7 @@ class WorkshopTelemetry:
                 "bootstrap.phase",
                 "operation.source",
                 "operation.backoff_seconds",
+                "operation.resumed",
             }
             and isinstance(value, (str, int, float, bool))
         }
@@ -369,6 +374,10 @@ class WorkshopTelemetry:
         elif name == "mirror.fetch":
             self.mirror_coverage.record(
                 float(attributes.get("mirror.coverage", 0)), metric_attributes
+            )
+        elif name == "app.deploy":
+            self.app_deploy_duration.record(
+                float(attributes.get("operation.duration_ms", 0)), metric_attributes
             )
 
     def record_readiness(
