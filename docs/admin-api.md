@@ -103,6 +103,20 @@ access.
 ### `GET /api/admin/state`
 Current phase, available phases, nugget count, active broadcast, start time.
 
+### `PUT /api/admin/event-deadline`
+
+Extend `WORKSHOP_EVENT_ENDS_AT` on a running terminal without an App redeploy.
+The body is `{"event_ends_at": <unix epoch seconds>}`. The value is persisted
+under `DATA_ROOT`, replaying the same value is idempotent, and an older value is
+rejected with `409 stale_event_deadline`. The response reads back the effective
+deadline and the terminal's `credential_durability` result so Control Tower can
+record per-seat evidence.
+
+The deployed `WORKSHOP_EVENT_ENDS_AT` value is the persistence baseline. An App
+redeploy with a different value, whether earlier or later, discards any live
+override from the previous deployment and establishes the new value as the
+effective deadline.
+
 ### `POST /api/admin/content-pack`
 Replace the live content pack (nuggets + shell config). Body must validate
 against the pack schema (`server/content.py`). In-memory until the next
