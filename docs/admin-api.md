@@ -112,6 +112,11 @@ rejected with `409 stale_event_deadline`. The response reads back the effective
 deadline and the terminal's `credential_durability` result so Control Tower can
 record per-seat evidence.
 
+The deployed `WORKSHOP_EVENT_ENDS_AT` value is the persistence baseline. An App
+redeploy with a different value, whether earlier or later, discards any live
+override from the previous deployment and establishes the new value as the
+effective deadline.
+
 ### `POST /api/admin/content-pack`
 Replace the live content pack (nuggets + shell config). Body must validate
 against the pack schema (`server/content.py`). In-memory until the next

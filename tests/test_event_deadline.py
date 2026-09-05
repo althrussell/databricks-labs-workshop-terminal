@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import os
 import time
+from pathlib import Path
 
 import pytest
 
@@ -19,6 +20,7 @@ def isolated_deadline_store(monkeypatch, tmp_path):
 
 
 def test_admin_extension_is_durable_exact_and_idempotent(client, as_admin):
+    deployment_deadline = int(os.environ["WORKSHOP_EVENT_ENDS_AT"])
     wanted = int(time.time()) + 7200
 
     first = client.put("/api/admin/event-deadline", json={"event_ends_at": wanted})
@@ -36,7 +38,43 @@ def test_admin_extension_is_durable_exact_and_idempotent(client, as_admin):
     event_deadline.store.reset_for_tests()
     assert event_deadline.store.snapshot() == wanted
     persisted = json.loads(Path(event_deadline.store._path()).read_text())
-    assert persisted == {"event_ends_at": wanted, "schema_version": 1}
+    assert persisted == {
+        "deployment_event_ends_at": deployment_deadline,
+        "event_ends_at": wanted,
+        "schema_version": 2,
+    }
+
+
+def test_redeploy_with_later_deadline_discards_older_live_override(monkeypatch):
+    deployment_deadline = int(time.time()) + 3600
+    live_override = deployment_deadline + 1800
+    redeployed_deadline = live_override + 1800
+    monkeypatch.setenv("WORKSHOP_EVENT_ENDS_AT", str(deployment_deadline))
+    event_deadline.store.apply(live_override)
+
+    event_deadline.store.reset_for_tests()
+    monkeypatch.setenv("WORKSHOP_EVENT_ENDS_AT", str(redeployed_deadline))
+
+    assert event_deadline.store.snapshot() == redeployed_deadline
+    assert not Path(event_deadline.store._path()).exists()
+
+
+def test_redeploy_with_earlier_deadline_resets_monotonic_baseline(monkeypatch):
+    deployment_deadline = int(time.time()) + 3600
+    live_override = deployment_deadline + 3600
+    redeployed_deadline = deployment_deadline - 1800
+    next_extension = redeployed_deadline + 300
+    monkeypatch.setenv("WORKSHOP_EVENT_ENDS_AT", str(deployment_deadline))
+    event_deadline.store.apply(live_override)
+
+    # The cache key includes the deployment baseline, so a changed environment
+    # is observed even before a process-local cache reset.
+    monkeypatch.setenv("WORKSHOP_EVENT_ENDS_AT", str(redeployed_deadline))
+
+    assert event_deadline.store.snapshot() == redeployed_deadline
+    assert not Path(event_deadline.store._path()).exists()
+    assert event_deadline.store.apply(next_extension) == (next_extension, True)
+    assert event_deadline.store.snapshot() == next_extension
 
 
 def test_admin_extension_reports_failed_credential_durability(
