@@ -17,6 +17,7 @@ from . import agents
 from . import attendee as attendee_binding
 from . import (
     config,
+    event_deadline,
     help as help_module,
     model_policy,
     obo,
@@ -71,6 +72,10 @@ class PhaseBody(BaseModel):
     phase: str
 
 
+class EventDeadlineBody(BaseModel):
+    event_ends_at: int
+
+
 @router.get("/state")
 def admin_state():
     from . import wizard_llm
@@ -81,7 +86,9 @@ def admin_state():
         "phase": content_service.phase,
         "phases": pack.phases,
         "nugget_count": len(pack.nuggets),
-        "broadcast": (b.model_dump() if (b := content_service.active_broadcast()) else None),
+        "broadcast": (
+            b.model_dump() if (b := content_service.active_broadcast()) else None
+        ),
         "started_at": content_service.started_at,
         # An override lives in memory only, so a restart reverts it. Reporting
         # the effective model here is what stops that revert being invisible to
@@ -92,6 +99,59 @@ def admin_state():
             "positive_checks": list(policy.allowed_services()),
             "negative_checks": list(policy.denied_models),
         },
+        "event_ends_at": event_deadline.store.snapshot(),
+    }
+
+
+@router.put("/event-deadline")
+def set_event_deadline(body: EventDeadlineBody):
+    """Extend the live event deadline and read back credential durability.
+
+    The store is monotonic and durable. Replaying the same epoch is safe and
+    deliberately reruns readiness so Control Tower can retry a lost response.
+    """
+    try:
+        event_ends_at, changed = event_deadline.store.apply(body.event_ends_at)
+    except event_deadline.StaleEventDeadline as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "stale_event_deadline",
+                "current_event_ends_at": exc.current_epoch,
+            },
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    report = readiness.evaluate_runtime()
+    durability = dict(report.get("durability") or {})
+    credential_check = dict(
+        (report.get("checks") or {}).get("credential_durability") or {}
+    )
+    verified = (
+        durability.get("event_ends_in") is not None
+        and credential_check.get("ok") is True
+    )
+    from . import telemetry
+
+    telemetry.emit(
+        "event_deadline.applied",
+        "system",
+        {
+            "event_ends_at": event_ends_at,
+            "changed": changed,
+            "verified": verified,
+            "credential_state": credential_check.get("state", "unknown"),
+            "outcome": "verified" if verified else "durability_failed",
+        },
+    )
+    return {
+        "event_ends_at": event_ends_at,
+        "applied": True,
+        "changed": changed,
+        "verified": verified,
+        "credential_durability": credential_check,
+        "durability": durability,
     }
 
 
@@ -646,16 +706,18 @@ def presence():
     users = []
     for user in user_manager.all():
         sessions = session_manager.list_for(user.email)
-        users.append({
-            "email": user.email,
-            "online": (now - user.last_seen) < 60 if user.last_seen else False,
-            "last_seen": user.last_seen,
-            "first_seen": user.first_seen,
-            "cli_ready": bool(user.cli_ready),
-            "obo": obo.obo_manager.status(user.email),
-            "workspace_sync": user_content.workspace_sync_status(user),
-            "sessions": [s.to_dict() for s in sessions],
-        })
+        users.append(
+            {
+                "email": user.email,
+                "online": (now - user.last_seen) < 60 if user.last_seen else False,
+                "last_seen": user.last_seen,
+                "first_seen": user.first_seen,
+                "cli_ready": bool(user.cli_ready),
+                "obo": obo.obo_manager.status(user.email),
+                "workspace_sync": user_content.workspace_sync_status(user),
+                "sessions": [s.to_dict() for s in sessions],
+            }
+        )
     return {
         "users": sorted(users, key=lambda u: u["email"]),
         "session_count": session_manager.count_all(),

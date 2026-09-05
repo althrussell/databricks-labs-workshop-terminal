@@ -1023,7 +1023,7 @@ def _bound_workspace_sync() -> dict | None:
 
 
 def evaluate_runtime() -> dict:
-    from . import attendee
+    from . import attendee, event_deadline
     from .bootstrap import install
     from .cli_config import gateway_status
     from .credentials import credential_manager, secret_protection_status
@@ -1033,7 +1033,7 @@ def evaluate_runtime() -> dict:
     from .telemetry import otel_health
 
     return evaluate(
-        env=os.environ,
+        env=event_deadline.effective_environment(os.environ),
         gateway_status=gateway_status(),
         credential_status=credential_manager.status(),
         installer_status=install.status(include_proof=True),

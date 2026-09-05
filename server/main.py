@@ -25,6 +25,7 @@ from . import (
     agents,
     cli_config,
     config,
+    event_deadline,
     help as help_module,
     identity,
     models,
@@ -264,7 +265,7 @@ def get_config(principal: Principal = Depends(get_current_user)):
         "durability": readiness.durability(
             credential_manager.status(),
             obo.obo_manager.status(principal.name),
-            os.environ,
+            event_deadline.effective_environment(os.environ),
         ),
         "omnigent_remote": {
             "enabled": config.omnigent_remote_enabled(),
