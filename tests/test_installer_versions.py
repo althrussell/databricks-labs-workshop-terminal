@@ -528,7 +528,7 @@ def test_tmux_reuses_only_checksum_verified_persistent_install(
 
     class Result:
         returncode = 0
-        stdout = "tmux 3.6b"
+        stdout = "tmux 3.7b"
         stderr = ""
 
     monkeypatch.setattr(install.config, "shared_prefix", lambda: str(tmp_path))
@@ -692,10 +692,10 @@ def test_omnigent_missing_staged_supply_chain_sets_installer_error(
 
 
 def test_all_release_candidate_defaults_are_exact():
-    assert install.CLAUDE_VERSION == "2.1.237"
-    assert install.CODEX_VERSION == "0.148.0"
-    assert install.DATABRICKS_CLI_VERSION == "1.11.0"
-    assert install.OMNIGENT_VERSION == "0.10.0"
+    assert install.CLAUDE_VERSION == "2.1.263"
+    assert install.CODEX_VERSION == "0.153.4"
+    assert install.DATABRICKS_CLI_VERSION == "1.15.0"
+    assert install.OMNIGENT_VERSION == "0.12.0"
 
 
 # Manifest artifact -> the app.yaml env var pinning the same release, and the

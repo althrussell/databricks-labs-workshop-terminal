@@ -274,14 +274,14 @@ env:
   # Release-candidate CLI pins. Control Tower may override these only as part
   # of a reviewed event release.
   - name: CLAUDE_CODE_VERSION
-    value: "2.1.237"
+    value: "2.1.263"
   - name: CODEX_CLI_VERSION
-    value: "0.148.0"
+    value: "0.153.4"
   - name: DATABRICKS_CLI_VERSION
-    value: "1.11.0"
+    value: "1.15.0"
   # Node 24 is the active LTS line used by Codex.
   - name: NODE_VERSION
-    value: "24.18.1"
+    value: "24.20.0"
   # OPTIONAL mirror override. The reviewed contract (source + SHA-256 for every
   # installer/archive/package, plus the skills commit/content digest) ships in
   # the image at assets/artifacts/manifest.json, so boot needs nothing here.
@@ -305,7 +305,7 @@ env:
     value: "false"
 
   # --- Omnigent (agent meta-harness) ---
-  # Feature flag, default ON: installs the reviewed Omnigent 0.10.0 artifact
+  # Feature flag, default ON: installs the reviewed Omnigent 0.12.0 artifact
   # set (including transitive siblings) plus tmux, then leads the catalog with
   # the Omnigent session. Set to "false" to opt out.
   - name: OMNIGENT_ENABLED
@@ -315,7 +315,7 @@ env:
   # TMUX_STATIC_URL/SHA256 are pinned in code; the env overrides below exist
   # for emergencies (e.g. GitHub release unreachable).
   - name: OMNIGENT_VERSION
-    value: "0.10.0"
+    value: "0.12.0"
   # Dedicated Omnigent App URL. Empty preserves the existing local-server
   # behavior. Control Tower sets the attendee-specific HTTPS URL when remote
   # host/TUI integration is enabled.

@@ -24,10 +24,10 @@ from urllib.request import urlopen
 
 
 NODE_LINUX_X64_SHA256 = (
-    "d6c664df3f3f61458e8c277585571328522d705166723a7c7823a9253a4d15a0"
+    "2f2c0da162318f0de47665410c7c8c2ed3d36c8f3105de4bbc61176c70a7cbf2"
 )
 TMUX_LINUX_X64_SHA256 = (
-    "a23e56e9913d610c31f2893a1c9c669a73cb8bb2b8ded1180f6572bb55e52ca5"
+    "92ac102a1f9b33b21d891a836b4b5b5c8c5d2eeac4bae4dfd34d565bbed598bf"
 )
 REQUIRED_ARTIFACTS = frozenset({
     "node_linux_x64",

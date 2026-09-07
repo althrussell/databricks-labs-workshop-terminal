@@ -48,9 +48,9 @@ CLI_RELEASE = (
 )
 NPM_PUBLIC_REGISTRY = "https://registry.npmjs.org"
 CODEX_PACKAGE = "@openai/codex"
-UV_VERSION = "0.12.0"
-PYTHON_RELEASE = "20260728"
-PYTHON_VERSION = "3.12.13"
+UV_VERSION = "0.12.10"
+PYTHON_RELEASE = "20260901"
+PYTHON_VERSION = "3.12.14"
 CODEX_NATIVE_EXECUTABLE = "vendor/x86_64-unknown-linux-musl/bin/codex"
 
 
@@ -199,7 +199,7 @@ def build() -> dict:
             "sha256": _checksum_from_sums(node_sums, node_arm64),
         },
         "tmux_linux_x64": {
-            "version": "3.6b",
+            "version": "3.7b",
             "source": install.TMUX_STATIC_URL,
             "sha256": install.TMUX_STATIC_SHA256,
         },
