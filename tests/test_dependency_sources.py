@@ -25,7 +25,13 @@ def test_hosted_locks_use_only_public_package_sources():
 
     for path in RESOLUTION_LOCKS[:2]:
         text = path.read_text(encoding="utf-8")
-        assert 'registry = "https://pypi.org/simple/' in text, path
+        assert any(
+            registry in text
+            for registry in (
+                'registry = "https://pypi.org/simple"',
+                'registry = "https://pypi.org/simple/"',
+            )
+        ), path
         assert "https://files.pythonhosted.org/packages/" in text, path
 
     npm_lock = RESOLUTION_LOCKS[2].read_text(encoding="utf-8")
