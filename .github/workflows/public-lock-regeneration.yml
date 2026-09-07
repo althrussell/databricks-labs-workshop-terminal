@@ -1,0 +1,34 @@
+name: Regenerate public Python lock
+
+on:
+  push:
+    branches:
+      - codex/wt-public-lock-regeneration
+
+permissions:
+  contents: read
+
+jobs:
+  lock:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.10"
+      - name: Regenerate hosted-App dependency outputs
+        run: |
+          uv lock
+          uv export --frozen --no-dev --no-group release --no-hashes --no-emit-project --output-file requirements.txt
+          uv export --frozen --no-group release --no-hashes --no-emit-project --output-file requirements-dev.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: public-python-lock
+          path: |
+            uv.lock
+            requirements.txt
+            requirements-dev.txt
+          if-no-files-found: error
