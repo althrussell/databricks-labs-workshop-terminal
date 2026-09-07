@@ -393,7 +393,7 @@ implementation; where this design and the source disagreed, the source won:
   resolution is not permitted during event bootstrap. `OMNIGENT_VERSION` must
   match the in-repo fully hashed lock, and uv and Python come from
   checksum-verified archives in the manifest, never from `PATH`.
-- **tmux pin.** The v3.5a release in §3.1 does not exist; pinned v3.6b
+- **tmux pin.** The v3.5a release in §3.1 does not exist; pinned v3.7b
   (`tmux.linux-amd64.stripped.gz`, sha256 `a23e56e9…` in code). The artifact
   is downloaded once, hash-verified, then decompressed (no re-fetch).
 - **Auth refresh cadence.** `auth_refresh_interval_ms` is NOT a provider

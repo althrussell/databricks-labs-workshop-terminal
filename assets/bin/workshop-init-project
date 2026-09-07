@@ -68,6 +68,7 @@ TEMPLATE="${HOME}/.config/workshop/project-memory.md"
 # The template carries this marker so re-running the helper (or adopting a
 # project it already seeded) is a no-op rather than a second copy.
 MARKER="<!-- workshop-project-memory -->"
+APPKIT_VERSION="${APPKIT_VERSION:-0.72.0}"
 
 mkdir -p "$PROJECTS"
 
@@ -93,7 +94,8 @@ if [ "$APPKIT" = "1" ] && [ ! -e "$DEST" ]; then
   # it because the status is inspected below rather than aborting here, and
   # PIPESTATUS has to be read before any other command runs.
   set +e
-  databricks apps init --name "$NAME" --output-dir "$PROJECTS" \
+  databricks apps init --version "$APPKIT_VERSION" \
+    --name "$NAME" --output-dir "$PROJECTS" \
     "${PASSTHRU[@]+"${PASSTHRU[@]}"}" 2>&1 \
     | grep -vF \
         -e "Databricks skills are not installed" \
@@ -104,7 +106,7 @@ if [ "$APPKIT" = "1" ] && [ ! -e "$DEST" ]; then
   if [ "$SCAFFOLD_STATUS" -ne 0 ]; then
     echo "workshop-init-project: AppKit scaffold failed — continuing with a" >&2
     echo "  plain project. To retry the scaffold, run it into a clean name:" >&2
-    echo "    databricks apps init --name ${NAME} --output-dir ${PROJECTS}" >&2
+    echo "    databricks apps init --version ${APPKIT_VERSION} --name ${NAME} --output-dir ${PROJECTS}" >&2
     echo "  (it will not write into ${DEST} once that directory exists)" >&2
   fi
 fi

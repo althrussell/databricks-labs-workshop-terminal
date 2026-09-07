@@ -24,7 +24,7 @@ A dashboard should be showing something relevant for a human, typically some KPI
 | Get schema | `databricks experimental aitools tools discover-schema catalog.schema.table1 catalog.schema.table2` |
 | Test query | `databricks experimental aitools tools query --warehouse WH "SELECT..."` |
 | Create dashboard | `databricks lakeview create --display-name "X" --warehouse-id "WH" --dataset-catalog CATALOG --dataset-schema SCHEMA --serialized-dashboard "$(cat file.json)" --json '{"parent_path": "/Workspace/Users/<you>/path"}'` — `--dataset-catalog` / `--dataset-schema` are **flag-only** (REQUIRED; CLI silently drops them if put in `--json`); `parent_path` is JSON-only (no flag). Queries must use bare table names. |
-| Update dashboard | `databricks lakeview update DASHBOARD_ID --serialized-dashboard "$(cat file.json)"` |
+| Update dashboard | `databricks lakeview update DASHBOARD_ID --dataset-catalog CATALOG --dataset-schema SCHEMA --serialized-dashboard "$(cat file.json)"` — **always re-pass `--dataset-catalog` / `--dataset-schema` on update** (same flag-only rule as create); update replaces the serialized dashboard, so omitting them nulls the per-dataset defaults and breaks every bare-table query. |
 | Publish | `databricks lakeview publish DASHBOARD_ID --warehouse-id WH` |
 | Delete | `databricks lakeview trash DASHBOARD_ID` |
 
@@ -58,6 +58,7 @@ A dashboard should be showing something relevant for a human, typically some KPI
 | `waterfall` | **1** | [2-advanced-widget-specifications.md#waterfall](references/2-advanced-widget-specifications.md#waterfall) |
 | `filter-single-select`, `filter-multi-select`, `filter-date-range-picker` | **2** | [3-filters.md#filter-widget-structure](references/3-filters.md#filter-widget-structure) |
 | `range-slider` | **2** | [3-filters.md#range-slider-numeric-range-filter](references/3-filters.md#range-slider-numeric-range-filter) |
+| `custom-vega-viz` (Vega-Lite: matrix/grid, radar, gauge, sunburst, network — only when no built-in fits) | **1** | [6-custom-visualizations.md#custom-vega-viz](references/6-custom-visualizations.md#custom-vega-viz) |
 
 > Cohort retention charts are built as a `pivot` with a color-scale cell style — there is no `cohort` widget type. See pivot in [2-advanced-widget-specifications.md](references/2-advanced-widget-specifications.md).
 
@@ -144,6 +145,10 @@ Always make sure you read an entire example to understand the structure, like [4
 
 **Now deploy the JSON to the workspace.** Run `databricks lakeview create` (below). Your task is not complete until this command succeeds and returns a dashboard ID — the JSON file alone is an intermediate working artifact.
 
+**Give the user the dashboard link** (host from `databricks auth env -o json` → `.env.DATABRICKS_HOST`). Note the `v3` — `/sql/dashboards/` without it is the wrong legacy path:
+- **Draft:** `https://<host>/sql/dashboardsv3/<DASHBOARD_ID>`
+- **Published:** append `/published` (only valid once you've run `databricks lakeview publish DASHBOARD_ID`)
+
 After deploying, the same `lakeview` subcommands manage the dashboard's lifecycle (list, get, update, publish, trash).
 
 ```bash
@@ -160,13 +165,21 @@ After deploying, the same `lakeview` subcommands manage the dashboard's lifecycl
 # "FROM schema.trips" or "FROM catalog.schema.trips") — --dataset-catalog and
 # --dataset-schema only fill in missing parts, they do NOT rewrite hardcoded
 # prefixes.
-databricks lakeview create \
+#
+# parent_path must ALREADY EXIST or create fails "Tree node ... does not exist":
+databricks workspace mkdirs /Workspace/Users/me@co.com/dashboards
+
+# Capture the dashboard_id with -o json. Do NOT add 2>&1: create echoes the
+# serialized dashboard back, and merging stderr breaks the output so jq can't
+# parse it (the dashboard IS created, but you lose the id and the step looks failed).
+DASHBOARD_ID=$(databricks lakeview create \
   --display-name "My Dashboard" \
   --warehouse-id "abc123def456" \
   --dataset-catalog "my_catalog" \
   --dataset-schema "my_schema" \
   --serialized-dashboard "$(cat dashboard.json)" \
-  --json '{"parent_path": "/Workspace/Users/me@co.com/dashboards"}'
+  --json '{"parent_path": "/Workspace/Users/me@co.com/dashboards"}' \
+  -o json | jq -r '.dashboard_id')
 
 # List all dashboards
 databricks lakeview list
@@ -175,7 +188,12 @@ databricks lakeview list
 databricks lakeview get DASHBOARD_ID
 
 # Update a dashboard
-databricks lakeview update DASHBOARD_ID --serialized-dashboard "$(cat dashboard.json)"
+# ALWAYS re-pass --dataset-catalog / --dataset-schema: update replaces the
+# serialized dashboard, so omitting them nulls the defaults and breaks queries.
+databricks lakeview update DASHBOARD_ID \
+  --dataset-catalog "my_catalog" \
+  --dataset-schema "my_schema" \
+  --serialized-dashboard "$(cat dashboard.json)"
 
 # Publish a dashboard
 databricks lakeview publish DASHBOARD_ID --warehouse-id WAREHOUSE_ID
@@ -266,14 +284,15 @@ Mental model — **60/30/10 rule** mapped to theme keys: **60% neutral** = canva
 
 - `visualizationColors`: ordered palette every chart series and category mapping cycles through. **Positions are 0-indexed**: `position: 0` = first color (`#FFA600` above), `position: 6` = seventh (`#99DDB4`). Length 5–8 is typical.
 - Background / font / selection colors take `light` + `dark` pairs; the dashboard auto-selects based on viewer mode.
+- `fontColor` also drives the **counter number color** — counters have no per-widget color, so this is the only lever for them (it colors every counter's value on the dashboard, not per-tile).
 - `widgetHeaderAlignment`: `"LEFT"` (default), `"CENTER"`, or `"RIGHT"`. Optional top-level: `fontFamily` (e.g. `"Space Grotesk"`, `"Inter"` — sans-serif keeps dense data readable; don't override per widget) and `widgetCornerRadius` (integer px, e.g. `12` for rounded corners; `0` or omit = square).
-- Per-widget color references: `{"themeColorType": "visualizationColors", "position": N}` (0-indexed) to pin to a palette slot, or `{"hex": "#FF0000"}` for an exact color outside the palette.
+- Per-widget color references (charts only): `{"themeColorType": "visualizationColors", "position": N}` (0-indexed) to pin to a palette slot, or `{"hex": "#FF0000"}` for an exact color outside the palette. **Counters do NOT support a per-widget color** — a `color` on a counter's `value` renders the widget as "unsupported widget definition"; color counters via `fontColor` above.
 
 **Palette-design rules** (this is what separates a polished dashboard from a noisy one):
 
 1. **One coherent color family per dashboard, distinct across the suite.** Walk **across hues** (e.g., amber → coral → pink → purple → navy), not one color faded toward white — a single-hue lightness ramp reads as one color and the viewer can't tell categories apart. Adjacent stops must be visually distinct: if you squint and two blur into one, push them further apart. Single-hue ramps are for **quantitative** widgets only (`colorRamp.mode: "custom-sequential"`), never for `visualizationColors`.
 2. **Pin semantic colors as literal hex, outside the palette.** "Bad" = a warm coral (e.g. `#FF7E5C`), "good" = a calm teal/green. Use `color.scale.mappings` with a bare hex string — `{"value": "Critical", "color": "#FF7E5C"}` — **not** `{"hex": "..."}` or `themeColorType: position` (both are silently dropped on chart widgets). Reuse the good-teal that's already in the palette so it never clashes.
-3. **Color non-categorical widgets explicitly so they join the family.** Maps & heatmaps: `colorRamp.mode: "custom-sequential"` with `{start, end}` from the family (if directional: `start` = bad color, `end` = good color). Forecast / multi-series: pin per-series via `color.scale.mappings` keyed on `displayName` (actual = solid family color, forecast = contrast/alert, threshold = muted tone). Sparkline counters: set `value.color` to a family color, not grey.
+3. **Color non-categorical widgets explicitly so they join the family.** Maps & heatmaps: `colorRamp.mode: "custom-sequential"` with `{start, end}` from the family (if directional: `start` = bad color, `end` = good color). Forecast / multi-series: pin per-series via `color.scale.mappings` keyed on `displayName` (actual = solid family color, forecast = contrast/alert, threshold = muted tone). Counters (incl. sparkline counters) take **no** per-widget color — their number color comes from the theme's `fontColor`; do NOT set `value.color` (it renders "unsupported widget definition").
 4. **"Lighter / more pastel" tweak**: nudge all stops up in lightness *together*; don't recolor individual ones. Re-sync the pinned semantic hex values; keep enough contrast on the alert color that it still reads as a warning.
 
 **Starter palettes** (pick one and adapt — extend to 7-8 stops if needed; semantic red/green stay as literal hex per rule 2):
@@ -328,6 +347,7 @@ Apply unless user specifies otherwise:
 | Any widget (text, counter, table, chart) | [1-widget-specifications.md](references/1-widget-specifications.md) |
 | Advanced charts (area, scatter/Bubble, combo (Line+Bar), Choropleth map) | [2-advanced-widget-specifications.md](references/2-advanced-widget-specifications.md) |
 | Dashboard with filters (global or page-level) | [3-filters.md](references/3-filters.md) |
+| A chart type that isn't built in (matrix/grid, radar, gauge, sunburst, network) — custom **Vega-Lite** viz | [6-custom-visualizations.md](references/6-custom-visualizations.md) |
 | Debugging a broken dashboard | [5-troubleshooting.md](references/5-troubleshooting.md) |
 
 ---
@@ -502,6 +522,7 @@ Before deploying, verify:
 10. SQL uses Spark syntax (date_sub, not INTERVAL)
 11. **All SQL queries tested via CLI and return expected data**
 12. **Every dataset you want filtered MUST contain the filter field** — filters only affect datasets with that column in their query
+13. **`abbreviation: "compact"` needs `decimalPlaces`** — without it the value isn't rounded (renders `$9.756278496M`, not `$9.76M`)
 
 ---
 

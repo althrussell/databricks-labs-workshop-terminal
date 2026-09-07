@@ -403,6 +403,11 @@ def test_the_appkit_flag_scaffolds_into_the_project_root(
 
     argv = recorded.read_text().split("\n")
     assert argv[:2] == ["apps", "init"]
+    assert "--version" in argv
+    assert argv[argv.index("--version") + 1] == "0.72.0", (
+        "the workshop must scaffold the reviewed AppKit release, not whichever "
+        "version happens to be current during the event"
+    )
     assert "--output-dir" in argv
     assert argv[argv.index("--output-dir") + 1] == str(fake_home / "projects"), (
         "the parent, so the scaffold lands at projects/<name> and never nests"

@@ -2,78 +2,78 @@
   "//": "GENERATED FILE. Run `python3 scripts/build_artifact_manifest.py --write` to regenerate. See docs/artifact-manifest.md.",
   "artifacts": {
     "claude_binary": {
-      "sha256": "73975167f0108693cf6fd6614994781657ebb8456ebef5d247458734abfb3916",
-      "source": "https://downloads.claude.ai/claude-code-releases/2.1.237/linux-x64/claude",
-      "version": "2.1.237"
+      "sha256": "26d020351e8112f4006790f3cfce43b4c9df0c1bb1d0e542364d64151b81d5ba",
+      "source": "https://downloads.claude.ai/claude-code-releases/2.1.263/linux-x64/claude",
+      "version": "2.1.263"
     },
     "claude_installer": {
       "sha256": "cde4f1702d3b1695f92b73d26888364e17bca476e17f0fd676484c951d36c125",
       "source": "claude-code-bootstrap.sh",
       "upstream": "https://claude.ai/install.sh",
-      "version": "2.1.237"
+      "version": "2.1.263"
     },
     "codex_native_package_linux_x64": {
-      "executable_sha256": "ac2cfed85fb647d61e0150b8548102b330e4799d9d81ad5d354de701edf6b074",
-      "sha256": "52f1b8f5cf66fe776d2bd5e68a32ef6884b7e466fd80614bf8858046dfa9012f",
-      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.148.0-linux-x64.tgz",
-      "version": "0.148.0-linux-x64"
+      "executable_sha256": "56ef98ab4032d317ab26e9b5e5a175650717351edb16ed9cde0cb6d1734d62da",
+      "sha256": "54818cb9fce3360cc6e44cfc5a96952cd5c1243efb43cbe488e11dda84663e08",
+      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.153.4-linux-x64.tgz",
+      "version": "0.153.4-linux-x64"
     },
     "codex_npm_launcher_package": {
-      "sha256": "74be73c8a50cc01bce978cc6fec9274564f529a50e9f256b3608a7012437cebe",
-      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.148.0.tgz",
-      "version": "0.148.0"
+      "sha256": "fd04263c1adfa1d285c6c0ad86a97cab508d3012ee9eab80a99f773cc4b2fb3a",
+      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.153.4.tgz",
+      "version": "0.153.4"
     },
     "databricks_agent_skills": {
-      "commit": "3d79814688e28765db0153eddcf6ec74972c75b4",
-      "content_sha256": "43b1fde1da1c892bd023eed0fd8c677c82ba68bc727b5d39d49d6b3e43de9104",
+      "commit": "4d17885b0115718b5fb6a7540e908cb4201d4f2d",
+      "content_sha256": "0b91eddfe20cf410c27e632ccc28b00b5049ad58aecc9101caca5476a4b1f1a1",
       "source": "https://github.com/databricks/databricks-agent-skills.git",
-      "version": "v0.2.10"
+      "version": "v0.2.15"
     },
     "databricks_cli_archive_linux_x64": {
-      "sha256": "bddad9e2d830dd7ea00292203c00088f3efe6f940f1ecdad59a3dc25bc28bca9",
-      "source": "https://github.com/databricks/cli/releases/download/v1.11.0/databricks_cli_1.11.0_linux_amd64.zip",
-      "version": "1.11.0"
+      "sha256": "a07dba889c7003b84d00556e61a6e66fc4d0c951c6f17be1a18e1fcb36015fe0",
+      "source": "https://github.com/databricks/cli/releases/download/v1.15.0/databricks_cli_1.15.0_linux_amd64.zip",
+      "version": "1.15.0"
     },
     "databricks_cli_installer": {
-      "sha256": "873cd383f1b09208908ac6e9c3cc6300ee139d4d0b94a2cf144cbaf414a905e1",
+      "sha256": "04b99d7a72633ef4f09dab09a9f684394017deea2c37025dd77114022483abd1",
       "source": "databricks-cli-install.sh",
-      "upstream": "https://raw.githubusercontent.com/databricks/setup-cli/v1.11.0/install.sh",
-      "version": "1.11.0"
+      "upstream": "https://raw.githubusercontent.com/databricks/setup-cli/v1.15.0/install.sh",
+      "version": "1.15.0"
     },
     "node_linux_arm64": {
-      "sha256": "7201e3a09dc825bac57867c81913e2b8f0ef87d04cb9082af4cda82f6ff3d88c",
-      "source": "https://nodejs.org/dist/v24.18.1/node-v24.18.1-linux-arm64.tar.xz",
-      "version": "24.18.1"
+      "sha256": "5f4ddab610c1ab2016b3c227cebdbf6d9495161487e4739c7b90090595f465f7",
+      "source": "https://nodejs.org/dist/v24.20.0/node-v24.20.0-linux-arm64.tar.xz",
+      "version": "24.20.0"
     },
     "node_linux_x64": {
-      "sha256": "d6c664df3f3f61458e8c277585571328522d705166723a7c7823a9253a4d15a0",
-      "source": "https://nodejs.org/dist/v24.18.1/node-v24.18.1-linux-x64.tar.xz",
-      "version": "24.18.1"
+      "sha256": "2f2c0da162318f0de47665410c7c8c2ed3d36c8f3105de4bbc61176c70a7cbf2",
+      "source": "https://nodejs.org/dist/v24.20.0/node-v24.20.0-linux-x64.tar.xz",
+      "version": "24.20.0"
     },
     "omnigent_lock": {
-      "lock_sha256": "fbeaddef72f2f48c3719aca8ab7207d8e21dfb16485caafa11a681df438c2962",
-      "sha256": "fbeaddef72f2f48c3719aca8ab7207d8e21dfb16485caafa11a681df438c2962",
-      "source": "omnigent-0.10.0.lock",
-      "version": "0.10.0"
+      "lock_sha256": "64f8c46918058a5a6883d7d5257fd1f137a2b49f40b371ce23c4b4f33d247ad1",
+      "sha256": "64f8c46918058a5a6883d7d5257fd1f137a2b49f40b371ce23c4b4f33d247ad1",
+      "source": "omnigent-0.12.0.lock",
+      "version": "0.12.0"
     },
     "python_3_12_runtime": {
       "executable_relative_path": "python/bin/python3.12",
       "kind": "archive",
-      "sha256": "fd9d70e1e1ed3f6caccb4e2eefe570aa07589c8f86ddf0e87f68a96cd14272e1",
-      "source": "https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.12.13+20260728-x86_64-unknown-linux-gnu-install_only.tar.gz",
-      "version": "3.12.13"
+      "sha256": "936c246dfdbbfa7cb22dd01814a21f582a892689fae96b06071a5e433baffa22",
+      "source": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.12.14+20260901-x86_64-unknown-linux-gnu-install_only.tar.gz",
+      "version": "3.12.14"
     },
     "tmux_linux_x64": {
-      "sha256": "a23e56e9913d610c31f2893a1c9c669a73cb8bb2b8ded1180f6572bb55e52ca5",
-      "source": "https://github.com/mjakob-gh/build-static-tmux/releases/download/v3.6b/tmux.linux-amd64.stripped.gz",
-      "version": "3.6b"
+      "sha256": "92ac102a1f9b33b21d891a836b4b5b5c8c5d2eeac4bae4dfd34d565bbed598bf",
+      "source": "https://github.com/mjakob-gh/build-static-tmux/releases/download/v3.7b/tmux.linux-amd64.stripped.gz",
+      "version": "3.7b"
     },
     "uv_binary": {
       "executable_relative_path": "uv-x86_64-unknown-linux-gnu/uv",
       "kind": "archive",
-      "sha256": "eaf842262aa1c418d8ecc5605f02ee1ebfd369124fa48548e85f9481a47831a9",
-      "source": "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-x86_64-unknown-linux-gnu.tar.gz",
-      "version": "0.12.0"
+      "sha256": "173d95a0c32d18c896c46ba6fafbf3cf9c14ab74b033f81b76c883ef492a976b",
+      "source": "https://github.com/astral-sh/uv/releases/download/0.12.10/uv-x86_64-unknown-linux-gnu.tar.gz",
+      "version": "0.12.10"
     }
   },
   "reviewed": true,

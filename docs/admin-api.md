@@ -514,7 +514,7 @@ stats collection. It returns the exact local supervisor `status`, `connected`,
 and `expected_host_id`; `host_id` and `last_seen_at` appear only after a fresh
 attendee-owned bearer verifies `GET /v1/hosts/{expected_host_id}` as `online`.
 `last_seen_at` is the UTC timestamp when Workshop Terminal completed that
-successful verification; upstream v0.10.0's host response has no last-seen field.
+successful verification; upstream v0.12.0's host response has no last-seen field.
 Network/auth/offline/mismatch results remain disconnected and never expose the
 bearer.
 
@@ -618,10 +618,10 @@ python scripts/pull_diagnostics.py errors  --urls ./instances.txt   # whole flee
 | `SKILLS_REPO` | github databricks/databricks-agent-skills | Skills source; event use is constrained by the reviewed artifact manifest |
 | `SKILLS_REF` | empty in `app.yaml` | Exact reviewed tag/SHA for the skills overlay; must match the manifest ref, commit, and content SHA-256 |
 | `ARTIFACT_MANIFEST_PATH` | empty | Optional mirror override for the repo-owned contract in `assets/artifacts/manifest.json`; may redirect `source` only, and a version/checksum override is rejected |
-| `CLAUDE_CODE_VERSION` | `2.1.237` in `app.yaml` | Exact reviewed Claude Code CLI release candidate |
-| `CODEX_CLI_VERSION` | `0.148.0` in `app.yaml` | Exact reviewed Codex CLI release candidate |
-| `OMNIGENT_VERSION` | `0.10.0` in `app.yaml` | Exact reviewed Omnigent release candidate, matched to the dedicated App protocol |
-| `DATABRICKS_CLI_VERSION` | `1.11.0` in `app.yaml` | Exact reviewed Databricks CLI release input |
+| `CLAUDE_CODE_VERSION` | `2.1.263` in `app.yaml` | Exact reviewed Claude Code CLI release candidate |
+| `CODEX_CLI_VERSION` | `0.153.4` in `app.yaml` | Exact reviewed Codex CLI release candidate |
+| `OMNIGENT_VERSION` | `0.12.0` in `app.yaml` | Exact reviewed Omnigent release candidate, matched to the dedicated App protocol |
+| `DATABRICKS_CLI_VERSION` | `1.15.0` in `app.yaml` | Exact reviewed Databricks CLI release input |
 | `DEEPWIKI_MCP_URL` / `EXA_MCP_URL` | public endpoints | MCP servers for attendee agents (empty string disables) |
 | `ACCESS_GROUP` | *(unset)* | Optional group restricting attendee access |
 | `WORKSHOP_ATTENDEE_EMAIL` | *(unset; required for `/readyz`)* | Control-Tower-injected email assigned to this one app instance. A different attendee receives HTTP 403 / WebSocket 4403 unless `ALLOW_SHARED_TOPOLOGY=true`. Admin service-principal routes remain group-authorized and independent of this binding |

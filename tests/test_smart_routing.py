@@ -45,7 +45,7 @@ def _client(host: str = "https://x.cloud.databricks.com", token: str = "tok"):
 
 
 # --- Fake Omnigent surface -------------------------------------------------
-# Mirrors the 0.10.0 signatures this module binds to. If upstream changes one,
+# Mirrors the 0.12.0 signatures this module binds to. If upstream changes one,
 # these fakes go stale silently — which is why the live App build is also
 # exercised against the real wheel before release.
 
@@ -136,7 +136,7 @@ def _fake_harness_bars_model(harness, model, **_kwargs):
 
 
 def test_smart_routing_enabled_by_default():
-    # 0.10.0 falls back to the built-in judge when the account has no routing
+    # 0.12.0 falls back to the built-in judge when the account has no routing
     # API, so Auto no longer depends on a flag we cannot turn on.
     assert smart_routing.smart_routing_enabled({}) is True
 
@@ -295,6 +295,8 @@ def test_build_runtime_caps_attaches_both_backends(fake_omnigent):
     assert kwargs["base_url"] == "https://x.cloud.databricks.com/ai-gateway/routing/v1"
     assert kwargs["router_name"] == "task_v1"
     assert kwargs["model_prefixes"] == ["databricks-", "system.ai."]
+    assert kwargs["auth_provider"]() == {"Authorization": "Bearer tok"}
+    assert "auth" not in kwargs
     assert fake_omnigent["smart_routing_module"]._AUTO_ROUTING_HARNESSES == (
         "claude-sdk",
         "codex",
@@ -320,17 +322,6 @@ def test_build_runtime_caps_is_bare_when_no_backend_can_be_built(fake_omnigent, 
 
     assert caps.routing_client is None
     assert caps.routing_backends is None
-
-
-def test_workspace_client_bearer_auth_sets_authorization():
-    httpx = pytest.importorskip("httpx")
-
-    auth = smart_routing.WorkspaceClientBearerAuth(_client(token="rotated-token"))
-    request = httpx.Request("POST", "https://example.com/routes:select")
-    flows = list(auth.auth_flow(request))
-
-    assert flows == [request]
-    assert request.headers["Authorization"] == "Bearer rotated-token"
 
 
 # --- Judge menu shaping ----------------------------------------------------

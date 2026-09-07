@@ -9,17 +9,17 @@ link.
 ## Confirmed upstream behavior
 
 A read-only spike used `gh` against `omnigent-ai/omnigent` main at
-`b08eb50f2ebe242cc64d5e289bc8d209567c5126`. The following are source-confirmed:
+`358c0df67e1dc90de21a18e7736f8292173224c7`. The following are source-confirmed:
 
-- The published `omnigent==0.10.0` wheel contains the upstream React UI. Its
-  release commit is `40755dd8dddb07e1eb6e4055d1d9936e184ceb9b`; the wheel SHA-256
+- The published `omnigent==0.12.0` wheel contains the upstream React UI. Its
+  release commit is `f04b0354fb5344c1ea8b92795ceb6760a9ad7595`; the wheel SHA-256
   is recorded in `deploy/omnigent-app/upstream-lock.json`.
-- Omnigent 0.10.0 requires Python `>=3.12`. The App source keeps `>=3.12,<3.13`
+- Omnigent 0.12.0 requires Python `>=3.12`. The App source keeps `>=3.12,<3.13`
   so Databricks Apps stays on 3.12 uv mode, and omits `requirements.txt` so the
   platform selects uv mode from `pyproject.toml` and `uv.lock` instead of its
   Python 3.11 pip mode.
 - Upstream's Databricks wrapper still constructs the same stores and
-  `create_app(...)` kwargs. 0.10.0 added an optional `feature_flags` argument;
+  `create_app(...)` kwargs. 0.12.0 supports an optional `feature_flags` argument;
   when omitted, `create_app` reads `OMNIGENT_FEATURES`. We leave that unset so
   attendees do not get a cost page or web-driven harness installer. We track
   the release wrapper deliberately, not main.
@@ -59,7 +59,7 @@ Every authenticated Workshop Terminal request carries the attendee's Databricks
 Apps OBO bearer in `X-Forwarded-Access-Token`. When `OMNIGENT_APP_URL` is set,
 Workshop Terminal mirrors that bearer into the attendee's isolated
 `~/.omnigent/auth_tokens.json`, keyed by the normalized App URL, using
-Omnigent 0.10.0's `{token,user_id,expires_at}` record shape. The attendee email
+Omnigent 0.12.0's `{token,user_id,expires_at}` record shape. The attendee email
 is lowercased and JWT `exp` supplies `expires_at`. Capture ordering uses JWT
 `iat` then `exp`; a late older request, even if still valid, cannot replace the
 newer mirrored bearer.
@@ -143,7 +143,7 @@ attendee quitting a session they had deliberately joined, and would fork a new
 session on every such exit.
 
 Remote startup fails closed unless Omnigent is enabled and the effective CLI
-install is exactly protocol-compatible 0.10.0. Local mode retains install-spec
+install is exactly protocol-compatible 0.12.0. Local mode retains install-spec
 override support.
 
 Remote startup also enforces the security topology: exactly one attendee may
@@ -187,7 +187,7 @@ start may fail before those grants; that is a provisioning phase, not readiness.
 
 ### Smart routing (Auto · smart routing)
 
-Omnigent 0.10.0 has two routing backends and the App configures both.
+Omnigent 0.12.0 has two routing backends and the App configures both.
 
 The external one is AI Gateway `POST …/ai-gateway/routing/v1/routes:select`,
 called as the App service principal with ambient Apps OAuth. Labs
@@ -197,7 +197,7 @@ enabled for this account." That is an **account-level product flag**, not a
 missing App-SP grant: no Control Tower privilege change unblocks it.
 
 The local one is the built-in judge, and it is what makes Auto usable anyway.
-0.10.0 latches the external client off after its first `ENDPOINT_NOT_FOUND`, so
+0.12.0 latches the external client off after its first `ENDPOINT_NOT_FOUND`, so
 the cost is one request per App process and the judge answers everything after
 it. `GET /v1/info` drops the external routing source once latched, so the UI
 never offers a router that cannot answer. The judge also serves any pane whose
@@ -223,7 +223,7 @@ panes.
 Workshop Polly economy/balanced/frontier template agents are removed; stock
 `polly` is the default agent.
 
-### Shared-session approvals (upstream, 0.10.0)
+### Shared-session approvals (upstream, 0.12.0)
 
 Posting a session event — including an `approval` verdict — requires
 `LEVEL_EDIT`, not `LEVEL_OWNER`. Any principal granted edit on a shared session
@@ -275,7 +275,7 @@ Workshop Terminal App so the proxy forwards the attendee OBO bearer.
    Apps does not mount Unity Catalog volumes, so the path is unreachable from the
    filesystem. Startup fails if the write is not permitted.
 7. Poll App deployment state, authenticated `GET /health`, and
-   `GET /api/version`; require version `0.10.0`. Successful health proves the
+   `GET /api/version`; require version `0.12.0`. Successful health proves the
    Volume startup invariant.
 8. Record the App URL and resource/deployment identifiers.
 9. Deploy Workshop Terminal with the normalized App URL, exact attendee email,
@@ -294,7 +294,7 @@ steps 3–10 retain the dependency order above.
 
 App health is true only when deployment is running, authenticated
 `GET /health` returns HTTP 200 with `{"status":"ok"}`, and
-`GET /api/version` is `0.10.0`. Resource readiness additionally requires the
+`GET /api/version` is `0.12.0`. Resource readiness additionally requires the
 Lakebase endpoint active and an App-SP write probe to the bound Volume.
 
 Workshop readiness is stricter:
@@ -320,7 +320,7 @@ URL and attendee identity, but may set `connected=true`, `host_id`, and
 attendee-owned host and the observed `host_id` equals `expected_host_id`.
 Workshop Terminal performs that verification only while its local supervisor is
 running and a fresh attendee-owned token mirror exists, using authenticated
-`GET /v1/hosts/{expected_host_id}` with a short timeout. Upstream v0.10.0 does
+`GET /v1/hosts/{expected_host_id}` with a short timeout. Upstream v0.12.0 does
 not return a last-seen field, so `last_seen_at` is the UTC timestamp when
 Workshop Terminal completed the successful exact-host online verification.
 Network/auth failures produce `connected=false` while retaining the honest

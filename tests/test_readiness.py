@@ -24,7 +24,7 @@ def _good_inputs(tmp_path):
         "CODEX_CLI_VERSION": "0.144.6",
         "OMNIGENT_VERSION": "0.9.0",
         "DATABRICKS_CLI_VERSION": "1.8.0",
-        "NODE_VERSION": "24.18.1",
+        "NODE_VERSION": "24.20.0",
     }
     credential = {
         "configured": True,
@@ -77,7 +77,7 @@ def _good_inputs(tmp_path):
                 "claude": "2.1.228",
                 "codex": "0.144.6",
                 "databricks": "1.8.0",
-                "node": "24.18.1",
+                "node": "24.20.0",
                 "omnigent": "0.9.0",
             }.items()
         }

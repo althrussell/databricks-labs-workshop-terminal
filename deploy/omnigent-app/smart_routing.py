@@ -1,6 +1,6 @@
 """Build Omnigent Auto · smart routing for the workshop control plane.
 
-Omnigent 0.10.0 routes from two backends. The external client calls Databricks AI
+Omnigent 0.12.0 routes from two backends. The external client calls Databricks AI
 Gateway ``routes:select``; the built-in judge asks a small model instead.
 Upstream prefers the external one and falls back to the judge per request.
 
@@ -114,27 +114,6 @@ def _app_bearer(workspace_client: Any) -> str:
     if not token:
         raise RuntimeError("WorkspaceClient authenticate() returned no bearer token")
     return token
-
-
-class WorkspaceClientBearerAuth:
-    """httpx Auth that mints a fresh App SP bearer on every request.
-
-    Databricks Apps inject ambient OAuth into ``WorkspaceClient()``. Capturing a
-    token once at startup would 401 after ~1h; re-calling ``authenticate()``
-    refreshes like Omnigent's ``databricks_profile`` path without writing a
-    CLI profile file into the App container.
-    """
-
-    def __init__(self, workspace_client: Any) -> None:
-        self._workspace_client = workspace_client
-
-    def auth_flow(self, request):  # type: ignore[no-untyped-def]
-        import httpx
-
-        if not isinstance(request, httpx.Request):
-            raise TypeError("expected httpx.Request")
-        request.headers["Authorization"] = f"Bearer {_app_bearer(self._workspace_client)}"
-        yield request
 
 
 # Cheapest first. GPT is priced in DBU per output token — luna 28, terra 282,
@@ -429,7 +408,6 @@ def build_external_routing_client(
 ) -> Any | None:
     """Return an ``ExternalRoutingClient``, or ``None`` when it cannot be built."""
     try:
-        import httpx
         from omnigent.server.smart_routing import ExternalRoutingClient
     except Exception:  # noqa: BLE001 — fail-soft at App startup
         logger.warning("External routing imports failed", exc_info=True)
@@ -441,18 +419,14 @@ def build_external_routing_client(
         logger.warning("External routing base URL unresolved", exc_info=True)
         return None
 
-    class _AppsSpAuth(httpx.Auth):
-        def __init__(self, client: Any) -> None:
-            self._inner = WorkspaceClientBearerAuth(client)
-
-        def auth_flow(self, request):  # type: ignore[no-untyped-def]
-            yield from self._inner.auth_flow(request)
-
     try:
         client = ExternalRoutingClient(
             base_url=base_url,
             router_name=settings.router_name,
-            auth=_AppsSpAuth(workspace_client),
+            # Omnigent 0.12 resolves this provider in a worker thread for every
+            # route. That keeps Apps OAuth fresh without blocking the async
+            # request loop while the SDK refreshes a token.
+            auth_provider=workspace_client.config.authenticate,
             model_prefixes=list(settings.model_prefixes),
             selection_model=settings.selection_model,
             menus=settings.menus,

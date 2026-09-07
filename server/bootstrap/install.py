@@ -35,13 +35,13 @@ from .codex_artifacts import install_native_alias, validate_codex_tarballs
 logger = logging.getLogger(__name__)
 
 # Pinned versions — bump deliberately per release.
-CLAUDE_VERSION = os.environ.get("CLAUDE_CODE_VERSION", "2.1.237").strip()
-CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.148.0").strip()
-DATABRICKS_CLI_VERSION = os.environ.get("DATABRICKS_CLI_VERSION", "1.11.0").strip()
-OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "0.10.0").strip()
-OMNIGENT_PROTOCOL_VERSION = "0.10.0"
+CLAUDE_VERSION = os.environ.get("CLAUDE_CODE_VERSION", "2.1.263").strip()
+CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.153.4").strip()
+DATABRICKS_CLI_VERSION = os.environ.get("DATABRICKS_CLI_VERSION", "1.15.0").strip()
+OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "0.12.0").strip()
+OMNIGENT_PROTOCOL_VERSION = "0.12.0"
 # Node 24 is the active LTS line; Node 22 is maintenance-only.
-NODE_VERSION = os.environ.get("NODE_VERSION", "24.18.1").strip()
+NODE_VERSION = os.environ.get("NODE_VERSION", "24.20.0").strip()
 CLAUDE_INSTALLER_URL = os.environ.get(
     "CLAUDE_INSTALLER_URL", "https://claude.ai/install.sh"
 )
@@ -50,10 +50,10 @@ CLAUDE_INSTALLER_URL = os.environ.get(
 # Omnigent's claude/codex wrappers hard-require tmux and the Apps runtime has
 # no package manager — install a fully static musl build into the shared bin.
 TMUX_STATIC_URL = os.environ.get("TMUX_STATIC_URL", "").strip() or (
-    "https://github.com/mjakob-gh/build-static-tmux/releases/download/v3.6b/tmux.linux-amd64.stripped.gz"
+    "https://github.com/mjakob-gh/build-static-tmux/releases/download/v3.7b/tmux.linux-amd64.stripped.gz"
 )
 TMUX_STATIC_SHA256 = os.environ.get("TMUX_STATIC_SHA256", "").strip() or (
-    "a23e56e9913d610c31f2893a1c9c669a73cb8bb2b8ded1180f6572bb55e52ca5"
+    "92ac102a1f9b33b21d891a836b4b5b5c8c5d2eeac4bae4dfd34d565bbed598bf"
 )
 # Databricks agent skills are overlaid from databricks-agent-skills at boot; the
 # vendored copy in assets/skills is the offline fallback (and carries the workflow
@@ -66,7 +66,7 @@ TMUX_STATIC_SHA256 = os.environ.get("TMUX_STATIC_SHA256", "").strip() or (
 SKILLS_REPO = os.environ.get(
     "SKILLS_REPO", "https://github.com/databricks/databricks-agent-skills.git"
 )
-SKILLS_REF = os.environ.get("SKILLS_REF", "v0.2.10").strip() or "v0.2.10"
+SKILLS_REF = os.environ.get("SKILLS_REF", "v0.2.15").strip() or "v0.2.15"
 # The manifest and readiness key for the skills artifact.
 SKILLS_ARTIFACT = "databricks_agent_skills"
 # The directory inside the upstream repository that holds one subdirectory per

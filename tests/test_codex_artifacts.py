@@ -5,7 +5,7 @@ import tarfile
 import pytest
 
 
-VERSION = "0.148.0"
+VERSION = "0.153.4"
 NATIVE_VERSION = f"{VERSION}-linux-x64"
 NATIVE_MEMBER = (
     "package/vendor/x86_64-unknown-linux-musl/bin/codex"
@@ -13,8 +13,8 @@ NATIVE_MEMBER = (
 
 
 def make_codex_tarballs(tmp_path):
-    launcher = tmp_path / "codex-npm-0.148.0.tgz"
-    native = tmp_path / "codex-npm-linux-x64-0.148.0.tgz"
+    launcher = tmp_path / "codex-npm-0.153.4.tgz"
+    native = tmp_path / "codex-npm-linux-x64-0.153.4.tgz"
     launcher_metadata = {
         "name": "@openai/codex",
         "version": VERSION,
