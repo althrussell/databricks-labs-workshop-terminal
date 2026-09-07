@@ -24,6 +24,7 @@ jobs:
           uv lock
           uv export --frozen --no-dev --no-group release --no-hashes --no-emit-project --output-file requirements.txt
           uv export --frozen --no-group release --no-hashes --no-emit-project --output-file requirements-dev.txt
+          uv lock --project deploy/omnigent-app
       - uses: actions/upload-artifact@v4
         with:
           name: public-python-lock
@@ -31,4 +32,5 @@ jobs:
             uv.lock
             requirements.txt
             requirements-dev.txt
+            deploy/omnigent-app/uv.lock
           if-no-files-found: error
