@@ -1,3 +1,5 @@
+import sys
+
 from server import otel_bootstrap
 
 
@@ -68,7 +70,7 @@ def test_databricks_collector_environment_enables_documented_instrumentation():
     command = otel_bootstrap.uvicorn_command(env)
 
     assert command[0] == "opentelemetry-instrument"
-    assert command[1:3] == ["uvicorn", "server.main:app"]
+    assert command[1:5] == [sys.executable, "-m", "uvicorn", "server.main:app"]
     assert "http://localhost:4314" not in command
     assert "grpc" not in command
 

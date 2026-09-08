@@ -30,7 +30,11 @@ by `assets/artifacts/manifest.json`.
 
 The entry point is `server.otel_bootstrap:main`. PEX venv mode prepends its own
 console-script directory to `PATH`, so the launcher's `uvicorn` and
-`opentelemetry-instrument` processes resolve from the PEX. OTel environment and
+`opentelemetry-instrument` processes resolve from the PEX. When telemetry is
+enabled, the launcher enters Uvicorn through the packaged Python interpreter
+instead of its PEX-generated console script. This preserves OpenTelemetry's
+`PYTHONPATH` bootstrap, which the console script's `-E` shebang would otherwise
+discard. OTel environment and
 fleet identity are merged before `server.main` imports. Uvicorn always receives
 `--workers 1`.
 

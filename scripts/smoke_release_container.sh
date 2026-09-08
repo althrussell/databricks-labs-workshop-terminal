@@ -30,3 +30,10 @@ docker run --rm --network none \
   --env WT_SOURCE_ROOT=/source \
   python:3.11-slim-bookworm \
   /bin/sh -c 'PEX_INTERPRETER=1 /release/workshop-terminal.pex /source/scripts/smoke_release.py'
+
+docker run --rm --network none \
+  --volume "${ROOT}:/source:ro" \
+  --volume "${DIST}:/release:ro" \
+  --env WT_RELEASE_ARTIFACT=/release/workshop-terminal.pex \
+  python:3.11-slim-bookworm \
+  python /source/scripts/smoke_otel_entrypoint.py
