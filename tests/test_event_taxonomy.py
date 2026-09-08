@@ -152,6 +152,21 @@ def test_the_attendee_reports_what_their_screen_said(client, emitted):
     assert payload["agent"] == "codex"
 
 
+def test_gateway_limit_codes_keep_their_fixed_telemetry_buckets(emitted):
+    for code in ("gateway_rate_limited", "gateway_allowance_exhausted"):
+        telemetry.attendee_error_seen("alice@example.com", code)
+
+    gateway_events = [
+        payload
+        for event_type, _attendee, payload in emitted
+        if event_type == "attendee.error_seen"
+    ]
+    assert [event["code"] for event in gateway_events] == [
+        "gateway_rate_limited",
+        "gateway_allowance_exhausted",
+    ]
+
+
 def test_a_code_nobody_has_seen_before_is_bucketed_but_never_dropped(client, emitted):
     client.post(
         "/api/telemetry/error",

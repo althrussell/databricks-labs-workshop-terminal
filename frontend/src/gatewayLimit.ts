@@ -24,6 +24,21 @@ export function terminalGatewayLimit(
     "out[ _-]of[ _-]credits",
     "exceeded[ _-]limit",
   ].join("|");
+  const rateLimit = [
+    "rate[ _-]limit",
+    "too many requests",
+    "tpm[ _-]exceeded",
+    "rpm[ _-]exceeded",
+  ].join("|");
+  // Prefer an explicit request/token rate-limit denial over generic allowance
+  // words. The rolling terminal window can contain ordinary project prose
+  // such as "budget" immediately before a definitive 429 TPM/RPM error.
+  if (text.includes("too many requests")) return "gateway_rate_limited";
+  const rateLimitFailure = new RegExp(
+    `(?:${failure})[\\s\\S]{0,768}(?:${rateLimit})|(?:${rateLimit})[\\s\\S]{0,768}(?:${failure})`
+  );
+  if (rateLimitFailure.test(text)) return "gateway_rate_limited";
+
   // Require the HTTP denial and allowance wording to be part of the same
   // nearby error. A project can legitimately print both words at different
   // times; that must not become a workshop budget banner.
@@ -31,15 +46,5 @@ export function terminalGatewayLimit(
     `(?:${failure})[\\s\\S]{0,768}(?:${allowance})|(?:${allowance})[\\s\\S]{0,768}(?:${failure})`
   );
   if (allowanceFailure.test(text)) return "gateway_allowance_exhausted";
-
-  if (!new RegExp(failure).test(text)) return null;
-
-  const rateLimited = [
-    "rate limit",
-    "rate_limit",
-    "too many requests",
-    "tpm exceeded",
-    "rpm exceeded",
-  ].some((marker) => text.includes(marker));
-  return rateLimited ? "gateway_rate_limited" : null;
+  return null;
 }

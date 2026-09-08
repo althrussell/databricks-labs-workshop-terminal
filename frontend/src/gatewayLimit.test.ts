@@ -22,6 +22,19 @@ test("temporary gateway pressure remains distinct from a spent budget", () => {
     terminalGatewayLimit("429 Too Many Requests: TPM exceeded; rate limit"),
     "gateway_rate_limited"
   );
+  assert.equal(
+    terminalGatewayLimit("Too Many Requests: retry after 30 seconds"),
+    "gateway_rate_limited"
+  );
+});
+
+test("an explicit rate denial wins over unrelated nearby budget prose", () => {
+  assert.equal(
+    terminalGatewayLimit(
+      "Project budget remaining: $20\r\n429 Too Many Requests: TPM exceeded"
+    ),
+    "gateway_rate_limited"
+  );
 });
 
 test("ordinary terminal prose cannot create a false budget banner", () => {
