@@ -9,6 +9,7 @@ in FastAPI's lifespan is too late for complete request instrumentation.
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Mapping, MutableMapping
 from urllib.parse import quote, unquote
 
@@ -88,7 +89,16 @@ def uvicorn_command(env: Mapping[str, str]) -> list[str]:
         "1",
     ]
     if instrumentation_enabled(env):
-        return ["opentelemetry-instrument", *command]
+        # PEX-generated console scripts run Python with ``-E``. OpenTelemetry
+        # injects its auto-instrumentation into the child through PYTHONPATH,
+        # so invoking the generated ``uvicorn`` script would silently discard
+        # the bootstrap. Enter uvicorn through the packaged interpreter instead.
+        return [
+            "opentelemetry-instrument",
+            sys.executable,
+            "-m",
+            *command,
+        ]
     return command
 
 
