@@ -3,18 +3,23 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
+import { terminalGatewayLimit } from "../gatewayLimit";
+import type { AttendeeErrorCode } from "../telemetry";
 
 interface Props {
   sessionId: string;
   active: boolean;
   onExit: (sessionId: string) => void;
+  onGatewayLimit?: (
+    code: Extract<AttendeeErrorCode, "gateway_allowance_exhausted" | "gateway_rate_limited">
+  ) => void;
 }
 
 // One xterm + one websocket per session, kept alive across tab switches
 // (the component stays mounted; `active` only toggles visibility). The
 // server holds the PTY and scrollback, so a dropped socket reconnects and
 // replays seamlessly.
-export default function TerminalView({ sessionId, active, onExit }: Props) {
+export default function TerminalView({ sessionId, active, onExit, onGatewayLimit }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -48,6 +53,8 @@ export default function TerminalView({ sessionId, active, onExit }: Props) {
     let retryDelay = 500;
     let attempts = 0;
     let disposed = false;
+    let limitWindow = "";
+    let reportedLimit: AttendeeErrorCode | null = null;
     // Ceiling on consecutive failed reconnects so N tabs hitting a down/empty
     // instance can't turn into an unbounded request storm against it.
     const MAX_ATTEMPTS = 12;
@@ -68,6 +75,14 @@ export default function TerminalView({ sessionId, active, onExit }: Props) {
         const data = JSON.parse(msg.data);
         if (data.t === "replay" || data.t === "output") {
           term.write(data.data);
+          // Keep only enough local output to bridge websocket chunk boundaries.
+          // Raw terminal output never leaves this browser tab.
+          limitWindow = (limitWindow + String(data.data)).slice(-4096);
+          const limit = terminalGatewayLimit(limitWindow);
+          if (limit && limit !== reportedLimit) {
+            reportedLimit = limit;
+            onGatewayLimit?.(limit);
+          }
         } else if (data.t === "exit") {
           closedRef.current = true;
           term.write("\r\n\x1b[90m[session ended]\x1b[0m\r\n");
@@ -144,8 +159,7 @@ export default function TerminalView({ sessionId, active, onExit }: Props) {
       socketRef.current?.close();
       term.dispose();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, onExit, onGatewayLimit]);
 
   useEffect(() => {
     if (active) {

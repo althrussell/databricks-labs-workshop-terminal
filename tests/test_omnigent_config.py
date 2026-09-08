@@ -407,6 +407,7 @@ def test_claude_uses_apikeyhelper_not_static_token(user, monkeypatch):
     assert "ANTHROPIC_AUTH_TOKEN" not in settings["env"]
     assert settings["apiKeyHelper"] == f"cat {_token_path(user)}"
     assert settings["env"]["CLAUDE_CODE_API_KEY_HELPER_TTL_MS"] == "240000"
+    assert settings["env"]["CLAUDE_CODE_MAX_RETRIES"] == "0"
     with open(_token_path(user)) as f:
         assert f.read().strip() == "tok-1"
 

@@ -125,6 +125,17 @@ export default function App() {
     return active;
   }, []);
 
+  const handleGatewayLimit = useCallback(
+    (code: "gateway_allowance_exhausted" | "gateway_rate_limited") => {
+      setError(code);
+      reportAttendeeError(code, code, {
+        agentId: session?.agent_id,
+        sessionId: session?.id,
+      });
+    },
+    [session?.agent_id, session?.id]
+  );
+
   /* Stable across renders, because the wizard treats a changed prop identity as
    * a reason to re-run its mount effect — and Home re-renders every few seconds
    * while it polls agent install progress. An inline arrow here used to wipe
@@ -836,6 +847,7 @@ export default function App() {
                   sessionId={session.id}
                   active={view === "agent"}
                   onExit={removeSession}
+                  onGatewayLimit={handleGatewayLimit}
                 />
               )}
             </div>

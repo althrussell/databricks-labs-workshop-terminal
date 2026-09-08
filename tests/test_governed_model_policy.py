@@ -284,6 +284,7 @@ def test_generated_configs_use_only_policy_approved_system_models(
     claude_env = claude["env"]
     assert claude_env["ANTHROPIC_MODEL"] == "system.ai.claude-sonnet-5"
     assert claude_env["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "system.ai.claude-sonnet-5"
+    assert claude_env["CLAUDE_CODE_MAX_RETRIES"] == "0"
     assert "main.wt_services" not in json.dumps(claude)
     assert codex["model"] == "system.ai.gpt-5-6-terra"
     assert "main.wt_services" not in json.dumps(codex)

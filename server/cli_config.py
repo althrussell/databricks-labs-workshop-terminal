@@ -354,6 +354,11 @@ def configure_claude(
             # omnigent harness refresh window). A 401 also forces an
             # immediate re-run, so a mid-flight rotation self-heals either way.
             "CLAUDE_CODE_API_KEY_HELPER_TTL_MS": "240000",
+            # A blocked AI Gateway budget is definitive for this attendee until
+            # an operator changes policy. Claude Code otherwise retries the same
+            # denied request ten times, wasting workshop time while implying the
+            # failure may clear on its own. Return the first denial immediately.
+            "CLAUDE_CODE_MAX_RETRIES": "0",
         }
     )
     # A static ANTHROPIC_AUTH_TOKEN in the env block would take precedence over
