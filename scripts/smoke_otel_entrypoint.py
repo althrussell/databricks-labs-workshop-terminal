@@ -23,6 +23,7 @@ from urllib.request import Request, urlopen
 
 APP_PORT = 8767
 COLLECTOR_PORT = 4314
+REQUIRED_METRIC = "workshop.readiness.latency"
 
 
 def _request(route: str) -> int:
@@ -68,15 +69,19 @@ def _read_result(path: Path) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+def _has_required_signals(result: dict) -> bool:
+    return all(
+        int(result.get(signal, {}).get("records", 0)) > 0
+        for signal in ("logs", "metrics", "traces")
+    ) and REQUIRED_METRIC in set(result.get("metrics", {}).get("names", []))
+
+
 def _wait_for_all_signals(path: Path) -> dict:
     deadline = time.monotonic() + 15
     latest: dict = {}
     while time.monotonic() < deadline:
         latest = _read_result(path)
-        if all(
-            int(latest.get(signal, {}).get("records", 0)) > 0
-            for signal in ("logs", "metrics", "traces")
-        ):
+        if _has_required_signals(latest):
             return latest
         time.sleep(0.2)
     return latest
@@ -111,7 +116,7 @@ def _assert_telemetry(result: dict, output: str, collector_output: str) -> None:
             if attributes.get(name) != expected:
                 missing.append(f"{signal} {name}")
     metric_names = set(result.get("metrics", {}).get("names", []))
-    if "workshop.readiness.latency" not in metric_names:
+    if REQUIRED_METRIC not in metric_names:
         missing.append("custom readiness metric")
     if missing:
         raise AssertionError(

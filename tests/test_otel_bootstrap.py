@@ -1,5 +1,6 @@
 import sys
 
+from scripts import smoke_otel_entrypoint
 from server import otel_bootstrap
 
 
@@ -91,3 +92,16 @@ def test_partial_or_unknown_collector_configuration_stays_fail_soft():
             "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
         }
     )
+
+
+def test_packaged_smoke_waits_for_the_required_readiness_metric():
+    result = {
+        "logs": {"records": 1},
+        "metrics": {"records": 1, "names": ["workshop.session.active"]},
+        "traces": {"records": 1},
+    }
+
+    assert not smoke_otel_entrypoint._has_required_signals(result)
+
+    result["metrics"]["names"].append("workshop.readiness.latency")
+    assert smoke_otel_entrypoint._has_required_signals(result)
