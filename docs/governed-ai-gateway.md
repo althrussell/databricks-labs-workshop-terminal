@@ -86,6 +86,9 @@ optional `terminate_active`. Disabling is linearized with session creation: a
 concurrent launch is either refused or found and terminated. This emergency
 control does not replace the Gateway budget or Unity Catalog permissions.
 
-Gateway 429s distinguish temporary rate limits from exhausted budget allowance.
-Generated Codex and Omnigent configuration limits automatic retries so clients
-do not fight an enforced Gateway boundary.
+Gateway 403/429 responses distinguish temporary rate limits from exhausted
+budget allowance. Generated Claude, Codex, and Omnigent configuration limits
+automatic retries so clients do not fight an enforced Gateway boundary. Direct
+Claude sessions make no automatic retry; WT also recognises the denial in the
+local terminal stream and shows the attendee a clear allowance-exhausted banner.
+Terminal contents are neither persisted nor sent to the server by this check.
