@@ -114,23 +114,36 @@ def test_release_identity_must_match_checkout_and_tag():
 
 def test_packaged_launcher_is_early_otel_and_one_worker():
     assert build_release.ENTRY_POINT == "server.otel_bootstrap:main"
+    build_source = (ROOT / "scripts" / "build_release.py").read_text(
+        encoding="utf-8"
+    )
+    assert '"--non-hermetic-venv-scripts"' not in build_source
     source = (ROOT / "server" / "otel_bootstrap.py").read_text(encoding="utf-8")
     main_body = source.split("def main()", 1)[1]
     assert main_body.index("prepare_environment") < main_body.index("uvicorn_command")
     command = __import__("server.otel_bootstrap", fromlist=["uvicorn_command"])
     argv = command.uvicorn_command({"DATABRICKS_APP_PORT": "8123"})
     assert argv[argv.index("--workers") + 1] == "1"
+    assert 'sys.executable,\n            "-m",\n            *command' in source
 
 
 def test_packaged_smoke_covers_offline_entrypoint_and_supported_lifecycles():
     container = (ROOT / "scripts" / "smoke_release_container.sh").read_text()
     smoke = (ROOT / "scripts" / "smoke_release.py").read_text()
+    otel_smoke = (ROOT / "scripts" / "smoke_otel_entrypoint.py").read_text()
+    collector = (ROOT / "scripts" / "fake_otlp_collector.py").read_text()
 
-    assert container.count("--network none") == 2
+    assert container.count("--network none") == 3
     assert "benchmark_release.py" in container
     assert "PEX_INTERPRETER=1" in container
+    assert "smoke_otel_entrypoint.py" in container
+    assert "OTEL_EXPORTER_OTLP_PROTOCOL" in otel_smoke
+    assert '"workshop.readiness.latency"' in otel_smoke
+    assert '"workshop.run_id": "packaged-smoke"' in otel_smoke
+    for signal in ("LogsService", "MetricsService", "TraceService"):
+        assert signal in collector
     for endpoint in ("/healthz", "/readyz", "/api/agents", "/api/sessions"):
-        assert endpoint in smoke or endpoint in (
+        assert endpoint in smoke or endpoint in otel_smoke or endpoint in (
             ROOT / "scripts" / "benchmark_release.py"
         ).read_text()
     for agent in ("claude", "codex", "omnigent"):
