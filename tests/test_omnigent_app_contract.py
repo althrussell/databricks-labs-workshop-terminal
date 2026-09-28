@@ -113,9 +113,9 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
     assert env["AP_LAKEBASE_ENDPOINT"]["valueFrom"] == "postgres"
     assert env["AP_ARTIFACT_VOLUME_PATH"]["valueFrom"] == "artifact_volume"
     assert env["OMNIGENT_AUTH_PROVIDER"]["value"] == "header"
-    assert env["OMNIGENT_BUILD_VERSION"]["value"] == "0.12.0"
+    assert env["OMNIGENT_BUILD_VERSION"]["value"] == "0.15.0"
     assert (
-        env["OMNIGENT_BUILD_SHA"]["value"] == "f04b0354fb5344c1ea8b92795ceb6760a9ad7595"
+        env["OMNIGENT_BUILD_SHA"]["value"] == "c8b9b85f822f2c9203ff995c10f3cc49d064bbe5"
     )
     # The App's env surface is an allowlist so that widening it is a deliberate,
     # reviewed act. Beyond the required bindings the only additions permitted are
@@ -171,10 +171,10 @@ def test_wrapper_retains_upstream_control_plane_topology():
     tree = ast.parse(source)
 
     assert lock == {
-        "package": "omnigent[databricks]==0.12.0",
-        "release_commit": "f04b0354fb5344c1ea8b92795ceb6760a9ad7595",
-        "verified_main_commit": "358c0df67e1dc90de21a18e7736f8292173224c7",
-        "wheel_sha256": "703884e69ffb944e75544a3b395a1ea66fa735998843adae93caadbf16a3b744",
+        "package": "omnigent[databricks]==0.15.0",
+        "release_commit": "c8b9b85f822f2c9203ff995c10f3cc49d064bbe5",
+        "verified_main_commit": "56c6a7f73024a257a5d359378e8ebb68a66dde7f",
+        "wheel_sha256": "0881c9251dd753ebec140a0db00e5c2b24f7ee711c7e01b9e73e4b9d40ce1f15",
     }
     assert "sys.version_info < (3, 12)" in source
     assert "host_store = HostStore(DB_URI)" in source
@@ -188,7 +188,7 @@ def test_wrapper_retains_upstream_control_plane_topology():
     assert "_register_polly_variants" not in source
     assert "polly_variants" not in source
     assert 'os.environ["OMNIGENT_AUTH_PROVIDER"] = "header"' in source
-    assert 'uvicorn.run(app, host="0.0.0.0", port=PORT)' in source
+    assert 'uvicorn.run(app, host="0.0.0.0", port=PORT, **uvicorn_tunnel_kwargs())' in source
     assert "OMNIGENT_REMOTE_HOST_ENABLED" not in source
     assert "OMNIGENT_FEATURES" not in source
     assert "feature_flags=" not in source
@@ -319,7 +319,13 @@ def test_wrapper_probes_artifact_volume_before_health_app_creation():
 
 def test_app_source_snapshot_stays_below_platform_file_limit():
     ten_megabytes = 10 * 1024 * 1024
-    files = [path for path in APP_DIR.rglob("*") if path.is_file()]
+    files = [
+        path for path in APP_DIR.rglob("*")
+        if path.is_file()
+        and not {".venv", "__pycache__", ".pytest_cache"}.intersection(
+            path.relative_to(APP_DIR).parts
+        )
+    ]
 
     assert files
     assert all(path.stat().st_size < ten_megabytes for path in files)
@@ -334,7 +340,7 @@ def test_uv_project_pins_python_and_omnigent_release():
     assert not (APP_DIR / "requirements.txt").exists()
     assert not (APP_DIR / "requirements.in").exists()
     assert project["project"]["requires-python"] == ">=3.12,<3.13"
-    assert project["project"]["dependencies"] == ["omnigent[databricks]==0.12.0"]
+    assert project["project"]["dependencies"] == ["omnigent[databricks]==0.15.0"]
     assert project["tool"]["uv"]["package"] is False
     # Both spellings are the same constraint; uv changed which one it writes.
     assert locked["requires-python"] in (">=3.12, <3.13", "==3.12.*")
@@ -346,15 +352,15 @@ def test_uv_project_pins_python_and_omnigent_release():
     lock_hosts = set(re.findall(r'https://([^/"\s]+)', lock_text))
     assert lock_hosts == {"files.pythonhosted.org", "pypi.org"}
     packages = {(entry["name"], entry["version"]) for entry in locked["package"]}
-    assert ("omnigent", "0.12.0") in packages
-    assert ("omnigent-client", "0.12.0") in packages
-    assert ("omnigent-ui-sdk", "0.12.0") in packages
+    assert ("omnigent", "0.15.0") in packages
+    assert ("omnigent-client", "0.15.0") in packages
+    assert ("omnigent-ui-sdk", "0.15.0") in packages
     omnigent = next(entry for entry in locked["package"] if entry["name"] == "omnigent")
     assert len(omnigent["wheels"]) == 1
     wheel = omnigent["wheels"][0]
-    assert wheel["url"].endswith("/omnigent-0.12.0-py3-none-any.whl")
+    assert wheel["url"].endswith("/omnigent-0.15.0-py3-none-any.whl")
     assert wheel["hash"] == (
-        "sha256:703884e69ffb944e75544a3b395a1ea66fa735998843adae93caadbf16a3b744"
+        "sha256:0881c9251dd753ebec140a0db00e5c2b24f7ee711c7e01b9e73e4b9d40ce1f15"
     )
 
 
@@ -509,7 +515,7 @@ def test_handoff_docs_cover_lifecycle_security_and_upstream_gap():
         "## Control Tower return value",
     ):
         assert heading in contract
-    assert "358c0df67e1dc90de21a18e7736f8292173224c7" in contract
+    assert "56c6a7f73024a257a5d359378e8ebb68a66dde7f" in contract
     assert "omnigent host --server <OMNIGENT_APP_URL> --non-interactive" in contract
     assert "omnigent polly --server <OMNIGENT_APP_URL>" in contract
     assert "service principal" in contract

@@ -1,6 +1,6 @@
 """Build Omnigent Auto · smart routing for the workshop control plane.
 
-Omnigent 0.12.0 routes from two backends. The external client calls Databricks AI
+Omnigent 0.15.0 routes from two backends. The external client calls Databricks AI
 Gateway ``routes:select``; the built-in judge asks a small model instead.
 Upstream prefers the external one and falls back to the judge per request.
 
@@ -423,7 +423,7 @@ def build_external_routing_client(
         client = ExternalRoutingClient(
             base_url=base_url,
             router_name=settings.router_name,
-            # Omnigent 0.12 resolves this provider in a worker thread for every
+            # Omnigent 0.15 resolves this provider in a worker thread for every
             # route. That keeps Apps OAuth fresh without blocking the async
             # request loop while the SDK refreshes a token.
             auth_provider=workspace_client.config.authenticate,
