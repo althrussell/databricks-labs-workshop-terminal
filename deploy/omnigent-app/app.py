@@ -1,7 +1,7 @@
 """Dedicated Omnigent control plane for Databricks Apps.
 
 This is a thin adaptation of upstream ``deploy/databricks/src/app.py`` from
-Omnigent v0.12.0. It serves the published upstream UI and durable stores only;
+Omnigent v0.15.0. It serves the published upstream UI and durable stores only;
 native harnesses, PTYs, and working directories belong on an external host.
 
 Auto · smart routing is wired through ``smart_routing.build_runtime_caps`` when
@@ -29,7 +29,7 @@ logging.basicConfig(level=logging.INFO, stream=sys.stderr, force=True)
 logger = logging.getLogger("omnigent-workshop-app")
 
 if sys.version_info < (3, 12):
-    raise RuntimeError("Omnigent 0.12.0 requires Python 3.12 or newer")
+    raise RuntimeError("Omnigent 0.15.0 requires Python 3.12 or newer")
 
 # Fallback lifetime when the credential response carries no usable expiry.
 _TOKEN_TTL_SECONDS = 50 * 60
@@ -71,12 +71,13 @@ try:
     import uvicorn
     from databricks.sdk import WorkspaceClient
 
-    from omnigent.db.utils import _run_migrations as _run_alembic_upgrade
+    from omnigent.db.utils import run_migrations_with_retry
     from omnigent.runtime import init as init_runtime
     from omnigent.runtime import telemetry
     from omnigent.runtime.agent_cache import AgentCache
     from omnigent.server.app import create_app
     from omnigent.server.auth import create_auth_provider, warn_if_single_user_exposed
+    from omnigent.util.tunnel_limits import uvicorn_tunnel_kwargs
     from omnigent.stores.agent_store.sqlalchemy_store import SqlAlchemyAgentStore
     from omnigent.stores.artifact_store.databricks_volumes import (
         DatabricksVolumesArtifactStore,
@@ -106,7 +107,6 @@ try:
     PGPORT = os.environ.get("PGPORT", "5432")
     PGSSLMODE = os.environ.get("PGSSLMODE", "require")
     PORT = int(os.environ.get("DATABRICKS_APP_PORT", "8000"))
-    POOL_RECYCLE_SECONDS = int(os.environ.get("AP_POOL_RECYCLE_SECONDS", "300"))
 
     _workspace_client = WorkspaceClient()
 
@@ -148,14 +148,9 @@ try:
     # volumes, so this goes through the Files API rather than the filesystem.
     probe_artifact_volume(VOLUME_PATH, _workspace_client)
 
-    migration_engine = sqlalchemy.create_engine(
-        DB_URI,
-        pool_recycle=POOL_RECYCLE_SECONDS,
-    )
-    try:
-        _run_alembic_upgrade(migration_engine, DB_URI)
-    finally:
-        migration_engine.dispose()
+    # Lakebase can be suspended at cold start. Upstream's bounded migration
+    # retry lets the endpoint resume before schema verification and store boot.
+    run_migrations_with_retry(DB_URI)
 
     agent_store = SqlAlchemyAgentStore(DB_URI)
     file_store = SqlAlchemyFileStore(DB_URI)
@@ -192,7 +187,7 @@ try:
     # Safe only behind the Databricks Apps proxy, which strips client-supplied
     # identity headers and injects the authenticated workspace identity.
     os.environ["OMNIGENT_AUTH_PROVIDER"] = "header"
-    # Harmless under header auth behind the Apps proxy; matches upstream 0.12.0.
+    # Harmless under header auth behind the Apps proxy; matches upstream 0.15.0.
     _exposure = warn_if_single_user_exposed("0.0.0.0")
     if _exposure:
         logger.warning("%s", _exposure)
@@ -217,7 +212,7 @@ try:
             "Starting Omnigent control plane on 0.0.0.0:%d",
             PORT,
         )
-        uvicorn.run(app, host="0.0.0.0", port=PORT)
+        uvicorn.run(app, host="0.0.0.0", port=PORT, **uvicorn_tunnel_kwargs())
 
 except Exception:  # noqa: BLE001 - startup failures must reach Apps logs
     logger.error("FATAL: Omnigent failed to start:\n%s", traceback.format_exc())

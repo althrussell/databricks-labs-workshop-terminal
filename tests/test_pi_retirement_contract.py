@@ -36,7 +36,11 @@ def _production_files():
         yield from (
             path
             for path in root.rglob("*")
-            if path.is_file() and path.suffix in _TEXT_SUFFIXES
+            if path.is_file()
+            and path.suffix in _TEXT_SUFFIXES
+            and not {".venv", "node_modules", "__pycache__"}.intersection(
+                path.relative_to(root).parts
+            )
         )
 
 

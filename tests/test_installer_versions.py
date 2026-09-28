@@ -692,10 +692,10 @@ def test_omnigent_missing_staged_supply_chain_sets_installer_error(
 
 
 def test_all_release_candidate_defaults_are_exact():
-    assert install.CLAUDE_VERSION == "2.1.263"
-    assert install.CODEX_VERSION == "0.153.4"
-    assert install.DATABRICKS_CLI_VERSION == "1.15.0"
-    assert install.OMNIGENT_VERSION == "0.12.0"
+    assert install.CLAUDE_VERSION == "2.1.283"
+    assert install.CODEX_VERSION == "0.157.1"
+    assert install.DATABRICKS_CLI_VERSION == "1.18.0"
+    assert install.OMNIGENT_VERSION == "0.15.0"
 
 
 # Manifest artifact -> the app.yaml env var pinning the same release, and the

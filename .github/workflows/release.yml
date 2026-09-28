@@ -27,7 +27,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - uses: astral-sh/setup-uv@v6
         with:
-          version: "0.12.10"
+          version: "0.12.19"
       - name: Verify immutable tag checkout
         run: test "$(git rev-list -n 1 "${GITHUB_REF_NAME}")" = "${GITHUB_SHA}"
       - name: Validate uv lock and source-deployment exports

@@ -35,11 +35,11 @@ from .codex_artifacts import install_native_alias, validate_codex_tarballs
 logger = logging.getLogger(__name__)
 
 # Pinned versions — bump deliberately per release.
-CLAUDE_VERSION = os.environ.get("CLAUDE_CODE_VERSION", "2.1.263").strip()
-CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.153.4").strip()
-DATABRICKS_CLI_VERSION = os.environ.get("DATABRICKS_CLI_VERSION", "1.15.0").strip()
-OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "0.12.0").strip()
-OMNIGENT_PROTOCOL_VERSION = "0.12.0"
+CLAUDE_VERSION = os.environ.get("CLAUDE_CODE_VERSION", "2.1.283").strip()
+CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.157.1").strip()
+DATABRICKS_CLI_VERSION = os.environ.get("DATABRICKS_CLI_VERSION", "1.18.0").strip()
+OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "0.15.0").strip()
+OMNIGENT_PROTOCOL_VERSION = "0.15.0"
 # Node 24 is the active LTS line; Node 22 is maintenance-only.
 NODE_VERSION = os.environ.get("NODE_VERSION", "24.20.0").strip()
 CLAUDE_INSTALLER_URL = os.environ.get(
