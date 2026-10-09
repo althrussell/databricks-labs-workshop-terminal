@@ -42,6 +42,7 @@ REQUIRED_ARTIFACTS = frozenset({
     "uv_binary",
     "python_3_12_runtime",
     "omnigent_lock",
+    "agentbricks_lock",
     "databricks_agent_skills",
 })
 # Artifacts published only as archives: verified as a file, then extracted at
@@ -480,14 +481,15 @@ def load_manifest(path: str = "") -> dict:
         )
     ):
         raise ArtifactManifestError("Codex native executable checksum is required")
-    lock = artifacts["omnigent_lock"]
-    if (
-        lock.get("lock_sha256") != lock.get("sha256")
-        or not _fully_pinned_hashed_lock(str(lock["source"]))
-    ):
-        raise ArtifactManifestError(
-            "Omnigent lock must be fully pinned with SHA-256 hashes"
-        )
+    for name in ("omnigent_lock", "agentbricks_lock"):
+        lock = artifacts[name]
+        if (
+            lock.get("lock_sha256") != lock.get("sha256")
+            or not _fully_pinned_hashed_lock(str(lock["source"]))
+        ):
+            raise ArtifactManifestError(
+                f"{name} must be fully pinned with SHA-256 hashes"
+            )
     if artifacts["node_linux_x64"]["sha256"] != NODE_LINUX_X64_SHA256:
         raise ArtifactManifestError("official Node linux-x64 checksum mismatch")
     if artifacts["tmux_linux_x64"]["sha256"] != TMUX_LINUX_X64_SHA256:

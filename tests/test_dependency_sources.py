@@ -10,7 +10,8 @@ RESOLUTION_LOCKS = (
     ROOT / "frontend" / "package-lock.json",
 )
 LOCKS = RESOLUTION_LOCKS + tuple(
-    sorted((ROOT / "assets" / "artifacts").glob("omnigent-*.lock"))
+    sorted(path for pattern in ("omnigent-*.lock", "agentbricks-*.lock")
+           for path in (ROOT / "assets" / "artifacts").glob(pattern))
 )
 INTERNAL_HOSTS = (
     "pypi-proxy.dev.databricks.com",

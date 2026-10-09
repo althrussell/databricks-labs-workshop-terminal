@@ -163,6 +163,11 @@ binary checksum. `ARTIFACT_MANIFEST_PATH` is an optional override for mirrored
 events that may redirect `source` only — see
 [docs/artifact-manifest.md](docs/artifact-manifest.md).
 
+The optional [Agent Bricks CLI](docs/agent-bricks-cli.md) supports custom
+LangGraph and OpenAI agent backends with a workshop-specific harness skill.
+Enable it with `AGENTBRICKS_ENABLED=true` for isolated qualification; it is off
+by default while deployed model/tool and attendee access are being qualified.
+
 ### Observability
 
 When Control Tower configures a Databricks Apps telemetry destination, WT uses

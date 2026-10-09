@@ -1,6 +1,12 @@
 {
   "//": "GENERATED FILE. Run `python3 scripts/build_artifact_manifest.py --write` to regenerate. See docs/artifact-manifest.md.",
   "artifacts": {
+    "agentbricks_lock": {
+      "lock_sha256": "3aa33fa614f105c7eaeed2c8777ae753395c029d3ea64f782dfb1c1c8700f661",
+      "sha256": "3aa33fa614f105c7eaeed2c8777ae753395c029d3ea64f782dfb1c1c8700f661",
+      "source": "agentbricks-0.4.0.lock",
+      "version": "0.4.0"
+    },
     "claude_binary": {
       "sha256": "4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358",
       "source": "https://downloads.claude.ai/claude-code-releases/2.1.295/linux-x64/claude",

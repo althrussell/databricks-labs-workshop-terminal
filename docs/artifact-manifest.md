@@ -68,6 +68,16 @@ passes the extracted reviewed Python 3.12 executable explicitly, and installs
 with `--require-hashes`. Persistent reuse additionally hashes the entire
 installed venv, including site-packages, transitive dependencies, and scripts.
 
+## Optional Agent Bricks CLI
+
+`agentbricks_lock` pins the isolated `databricks-agentbricks` utility and every
+dependency with hashes. `AGENTBRICKS_ENABLED=true` enables installation using
+the reviewed Python/uv archives and wheel-only public PyPI sync. Reuse verifies
+the venv, launcher, uv and lock content; this utility is reported separately
+from the core coding-harness binaries. See [Agent Bricks CLI](agent-bricks-cli.md)
+for qualification and deployment guidance. The toolchain volume can mirror
+the lock and runtime archives; it does not provide an offline wheelhouse.
+
 ## Toolchain mirror
 
 An event may stage every fetched artifact into one Unity Catalog Volume and have

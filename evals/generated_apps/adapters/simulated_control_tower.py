@@ -37,6 +37,7 @@ _SPEC_FIELDS = frozenset({
     "attendee_mode", "disposable", "ttl_seconds", "cost_budget_usd", "release",
     "harnesses", "onboarding_wizard", "llm_wizard", "evaluation_observation",
     "omnigent", "omnigent_compatibility",
+    "agentbricks",
 })
 _ARTIFACTS = frozenset({
     "claude_binary", "claude_installer", "codex_native_package_linux_x64",
@@ -52,6 +53,7 @@ _PINS = {
     "NODE_VERSION": "node_linux_x64",
     "OMNIGENT_VERSION": "omnigent_lock",
     "PI_CLI_VERSION": "pi_npm_package",
+    "AGENTBRICKS_VERSION": "agentbricks_lock",
 }
 
 
@@ -121,7 +123,9 @@ def _reviewed_release(manifest: Mapping) -> tuple[dict, dict]:
             or manifest.get("schema_version") != 1 or _secret_fields(manifest)):
         raise ValueError("simulation requires the reviewed artifact manifest")
     artifacts = manifest.get("artifacts")
-    if not isinstance(artifacts, Mapping) or set(artifacts) not in {_ARTIFACTS, _ARTIFACTS - {"pi_npm_package"}}:
+    required = _ARTIFACTS - {"pi_npm_package"}
+    allowed = _ARTIFACTS | {"agentbricks_lock"}
+    if not isinstance(artifacts, Mapping) or not required <= set(artifacts) <= allowed:
         raise ValueError("simulation requires the complete reviewed artifact manifest")
     for name, entry in artifacts.items():
         if (not isinstance(entry, Mapping) or not isinstance(entry.get("source"), str)
@@ -150,6 +154,8 @@ def _reviewed_release(manifest: Mapping) -> tuple[dict, dict]:
           _DIGEST, "reviewed Codex executable digest is missing")
     if artifacts["omnigent_lock"].get("lock_sha256") != artifacts["omnigent_lock"]["sha256"]:
         raise ValueError("reviewed Omnigent lock digests disagree")
+    if "agentbricks_lock" in artifacts and artifacts["agentbricks_lock"].get("lock_sha256") != artifacts["agentbricks_lock"]["sha256"]:
+        raise ValueError("reviewed Agent Bricks lock digests disagree")
     pins = {
         env: _text(artifacts[name].get("version"), _VERSION, "reviewed version pin is missing")
         for env, name in _PINS.items() if name in artifacts
@@ -220,6 +226,9 @@ def plan_simulation(spec: Mapping, artifact_manifest: Mapping, *, now: datetime 
         raise ValueError("simulation requires an explicit supported harness set")
     harnesses = list(harnesses)
     pins, artifact_identity = _reviewed_release(artifact_manifest)
+    agentbricks = _bool(spec, "agentbricks", False)
+    if agentbricks and "AGENTBRICKS_VERSION" not in pins:
+        raise ValueError("Agent Bricks testing requires its reviewed artifact lock")
     run_id, unit_id = f"sim-{marker}", f"sim-{marker}-unit-1"
     names = {
         "app_name": marker + "-wt", "admin_group": marker + "-operators",
@@ -228,6 +237,7 @@ def plan_simulation(spec: Mapping, artifact_manifest: Mapping, *, now: datetime 
         "source_path": f"/Workspace/Shared/{marker}/workshop-terminal",
     }
     environment = {
+        "AGENTBRICKS_ENABLED": "true" if agentbricks else "false",
         "DATABRICKS_HOST": workspace,
         "DATABRICKS_GATEWAY_HOST": workspace + "/ai-gateway",
         "WORKSHOP_ATTENDEE_EMAIL": attendee,

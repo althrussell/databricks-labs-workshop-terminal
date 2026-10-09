@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "qualification": "local-cli-and-contracts",
+  "workspace_requests": 0,
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "f275f51c6f3e5956bd65ce59b98b9b461705e9b3b85fc67b47ea57f4ef155c0d",
+      "bytes": 2160
+    },
+    {
+      "path": "artifact-check.log",
+      "sha256": "97bd7a6e62e1c0d8058cfc09698f79f38ea345f7d250283189d6d6459ff34fce",
+      "bytes": 26
+    },
+    {
+      "path": "backend-tests.log",
+      "sha256": "52ca083be4ac1ec6a5eee1c00a8f6470a5f3b59888395923c0da1f7558629fc7",
+      "bytes": 5380
+    },
+    {
+      "path": "local-cli-contract.json",
+      "sha256": "e78fd2f0e5c82207cac73658b5d5b4c229d751e4c98a858d47ddd5b2a9d52dd7",
+      "bytes": 3617
+    },
+    {
+      "path": "public-source-check.log",
+      "sha256": "c090baa08c27692607057ba34129b28cddbfb9d5cfeb6468762a86399063ffc1",
+      "bytes": 637
+    }
+  ]
+}

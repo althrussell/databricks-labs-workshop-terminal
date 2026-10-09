@@ -38,6 +38,8 @@ logger = logging.getLogger(__name__)
 CLAUDE_VERSION = os.environ.get("CLAUDE_CODE_VERSION", "2.1.295").strip()
 CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.162.0").strip()
 DATABRICKS_CLI_VERSION = os.environ.get("DATABRICKS_CLI_VERSION", "1.20.0").strip()
+AGENTBRICKS_VERSION = os.environ.get("AGENTBRICKS_VERSION", "0.4.0").strip()
+UV_VERSION = "0.12.24"
 OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "0.15.0").strip()
 OMNIGENT_PROTOCOL_VERSION = "0.15.0"
 # Node 24 is the active LTS line; Node 22 is maintenance-only.
@@ -69,6 +71,10 @@ SKILLS_REPO = os.environ.get(
 SKILLS_REF = os.environ.get("SKILLS_REF", "v0.2.28").strip() or "v0.2.28"
 # The manifest and readiness key for the skills artifact.
 SKILLS_ARTIFACT = "databricks_agent_skills"
+FORK_SKILLS = frozenset({
+    "databricks-app-apx", "promote", "refresh-databricks-skills",
+    "workshop-design-studio", "workshop-agent-bricks-cli",
+})
 # The directory inside the upstream repository that holds one subdirectory per
 # skill. Each carries SKILL.md for Claude and agents/openai.yaml for Codex.
 SKILLS_UPSTREAM_DIR = "skills"
@@ -336,6 +342,8 @@ def _release_specs() -> dict[str, tuple[bool, str]]:
         "claude": (True, CLAUDE_VERSION),
         "codex": (True, CODEX_VERSION),
         "databricks": (True, DATABRICKS_CLI_VERSION),
+        "agentbricks": (config.agentbricks_enabled(), AGENTBRICKS_VERSION),
+        "uv": (config.agentbricks_enabled(), UV_VERSION),
         # Node is a release input like the CLIs, not just their prerequisite:
         # it is the runtime Codex executes in, and /readyz cannot call
         # NODE_VERSION a fact about the running terminal without an installed
@@ -639,7 +647,7 @@ def _prewarm_status_unlocked() -> dict:
         persistent_skills = None
     resolved_commit = str(stamp.get("resolved_commit") or "") or None
     expected_checksum = str(stamp.get("content_checksum") or "") or None
-    skills_reusable = persistent_skills is not None
+    skills_reusable = persistent_skills is not None and _fork_skills_current(os.path.join(prefix, "skills"))
     actual_commit = persistent_skills[0] if persistent_skills else resolved_commit
     actual_checksum = persistent_skills[1] if persistent_skills else None
     skills_provenance = {
@@ -651,12 +659,22 @@ def _prewarm_status_unlocked() -> dict:
         "source": "persistent",
         "reusable": skills_reusable,
     }
-    reusable = all(entry["reusable"] for entry in binaries.values()) and skills_reusable
+    python_tools = {}
+    if config.agentbricks_enabled():
+        from .agentbricks import prewarm_status as agentbricks_prewarm_status
+
+        python_tools = agentbricks_prewarm_status()
+    reusable = (
+        all(entry["reusable"] for entry in binaries.values())
+        and skills_reusable
+        and all(entry["reusable"] for entry in python_tools.values())
+    )
     return {
         "reusable": reusable,
         "manifest": {
             "expected_binaries": sorted(binaries),
             "binaries": binaries,
+            "python_tools": python_tools,
             SKILLS_ARTIFACT: skills_provenance,
         },
         "toolchain_mirror": toolchain_mirror_status(),
@@ -1558,6 +1576,29 @@ def _stage_vendored_skills(prefix: str) -> str:
         raise
 
 
+def _fork_skills_current(target: str) -> bool:
+    names = {name for name in FORK_SKILLS if os.path.isdir(os.path.join(_ASSETS_SKILLS, name))}
+    return _directory_checksum(_ASSETS_SKILLS, names) == _directory_checksum(target, names)
+
+
+def _refresh_fork_skills(prefix: str, target: str) -> None:
+    """Refresh fork instructions on redeploy even when the upstream tag is unchanged."""
+    if _fork_skills_current(target):
+        return
+    staged = tempfile.mkdtemp(prefix=".skills-fork-stage-", dir=prefix)
+    try:
+        shutil.copytree(target, staged, dirs_exist_ok=True)
+        for name in FORK_SKILLS:
+            source = os.path.join(_ASSETS_SKILLS, name)
+            if os.path.isdir(source):
+                destination = os.path.join(staged, name)
+                shutil.rmtree(destination, ignore_errors=True)
+                shutil.copytree(source, destination)
+        _publish_skills_tree(staged, target)
+    finally:
+        shutil.rmtree(staged, ignore_errors=True)
+
+
 class SkillsContractError(RuntimeError):
     """The fetched skills violate the reviewed contract, so no fallback applies.
 
@@ -1600,6 +1641,7 @@ def _install_skills() -> None:
     try:
         persistent = _persistent_skills_install(clone_dir, skills_dir)
         if persistent is not None:
+            _refresh_fork_skills(prefix, skills_dir)
             resolved_commit, checksum = persistent
             _set(
                 "skills",
@@ -1813,6 +1855,24 @@ _install_skills = _guard_installer(
 )
 
 
+def _install_agentbricks() -> None:
+    from .agentbricks import install_cli
+
+    try:
+        install_cli()
+    except Exception:
+        with _state_lock:
+            uv_complete = _state.get("uv", {}).get("status") == "complete"
+        if not uv_complete:
+            _set("uv", "error", "Agent Bricks prerequisite installation failed")
+        raise
+
+
+_install_agentbricks = _guard_installer(
+    "agentbricks", _install_agentbricks, expected_version=AGENTBRICKS_VERSION
+)
+
+
 def _run_parallel_installers(tasks, *, max_workers: int) -> None:
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {
@@ -1831,6 +1891,8 @@ def run_in_background() -> None:
     steps = ["node", "claude", "codex", "databricks", "skills"]
     if omnigent:
         steps += ["tmux", "omnigent"]
+    if config.agentbricks_enabled():
+        steps += ["agentbricks", "uv"]
     for step in steps:
         _set(step, "pending")
 
@@ -1900,6 +1962,12 @@ def run_in_background() -> None:
                     future.result()
                 except Exception as error:  # noqa: BLE001 - consume every future
                     _set(step, "error", str(error))
+
+        # Both Python CLIs use the same content-addressed uv/Python archives.
+        # Start this utility after the parallel installers to avoid extracting
+        # their shared archive roots concurrently. Harnesses can already launch.
+        if config.agentbricks_enabled():
+            _install_agentbricks()
 
     def orchestrate():
         with _install_file_lock(exclusive=True):

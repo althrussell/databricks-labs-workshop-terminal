@@ -1,0 +1,123 @@
+{
+  "cli": "0.4.0",
+  "uv": "0.12.24",
+  "platform": "Darwin",
+  "bootstrap_proof": null,
+  "checks": [
+    {
+      "framework": "langgraph",
+      "scaffold": "pass",
+      "doctor": {
+        "directory": "<disposable-attendee-project>",
+        "framework": "langgraph",
+        "onboarded": true,
+        "checks": [
+          {
+            "id": "agent_manifest",
+            "status": "pass",
+            "detail": "Valid schema v1 manifest for langgraph."
+          },
+          {
+            "id": "agentbricks_server",
+            "status": "pass",
+            "detail": "agent.server is agentbricks."
+          },
+          {
+            "id": "project_metadata",
+            "status": "pass",
+            "detail": "Valid schema v1 metadata for langgraph (agent-langgraph)."
+          },
+          {
+            "id": "agentbricks_dependency",
+            "status": "pass",
+            "detail": "Project depends on databricks-agentbricks[langgraph]."
+          },
+          {
+            "id": "app_command",
+            "status": "pass",
+            "detail": "app.yaml declares a non-empty startup command."
+          },
+          {
+            "id": "agent_app",
+            "status": "pass",
+            "detail": "DurableAgentServer is constructed and has invoke registered in runtime/main.py."
+          },
+          {
+            "id": "framework_adapter",
+            "status": "pass",
+            "detail": "A recognized databricks_agentkit.langgraph adapter call is present in agent/agent.py."
+          }
+        ],
+        "summary": {
+          "total": 7,
+          "passed": 7,
+          "failed": 0
+        },
+        "next_step": null
+      },
+      "memory_committed": true,
+      "no_nested_project": true,
+      "rerun_preserved_commit": true,
+      "migration_preserved_source": true
+    },
+    {
+      "framework": "openai",
+      "scaffold": "pass",
+      "doctor": {
+        "directory": "<disposable-attendee-project>",
+        "framework": "openai",
+        "onboarded": true,
+        "checks": [
+          {
+            "id": "agent_manifest",
+            "status": "pass",
+            "detail": "Valid schema v1 manifest for openai."
+          },
+          {
+            "id": "agentbricks_server",
+            "status": "pass",
+            "detail": "agent.server is agentbricks."
+          },
+          {
+            "id": "project_metadata",
+            "status": "pass",
+            "detail": "Valid schema v1 metadata for openai (agent-openai)."
+          },
+          {
+            "id": "agentbricks_dependency",
+            "status": "pass",
+            "detail": "Project depends on databricks-agentbricks[openai]."
+          },
+          {
+            "id": "app_command",
+            "status": "pass",
+            "detail": "app.yaml declares a non-empty startup command."
+          },
+          {
+            "id": "agent_app",
+            "status": "pass",
+            "detail": "DurableAgentServer is constructed and has invoke registered in runtime/main.py."
+          },
+          {
+            "id": "framework_adapter",
+            "status": "pass",
+            "detail": "A recognized databricks_agentkit.openai adapter call is present in agent/agent.py."
+          }
+        ],
+        "summary": {
+          "total": 7,
+          "passed": 7,
+          "failed": 0
+        },
+        "next_step": null
+      },
+      "memory_committed": true,
+      "no_nested_project": true,
+      "rerun_preserved_commit": true,
+      "migration_preserved_source": true
+    }
+  ],
+  "offline_network_guard": true,
+  "workspace_requests": 0,
+  "deployment_mutations": 0
+}

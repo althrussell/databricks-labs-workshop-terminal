@@ -845,6 +845,23 @@ def test_release_pins_require_installed_versions_to_match(tmp_path):
     assert report["release_manifest"]["claude"]["actual"] == "2.1.215"
 
 
+def test_enabled_agentbricks_requires_installed_cli_and_uv(tmp_path):
+    _, _, installer, _, _, _ = _good_inputs(tmp_path)
+    enabled_env = lambda env: env.update({"AGENTBRICKS_ENABLED": "true", "AGENTBRICKS_VERSION": "0.4.0"})
+    missing = _evaluate(tmp_path, installer=installer, mutate_env=enabled_env)
+    assert {"agentbricks", "uv"} <= set(missing["checks"]["release_pins"]["mismatched"])
+    for name, version in (("agentbricks", "0.4.0"), ("uv", "0.12.24")):
+        installer["release_manifest"][name] = {
+            "enabled": True, "expected": version, "actual": version, "match": True,
+        }
+    ready = _evaluate(tmp_path, installer=installer, mutate_env=enabled_env)
+    assert ready["checks"]["release_pins"]["ok"] is True
+    installer["release_manifest"]["uv"]["actual"] = "0.1.0"
+    stale = _evaluate(tmp_path, installer=installer, mutate_env=enabled_env)
+    assert stale["checks"]["release_pins"]["ok"] is False
+    assert "uv" in stale["checks"]["release_pins"]["mismatched"]
+
+
 def test_readyz_requires_reviewed_artifact_manifest(tmp_path):
     _, _, installer, _, _, _ = _good_inputs(tmp_path)
     installer["artifact_manifest"] = {

@@ -5,6 +5,7 @@ import os
 import subprocess
 import time
 import uuid
+from pathlib import Path
 
 import pytest
 
@@ -174,6 +175,13 @@ def test_project_helper_installed(client, monkeypatch):
 
     template = os.path.join(home, ".config", "workshop", "project-memory.md")
     assert APPKIT_MANDATE in open(template).read()
+
+
+def test_custom_agent_skill_is_available_to_both_harnesses(client, monkeypatch):
+    home = _provisioned_home(client, monkeypatch)
+    for harness in (".claude", ".codex"):
+        skill = Path(home) / harness / "skills/workshop-agent-bricks-cli/SKILL.md"
+        assert skill.is_file()
 
 
 def test_project_helper_commits_appkit_memory(client, monkeypatch, tmp_path):

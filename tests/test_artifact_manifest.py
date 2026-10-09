@@ -18,6 +18,7 @@ REQUIRED = (
     "uv_binary",
     "python_3_12_runtime",
     "omnigent_lock",
+    "agentbricks_lock",
     "databricks_agent_skills",
 )
 

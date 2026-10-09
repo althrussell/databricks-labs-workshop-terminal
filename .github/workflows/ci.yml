@@ -79,6 +79,21 @@ jobs:
           git diff --exit-code -- static
           test -z "$(git status --porcelain -- static)"
 
+  agentbricks-toolchain:
+    name: agentbricks-cli-contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.24"
+      - name: Qualify actual Linux installer and offline project lifecycle
+        run: uv run --frozen --no-group release python scripts/check_agentbricks_toolchain.py --bootstrap
+
   package:
     name: packaged-runtime
     runs-on: ubuntu-24.04

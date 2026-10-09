@@ -15,6 +15,13 @@ AppKit is the required baseline for every app. Every app, interactive tool, or
 custom UI in this project MUST be built with **AppKit** (Node.js + TypeScript + React) via
 the **`databricks-apps`** skill.
 
+Custom agent backends use **`workshop-agent-bricks-cli`** and its supported
+Python `DurableAgentServer` runtime when the optional CLI is enabled. This is
+an explicit exception for the backend; any attendee-facing UI still uses
+AppKit and the workshop design skills. Scaffold with
+`workshop-init-project <name> --agentbricks`. Deploy that backend with
+`agentbricks deploy`, and its separate AppKit UI with the workshop app tool.
+
 Scaffold with `workshop-init-project <name> --appkit` (add
 `-- --features <plugins>` to pass AppKit flags through). Do not run
 `databricks apps init` directly: it always creates a subdirectory named after
@@ -79,7 +86,7 @@ After the first deploy, inspect the primary screen and useful task as described
 in the workshop interaction contract. Fix observed defects and describe the
 change in product terms.
 
-Do **not** reach for a Python framework (Streamlit / Dash / Gradio / Flask /
+For attendee-facing UI, do **not** reach for a Python framework (Streamlit / Dash / Gradio / Flask /
 FastAPI / Reflex), and do not default to `databricks-apps-python` — that is the
 Python-backend alternative. The only exception is when the user **explicitly and
 insistently** asks for a specific Python framework — confirm that's really what
