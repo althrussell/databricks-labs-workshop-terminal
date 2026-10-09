@@ -11,10 +11,10 @@ hand-edit them — refresh via the `refresh-databricks-skills` skill instead.
 |-------|-------|
 | Upstream repo | https://github.com/databricks/databricks-agent-skills |
 | Source path | `skills/` |
-| Pinned tag | `v0.2.15` |
-| Pinned commit | `4d17885b0115718b5fb6a7540e908cb4201d4f2d` |
-| Content SHA-256 | `0b91eddfe20cf410c27e632ccc28b00b5049ad58aecc9101caca5476a4b1f1a1` |
-| Synced on | 2026-09-07 |
+| Pinned tag | `v0.2.28` |
+| Pinned commit | `ba45d10df7413de14c32937bbd584aeee17d22a2` |
+| Content SHA-256 | `0ddf4467590698fd17b98ef7035ad4bee90e2a082a34467489e48c53da10d98a` |
+| Synced on | 2026-10-09 |
 | Synced by | refresh-databricks-skills |
 
 The tag, commit, and content digest above must equal the

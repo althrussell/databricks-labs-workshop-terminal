@@ -946,11 +946,12 @@ def identity_receipt(value=None):
 
 def fake_identity_clock(monkeypatch):
     clock = {"now": 0, "sleeps": []}
-    monkeypatch.setattr(runner.time, "monotonic", lambda: clock["now"])
     def advance(seconds):
         clock["sleeps"].append(seconds)
         clock["now"] += seconds
-    monkeypatch.setattr(runner.time, "sleep", advance)
+    # Scope the clock to the runner. Patching the shared stdlib time module
+    # lets unrelated background threads advance this test's phase deadline.
+    monkeypatch.setattr(runner, "time", SimpleNamespace(monotonic=lambda: clock["now"], sleep=advance))
     return clock
 
 

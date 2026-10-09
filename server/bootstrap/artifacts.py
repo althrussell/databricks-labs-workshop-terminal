@@ -24,7 +24,7 @@ from urllib.request import urlopen
 
 
 NODE_LINUX_X64_SHA256 = (
-    "2f2c0da162318f0de47665410c7c8c2ed3d36c8f3105de4bbc61176c70a7cbf2"
+    "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6"
 )
 TMUX_LINUX_X64_SHA256 = (
     "92ac102a1f9b33b21d891a836b4b5b5c8c5d2eeac4bae4dfd34d565bbed598bf"

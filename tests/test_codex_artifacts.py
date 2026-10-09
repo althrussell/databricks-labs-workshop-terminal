@@ -12,38 +12,38 @@ NATIVE_MEMBER = (
 )
 
 
-def make_codex_tarballs(tmp_path):
-    launcher = tmp_path / "codex-npm-0.157.1.tgz"
-    native = tmp_path / "codex-npm-linux-x64-0.157.1.tgz"
+def make_codex_tarballs(tmp_path, *, version=VERSION):
+    launcher = tmp_path / f"codex-npm-{version}.tgz"
+    native = tmp_path / f"codex-npm-linux-x64-{version}.tgz"
     launcher_metadata = {
         "name": "@openai/codex",
-        "version": VERSION,
+        "version": version,
         "bin": {"codex": "bin/codex.js"},
         "type": "module",
         "optionalDependencies": {
             "@openai/codex-linux-x64": (
-                f"npm:@openai/codex@{VERSION}-linux-x64"
+                f"npm:@openai/codex@{version}-linux-x64"
             ),
             "@openai/codex-linux-arm64": (
-                f"npm:@openai/codex@{VERSION}-linux-arm64"
+                f"npm:@openai/codex@{version}-linux-arm64"
             ),
             "@openai/codex-darwin-x64": (
-                f"npm:@openai/codex@{VERSION}-darwin-x64"
+                f"npm:@openai/codex@{version}-darwin-x64"
             ),
             "@openai/codex-darwin-arm64": (
-                f"npm:@openai/codex@{VERSION}-darwin-arm64"
+                f"npm:@openai/codex@{version}-darwin-arm64"
             ),
             "@openai/codex-win32-x64": (
-                f"npm:@openai/codex@{VERSION}-win32-x64"
+                f"npm:@openai/codex@{version}-win32-x64"
             ),
             "@openai/codex-win32-arm64": (
-                f"npm:@openai/codex@{VERSION}-win32-arm64"
+                f"npm:@openai/codex@{version}-win32-arm64"
             ),
         },
     }
     native_metadata = {
         "name": "@openai/codex",
-        "version": NATIVE_VERSION,
+        "version": f"{version}-linux-x64",
         "os": ["linux"],
         "cpu": ["x64"],
         "files": ["vendor"],

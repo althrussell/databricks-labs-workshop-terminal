@@ -6,7 +6,7 @@ predict function: judges assess observed outputs without rerunning or repairing
 the builder. Private simulator facts, tool arguments, source, PTY output, and
 browser credentials never enter these records.
 
-Supported API contract: MLflow 3.13.x, ``create_dataset`` then ``merge_records``,
+Supported API contract: MLflow 3.13.x and 3.17.0, ``create_dataset`` then ``merge_records``,
 ``make_judge``/``Scorer.register``, and ``mlflow.genai.evaluate``. Databricks
 managed datasets additionally require the SDK's databricks-agents dependency.
 The CLI/environment owner must configure tracking/auth; this module never sets
@@ -27,7 +27,7 @@ from typing import Any, Mapping
 from .adapters.harness import redact_evidence
 
 
-SUPPORTED_MLFLOW = "3.13.x"
+SUPPORTED_MLFLOW = "3.13.x or 3.17.0"
 _CONVERSATION_SOURCE = "operator_exported_native_synthetic_transcript"
 _BROWSER_SOURCE = "independent_generated_app_browser"
 _PUBLIC_KEYS = {"message", "persona", "entry_path"}
@@ -303,7 +303,7 @@ def plan_quality_evaluation(
 
 def _sdk(mlflow_module=None):
     sdk = mlflow_module or importlib.import_module("mlflow")
-    if not re.fullmatch(r"3\.13\.\d+", str(sdk.__version__)):
+    if not (re.fullmatch(r"3\.13\.\d+", str(sdk.__version__)) or sdk.__version__ == "3.17.0"):
         raise RuntimeError(f"This native evaluation adapter requires MLflow {SUPPORTED_MLFLOW}")
     if mlflow_module is None:
         for name in ("datasets", "judges", "scorers"):
@@ -453,7 +453,7 @@ def run_quality_evaluation(plan: QualityPlan, *, execute: bool = False,
         with sdk.start_run(experiment_id=plan.experiment_id, run_name=f"wt-{plan.run_id}-{batch.family}"):
             sdk.set_tags({"wt.synthetic_attendee": "true", "wt.evaluation_run_id": plan.run_id,
                           "wt.dataset_id": dataset.dataset_id, "wt.dataset_name": dataset.name,
-                          "wt.evidence_family": batch.family, "wt.native_adapter": "mlflow-3.13-v1",
+                          "wt.evidence_family": batch.family, "wt.native_adapter": f"mlflow-{sdk.__version__}-v1",
                           "wt.observed_evidence_trace_id": tracing["trace_id"]})
             result = sdk.genai.evaluate(
                 data=[batch.record], scorers=[registered[spec.name] for spec in batch.judges],

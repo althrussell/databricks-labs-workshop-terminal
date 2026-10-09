@@ -146,7 +146,8 @@ def scope_pages(scenario, *, harness="claude"):
             page([message("agreement", "Yes, that sounds right.", "user", 3)], "cursor2", harness=harness)]
 
 
-@pytest.mark.parametrize("agent,pin", [("claude", "2.1.283"), ("codex", "0.157.1")])
+@pytest.mark.parametrize("agent,pin", [("claude", "2.1.283"), ("codex", "0.157.1"),
+                                     ("claude", "2.1.295"), ("codex", "0.162.0")])
 def test_current_release_pin_must_be_explicit_and_match_every_native_page(agent, pin):
     clock, sim, scenario, driver, launch, config = setup()
     config = replace(config, harness_version=pin)

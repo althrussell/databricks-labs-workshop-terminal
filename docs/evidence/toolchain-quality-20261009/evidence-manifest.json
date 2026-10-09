@@ -1,0 +1,109 @@
+{
+  "files": [
+    {
+      "path": "README.md",
+      "size_bytes": 8063,
+      "sha256": "3cc38a14d801a3cd0afa7d21b236f6b5c4dd822187cb80bf886783b9c4332cd1"
+    },
+    {
+      "path": "appkit-build.log",
+      "size_bytes": 2855,
+      "sha256": "b694d0617c867ae30473f485ca5cd51966a636b98ddac3e275704f2acc791c67"
+    },
+    {
+      "path": "backend-tests.log",
+      "size_bytes": 4642,
+      "sha256": "297f6472139c59a6864b56d344710289bab44ec2a6277ff0e79f80a65d036d17"
+    },
+    {
+      "path": "claude-ui-screen.txt",
+      "size_bytes": 4662,
+      "sha256": "0e0d807d2d063cafa8e140df0df0a87c43fef7fdc90068e4f95af29c64699402"
+    },
+    {
+      "path": "deploy-clock-regression.log",
+      "size_bytes": 718,
+      "sha256": "5216f8d06de04e9cfdbfc01559e7bad095c020992d6c0fbfa2e686ebe14e40c7"
+    },
+    {
+      "path": "extra-staged-tools.json",
+      "size_bytes": 323,
+      "sha256": "54d98f89ceacc9c1de6aaea904da0c59a6db99d8dc24e1a977c37e5ab6978745"
+    },
+    {
+      "path": "initial-upstream-audit.json",
+      "size_bytes": 69228,
+      "sha256": "702701e9f14be8215101a205ca76b187d01fbf88e9584f957c98834c175eff11"
+    },
+    {
+      "path": "installed-test-environment.json",
+      "size_bytes": 2228,
+      "sha256": "8270fe0340705ec2c6096bfb235725a4dfbac9a5674027ddadbf8fedc02f3d62"
+    },
+    {
+      "path": "labs-model-catalogue.json",
+      "size_bytes": 7905,
+      "sha256": "d4b79112c520b2383fba24950cfdb7b9c7b142d238620887040d6a1250d30c37"
+    },
+    {
+      "path": "lock-check.log",
+      "size_bytes": 29,
+      "sha256": "23ff4ba3bb3c125cde6261fb6e6153cb59ac6e1298d21778d9eaa43074f87fde"
+    },
+    {
+      "path": "manifest-check.log",
+      "size_bytes": 26,
+      "sha256": "97bd7a6e62e1c0d8058cfc09698f79f38ea345f7d250283189d6d6459ff34fce"
+    },
+    {
+      "path": "mlflow-api-qualification.json",
+      "size_bytes": 1556,
+      "sha256": "d7a0daffaa80877b569f0e56a0b1a3ae802d2d19060f1e858a0f0c2bccdcd1d1"
+    },
+    {
+      "path": "model-qualification.json",
+      "size_bytes": 1833,
+      "sha256": "eb0c48832168e4cfebfd3875a4df3ccba61c642e8653f924996751e6687ba4b8"
+    },
+    {
+      "path": "native-claude-normal-qualification.json",
+      "size_bytes": 1431,
+      "sha256": "e34ee836bdf71e1b82f44d35aaf487f1c459f5fa79d034d8743cfd7274125f0c"
+    },
+    {
+      "path": "native-final-qualification.json",
+      "size_bytes": 2382,
+      "sha256": "56205a291da3661beb35ace451b1a01cdeb10093c7014fbb5c71236ca50d0627"
+    },
+    {
+      "path": "native-qualification.json",
+      "size_bytes": 2093,
+      "sha256": "70fbab1b1155cdcbd5da61b33732641d7ca9d50f9619b38b739e0bd01bf49bcd"
+    },
+    {
+      "path": "native-startup-qualification.json",
+      "size_bytes": 265,
+      "sha256": "34ab216dc7429e52aa85ae73fd7143ba633f9254c5404cb8d5e21e221bc8c45e"
+    },
+    {
+      "path": "optional-tests.log",
+      "size_bytes": 880,
+      "sha256": "a90ef60f98d00238ccab497b44dbddebf12ac7423eda96d1d03b87975316a423"
+    },
+    {
+      "path": "quality-api-check.json",
+      "size_bytes": 199,
+      "sha256": "d579a0bec14cb9d1e5404b49d81107c733441a2ee68b78729b230ab98a6045fe"
+    },
+    {
+      "path": "reproducible-freshness-audit.json",
+      "size_bytes": 9552,
+      "sha256": "60492043cccf18b8b3c307a2ff7f5bb7b037c6fee81fd9c7cff94d74131886a3"
+    },
+    {
+      "path": "targeted-tests.log",
+      "size_bytes": 1367,
+      "sha256": "05c2bf74d9e5fafcc8e70b60c7ef5f062b7752b9f8f55b22c28fe21e26b0d400"
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "mlflow": "3.17.0",
+  "databricks_agents": "1.12.0",
+  "databricks_sdk": "0.150.0",
+  "native_api_contracts": [
+    {
+      "function": "mlflow.genai.datasets.create_dataset",
+      "required_parameters": [
+        "experiment_id",
+        "name"
+      ],
+      "signature_matches": true
+    },
+    {
+      "function": "mlflow.genai.datasets.search_datasets",
+      "required_parameters": [
+        "experiment_ids"
+      ],
+      "signature_matches": true
+    },
+    {
+      "function": "mlflow.genai.scorers.registry.list_scorers",
+      "required_parameters": [
+        "experiment_id"
+      ],
+      "signature_matches": true
+    },
+    {
+      "function": "mlflow.genai.judges.make_judge.make_judge",
+      "required_parameters": [
+        "feedback_value_type",
+        "instructions",
+        "model",
+        "name"
+      ],
+      "signature_matches": true
+    },
+    {
+      "function": "mlflow.genai.evaluation.base.evaluate",
+      "required_parameters": [
+        "data",
+        "scorers"
+      ],
+      "signature_matches": true
+    },
+    {
+      "function": "mlflow.tracing.fluent.start_span",
+      "required_parameters": [
+        "attributes",
+        "name",
+        "span_type",
+        "trace_destination"
+      ],
+      "signature_matches": true
+    },
+    {
+      "function": "mlflow.tracing.fluent.get_trace",
+      "required_parameters": [
+        "flush",
+        "trace_id"
+      ],
+      "signature_matches": true
+    }
+  ],
+  "tracking_requests": 0,
+  "model_requests": 0,
+  "registration_or_evaluation_executed": false
+}

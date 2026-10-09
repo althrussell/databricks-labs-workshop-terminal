@@ -1,0 +1,1694 @@
+{
+  "checked_at": "2026-10-09T10:02:52.140577+00:00",
+  "rows": [
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/netbsd-arm64",
+      "current": "0.28.1",
+      "latest_stable": "0.28.2",
+      "source": "https://registry.npmjs.org/@esbuild/netbsd-arm64",
+      "engines": {
+        "node": ">=18"
+      },
+      "published_at": "2026-08-08T19:58:52.524Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/openbsd-arm64",
+      "current": "0.28.1",
+      "latest_stable": "0.28.2",
+      "source": "https://registry.npmjs.org/@esbuild/openbsd-arm64",
+      "engines": {
+        "node": ">=18"
+      },
+      "published_at": "2026-08-08T19:59:03.431Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@esbuild/openharmony-arm64",
+      "current": "0.28.1",
+      "latest_stable": "0.28.2",
+      "source": "https://registry.npmjs.org/@esbuild/openharmony-arm64",
+      "engines": {
+        "node": ">=18"
+      },
+      "published_at": "2026-08-08T20:03:17.337Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@fontsource-variable/dm-sans",
+      "current": "5.3.0",
+      "latest_stable": "5.3.0",
+      "source": "https://registry.npmjs.org/@fontsource-variable/dm-sans",
+      "engines": null,
+      "published_at": "2026-07-19T03:49:56.540Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@fontsource/jetbrains-mono",
+      "current": "5.3.0",
+      "latest_stable": "5.3.0",
+      "source": "https://registry.npmjs.org/@fontsource/jetbrains-mono",
+      "engines": null,
+      "published_at": "2026-07-19T03:40:24.169Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@oxc-project/types",
+      "current": "0.148.0",
+      "latest_stable": "0.152.0",
+      "source": "https://registry.npmjs.org/@oxc-project/types",
+      "engines": null,
+      "published_at": "2026-09-28T09:49:19.368Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@rolldown/binding-android-arm-eabi",
+      "current": "1.2.7",
+      "latest_stable": "1.2.12",
+      "source": "https://registry.npmjs.org/@rolldown/binding-android-arm-eabi",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "published_at": "2026-09-30T14:35:33.262Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@rolldown/binding-android-arm64",
+      "current": "1.2.7",
+      "latest_stable": "1.2.12",
+      "source": "https://registry.npmjs.org/@rolldown/binding-android-arm64",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "published_at": "2026-09-30T14:34:52.399Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@rolldown/binding-darwin-arm64",
+      "current": "1.2.7",
+      "latest_stable": "1.2.12",
+      "source": "https://registry.npmjs.org/@rolldown/binding-darwin-arm64",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "published_at": "2026-09-30T14:33:49.362Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@rolldown/binding-darwin-x64",
+      "current": "1.2.7",
+      "latest_stable": "1.2.12",
+      "source": "https://registry.npmjs.org/@rolldown/binding-darwin-x64",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "published_at": "2026-09-30T14:35:08.056Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@rolldown/binding-freebsd-x64",
+      "current": "1.2.7",
+      "latest_stable": "1.2.12",
+      "source": "https://registry.npmjs.org/@rolldown/binding-freebsd-x64",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "published_at": "2026-09-30T14:38:13.043Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@rolldown/binding-linux-arm-gnueabihf",
+      "current": "1.2.7",
+      "latest_stable": "1.2.12",
+      "source": "https://registry.npmjs.org/@rolldown/binding-linux-arm-gnueabihf",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "published_at": "2026-09-30T14:34:48.480Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@rolldown/binding-linux-arm64-gnu",
+      "current": "1.2.7",
+      "latest_stable": "1.2.12",
+      "source": "https://registry.npmjs.org/@rolldown/binding-linux-arm64-gnu",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "published_at": "2026-09-30T14:34:43.225Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@rolldown/binding-linux-arm64-musl",
+      "current": "1.2.7",
+      "latest_stable": "1.2.12",
+      "source": "https://registry.npmjs.org/@rolldown/binding-linux-arm64-musl",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "published_at": "2026-09-30T14:34:56.001Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@rolldown/binding-linux-ppc64-gnu",
+      "current": "1.2.7",
+      "latest_stable": "1.2.12",
+      "source": "https://registry.npmjs.org/@rolldown/binding-linux-ppc64-gnu",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "published_at": "2026-09-30T14:39:40.161Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@rolldown/binding-linux-s390x-gnu",
+      "current": "1.2.7",
+      "latest_stable": "1.2.12",
+      "source": "https://registry.npmjs.org/@rolldown/binding-linux-s390x-gnu",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "published_at": "2026-09-30T14:37:43.336Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@rolldown/binding-linux-x64-gnu",
+      "current": "1.2.7",
+      "latest_stable": "1.2.12",
+      "source": "https://registry.npmjs.org/@rolldown/binding-linux-x64-gnu",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "published_at": "2026-09-30T14:35:50.441Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@rolldown/binding-linux-x64-musl",
+      "current": "1.2.7",
+      "latest_stable": "1.2.12",
+      "source": "https://registry.npmjs.org/@rolldown/binding-linux-x64-musl",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "published_at": "2026-09-30T14:36:27.963Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@rolldown/binding-openharmony-arm64",
+      "current": "1.2.7",
+      "latest_stable": "1.2.12",
+      "source": "https://registry.npmjs.org/@rolldown/binding-openharmony-arm64",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "published_at": "2026-09-30T14:35:57.709Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@rolldown/binding-win32-arm64-msvc",
+      "current": "1.2.7",
+      "latest_stable": "1.2.12",
+      "source": "https://registry.npmjs.org/@rolldown/binding-win32-arm64-msvc",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "published_at": "2026-09-30T14:34:36.404Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@rolldown/binding-win32-x64-msvc",
+      "current": "1.2.7",
+      "latest_stable": "1.2.12",
+      "source": "https://registry.npmjs.org/@rolldown/binding-win32-x64-msvc",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "published_at": "2026-09-30T14:35:12.522Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@rolldown/pluginutils",
+      "current": "1.0.1",
+      "latest_stable": "1.0.1",
+      "source": "https://registry.npmjs.org/@rolldown/pluginutils",
+      "engines": null,
+      "published_at": "2026-05-13T03:52:29.927Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@types/react",
+      "current": "19.2.18",
+      "latest_stable": "19.3.0",
+      "source": "https://registry.npmjs.org/@types/react",
+      "engines": null,
+      "published_at": "2026-09-09T18:08:49.750Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@types/react-dom",
+      "current": "19.2.7",
+      "latest_stable": "19.3.0",
+      "source": "https://registry.npmjs.org/@types/react-dom",
+      "engines": null,
+      "published_at": "2026-09-09T18:07:51.886Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-aix-ppc64",
+      "current": "7.0.2",
+      "latest_stable": "7.0.2",
+      "source": "https://registry.npmjs.org/@typescript/typescript-aix-ppc64",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "published_at": "2026-07-08T15:49:32.839Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-darwin-arm64",
+      "current": "7.0.2",
+      "latest_stable": "7.0.2",
+      "source": "https://registry.npmjs.org/@typescript/typescript-darwin-arm64",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "published_at": "2026-07-08T15:49:36.897Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-darwin-x64",
+      "current": "7.0.2",
+      "latest_stable": "7.0.2",
+      "source": "https://registry.npmjs.org/@typescript/typescript-darwin-x64",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "published_at": "2026-07-08T15:49:40.886Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-freebsd-arm64",
+      "current": "7.0.2",
+      "latest_stable": "7.0.2",
+      "source": "https://registry.npmjs.org/@typescript/typescript-freebsd-arm64",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "published_at": "2026-07-08T15:49:45.020Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-freebsd-x64",
+      "current": "7.0.2",
+      "latest_stable": "7.0.2",
+      "source": "https://registry.npmjs.org/@typescript/typescript-freebsd-x64",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "published_at": "2026-07-08T15:49:49.189Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-linux-arm",
+      "current": "7.0.2",
+      "latest_stable": "7.0.2",
+      "source": "https://registry.npmjs.org/@typescript/typescript-linux-arm",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "published_at": "2026-07-08T15:49:53.075Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-linux-arm64",
+      "current": "7.0.2",
+      "latest_stable": "7.0.2",
+      "source": "https://registry.npmjs.org/@typescript/typescript-linux-arm64",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "published_at": "2026-07-08T15:49:57.270Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-linux-loong64",
+      "current": "7.0.2",
+      "latest_stable": "7.0.2",
+      "source": "https://registry.npmjs.org/@typescript/typescript-linux-loong64",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "published_at": "2026-07-08T15:50:01.501Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-linux-mips64el",
+      "current": "7.0.2",
+      "latest_stable": "7.0.2",
+      "source": "https://registry.npmjs.org/@typescript/typescript-linux-mips64el",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "published_at": "2026-07-08T15:50:05.178Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-linux-ppc64",
+      "current": "7.0.2",
+      "latest_stable": "7.0.2",
+      "source": "https://registry.npmjs.org/@typescript/typescript-linux-ppc64",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "published_at": "2026-07-08T15:50:09.539Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-linux-riscv64",
+      "current": "7.0.2",
+      "latest_stable": "7.0.2",
+      "source": "https://registry.npmjs.org/@typescript/typescript-linux-riscv64",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "published_at": "2026-07-08T15:50:13.357Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-linux-s390x",
+      "current": "7.0.2",
+      "latest_stable": "7.0.2",
+      "source": "https://registry.npmjs.org/@typescript/typescript-linux-s390x",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "published_at": "2026-07-08T15:50:17.275Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-linux-x64",
+      "current": "7.0.2",
+      "latest_stable": "7.0.2",
+      "source": "https://registry.npmjs.org/@typescript/typescript-linux-x64",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "published_at": "2026-07-08T15:50:21.639Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-netbsd-arm64",
+      "current": "7.0.2",
+      "latest_stable": "7.0.2",
+      "source": "https://registry.npmjs.org/@typescript/typescript-netbsd-arm64",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "published_at": "2026-07-08T15:50:25.229Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-netbsd-x64",
+      "current": "7.0.2",
+      "latest_stable": "7.0.2",
+      "source": "https://registry.npmjs.org/@typescript/typescript-netbsd-x64",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "published_at": "2026-07-08T15:50:29.798Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-openbsd-arm64",
+      "current": "7.0.2",
+      "latest_stable": "7.0.2",
+      "source": "https://registry.npmjs.org/@typescript/typescript-openbsd-arm64",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "published_at": "2026-07-08T15:50:33.600Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-openbsd-x64",
+      "current": "7.0.2",
+      "latest_stable": "7.0.2",
+      "source": "https://registry.npmjs.org/@typescript/typescript-openbsd-x64",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "published_at": "2026-07-08T15:50:37.789Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-sunos-x64",
+      "current": "7.0.2",
+      "latest_stable": "7.0.2",
+      "source": "https://registry.npmjs.org/@typescript/typescript-sunos-x64",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "published_at": "2026-07-08T15:50:41.700Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-win32-arm64",
+      "current": "7.0.2",
+      "latest_stable": "7.0.2",
+      "source": "https://registry.npmjs.org/@typescript/typescript-win32-arm64",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "published_at": "2026-07-08T15:50:45.825Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@typescript/typescript-win32-x64",
+      "current": "7.0.2",
+      "latest_stable": "7.0.2",
+      "source": "https://registry.npmjs.org/@typescript/typescript-win32-x64",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "published_at": "2026-07-08T15:50:50.403Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@vitejs/plugin-react",
+      "current": "6.1.1",
+      "latest_stable": "6.1.1",
+      "source": "https://registry.npmjs.org/@vitejs/plugin-react",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "published_at": "2026-08-28T03:30:56.619Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@xterm/addon-fit",
+      "current": "0.11.0",
+      "latest_stable": "0.11.0",
+      "source": "https://registry.npmjs.org/@xterm/addon-fit",
+      "engines": null,
+      "published_at": "2025-12-22T13:50:25.004Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@xterm/addon-web-links",
+      "current": "0.12.0",
+      "latest_stable": "0.12.0",
+      "source": "https://registry.npmjs.org/@xterm/addon-web-links",
+      "engines": null,
+      "published_at": "2025-12-22T13:50:56.509Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@xterm/xterm",
+      "current": "6.0.0",
+      "latest_stable": "6.0.0",
+      "source": "https://registry.npmjs.org/@xterm/xterm",
+      "engines": null,
+      "published_at": "2025-12-22T13:50:12.430Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "csstype",
+      "current": "3.2.3",
+      "latest_stable": "3.2.3",
+      "source": "https://registry.npmjs.org/csstype",
+      "engines": null,
+      "published_at": "2025-11-17T11:42:27.045Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "detect-libc",
+      "current": "2.1.2",
+      "latest_stable": "2.1.2",
+      "source": "https://registry.npmjs.org/detect-libc",
+      "engines": {
+        "node": ">=8"
+      },
+      "published_at": "2025-10-05T12:46:33.077Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "fdir",
+      "current": "6.5.0",
+      "latest_stable": "6.5.0",
+      "source": "https://registry.npmjs.org/fdir",
+      "engines": {
+        "node": ">=12.0.0"
+      },
+      "published_at": "2025-08-14T16:56:03.948Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "fsevents",
+      "current": "2.3.3",
+      "latest_stable": "2.3.3",
+      "source": "https://registry.npmjs.org/fsevents",
+      "engines": {
+        "node": "^8.16.0 || ^10.6.0 || >=11.0.0"
+      },
+      "published_at": "2023-08-21T16:24:22.854Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "lightningcss",
+      "current": "1.33.0",
+      "latest_stable": "1.33.0",
+      "source": "https://registry.npmjs.org/lightningcss",
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "published_at": "2026-07-20T05:11:09.509Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "lightningcss-android-arm64",
+      "current": "1.33.0",
+      "latest_stable": "1.33.0",
+      "source": "https://registry.npmjs.org/lightningcss-android-arm64",
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "published_at": "2026-07-20T05:10:36.404Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "lightningcss-darwin-arm64",
+      "current": "1.33.0",
+      "latest_stable": "1.33.0",
+      "source": "https://registry.npmjs.org/lightningcss-darwin-arm64",
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "published_at": "2026-07-20T05:10:38.380Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "lightningcss-darwin-x64",
+      "current": "1.33.0",
+      "latest_stable": "1.33.0",
+      "source": "https://registry.npmjs.org/lightningcss-darwin-x64",
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "published_at": "2026-07-20T05:10:40.758Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "lightningcss-freebsd-x64",
+      "current": "1.33.0",
+      "latest_stable": "1.33.0",
+      "source": "https://registry.npmjs.org/lightningcss-freebsd-x64",
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "published_at": "2026-07-20T05:10:43.067Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "lightningcss-linux-arm-gnueabihf",
+      "current": "1.33.0",
+      "latest_stable": "1.33.0",
+      "source": "https://registry.npmjs.org/lightningcss-linux-arm-gnueabihf",
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "published_at": "2026-07-20T05:10:45.198Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "lightningcss-linux-arm64-gnu",
+      "current": "1.33.0",
+      "latest_stable": "1.33.0",
+      "source": "https://registry.npmjs.org/lightningcss-linux-arm64-gnu",
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "published_at": "2026-07-20T05:10:47.355Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "lightningcss-linux-arm64-musl",
+      "current": "1.33.0",
+      "latest_stable": "1.33.0",
+      "source": "https://registry.npmjs.org/lightningcss-linux-arm64-musl",
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "published_at": "2026-07-20T05:10:49.830Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "lightningcss-linux-x64-gnu",
+      "current": "1.33.0",
+      "latest_stable": "1.33.0",
+      "source": "https://registry.npmjs.org/lightningcss-linux-x64-gnu",
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "published_at": "2026-07-20T05:10:52.507Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "lightningcss-linux-x64-musl",
+      "current": "1.33.0",
+      "latest_stable": "1.33.0",
+      "source": "https://registry.npmjs.org/lightningcss-linux-x64-musl",
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "published_at": "2026-07-20T05:10:54.935Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "lightningcss-win32-arm64-msvc",
+      "current": "1.33.0",
+      "latest_stable": "1.33.0",
+      "source": "https://registry.npmjs.org/lightningcss-win32-arm64-msvc",
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "published_at": "2026-07-20T05:10:57.219Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "lightningcss-win32-x64-msvc",
+      "current": "1.33.0",
+      "latest_stable": "1.33.0",
+      "source": "https://registry.npmjs.org/lightningcss-win32-x64-msvc",
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "published_at": "2026-07-20T05:10:59.727Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "lucide-react",
+      "current": "1.40.0",
+      "latest_stable": "1.49.0",
+      "source": "https://registry.npmjs.org/lucide-react",
+      "engines": null,
+      "published_at": "2026-09-29T22:20:06.410Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "marked",
+      "current": "18.0.11",
+      "latest_stable": "18.0.14",
+      "source": "https://registry.npmjs.org/marked",
+      "engines": {
+        "node": ">= 20"
+      },
+      "published_at": "2026-09-22T06:09:15.277Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "nanoid",
+      "current": "3.3.18",
+      "latest_stable": "3.3.19",
+      "source": "https://registry.npmjs.org/nanoid",
+      "engines": {
+        "node": "^10 || ^12 || ^13.7 || ^14 || >=15.0.1"
+      },
+      "published_at": "2026-09-10T18:00:48.080Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "picocolors",
+      "current": "1.1.1",
+      "latest_stable": "1.1.1",
+      "source": "https://registry.npmjs.org/picocolors",
+      "engines": null,
+      "published_at": "2024-10-16T18:20:03.921Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "picomatch",
+      "current": "4.0.7",
+      "latest_stable": "4.0.7",
+      "source": "https://registry.npmjs.org/picomatch",
+      "engines": {
+        "node": ">=12"
+      },
+      "published_at": "2026-08-24T14:36:23.690Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "postcss",
+      "current": "8.5.28",
+      "latest_stable": "8.5.28",
+      "source": "https://registry.npmjs.org/postcss",
+      "engines": {
+        "node": "^10 || ^12 || >=14"
+      },
+      "published_at": "2026-09-03T15:13:59.819Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "react",
+      "current": "19.2.8",
+      "latest_stable": "19.3.0",
+      "source": "https://registry.npmjs.org/react",
+      "engines": {
+        "node": ">=0.10.0"
+      },
+      "published_at": "2026-09-09T17:21:30.071Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "react-dom",
+      "current": "19.2.8",
+      "latest_stable": "19.3.0",
+      "source": "https://registry.npmjs.org/react-dom",
+      "engines": null,
+      "published_at": "2026-09-09T17:17:39.744Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "rolldown",
+      "current": "1.2.7",
+      "latest_stable": "1.2.12",
+      "source": "https://registry.npmjs.org/rolldown",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "published_at": "2026-09-30T14:43:47.669Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "scheduler",
+      "current": "0.27.0",
+      "latest_stable": "0.28.0",
+      "source": "https://registry.npmjs.org/scheduler",
+      "engines": null,
+      "published_at": "2026-09-09T17:17:30.281Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "source-map-js",
+      "current": "1.2.1",
+      "latest_stable": "1.2.2",
+      "source": "https://registry.npmjs.org/source-map-js",
+      "engines": {
+        "node": ">=0.10.0"
+      },
+      "published_at": "2026-09-30T14:08:09.382Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "tinyglobby",
+      "current": "0.2.17",
+      "latest_stable": "0.2.17",
+      "source": "https://registry.npmjs.org/tinyglobby",
+      "engines": {
+        "node": ">=12.0.0"
+      },
+      "published_at": "2026-05-30T19:57:21.717Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "tsx",
+      "current": "4.23.13",
+      "latest_stable": "4.23.15",
+      "source": "https://registry.npmjs.org/tsx",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "published_at": "2026-09-20T07:22:17.792Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "typescript",
+      "current": "7.0.2",
+      "latest_stable": "7.0.2",
+      "source": "https://registry.npmjs.org/typescript",
+      "engines": {
+        "node": ">=16.20.0"
+      },
+      "published_at": "2026-07-08T15:55:18.431Z",
+      "status": "current"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "vite",
+      "current": "8.2.2",
+      "latest_stable": "8.3.2",
+      "source": "https://registry.npmjs.org/vite",
+      "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+      },
+      "published_at": "2026-10-01T10:17:44.767Z",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@openai/codex",
+      "current": null,
+      "latest_stable": "0.162.0",
+      "source": "https://registry.npmjs.org/@openai/codex",
+      "engines": {
+        "node": ">=16"
+      },
+      "published_at": "2026-10-08T19:01:18.070Z",
+      "status": "not_repo_dependency"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@anthropic-ai/claude-code",
+      "current": null,
+      "latest_stable": "2.1.295",
+      "source": "https://registry.npmjs.org/@anthropic-ai/claude-code",
+      "engines": {
+        "node": ">=22.0.0"
+      },
+      "published_at": "2026-10-08T18:22:58.621Z",
+      "status": "not_repo_dependency"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@databricks/appkit",
+      "current": null,
+      "latest_stable": "0.87.0",
+      "source": "https://registry.npmjs.org/@databricks/appkit",
+      "engines": null,
+      "published_at": "2026-10-07T23:30:03.822Z",
+      "status": "not_repo_dependency"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@databricks/appkit-ui",
+      "current": null,
+      "latest_stable": "0.87.0",
+      "source": "https://registry.npmjs.org/@databricks/appkit-ui",
+      "engines": null,
+      "published_at": "2026-10-07T23:30:02.322Z",
+      "status": "not_repo_dependency"
+    },
+    {
+      "ecosystem": "github",
+      "name": "databricks-agent-skills",
+      "current": "v0.2.15",
+      "latest_stable": "v0.2.28",
+      "source": "https://github.com/databricks/databricks-agent-skills/releases/tag/v0.2.28",
+      "published_at": "2026-10-09T08:39:26Z",
+      "status": "update_available",
+      "release_notes": "## What's Changed\n* Update agent skills to d9af7cac76c7fc842d86273efc789b06a498b54e by @databricks-ci-ghec-2[bot] in https://github.com/databricks/databricks-agent-skills/pull/280\n\n\n**Full Changelog**: https://github.com/databricks/databricks-agent-skills/compare/v0.2.27...v0.2.28"
+    },
+    {
+      "ecosystem": "github",
+      "name": "databricks-cli",
+      "current": "v1.18.0",
+      "latest_stable": "v1.20.0",
+      "source": "https://github.com/databricks/cli/releases/tag/v1.20.0",
+      "published_at": "2026-10-07T12:16:39Z",
+      "status": "update_available",
+      "release_notes": "## Release v1.20.0\r\n\r\n### Notable Changes\r\n\r\n * Remove the Terraform deployment engine. `bundle.engine: terraform` and `DATABRICKS_BUNDLE_ENGINE=terraform` now error, and a failed migration of existing Terraform state is reported as an error instead of falling back to Terraform. To keep deploying with Terraform, use Databricks CLI v1.19.x. ([#6888](https://github.com/databricks/cli/pull/6888), [#6889](https://github.com/databricks/cli/pull/6889))\r\n\r\n### CLI\r\n\r\n * `databricks aitools install` now supports Kiro, installing Databricks agent skills into its skills directory. ([#6908](https://github.com/databricks/cli/pull/6908))\r\n * Fixed `databricks api` corrupting integers larger than 2^53 (such as job and pipeline ids) \u2014 request bodies and responses now preserve them exactly. ([#6884](https://github.com/databricks/cli/pull/6884))\r\n * Added `--auth-mode` and `--set <plugin>.<resourceKey>.authMode=obo|sp|both` to `databricks apps init` so AppKit resources can be accessed on behalf of the user, by the service principal, or both. The default stays service principal. ([#6886](https://github.com/databricks/cli/pull/6886))\r\n * `databricks apps init` now requires a value for every field a service principal resource binding references, prompting for missing values in an interactive terminal and otherwise failing with the `--set` key to use, instead of creating a project with unset variables. ([#6903](https://github.com/databricks/cli/pull/6903))\r\n * Add `databricks apps init --package-manager <npm|pnpm>` to select the package manager for Node.js templates. Infer the default quietly from template lockfiles and AppKit version, check prerequisites before creating files, and preserve template formatting and pnpm version pins. ([#6902](https://github.com/databricks/cli/pull/6902))\r\n * Select npm or pnpm from `packageManager` declarations and lockfiles for `apps validate` and project validation during `apps deploy`. ([#6892](https://github.com/databricks/cli/pull/6892))\r\n * Fix `auth docker host` reporting the credential helper as configured when its executable is missing from `PATH`. ([#6880](https://github.com/databricks/cli/pull/6880))\r\n * Warn when the CLI binary was built more than 6 months ago and recommend updating. ([#6898](https://github.com/databricks/cli/pull/6898))\r\n\r\n### AI Runtime\r\n\r\n * Add an experimental rank-partitioned container images to AI Runtime jobs. ([#6841](https://github.com/databricks/cli/pull/6841))\r\n * Support snapshot fields directly under `code_source` without requiring `type` or a nested `snapshot` block. ([#6927](https://github.com/databricks/cli/pull/6927))\r\n * Map AIR priority and Unity Catalog image fields when converting run configurations to bundles. ([#6905](https://github.com/databricks/cli/pull/6905))\r\n * Add workspace backend validation to `air run --dry-run`. ([#6934](https://github.com/databricks/cli/pull/6934))\r\n\r\n### Bundles\r\n\r\n * Warn that `bundle.terraform` is deprecated and has no effect since the Terraform deployment engine was removed. ([#6940](https://github.com/databricks/cli/pull/6940))\r\n * Direct engine now detects and applies an explicitly configured zero-value boolean or float (e.g. `gcp_attributes.use_preemptible_executors: false`, `azure_attributes.spot_bid_max_price: 0`) added to a resource first deployed without the field, matching the existing handling of an explicit integer zero. ([#6882](https://github.com/databricks/cli/pull/6882))\r\n * Fix `bundle deployment migrate` failing with \"no such file or directory\" when the Terraform state has no resources or the configuration no longer declares any of them. ([#6958](https://github.com/databricks/cli/pull/6958))\r\n * `bundle run` and `pipelines run` now send the per-update `development` parameter for pipelines in development mode targets. Setting `development` on a pipeline is deprecated and now emits a warning; use `mode: development` instead. ([#6863](https://github.com/databricks/cli/pull/6863))\r\n * Remove the hidden `bundle debug terraform` command. ([#6933](https://github.com/databricks/cli/pull/6933))\r\n * Add support for `run_as.group_name` at the bundle and target levels for jobs and pipelines. ([#6676](https://github.com/databricks/cli/pull/6676))\r\n * Fix recreating a secret scope that was deleted outside of the bundle with the direct deployment engine. ([#6970](https://github.com/databricks/cli/pull/6970))\r\n * Accept title-case booleans (`True`/`False`, as rendered by Azure Pipelines) for boolean variables, and accept the same boolean strings (`yes`/`no`, `on`/`off`, ...) in Python bundles as in YAML. ([#6942](https://github.com/databricks/cli/pull/6942))\r\n\r\n### Dependency Updates\r\n\r\n * Bump `github.com/databricks/databricks-sdk-go` from v0.182.0 to v0.185.0. ([#6928](https://github.com/databricks/cli/pull/6928))\r\n"
+    },
+    {
+      "ecosystem": "github",
+      "name": "uv",
+      "current": "0.12.19",
+      "latest_stable": "0.12.24",
+      "source": "https://github.com/astral-sh/uv/releases/tag/0.12.24",
+      "published_at": "2026-10-08T20:06:20Z",
+      "status": "update_available",
+      "release_notes": "## Release Notes\n\nReleased on 2026-10-08.\n\n### Enhancements\n\n- Remove orphaned temporary build environments with `uv cache prune` ([#22171](https://github.com/astral-sh/uv/pull/22171))\n- Accept PEP 508 marker operators directly before grouped expressions ([#22309](https://github.com/astral-sh/uv/pull/22309))\n- Reject malformed requirements-file options instead of partially parsing or ignoring them ([#22317](https://github.com/astral-sh/uv/pull/22317))\n- Show underlying filesystem and registry errors when managed Python uninstallation fails ([#22362](https://github.com/astral-sh/uv/pull/22362))\n- Identify the invalid source URL in Python mirror errors ([#22364](https://github.com/astral-sh/uv/pull/22364))\n\n### Preview features\n\n- Display preferred advisory IDs in `uv audit` reports, prioritizing PYSEC, GHSA, then CVE identifiers ([#22292](https://github.com/astral-sh/uv/pull/22292))\n\n### Configuration\n\n- Support custom installation mirrors for GraalPy ([#22269](https://github.com/astral-sh/uv/pull/22269))\n- Support custom installation mirrors for Pyodide ([#22271](https://github.com/astral-sh/uv/pull/22271))\n- Allow `UV_NO_CACHE=false` to override `no-cache = true` in configuration ([#22324](https://github.com/astral-sh/uv/pull/22324))\n- Report more precise error locations for invalid trusted-host ports and preview-feature list entries ([#22144](https://github.com/astral-sh/uv/pull/22144))\n\n### Performance\n\n- Speed up later commands after creating an environment by warming its interpreter cache ([#21304](https://github.com/astral-sh/uv/pull/21304))\n- Reduce code-signature verification work for ARM64 macOS releases with 16 KiB signature pages ([#22246](https://github.com/astral-sh/uv/pull/22246))\n- Enforce resource limits when parsing package indexes and `--find-links` pages with `astral-html` ([#22203](https://github.com/astral-sh/uv/pull/22203))\n- Reduce standalone `uv-build` executable size by 7.5% by omitting unused Zstandard support ([#22242](https://github.com/astral-sh/uv/pull/22242))\n- Reduce uv's binary size by about 232 KB by simplifying configuration deserialization ([#22144](https://github.com/astral-sh/uv/pull/22144))\n- Reduce Python download error formatting code size by sharing its formatter ([#22141](https://github.com/astral-sh/uv/pull/22141))\n\n### Bug fixes\n\n- Verify supplied hashes even when hash presence is disabled with `--no-require-hashes` or `require-hashes = false` ([#22369](https://github.com/astral-sh/uv/pull/22369))\n- Honor exact managed Python patch pins when creating script environments instead of following patch upgrades ([#22360](https://github.com/astral-sh/uv/pull/22360))\n- Prevent dependency overrides and constraints from activating optional dependencies when their extras are not selected ([#22237](https://github.com/astral-sh/uv/pull/22237))\n- Exclude optional dependencies from exports when their extras are activated only in incompatible environments ([#22234](https://github.com/astral-sh/uv/pull/22234))\n- Give explicit `uv publish --trusted-publishing` values precedence over configuration ([#22279](https://github.com/astral-sh/uv/pull/22279))\n- Allow `UV_OFFLINE=false` to override `offline = true` in configuration ([#22283](https://github.com/astral-sh/uv/pull/22283))\n- Allow `UV_SYSTEM_CERTS=false` to override `system-certs = true` in configuration ([#22291](https://github.com/astral-sh/uv/pull/22291))\n- Allow `uv auth login` over IPv6 loopback addresses ([#22306](https://github.com/astral-sh/uv/pull/22306))\n- Resolve GitHub dependencies whose Git references contain `#` or `%` characters ([#22281](https://github.com/astral-sh/uv/pull/22281))\n- Recognize existing Pyodide interpreters as satisfying Pyodide Python requests ([#22322](https://github.com/astral-sh/uv/pull/22322))\n- Preserve JSON output from `uv version` and `uv self version` with a single `--quiet` flag ([#22280](https://github.com/astral-sh/uv/pull/22280))\n- Preserve trailing spaces and tabs in passwords returned by subprocess keyrings ([#22284](https://github.com/astral-sh/uv/pull/22284))\n- Restore wheel incompatibility hints when `WHEEL` metadata contains multiple expanded `Tag:` rows ([#22235](https://github.com/astral-sh/uv/pull/22235))\n- Preserve Windows wheel-script rename errors unless a cross-drive copy fallback applies ([#22302](https://github.com/astral-sh/uv/pull/22302))\n- Prevent workspace-cache assertion failures after modifying a project at the workspace root ([#22236](https://github.com/astral-sh/uv/pull/22236))\n- Hide the ignored `--keyring-provider` option from `uv auth` help ([#19520](https://github.com/astral-sh/uv/pull/19520))\n- Report HTTP client setup failures directly when resolving unnamed `uv tool` requirements ([#22320](https://github.com/astral-sh/uv/pull/22320))\n\n### Documentation\n\n- Update Docker and AWS Lambda examples to cache dependency layers using frozen lockfiles without project manifests ([#22172](https://github.com/astral-sh/uv/pull/22172))\n- Fix stale links and descriptions in Rust crate documentation ([#22311](https://github.com/astral-sh/uv/pull/22311), [#22361](https://github.com/astral-sh/uv/pull/22361))\n- Fix a typo in the `required-environments` documentation ([#22238](https://github.com/astral-sh/uv/pull/22238))\n\n## Install uv 0.12.24\n\n### Install prebuilt binaries via shell script\n\n```sh\ncurl --proto '=https' --tlsv1.2 -LsSf https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-installer.sh | sh\n```\n\n### Install prebuilt binaries via powershell script\n\n```sh\npowershell -ExecutionPolicy Bypass -c \"irm https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-installer.ps1 | iex\"\n```\n\n## Download uv 0.12.24\n\n|  File  | Platform | Checksum |\n|--------|----------|----------|\n| [uv-aarch64-apple-darwin.tar.gz](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-aarch64-apple-darwin.tar.gz) | Apple Silicon macOS | [checksum](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-aarch64-apple-darwin.tar.gz.sha256) |\n| [uv-x86_64-apple-darwin.tar.gz](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-x86_64-apple-darwin.tar.gz) | Intel macOS | [checksum](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-x86_64-apple-darwin.tar.gz.sha256) |\n| [uv-aarch64-pc-windows-msvc.zip](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-aarch64-pc-windows-msvc.zip) | ARM64 Windows | [checksum](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-aarch64-pc-windows-msvc.zip.sha256) |\n| [uv-i686-pc-windows-msvc.zip](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-i686-pc-windows-msvc.zip) | x86 Windows | [checksum](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-i686-pc-windows-msvc.zip.sha256) |\n| [uv-x86_64-pc-windows-msvc.zip](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-x86_64-pc-windows-msvc.zip) | x64 Windows | [checksum](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-x86_64-pc-windows-msvc.zip.sha256) |\n| [uv-aarch64-unknown-linux-gnu.tar.gz](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-aarch64-unknown-linux-gnu.tar.gz) | ARM64 Linux | [checksum](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-aarch64-unknown-linux-gnu.tar.gz.sha256) |\n| [uv-i686-unknown-linux-gnu.tar.gz](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-i686-unknown-linux-gnu.tar.gz) | x86 Linux | [checksum](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-i686-unknown-linux-gnu.tar.gz.sha256) |\n| [uv-powerpc64le-unknown-linux-gnu.tar.gz](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-powerpc64le-unknown-linux-gnu.tar.gz) | PPC64LE Linux | [checksum](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-powerpc64le-unknown-linux-gnu.tar.gz.sha256) |\n| [uv-riscv64gc-unknown-linux-gnu.tar.gz](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-riscv64gc-unknown-linux-gnu.tar.gz) | RISCV Linux | [checksum](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-riscv64gc-unknown-linux-gnu.tar.gz.sha256) |\n| [uv-s390x-unknown-linux-gnu.tar.gz](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-s390x-unknown-linux-gnu.tar.gz) | S390x Linux | [checksum](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-s390x-unknown-linux-gnu.tar.gz.sha256) |\n| [uv-x86_64-unknown-linux-gnu.tar.gz](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-x86_64-unknown-linux-gnu.tar.gz) | x64 Linux | [checksum](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-x86_64-unknown-linux-gnu.tar.gz.sha256) |\n| [uv-armv7-unknown-linux-gnueabihf.tar.gz](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-armv7-unknown-linux-gnueabihf.tar.gz) | ARMv7 Linux | [checksum](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-armv7-unknown-linux-gnueabihf.tar.gz.sha256) |\n| [uv-aarch64-unknown-linux-musl.tar.gz](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-aarch64-unknown-linux-musl.tar.gz) | ARM64 MUSL Linux | [checksum](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-aarch64-unknown-linux-musl.tar.gz.sha256) |\n| [uv-i686-unknown-linux-musl.tar.gz](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-i686-unknown-linux-musl.tar.gz) | x86 MUSL Linux | [checksum](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-i686-unknown-linux-musl.tar.gz.sha256) |\n| [uv-riscv64gc-unknown-linux-musl.tar.gz](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-riscv64gc-unknown-linux-musl.tar.gz) | RISCV MUSL Linux | [checksum](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-riscv64gc-unknown-linux-musl.tar.gz.sha256) |\n| [uv-x86_64-unknown-linux-musl.tar.gz](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-x86_64-unknown-linux-musl.tar.gz) | x64 MUSL Linux | [checksum](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-x86_64-unknown-linux-musl.tar.gz.sha256) |\n| [uv-arm-unknown-linux-musleabihf.tar.gz](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-arm-unknown-linux-musleabihf.tar.gz) | ARMv6 MUSL Linux (Hardfloat) | [checksum](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-arm-unknown-linux-musleabihf.tar.gz.sha256) |\n| [uv-armv7-unknown-linux-musleabihf.tar.gz](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-armv7-unknown-linux-musleabihf.tar.gz) | ARMv7 MUSL Linux | [checksum](https://releases.astral.sh/github/uv/releases/download/0.12.24/uv-armv7-unknown-linux-musleabihf.tar.gz.sha256) |\n\n## Verifying GitHub Artifact Attestations\n\nThe artifacts in this release have attestations generated with GitHub Artifact Attestations. These can be verified by using the [GitHub CLI](https://cli.github.com/manual/gh_attestation_verify):\n```sh\ngh attestation verify <file-path of downloaded artifact> --repo astral-sh/uv\n```\n\nYou can also download the attestation from [GitHub](https://github.com/astral-sh/uv/attestations) and verify against that directly:\n```sh\ngh attestation verify <file-path of downloaded artifact> --bundle <file-path of downloaded attestation>\n```\n\n\n"
+    },
+    {
+      "ecosystem": "github",
+      "name": "python-build-standalone",
+      "current": "20260901",
+      "latest_stable": "20261003",
+      "source": "https://github.com/astral-sh/python-build-standalone/releases/tag/20261003",
+      "published_at": "2026-10-03T14:56:28Z",
+      "status": "update_available",
+      "release_notes": "TBD"
+    },
+    {
+      "ecosystem": "github",
+      "name": "static-tmux",
+      "current": "v3.7b",
+      "latest_stable": "v3.7b",
+      "source": "https://github.com/mjakob-gh/build-static-tmux/releases/tag/v3.7b",
+      "published_at": "2026-07-12T11:01:34Z",
+      "status": "current",
+      "release_notes": "# build-static-tmux\r\n\r\nA script or building a static tmux for linux which should run on a wide selection of distributions (tested on Ubuntu, SLES12, SLES15)\r\n\r\n**Versions**\r\n* [tmux 3.7b](https://github.com/tmux/tmux/)\r\n* [musl 1.2.6](https://musl.libc.org/)\r\n* [ncurses 6.6](https://invisible-island.net/ncurses/)\r\n* [libevent 2.1.13](https://github.com/libevent/libevent/)\r\n\r\nBinaries available in releases.\r\nBuild with GitHub actions (Ubuntu 22.04, amd64, arm64)\r\n\r\n![Build Status](https://github.com/mjakob-gh/build-static-tmux/actions/workflows/build.yml/badge.svg)"
+    },
+    {
+      "ecosystem": "github",
+      "name": "apx-source",
+      "current": null,
+      "latest_stable": "v0.3.8",
+      "source": "https://github.com/databricks-solutions/apx/releases/tag/v0.3.8",
+      "published_at": "2026-02-26T17:26:41Z",
+      "status": "update_available",
+      "release_notes": "## What's Changed\n* Add non-blocking upgrade check on CLI startup by @renardeinside in https://github.com/databricks-solutions/apx/pull/129\n\n\n**Full Changelog**: https://github.com/databricks-solutions/apx/compare/v0.3.7...v0.3.8"
+    },
+    {
+      "ecosystem": "node",
+      "name": "node-active-lts",
+      "current": "24.20.0",
+      "latest_stable": "24.21.0",
+      "latest_current": "26.11.1",
+      "source": "https://nodejs.org/dist/index.json",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "annotated-doc",
+      "current": "0.0.5",
+      "latest_stable": "0.0.5",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/annotated-doc/0.0.5/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "annotated-types",
+      "current": "0.8.0",
+      "latest_stable": "0.8.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/annotated-types/0.8.0/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "anyio",
+      "current": "4.15.0",
+      "latest_stable": "4.15.1",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/anyio/4.15.1/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "asgiref",
+      "current": "3.12.1",
+      "latest_stable": "3.12.1",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/asgiref/3.12.1/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "certifi",
+      "current": "2026.7.22",
+      "latest_stable": "2026.7.22",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/certifi/2026.7.22/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "cffi",
+      "current": "2.1.1",
+      "latest_stable": "2.1.1",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/cffi/2.1.1/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "charset-normalizer",
+      "current": "3.5.1",
+      "latest_stable": "3.5.2",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/charset-normalizer/3.5.2/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "click",
+      "current": "8.5.0",
+      "latest_stable": "8.5.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/click/8.5.0/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "colorama",
+      "current": "0.4.6",
+      "latest_stable": "0.4.6",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/colorama/0.4.6/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "cryptography",
+      "current": "50.0.1",
+      "latest_stable": "50.0.2",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/cryptography/50.0.2/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "databricks-sdk",
+      "current": "0.143.0",
+      "latest_stable": "0.150.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/databricks-sdk/0.150.0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "fastapi",
+      "current": "0.141.1",
+      "latest_stable": "0.142.2",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/fastapi/0.142.2/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "google-auth",
+      "current": "2.57.0",
+      "latest_stable": "2.59.1",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/google-auth/2.59.1/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "googleapis-common-protos",
+      "current": "1.75.2",
+      "latest_stable": "1.75.5",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/googleapis-common-protos/1.75.5/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "grpcio",
+      "current": "1.83.1",
+      "latest_stable": "1.84.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/grpcio/1.84.0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "h11",
+      "current": "0.16.0",
+      "latest_stable": "0.16.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/h11/0.16.0/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "httpcore",
+      "current": "1.0.9",
+      "latest_stable": "1.0.9",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/httpcore/1.0.9/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "httptools",
+      "current": "0.8.0",
+      "latest_stable": "0.8.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/httptools/0.8.0/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "httpx",
+      "current": "0.28.1",
+      "latest_stable": "0.28.1",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/httpx/0.28.1/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "idna",
+      "current": "3.19",
+      "latest_stable": "3.20",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/idna/3.20/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "iniconfig",
+      "current": "2.3.0",
+      "latest_stable": "2.3.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/iniconfig/2.3.0/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "opentelemetry-api",
+      "current": "1.44.0",
+      "latest_stable": "1.45.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/opentelemetry-api/1.45.0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "opentelemetry-distro",
+      "current": "0.65b0",
+      "latest_stable": "0.66b0",
+      "release_channel": "instrumentation_beta",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/opentelemetry-distro/0.66b0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "opentelemetry-exporter-otlp-proto-common",
+      "current": "1.44.0",
+      "latest_stable": "1.45.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/opentelemetry-exporter-otlp-proto-common/1.45.0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "opentelemetry-exporter-otlp-proto-grpc",
+      "current": "1.44.0",
+      "latest_stable": "1.45.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/opentelemetry-exporter-otlp-proto-grpc/1.45.0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "opentelemetry-instrumentation",
+      "current": "0.65b0",
+      "latest_stable": "0.66b0",
+      "release_channel": "instrumentation_beta",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/opentelemetry-instrumentation/0.66b0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "opentelemetry-instrumentation-asgi",
+      "current": "0.65b0",
+      "latest_stable": "0.66b0",
+      "release_channel": "instrumentation_beta",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/opentelemetry-instrumentation-asgi/0.66b0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "opentelemetry-instrumentation-fastapi",
+      "current": "0.65b0",
+      "latest_stable": "0.66b0",
+      "release_channel": "instrumentation_beta",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/opentelemetry-instrumentation-fastapi/0.66b0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "opentelemetry-proto",
+      "current": "1.44.0",
+      "latest_stable": "1.45.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/opentelemetry-proto/1.45.0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "opentelemetry-sdk",
+      "current": "1.44.0",
+      "latest_stable": "1.45.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/opentelemetry-sdk/1.45.0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "opentelemetry-semantic-conventions",
+      "current": "0.65b0",
+      "latest_stable": "0.66b0",
+      "release_channel": "instrumentation_beta",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/opentelemetry-semantic-conventions/0.66b0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "opentelemetry-util-http",
+      "current": "0.65b0",
+      "latest_stable": "0.66b0",
+      "release_channel": "instrumentation_beta",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/opentelemetry-util-http/0.66b0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "packaging",
+      "current": "26.3",
+      "latest_stable": "26.3",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/packaging/26.3/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "pex",
+      "current": "2.101.3",
+      "latest_stable": "2.103.3",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/pex/2.103.3/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "pillow",
+      "current": "12.3.0",
+      "latest_stable": "12.3.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/pillow/12.3.0/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "pluggy",
+      "current": "1.6.0",
+      "latest_stable": "1.6.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/pluggy/1.6.0/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "protobuf",
+      "current": "6.33.6",
+      "latest_stable": "7.36.2",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/protobuf/7.36.2/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "pyasn1",
+      "current": "0.6.4",
+      "latest_stable": "0.6.4",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/pyasn1/0.6.4/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "pyasn1-modules",
+      "current": "0.4.2",
+      "latest_stable": "0.4.2",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/pyasn1-modules/0.4.2/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "pycparser",
+      "current": "3.0",
+      "latest_stable": "3.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/pycparser/3.0/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "pydantic",
+      "current": "2.13.5",
+      "latest_stable": "2.13.5",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/pydantic/2.13.5/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "pydantic-core",
+      "current": "2.46.5",
+      "latest_stable": "2.49.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/pydantic-core/2.49.0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "pygments",
+      "current": "2.21.0",
+      "latest_stable": "2.21.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/pygments/2.21.0/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "pytest",
+      "current": "9.1.1",
+      "latest_stable": "9.1.1",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/pytest/9.1.1/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "python-dotenv",
+      "current": "1.2.3",
+      "latest_stable": "1.2.4",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/python-dotenv/1.2.4/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "pyyaml",
+      "current": "6.0.3",
+      "latest_stable": "6.0.3",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/pyyaml/6.0.3/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "reportlab",
+      "current": "5.0.1",
+      "latest_stable": "5.0.1",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/reportlab/5.0.1/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "requests",
+      "current": "2.34.2",
+      "latest_stable": "2.34.2",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/requests/2.34.2/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "starlette",
+      "current": "1.6.0",
+      "latest_stable": "1.7.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/starlette/1.7.0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "typing-extensions",
+      "current": "4.16.0",
+      "latest_stable": "4.16.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/typing-extensions/4.16.0/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "typing-inspection",
+      "current": "0.4.4",
+      "latest_stable": "0.4.4",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/typing-inspection/0.4.4/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "urllib3",
+      "current": "2.7.0",
+      "latest_stable": "2.8.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/urllib3/2.8.0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "uvicorn",
+      "current": "0.53.0",
+      "latest_stable": "0.54.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/uvicorn/0.54.0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "uvloop",
+      "current": "0.22.1",
+      "latest_stable": "0.23.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/uvloop/0.23.0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "watchfiles",
+      "current": "1.2.0",
+      "latest_stable": "1.3.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/watchfiles/1.3.0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "websockets",
+      "current": "17.1",
+      "latest_stable": "17.1",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/websockets/17.1/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "wrapt",
+      "current": "2.4.0",
+      "latest_stable": "2.5.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/wrapt/2.5.0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "omnigent",
+      "current": "0.15.0",
+      "latest_stable": "0.17.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/omnigent/0.17.0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "mlflow",
+      "current": null,
+      "latest_stable": "3.17.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/mlflow/3.17.0/",
+      "status": "evaluator_candidate"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "openai",
+      "current": null,
+      "latest_stable": "3.23.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/openai/3.23.0/",
+      "status": "evaluator_candidate"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "anthropic",
+      "current": null,
+      "latest_stable": "1.11.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/anthropic/1.11.0/",
+      "status": "evaluator_candidate"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "playwright",
+      "current": "1.60.0",
+      "latest_stable": "1.63.0",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/playwright/1.63.0/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "aiohttp",
+      "current": "3.13.3",
+      "latest_stable": "3.14.3",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/aiohttp/3.14.3/",
+      "status": "update_available"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "pyte",
+      "current": "0.8.2",
+      "latest_stable": "0.8.2",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/pyte/0.8.2/",
+      "status": "current"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "uv",
+      "current": "0.12.19",
+      "latest_stable": "0.12.22",
+      "release_channel": "stable",
+      "metadata_transport": "configured_laptop_pypi_proxy",
+      "source": "https://pypi.org/project/uv/0.12.22/",
+      "status": "update_available"
+    }
+  ],
+  "control_tower_mutations": 0,
+  "public_runtime_registries_unchanged": true,
+  "excluded_unrelated_packages": [
+    "The npm apx package is unrelated to databricks-solutions/apx.",
+    "No separate @databricks/appkit-cli package is required."
+  ]
+}

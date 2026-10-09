@@ -1,0 +1,9 @@
+{
+  "harness": "claude",
+  "version": "2.1.295",
+  "cwd": "disposable operator test directory",
+  "selected_choice": "No, exit",
+  "screen_shape_matches_existing_owned_folder_driver": true,
+  "trust_confirmed": false,
+  "attendee_browser_startup_verified": false
+}

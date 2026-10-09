@@ -159,8 +159,8 @@ def _canary_response(body: dict | None, role: str, model: str) -> dict:
     if not isinstance(body, dict) or ("error" in body and body["error"] is not None):
         raise CanaryUnverified("invalid_provider_response")
     # Provider IDs can differ from the UC routing name. These exact aliases
-    # were observed on the CT-pinned release; unrelated models still fail.
-    aliases = {"gpt-5-6-terra": "gpt-5.6-terra", "gpt-oss-120b": "gpt-oss-120b-080525"}
+    # were observed in reviewed qualification runs; unrelated models still fail.
+    aliases = {"gpt-5-6-terra": "gpt-5.6-terra", "gpt-6-1-sol": "gpt-6.1-sol", "gpt-oss-120b": "gpt-oss-120b-080525"}
     expected = models.short_name(model)
     if body.get("model") is not None and (not isinstance(body["model"], str)
             or models.short_name(body["model"]) not in {expected, aliases.get(expected, expected)}):

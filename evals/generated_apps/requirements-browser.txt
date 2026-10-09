@@ -1,4 +1,4 @@
 # External evaluator only. These packages never enter the attendee PEX.
-playwright==1.60.0
+playwright==1.63.0
 pyte==0.8.2
-aiohttp==3.13.3
+aiohttp==3.14.3

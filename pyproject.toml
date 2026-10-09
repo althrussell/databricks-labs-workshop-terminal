@@ -4,16 +4,16 @@ version = "0.0.0"
 description = "One-attendee Databricks Workshop Terminal runtime"
 requires-python = ">=3.11,<3.13"
 dependencies = [
-  "databricks-sdk==0.143.0",
-  "fastapi==0.141.1",
-  "opentelemetry-distro==0.65b0",
-  "opentelemetry-exporter-otlp-proto-grpc==1.44.0",
-  "opentelemetry-instrumentation-fastapi==0.65b0",
+  "databricks-sdk==0.150.0",
+  "fastapi==0.142.2",
+  "opentelemetry-distro==0.66b0",
+  "opentelemetry-exporter-otlp-proto-grpc==1.45.0",
+  "opentelemetry-instrumentation-fastapi==0.66b0",
   "pillow==12.3.0",
   "pydantic==2.13.5",
   "reportlab==5.0.1",
   "requests==2.34.2",
-  "uvicorn[standard]==0.53.0",
+  "uvicorn[standard]==0.54.0",
 ]
 
 [dependency-groups]
@@ -22,7 +22,12 @@ dev = [
   "pytest==9.1.1",
 ]
 release = [
-  "pex==2.101.3",
+  "pex==2.103.3",
+]
+quality = [
+  "mlflow==3.17.0",
+  "databricks-agents==1.12.0",
+  "openai==3.23.0",
 ]
 
 [tool.uv]
