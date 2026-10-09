@@ -26,6 +26,7 @@ from collections.abc import Callable
 
 from . import config
 from .users import User
+from .codex_home import shell_home as codex_shell_home
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +142,7 @@ class Session:
         self.exited = False
         self.exit_code: int | None = None
         self.exit_signal: int | None = None
+        self.exit_reason: str | None = None
         # Live websocket subscribers: asyncio queues drained by ws handlers.
         self.subscribers: set[asyncio.Queue] = set()
 
@@ -162,6 +164,16 @@ class Session:
     def replay_text(self) -> str:
         with self.lock:
             return self.scrollback.text()
+
+    def exit_message(self) -> dict:
+        """Structured status for the attendee; raw output stays in the PTY."""
+        with self.lock:
+            return {
+                "t": "exit",
+                "reason": self.exit_reason or "exited",
+                "exit_code": self.exit_code,
+                "exit_signal": self.exit_signal,
+            }
 
     def metadata(self) -> dict:
         """Persistable metadata for restart recovery (P1-11).
@@ -387,10 +399,14 @@ class SessionManager:
             # A reservation flag would introduce a second state to recover from;
             # this short critical section guarantees a losing request never
             # creates a child process at all.
-            master_fd, slave_fd = pty.openpty()
-            env = user.shell_env()
             cwd = os.path.join(user.home, "projects")
             os.makedirs(cwd, exist_ok=True)
+            env = user.shell_env()
+            if agent_id == "codex":
+                # Keep cwd, configs, credentials and native logs in the original
+                # attendee home. Only Codex's lexical socket prefix is shortened.
+                env["HOME"] = codex_shell_home(user.home)
+            master_fd, slave_fd = pty.openpty()
             try:
                 pid = subprocess.Popen(
                     command,
@@ -429,9 +445,12 @@ class SessionManager:
         # given. Claiming first makes the loser a no-op instead of a hazard.
         with self._lock:
             claimed = self._sessions.pop(session.id, None) is not None
-        self._fanout(session, {"t": "exit"})
         if not claimed:
             return
+        with session.lock:
+            session.exited = True
+            session.exit_reason = reason
+        self._fanout(session, session.exit_message())
         try:
             # A captured wait status means the reader already reaped the agent;
             # signalling that PID again risks hitting a rapidly reused PID.
@@ -519,8 +538,6 @@ class SessionManager:
                     capture_wait_status(wait_status)
             except (ChildProcessError, OSError):
                 pass
-        session.exited = True
-        self._fanout(session, {"t": "exit"})
         reason = (
             "process_signal"
             if session.exit_signal is not None

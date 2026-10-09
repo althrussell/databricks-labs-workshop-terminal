@@ -20,6 +20,13 @@ test("the active agent focuses while another agent requires confirmation", () =>
   assert.equal(agentSelection(null, "codex"), "launch");
 });
 
+test("a retained ended terminal never occupies the live slot or receives input", () => {
+  const ended = { ...session("ended", "codex"), exited: true };
+  assert.equal(agentSelection(ended, "codex"), "launch");
+  assert.equal(agentSelection(ended, "claude"), "launch");
+  assert.deepEqual(resolveSessionConflict(ended, "codex", "Help me choose"), { action: "missing" });
+});
+
 test("a same-agent conflict returns the live session so its prompt is not dropped", () => {
   const active = session("one", "claude", "Claude Code");
   assert.deepEqual(

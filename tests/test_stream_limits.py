@@ -196,6 +196,32 @@ def test_terminal_max_depth_survives_unsubscribe():
     assert manager.queue_metrics()["terminal"]["max_depth"] == 2
 
 
+def test_exit_pump_delivers_final_output_and_status_then_closes():
+    class Socket:
+        def __init__(self):
+            self.frames = []
+            self.closed = []
+
+        async def send_text(self, value):
+            self.frames.append(json.loads(value))
+
+        async def close(self, code):
+            self.closed.append(code)
+
+    async def exercise():
+        queue = asyncio.Queue()
+        output = {"t": "output", "data": "startup failure detail"}
+        ended = {"t": "exit", "reason": "process_error", "exit_code": 17, "exit_signal": None}
+        queue.put_nowait(output)
+        queue.put_nowait(ended)
+        socket = Socket()
+        await asyncio.wait_for(ws_module.pump_terminal_output(socket, queue, "owned-session"), timeout=1)
+        assert socket.frames == [output, ended]
+        assert socket.closed == [1000]
+
+    asyncio.run(exercise())
+
+
 def test_event_max_depth_survives_unsubscribe():
     hub = EventHub(max_queue=3)
     queue = hub.subscribe()

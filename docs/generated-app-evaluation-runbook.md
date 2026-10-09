@@ -38,6 +38,35 @@ later CT-integrated deployment are separate from this failed baseline closeout.
 
 ## Current CT-compatible package workflow
 
+### Laptop registries and deployed registries
+
+Keep the committed lockfiles and runtime package sources on public npm/PyPI.
+On a Databricks-managed laptop, dependency installation uses the laptop's
+Databricks proxies without rewriting those lockfiles. For example:
+
+```bash
+cd frontend
+npm ci --registry https://npm-proxy.cloud.databricks.com/ --replace-registry-host=always
+
+# From the repository root, into an existing Python 3.11/3.12 virtualenv:
+uv pip sync --python .venv/bin/python requirements-dev.txt \
+  --index-url https://pypi-proxy.cloud.databricks.com/simple
+```
+
+The project declares public PyPI, so do not assume a user-level uv proxy setting
+overrides it. Invoke the local proxy explicitly when installing. Public npm URLs
+in the lockfile likewise describe package identity; npm's effective registry and
+fetch logs establish which host served a laptop installation. Keep proxy URLs
+and credentials out of generated attendee projects and deployment configuration.
+
+Deployed WT reads pinned toolchain blobs from the UC volume with checksum
+verification and uses public sources on a permitted mirror miss. Codex's npm
+installation is offline from those verified tarballs. Its later managed-daemon
+installation copies the installed native package into the attendee's `.codex`
+directory; that message does not indicate another UC or npm download. The WT
+PEX supplies its Python dependencies without an index lookup. Omnigent's hashed
+wheel requirements use public PyPI. CI installs from public registries.
+
 Use `scripts/deploy_ct_compatible_wt_test.py` for a fresh package test. The older
 snapshot command later in this runbook is retained for historical evidence and
 instrumented development experiments; it does not reproduce CT package mode.

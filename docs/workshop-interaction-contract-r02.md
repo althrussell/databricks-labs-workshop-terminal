@@ -159,6 +159,14 @@ form with multiple selections on the pinned Linux CLI. Both UI acknowledgements
 and collector correlation passed in those controlled cells. The earlier missing
 assistant records during a tool-using build remain unexplained; Codex exited at
 startup in both probe attempts, so its question delivery remains unverified.
+The subsequent [startup and coach-hint repair](evidence/workshop-contract-r02/codex-startup-and-coach-hint-20261009/README.md)
+reproduced Codex's long client socket pathname failure in a disposable Linux
+App and verified the exact WT short-HOME helper: native daemon start passed in
+1.699 seconds, with the original state preserved. The banner now offers a quick
+idea choice without claiming CLI readiness, and ended terminals retain their
+output with Relaunch. Local Browser checks and 76 focused backend / 107 frontend
+tests passed. These runtime changes still need a newly packaged, CT-compatible
+WT TUI test; daemon startup does not qualify model reply delivery or generated UX.
 Repeat the isolated Claude WT-to-app journey through Computer/Browser and
 independently check its generated UI, recording collector gaps separately.
 Actual CT integration follows a passing isolated result. R02 has been exercised
