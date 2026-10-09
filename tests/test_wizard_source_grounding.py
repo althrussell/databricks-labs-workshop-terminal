@@ -176,6 +176,7 @@ def test_labelled_working_samples_can_preserve_the_requested_object(monkeypatch)
 
 @pytest.mark.parametrize("claim", [
     "The prepared source has verified genre values.",
+    "The source includes verified device values for a simple comparison.",
     "The product values are confirmed.",
     "Use validated product rows in the preview.",
 ])
@@ -188,6 +189,7 @@ def test_verified_columns_do_not_establish_verified_row_values(monkeypatch, clai
 
 
 @pytest.mark.parametrize("wording", [
+    "The listed device column supports the comparison; inspect its sample values first.",
     "The price columns are verified; row values are not verified.",
     "The source does not have verified product values.",
     "Inspect the product rows and verify their values before building the preview.",

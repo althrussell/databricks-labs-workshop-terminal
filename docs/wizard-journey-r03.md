@@ -5,6 +5,17 @@ visible cards and two empty/rejected results, with one primary task/source misma
 main through merged Agent Bricks PR91 (`2a19cde`); that feature remains opt-in.
 This work does not change Control Tower.
 
+The follow-up on `4c1825d` reused the original Labs app and its provisioned compute
+under a new bounded receipt. CI passed, including the offline release smoke after
+registry fallback was added. The live dry run attempted three of 13 regression
+cases and stopped: two model cards were visible; the third incorrectly claimed
+verified device values despite inspecting metadata only and was correctly rejected.
+The other ten were not dispatched. Field-level generation guidance now explains
+fit through the requested action and listed columns, states that the wizard read
+zero rows, and requires consistency with unresolved row inspection. Honest metadata
+wording and the actual false device-value claim have positive/negative controls.
+This repair still needs a new live run; the failed run remains failed.
+
 The wizard now asks for a useful goal or offers a deliberate choice of ideas,
 then opens a ready agent with the saved task. Industry and collaboration style
 are optional. There is no model request on mount or typing. Removing Surprise

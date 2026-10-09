@@ -156,6 +156,13 @@ for _field, _target in _COPY_TARGETS.items():
     # validate the full reply locally rather than constraining its last token.
     _CARD_SCHEMA["properties"][_field].update(
         minLength=1, description=f"Brief, complete wording; aim for at most {_target} characters.")
+_CARD_SCHEMA["properties"]["fit_reason"]["description"] += (
+    " Explain how the proposed action helps the attendee's task. For prepared data, "
+    "describe what its listed columns can support, not the contents of unseen rows. "
+    "For example: 'The listed category column supports the requested comparison; "
+    "inspect its sample values first.' No rows have been read by this wizard. "
+    "Never describe row values, records or distributions as verified or confirmed."
+)
 _CARD_SCHEMA["properties"]["prompt"]["description"] += (
     " Describe the attendee's object and primary action. The server adds source discovery and "
     "verified dependencies; never explain sample generation by claiming a dataset is absent."
@@ -169,7 +176,8 @@ _CARD_SCHEMA["properties"]["assumptions"]["items"]["description"] = (
     "A proposed demo default, not a source-availability assertion. Prepared daily previews use a selected sample day."
 )
 _CARD_SCHEMA["properties"]["unresolved"]["items"]["description"] = (
-    "A material unknown. Describe missing source attributes as unverified, never absent from the catalog."
+    "A material unknown. Describe missing source attributes as unverified, never absent from the catalog. "
+    "Sample row values and distributions remain uninspected; no other field may claim they are verified."
 )
 
 
@@ -802,8 +810,12 @@ def _prompt(text: str, industry: str, intent: str = "", *, industry_locked: bool
         "a data restriction: use task-fitting samples from any listed schema while keeping a confirmed chip. "
         "Never invent schemas, tables or columns. Metadata is not SELECT, "
         "join or generated-app resource verification.\n"
-        "- Verified column names do not mean verified row values. Say the column is verified and "
-        "its values still need inspection; never claim rows, entries or values have been validated.\n"
+        "- Source evidence below is metadata only: this wizard has read zero sample rows. "
+        "Explain fit through the requested action and listed columns, for example 'The category "
+        "column supports this comparison; inspect its sample values first.' A column's presence "
+        "does not confirm its values, distribution, dates or record contents. Do not describe "
+        "rows, entries or values as verified, confirmed or validated in any field. Check that "
+        "fit_reason and unresolved agree about what still needs inspection.\n"
         "- Choose the source for the attendee's object and workflow, not the other way around. "
         "Inventory order is only a search hint. An available source with similar-looking counts "
         "or statuses is not interchangeable with a different business object. Keep the requested "
