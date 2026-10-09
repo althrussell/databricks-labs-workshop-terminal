@@ -1,0 +1,23 @@
+- region "Notifications alt+T"
+- main:
+  - text: No orders yet Add your first order and it'll show up here, sorted by what needs attention.
+  - button "Add an order"
+- dialog "Add an order":
+  - heading "Add an order" [level=2]
+  - paragraph: It'll show up on the board, sorted by due date.
+  - text: Customer
+  - textbox "Customer":
+    - /placeholder: e.g. Priya Shah
+    - text: R01 Bakery Customer
+  - text: Order
+  - textbox "Order":
+    - /placeholder: e.g. 2 dozen chocolate chip cookies
+    - text: 2 dozen rolls
+  - text: Due date
+  - textbox "Due date": 2026-10-08
+  - text: Notes (optional)
+  - textbox "Notes (optional)":
+    - /placeholder: e.g. nut allergy, pickup after 2pm
+    - text: Synthetic R01 UI test
+  - button "Add order"
+  - button "Close"

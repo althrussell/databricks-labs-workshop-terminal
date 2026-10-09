@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "scenario_id": "novice-bakery-order-queue-v1",
+  "public_input": {
+    "persona": "business",
+    "entry_path": "workshop_terminal_wizard",
+    "message": "I run a small bakery. Can you make a page so I know which orders need attention?"
+  },
+  "simulator_private": {
+    "users": "The people working in the shop.",
+    "attention": "Orders that are late and haven't been packed yet. Show those first.",
+    "primary_action": "Mark an order as packed when it's ready.",
+    "remember_changes": "Yes, it should remember what we changed.",
+    "data": "Sample orders are fine for today.",
+    "current_workflow": "We use a spreadsheet and keep asking each other what's ready.",
+    "scope_exclusions": "We don't need payments or customers signing in today.",
+    "technical_choice_reply": "I don't know what that means. What would you recommend?",
+    "visual_choice_reply": "Please choose something easy for the team to use."
+  }
+}

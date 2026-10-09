@@ -1,0 +1,1478 @@
+{
+  "schema_version": 1,
+  "scope": "simulated_control_tower",
+  "control_tower_requests": 0,
+  "evaluator_source": [
+    {
+      "path": "scripts/run_generated_app_journey.py",
+      "sha256": "bc4c8885862a48bfd76cdcc834c93c792d8db624fb5681987a32f5fad49f8d8d"
+    },
+    {
+      "path": "evals/generated_apps/journey.py",
+      "sha256": "53bc2ef4c053d10bf85eb117c7c71b3646f4b1c3262eb12d9dbf615b98cd1b0a"
+    },
+    {
+      "path": "evals/generated_apps/simulator.py",
+      "sha256": "1a8fb1875aa89fbf868d391a1a188645c285cfb58b6f4e5e3478a32523e4b599"
+    },
+    {
+      "path": "evals/generated_apps/interactions.py",
+      "sha256": "0851abd2d326e3ffc08e406f86a67c20dc539597ec932282460cc0b44ee5070d"
+    },
+    {
+      "path": "evals/generated_apps/report.py",
+      "sha256": "0d50ec4d017ab4c62093427e9c81f446a0c160e654ceed4c897a46f764415e1e"
+    },
+    {
+      "path": "evals/generated_apps/adapters/browser.py",
+      "sha256": "66c3de1b8c04bc123c7fdc41f741a32e785675a08c5f4a3b48d7f2ca48f46e9f"
+    },
+    {
+      "path": "evals/generated_apps/adapters/harness.py",
+      "sha256": "391c3840e60f3fe615683ff160f25e06fcaecf2ea8a24635045c99436a508061"
+    },
+    {
+      "path": "evals/generated_apps/adapters/simulated_control_tower.py",
+      "sha256": "f23cd72abcb2c912520b2748a454d387943422481a6b56471fb319a817c746e6"
+    }
+  ],
+  "accepted": false,
+  "verdict": "unverified",
+  "status": "journey_finished",
+  "mode": "build",
+  "entry_path": "skip_wizard",
+  "agent_id": "claude",
+  "startup_qualification_requested": true,
+  "unverified_checks": [
+    "event_attendee_equivalence",
+    "obo_consent",
+    "token_and_spend_enforcement",
+    "tool_and_worker_attribution",
+    "implementation_timing",
+    "native_transcript_authenticity",
+    "critical_user_task",
+    "backend_persistence",
+    "app_restart_persistence",
+    "first_and_final_ux"
+  ],
+  "limitations": [
+    "A consultation probe or deployed-app observation does not establish full app acceptance."
+  ],
+  "model_qualification": {
+    "receipt_sha256": "2fba8ed6dfbbc86a04f3fe4673790aa3318bcaa679e977acc9788fe6366d19a5",
+    "all_roles_invoked": true,
+    "application_id": "245e0b42-da94-4a24-b7f3-0f213bc721cb"
+  },
+  "target": {
+    "marker": "wt-eval-r01-1009-68bd",
+    "workspace_host": "https://dbc-e155652a-2cba.cloud.databricks.com",
+    "workspace_id": "7474655950495189",
+    "deployment_id": "01f1c379b2d61f4f824640833ffca5b3",
+    "source_path": "/Workspace/Shared/wt-eval-r01-1009-68bd/workshop-terminal",
+    "attendee": {
+      "email": "labuser+1@awsbricks.com",
+      "mode": "synthetic_attendee",
+      "persona": "synthetic_nontechnical",
+      "identity_verified": false,
+      "event_attendee_equivalence_verified": false
+    },
+    "app_id": "245e0b42-da94-4a24-b7f3-0f213bc721cb",
+    "app_name": "wt-eval-r01-1009-68bd-wt",
+    "app_url": "https://wt-eval-r01-1009-68bd-wt-7474655950495189.aws.databricksapps.com"
+  },
+  "declared_budget": {
+    "total_seconds": 1800,
+    "consultation_seconds": 180,
+    "token_ceiling": 100000,
+    "spend_ceiling_usd": 5
+  },
+  "deployment_verification": {
+    "verified": true,
+    "workspace_id": "7474655950495189",
+    "workspace_host": "https://dbc-e155652a-2cba.cloud.databricks.com",
+    "app_name": "wt-eval-r01-1009-68bd-wt",
+    "app_id": "245e0b42-da94-4a24-b7f3-0f213bc721cb",
+    "app_url": "https://wt-eval-r01-1009-68bd-wt-7474655950495189.aws.databricksapps.com",
+    "service_principal_id": 78655089022656,
+    "operator_email": "al.thrussell+genai@databricks.com",
+    "attendee_mode": "synthetic_attendee",
+    "deployment_id": "01f1c379b2d61f4f824640833ffca5b3",
+    "deployment_state": "SUCCEEDED",
+    "runtime_snapshot": {
+      "snapshot_path": "/Workspace/Users/245e0b42-da94-4a24-b7f3-0f213bc721cb/src/01f1c379b2d61f4f824640833ffca5b3",
+      "manifest_digest": "352d0fd21663b0a0dae142b3327db8bc100367a5165c92e223df19a6d615bc0a",
+      "file_count": 6,
+      "bytes_verified": 51354,
+      "all_file_hashes_verified": true
+    },
+    "instrumented_release": true,
+    "control_tower_requests": 0,
+    "obo_consent_verified": false,
+    "event_attendee_equivalence_verified": false
+  },
+  "project_precondition": {
+    "observed_at": "2026-10-09T00:40:02.743282+00:00",
+    "source": "restricted_synthetic_home_metadata",
+    "directory_exists": false,
+    "entry_count": 0,
+    "empty": true
+  },
+  "effective_budget": {
+    "total_seconds": 1800,
+    "consultation_seconds": 180,
+    "token_ceiling": 100000,
+    "spend_ceiling_usd": 5,
+    "token_and_spend_enforcement_verified": false
+  },
+  "journey": {
+    "mode": "build",
+    "status": "unverified",
+    "stop_reason": "deployment_before_correlated_scope_agreement",
+    "entry": {
+      "identity": "labuser+1@awsbricks.com",
+      "entry_path": "skip_wizard",
+      "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+      "agent_id": "claude",
+      "wizard_enabled": true,
+      "wizard_should_show": false,
+      "saved_brief": {
+        "record_id": "8f2b5179f6ce4eada204ec7947e44da8",
+        "what_building": "",
+        "industry": "",
+        "intent": "",
+        "idea_id": "",
+        "current_stack": [],
+        "persona": "",
+        "seen": true,
+        "skipped": true,
+        "completed_at": "",
+        "industry_stated": false
+      },
+      "starter_prompt_from_save": "",
+      "prompt_delivery_request": "",
+      "prompt_delivery_http_status": null,
+      "friction": [
+        "owned_folder_trust_requires_confirmation",
+        "evaluator_confirmed_owned_folder_trust"
+      ],
+      "opening_submitted": true,
+      "harness_readiness_verified": true,
+      "prompt_preservation_verified": false,
+      "error_code": "",
+      "error_detail": ""
+    },
+    "native_session_id": "e0b79785-ed06-4179-9376-f1e2a97d7021",
+    "harness_id": "claude",
+    "harness_version": "2.1.283",
+    "messages": [
+      {
+        "message_id": "b55c758379bcdcaad10329defd0dbc3ecba1e427cd0461e3fe28128e39084f8e",
+        "timestamp": "2026-10-09T00:40:07.847Z",
+        "role": "user",
+        "visibility": "user",
+        "complete": true,
+        "text": "I run a small bakery. Can you make a page so I know which orders need attention?",
+        "observed_elapsed_seconds": 6.174786250005127
+      },
+      {
+        "message_id": "3b6bd7ec9bd9eee086204a9265a0f5474c081b997a462f89845b567dd054c40d",
+        "timestamp": "2026-10-09T00:40:16.883Z",
+        "role": "assistant",
+        "visibility": "user",
+        "complete": true,
+        "text": "A page that flags which bakery orders need attention \u2014 got it. Quick question before I build: today, how do you track orders (paper, a spreadsheet, something else), and what usually makes an order \"need attention\" for you \u2014 it's due soon, it hasn't been paid, it's a custom/special request, something else?\n\nI'll default to building a page with orders due today/tomorrow and unpaid orders flagged first, but tell me what matters most for your bakery and I'll build around that.",
+        "observed_elapsed_seconds": 13.073094834006042
+      },
+      {
+        "message_id": "c899c76a2f0386c5aa54bb0f610bb4aec742f8eb940fa56c536c94d6e8b0ffa2",
+        "timestamp": "2026-10-09T00:40:17.181Z",
+        "role": "user",
+        "visibility": "user",
+        "complete": true,
+        "text": "Orders that are late and haven't been packed yet. Show those first. We use a spreadsheet and keep asking each other what's ready.",
+        "observed_elapsed_seconds": 15.39718187499966
+      },
+      {
+        "message_id": "1c7d5a27656c3e7b22fd12b69f33ee4bf4f2b0b96306e0705196b9cd79588a74",
+        "timestamp": "2026-10-09T00:48:57.271Z",
+        "role": "assistant",
+        "visibility": "user",
+        "complete": true,
+        "text": "I've kicked off the deploy \u2014 a first deploy spins up fresh app compute, so it takes a few minutes. I'll check back shortly and send you the link.",
+        "observed_elapsed_seconds": 533.7681880000018
+      }
+    ],
+    "deliveries": [
+      {
+        "text": "I run a small bakery. Can you make a page so I know which orders need attention?",
+        "decision": "opening",
+        "in_reply_to": null,
+        "fact_ids": [],
+        "ui_submitted": true,
+        "native_correlated": true,
+        "submitted_elapsed_seconds": 3.7531116669997573,
+        "native_message_id": "b55c758379bcdcaad10329defd0dbc3ecba1e427cd0461e3fe28128e39084f8e",
+        "correlated_elapsed_seconds": 6.174791500001447
+      },
+      {
+        "text": "Orders that are late and haven't been packed yet. Show those first. We use a spreadsheet and keep asking each other what's ready.",
+        "decision": "answer",
+        "in_reply_to": "3b6bd7ec9bd9eee086204a9265a0f5474c081b997a462f89845b567dd054c40d",
+        "fact_ids": [
+          "attention",
+          "current_workflow"
+        ],
+        "ui_submitted": true,
+        "native_correlated": true,
+        "submitted_elapsed_seconds": 13.091388625005493,
+        "native_message_id": "c899c76a2f0386c5aa54bb0f610bb4aec742f8eb940fa56c536c94d6e8b0ffa2",
+        "correlated_elapsed_seconds": 15.397187042006408
+      }
+    ],
+    "simulator": {
+      "schema_version": 1,
+      "scenario_id": "novice-bakery-order-queue-v1",
+      "scenario_sha256": "7eeb44e2c4ec6b9fef7c622198741fdb5ed350b0d3367ef5f7614efc8efa9b13",
+      "policy": "deterministic-bakery-v1",
+      "scope_agreed": false,
+      "reply_count": 2,
+      "stop_reason": "consultation_deadline",
+      "events": [
+        {
+          "sequence": 1,
+          "elapsed_seconds": 4e-06,
+          "builder_message_id": null,
+          "builder_message_sha256": null,
+          "decision": "opening",
+          "reply_text": "I run a small bakery. Can you make a page so I know which orders need attention?",
+          "fact_ids": [],
+          "provenance": "public_opening",
+          "agreement": false,
+          "reason": null
+        },
+        {
+          "sequence": 2,
+          "elapsed_seconds": 13.08945,
+          "builder_message_id": "3b6bd7ec9bd9eee086204a9265a0f5474c081b997a462f89845b567dd054c40d",
+          "builder_message_sha256": "98f0c8edbba341b8d8442b203fd92baebeaa46dcda307ad26e07d4fbf5290c13",
+          "decision": "answer",
+          "reply_text": "Orders that are late and haven't been packed yet. Show those first. We use a spreadsheet and keep asking each other what's ready.",
+          "fact_ids": [
+            "attention",
+            "current_workflow"
+          ],
+          "provenance": "explicit_assistant_question",
+          "agreement": false,
+          "reason": null
+        }
+      ]
+    },
+    "first_complete_assistant": {
+      "message_id": "3b6bd7ec9bd9eee086204a9265a0f5474c081b997a462f89845b567dd054c40d",
+      "timestamp": "2026-10-09T00:40:16.883Z",
+      "role": "assistant",
+      "visibility": "user",
+      "complete": true,
+      "text": "A page that flags which bakery orders need attention \u2014 got it. Quick question before I build: today, how do you track orders (paper, a spreadsheet, something else), and what usually makes an order \"need attention\" for you \u2014 it's due soon, it hasn't been paid, it's a custom/special request, something else?\n\nI'll default to building a page with orders due today/tomorrow and unpaid orders flagged first, but tell me what matters most for your bakery and I'll build around that.",
+      "observed_elapsed_seconds": 13.073094834006042
+    },
+    "material_consultation_observed": true,
+    "scope_agreement_delivered": false,
+    "consultation_deadline_enforced": true,
+    "consultation_status": "failed",
+    "consultation_stop_reason": "consultation_scope_not_agreed",
+    "consultation_closed_elapsed_seconds": 181.673135584002,
+    "no_question_before_scope_agreement_observed": false,
+    "total_deadline_enforced": false,
+    "polls": 264,
+    "elapsed_seconds": 620.9301931670052,
+    "budget_start": "before_normal_ui_entry",
+    "cleanup": {
+      "status": "closed_owned_ui_session",
+      "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b"
+    },
+    "app_observations": [
+      {
+        "status": "awaiting",
+        "app_url": "",
+        "artifacts": [],
+        "source": "live workspace app inventory difference",
+        "observed_elapsed_seconds": 4.1367093340086285
+      },
+      {
+        "status": "deployment_observed",
+        "app_url": "https://bakery-orders-7474655950495189.aws.databricksapps.com",
+        "artifacts": [
+          "workspace-app:5d8f6f22-85b3-4cc9-a2d6-104b667619c1"
+        ],
+        "source": "live workspace app inventory difference",
+        "observed_elapsed_seconds": 618.7620691670018
+      }
+    ],
+    "full_app_acceptance_verified": false,
+    "accepted": false,
+    "unverified_checks": [
+      "tool_and_worker_attribution",
+      "implementation_timing",
+      "native_transcript_authenticity",
+      "full_app_acceptance"
+    ]
+  },
+  "startup_qualification": {
+    "enabled": true,
+    "source": "attendee_browser_existing_pty_startup_screen",
+    "status": "qualified",
+    "expected_cwd": "/app/python/source_code/data/wt-eval-r01-1009-68bd/users/labuser-1-e2e66dc8/projects",
+    "actions": [
+      {
+        "kind": "select_owned_folder_trust",
+        "key": "ArrowDown",
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "cwd": "/app/python/source_code/data/wt-eval-r01-1009-68bd/users/labuser-1-e2e66dc8/projects"
+      },
+      {
+        "kind": "selected_owned_folder_trust",
+        "key": "Enter",
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "cwd": "/app/python/source_code/data/wt-eval-r01-1009-68bd/users/labuser-1-e2e66dc8/projects"
+      }
+    ],
+    "captures": [
+      {
+        "label": "owned-folder-trust-default-no",
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "screenshot": "/private/tmp/wt-r01-bakery-journey13-68bd.json.startup-browser/1-owned-folder-trust-default-no.png",
+        "screen_text": "/private/tmp/wt-r01-bakery-journey13-68bd.json.startup-browser/1-owned-folder-trust-default-no.txt",
+        "screenshot_sha256": "adac485675a5861e440aa9bf9a102da791e2d86fb66378ead90d3430f8e3df6a",
+        "screen_text_sha256": "cb43db5e35a8cab4d859b79c3b42189eda8c8bc8bff879f1cdb099250dfa625a"
+      },
+      {
+        "label": "owned-folder-trust",
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "screenshot": "/private/tmp/wt-r01-bakery-journey13-68bd.json.startup-browser/2-owned-folder-trust.png",
+        "screen_text": "/private/tmp/wt-r01-bakery-journey13-68bd.json.startup-browser/2-owned-folder-trust.txt",
+        "screenshot_sha256": "a8dd758e09b19d4457a3a7191ece2740452cb4f32501c1b5e8a1096f703204d8",
+        "screen_text_sha256": "2a60d857f061f6e6d4ec2c0e79ac03387494c642782fd8403948d338308ae009"
+      },
+      {
+        "label": "native-prompt",
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "screenshot": "/private/tmp/wt-r01-bakery-journey13-68bd.json.startup-browser/3-native-prompt.png",
+        "screen_text": "/private/tmp/wt-r01-bakery-journey13-68bd.json.startup-browser/3-native-prompt.txt",
+        "screenshot_sha256": "b887f3e98328740156fbf6f2053befaf1a305f201bfd4a44131b17bc56622833",
+        "screen_text_sha256": "85e7ed0993f25ac6b9123e2ddfd67d971047b455cb3ffcc6cbcebe70b78f6146"
+      }
+    ],
+    "native_prompt_verified": true,
+    "user_scope_consent_inferred": false,
+    "assistant_turns_inferred": false,
+    "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+    "owned_folder_trust_confirmed": true
+  },
+  "terminal_browser": {
+    "status": "captured",
+    "source": "identified_attendee_terminal_browser",
+    "artifacts": {
+      "screenshot": "/private/tmp/wt-r01-bakery-journey13-68bd.json.wt-browser/final-wt.png",
+      "accessibility_snapshot": "/private/tmp/wt-r01-bakery-journey13-68bd.json.wt-browser/final-wt.aria.txt"
+    }
+  },
+  "operator_observation": {
+    "separate_from_attendee_browser": true,
+    "requests": [
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      },
+      {
+        "session_id": "67ae1a50-3def-43d7-a84f-6190a2b4e75b",
+        "http_status": 200
+      }
+    ],
+    "collection_failure": null
+  },
+  "app_discovery": {
+    "status": "deployment_observed",
+    "candidates": [
+      {
+        "app_id": "5d8f6f22-85b3-4cc9-a2d6-104b667619c1",
+        "app_name": "bakery-orders",
+        "creator": "245e0b42-da94-4a24-b7f3-0f213bc721cb",
+        "namespace_marker_observed": false,
+        "unique_terminal_sp_creator": true,
+        "source_code_path": "/Workspace/Users/245e0b42-da94-4a24-b7f3-0f213bc721cb/.bundle/bakery-orders/default/files",
+        "deployment_id": "01f1c37b50c31b74a68f102244de710d",
+        "deployment_state": "SUCCEEDED",
+        "app_state": "RUNNING",
+        "url": "https://bakery-orders-7474655950495189.aws.databricksapps.com"
+      }
+    ],
+    "unattributed_new_attendee_apps": 0,
+    "baseline_count": 7
+  },
+  "assessment": {
+    "verdict": "unverified",
+    "complete_assistant_text_available": true,
+    "consultation": {
+      "verdict": "failed",
+      "reason": "consultation_scope_not_agreed",
+      "closed_elapsed_seconds": 181.673135584002,
+      "deadline_enforced": true,
+      "scope_agreement_delivered": false,
+      "no_question_before_scope_agreement_observed": false
+    },
+    "native_format_qualification_verified": false,
+    "quality_failure_inferred_from_silence": false,
+    "reason": "full_app_acceptance_unverified",
+    "operational_status": "unverified",
+    "operational_stop_reason": "deployment_before_correlated_scope_agreement"
+  }
+}

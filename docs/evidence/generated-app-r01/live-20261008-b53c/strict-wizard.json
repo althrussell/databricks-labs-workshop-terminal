@@ -1,0 +1,180 @@
+{
+  "schema_version": 1,
+  "scope": "simulated_control_tower",
+  "control_tower_requests": 0,
+  "accepted": false,
+  "verdict": "failed",
+  "status": "journey_finished",
+  "mode": "build",
+  "entry_path": "wizard",
+  "agent_id": "claude",
+  "unverified_checks": [
+    "event_attendee_equivalence",
+    "obo_consent",
+    "token_and_spend_enforcement",
+    "tool_and_worker_attribution",
+    "implementation_timing",
+    "native_transcript_authenticity",
+    "critical_user_task",
+    "backend_persistence",
+    "app_restart_persistence",
+    "first_and_final_ux"
+  ],
+  "limitations": [
+    "A consultation probe or deployed-app observation does not establish full app acceptance."
+  ],
+  "target": {
+    "marker": "wt-eval-r01-1008-b53c",
+    "workspace_host": "https://dbc-e155652a-2cba.cloud.databricks.com",
+    "workspace_id": "7474655950495189",
+    "deployment_id": "01f1c2e7c80c1e8c89d3098ad707d5ce",
+    "source_path": "/Workspace/Shared/wt-eval-r01-1008-b53c/workshop-terminal",
+    "attendee": {
+      "email": "labuser+1@awsbricks.com",
+      "mode": "synthetic_attendee",
+      "persona": "synthetic_nontechnical",
+      "identity_verified": false,
+      "event_attendee_equivalence_verified": false
+    },
+    "app_id": "6bff7044-f479-43bc-834b-4cf40b5ed654",
+    "app_name": "wt-eval-r01-1008-b53c-wt",
+    "app_url": "https://wt-eval-r01-1008-b53c-wt-7474655950495189.aws.databricksapps.com"
+  },
+  "declared_budget": {
+    "total_seconds": 1800,
+    "consultation_seconds": 180,
+    "token_ceiling": 100000,
+    "spend_ceiling_usd": 5
+  },
+  "deployment_verification": {
+    "verified": true,
+    "workspace_id": "7474655950495189",
+    "workspace_host": "https://dbc-e155652a-2cba.cloud.databricks.com",
+    "app_name": "wt-eval-r01-1008-b53c-wt",
+    "app_id": "6bff7044-f479-43bc-834b-4cf40b5ed654",
+    "app_url": "https://wt-eval-r01-1008-b53c-wt-7474655950495189.aws.databricksapps.com",
+    "service_principal_id": 70742253194359,
+    "operator_email": "al.thrussell+genai@databricks.com",
+    "attendee_mode": "synthetic_attendee",
+    "deployment_id": "01f1c2e7c80c1e8c89d3098ad707d5ce",
+    "deployment_state": "SUCCEEDED",
+    "runtime_snapshot": {
+      "snapshot_path": "/Workspace/Users/6bff7044-f479-43bc-834b-4cf40b5ed654/src/01f1c2e7c80c1e8c89d3098ad707d5ce",
+      "manifest_digest": "9a23981f1705dd0ad9e0544dceaadcb77be87f9f832c3bf9c01a8e9a46636e81",
+      "file_count": 419,
+      "bytes_verified": 5258226,
+      "all_file_hashes_verified": true
+    },
+    "instrumented_release": true,
+    "control_tower_requests": 0,
+    "obo_consent_verified": false,
+    "event_attendee_equivalence_verified": false
+  },
+  "effective_budget": {
+    "total_seconds": 1800,
+    "consultation_seconds": 180,
+    "token_ceiling": 100000,
+    "spend_ceiling_usd": 5,
+    "token_and_spend_enforcement_verified": false
+  },
+  "journey": {
+    "mode": "build",
+    "status": "failed",
+    "stop_reason": "industry_required",
+    "entry": {
+      "identity": "labuser+1@awsbricks.com",
+      "entry_path": "wizard",
+      "session_id": "",
+      "agent_id": "",
+      "wizard_enabled": true,
+      "saved_brief": {},
+      "starter_prompt_from_save": "",
+      "prompt_delivery_request": "",
+      "prompt_delivery_http_status": null,
+      "friction": [
+        "plain_goal_blocked_by_industry_gate"
+      ],
+      "opening_submitted": false,
+      "harness_readiness_verified": false,
+      "prompt_preservation_verified": false,
+      "error_code": "industry_required",
+      "error_detail": "The typed novice goal cannot continue without confirming an industry."
+    },
+    "native_session_id": "",
+    "harness_id": "claude",
+    "harness_version": "2.1.237",
+    "messages": [],
+    "deliveries": [],
+    "simulator": {
+      "schema_version": 1,
+      "scenario_id": "novice-bakery-order-queue-v1",
+      "scenario_sha256": "7eeb44e2c4ec6b9fef7c622198741fdb5ed350b0d3367ef5f7614efc8efa9b13",
+      "policy": "deterministic-bakery-v1",
+      "scope_agreed": false,
+      "reply_count": 1,
+      "stop_reason": null,
+      "events": [
+        {
+          "sequence": 1,
+          "elapsed_seconds": 6e-06,
+          "builder_message_id": null,
+          "builder_message_sha256": null,
+          "decision": "opening",
+          "reply_text": "I run a small bakery. Can you make a page so I know which orders need attention?",
+          "fact_ids": [],
+          "provenance": "public_opening",
+          "agreement": false,
+          "reason": null
+        }
+      ]
+    },
+    "first_complete_assistant": null,
+    "material_consultation_observed": false,
+    "scope_agreement_delivered": false,
+    "consultation_deadline_enforced": false,
+    "total_deadline_enforced": false,
+    "polls": 0,
+    "elapsed_seconds": 0.608071041002404,
+    "budget_start": "before_normal_ui_entry",
+    "cleanup": {
+      "status": "not_needed"
+    },
+    "app_observations": [],
+    "full_app_acceptance_verified": false,
+    "accepted": false,
+    "unverified_checks": [
+      "tool_and_worker_attribution",
+      "implementation_timing",
+      "native_transcript_authenticity",
+      "full_app_acceptance"
+    ]
+  },
+  "terminal_browser": {
+    "status": "captured",
+    "source": "identified_attendee_terminal_browser",
+    "artifacts": {
+      "screenshot": "/private/tmp/wt-eval-r01-b53c-strict-wizard-live.json.wt-browser/final-wt.png",
+      "accessibility_snapshot": "/private/tmp/wt-eval-r01-b53c-strict-wizard-live.json.wt-browser/final-wt.aria.txt"
+    }
+  },
+  "operator_observation": {
+    "separate_from_attendee_browser": true,
+    "requests": [],
+    "collection_failure": null
+  },
+  "app_discovery": {
+    "status": "observing",
+    "candidates": [],
+    "unattributed_new_attendee_apps": 0,
+    "baseline_count": 7
+  },
+  "assessment": {
+    "verdict": "failed",
+    "complete_assistant_text_available": false,
+    "native_format_qualification_verified": false,
+    "quality_failure_inferred_from_silence": false,
+    "reason": "full_app_acceptance_unverified",
+    "operational_status": "failed",
+    "operational_stop_reason": "industry_required"
+  }
+}

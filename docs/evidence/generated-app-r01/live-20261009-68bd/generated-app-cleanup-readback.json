@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "operation": "verify_generated_cleanup_after_purge",
+  "scope": "simulated_control_tower",
+  "control_tower_mutations": 0,
+  "workspace_mutations": 0,
+  "accepted": false,
+  "purge_receipt_sha256": "1a38036062ee3a00b7f860f3de58af51f735c215ec145fdc8a0a108078fa0b56",
+  "collector_failure": "The purge request succeeded, but serializing the SDK operation.name method stopped its receipt writer. This independent followup verifies actual absence.",
+  "observations": [
+    {
+      "kind": "generated_app",
+      "identity": "5d8f6f22-85b3-4cc9-a2d6-104b667619c1",
+      "absence_verified": true
+    },
+    {
+      "kind": "workspace_directory",
+      "identity": "1778343084214827",
+      "absence_verified": true
+    },
+    {
+      "kind": "workspace_directory",
+      "identity": "1778343084214887",
+      "absence_verified": true
+    },
+    {
+      "kind": "workspace_directory",
+      "identity": "1778343084214938",
+      "absence_verified": true
+    },
+    {
+      "kind": "lakebase_project",
+      "identity": "b6fb2a0d-85e3-45d3-b9ab-e9611b1e2262",
+      "absence_verified": true
+    }
+  ],
+  "started_at": "2026-10-09T01:12:17.290208+00:00",
+  "control_tower_after": {
+    "id": "4f1951af-9397-4462-b283-9a66c76b234f",
+    "active_deployment_id": "01f1bbc1de2911cb93356caa765f77a3",
+    "state": "RUNNING",
+    "compute": "ACTIVE"
+  },
+  "status": "cleanup_verified",
+  "control_tower_deployment_unchanged": true,
+  "completed_at": "2026-10-09T01:12:18.209334+00:00"
+}

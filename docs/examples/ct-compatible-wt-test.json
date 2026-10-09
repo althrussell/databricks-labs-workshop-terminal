@@ -1,0 +1,33 @@
+{
+  "marker": "wt-eval-r01-demo-1",
+  "workspace_host": "https://dbc-e155652a-2cba.cloud.databricks.com",
+  "workspace_id": "7474655950495189",
+  "profile": "labs",
+  "attendee_email": "labuser+1@awsbricks.com",
+  "attendee_mode": "synthetic_attendee",
+  "disposable": true,
+  "ttl_seconds": 14400,
+  "cost_budget_usd": 10,
+  "harnesses": ["claude", "codex"],
+  "onboarding_wizard": true,
+  "llm_wizard": true,
+  "evaluation_observation": true,
+  "package": {
+    "manifest_sha256": "345509ef449a910f7e901a2ab7aaf8580aa4a7ade976ee9c4c4281d5652f9f63"
+  },
+  "toolchain_mirror": {
+    "source_volume": "/Volumes/main/wt_central/toolchain",
+    "strict": false
+  },
+  "model_policy": {
+    "revision": 1,
+    "pool": [
+      {"service_name": "system.ai.claude-sonnet-5", "enabled": true, "capabilities": ["claude"], "principal_classes": ["wt_sp"], "limit_profile": {}},
+      {"service_name": "system.ai.claude-haiku-4-5", "enabled": true, "capabilities": ["claude"], "principal_classes": ["wt_sp"], "limit_profile": {}},
+      {"service_name": "system.ai.gpt-5-6-terra", "enabled": true, "capabilities": ["codex"], "principal_classes": ["wt_sp"], "limit_profile": {}},
+      {"service_name": "system.ai.gpt-oss-120b", "enabled": true, "capabilities": ["chat"], "principal_classes": ["wt_sp"], "limit_profile": {}}
+    ],
+    "denied_models": ["system.ai.claude-opus-4-8"],
+    "restart_processes": false
+  }
+}

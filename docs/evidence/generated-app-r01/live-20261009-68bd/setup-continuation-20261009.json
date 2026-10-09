@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "status": "setup_attempts_excluded",
+  "control_tower_requests": 0,
+  "auth_state_archived": false,
+  "attempts": [
+    {
+      "artifact": "journey-6.json",
+      "source_sha256": "3814e1408fd14dddca3c4aa3e23448ba17612972c1726980148b00556ab914f3",
+      "archived_sha256": "3814e1408fd14dddca3c4aa3e23448ba17612972c1726980148b00556ab914f3",
+      "eligible_for_quality": false,
+      "stop_reason": "native_line_size_budget"
+    },
+    {
+      "artifact": "journey-7.json",
+      "source_sha256": "a5e201e88dbecf170cee06f46b07fc70c8d8b39186c60096e7604aa303b0a0c8",
+      "archived_sha256": "a5e201e88dbecf170cee06f46b07fc70c8d8b39186c60096e7604aa303b0a0c8",
+      "eligible_for_quality": false,
+      "stop_reason": "unsupported_native_question"
+    },
+    {
+      "artifact": "journey-8.json",
+      "source_sha256": "2bed90f320fa2d79f649b9df1dc71be3b95e5bf8b8ed713c72223d82f15275bc",
+      "archived_sha256": "2bed90f320fa2d79f649b9df1dc71be3b95e5bf8b8ed713c72223d82f15275bc",
+      "eligible_for_quality": false,
+      "stop_reason": "operation_timeout"
+    },
+    {
+      "artifact": "journey-9.json",
+      "source_sha256": "337794820db604883e9192e38a163ecd700f8967afc7e946a4b3c1f117b2e67b",
+      "archived_sha256": "337794820db604883e9192e38a163ecd700f8967afc7e946a4b3c1f117b2e67b",
+      "eligible_for_quality": false,
+      "stop_reason": "startup_native_prompt_unverified"
+    },
+    {
+      "artifact": "journey-10.json",
+      "source_sha256": "fca2cc609cb5744f3cd1f790f4768c058e70845c7be1359abe8b15709671292b",
+      "archived_sha256": "fca2cc609cb5744f3cd1f790f4768c058e70845c7be1359abe8b15709671292b",
+      "eligible_for_quality": false,
+      "stop_reason": "operation_timeout"
+    },
+    {
+      "artifact": "journey-11.json",
+      "source_sha256": "4a1223dee24659f649aa13288a6257564c515c78e1bfbb2190ea0cb155a490b6",
+      "archived_sha256": "4a1223dee24659f649aa13288a6257564c515c78e1bfbb2190ea0cb155a490b6",
+      "eligible_for_quality": false,
+      "stop_reason": "unsupported_question"
+    },
+    {
+      "artifact": "journey-12.json",
+      "source_sha256": "b9bf9ff6a44cefc264c9ac4b2f46a73319f81bd51db0dc1e329eba7a30c5ac74",
+      "archived_sha256": "b9bf9ff6a44cefc264c9ac4b2f46a73319f81bd51db0dc1e329eba7a30c5ac74",
+      "eligible_for_quality": false,
+      "stop_reason": "operation_timeout"
+    }
+  ],
+  "run12_exclusion": "Incorrect empty-editor Enter cancelled the question; an overbroad fact matcher also disclosed primary_action without it being asked. Both corrections are in the subsequent fresh-home run."
+}

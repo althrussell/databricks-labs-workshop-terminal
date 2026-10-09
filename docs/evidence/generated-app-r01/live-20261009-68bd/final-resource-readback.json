@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "operation": "r01_final_resource_readback",
+  "scope": "simulated_control_tower",
+  "control_tower_mutations": 0,
+  "workspace_mutations": 0,
+  "accepted": false,
+  "deployment_receipt_sha256": "2fba8ed6dfbbc86a04f3fe4673790aa3318bcaa679e977acc9788fe6366d19a5",
+  "observed_at": "2026-10-09T01:15:23.567568+00:00",
+  "observations": [
+    {
+      "kind": "wt_app",
+      "identity": "245e0b42-da94-4a24-b7f3-0f213bc721cb",
+      "absence_verified": true
+    },
+    {
+      "kind": "generated_app",
+      "identity": "5d8f6f22-85b3-4cc9-a2d6-104b667619c1",
+      "absence_verified": true
+    },
+    {
+      "kind": "catalog",
+      "identity": "wt_eval_r01_1009_68bd",
+      "absence_verified": true
+    },
+    {
+      "kind": "temporary_group",
+      "identity": "2120673294523943",
+      "absence_verified": true
+    },
+    {
+      "kind": "wt_source",
+      "identity": "3605309324094535",
+      "absence_verified": true
+    },
+    {
+      "kind": "lakebase_project",
+      "identity": "b6fb2a0d-85e3-45d3-b9ab-e9611b1e2262",
+      "absence_verified": true
+    }
+  ],
+  "attendee_projects": {
+    "id": "1462869392157865",
+    "directory_preserved": true,
+    "entries_preserved": []
+  },
+  "app_service_principals": [
+    {
+      "application_id": "245e0b42-da94-4a24-b7f3-0f213bc721cb",
+      "workspace_principal_absence_verified": true
+    },
+    {
+      "application_id": "5d8f6f22-85b3-4cc9-a2d6-104b667619c1",
+      "workspace_principal_absence_verified": true
+    }
+  ],
+  "control_tower": {
+    "id": "4f1951af-9397-4462-b283-9a66c76b234f",
+    "active_deployment_id": "01f1bbc1de2911cb93356caa765f77a3",
+    "state": "RUNNING",
+    "compute": "ACTIVE"
+  },
+  "control_tower_deployment_unchanged": true,
+  "status": "cleanup_independently_verified"
+}

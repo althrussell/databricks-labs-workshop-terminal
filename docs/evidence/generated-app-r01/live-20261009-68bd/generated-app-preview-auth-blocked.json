@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "operation": "observe_generated_app_final_followup",
+  "scope": "simulated_control_tower",
+  "control_tower_requests": 0,
+  "accepted": false,
+  "input_sha256": {
+    "terminal_receipt": "2fba8ed6dfbbc86a04f3fe4673790aa3318bcaa679e977acc9788fe6366d19a5",
+    "journey": "23725a512442bd44ad8c7ac213044948fae6c98bca942f59e92343615c1cfc0d",
+    "seed_receipt": "34a2d2076469b40d73f536375236db41cc6bfd9982fdcda4f3d733fd7035e54f"
+  },
+  "deployment_followup_sha256": "93391aff17b3185711a392e2c61371ed6e801332c2156dba798cb4d8202b46c5",
+  "target": {
+    "app_id": "5d8f6f22-85b3-4cc9-a2d6-104b667619c1",
+    "app_name": "bakery-orders",
+    "creator": "245e0b42-da94-4a24-b7f3-0f213bc721cb",
+    "namespace_marker_observed": false,
+    "unique_terminal_sp_creator": true,
+    "source_code_path": "/Workspace/Users/245e0b42-da94-4a24-b7f3-0f213bc721cb/.bundle/bakery-orders/default/files",
+    "deployment_id": "01f1c37b69a410419a2b6fa1f563290f",
+    "deployment_state": "SUCCEEDED",
+    "app_state": "RUNNING",
+    "url": "https://bakery-orders-7474655950495189.aws.databricksapps.com"
+  },
+  "terminal_verification": {
+    "verified": true,
+    "workspace_id": "7474655950495189",
+    "workspace_host": "https://dbc-e155652a-2cba.cloud.databricks.com",
+    "app_name": "wt-eval-r01-1009-68bd-wt",
+    "app_id": "245e0b42-da94-4a24-b7f3-0f213bc721cb",
+    "app_url": "https://wt-eval-r01-1009-68bd-wt-7474655950495189.aws.databricksapps.com",
+    "service_principal_id": 78655089022656,
+    "operator_email": "al.thrussell+genai@databricks.com",
+    "attendee_mode": "synthetic_attendee",
+    "deployment_id": "01f1c379b2d61f4f824640833ffca5b3",
+    "deployment_state": "SUCCEEDED",
+    "runtime_snapshot": {
+      "snapshot_path": "/Workspace/Users/245e0b42-da94-4a24-b7f3-0f213bc721cb/src/01f1c379b2d61f4f824640833ffca5b3",
+      "manifest_digest": "352d0fd21663b0a0dae142b3327db8bc100367a5165c92e223df19a6d615bc0a",
+      "file_count": 6,
+      "bytes_verified": 51354,
+      "all_file_hashes_verified": true
+    },
+    "instrumented_release": true,
+    "control_tower_requests": 0,
+    "obo_consent_verified": false,
+    "event_attendee_equivalence_verified": false
+  },
+  "deployment": {
+    "new_app_verified": true,
+    "app_id": "5d8f6f22-85b3-4cc9-a2d6-104b667619c1",
+    "app_name": "bakery-orders",
+    "deployment_id": "01f1c37b69a410419a2b6fa1f563290f",
+    "source_code_path": "/Workspace/Users/245e0b42-da94-4a24-b7f3-0f213bc721cb/.bundle/bakery-orders/default/files",
+    "creator": "245e0b42-da94-4a24-b7f3-0f213bc721cb",
+    "url": "https://bakery-orders-7474655950495189.aws.databricksapps.com",
+    "create_time": "2026-10-09T00:47:09Z",
+    "deployment_create_time": "2026-10-09T00:50:24Z",
+    "source_identity_verified": "current_successful_deployment_source_path",
+    "process_restart_verified": false
+  },
+  "status": "blocked",
+  "error_type": "BrowserJourneyError",
+  "reason": null
+}

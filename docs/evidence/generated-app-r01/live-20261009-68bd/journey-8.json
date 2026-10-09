@@ -1,0 +1,480 @@
+{
+  "schema_version": 1,
+  "scope": "simulated_control_tower",
+  "control_tower_requests": 0,
+  "accepted": false,
+  "verdict": "unverified",
+  "status": "journey_finished",
+  "mode": "build",
+  "entry_path": "skip_wizard",
+  "agent_id": "claude",
+  "startup_qualification_requested": true,
+  "unverified_checks": [
+    "event_attendee_equivalence",
+    "obo_consent",
+    "token_and_spend_enforcement",
+    "tool_and_worker_attribution",
+    "implementation_timing",
+    "native_transcript_authenticity",
+    "critical_user_task",
+    "backend_persistence",
+    "app_restart_persistence",
+    "first_and_final_ux"
+  ],
+  "limitations": [
+    "A consultation probe or deployed-app observation does not establish full app acceptance."
+  ],
+  "model_qualification": {
+    "receipt_sha256": "4be9d1001fff44430b2c456b5ce5499b6104835b89548ba6acbb44a454ec9d0a",
+    "all_roles_invoked": true,
+    "application_id": "245e0b42-da94-4a24-b7f3-0f213bc721cb"
+  },
+  "target": {
+    "marker": "wt-eval-r01-1009-68bd",
+    "workspace_host": "https://dbc-e155652a-2cba.cloud.databricks.com",
+    "workspace_id": "7474655950495189",
+    "deployment_id": "01f1c377f249100d8332e8a8245c517d",
+    "source_path": "/Workspace/Shared/wt-eval-r01-1009-68bd/workshop-terminal",
+    "attendee": {
+      "email": "labuser+1@awsbricks.com",
+      "mode": "synthetic_attendee",
+      "persona": "synthetic_nontechnical",
+      "identity_verified": false,
+      "event_attendee_equivalence_verified": false
+    },
+    "app_id": "245e0b42-da94-4a24-b7f3-0f213bc721cb",
+    "app_name": "wt-eval-r01-1009-68bd-wt",
+    "app_url": "https://wt-eval-r01-1009-68bd-wt-7474655950495189.aws.databricksapps.com"
+  },
+  "declared_budget": {
+    "total_seconds": 1800,
+    "consultation_seconds": 180,
+    "token_ceiling": 100000,
+    "spend_ceiling_usd": 5
+  },
+  "deployment_verification": {
+    "verified": true,
+    "workspace_id": "7474655950495189",
+    "workspace_host": "https://dbc-e155652a-2cba.cloud.databricks.com",
+    "app_name": "wt-eval-r01-1009-68bd-wt",
+    "app_id": "245e0b42-da94-4a24-b7f3-0f213bc721cb",
+    "app_url": "https://wt-eval-r01-1009-68bd-wt-7474655950495189.aws.databricksapps.com",
+    "service_principal_id": 78655089022656,
+    "operator_email": "al.thrussell+genai@databricks.com",
+    "attendee_mode": "synthetic_attendee",
+    "deployment_id": "01f1c377f249100d8332e8a8245c517d",
+    "deployment_state": "SUCCEEDED",
+    "runtime_snapshot": {
+      "snapshot_path": "/Workspace/Users/245e0b42-da94-4a24-b7f3-0f213bc721cb/src/01f1c377f249100d8332e8a8245c517d",
+      "manifest_digest": "e73659650761cbd68a4321afd0f4ae899c2055ca8eda9d8a86530b757883a14c",
+      "file_count": 6,
+      "bytes_verified": 50763,
+      "all_file_hashes_verified": true
+    },
+    "instrumented_release": true,
+    "control_tower_requests": 0,
+    "obo_consent_verified": false,
+    "event_attendee_equivalence_verified": false
+  },
+  "effective_budget": {
+    "total_seconds": 1800,
+    "consultation_seconds": 180,
+    "token_ceiling": 100000,
+    "spend_ceiling_usd": 5,
+    "token_and_spend_enforcement_verified": false
+  },
+  "journey": {
+    "mode": "build",
+    "status": "failed",
+    "stop_reason": "operation_timeout",
+    "entry": {
+      "identity": "labuser+1@awsbricks.com",
+      "entry_path": "skip_wizard",
+      "session_id": "366b3b79-060e-418c-8e29-b994844935d2",
+      "agent_id": "claude",
+      "wizard_enabled": true,
+      "wizard_should_show": false,
+      "saved_brief": {
+        "record_id": "355087a73522413aa11291f0877294f0",
+        "what_building": "",
+        "industry": "",
+        "intent": "",
+        "idea_id": "",
+        "current_stack": [],
+        "persona": "",
+        "seen": true,
+        "skipped": true,
+        "completed_at": "",
+        "industry_stated": false
+      },
+      "starter_prompt_from_save": "",
+      "prompt_delivery_request": "",
+      "prompt_delivery_http_status": null,
+      "friction": [
+        "owned_folder_trust_requires_confirmation",
+        "evaluator_confirmed_owned_folder_trust"
+      ],
+      "opening_submitted": true,
+      "harness_readiness_verified": true,
+      "prompt_preservation_verified": false,
+      "error_code": "",
+      "error_detail": ""
+    },
+    "native_session_id": "a67f2428-f945-47bc-8f45-246eb4d295cc",
+    "harness_id": "claude",
+    "harness_version": "2.1.283",
+    "messages": [
+      {
+        "message_id": "cdcf7cc7b863df2667ad3431c94541eca2f52e388cab122e5d556058c2fcc7fc",
+        "timestamp": "2026-10-09T00:27:07.809Z",
+        "role": "user",
+        "visibility": "user",
+        "complete": true,
+        "text": "I run a small bakery. Can you make a page so I know which orders need attention?",
+        "observed_elapsed_seconds": 5.897318749994156
+      },
+      {
+        "message_id": "f743cc3b8b6a9750a4a73fc01bde55785412d7f91f7b6cf9c4934f935072b638",
+        "timestamp": "2026-10-09T00:27:30.512Z",
+        "role": "assistant",
+        "visibility": "user",
+        "complete": true,
+        "text": "What should make an order count as \"needs attention\"?\nClose to pickup time, unpaid, or has a note (Recommended): I'll flag any order that's due soon, hasn't been paid for, or has a special request/note on it.\nJust overdue or late pickups: Only flag orders past their pickup time \u2014 simplest view.\nSomething else: Tell me what usually causes an order to need extra attention at your bakery.\nHow do you track orders today?\nNowhere formal yet \u2014 I'll enter them in this app (Recommended): You add each order (customer, item, pickup time) right in the new page, and it tracks status from there.\nPaper or texts/calls: Same as above \u2014 you'd still enter them into the app, just coming from paper/texts today.\nA POS system (e.g. Square): Tell me which one \u2014 I'll check if it's something we can pull from automatically, otherwise you'd enter orders manually for now.",
+        "interaction": {
+          "kind": "claude_ask_user_question",
+          "tool_use_id": "toolu_bdrk_011bP9ai3vk2Kx5DEoZYuTyE",
+          "questions": [
+            {
+              "question": "What should make an order count as \"needs attention\"?",
+              "header": "Needs attention",
+              "multiSelect": false,
+              "options": [
+                {
+                  "label": "Close to pickup time, unpaid, or has a note (Recommended)",
+                  "description": "I'll flag any order that's due soon, hasn't been paid for, or has a special request/note on it."
+                },
+                {
+                  "label": "Just overdue or late pickups",
+                  "description": "Only flag orders past their pickup time \u2014 simplest view."
+                },
+                {
+                  "label": "Something else",
+                  "description": "Tell me what usually causes an order to need extra attention at your bakery."
+                }
+              ]
+            },
+            {
+              "question": "How do you track orders today?",
+              "header": "Order source",
+              "multiSelect": false,
+              "options": [
+                {
+                  "label": "Nowhere formal yet \u2014 I'll enter them in this app (Recommended)",
+                  "description": "You add each order (customer, item, pickup time) right in the new page, and it tracks status from there."
+                },
+                {
+                  "label": "Paper or texts/calls",
+                  "description": "Same as above \u2014 you'd still enter them into the app, just coming from paper/texts today."
+                },
+                {
+                  "label": "A POS system (e.g. Square)",
+                  "description": "Tell me which one \u2014 I'll check if it's something we can pull from automatically, otherwise you'd enter orders manually for now."
+                }
+              ]
+            }
+          ]
+        },
+        "observed_elapsed_seconds": 26.631140291996417
+      }
+    ],
+    "deliveries": [
+      {
+        "text": "I run a small bakery. Can you make a page so I know which orders need attention?",
+        "decision": "opening",
+        "in_reply_to": null,
+        "fact_ids": [],
+        "ui_submitted": true,
+        "native_correlated": true,
+        "submitted_elapsed_seconds": 3.4553474580025068,
+        "native_message_id": "cdcf7cc7b863df2667ad3431c94541eca2f52e388cab122e5d556058c2fcc7fc",
+        "correlated_elapsed_seconds": 5.897324124991428
+      }
+    ],
+    "simulator": {
+      "schema_version": 1,
+      "scenario_id": "novice-bakery-order-queue-v1",
+      "scenario_sha256": "7eeb44e2c4ec6b9fef7c622198741fdb5ed350b0d3367ef5f7614efc8efa9b13",
+      "policy": "deterministic-bakery-v1",
+      "scope_agreed": false,
+      "reply_count": 3,
+      "stop_reason": null,
+      "events": [
+        {
+          "sequence": 1,
+          "elapsed_seconds": 5e-06,
+          "builder_message_id": null,
+          "builder_message_sha256": null,
+          "decision": "opening",
+          "reply_text": "I run a small bakery. Can you make a page so I know which orders need attention?",
+          "fact_ids": [],
+          "provenance": "public_opening",
+          "agreement": false,
+          "reason": null
+        },
+        {
+          "sequence": 2,
+          "elapsed_seconds": 26.646178,
+          "builder_message_id": "f743cc3b8b6a9750a4a73fc01bde55785412d7f91f7b6cf9c4934f935072b638:0",
+          "builder_message_sha256": "2121b281311e1e7c5ce3eb46fae4f5adf9515d2035cebccba7bb90eb8b9cf49c",
+          "decision": "answer",
+          "reply_text": "Orders that are late and haven't been packed yet. Show those first.",
+          "fact_ids": [
+            "attention"
+          ],
+          "provenance": "explicit_assistant_question",
+          "agreement": false,
+          "reason": null
+        },
+        {
+          "sequence": 3,
+          "elapsed_seconds": 26.646523,
+          "builder_message_id": "f743cc3b8b6a9750a4a73fc01bde55785412d7f91f7b6cf9c4934f935072b638:1",
+          "builder_message_sha256": "e917bb5db1028427ab4fd4239e017fa5faacb55f67610424eeffa9a35f1a6773",
+          "decision": "answer",
+          "reply_text": "We use a spreadsheet and keep asking each other what's ready.",
+          "fact_ids": [
+            "current_workflow"
+          ],
+          "provenance": "explicit_assistant_question",
+          "agreement": false,
+          "reason": null
+        }
+      ]
+    },
+    "first_complete_assistant": {
+      "message_id": "f743cc3b8b6a9750a4a73fc01bde55785412d7f91f7b6cf9c4934f935072b638",
+      "timestamp": "2026-10-09T00:27:30.512Z",
+      "role": "assistant",
+      "visibility": "user",
+      "complete": true,
+      "text": "What should make an order count as \"needs attention\"?\nClose to pickup time, unpaid, or has a note (Recommended): I'll flag any order that's due soon, hasn't been paid for, or has a special request/note on it.\nJust overdue or late pickups: Only flag orders past their pickup time \u2014 simplest view.\nSomething else: Tell me what usually causes an order to need extra attention at your bakery.\nHow do you track orders today?\nNowhere formal yet \u2014 I'll enter them in this app (Recommended): You add each order (customer, item, pickup time) right in the new page, and it tracks status from there.\nPaper or texts/calls: Same as above \u2014 you'd still enter them into the app, just coming from paper/texts today.\nA POS system (e.g. Square): Tell me which one \u2014 I'll check if it's something we can pull from automatically, otherwise you'd enter orders manually for now.",
+      "interaction": {
+        "kind": "claude_ask_user_question",
+        "tool_use_id": "toolu_bdrk_011bP9ai3vk2Kx5DEoZYuTyE",
+        "questions": [
+          {
+            "question": "What should make an order count as \"needs attention\"?",
+            "header": "Needs attention",
+            "multiSelect": false,
+            "options": [
+              {
+                "label": "Close to pickup time, unpaid, or has a note (Recommended)",
+                "description": "I'll flag any order that's due soon, hasn't been paid for, or has a special request/note on it."
+              },
+              {
+                "label": "Just overdue or late pickups",
+                "description": "Only flag orders past their pickup time \u2014 simplest view."
+              },
+              {
+                "label": "Something else",
+                "description": "Tell me what usually causes an order to need extra attention at your bakery."
+              }
+            ]
+          },
+          {
+            "question": "How do you track orders today?",
+            "header": "Order source",
+            "multiSelect": false,
+            "options": [
+              {
+                "label": "Nowhere formal yet \u2014 I'll enter them in this app (Recommended)",
+                "description": "You add each order (customer, item, pickup time) right in the new page, and it tracks status from there."
+              },
+              {
+                "label": "Paper or texts/calls",
+                "description": "Same as above \u2014 you'd still enter them into the app, just coming from paper/texts today."
+              },
+              {
+                "label": "A POS system (e.g. Square)",
+                "description": "Tell me which one \u2014 I'll check if it's something we can pull from automatically, otherwise you'd enter orders manually for now."
+              }
+            ]
+          }
+        ]
+      },
+      "observed_elapsed_seconds": 26.631140291996417
+    },
+    "material_consultation_observed": true,
+    "scope_agreement_delivered": false,
+    "consultation_deadline_enforced": false,
+    "consultation_status": "unverified",
+    "consultation_stop_reason": "operation_timeout",
+    "consultation_closed_elapsed_seconds": 56.638871041999664,
+    "no_question_before_scope_agreement_observed": false,
+    "total_deadline_enforced": false,
+    "polls": 11,
+    "elapsed_seconds": 58.021331249998184,
+    "budget_start": "before_normal_ui_entry",
+    "cleanup": {
+      "status": "closed_owned_ui_session",
+      "session_id": "366b3b79-060e-418c-8e29-b994844935d2"
+    },
+    "app_observations": [
+      {
+        "status": "awaiting",
+        "app_url": "",
+        "artifacts": [],
+        "source": "live workspace app inventory difference",
+        "observed_elapsed_seconds": 3.8589544580026995
+      }
+    ],
+    "full_app_acceptance_verified": false,
+    "accepted": false,
+    "unverified_checks": [
+      "tool_and_worker_attribution",
+      "implementation_timing",
+      "native_transcript_authenticity",
+      "full_app_acceptance"
+    ]
+  },
+  "startup_qualification": {
+    "enabled": true,
+    "source": "attendee_browser_existing_pty_startup_screen",
+    "status": "qualified",
+    "expected_cwd": "/app/python/source_code/data/wt-eval-r01-1009-68bd/users/labuser-1-e2e66dc8/projects",
+    "actions": [
+      {
+        "kind": "select_owned_folder_trust",
+        "key": "ArrowDown",
+        "session_id": "366b3b79-060e-418c-8e29-b994844935d2",
+        "cwd": "/app/python/source_code/data/wt-eval-r01-1009-68bd/users/labuser-1-e2e66dc8/projects"
+      },
+      {
+        "kind": "selected_owned_folder_trust",
+        "key": "Enter",
+        "session_id": "366b3b79-060e-418c-8e29-b994844935d2",
+        "cwd": "/app/python/source_code/data/wt-eval-r01-1009-68bd/users/labuser-1-e2e66dc8/projects"
+      }
+    ],
+    "captures": [
+      {
+        "label": "owned-folder-trust-default-no",
+        "session_id": "366b3b79-060e-418c-8e29-b994844935d2",
+        "screenshot": "/private/tmp/wt-r01-bakery-journey8-68bd.json.startup-browser/1-owned-folder-trust-default-no.png",
+        "screen_text": "/private/tmp/wt-r01-bakery-journey8-68bd.json.startup-browser/1-owned-folder-trust-default-no.txt",
+        "screenshot_sha256": "adac485675a5861e440aa9bf9a102da791e2d86fb66378ead90d3430f8e3df6a",
+        "screen_text_sha256": "cb43db5e35a8cab4d859b79c3b42189eda8c8bc8bff879f1cdb099250dfa625a"
+      },
+      {
+        "label": "owned-folder-trust",
+        "session_id": "366b3b79-060e-418c-8e29-b994844935d2",
+        "screenshot": "/private/tmp/wt-r01-bakery-journey8-68bd.json.startup-browser/2-owned-folder-trust.png",
+        "screen_text": "/private/tmp/wt-r01-bakery-journey8-68bd.json.startup-browser/2-owned-folder-trust.txt",
+        "screenshot_sha256": "a8dd758e09b19d4457a3a7191ece2740452cb4f32501c1b5e8a1096f703204d8",
+        "screen_text_sha256": "2a60d857f061f6e6d4ec2c0e79ac03387494c642782fd8403948d338308ae009"
+      },
+      {
+        "label": "native-prompt",
+        "session_id": "366b3b79-060e-418c-8e29-b994844935d2",
+        "screenshot": "/private/tmp/wt-r01-bakery-journey8-68bd.json.startup-browser/3-native-prompt.png",
+        "screen_text": "/private/tmp/wt-r01-bakery-journey8-68bd.json.startup-browser/3-native-prompt.txt",
+        "screenshot_sha256": "b887f3e98328740156fbf6f2053befaf1a305f201bfd4a44131b17bc56622833",
+        "screen_text_sha256": "85e7ed0993f25ac6b9123e2ddfd67d971047b455cb3ffcc6cbcebe70b78f6146"
+      },
+      {
+        "label": "native-question-1",
+        "session_id": "366b3b79-060e-418c-8e29-b994844935d2",
+        "screenshot": "/private/tmp/wt-r01-bakery-journey8-68bd.json.startup-browser/4-native-question-1.png",
+        "screen_text": "/private/tmp/wt-r01-bakery-journey8-68bd.json.startup-browser/4-native-question-1.txt",
+        "screenshot_sha256": "b7eea349e593af345bdf83ef8229d610d0adf4a12cf62cd21e9af06639180f33",
+        "screen_text_sha256": "d8a20822ca44c1cb48d9fcf40953cddd7f633de1f3750c687af455125012d00d"
+      }
+    ],
+    "native_prompt_verified": true,
+    "user_scope_consent_inferred": false,
+    "assistant_turns_inferred": false,
+    "session_id": "366b3b79-060e-418c-8e29-b994844935d2",
+    "owned_folder_trust_confirmed": true
+  },
+  "terminal_browser": {
+    "status": "captured",
+    "source": "identified_attendee_terminal_browser",
+    "artifacts": {
+      "screenshot": "/private/tmp/wt-r01-bakery-journey8-68bd.json.wt-browser/final-wt.png",
+      "accessibility_snapshot": "/private/tmp/wt-r01-bakery-journey8-68bd.json.wt-browser/final-wt.aria.txt"
+    }
+  },
+  "operator_observation": {
+    "separate_from_attendee_browser": true,
+    "requests": [
+      {
+        "session_id": "366b3b79-060e-418c-8e29-b994844935d2",
+        "http_status": 200
+      },
+      {
+        "session_id": "366b3b79-060e-418c-8e29-b994844935d2",
+        "http_status": 200
+      },
+      {
+        "session_id": "366b3b79-060e-418c-8e29-b994844935d2",
+        "http_status": 200
+      },
+      {
+        "session_id": "366b3b79-060e-418c-8e29-b994844935d2",
+        "http_status": 200
+      },
+      {
+        "session_id": "366b3b79-060e-418c-8e29-b994844935d2",
+        "http_status": 200
+      },
+      {
+        "session_id": "366b3b79-060e-418c-8e29-b994844935d2",
+        "http_status": 200
+      },
+      {
+        "session_id": "366b3b79-060e-418c-8e29-b994844935d2",
+        "http_status": 200
+      },
+      {
+        "session_id": "366b3b79-060e-418c-8e29-b994844935d2",
+        "http_status": 200
+      },
+      {
+        "session_id": "366b3b79-060e-418c-8e29-b994844935d2",
+        "http_status": 200
+      },
+      {
+        "session_id": "366b3b79-060e-418c-8e29-b994844935d2",
+        "http_status": 200
+      },
+      {
+        "session_id": "366b3b79-060e-418c-8e29-b994844935d2",
+        "http_status": 200
+      }
+    ],
+    "collection_failure": null
+  },
+  "app_discovery": {
+    "status": "observing",
+    "candidates": [],
+    "unattributed_new_attendee_apps": 0,
+    "baseline_count": 7
+  },
+  "assessment": {
+    "verdict": "unverified",
+    "complete_assistant_text_available": true,
+    "consultation": {
+      "verdict": "unverified",
+      "reason": "operation_timeout",
+      "closed_elapsed_seconds": 56.638871041999664,
+      "deadline_enforced": false,
+      "scope_agreement_delivered": false,
+      "no_question_before_scope_agreement_observed": false
+    },
+    "native_format_qualification_verified": false,
+    "quality_failure_inferred_from_silence": false,
+    "reason": "operation_timeout_unverified",
+    "operational_status": "failed",
+    "operational_stop_reason": "operation_timeout"
+  }
+}

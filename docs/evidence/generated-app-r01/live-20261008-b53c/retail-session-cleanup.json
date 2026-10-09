@@ -1,0 +1,12 @@
+{
+  "scope": "simulated_control_tower",
+  "control_tower_requests": 0,
+  "session_id": "67e49cd6-426f-48ec-b23c-f08ce0f44ea8",
+  "journey_sha256": "9822fdad1ea81f85082a678781e2be377f13818d3e8b5ac290c97f7045cebbb4",
+  "original_ui_cleanup_failure_preserved": true,
+  "operation": "close_exact_owned_failed_test_session",
+  "active_owned_session_present": true,
+  "delete_http_status": 200,
+  "verified": true,
+  "unrelated_active_sessions_changed": false
+}

@@ -1,0 +1,240 @@
+{
+  "schema_version": 1,
+  "operation": "generated_app_ui_task_followup",
+  "scope": "simulated_control_tower",
+  "control_tower_requests": 0,
+  "accepted": false,
+  "input_sha256": {
+    "terminal_receipt": "2fba8ed6dfbbc86a04f3fe4673790aa3318bcaa679e977acc9788fe6366d19a5",
+    "journey": "23725a512442bd44ad8c7ac213044948fae6c98bca942f59e92343615c1cfc0d",
+    "seed_receipt": "34a2d2076469b40d73f536375236db41cc6bfd9982fdcda4f3d733fd7035e54f"
+  },
+  "deployment_followup_sha256": "93391aff17b3185711a392e2c61371ed6e801332c2156dba798cb4d8202b46c5",
+  "deployment": {
+    "new_app_verified": true,
+    "app_id": "5d8f6f22-85b3-4cc9-a2d6-104b667619c1",
+    "app_name": "bakery-orders",
+    "deployment_id": "01f1c37b69a410419a2b6fa1f563290f",
+    "source_code_path": "/Workspace/Users/245e0b42-da94-4a24-b7f3-0f213bc721cb/.bundle/bakery-orders/default/files",
+    "creator": "245e0b42-da94-4a24-b7f3-0f213bc721cb",
+    "url": "https://bakery-orders-7474655950495189.aws.databricksapps.com",
+    "create_time": "2026-10-09T00:47:09Z",
+    "deployment_create_time": "2026-10-09T00:50:24Z",
+    "source_identity_verified": "current_successful_deployment_source_path",
+    "process_restart_verified": false
+  },
+  "observed_at": "2026-10-09T01:02:52.778261+00:00",
+  "task": {
+    "source": "private_evaluator_task_after_generation",
+    "builder_rescue": false,
+    "customer": "R01 Bakery Customer",
+    "item": "2 dozen rolls",
+    "due_date": "2026-10-08",
+    "notes": "Synthetic R01 UI test",
+    "action": "Add the late order, then mark it packed once"
+  },
+  "app_response_observations": [
+    {
+      "method": "GET",
+      "path": "/api/lakebase/orders",
+      "http_status": 200,
+      "source": "actual_app_browser_response_not_independent_storage",
+      "row_count": 0,
+      "target_rows": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/lakebase/orders",
+      "http_status": 201,
+      "source": "actual_app_browser_response_not_independent_storage",
+      "target_row": {
+        "id": 1,
+        "customer_name": "R01 Bakery Customer",
+        "item": "2 dozen rolls",
+        "due_date": "2026-10-08T00:00:00.000Z",
+        "notes": "Synthetic R01 UI test",
+        "packed": false,
+        "created_at": "2026-10-09T01:02:53.958Z"
+      }
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/lakebase/orders/1/packed",
+      "http_status": 200,
+      "source": "actual_app_browser_response_not_independent_storage",
+      "target_row": {
+        "id": 1,
+        "customer_name": "R01 Bakery Customer",
+        "item": "2 dozen rolls",
+        "due_date": "2026-10-08T00:00:00.000Z",
+        "notes": "Synthetic R01 UI test",
+        "packed": true,
+        "created_at": "2026-10-09T01:02:53.958Z"
+      }
+    }
+  ],
+  "independent_backend_oracle": "unsupported_lakebase",
+  "backend_persistence_verified": false,
+  "process_restart_verified": false,
+  "new_order_dialog": [
+    {
+      "name": "add-order-desktop",
+      "width": 1440,
+      "height": 900,
+      "screenshot": "/private/tmp/wt-r01-generated-app13-ui-task-68bd/add-order-desktop.png",
+      "accessibility_snapshot": "/private/tmp/wt-r01-generated-app13-ui-task-68bd/add-order-desktop.aria.txt",
+      "layout_observation": {
+        "viewport": 1440,
+        "content": 1440,
+        "horizontalOverflow": false
+      },
+      "state": "add-order",
+      "accessibility_snapshot_text": "- region \"Notifications alt+T\"\n- main:\n  - text: No orders yet Add your first order and it'll show up here, sorted by what needs attention.\n  - button \"Add an order\"\n- dialog \"Add an order\":\n  - heading \"Add an order\" [level=2]\n  - paragraph: It'll show up on the board, sorted by due date.\n  - text: Customer\n  - textbox \"Customer\":\n    - /placeholder: e.g. Priya Shah\n    - text: R01 Bakery Customer\n  - text: Order\n  - textbox \"Order\":\n    - /placeholder: e.g. 2 dozen chocolate chip cookies\n    - text: 2 dozen rolls\n  - text: Due date\n  - textbox \"Due date\": 2026-10-08\n  - text: Notes (optional)\n  - textbox \"Notes (optional)\":\n    - /placeholder: e.g. nut allergy, pickup after 2pm\n    - text: Synthetic R01 UI test\n  - button \"Add order\"\n  - button \"Close\"",
+      "horizontal_overflow_observed": false
+    },
+    {
+      "name": "add-order-tablet",
+      "width": 768,
+      "height": 1024,
+      "screenshot": "/private/tmp/wt-r01-generated-app13-ui-task-68bd/add-order-tablet.png",
+      "accessibility_snapshot": "/private/tmp/wt-r01-generated-app13-ui-task-68bd/add-order-tablet.aria.txt",
+      "layout_observation": {
+        "viewport": 768,
+        "content": 768,
+        "horizontalOverflow": false
+      },
+      "state": "add-order",
+      "accessibility_snapshot_text": "- region \"Notifications alt+T\"\n- main:\n  - text: No orders yet Add your first order and it'll show up here, sorted by what needs attention.\n  - button \"Add an order\"\n- dialog \"Add an order\":\n  - heading \"Add an order\" [level=2]\n  - paragraph: It'll show up on the board, sorted by due date.\n  - text: Customer\n  - textbox \"Customer\":\n    - /placeholder: e.g. Priya Shah\n    - text: R01 Bakery Customer\n  - text: Order\n  - textbox \"Order\":\n    - /placeholder: e.g. 2 dozen chocolate chip cookies\n    - text: 2 dozen rolls\n  - text: Due date\n  - textbox \"Due date\": 2026-10-08\n  - text: Notes (optional)\n  - textbox \"Notes (optional)\":\n    - /placeholder: e.g. nut allergy, pickup after 2pm\n    - text: Synthetic R01 UI test\n  - button \"Add order\"\n  - button \"Close\"",
+      "horizontal_overflow_observed": false
+    },
+    {
+      "name": "add-order-mobile",
+      "width": 390,
+      "height": 844,
+      "screenshot": "/private/tmp/wt-r01-generated-app13-ui-task-68bd/add-order-mobile.png",
+      "accessibility_snapshot": "/private/tmp/wt-r01-generated-app13-ui-task-68bd/add-order-mobile.aria.txt",
+      "layout_observation": {
+        "viewport": 390,
+        "content": 390,
+        "horizontalOverflow": false
+      },
+      "state": "add-order",
+      "accessibility_snapshot_text": "- region \"Notifications alt+T\"\n- main:\n  - text: No orders yet Add your first order and it'll show up here, sorted by what needs attention.\n  - button \"Add an order\"\n- dialog \"Add an order\":\n  - heading \"Add an order\" [level=2]\n  - paragraph: It'll show up on the board, sorted by due date.\n  - text: Customer\n  - textbox \"Customer\":\n    - /placeholder: e.g. Priya Shah\n    - text: R01 Bakery Customer\n  - text: Order\n  - textbox \"Order\":\n    - /placeholder: e.g. 2 dozen chocolate chip cookies\n    - text: 2 dozen rolls\n  - text: Due date\n  - textbox \"Due date\": 2026-10-08\n  - text: Notes (optional)\n  - textbox \"Notes (optional)\":\n    - /placeholder: e.g. nut allergy, pickup after 2pm\n    - text: Synthetic R01 UI test\n  - button \"Add order\"\n  - button \"Close\"",
+      "horizontal_overflow_observed": false
+    }
+  ],
+  "before_packed_aria": "- row \"R01 Bakery Customer 2 dozen rolls Synthetic R01 UI test Invalid Date Late Mark packed\":\n  - cell \"R01 Bakery Customer\"\n  - cell \"2 dozen rolls Synthetic R01 UI test\"\n  - cell \"Invalid Date\"\n  - cell \"Late\"\n  - cell \"Mark packed\":\n    - button \"Mark packed\"",
+  "before_packed": [
+    {
+      "name": "before-packed-desktop",
+      "width": 1440,
+      "height": 900,
+      "screenshot": "/private/tmp/wt-r01-generated-app13-ui-task-68bd/before-packed-desktop.png",
+      "accessibility_snapshot": "/private/tmp/wt-r01-generated-app13-ui-task-68bd/before-packed-desktop.aria.txt",
+      "layout_observation": {
+        "viewport": 1440,
+        "content": 1440,
+        "horizontalOverflow": false
+      },
+      "state": "before-packed",
+      "accessibility_snapshot_text": "- region \"Notifications alt+T\"\n- banner:\n  - text: Order Board.\n  - button \"New order\"\n- main:\n  - heading \"Today's orders\" [level=1]\n  - paragraph: Late and unpacked orders surface first, so you always know what to grab next.\n  - paragraph: Needs attention\n  - text: 1 order late and unpacked\n  - table:\n    - rowgroup:\n      - row \"Customer Order Due Status Packed\":\n        - columnheader \"Customer\"\n        - columnheader \"Order\"\n        - columnheader \"Due\"\n        - columnheader \"Status\"\n        - columnheader \"Packed\"\n    - rowgroup:\n      - row \"R01 Bakery Customer 2 dozen rolls Synthetic R01 UI test Invalid Date Late Mark packed\":\n        - cell \"R01 Bakery Customer\"\n        - cell \"2 dozen rolls Synthetic R01 UI test\"\n        - cell \"Invalid Date\"\n        - cell \"Late\"\n        - cell \"Mark packed\":\n          - button \"Mark packed\"",
+      "horizontal_overflow_observed": false
+    },
+    {
+      "name": "before-packed-tablet",
+      "width": 768,
+      "height": 1024,
+      "screenshot": "/private/tmp/wt-r01-generated-app13-ui-task-68bd/before-packed-tablet.png",
+      "accessibility_snapshot": "/private/tmp/wt-r01-generated-app13-ui-task-68bd/before-packed-tablet.aria.txt",
+      "layout_observation": {
+        "viewport": 768,
+        "content": 768,
+        "horizontalOverflow": false
+      },
+      "state": "before-packed",
+      "accessibility_snapshot_text": "- region \"Notifications alt+T\"\n- banner:\n  - text: Order Board.\n  - button \"New order\"\n- main:\n  - heading \"Today's orders\" [level=1]\n  - paragraph: Late and unpacked orders surface first, so you always know what to grab next.\n  - paragraph: Needs attention\n  - text: 1 order late and unpacked\n  - table:\n    - rowgroup:\n      - row \"Customer Order Due Status Packed\":\n        - columnheader \"Customer\"\n        - columnheader \"Order\"\n        - columnheader \"Due\"\n        - columnheader \"Status\"\n        - columnheader \"Packed\"\n    - rowgroup:\n      - row \"R01 Bakery Customer 2 dozen rolls Synthetic R01 UI test Invalid Date Late Mark packed\":\n        - cell \"R01 Bakery Customer\"\n        - cell \"2 dozen rolls Synthetic R01 UI test\"\n        - cell \"Invalid Date\"\n        - cell \"Late\"\n        - cell \"Mark packed\":\n          - button \"Mark packed\"",
+      "horizontal_overflow_observed": false
+    },
+    {
+      "name": "before-packed-mobile",
+      "width": 390,
+      "height": 844,
+      "screenshot": "/private/tmp/wt-r01-generated-app13-ui-task-68bd/before-packed-mobile.png",
+      "accessibility_snapshot": "/private/tmp/wt-r01-generated-app13-ui-task-68bd/before-packed-mobile.aria.txt",
+      "layout_observation": {
+        "viewport": 390,
+        "content": 390,
+        "horizontalOverflow": false
+      },
+      "state": "before-packed",
+      "accessibility_snapshot_text": "- region \"Notifications alt+T\"\n- banner:\n  - text: Order Board.\n  - button \"New order\"\n- main:\n  - heading \"Today's orders\" [level=1]\n  - paragraph: Late and unpacked orders surface first, so you always know what to grab next.\n  - paragraph: Needs attention\n  - text: 1 order late and unpacked\n  - table:\n    - rowgroup:\n      - row \"Customer Order Due Status Packed\":\n        - columnheader \"Customer\"\n        - columnheader \"Order\"\n        - columnheader \"Due\"\n        - columnheader \"Status\"\n        - columnheader \"Packed\"\n    - rowgroup:\n      - row \"R01 Bakery Customer 2 dozen rolls Synthetic R01 UI test Invalid Date Late Mark packed\":\n        - cell \"R01 Bakery Customer\"\n        - cell \"2 dozen rolls Synthetic R01 UI test\"\n        - cell \"Invalid Date\"\n        - cell \"Late\"\n        - cell \"Mark packed\":\n          - button \"Mark packed\"",
+      "horizontal_overflow_observed": false
+    }
+  ],
+  "created_order_via_ui": true,
+  "packed_http_status": 200,
+  "status": "ui_task_failed",
+  "error_type": "Error",
+  "failure_capture": [
+    {
+      "name": "failure-desktop",
+      "width": 1440,
+      "height": 900,
+      "screenshot": "/private/tmp/wt-r01-generated-app13-ui-task-68bd/failure-desktop.png",
+      "accessibility_snapshot": "/private/tmp/wt-r01-generated-app13-ui-task-68bd/failure-desktop.aria.txt",
+      "layout_observation": {
+        "viewport": 1440,
+        "content": 1440,
+        "horizontalOverflow": false
+      },
+      "state": "failure",
+      "accessibility_snapshot_text": "- region \"Notifications alt+T\"\n- banner:\n  - text: Order Board.\n  - button \"New order\"\n- main:\n  - heading \"Today's orders\" [level=1]\n  - paragraph: Late and unpacked orders surface first, so you always know what to grab next.\n  - paragraph: Needs attention\n  - text: 0 order late and unpacked \u2014 you're all caught up\n  - table:\n    - rowgroup:\n      - row \"Customer Order Due Status Packed\":\n        - columnheader \"Customer\"\n        - columnheader \"Order\"\n        - columnheader \"Due\"\n        - columnheader \"Status\"\n        - columnheader \"Packed\"\n    - rowgroup:\n      - row \"R01 Bakery Customer 2 dozen rolls Synthetic R01 UI test Invalid Date Packed Packed\":\n        - cell \"R01 Bakery Customer\"\n        - cell \"2 dozen rolls Synthetic R01 UI test\"\n        - cell \"Invalid Date\"\n        - cell \"Packed\"\n        - cell \"Packed\":\n          - button \"Packed\"",
+      "horizontal_overflow_observed": false
+    },
+    {
+      "name": "failure-tablet",
+      "width": 768,
+      "height": 1024,
+      "screenshot": "/private/tmp/wt-r01-generated-app13-ui-task-68bd/failure-tablet.png",
+      "accessibility_snapshot": "/private/tmp/wt-r01-generated-app13-ui-task-68bd/failure-tablet.aria.txt",
+      "layout_observation": {
+        "viewport": 768,
+        "content": 768,
+        "horizontalOverflow": false
+      },
+      "state": "failure",
+      "accessibility_snapshot_text": "- region \"Notifications alt+T\"\n- banner:\n  - text: Order Board.\n  - button \"New order\"\n- main:\n  - heading \"Today's orders\" [level=1]\n  - paragraph: Late and unpacked orders surface first, so you always know what to grab next.\n  - paragraph: Needs attention\n  - text: 0 order late and unpacked \u2014 you're all caught up\n  - table:\n    - rowgroup:\n      - row \"Customer Order Due Status Packed\":\n        - columnheader \"Customer\"\n        - columnheader \"Order\"\n        - columnheader \"Due\"\n        - columnheader \"Status\"\n        - columnheader \"Packed\"\n    - rowgroup:\n      - row \"R01 Bakery Customer 2 dozen rolls Synthetic R01 UI test Invalid Date Packed Packed\":\n        - cell \"R01 Bakery Customer\"\n        - cell \"2 dozen rolls Synthetic R01 UI test\"\n        - cell \"Invalid Date\"\n        - cell \"Packed\"\n        - cell \"Packed\":\n          - button \"Packed\"",
+      "horizontal_overflow_observed": false
+    },
+    {
+      "name": "failure-mobile",
+      "width": 390,
+      "height": 844,
+      "screenshot": "/private/tmp/wt-r01-generated-app13-ui-task-68bd/failure-mobile.png",
+      "accessibility_snapshot": "/private/tmp/wt-r01-generated-app13-ui-task-68bd/failure-mobile.aria.txt",
+      "layout_observation": {
+        "viewport": 390,
+        "content": 390,
+        "horizontalOverflow": false
+      },
+      "state": "failure",
+      "accessibility_snapshot_text": "- region \"Notifications alt+T\"\n- banner:\n  - text: Order Board.\n  - button \"New order\"\n- main:\n  - heading \"Today's orders\" [level=1]\n  - paragraph: Late and unpacked orders surface first, so you always know what to grab next.\n  - paragraph: Needs attention\n  - text: 0 order late and unpacked \u2014 you're all caught up\n  - table:\n    - rowgroup:\n      - row \"Customer Order Due Status Packed\":\n        - columnheader \"Customer\"\n        - columnheader \"Order\"\n        - columnheader \"Due\"\n        - columnheader \"Status\"\n        - columnheader \"Packed\"\n    - rowgroup:\n      - row \"R01 Bakery Customer 2 dozen rolls Synthetic R01 UI test Invalid Date Packed Packed\":\n        - cell \"R01 Bakery Customer\"\n        - cell \"2 dozen rolls Synthetic R01 UI test\"\n        - cell \"Invalid Date\"\n        - cell \"Packed\"\n        - cell \"Packed\":\n          - button \"Packed\"",
+      "horizontal_overflow_observed": false
+    }
+  ],
+  "page_errors": [],
+  "final_deployment_verification": {
+    "new_app_verified": true,
+    "app_id": "5d8f6f22-85b3-4cc9-a2d6-104b667619c1",
+    "app_name": "bakery-orders",
+    "deployment_id": "01f1c37b69a410419a2b6fa1f563290f",
+    "source_code_path": "/Workspace/Users/245e0b42-da94-4a24-b7f3-0f213bc721cb/.bundle/bakery-orders/default/files",
+    "creator": "245e0b42-da94-4a24-b7f3-0f213bc721cb",
+    "url": "https://bakery-orders-7474655950495189.aws.databricksapps.com",
+    "create_time": "2026-10-09T00:47:09Z",
+    "deployment_create_time": "2026-10-09T00:50:24Z",
+    "source_identity_verified": "current_successful_deployment_source_path",
+    "process_restart_verified": false
+  },
+  "binding_current_at_end_verified": true
+}

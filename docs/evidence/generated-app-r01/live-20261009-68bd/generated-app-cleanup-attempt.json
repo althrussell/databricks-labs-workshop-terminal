@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "operation": "cleanup_generated_app_resources",
+  "scope": "simulated_control_tower",
+  "control_tower_mutations": 0,
+  "accepted": false,
+  "cleanup_plan_sha256": "b188cad265422174d199c9f3bd42649443e961d09bef4f3bcf9d0b5c0695ea64",
+  "started_at": "2026-10-09T01:07:47.073372+00:00",
+  "status": "cleanup_failed",
+  "operations": [
+    {
+      "kind": "generated_app",
+      "identity": "5d8f6f22-85b3-4cc9-a2d6-104b667619c1",
+      "state": "absence_verified"
+    },
+    {
+      "kind": "generated_workspace_directory",
+      "identity": "1778343084214827",
+      "state": "absence_verified"
+    },
+    {
+      "kind": "generated_workspace_directory",
+      "identity": "1778343084214887",
+      "state": "requested"
+    }
+  ],
+  "attendee_projects_directory_preserved": true,
+  "error_type": "ResourceDoesNotExist"
+}

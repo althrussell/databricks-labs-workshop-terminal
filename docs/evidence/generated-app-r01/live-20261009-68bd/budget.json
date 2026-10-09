@@ -1,0 +1,6 @@
+{
+  "total_seconds": 1800,
+  "consultation_seconds": 180,
+  "token_ceiling": 100000,
+  "spend_ceiling_usd": 5
+}

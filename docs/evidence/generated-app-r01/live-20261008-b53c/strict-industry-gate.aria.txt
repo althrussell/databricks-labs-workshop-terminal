@@ -1,0 +1,136 @@
+- banner:
+  - img "Databricks"
+  - text: Databricks
+  - navigation:
+    - button "Home":
+      - img
+      - text: Home
+    - link "Databricks Docs":
+      - /url: https://docs.databricks.com
+      - img
+      - text: Databricks Docs
+    - link "AI Docs":
+      - /url: https://naveenb83.github.io/ai-dev-day-brisbane/
+      - img
+      - text: AI Docs
+    - link "Customer Academy":
+      - /url: https://customer-academy.databricks.com
+      - img
+      - text: Customer Academy
+    - link "Workspace":
+      - /url: https://dbc-e155652a-2cba.cloud.databricks.com
+      - img
+      - text: Workspace
+    - button "Certificate":
+      - img
+      - text: Certificate
+    - button "Raise hand":
+      - img
+      - text: Raise hand
+    - button "Help":
+      - img
+      - text: Help
+    - link "Get Free Edition":
+      - /url: https://www.databricks.com/learn/free-edition
+      - img
+      - text: Get Free Edition
+  - text: labuser+1@awsbricks.com
+- region "Notifications"
+- heading "What will you build today?" [level=1]
+- paragraph: Pick your AI coding agent. Credentials, skills, and the Databricks CLI are already wired up — nothing to paste, nothing to configure.
+- button "Claude Code Anthropic's agentic coding CLI, wired to Databricks model serving. ready":
+  - img
+  - text: Claude Code Anthropic's agentic coding CLI, wired to Databricks model serving. ready
+- button "Codex OpenAI's coding agent, wired to Databricks model serving. ready":
+  - img
+  - text: Codex OpenAI's coding agent, wired to Databricks model serving. ready
+- img
+- text: Need an idea? One click types it into your agent
+- button "What can you do here?"
+- button "Explore the workshop data"
+- img
+- text: Dive into your workspace
+- link "Genie":
+  - /url: https://dbc-e155652a-2cba.cloud.databricks.com/genie
+  - img
+  - text: Genie
+- link "SQL Editor":
+  - /url: https://dbc-e155652a-2cba.cloud.databricks.com/sql/editor
+  - img
+  - text: SQL Editor
+- link "Catalog":
+  - /url: https://dbc-e155652a-2cba.cloud.databricks.com/explore/data
+  - img
+  - text: Catalog
+- link "Dashboards":
+  - /url: https://dbc-e155652a-2cba.cloud.databricks.com/dashboards
+  - img
+  - text: Dashboards
+- link "Jobs & Pipelines":
+  - /url: https://dbc-e155652a-2cba.cloud.databricks.com/jobs
+  - img
+  - text: Jobs & Pipelines
+- link "Workspace":
+  - /url: https://dbc-e155652a-2cba.cloud.databricks.com/browse
+  - img
+  - text: Workspace
+- img
+- strong: Welcome to the workshop
+- img
+- strong: What makes an agent different from chat?
+- text: 💡 Insights about what you're building appear on the right as you work.
+- complementary:
+  - img
+  - text: Databricks insights intro
+  - button "Collapse":
+    - img
+  - article:
+    - heading "Welcome to the workshop" [level=3]
+    - paragraph:
+      - text: You're about to build on Databricks with an AI coding agent at your side. Click
+      - strong: Claude Code
+      - text: or
+      - strong: Codex
+      - text: above to launch a terminal — your credentials are wired up automatically, nothing to paste.
+  - article:
+    - heading "What makes an agent different from chat?" [level=3]
+    - paragraph:
+      - text: "A coding agent doesn't just suggest code — it runs commands, reads files, fixes its own mistakes, and iterates until the job is done. Treat it like a fast pair programmer: describe the"
+      - emphasis: outcome
+      - text: you want, not the steps.
+    - link "Agent systems on Databricks":
+      - /url: https://www.databricks.com/blog/ai-agent-systems
+      - text: Agent systems on Databricks
+      - img
+- dialog:
+  - text: Step 1 of 2
+  - button "Skip"
+  - heading "Which industry are you in?" [level=2]
+  - paragraph: Pick one first so we know which demo data to use. Then tell us what you want to build.
+  - text: Your industry
+  - button "Automotive / mobility"
+  - button "Cross-industry"
+  - button "Energy / utilities"
+  - button "Banking / financial services"
+  - button "Healthcare"
+  - button "Manufacturing"
+  - button "Media"
+  - button "Mining"
+  - button "Public sector"
+  - button "Retail"
+  - button "Superannuation"
+  - button "Telco"
+  - button "Travel"
+  - button "Other"
+  - paragraph: There's no ready-made demo data in this workspace, so your agent will generate what it needs. Pick your industry anyway — it tells the agent who it's building for.
+  - textbox "e.g. a dashboard showing which parts fail early across our fleet": I run a small bakery. Can you make a page so I know which orders need attention?
+  - button "I'm not sure yet — show me ideas":
+    - img
+    - text: I'm not sure yet — show me ideas
+  - button "Surprise me":
+    - img
+    - text: Surprise me
+  - button "A little context (optional)":
+    - img
+    - text: A little context (optional)
+  - button "Next" [disabled]

@@ -9,6 +9,8 @@ against the live upstream repo needs the network and belongs to
 import os
 import re
 
+import pytest
+
 from server.bootstrap import install
 from server.bootstrap.artifacts import directory_checksum, load_manifest
 
@@ -113,6 +115,7 @@ _SKIP_DIRS = {
     ".venv", "static", "dist", ".ruff_cache",
 }
 _SELF = "tests/test_skills_provenance.py"
+_OBSERVED_EVIDENCE_ROOT = os.path.join("docs", "evidence")
 
 
 def _fork_owned_text_files():
@@ -129,6 +132,13 @@ def _fork_owned_text_files():
     for root, dirs, files in os.walk(REPO):
         dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
         relative_root = os.path.relpath(root, REPO)
+        # Captured source manifests/transcripts describe historical inputs;
+        # their exact bytes must survive even when those inputs name a retired
+        # skill. This path is not an authored instruction/policy surface. Keep
+        # scanning every other docs/assets path, including similarly named dirs.
+        if relative_root == _OBSERVED_EVIDENCE_ROOT:
+            dirs[:] = []
+            continue
         if any(
             relative_root == skill or relative_root.startswith(skill + os.sep)
             for skill in upstream_skill_dirs
@@ -146,6 +156,34 @@ def _fork_owned_text_files():
                 yield os.path.relpath(path, REPO), open(path, encoding="utf-8").read()
             except (UnicodeDecodeError, OSError):
                 continue
+
+
+def test_provenance_scanner_excludes_captured_evidence_but_keeps_active_instruction_surfaces(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(os.path.join(REPO, "scripts"))
+    skills_dir = tmp_path / "assets" / "skills"
+    skills_dir.mkdir(parents=True)
+    paths = {
+        "docs/evidence/live-run/deployment.json": '{"path": "assets/skills/' + RETIRED_SKILLS[0] + '/SKILL.md"}',
+        "docs/evidence/live-run/transcript.md": "Observed historical coda instruction: " + RETIRED_SKILLS[0],
+        "docs/operator-guide.md": "Use " + RETIRED_SKILLS[0] + " for coda",
+        "assets/skills/promote/SKILL.md": "Use " + RETIRED_SKILLS[0],
+        "docs/evidence-policy/README.md": "Use " + RETIRED_SKILLS[0],
+    }
+    for relative, text in paths.items():
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(text)
+    evidence = {relative: (tmp_path / relative).read_bytes() for relative in paths if relative.startswith("docs/evidence/")}
+    monkeypatch.setitem(globals(), "REPO", str(tmp_path))
+    monkeypatch.setitem(globals(), "SKILLS_DIR", str(skills_dir))
+    scanned = dict(_fork_owned_text_files())
+    assert set(scanned) == {"docs/operator-guide.md", "assets/skills/promote/SKILL.md", "docs/evidence-policy/README.md"}
+    assert all(RETIRED_SKILLS[0] in text for text in scanned.values())
+    with pytest.raises(AssertionError, match="retired skill names still referenced"):
+        test_no_retired_skill_name_is_referenced_in_fork_owned_text()
+    with pytest.raises(AssertionError, match="stale project codename"):
+        test_fork_owned_text_carries_no_stale_project_codename()
+    assert all((tmp_path / relative).read_bytes() == original for relative, original in evidence.items())
 
 
 def test_no_retired_skill_name_is_referenced_in_fork_owned_text():

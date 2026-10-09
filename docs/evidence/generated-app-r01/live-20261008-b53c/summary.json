@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-10-08T07:32:07.501069+00:00",
+  "scope": "simulated_control_tower",
+  "control_tower_requests": 0,
+  "accepted": false,
+  "marker": "wt-eval-r01-1008-b53c",
+  "attendee": {
+    "email": "labuser+1@awsbricks.com",
+    "mode": "synthetic_attendee",
+    "persona": "synthetic_nontechnical",
+    "identity_verified": false,
+    "event_attendee_equivalence_verified": false
+  },
+  "deployment_id": "01f1c2e7c80c1e8c89d3098ad707d5ce",
+  "expires_at": "2026-10-08T08:39:59Z",
+  "source_digest": "9a23981f1705dd0ad9e0544dceaadcb77be87f9f832c3bf9c01a8e9a46636e81",
+  "attendee_browser_identity_verified": true,
+  "browser_auth_state_included": false,
+  "seed": {
+    "row_count": 20,
+    "table_id": "a62d6102-d75e-4025-a3d4-cb3187229091",
+    "same_table_id_before_after_setup_correction": true,
+    "provisioning_attribution": "external_setup_fixture_not_app_created"
+  },
+  "strict_wizard": {
+    "result": "industry_required",
+    "model_started": false
+  },
+  "retail_wizard": {
+    "model_conversation_verified": false,
+    "native_folder_trust_observed": true,
+    "starter_preservation_verified": true,
+    "owned_session_cleanup_verified": false,
+    "manual_user_interaction_during_cell": true,
+    "model_quality_verdict": "unverified",
+    "separate_external_cleanup_verified": true,
+    "original_ui_cleanup_failure_preserved": true
+  },
+  "model_access": {
+    "selected_service": "system.ai.claude-sonnet-5",
+    "service_exists": true,
+    "test_app_sp_effective_execute_present": false,
+    "recovery_grants_applied": false,
+    "recovery_approval": "pending_after_automatic_approval_review_rejection",
+    "user_screenshot_app_binding": "reported_by_user_not_independently_bound_by_cropped_image"
+  },
+  "generated_app_observed": false,
+  "ux_score": null,
+  "limitations": [
+    "No qualified native assistant turn was collected.",
+    "Native folder confirmation and model access are setup blockers, not model-quality scores.",
+    "The wizard industry gate and build-now starter are independently observed product behavior.",
+    "This isolated run does not qualify CT integration or fleet readiness."
+  ],
+  "artifacts": [
+    {
+      "path": "deployment.json",
+      "size": 102305,
+      "sha256": "c4efbe26aa7fcdaac94fc587412586df3e7f223a6db293b195974f5f59f67b1f"
+    },
+    {
+      "path": "seed-verified.json",
+      "size": 57414,
+      "sha256": "22f31890788b11d766afeb93f88a562ad5ae3afe2123f6b469b2f9207814aac3"
+    },
+    {
+      "path": "strict-wizard.json",
+      "size": 6083,
+      "sha256": "31d2609275580aea107ee8baea3df89ec1412553dde8382cc22cf7fc993faa74"
+    },
+    {
+      "path": "retail-wizard.json",
+      "size": 16478,
+      "sha256": "9822fdad1ea81f85082a678781e2be377f13818d3e8b5ac290c97f7045cebbb4"
+    },
+    {
+      "path": "model-access-diagnostic.json",
+      "size": 30019,
+      "sha256": "c1d751ee4c5d776db6c6f218b255e531c90b2d61aacc0795c5b948e1cf2ff575"
+    },
+    {
+      "path": "strict-industry-gate.png",
+      "size": 168783,
+      "sha256": "6e6e06e49dfd228bd5b16e7448bea1238acd7c0f3e9cfea521e95b5cf2377dd9"
+    },
+    {
+      "path": "strict-industry-gate.aria.txt",
+      "size": 4767,
+      "sha256": "4928dddc0e9b9ed5b9be0aabee566e36328311c0ff1de2d9d2c01f58821ba52f"
+    },
+    {
+      "path": "model-error-user-screenshot.png",
+      "size": 27237,
+      "sha256": "0c73bf623b82b89b994d228990fa52bf714cd553c437a64123846f5c673303e7"
+    },
+    {
+      "path": "retail-session-cleanup.json",
+      "size": 455,
+      "sha256": "42f17dfc1308e4807d10c5fae38ef2d5f75ba0d3e248477bb820a4d97370df2a"
+    }
+  ]
+}
