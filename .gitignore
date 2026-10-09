@@ -9,6 +9,11 @@ node_modules/
 .DS_Store
 .databricks/
 /data/
-# Native MLflow evaluator artifacts; reviewed exports live under docs/evidence/.
+# Raw evaluation records are archived outside Git; commit concise validation summaries.
 /mlruns/
 # Never commit a real credential into app.yaml — deploys inject WORKSHOP_PAT.
+
+/docs/evidence/
+/evidence/
+/test-results/
+/playwright-report/

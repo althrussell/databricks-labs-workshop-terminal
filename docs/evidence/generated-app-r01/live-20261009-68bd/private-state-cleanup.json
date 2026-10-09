@@ -1,6 +1,0 @@
-{
-  "operation": "remove_exact_private_evaluator_authentication_exports",
-  "removed_count": 2,
-  "authentication_state_archived": false,
-  "existing_user_browser_session_changed": false
-}

@@ -1,7 +1,7 @@
 # R01 generated-app evaluation: simulation first
 
 Current status, 9 October: **R01 is complete with a failed baseline**. The
-[closeout and inspected app evidence](evidence/generated-app-r01/live-20261009-68bd/CLOSEOUT.md)
+[closeout and inspected app evidence](remediation-validation.md#r01)
 record one eligible Claude `2.1.283` / AppKit `0.76.1` run from the unchanged
 CT-pinned September PEX, source `440232b953a5050c965838b42a594e1592ee3d33`.
 The WT-owned package runner exercised CT-compatible provisioning, exact source
@@ -47,7 +47,7 @@ Claude/Codex capabilities. The planner checks packaged toolchain pins; own-SP
 qualification checks the requested model identity and real invocation before a
 browser build. A substituted older model does not qualify.
 
-The [version audit, evidence and explicit compatibility holds](evidence/toolchain-quality-20261009/README.md)
+The [version audit, evidence and explicit compatibility holds](remediation-validation.md#toolchain)
 cover SDK `0.150.0`, agent skills `v0.2.28`, CLI `1.20.0`, AppKit `0.87.0`,
 Node LTS `24.21.0`, and the optional MLflow `3.17.0` quality group. Omnigent
 remains `0.15.0` until its newer client/server pair is qualified separately.
@@ -193,7 +193,7 @@ have run; the recorded deployment, seed, journey, and result regressions totaled
 289 passes, and the latest focused independent-result suite passed 47 tests.
 The isolated `wt-eval-r01-1008-b53c-wt` run is historical: its window expired at
 `2026-10-08T08:39:59Z`. A fresh isolated run is being prepared. The b53c
-[cleanup receipt](evidence/generated-app-r01/live-20261008-b53c/cleanup.json)
+[cleanup receipt](remediation-validation.md#r01)
 verifies removal of its exact test model grants, app, catalog, copied source, and
 operator group, with absence readbacks and other principals' permissions unchanged.
 The fresh `wt-eval-r01-1008-c72d` specification is prepared; deployment and canary
@@ -211,8 +211,8 @@ Both outcomes remain recorded separately.
 
 After subsequent user authorization, five direct model-service EXECUTE grants for
 the b53c app's own SP were applied and independently verified. The
-[dated follow-up](evidence/generated-app-r01/live-20261008-b53c/README.md) and
-[unchanged grant receipt](evidence/generated-app-r01/live-20261008-b53c/model-grants.json)
+[dated follow-up](remediation-validation.md#r01) and
+[unchanged grant receipt](remediation-validation.md#r01)
 record Sonnet 5, Opus 5, Haiku 4.5, GPT 5.6 Terra, and GPT 5.4 Mini access.
 CT groups and existing principals' permissions were unchanged. This supersedes
 the earlier pending-approval/missing-permission status while retaining its
@@ -220,7 +220,7 @@ original evidence. No app-SP wire canary, generated app, or independent app
 acceptance was completed before expiry. Attendee-facing consultation, wizard,
 starter, and design-policy remediation remains R02 onward.
 
-The preserved [live evidence summary](evidence/generated-app-r01/live-20261008-b53c/summary.json)
+The preserved [live evidence summary](remediation-validation.md#r01)
 includes immutable deployment/seed receipts, both wizard cells, actual industry-gate
 PNG/ARIA, model-service availability and grant readbacks, and the user's model-error
 screenshot. It contains no browser authentication state. `/readyz` reported ready
@@ -240,11 +240,11 @@ governs future remediation: a small compelling demo, usually one short exchange,
 sensible defaults and practical checks. [R02](workshop-interaction-contract-r02.md)
 is committed and pushed with policy delivery tests and bounded native MLflow
 model probes. Three genuine-labuser Labs attempts are preserved in the
-[R02 live closeout](evidence/workshop-contract-r02/live-20261009-e569/CLOSEOUT.md).
+[R02 live closeout](remediation-validation.md#r02).
 Observer failures and a simulated generated-SP permission gap prevented generated
 app acceptance; native assistant/question persistence during those builds remains
 unresolved. A subsequent
-[direct Computer/Browser probe](evidence/workshop-contract-r02/ui-question-capture-20261009-6b90/README.md)
+[direct Computer/Browser probe](remediation-validation.md#r02)
 qualified Claude's plain-text and structured question/reply UI paths, including
 an inline custom answer and two selected fields. The collector correlated both
 completed cells, but that does not explain the prior missing assistant records.

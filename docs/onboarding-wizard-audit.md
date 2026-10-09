@@ -46,28 +46,27 @@ responses. There were no live gateway calls, real attendee data, or cloud builds
 |---|---|---|
 | Actual source component in Chromium | Typing the bakery goal leaves Next disabled; Tab exits the modal; an older bakery recommendation appears beneath a new staff-shifts goal. | Isolated browser harness with controlled synthetic API/timing; not the complete WT runtime. |
 | Actual transpiled component with controlled hooks/timers | A pending suggestion survives card selection and Next; an older in-flight response remains eligible after text changes. | Executes component handlers/state, without browser rendering. |
-| [Offline contract reproducer](evidence/onboarding-wizard/reproduce-contract.py) and [results](evidence/onboarding-wizard/contract-reproduction.json) | Ten current-defect demonstrations covering generated-card loss/collision, mutable prompts, discovery replacement/clearing, concurrent saves, capture, and persona divergence. | Models/catalog access are mocked, homes are temporary, network connections blocked. Assertions document existing broken behavior; they are not acceptance tests. |
+| [Offline contract reproducer](remediation-validation.md#audit) and [results](remediation-validation.md#audit) | Ten current-defect demonstrations covering generated-card loss/collision, mutable prompts, discovery replacement/clearing, concurrent saves, capture, and persona divergence. | Models/catalog access are mocked, homes are temporary, network connections blocked. Assertions document existing broken behavior; they are not acceptance tests. |
 | Offline generation probes | Malformed lists raise TypeError; empty dependencies can hide nonexistent prompt tables; irrelevant shape fillers displace relevant cards; fallback reshuffles; no invocation failover; duplicate concepts and misleading counts survive. | Executed inline during the audit, without saved probe script/output; not covered by the linked contract reproducer. Synthetic output/dependencies, without real model quality judgments. |
 | Existing tests | 129 focused wizard/admin/user-content/content tests and 29 generation/admin tests passed in the extended audit. | These groups overlap and must not be summed into a unique test count. Passing tests do not exercise the full wizard CUJ. |
 
-Browser artifacts: [industry gate](evidence/onboarding-wizard/industry-gate.png),
-[accessibility snapshot](evidence/onboarding-wizard/industry-gate-accessibility.txt),
-[stale recommendation](evidence/onboarding-wizard/stale-suggestions.png), and
-[observation details](evidence/onboarding-wizard/browser-observations.json).
+Browser artifacts: [industry gate](remediation-validation.md#audit),
+[accessibility snapshot](remediation-validation.md#audit),
+[stale recommendation](remediation-validation.md#audit), and
+[observation details](remediation-validation.md#audit).
 All cards, users, and responses in these artifacts are synthetic. The rendered
 checks demonstrate current behavior; they do not independently score the visual
 quality of live generated ideas or apps.
 
-Run the offline demonstration from the repository root with the existing Python
-environment:
+The historical defect demonstration is externally archived. Run the current
+regression suite from the repository root:
 
 ```sh
-.venv/bin/python docs/evidence/onboarding-wizard/reproduce-contract.py --output /tmp/wizard-contract-reproduction.json
+uv run --frozen --no-group release python -m pytest tests/test_wizard.py tests/test_wizard_llm.py -q
 ```
 
-After remediation, replace these defect assertions with the opposite acceptance
-invariants in the real test suite. Do not add a CI requirement that keeps these
-defects present.
+Regression tests verify acceptance invariants. The archived defect demonstrations
+are not a CI requirement to retain the old behavior.
 
 ## Current critical user journey and broken boundaries
 

@@ -7,7 +7,7 @@ created a real bakery app from simple nontechnical inputs. Independent observati
 proved missing scope agreement, an Invalid Date display, and offscreen mobile
 status/action columns. Adding/packing worked through UI and survived reload/fresh
 context; independent Lakebase storage proof and full acceptance remain unverified.
-The [R01 closeout](evidence/generated-app-r01/live-20261009-68bd/CLOSEOUT.md) records
+The [R01 closeout](remediation-validation.md#r01) records
 receipts, inspected screenshots, limitations, and independently verified cleanup.
 CT code and its working deployment are unchanged. R02 is accepted with recorded
 follow-ups and implemented in PR #89;
@@ -109,14 +109,14 @@ the full wizard-to-generated-app gates pass; qualify the disabled entry path too
 
 ## Evidence and limits
 
-The later R01 [isolated Labs evidence](evidence/generated-app-r01/live-20261008-b53c/summary.json)
+The later R01 [isolated Labs evidence](remediation-validation.md#r01)
 records genuine labuser authentication, all 419 runtime file hashes, and 20 real
 synthetic orders. The plain bakery sentence could not advance without an industry;
 selecting Retail preserved WT's build-now/one-question starter but encountered
 native startup and model authorization blockers. The original attempts proved
 Sonnet 5 exists while the test app SP lacked effective model EXECUTE access,
 despite `/readyz` reporting ready. The
-[later dated follow-up](evidence/generated-app-r01/live-20261008-b53c/README.md)
+[later dated follow-up](remediation-validation.md#r01)
 preserves five independently verified direct EXECUTE grants after further user
 authorization. CT code, deployment, groups, and existing principals' permissions
 were unchanged. The run window expired before an app-SP wire canary or generated
@@ -481,7 +481,7 @@ product/design reviewer should participate in starter and rubric calibration.
 
 | Workstream | Deliverable and likely files | Depends on | Suggested owner | Estimate | Exit evidence |
 |---|---|---|---|---|---|
-| R01: Baseline benchmark | Completed failed baseline: eligible Claude/AppKit build, native-correlated consultation, real deployed app, independent UI task/screenshots and exact cleanup; WT-owned CT-compatible package runner and evidence in `evals/generated_apps/` and `docs/evidence/generated-app-r01/live-20261009-68bd/` | None | Evaluation engineer + harness engineer | 3-5 | Current-policy baseline from novice inputs with exact release/instrumentation identity; failures retained and independently classified; real deployed app or explicit failure verdict per run; CT integration qualified separately |
+| R01: Baseline benchmark | Completed failed baseline: eligible Claude/AppKit build, native-correlated consultation, real deployed app, independent UI task/screenshots and exact cleanup; WT-owned CT-compatible package runner and evidence in `evals/generated_apps/` and `docs/remediation-validation.md` | None | Evaluation engineer + harness engineer | 3-5 | Current-policy baseline from novice inputs with exact release/instrumentation identity; failures retained and independently classified; real deployed app or explicit failure verdict per run; CT integration qualified separately |
 | R02: Workshop interaction and quality contract | Rewrite base/coach/project/studio policy around workshop pacing; shared concise framing; automatic compact brief; bounded prepared-data discovery; update contradictory tests and refresh allowlist | Accepted by the project owner on 9 October with recorded follow-ups. Native question/recommendation, action/reload and corrected first-preview phone checks passed. Working-data and first-page disclosure gaps remain for R04/R05/R06; Codex collector remains unqualified | Agent-experience engineer + product reviewer | 2-3 | Clear requests go straight to building; ambiguous goals usually need one brief exchange and a reasoned recommendation; existing data explored before invention; demo assumptions transparent; no routine approval ceremony or production planning; policy agrees across adapters |
 | R03: Wizard journey and brief integrity | Goal/help-me-choose paths; optional industry; request coordinator/stable selections; versioned immutable static/dynamic snapshots and scoped IDs; atomic saves; recovery/a11y; recommendation/schema/dependency/fallback contracts; discovery/persona reconciliation; rendered tests. Detailed stages in the extended wizard audit | R02 contract; baseline from R01 | Full-stack engineer + product designer | 6-10, revised after extended audit | Plain goal can continue; obsolete requests never change current selection; suggestion → select → save → reload/restart → launch preserves exact task/industry/provenance; faults recover; relevance/feasibility gates and real novice-to-app journey pass |
 | R04: Reliable preparation | Shared local/remote preparation; required-step readiness/retry; composed digests and warm-install refresh; race reconciliation; helper stdout/status and migration | R02 policy shape; may run alongside R03 | Runtime engineer | 3-5 | Fresh, prewarmed, redeployed, UI-first remote and partial-failure paths receive identical current policy/skills/helper; noisy scaffold works in documented command |

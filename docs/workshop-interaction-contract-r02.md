@@ -66,7 +66,7 @@ README wording correction, which leaves the shared contract unchanged.
 
 ## Validation and evidence
 
-The [R02 evidence directory](evidence/workshop-contract-r02/) contains test logs,
+The [R02 evidence directory](remediation-validation.md#r02) contains test logs,
 native MLflow summaries/traces, prompt snapshots, intermediate probe results,
 and a hash manifest. The final combined local suite covers 340 tests, with one
 existing skipped test, plus nine passing release-packaging tests. Final focused
@@ -111,7 +111,7 @@ before/after comparison.
 
 ## Isolated Labs native journeys
 
-The [live closeout](evidence/workshop-contract-r02/live-20261009-e569/CLOSEOUT.md)
+The [live closeout](remediation-validation.md#r02)
 preserves all three attempts, exact package/observer identities, native MLflow
 traces, the failed generated source, cleanup receipts, and CT readbacks. The
 runtime used R02 instruction commit `28c80f1`, independently compared across all
@@ -181,7 +181,7 @@ actual user messages.
 The combined local suite for helper/policy/inventory and deployment/access/
 cleanup passed 180 tests. A wizard API test reused an attendee whose brief an
 earlier policy test had saved; it now uses its own attendee identity. The fresh
-[packaged run and closeout](evidence/workshop-contract-r02/live-20261009-fdae/CLOSEOUT.md)
+[packaged run and closeout](remediation-validation.md#r02)
 independently matched all 445 runtime files to commit `4c8b8d7`. A genuine labuser
 answered the consequential question in about 47 seconds. Desktop and phone
 packing survived reload, with valid relative due dates and no horizontal action
@@ -207,14 +207,14 @@ Existing warm installations and already seeded project adoption still need R04's
 versioned reconciliation. R03 still owns wizard flow, card/typed-goal integrity,
 idea relevance, persistence, and request coordination. R05/R06 own starter quality
 and practical browser/repair infrastructure. The subsequent
-[direct browser question-delivery probe](evidence/workshop-contract-r02/ui-question-capture-20261009-6b90/README.md)
+[direct browser question-delivery probe](remediation-validation.md#r02)
 qualified Claude's plain-text question, inline custom answer and two-question
 form with multiple selections on the pinned Linux CLI. Both UI acknowledgements
 and collector correlation passed in those controlled cells. The earlier missing
 assistant records during a tool-using build remain unexplained. Codex exited at
 startup in both controlled probes; the subsequent c6d6 Browser run qualified
 its visible question/reply delivery, with its collector still unqualified.
-The subsequent [startup and coach-hint repair](evidence/workshop-contract-r02/codex-startup-and-coach-hint-20261009/README.md)
+The subsequent [startup and coach-hint repair](remediation-validation.md#r02)
 reproduced Codex's long client socket pathname failure in a disposable Linux
 App and verified the exact WT short-HOME helper: native daemon start passed in
 1.699 seconds, with the original state preserved. The banner now offers a quick

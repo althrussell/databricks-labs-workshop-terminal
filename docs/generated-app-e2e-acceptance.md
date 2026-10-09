@@ -1,7 +1,7 @@
 # Generated-app E2E acceptance: a simulated nontechnical attendee
 
 Status: **R01 is closed with a failed baseline**; the
-[eligible current-release build and actual app evidence](evidence/generated-app-r01/live-20261009-68bd/CLOSEOUT.md)
+[eligible current-release build and actual app evidence](remediation-validation.md#r01)
 are archived and test resources cleaned. The simulator, browser/harness adapters,
 bounded journeys, reports, CT-compatible package workflow and native MLflow
 adapters exist. This contract's full passing acceptance remains outstanding:
