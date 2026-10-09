@@ -9,18 +9,18 @@ status/action columns. Adding/packing worked through UI and survived reload/fres
 context; independent Lakebase storage proof and full acceptance remain unverified.
 The [R01 closeout](evidence/generated-app-r01/live-20261009-68bd/CLOSEOUT.md) records
 receipts, inspected screenshots, limitations, and independently verified cleanup.
-CT code and its working deployment are unchanged. R02 is committed and pushed;
+CT code and its working deployment are unchanged. R02 is accepted with recorded
+follow-ups and implemented in PR #89;
 R03–R10 remain proposed. The [R02 implementation report](workshop-interaction-contract-r02.md)
 records policy delivery, local regressions, model probes and live Labs attempts.
-The latest Browser run qualified native Codex question transport and a static
-page, plus Claude's bakery clarification, recommendation, packing and reload.
-Its first phone preview failed; a simple user request produced a working repair.
-WT's inventory filter hid prepared data, and noisy helper stdout broke the
-documented scaffold command. Those defects and stronger data-first/phone guidance
-are now covered locally, with optional prepared-demo read parity in the isolated
-runner. Acceptance requires a fresh package run; a repaired preview does not
-erase its first-preview failure. Codex collector qualification and actual CT
-integration remain separate.
+Browser tests qualified native Codex question transport and a static page, plus
+Claude's bakery clarification, recommendation, packing and reload. The fresh
+corrected package passed first-preview phone status/actions. Shared demo lookup
+worked, but the agent missed a suitable working-catalog fixture and omitted
+on-page sample/reset disclosure until a simple user repair request. Preserve
+those failures: carry working-data delivery into R04, truthful starter defaults
+into R05, and completion verification into R06. Codex collector qualification,
+broader generated-app quality and actual CT integration remain separate.
 
 Audited on 8 October 2026 against commit `4d46461c6a0229892bdda5c153d8a6dd03d316c6`.
 Scope: attendee onboarding, prompts, coaching, skill installation, project setup,
@@ -482,7 +482,7 @@ product/design reviewer should participate in starter and rubric calibration.
 | Workstream | Deliverable and likely files | Depends on | Suggested owner | Estimate | Exit evidence |
 |---|---|---|---|---|---|
 | R01: Baseline benchmark | Completed failed baseline: eligible Claude/AppKit build, native-correlated consultation, real deployed app, independent UI task/screenshots and exact cleanup; WT-owned CT-compatible package runner and evidence in `evals/generated_apps/` and `docs/evidence/generated-app-r01/live-20261009-68bd/` | None | Evaluation engineer + harness engineer | 3-5 | Current-policy baseline from novice inputs with exact release/instrumentation identity; failures retained and independently classified; real deployed app or explicit failure verdict per run; CT integration qualified separately |
-| R02: Workshop interaction and quality contract | Rewrite base/coach/project/studio policy around workshop pacing; shared concise framing; automatic compact brief; bounded prepared-data discovery; update contradictory tests and refresh allowlist | Native question/recommendation and action/reload observed. First-preview phone and data-discovery failures retained; corrected package qualification pending. Codex UI transport passes; its collector remains unqualified | Agent-experience engineer + product reviewer | 2-3 | Clear requests go straight to building; ambiguous goals usually need one brief exchange and a reasoned recommendation; existing data explored before invention; demo assumptions transparent; no routine approval ceremony or production planning; policy agrees across adapters |
+| R02: Workshop interaction and quality contract | Rewrite base/coach/project/studio policy around workshop pacing; shared concise framing; automatic compact brief; bounded prepared-data discovery; update contradictory tests and refresh allowlist | Accepted by the project owner on 9 October with recorded follow-ups. Native question/recommendation, action/reload and corrected first-preview phone checks passed. Working-data and first-page disclosure gaps remain for R04/R05/R06; Codex collector remains unqualified | Agent-experience engineer + product reviewer | 2-3 | Clear requests go straight to building; ambiguous goals usually need one brief exchange and a reasoned recommendation; existing data explored before invention; demo assumptions transparent; no routine approval ceremony or production planning; policy agrees across adapters |
 | R03: Wizard journey and brief integrity | Goal/help-me-choose paths; optional industry; request coordinator/stable selections; versioned immutable static/dynamic snapshots and scoped IDs; atomic saves; recovery/a11y; recommendation/schema/dependency/fallback contracts; discovery/persona reconciliation; rendered tests. Detailed stages in the extended wizard audit | R02 contract; baseline from R01 | Full-stack engineer + product designer | 6-10, revised after extended audit | Plain goal can continue; obsolete requests never change current selection; suggestion → select → save → reload/restart → launch preserves exact task/industry/provenance; faults recover; relevance/feasibility gates and real novice-to-app journey pass |
 | R04: Reliable preparation | Shared local/remote preparation; required-step readiness/retry; composed digests and warm-install refresh; race reconciliation; helper stdout/status and migration | R02 policy shape; may run alongside R03 | Runtime engineer | 3-5 | Fresh, prewarmed, redeployed, UI-first remote and partial-failure paths receive identical current policy/skills/helper; noisy scaffold works in documented command |
 | R05: Strong starters | First operational queue, then analytics/AI; working routing/actions/states; truthful data/provenance; pin, compile, render; reconcile minimal examples | R02 acceptance contract | Frontend engineer + product designer | 4-7 | Starter journey passes at 390/768/1440px; all controls work; error/empty/loading/screenshots and accessibility evidence; approved first-preview appearance |
@@ -504,6 +504,20 @@ Do not wait for all three starter genres to finish before running the first E2E.
 Do not release a prompt-only fix while claiming the UX problem is resolved.
 
 ## Release and rollout
+
+Use one reviewable PR per remediation workstream, starting with R03. Branch each
+from current `main`; stack only when an unmerged dependency is necessary and
+state that dependency explicitly. Keep evidence and known limitations with the
+workstream that produced them. Merge each PR after review, local CI and its
+appropriate isolated CT-compatible Labs checks. A merge does not deploy or
+change CT's pinned workshop release.
+
+Run final CT-to-WT integration against one immutable assembled WT candidate after
+the dependent workstreams land, before changing the event release pin or rolling
+out. Use a disposable workshop/attendee deployment and preserve CT's working
+deployment and code. If an integration finding spans workstreams, fix it in a
+focused follow-up PR and requalify that candidate. Do not leave every PR open until
+the end: that creates a growing dependency stack and defers integration problems.
 
 Use one immutable release identifier covering WT revision, instructions/overlay
 digest, starter version, AppKit/APX dependencies, CLI/harness versions, resolved

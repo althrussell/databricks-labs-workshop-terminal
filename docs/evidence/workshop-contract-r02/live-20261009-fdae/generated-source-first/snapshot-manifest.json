@@ -1,0 +1,274 @@
+{
+  "observed_at": "2026-10-09T09:44:30.098075+00:00",
+  "app": {
+    "active_deployment": {
+      "create_time": "2026-10-09T09:40:14Z",
+      "creator": "6f02b57e-9118-4674-aa23-bf7bd8a9a087",
+      "deployment_artifacts": {
+        "source_code_path": "/Workspace/Users/1ceccdbc-e9a0-4ade-a1f0-c3b3700affde/src/01f1c3c56db91946b7142e3cfa9eca37"
+      },
+      "deployment_id": "01f1c3c56db91946b7142e3cfa9eca37",
+      "mode": "SNAPSHOT",
+      "source_code_path": "/Workspace/Users/6f02b57e-9118-4674-aa23-bf7bd8a9a087/.bundle/bakery-orders/default/files",
+      "status": {
+        "message": "App started successfully",
+        "state": "SUCCEEDED"
+      },
+      "update_time": "2026-10-09T09:41:03Z"
+    },
+    "app_status": {
+      "message": "App has status: App is running",
+      "state": "RUNNING"
+    },
+    "compute_size": "MEDIUM",
+    "compute_status": {
+      "message": "App compute is running.",
+      "state": "ACTIVE"
+    },
+    "create_time": "2026-10-09T09:36:49Z",
+    "creator": "6f02b57e-9118-4674-aa23-bf7bd8a9a087",
+    "default_source_code_path": "/Workspace/Users/6f02b57e-9118-4674-aa23-bf7bd8a9a087/.bundle/bakery-orders/default/files",
+    "description": "A Databricks App powered by AppKit",
+    "effective_user_api_scopes": [
+      "iam.access-control:read",
+      "iam.current-user:read"
+    ],
+    "id": "1ceccdbc-e9a0-4ade-a1f0-c3b3700affde",
+    "name": "bakery-orders",
+    "oauth2_app_client_id": "81f10b2c-cc29-4063-98b2-7842c5cc834c",
+    "oauth2_app_integration_id": "81f10b2c-cc29-4063-98b2-7842c5cc834c",
+    "service_principal_client_id": "1ceccdbc-e9a0-4ade-a1f0-c3b3700affde",
+    "service_principal_id": 73682828201990,
+    "service_principal_name": "app-3di57i bakery-orders",
+    "thumbnail_url": "",
+    "update_time": "2026-10-09T09:40:14Z",
+    "updater": "6f02b57e-9118-4674-aa23-bf7bd8a9a087",
+    "url": "https://bakery-orders-7474655950495189.aws.databricksapps.com"
+  },
+  "deployment": {
+    "create_time": "2026-10-09T09:40:14Z",
+    "creator": "6f02b57e-9118-4674-aa23-bf7bd8a9a087",
+    "deployment_artifacts": {
+      "source_code_path": "/Workspace/Users/1ceccdbc-e9a0-4ade-a1f0-c3b3700affde/src/01f1c3c56db91946b7142e3cfa9eca37"
+    },
+    "deployment_id": "01f1c3c56db91946b7142e3cfa9eca37",
+    "mode": "SNAPSHOT",
+    "source_code_path": "/Workspace/Users/6f02b57e-9118-4674-aa23-bf7bd8a9a087/.bundle/bakery-orders/default/files",
+    "status": {
+      "message": "App started successfully",
+      "state": "SUCCEEDED"
+    },
+    "update_time": "2026-10-09T09:41:03Z"
+  },
+  "snapshot_path": "/Workspace/Users/1ceccdbc-e9a0-4ade-a1f0-c3b3700affde/src/01f1c3c56db91946b7142e3cfa9eca37",
+  "file_count": 41,
+  "files": [
+    {
+      "path": ".env.example",
+      "size": 110,
+      "sha256": "eb067acbfd037cf9466456c93bf22e159f02278daed1b5547a91005149e251a5"
+    },
+    {
+      "path": ".gitignore",
+      "size": 214,
+      "sha256": "754c472425a831b713e1a9ef53b4c4e3294422241c91144a7a580a9cea43f511"
+    },
+    {
+      "path": ".prettierignore",
+      "size": 321,
+      "sha256": "de6697ee35689bcef600534f812749b65a49764cc45a575ffb67ade8afee81d9"
+    },
+    {
+      "path": ".prettierrc.json",
+      "size": 227,
+      "sha256": "001a90cca9e78bb60975a7e2e8a8c002cdf33f5d91322b5e05e8ca0b718ed9d7"
+    },
+    {
+      "path": "AGENTS.md",
+      "size": 16735,
+      "sha256": "ee309775fc357b32df647c7c03989530fe2b48486f9b7ad18f7cb1190c290220"
+    },
+    {
+      "path": "CLAUDE.md",
+      "size": 17671,
+      "sha256": "4ad5922e63b92bb67f2952b74275bc01876bdaf85b0e8ec9763ddbc5fa10a97c"
+    },
+    {
+      "path": "README.md",
+      "size": 4290,
+      "sha256": "118f1ad993eaeff9f5e9b93b4d191a2085f4131f8121b3ba04413069e3be9a58"
+    },
+    {
+      "path": "app.yaml",
+      "size": 33,
+      "sha256": "401d032046dcaa81d770a84dbee8cde68f7253b7c433751f239153ebf9deba5d"
+    },
+    {
+      "path": "appkit.plugins.json",
+      "size": 19371,
+      "sha256": "1855f60f15d3c0b3bc25b2f7204ee22af240bde30cd1901573c576eac954ab3b"
+    },
+    {
+      "path": "client/components.json",
+      "size": 426,
+      "sha256": "6e94b7742765792c58b51aed1d98e78988ef468a8906f7bb723417f98f2b29e3"
+    },
+    {
+      "path": "client/index.html",
+      "size": 742,
+      "sha256": "190cd17c0627e3036a03c9beff1dc422dda3040b76cee64b0e3d84ed290d47e4"
+    },
+    {
+      "path": "client/postcss.config.js",
+      "size": 92,
+      "sha256": "fe78f76eb483fdc486e5f0ba4aabe66c85575aeec3c2d3e89f7024fc4632e67f"
+    },
+    {
+      "path": "client/public/apple-touch-icon.png",
+      "size": 2547,
+      "sha256": "89f56014a79d37f3c66aafc29c3d45daad56190812f16182834d717500490fde"
+    },
+    {
+      "path": "client/public/favicon-16x16.png",
+      "size": 302,
+      "sha256": "838387dd3210504bb74c13c45d65e3a45bc840a4e8129e856cab75df66be3218"
+    },
+    {
+      "path": "client/public/favicon-192x192.png",
+      "size": 2762,
+      "sha256": "c6c00d580e1616bc59ec0fcb440cf26f04e8f060b4da230a23677d22a40ce033"
+    },
+    {
+      "path": "client/public/favicon-32x32.png",
+      "size": 492,
+      "sha256": "e3d2d2083f3fecb0f203fc1ad4b5ccab27ac06d23152c5cd4677cf79b8971535"
+    },
+    {
+      "path": "client/public/favicon-48x48.png",
+      "size": 686,
+      "sha256": "751121599c522f5e40e57e7476b744cd2e366c1597eac7e4849985bf6736bc8b"
+    },
+    {
+      "path": "client/public/favicon-512x512.png",
+      "size": 10325,
+      "sha256": "561481ae99f479c7834a2d129930b9928c37c62b718d7d607b6e1ee48585118c"
+    },
+    {
+      "path": "client/public/favicon.svg",
+      "size": 522,
+      "sha256": "1cb943a581ccbd50d5d70b0446eee235fbcf0a9798e81ea527879ba2cac0d388"
+    },
+    {
+      "path": "client/public/site.webmanifest",
+      "size": 372,
+      "sha256": "89acd743e1756632d4a613c3ab0f9db03ab6d59d436b94393e3b9f8a48ff934d"
+    },
+    {
+      "path": "client/src/App.tsx",
+      "size": 276,
+      "sha256": "acd175f75a61779e5cc745efbd7f8ce70a7e97ecc8d2baab0e583afefc559a0c"
+    },
+    {
+      "path": "client/src/ErrorBoundary.tsx",
+      "size": 2268,
+      "sha256": "f142f29052ba81b6759dbbc82e573ea69112995c78a2b5355479dda2b38420c4"
+    },
+    {
+      "path": "client/src/index.css",
+      "size": 3006,
+      "sha256": "bbd89a0560b4c3c37727f01d2ece661f01f35f13b6ee52095ce10a6387f71eaf"
+    },
+    {
+      "path": "client/src/lib/utils.ts",
+      "size": 169,
+      "sha256": "9304a861c8673bee09e0f12de31773abbde503b02e59dfd74763ddec2e37cf05"
+    },
+    {
+      "path": "client/src/main.tsx",
+      "size": 917,
+      "sha256": "4224a11fc04092a4dbb3e473f709c9ef5245a469463af0e17fc779963f176be7"
+    },
+    {
+      "path": "client/src/pages/OrdersPage.tsx",
+      "size": 12270,
+      "sha256": "039adfd1800af615ee7ae647bdacd1cc57ff41d67eed2dddfccc0a5daea435d6"
+    },
+    {
+      "path": "client/src/vite-env.d.ts",
+      "size": 38,
+      "sha256": "65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5"
+    },
+    {
+      "path": "client/tailwind.config.ts",
+      "size": 274,
+      "sha256": "b4911ad8153c92e4d4289bf53547968cabe2aeeba5671b671ecda3a0f369f418"
+    },
+    {
+      "path": "client/vite.config.ts",
+      "size": 646,
+      "sha256": "2801f6ff6d7101027d86de65a4feef15c903d622c94f7e26a8cb6e684d992542"
+    },
+    {
+      "path": "databricks.yml",
+      "size": 549,
+      "sha256": "d00b25bb342d4ec17772ce4ac80f4dd833ebb7b356157cfd3708a5dcfc686794"
+    },
+    {
+      "path": "eslint.config.js",
+      "size": 2211,
+      "sha256": "ab68a42bdd10dbc3973f7808ef82a08e7f782cd097fcf87d8e01ba58ebab61ab"
+    },
+    {
+      "path": "package-lock.json",
+      "size": 558934,
+      "sha256": "afff55705c18a7346a9e72e707a94d5350a63e4766579d11fee0161c90fbde1d"
+    },
+    {
+      "path": "package.json",
+      "size": 2783,
+      "sha256": "8fd0cb5d9a149a87dbc9564b58c830ef1bfbeb1bb1bd2d50b3b65c06f910ba4c"
+    },
+    {
+      "path": "server/example.test.ts",
+      "size": 2419,
+      "sha256": "7e9c3cfa707f93241ecb40df009bf42e5e0456218a0edeb223562cef8d37ce27"
+    },
+    {
+      "path": "server/server.ts",
+      "size": 3445,
+      "sha256": "c83272981ee2c43c1c2ab962dfcab02903b18cd1b59bbcd777a1838aa1514b2b"
+    },
+    {
+      "path": "tsconfig.client.json",
+      "size": 690,
+      "sha256": "8e24bfb59034fd41601d17b55f13eaaf149623341e5eaa4f1a52bafac0c4057b"
+    },
+    {
+      "path": "tsconfig.json",
+      "size": 112,
+      "sha256": "a78ba2cb0355e5a262cdd081d0758750ec8bbe2f37898f9436e7b1768fd1addf"
+    },
+    {
+      "path": "tsconfig.server.json",
+      "size": 340,
+      "sha256": "46fdc2f437c0f0f2390a0a1528776c6392e0f4b4fef0d2e1721e28fd6dcf3b65"
+    },
+    {
+      "path": "tsconfig.shared.json",
+      "size": 473,
+      "sha256": "0564271afd2e32ad06c6160a2b2634ad84cf170c044f1e5231d01827146a5017"
+    },
+    {
+      "path": "tsdown.server.config.ts",
+      "size": 434,
+      "sha256": "d836e03833872baffd53c21352a74b0e9645a3190d0ace81b9cc75f2e85ca20e"
+    },
+    {
+      "path": "vitest.config.ts",
+      "size": 359,
+      "sha256": "3b2c441bbc58549d072a940a9de92c9a69e526d9ba05af56cd41737f3f035f1d"
+    }
+  ],
+  "current_deployment_unchanged_during_read": true,
+  "control_tower_mutations": 0
+}

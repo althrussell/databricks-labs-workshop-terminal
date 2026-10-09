@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "scope": "simulated_control_tower",
+  "control_tower_mutations": 0,
+  "runtime_source_commit": "4c8b8d761037bb9b785750acac3e9a52d935bb07",
+  "runtime_files_independently_matched": 445,
+  "entry": "Genuine labuser Browser/Computer; native Claude 2.1.283; wizard disabled",
+  "collector": "ready_question_reply_and_repair_correlated",
+  "consultation_seconds": 46.545,
+  "first_preview": {
+    "consequential_question_and_recommendation": "passed",
+    "packing_desktop_and_phone_reload": "passed",
+    "relative_due_dates": "passed",
+    "phone_status_action_without_horizontal_scroll": "passed",
+    "prepared_shared_lookup": "observed_DESCRIBE_and_SHOW_TABLES",
+    "working_catalog_fixture_reuse": "failed_suitable_bakery_fixture_missed",
+    "on_page_sample_reset_disclosure": "failed",
+    "deployed_source_brief": "scaffold_placeholders_unfilled_at_first_deploy"
+  },
+  "disclosure_repair": {
+    "ordinary_user_request": "Can you show on the page that these are sample orders and that packed changes reset if the app restarts?",
+    "desktop_and_phone_disclosure": "passed",
+    "redeploy_reset": "observed"
+  },
+  "initial_access_error": "403_before_deployment_helper_completion; normal_root_retry_after_completion_succeeded; cause_not_proven",
+  "storage": "shared_server_memory; reload_persists; redeploy_resets",
+  "r02_workstream_decision": "accepted_by_project_owner_with_followups_2026-10-09",
+  "all_observed_criteria_passed": false,
+  "followups": {
+    "R04": "working-catalog context and deployed brief delivery",
+    "R05": "truthful on-page sample/reset defaults",
+    "R06": "observed primary-task completion and first-preview checks"
+  },
+  "actual_ct_integration": "not_run",
+  "limits": [
+    "Single representative native Claude build; no fleet or wizard qualification",
+    "No deliberate restart/fault or calibrated visual suite",
+    "Spend not measured or enforced",
+    "Collector tool/worker attribution and transcript authenticity unverified"
+  ],
+  "cleanup": "independently_verified",
+  "control_tower_deployment_unchanged": "01f1bbc1de2911cb93356caa765f77a3"
+}

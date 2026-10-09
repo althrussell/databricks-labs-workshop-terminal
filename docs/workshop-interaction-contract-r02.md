@@ -1,15 +1,18 @@
 # R02: workshop interaction and quality contract
 
-Implementation is in PR #89; R02 acceptance remains open. Policy delivery tests
-and bounded model probes pass. Earlier genuine-labuser attempts retained observer
-failures and a simulation permission gap. A subsequent native Browser run on
-9 October qualified Codex question/reply delivery and a clear static-page build,
-then Claude's consequential bakery question, recommendation, deployed app,
-packing action and reload. The bakery first preview failed the phone action
-check; a simple user request produced a working repair. The agent invented data
-without exploring the prepared inventory. Those failures remain recorded and
-require a fresh packaged run after the fixes below. No Control Tower changes or
-wizard re-enablement were performed. R01's baseline and verdict are unchanged.
+R02's interaction-contract implementation in PR #89 was accepted by the project
+owner on 9 October, with the remaining quality findings carried into subsequent
+workstreams. Policy delivery tests and bounded model probes pass. Genuine
+labuser Browser tests qualified Codex question/reply delivery and a clear static
+page, plus Claude's consequential bakery question, recommendation, deployed app,
+packing action and reload. The fresh corrected package also passed first-preview
+phone status/actions without horizontal scrolling. It explored shared retail
+data but missed the suitable working-catalog bakery fixture, and the initial
+page omitted sample/reset disclosure. A simple user request fixed the disclosure;
+the original failures remain recorded. Working-data context belongs to R04,
+truthful starter defaults to R05, and observed completion checks to R06. This
+workstream closure does not mark every generated-app criterion or the release
+qualified. CT was unchanged and the wizard remains disabled. R01 is unchanged.
 
 ## What changed
 
@@ -177,8 +180,17 @@ actual user messages.
 
 The combined local suite for helper/policy/inventory and deployment/access/
 cleanup passed 180 tests. A wizard API test reused an attendee whose brief an
-earlier policy test had saved; it now uses its own attendee identity. Live
-qualification of these latest changes still requires a fresh immutable package.
+earlier policy test had saved; it now uses its own attendee identity. The fresh
+[packaged run and closeout](evidence/workshop-contract-r02/live-20261009-fdae/CLOSEOUT.md)
+independently matched all 445 runtime files to commit `4c8b8d7`. A genuine labuser
+answered the consequential question in about 47 seconds. Desktop and phone
+packing survived reload, with valid relative due dates and no horizontal action
+scroll. Shared retail metadata was inspected and rejected for missing bakery
+fields, but the existing 20-row bakery fixture was not inspected or reused.
+The first page had no sample/reset notice; the ordinary disclosure request
+produced a verified repair. Its redeploy reset packed state, consistent with
+the disclosed shared server-memory implementation. No restart/fault suite was
+run. The collector correlated the exact native question, answer and repair.
 
 ## Limits and remaining qualification
 
@@ -199,20 +211,23 @@ and practical browser/repair infrastructure. The subsequent
 qualified Claude's plain-text question, inline custom answer and two-question
 form with multiple selections on the pinned Linux CLI. Both UI acknowledgements
 and collector correlation passed in those controlled cells. The earlier missing
-assistant records during a tool-using build remain unexplained; Codex exited at
-startup in both probe attempts, so its question delivery remains unverified.
+assistant records during a tool-using build remain unexplained. Codex exited at
+startup in both controlled probes; the subsequent c6d6 Browser run qualified
+its visible question/reply delivery, with its collector still unqualified.
 The subsequent [startup and coach-hint repair](evidence/workshop-contract-r02/codex-startup-and-coach-hint-20261009/README.md)
 reproduced Codex's long client socket pathname failure in a disposable Linux
 App and verified the exact WT short-HOME helper: native daemon start passed in
 1.699 seconds, with the original state preserved. The banner now offers a quick
 idea choice without claiming CLI readiness, and ended terminals retain their
 output with Relaunch. Local Browser checks and 76 focused backend / 107 frontend
-tests passed. These runtime changes still need a newly packaged, CT-compatible
-WT TUI test; daemon startup does not qualify model reply delivery or generated UX.
-Repeat the isolated Claude WT-to-app journey through Computer/Browser and
-independently check its generated UI, recording collector gaps separately.
-Actual CT integration follows a passing isolated result. R02 has been exercised
-live; those attempts have not established generated-app acceptance or CT integration.
+tests passed. The subsequent c6d6 native test and fdae corrected-package test
+exercised these changes through real CT-compatible WT UI instances. Daemon
+startup alone does not qualify model reply delivery or generated UX; the
+separately recorded Browser observations provide those bounded checks.
+Actual CT integration follows qualification of the assembled remediation release.
+R02 is accepted as a completed interaction workstream, with the above failures
+retained for follow-up. These tests do not establish full generated-app acceptance
+or actual CT integration.
 
 To repeat the limited probe with an explicitly configured tracking store:
 

@@ -1,0 +1,5 @@
+{
+  "submitted_at": "2026-10-09T09:46:04.104Z",
+  "text": "Can you show on the page that these are sample orders and that packed changes reset if the app restarts?",
+  "reason": "Observed missing page disclosure; original preview remains a failure"
+}

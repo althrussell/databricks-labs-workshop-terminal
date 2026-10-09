@@ -1,0 +1,60 @@
+{
+  "observed_at": 1791538278.777299,
+  "active_sessions": [
+    {
+      "id": "ef09678b-ff0f-4d27-a107-17f5b50cfc4f",
+      "agent_id": "claude",
+      "label": "Claude Code",
+      "created_at": 1791538143.887803,
+      "last_activity": 1791538278.8016686,
+      "exited": false
+    }
+  ],
+  "collector": {
+    "http_status": 200,
+    "result": {
+      "schema_version": 1,
+      "instrumentation": "read_only_native_transcript_v1",
+      "status": "ready",
+      "binding_verified": true,
+      "harness_id": "claude",
+      "harness_version": "2.1.283",
+      "wt_session_id": "ef09678b-ff0f-4d27-a107-17f5b50cfc4f",
+      "native_session_id": "daeddac2-17bc-4b2f-9f3a-c62d3955ecff",
+      "messages": [
+        {
+          "message_id": "5aa7772b92bb43252e3bf7c82979b08b6df88d606afd4dff900ff1e5a408825c",
+          "timestamp": "2026-10-09T09:29:59.914Z",
+          "role": "user",
+          "visibility": "user",
+          "complete": true,
+          "text": "I run a small bakery. Can you make a page so I know which orders need attention?"
+        },
+        {
+          "message_id": "945d0a8e52f2bfb5ea0b97dd4de4cf3f6118e1e618dc77e4d083eebb354b70a8",
+          "timestamp": "2026-10-09T09:30:13.480Z",
+          "role": "assistant",
+          "visibility": "user",
+          "complete": true,
+          "text": "For your bakery, \"needs attention\" could mean a few different things \u2014 I want to build the right one rather than guess.\n\nWhat should flag an order for attention: **orders that are overdue for pickup/delivery**, **orders that haven't been paid**, or **orders that haven't been started/baked yet**? (Pick one or more, or tell me if it's something else \u2014 like a custom cake order needing a callback.)\n\nIf you're not sure, I'd default to **overdue + not-yet-started** orders surfaced first, since that's what tells your team what to grab next."
+        },
+        {
+          "message_id": "6027286681edd387476c2c2026173b7c5616a7a0f1d93710ad5a648d2d844607",
+          "timestamp": "2026-10-09T09:30:46.459Z",
+          "role": "user",
+          "visibility": "user",
+          "complete": true,
+          "text": "Orders that are late and haven't been packed yet. Show those first."
+        }
+      ],
+      "next_cursor": "eyJmIjoiN2M2MDNiNzExYzI4MTAwYmI2YjIwYWJlOGJjMjk5NGEwMjM2MzRlNGNjYjllNWExZWMzYmNhODljOWQ2M2VhNCIsIm4iOiJkYWVkZGFjMi0xN2JjLTRiMmYtOWYzYS1jNjJkMzk1NWVjZmYiLCJvIjozMzE2ODIsInYiOjEsInciOiJlZjA5Njc4Yi1mZjBmLTRkMjctYTEwNy0xN2Y1YjUwY2ZjNGYifS4wOGZmMjAxMjA2NDA1NjNlZjMzNTRjYzAwZDVjY2M2OGExY2FjNTJjMmVhMDZiZDg5ZTNlOTU5Mjg3MWE4MGZk",
+      "tool_and_worker_coverage_verified": false,
+      "transcript_authenticity_verified": false,
+      "unverified_checks": [
+        "tool_and_worker_attribution",
+        "implementation_timing",
+        "native_transcript_authenticity"
+      ]
+    }
+  }
+}

@@ -1,0 +1,269 @@
+{
+  "plan": {
+    "schema_version": 1,
+    "scope": "simulated_control_tower",
+    "mode": "plan_only",
+    "control_tower_requests": 0,
+    "marker": "wt-eval-r02-1009-fdae",
+    "disposable": true,
+    "workspace_host": "https://dbc-e155652a-2cba.cloud.databricks.com",
+    "profile": "labs",
+    "names": {
+      "app_name": "wt-eval-r02-1009-fdae-wt",
+      "admin_group": "wt-eval-r02-1009-fdae-operators",
+      "catalog": "wt_eval_r02_1009_fdae",
+      "schema": "generated_apps",
+      "resource_prefix": "wt-eval-r02-1009-fdae-",
+      "source_path": "/Workspace/Shared/wt-eval-r02-1009-fdae/workshop-terminal"
+    },
+    "run_id": "sim-wt-eval-r02-1009-fdae",
+    "unit_id": "sim-wt-eval-r02-1009-fdae-unit-1",
+    "attendee": {
+      "email": "labuser+1@awsbricks.com",
+      "mode": "synthetic_attendee",
+      "persona": "synthetic_nontechnical",
+      "identity_verified": false,
+      "event_attendee_equivalence_verified": false
+    },
+    "bounds": {
+      "attendee_count": 1,
+      "created_at": "2026-10-09T06:32:36Z",
+      "expires_at": "2026-10-09T10:32:36Z",
+      "ttl_seconds": 14400,
+      "cost_budget_usd": 10,
+      "budget_enforcement": "external_runner_required",
+      "native_gateway_budget_applied": false,
+      "automatic_expiry_applied": false
+    },
+    "release": {
+      "source_kind": "runtime-snapshot",
+      "source_digest": "cff2939927c3c4d867b1e64ab475065c30dc9043a8ab4d6985db68f67f0b2c15",
+      "parent_git_sha": "31bb22a8994200b65c8e89809b54b4f0d2611a2e",
+      "instrumentation": true,
+      "prompt_policy_unchanged_asserted": true
+    },
+    "artifact_manifest_identity": {
+      "digest": "7df0caed529c9d9eb99844dbcb95c73313884be232d89c522100f7c70f3ef6a9",
+      "digest_kind": "canonical-json-sha256",
+      "skills_ref": "v0.2.15",
+      "skills_commit": "4d17885b0115718b5fb6a7540e908cb4201d4f2d",
+      "skills_content_sha256": "0b91eddfe20cf410c27e632ccc28b00b5049ad58aecc9101caca5476a4b1f1a1"
+    },
+    "environment": {
+      "DATABRICKS_HOST": "https://dbc-e155652a-2cba.cloud.databricks.com",
+      "DATABRICKS_GATEWAY_HOST": "https://dbc-e155652a-2cba.cloud.databricks.com/ai-gateway",
+      "WORKSHOP_ATTENDEE_EMAIL": "labuser+1@awsbricks.com",
+      "WORKSHOP_RUN_ID": "sim-wt-eval-r02-1009-fdae",
+      "WORKSHOP_UNIT_ID": "sim-wt-eval-r02-1009-fdae-unit-1",
+      "WORKSHOP_EVENT_ENDS_AT": "1791541956",
+      "ALLOW_SHARED_TOPOLOGY": "false",
+      "MAX_SESSIONS_PER_USER": "1",
+      "MAX_SESSIONS_GLOBAL": "1",
+      "ENABLE_OBO": "true",
+      "OBO_SCOPES": "catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql",
+      "ENABLE_ENTITLEMENTS": "true",
+      "WORKSHOP_CATALOG": "wt_eval_r02_1009_fdae",
+      "WORKSHOP_SCHEMA": "generated_apps",
+      "ADMIN_GROUP": "wt-eval-r02-1009-fdae-operators",
+      "DATA_ROOT": "/app/python/source_code/data/wt-eval-r02-1009-fdae",
+      "SESSION_STATE_PATH": "/app/python/source_code/data/wt-eval-r02-1009-fdae/sessions.json",
+      "WORKSHOP_INSIGHT_CAPTURE": "false",
+      "DISCOVERY_ENABLED": "false",
+      "WORKSHOP_ONBOARDING_WIZARD": "false",
+      "WORKSHOP_LLM_WIZARD": "false",
+      "WORKSHOP_DEMO_CATALOG": "workshop_demo",
+      "WORKSHOP_DEFAULT_INDUSTRY": "",
+      "WORKSHOP_AGENTS": "claude,codex",
+      "OMNIGENT_ENABLED": "false",
+      "CLAUDE_CODE_VERSION": "2.1.283",
+      "CODEX_CLI_VERSION": "0.157.1",
+      "DATABRICKS_CLI_VERSION": "1.18.0",
+      "NODE_VERSION": "24.20.0",
+      "OMNIGENT_VERSION": "0.15.0",
+      "DATABRICKS_WORKSPACE_ID": "7474655950495189",
+      "WORKSHOP_EVALUATION_ENABLED": "true",
+      "WORKSHOP_EVALUATION_MARKER": "wt-eval-r02-1009-fdae",
+      "WORKSHOP_EVALUATION_ATTENDEE_EMAIL": "labuser+1@awsbricks.com",
+      "WORKSHOP_EVALUATION_RUN_ID": "sim-wt-eval-r02-1009-fdae",
+      "WORKSHOP_EVALUATION_UNIT_ID": "sim-wt-eval-r02-1009-fdae-unit-1",
+      "OMNIGENT_APP_URL": "",
+      "WORKSHOP_MODEL_POLICY_REQUIRED": "true",
+      "SKILLS_REF": "v0.2.15",
+      "WORKSHOP_RELEASE_SHA": "31bb22a8994200b65c8e89809b54b4f0d2611a2e",
+      "WORKSHOP_PACKAGE_SHA256": "cff2939927c3c4d867b1e64ab475065c30dc9043a8ab4d6985db68f67f0b2c15",
+      "WORKSHOP_PACKAGE_SIZE_BYTES": "37926775",
+      "WORKSHOP_PACKAGE_VOLUME_PATH": "/Volumes/wt_eval_r02_1009_fdae/_wt_runtime/packages/cff2939927c3c4d867b1e64ab475065c30dc9043a8ab4d6985db68f67f0b2c15/workshop-terminal.pex",
+      "HOME": "/app/python/source_code/data/wt-eval-r02-1009-fdae/apphome",
+      "OTEL_TRACES_SAMPLER": "always_on",
+      "OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SANITIZE_FIELDS": "authorization,cookie,set-cookie,x-api-key",
+      "OTEL_PYTHON_FASTAPI_EXCLUDED_URLS": "/api/wizard.*,/api/certificate.*",
+      "WORKSHOP_TOOLCHAIN_MIRROR_PATH": "/Volumes/wt_eval_r02_1009_fdae/_wt_runtime/toolchain",
+      "WORKSHOP_TOOLCHAIN_MIRROR_STRICT": "false"
+    },
+    "app_resource": {
+      "name": "wt-eval-r02-1009-fdae-wt",
+      "must_be_absent": true,
+      "user_authorization_enabled": true,
+      "user_api_scopes": [
+        "catalog.catalogs:read",
+        "catalog.schemas:read",
+        "catalog.tables:read",
+        "sql"
+      ]
+    },
+    "pending_runtime_patches": [
+      {
+        "environment_key": "WORKSHOP_APP_SP_ID",
+        "source": "created_app.service_principal_id",
+        "validation": "positive_numeric_scim_id",
+        "required_before_deploy": true
+      }
+    ],
+    "source_upload": {
+      "directories": [
+        "server",
+        "static",
+        "assets",
+        "content"
+      ],
+      "files": [
+        "app.yaml",
+        "requirements.txt",
+        "requirements.in"
+      ],
+      "reject_symlinks": true,
+      "reject_hardlinks": true,
+      "existing_destination_allowed": false
+    },
+    "grants": {
+      "catalog": "wt_eval_r02_1009_fdae",
+      "schema": "generated_apps",
+      "must_be_absent": true,
+      "attendee": {
+        "principal": "labuser+1@awsbricks.com",
+        "owner": false,
+        "privileges": [
+          "ALL_PRIVILEGES",
+          "MANAGE"
+        ]
+      },
+      "app_service_principal": {
+        "principal": null,
+        "privileges": [
+          "MANAGE",
+          "USE_CATALOG",
+          "CREATE_SCHEMA"
+        ]
+      },
+      "operator_group": {
+        "name": "wt-eval-r02-1009-fdae-operators",
+        "must_be_absent": true
+      },
+      "applied": false
+    },
+    "omnigent": null,
+    "omnigent_compatibility": "not_applicable",
+    "provenance": {
+      "deployment_applied": false,
+      "direct_oauth_verified": false,
+      "obo_consent_verified": false,
+      "resource_grants_verified": false,
+      "prompt_policy_unchanged_verified": false,
+      "control_tower_provisioning_verified": false,
+      "control_tower_integration_qualified": false,
+      "fleet_qualified": false
+    },
+    "ct_compatible_contract": {
+      "version": 2,
+      "deployment_mode": "package",
+      "package_manifest": {
+        "artifact_name": "workshop-terminal.pex",
+        "artifact_type": "pex",
+        "entry_point": "server.otel_bootstrap:main",
+        "format_version": 1,
+        "logical_contents_file_count": 445,
+        "logical_contents_sha256": "5905e12b1eacd8013729c7086945f9ace8e3187f2d39d9e8279e5b307b8318d7",
+        "minimum_control_tower_contract_version": 1,
+        "platform": "linux_x86_64",
+        "python_abi": "cp311",
+        "python_implementation": "cpython",
+        "sha256": "cff2939927c3c4d867b1e64ab475065c30dc9043a8ab4d6985db68f67f0b2c15",
+        "size_bytes": 37926775,
+        "wt_git_sha": "31bb22a8994200b65c8e89809b54b4f0d2611a2e",
+        "wt_release_tag": "unreleased"
+      },
+      "manifest_sha256": "7fafdb17ff813c24be92b290360cff1c05ba6cd9ada3bc0c5f52cbdca6172599",
+      "model_policy": {
+        "revision": 1,
+        "pool": [
+          {
+            "service_name": "system.ai.claude-sonnet-5",
+            "enabled": true,
+            "capabilities": [
+              "claude"
+            ],
+            "principal_classes": [
+              "wt_sp"
+            ],
+            "limit_profile": {}
+          },
+          {
+            "service_name": "system.ai.claude-haiku-4-5",
+            "enabled": true,
+            "capabilities": [
+              "claude"
+            ],
+            "principal_classes": [
+              "wt_sp"
+            ],
+            "limit_profile": {}
+          },
+          {
+            "service_name": "system.ai.gpt-5-6-terra",
+            "enabled": true,
+            "capabilities": [
+              "codex"
+            ],
+            "principal_classes": [
+              "wt_sp"
+            ],
+            "limit_profile": {}
+          },
+          {
+            "service_name": "system.ai.gpt-oss-120b",
+            "enabled": true,
+            "capabilities": [
+              "chat"
+            ],
+            "principal_classes": [
+              "wt_sp"
+            ],
+            "limit_profile": {}
+          }
+        ],
+        "denied_models": [
+          "system.ai.claude-opus-4-8"
+        ],
+        "restart_processes": false
+      },
+      "model_privilege_strategy": "exact_test_app_sp",
+      "catalog_owner_strategy": "retain_operator",
+      "attendee_app_permission": "CAN_MANAGE",
+      "work_sync_path": "/Workspace/Users/labuser+1@awsbricks.com/projects",
+      "toolchain_mirror": {
+        "source_volume": "/Volumes/main/wt_central/toolchain",
+        "strict": false
+      },
+      "demo_catalog": "workshop_demo",
+      "simulation_limits": [
+        "Existing shared Labs workspace; no new workspace assignment",
+        "Exact app-SP privileges replace permanent CT account group membership",
+        "No workspace-wide account users grant; generated-app SPs need exact owned-catalog access",
+        "CT callbacks and AI Gateway blocking budgets are not exercised",
+        "Work-sync ACL is exercised on the attendee home; only the added test-SP ACL is removed"
+      ]
+    }
+  },
+  "executed": false,
+  "control_tower_requests": 0
+}
