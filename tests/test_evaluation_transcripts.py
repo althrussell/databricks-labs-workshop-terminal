@@ -129,6 +129,32 @@ def test_current_claude_bookkeeping_prefix_cannot_prevent_or_supply_native_bindi
     assert result["status"] == "unverified" and result["messages"] == []
 
 
+def test_claude_compaction_summary_is_not_an_attendee_reply(client, as_admin, evaluation_seat):
+    from server import evaluation
+    seat = evaluation_seat
+    summary = claude(seat, "private compaction context " * 700, role="user", isCompactSummary=True)
+    write_claude(seat, [claude(seat, "Bakery please", role="user"), summary,
+                        claude(seat, "Here is the preview.")])
+    payload = client.get(endpoint(seat), headers=ALICE).json()
+    assert payload["status"] == "ready"
+    assert [message["text"] for message in payload["messages"]] == ["Bakery please", "Here is the preview."]
+    assert "private compaction context" not in json.dumps(payload)
+    metadata = client.get("/api/admin/evaluation/native-format", headers=ALICE).json()["files"][0]
+    assert metadata["compaction_summary_count"] == 1
+    assert metadata["oversized_text_records"] == [{"type": "user", "is_compact_summary": True,
+        "text_chars": len(summary["message"]["content"][1]["text"])}]
+    assert metadata["oversized_text_records"][0]["text_chars"] > evaluation.MAX_MESSAGE_CHARS
+
+
+@pytest.mark.parametrize("marker", [False, "true", 1, None])
+def test_oversized_authored_message_is_not_hidden_as_compaction(client, as_admin, evaluation_seat, marker):
+    seat = evaluation_seat
+    record = claude(seat, "attendee prose " * 1000, role="user", isCompactSummary=marker)
+    write_claude(seat, [claude(seat, "Bakery please", role="user"), record])
+    result = client.get(endpoint(seat), headers=ALICE).json()
+    assert result["status"] == "unverified" and result["reason"] == "native_message_size_budget"
+
+
 def question_record(seat):
     record = claude(seat, complete=False)
     record["message"]["content"] = [{"type": "thinking", "thinking": "private chain"},

@@ -541,6 +541,11 @@ def _message(record: dict, agent: str, native_id: str, offset: int, question_cal
     if not isinstance(message, dict) or message.get("role") not in {"user", "assistant"}:
         return None
     role = message["role"]
+    # Claude writes its internal compaction context as a synthetic user record.
+    # It is neither an attendee reply nor prose to export or size-check.
+    if (agent == "claude" and record.get("type") == "user" and role == "user"
+            and record.get("isCompactSummary") is True):
+        return None
     interaction = None
     content = message.get("content")
     if agent == "claude" and role == "assistant" and isinstance(content, list):
@@ -632,10 +637,23 @@ def native_format(request: Request):
                 scanned += len(raw)
                 if scanned > MAX_SCAN_BYTES:
                     raise Unverified("native_scan_budget")
-                metadata, question_formats = [], []
+                metadata, question_formats, oversized_text_records = [], [], []
+                compaction_summary_count = 0
                 for _offset, record in _records(raw):
                     message = record.get("message", {})
                     content = message.get("content", []) if isinstance(message, dict) else []
+                    if agent == "claude":
+                        compact = (record.get("type") == "user" and isinstance(message, dict)
+                                   and message.get("role") == "user" and record.get("isCompactSummary") is True)
+                        compaction_summary_count += int(compact)
+                        text_chars = len(content) if isinstance(content, str) else sum(
+                            len(block["text"]) for block in content if isinstance(block, dict)
+                            and block.get("type") == "text" and isinstance(block.get("text"), str)
+                        ) if isinstance(content, list) else 0
+                        if text_chars > MAX_MESSAGE_CHARS and len(oversized_text_records) < 8:
+                            oversized_text_records.append({"type": record.get("type")
+                                if record.get("type") in {"user", "assistant"} else "unknown",
+                                "is_compact_summary": compact, "text_chars": text_chars})
                     if agent == "claude" and isinstance(content, list):
                         for block in content:
                             if (len(question_formats) < 8 and isinstance(block, dict)
@@ -667,7 +685,9 @@ def native_format(request: Request):
                         "timestamp_valid": _epoch(payload.get("timestamp", record.get("timestamp"))) is not None})
                 files.append({"agent_id": agent, "file_fingerprint": fingerprint, "bytes": len(raw),
                               "max_record_bytes": max((len(line) for line in raw.splitlines(keepends=True)), default=0),
-                              "records": metadata, "question_formats": question_formats})
+                              "records": metadata, "question_formats": question_formats,
+                              "compaction_summary_count": compaction_summary_count,
+                              "oversized_text_records": oversized_text_records})
         projects = home / "projects"
         project_count = 0
         if projects.exists():
