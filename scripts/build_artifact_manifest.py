@@ -48,9 +48,9 @@ CLI_RELEASE = (
 )
 NPM_PUBLIC_REGISTRY = "https://registry.npmjs.org"
 CODEX_PACKAGE = "@openai/codex"
-UV_VERSION = "0.12.19"
-PYTHON_RELEASE = "20260901"
-PYTHON_VERSION = "3.12.14"
+UV_VERSION = "0.12.24"
+PYTHON_RELEASE = "20261003"
+PYTHON_VERSION = "3.12.15"
 CODEX_NATIVE_EXECUTABLE = "vendor/x86_64-unknown-linux-musl/bin/codex"
 
 

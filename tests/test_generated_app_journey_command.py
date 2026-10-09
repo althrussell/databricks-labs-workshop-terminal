@@ -542,9 +542,9 @@ def trust_screen(cwd, *, selected=True):
                           "2. No, exit", "Enter to confirm · Esc to cancel"])
 
 
-def native_screen(agent="claude"):
+def native_screen(agent="claude", *, pin=None):
     artifacts = json.loads((ROOT / "assets/artifacts/manifest.json").read_text())["artifacts"]
-    banner = ("Claude Code v" + artifacts["claude_binary"]["version"] + "\r\n❯ " if agent == "claude"
+    banner = ("Claude Code v" + (pin or artifacts["claude_binary"]["version"]) + "\r\n❯ " if agent == "claude"
               else "OpenAI Codex (v" + artifacts["codex_npm_launcher_package"]["version"] + ")\r\n› ")
     return "\x1b[2J\x1b[H" + banner
 
@@ -570,15 +570,17 @@ def current_trust_screen(cwd, *, selected_yes=False):
         "Enter to confirm · Esc to cancel"])
 
 
-def test_current_claude_default_no_is_selected_then_independently_verified_before_confirmation(tmp_path):
+@pytest.mark.parametrize("pin", ["2.1.283", "2.1.295"])
+def test_current_claude_default_no_is_selected_then_independently_verified_before_confirmation(tmp_path, pin):
     async def run():
         driver, page, socket = startup_driver(tmp_path)
+        driver._startup_binding["environment"]["CLAUDE_CODE_VERSION"] = pin
         socket.output(current_trust_screen(driver._expected_cwd))
         def update():
             if page.inputs[-1] == ("key", "ArrowDown"):
                 socket.output(current_trust_screen(driver._expected_cwd, selected_yes=True))
             else:
-                socket.output(native_screen())
+                socket.output(native_screen(pin=pin))
         page.on_enter = update
         await driver.submit_reply("Original simple novice opening")
         assert page.inputs == [("key", "ArrowDown"), ("key", "Enter"),

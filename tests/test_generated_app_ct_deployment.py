@@ -89,6 +89,55 @@ def test_package_plan_retains_owner_and_exact_ct_gateway_and_immutable_pins():
     assert artifact == package()[1]
 
 
+def quality_spec(pin):
+    value = spec(pin)
+    value["test_baseline"] = "quality-20261009"
+    value["model_policy"]["pool"][0]["service_name"] = "system.ai.claude-opus-5-5"
+    value["model_policy"]["pool"][1]["service_name"] = "system.ai.gpt-6-1-sol"
+    return value
+
+
+def test_quality_baseline_pins_models_without_changing_historical_plans():
+    raw, artifact, pin = package()
+    old = plan_package(spec(pin), raw, artifact)
+    current = plan_package(quality_spec(pin), raw, artifact)
+    assert "ANTHROPIC_MODEL" not in old["environment"]
+    assert "test_baseline" not in old["ct_compatible_contract"]
+    assert current["environment"]["ANTHROPIC_MODEL"] == "system.ai.claude-opus-5-5"
+    assert current["environment"]["CODEX_MODEL"] == "system.ai.gpt-6-1-sol"
+    assert current["ct_compatible_contract"]["test_baseline"]["id"] == "quality-20261009"
+
+
+@pytest.mark.parametrize("change", ["unknown", "older_model", "extra_fallback", "old_toolchain"])
+def test_quality_baseline_rejects_silent_substitution(change, monkeypatch):
+    from evals.generated_apps import ct_deployment
+    raw, artifact, pin = package()
+    value = quality_spec(pin)
+    if change == "unknown":
+        value["test_baseline"] = "latest"
+    elif change == "older_model":
+        value["model_policy"]["pool"][0]["service_name"] = "system.ai.claude-sonnet-5"
+    elif change == "extra_fallback":
+        value["model_policy"]["pool"].append(policy()["pool"][0])
+    else:
+        verified, artifacts = verify_package(raw, artifact, pin)
+        artifacts["artifacts"]["claude_binary"]["version"] = "2.1.283"
+        monkeypatch.setattr(ct_deployment, "verify_package", lambda *_: (verified, artifacts))
+    with pytest.raises(ValueError):
+        plan_package(value, raw, artifact)
+
+
+def test_quality_canary_rejects_invocation_on_a_different_model():
+    from evals.generated_apps.test_baseline import baseline_canary_matches
+    baseline = {"models": {"codex": "system.ai.gpt-6-1-sol"}}
+    assert baseline_canary_matches(baseline, "codex", {
+        "model": "system.ai.gpt-6-1-sol", "invocation_verified": True})
+    assert not baseline_canary_matches(baseline, "codex", {
+        "model": "system.ai.gpt-5-6-terra", "invocation_verified": True})
+    assert not baseline_canary_matches(baseline, "codex", {
+        "model": "system.ai.gpt-6-1-sol", "invocation_verified": False})
+
+
 def test_existing_demo_catalog_is_optional_and_reaches_packaged_environment():
     raw, artifact, pin = package()
     value = spec(pin) | {"demo_catalog": "workshop_demo"}

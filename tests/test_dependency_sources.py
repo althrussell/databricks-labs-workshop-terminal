@@ -15,6 +15,8 @@ LOCKS = RESOLUTION_LOCKS + tuple(
 INTERNAL_HOSTS = (
     "pypi-proxy.dev.databricks.com",
     "npm-proxy.dev.databricks.com",
+    "pypi-proxy.cloud.databricks.com",
+    "npm-proxy.cloud.databricks.com",
 )
 
 

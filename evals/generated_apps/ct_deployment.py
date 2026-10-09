@@ -21,6 +21,7 @@ import yaml
 
 from .adapters.simulated_control_tower import plan_simulation, bind_created_app
 from .report import write_evidence
+from .test_baseline import validate_test_baseline
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_VERSION = 2
@@ -104,6 +105,7 @@ def plan_package(spec, manifest_bytes, artifact, *, now=None):
     if set(package_input) != {"manifest_sha256"}:
         raise ValueError("Package declaration requires the reviewed manifest SHA256")
     policy = validate_policy(spec.pop("model_policy"))
+    baseline_name = spec.pop("test_baseline", None)
     demo_catalog = spec.pop("demo_catalog", None)
     if demo_catalog is not None and (
             not isinstance(demo_catalog, str)
@@ -116,6 +118,7 @@ def plan_package(spec, manifest_bytes, artifact, *, now=None):
             or type(mirror.get("strict")) is not bool):
         raise ValueError("Toolchain mirror requires an exact read-only source volume and strict flag")
     manifest, artifacts = verify_package(manifest_bytes, artifact, package_input["manifest_sha256"])
+    baseline = validate_test_baseline(baseline_name, artifacts, policy) if baseline_name is not None else None
     spec["release"] = {"source_kind": "runtime-snapshot", "source_digest": manifest["sha256"],
                        "parent_git_sha": manifest["wt_git_sha"], "instrumentation": True,
                        "prompt_policy_unchanged_asserted": True}
@@ -143,6 +146,10 @@ def plan_package(spec, manifest_bytes, artifact, *, now=None):
         OTEL_TRACES_SAMPLER="always_on",
         OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SANITIZE_FIELDS="authorization,cookie,set-cookie,x-api-key",
         OTEL_PYTHON_FASTAPI_EXCLUDED_URLS="/api/wizard.*,/api/certificate.*")
+    if baseline:
+        plan["ct_compatible_contract"]["test_baseline"] = baseline
+        plan["environment"].update(ANTHROPIC_MODEL=baseline["models"]["driver"],
+                                   CODEX_MODEL=baseline["models"]["codex"])
     if mirror:
         plan["environment"].update(WORKSHOP_TOOLCHAIN_MIRROR_PATH=f"/Volumes/{plan['names']['catalog']}/_wt_runtime/toolchain",
                                    WORKSHOP_TOOLCHAIN_MIRROR_STRICT=str(mirror["strict"]).lower())

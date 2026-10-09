@@ -38,6 +38,28 @@ later CT-integrated deployment are separate from this failed baseline closeout.
 
 ## Current CT-compatible package workflow
 
+### Ongoing quality-test baseline
+
+New runs use `"test_baseline": "quality-20261009"` in the package specification:
+Claude Code `2.1.295` on `system.ai.claude-opus-5-5`, and Codex `0.162.0` on
+`system.ai.gpt-6-1-sol`. The policy must allow exactly those services for its
+Claude/Codex capabilities. The planner checks packaged toolchain pins; own-SP
+qualification checks the requested model identity and real invocation before a
+browser build. A substituted older model does not qualify.
+
+The [version audit, evidence and explicit compatibility holds](evidence/toolchain-quality-20261009/README.md)
+cover SDK `0.150.0`, agent skills `v0.2.28`, CLI `1.20.0`, AppKit `0.87.0`,
+Node LTS `24.21.0`, and the optional MLflow `3.17.0` quality group. Omnigent
+remains `0.15.0` until its newer client/server pair is qualified separately.
+Run the read-only `python scripts/audit_test_toolchain.py` before preparing a
+new baseline; review and pin updates instead of using floating release aliases.
+
+Native read-tool smoke checks passed as the Labs operator. They do not replace
+fresh package deployment, exact app-SP model checks, authenticated labuser browser
+journeys or final CT integration. Earlier R01/R02 examples and recorded versions
+below remain historical; update both the baseline field and model-policy pool
+when preparing a new quality run.
+
 ### Laptop registries and deployed registries
 
 Keep the committed lockfiles and runtime package sources on public npm/PyPI.
@@ -293,14 +315,16 @@ still prevent a full-app acceptance verdict.
 Run from the WT repository. The deployment script needs Python, `databricks-sdk`,
 and PyYAML; the current repository `.venv` provides these. Journey execution also
 needs HTTPX, Playwright, and an installed Chromium. Native evaluation targets MLflow
-3.13.x; managed dataset dependencies need a reviewed compatible installation
-before actual evaluation. No browser/model execution is needed for plan generation.
+3.17.0 through the locked `quality` group; historical 3.13.x remains supported.
+Install/check it with `uv run --frozen --only-group quality python scripts/check_quality_toolchain.py`.
+No browser/model execution is needed for plan generation.
 The optional controlled startup arm also needs local `pyte==0.8.2` and `wcwidth`.
 These are evaluator dependencies; they are not added to the deployed app runtime.
-The deployed requirements pin SDK `0.121.0`; the current operator `.venv` has
-`0.116.0`. The journey client constructor is covered by a no-network regression
-using the real installed SDK. That check does not qualify the deployed SDK or
-native harness formats; record both versions in live evidence.
+The deployed requirements pin SDK `0.150.0`. Record the actual operator environment
+version for every run; do not assume a global install or an existing `.venv` has
+been refreshed. The journey client constructor is covered by a no-network
+regression using the real installed SDK. That check does not qualify the deployed
+SDK or native harness formats; record both versions in live evidence.
 
 Create a private JSON spec, for example `/private/tmp/wt-r01-spec.json`. Replace the
 marker and principal for each new test. The marker must start `wt-eval-`, fit the

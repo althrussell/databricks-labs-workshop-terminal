@@ -284,7 +284,7 @@ def test_agent_crash_reports_its_process_exit_code(monkeypatch, tmp_path):
 
     manager.create(user, "codex", ["/bin/sh", "-c", "exit 17"], "Codex")
     deadline = time.time() + 2
-    while manager.count_all() and time.time() < deadline:
+    while (manager.count_all() or not observed or not delivered) and time.time() < deadline:
         time.sleep(0.01)
 
     assert manager.count_all() == 0

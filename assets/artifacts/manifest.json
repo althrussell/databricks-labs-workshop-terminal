@@ -2,53 +2,53 @@
   "//": "GENERATED FILE. Run `python3 scripts/build_artifact_manifest.py --write` to regenerate. See docs/artifact-manifest.md.",
   "artifacts": {
     "claude_binary": {
-      "sha256": "1859583ce32920595c61ef868bee52e1b1594f7486db209935e01f1e5e804ae2",
-      "source": "https://downloads.claude.ai/claude-code-releases/2.1.283/linux-x64/claude",
-      "version": "2.1.283"
+      "sha256": "4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358",
+      "source": "https://downloads.claude.ai/claude-code-releases/2.1.295/linux-x64/claude",
+      "version": "2.1.295"
     },
     "claude_installer": {
       "sha256": "cde4f1702d3b1695f92b73d26888364e17bca476e17f0fd676484c951d36c125",
       "source": "claude-code-bootstrap.sh",
       "upstream": "https://claude.ai/install.sh",
-      "version": "2.1.283"
+      "version": "2.1.295"
     },
     "codex_native_package_linux_x64": {
-      "executable_sha256": "3e2584f3f3829a43a0495011a1cecb2facbe64a2403e2b682351fd9c2983f970",
-      "sha256": "7f12677740f439fe4884c7031d9d703e571cecf5ea9fa3a05abd1bbccc2162a8",
-      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.157.1-linux-x64.tgz",
-      "version": "0.157.1-linux-x64"
+      "executable_sha256": "50ed828f357c655a3c82054d346cab8434f24901f14ec19b8267571bdd008b38",
+      "sha256": "dbd342e7ad896d53dbb505e926f1b82314b79a9d33e209b0b7616ced6b06c983",
+      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.162.0-linux-x64.tgz",
+      "version": "0.162.0-linux-x64"
     },
     "codex_npm_launcher_package": {
-      "sha256": "813e2a944f4474b7e1826d9ce8bf696ad8d80c68f43f7a7067beec51fa8f5b73",
-      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.157.1.tgz",
-      "version": "0.157.1"
+      "sha256": "6cb67d6e7631af84f27580d8fe228ac437c34181d370dc5c5a5819e014c8c860",
+      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.162.0.tgz",
+      "version": "0.162.0"
     },
     "databricks_agent_skills": {
-      "commit": "4d17885b0115718b5fb6a7540e908cb4201d4f2d",
-      "content_sha256": "0b91eddfe20cf410c27e632ccc28b00b5049ad58aecc9101caca5476a4b1f1a1",
+      "commit": "ba45d10df7413de14c32937bbd584aeee17d22a2",
+      "content_sha256": "0ddf4467590698fd17b98ef7035ad4bee90e2a082a34467489e48c53da10d98a",
       "source": "https://github.com/databricks/databricks-agent-skills.git",
-      "version": "v0.2.15"
+      "version": "v0.2.28"
     },
     "databricks_cli_archive_linux_x64": {
-      "sha256": "0b8e24eeee5ad4a803c0d0c128350ada03c3855f60f6e6fdb32a6c0e605c5514",
-      "source": "https://github.com/databricks/cli/releases/download/v1.18.0/databricks_cli_1.18.0_linux_amd64.zip",
-      "version": "1.18.0"
+      "sha256": "dff217c237c4e53b2b2427ee131cfe5bace3178ed156cd98860d56feb13ce02f",
+      "source": "https://github.com/databricks/cli/releases/download/v1.20.0/databricks_cli_1.20.0_linux_amd64.zip",
+      "version": "1.20.0"
     },
     "databricks_cli_installer": {
       "sha256": "33be5976d44b7c98822030b5e62813bcb046e5feba387e663b5f0f9030dd7926",
       "source": "databricks-cli-install.sh",
-      "upstream": "https://raw.githubusercontent.com/databricks/setup-cli/v1.18.0/install.sh",
-      "version": "1.18.0"
+      "upstream": "https://raw.githubusercontent.com/databricks/setup-cli/v1.20.0/install.sh",
+      "version": "1.20.0"
     },
     "node_linux_arm64": {
-      "sha256": "5f4ddab610c1ab2016b3c227cebdbf6d9495161487e4739c7b90090595f465f7",
-      "source": "https://nodejs.org/dist/v24.20.0/node-v24.20.0-linux-arm64.tar.xz",
-      "version": "24.20.0"
+      "sha256": "6ad1325edbdb5649c379b75a237147a666c95d4f9ae8d340fef2d1575d289ad2",
+      "source": "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-arm64.tar.xz",
+      "version": "24.21.0"
     },
     "node_linux_x64": {
-      "sha256": "2f2c0da162318f0de47665410c7c8c2ed3d36c8f3105de4bbc61176c70a7cbf2",
-      "source": "https://nodejs.org/dist/v24.20.0/node-v24.20.0-linux-x64.tar.xz",
-      "version": "24.20.0"
+      "sha256": "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6",
+      "source": "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.xz",
+      "version": "24.21.0"
     },
     "omnigent_lock": {
       "lock_sha256": "de350c5ede68eb33a3919cfd73e6af90803923ebeb58a930664ff73aea6bec34",
@@ -59,9 +59,9 @@
     "python_3_12_runtime": {
       "executable_relative_path": "python/bin/python3.12",
       "kind": "archive",
-      "sha256": "936c246dfdbbfa7cb22dd01814a21f582a892689fae96b06071a5e433baffa22",
-      "source": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.12.14+20260901-x86_64-unknown-linux-gnu-install_only.tar.gz",
-      "version": "3.12.14"
+      "sha256": "f937814031eab4698ca6d07ec606ede1825768f3f3e99af76d9db3900bee03c5",
+      "source": "https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.12.15+20261003-x86_64-unknown-linux-gnu-install_only.tar.gz",
+      "version": "3.12.15"
     },
     "tmux_linux_x64": {
       "sha256": "92ac102a1f9b33b21d891a836b4b5b5c8c5d2eeac4bae4dfd34d565bbed598bf",
@@ -71,9 +71,9 @@
     "uv_binary": {
       "executable_relative_path": "uv-x86_64-unknown-linux-gnu/uv",
       "kind": "archive",
-      "sha256": "23bf5552d220e0842b65c862097b2ebaeba0064b74eda5e565e77fd25969d8c8",
-      "source": "https://github.com/astral-sh/uv/releases/download/0.12.19/uv-x86_64-unknown-linux-gnu.tar.gz",
-      "version": "0.12.19"
+      "sha256": "b4dfaef47d491a7296981f8374a4595f55dbf84e8937c8ecd2983574d8bb3da6",
+      "source": "https://github.com/astral-sh/uv/releases/download/0.12.24/uv-x86_64-unknown-linux-gnu.tar.gz",
+      "version": "0.12.24"
     }
   },
   "reviewed": true,

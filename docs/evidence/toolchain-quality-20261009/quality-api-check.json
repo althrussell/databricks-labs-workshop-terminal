@@ -1,0 +1,1 @@
+{"versions": {"mlflow": "3.17.0", "databricks-agents": "1.12.0", "databricks-sdk": "0.150.0", "openai": "3.23.0"}, "native_api_contract_verified": true, "workspace_requests": 0, "model_requests": 0}

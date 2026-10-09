@@ -159,8 +159,12 @@ def qualify(client, receipt_path, output, *, timeout_seconds=900):
                     or body.get("service_principal_id") != str(app.service_principal_id)):
                 raise ValueError("Canary returned a different app identity")
             row["result"] = body
+            if contract.get("test_baseline"):
+                from .test_baseline import baseline_canary_matches
+                row["test_baseline_model_verified"] = baseline_canary_matches(contract["test_baseline"], role, body)
         write_evidence(output, result)
-    result["status"] = "qualified" if all(row.get("result", {}).get("invocation_verified") is True for row in result["calls"]) else "model_invocation_failed"
+    result["status"] = "qualified" if all(row.get("result", {}).get("invocation_verified") is True
+        and row.get("test_baseline_model_verified", True) is True for row in result["calls"]) else "model_invocation_failed"
     result["novice_journey_eligible"] = result["status"] == "qualified"
     result["control_tower_integration_qualified"] = False
     write_evidence(output, result)

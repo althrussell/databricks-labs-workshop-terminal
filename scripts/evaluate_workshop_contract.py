@@ -3,7 +3,7 @@
 
 External operator tooling only; no CT writes, app deployments, or local coding.
 This exercises model responses to composed instructions, not CLI harnesses or
-generated UX. Dependencies: MLflow 3.13.x, OpenAI, Databricks SDK. Tracking must
+generated UX. Dependencies: the reviewed optional ``quality`` dependency group. Tracking must
 be configured by the caller (a local SQLite URI is suitable). Results are a
 sanity subset, never fleet qualification. R01's criteria/evidence stay unchanged.
 """
@@ -64,12 +64,29 @@ def records() -> list[dict]:
             for name, request, channel, help_pref, context, expected in cases]
 
 
+def gateway_client(workspace, wire, *, client_class=None):
+    """Use Unity Gateway with a fresh SDK bearer for each OpenAI request."""
+    if wire not in {"chat", "responses"}:
+        raise ValueError("Unsupported policy-probe wire")
+    if client_class is None:
+        from openai import OpenAI
+        client_class = OpenAI
+    def bearer():
+        authorization = workspace.config.authenticate().get("Authorization", "")
+        if not authorization.startswith("Bearer ") or not authorization[7:]:
+            raise RuntimeError("Policy probe requires workspace OAuth bearer authentication")
+        return authorization[7:]
+    path = "/mlflow/v1" if wire == "chat" else "/openai/v1"
+    return client_class(base_url=workspace.config.host.rstrip("/") + "/ai-gateway" + path,
+                        api_key=bearer, timeout=90, max_retries=0)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", default="labs")
-    parser.add_argument("--model", default="databricks-claude-sonnet-4-6")
+    parser.add_argument("--model", default="system.ai.claude-opus-5-5")
     parser.add_argument("--wire", choices=("auto", "chat", "responses"), default="auto")
-    parser.add_argument("--judge-model", default="databricks-claude-sonnet-4-6")
+    parser.add_argument("--judge-model", default="system.ai.gpt-6-1-sol")
     parser.add_argument("--tracking-uri", default=os.getenv("MLFLOW_TRACKING_URI"))
     parser.add_argument("--experiment", default="wt_workshop_contract_r02")
     parser.add_argument("--output", type=Path, required=True)
@@ -92,8 +109,8 @@ def main() -> int:
     mlflow.set_tracking_uri(args.tracking_uri)
     experiment = mlflow.set_experiment(experiment_id=os.environ["MLFLOW_EXPERIMENT_ID"]) if os.getenv("MLFLOW_EXPERIMENT_ID") else mlflow.set_experiment(args.experiment)
     experiment_id = experiment.experiment_id
-    client = WorkspaceClient(profile=args.profile).serving_endpoints.get_open_ai_client(timeout=90, max_retries=0)
     wire = ("responses" if "gpt-" in args.model else "chat") if args.wire == "auto" else args.wire
+    client = gateway_client(WorkspaceClient(profile=args.profile), wire)
     mlflow.openai.autolog()
     prompts = {"home": user_content._base_instructions(), "project": user_content._project_memory()}
     prediction_trace_ids = []

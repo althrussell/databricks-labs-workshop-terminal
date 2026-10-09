@@ -617,6 +617,20 @@ def test_model_canary_records_safe_provider_alias_without_claiming_match(client,
     assert result["error_classification"] == "response_model_mismatch" and not result["invocation_verified"]
 
 
+@pytest.mark.parametrize("returned,verified", [("gpt-6.1-sol", True), ("gpt-6.1-terra", False)])
+def test_quality_sol_alias_is_exact(returned, verified):
+    from server.evaluation import _canary_response, CanaryUnverified
+    body = {"object": "response", "status": "completed", "model": returned,
+        "output": [{"type": "message", "role": "assistant",
+                    "content": [{"type": "output_text", "text": "OK"}]}],
+        "usage": {"input_tokens": 5, "output_tokens": 1}}
+    if verified:
+        assert _canary_response(body, "codex", "system.ai.gpt-6-1-sol")["ok_answer_verified"]
+    else:
+        with pytest.raises(CanaryUnverified, match="response_model_mismatch"):
+            _canary_response(body, "codex", "system.ai.gpt-6-1-sol")
+
+
 def test_model_canary_does_not_echo_arbitrary_response_model_prose(client, as_admin, canary_runtime):
     canary_runtime.provider_body = {"model": "private-secret bearer response prose"}
     response = client.post(CANARY_ENDPOINT, headers=ALICE, json={"role": "driver"})

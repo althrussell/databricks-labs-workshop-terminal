@@ -26,8 +26,8 @@ from .simulator import BuilderMessage, NoviceSimulator
 from .interactions import validate_question
 
 SUPPORTED_PINS = {"claude": "2.1.237", "codex": "0.148.0"}
-REVIEWED_PINS = {"claude": frozenset({"2.1.237", "2.1.283"}),
-                 "codex": frozenset({"0.148.0", "0.157.1"})}
+REVIEWED_PINS = {"claude": frozenset({"2.1.237", "2.1.283", "2.1.295"}),
+                 "codex": frozenset({"0.148.0", "0.157.1", "0.162.0"})}
 _INSTRUMENTATION = "read_only_native_transcript_v1"
 _UNVERIFIED = ["tool_and_worker_attribution", "implementation_timing", "native_transcript_authenticity"]
 _BASE_FIELDS = {"schema_version", "instrumentation", "status", "binding_verified", "messages",

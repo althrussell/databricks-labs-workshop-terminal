@@ -1,0 +1,48 @@
+npm warn Unknown project config "enable-pre-post-scripts". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> quality-scaffold@1.0.0 prebuild
+> npm run sync && appkit generate-types --wait
+
+npm warn Unknown env config "enable-pre-post-scripts". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown project config "enable-pre-post-scripts". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> quality-scaffold@1.0.0 sync
+> appkit plugin sync --write --silent
+
+Skipping query type generation: no warehouse ID. Set DATABRICKS_WAREHOUSE_ID or pass as argument.
+Generated serving types: /private/tmp/wt-toolchain-1009/quality-scaffold/shared/appkit-types/serving.d.ts
+
+> quality-scaffold@1.0.0 build
+> npm run build:server && npm run build:client
+
+npm warn Unknown env config "enable-pre-post-scripts". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown project config "enable-pre-post-scripts". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> quality-scaffold@1.0.0 build:server
+> tsc -b tsconfig.server.json && tsdown -c tsdown.server.config.ts
+
+ℹ tsdown v0.20.3 powered by rolldown v1.0.0-rc.3
+ℹ config file: /private/tmp/wt-toolchain-1009/quality-scaffold/tsdown.server.config.ts 
+ℹ entry: server/server.ts
+ℹ tsconfig: tsconfig.json
+ℹ Build start
+ℹ dist/server.js  0.17 kB │ gzip: 0.15 kB
+ℹ 1 files, total: 0.17 kB
+✔ Build complete in 14ms
+npm warn Unknown env config "enable-pre-post-scripts". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown project config "enable-pre-post-scripts". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> quality-scaffold@1.0.0 build:client
+> tsc -b tsconfig.client.json && vite build --config client/vite.config.ts
+
+rolldown-vite v7.1.14 building for production...
+[2Ktransforming...Browserslist: browsers data (caniuse-lite) is 8 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+[32m✓[39m 5249 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mclient/dist/[22m[32mindex.html                 [39m[1m[2m  0.84 kB[22m[22m[2m │ gzip:   0.39 kB[22m
+[2mclient/dist/[22m[2massets/[22m[35mindex-CxM8Ifhb.css  [39m[1m[2m124.52 kB[22m[22m[2m │ gzip:  19.27 kB[22m
+[2mclient/dist/[22m[2massets/[22m[36mindex-Kk3XUq1m.js   [39m[1m[2m396.42 kB[22m[22m[2m │ gzip: 126.11 kB[22m
+✓ built in 647ms

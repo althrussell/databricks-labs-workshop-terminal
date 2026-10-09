@@ -274,14 +274,14 @@ env:
   # Release-candidate CLI pins. Control Tower may override these only as part
   # of a reviewed event release.
   - name: CLAUDE_CODE_VERSION
-    value: "2.1.283"
+    value: "2.1.295"
   - name: CODEX_CLI_VERSION
-    value: "0.157.1"
+    value: "0.162.0"
   - name: DATABRICKS_CLI_VERSION
-    value: "1.18.0"
+    value: "1.20.0"
   # Node 24 is the active LTS line used by Codex.
   - name: NODE_VERSION
-    value: "24.20.0"
+    value: "24.21.0"
   # OPTIONAL mirror override. The reviewed contract (source + SHA-256 for every
   # installer/archive/package, plus the skills commit/content digest) ships in
   # the image at assets/artifacts/manifest.json, so boot needs nothing here.

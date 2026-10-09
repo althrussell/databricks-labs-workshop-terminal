@@ -134,7 +134,7 @@ class StartupQualifiedDriver(WorkshopBrowserDriver):
         selected = "Yes, I trust this folder" if selected_yes else "No, exit"
         other = "No, exit" if selected_yes else "Yes, I trust this folder"
         return (self.evidence.agent_id == "claude"
-                and self._startup_binding["environment"].get("CLAUDE_CODE_VERSION") == "2.1.283"
+                and self._startup_binding["environment"].get("CLAUDE_CODE_VERSION") in {"2.1.283", "2.1.295"}
                 and self._expected_cwd in lines and "Accessing workspace:" in lines
                 and "Is this a project you created or one you trust?" in screen
                 and any(re.fullmatch(r"[>❯›]\s*" + re.escape(selected), line) for line in lines)

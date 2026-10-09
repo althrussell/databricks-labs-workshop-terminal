@@ -71,7 +71,7 @@ class _SyntheticArtifactContract:
                 return self._entries[name]
             from tests.test_codex_artifacts import make_codex_tarballs
 
-            launcher, native = make_codex_tarballs(self.root)
+            launcher, native = make_codex_tarballs(self.root, version=install.CODEX_VERSION)
             self._entries["codex_npm_launcher_package"] = {
                 "version": install.CODEX_VERSION,
                 "source": str(launcher),
@@ -366,7 +366,7 @@ def test_codex_installs_both_staged_packages_and_verifies_vendor_native_binary(
     prefix = tmp_path / "prefix"
     (prefix / "bin").mkdir(parents=True)
     (prefix / "bin" / "codex").write_bytes(b"old-launcher")
-    launcher_package, native_package = make_codex_tarballs(tmp_path)
+    launcher_package, native_package = make_codex_tarballs(tmp_path, version=install.CODEX_VERSION)
     native_bytes = b"reviewed-native"
     launcher_entry = {
         "sha256": install._file_checksum(launcher_package),
@@ -449,7 +449,7 @@ def test_codex_prewarm_rejects_launcher_and_native_sidecar_tampering(
 
     prefix = tmp_path / "prefix"
     (prefix / "bin").mkdir(parents=True)
-    launcher_package, native_package = make_codex_tarballs(tmp_path)
+    launcher_package, native_package = make_codex_tarballs(tmp_path, version=install.CODEX_VERSION)
     launcher_entry = {
         "source": str(launcher_package),
         "sha256": install._file_checksum(launcher_package),
@@ -692,9 +692,9 @@ def test_omnigent_missing_staged_supply_chain_sets_installer_error(
 
 
 def test_all_release_candidate_defaults_are_exact():
-    assert install.CLAUDE_VERSION == "2.1.283"
-    assert install.CODEX_VERSION == "0.157.1"
-    assert install.DATABRICKS_CLI_VERSION == "1.18.0"
+    assert install.CLAUDE_VERSION == "2.1.295"
+    assert install.CODEX_VERSION == "0.162.0"
+    assert install.DATABRICKS_CLI_VERSION == "1.20.0"
     assert install.OMNIGENT_VERSION == "0.15.0"
 
 

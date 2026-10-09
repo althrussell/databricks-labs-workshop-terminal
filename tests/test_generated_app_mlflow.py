@@ -255,6 +255,25 @@ def test_read_only_discovery_lists_existing_resources_without_registration():
     assert [call[0] for call in sdk.calls] == ["search_datasets", "list_scorers"]
 
 
+def test_latest_reviewed_mlflow_keeps_the_same_native_api_contract():
+    sdk = NativeSdk()
+    sdk.__version__ = "3.17.0"
+    assert discover_quality_resources(plan(), mlflow_module=sdk)["summary"]["read_only"]
+
+
+@pytest.mark.parametrize("wire,path", [("chat", "/mlflow/v1"), ("responses", "/openai/v1")])
+def test_policy_probe_uses_gateway_and_refreshes_oauth_for_each_request(wire, path):
+    from scripts.evaluate_workshop_contract import gateway_client
+    tokens = iter(["Bearer first-test-token", "Bearer refreshed-test-token"])
+    workspace = SimpleNamespace(config=SimpleNamespace(host="https://test.cloud.databricks.com/",
+        authenticate=lambda: {"Authorization": next(tokens)}))
+    client = gateway_client(workspace, wire, client_class=lambda **kwargs: kwargs)
+    assert client["base_url"] == "https://test.cloud.databricks.com/ai-gateway" + path
+    assert client["api_key"]() == "first-test-token"
+    assert client["api_key"]() == "refreshed-test-token"
+    assert client["max_retries"] == 0
+
+
 def test_ambiguous_dataset_never_gets_merged_or_scored():
     prepared = plan(transcript=transcript())
     sdk = NativeSdk()
