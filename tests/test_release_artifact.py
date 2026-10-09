@@ -148,3 +148,25 @@ def test_packaged_smoke_covers_offline_entrypoint_and_supported_lifecycles():
         ).read_text()
     for agent in ("claude", "codex", "omnigent"):
         assert f'"{agent}"' in smoke
+
+
+@pytest.mark.parametrize("altered", ["", "typed_characters", "typed_sha256"])
+def test_package_smoke_verifies_the_actual_input_acknowledgement(client, launchable_agents, monkeypatch, altered):
+    from scripts import smoke_release
+    from urllib.parse import urlsplit
+
+    monkeypatch.setenv("WORKSHOP_PAT", "dapi-test-token")
+    def request(method, url, body=None):
+        path = urlsplit(url).path
+        response = client.request(method, path, json=body,
+                                  headers={"X-Forwarded-Email": "smoke@example.invalid"})
+        payload = response.json()
+        if path.endswith("/type") and altered:
+            payload[altered] = 1 if altered == "typed_characters" else "wrong-digest"
+        return response.status_code, payload
+    monkeypatch.setattr(smoke_release, "_request", request)
+    if altered:
+        with pytest.raises(AssertionError, match="rejected input"):
+            smoke_release._lifecycle("http://fixture.invalid", "claude")
+    else:
+        assert smoke_release._lifecycle("http://fixture.invalid", "claude")

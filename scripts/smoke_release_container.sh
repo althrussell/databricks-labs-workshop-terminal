@@ -9,6 +9,9 @@ fi
 DIST="$(cd "${DIST}" && pwd)"
 ARTIFACT="${DIST}/workshop-terminal.pex"
 MANIFEST="${DIST}/release-manifest.json"
+# The public mirror of Docker's official image avoids shared-runner Docker Hub
+# pull quotas. Image retrieval happens before the network-disabled checks.
+SMOKE_IMAGE="${WT_RELEASE_SMOKE_IMAGE:-public.ecr.aws/docker/library/python:3.11-slim-bookworm}"
 
 test -f "${ARTIFACT}"
 test -f "${MANIFEST}"
@@ -16,7 +19,7 @@ test -f "${MANIFEST}"
 docker run --rm --network none \
   --volume "${ROOT}:/source:ro" \
   --volume "${DIST}:/release" \
-  python:3.11-slim-bookworm \
+  "${SMOKE_IMAGE}" \
   python /source/scripts/benchmark_release.py \
     /release/workshop-terminal.pex \
     --output /release/release-benchmark.json
@@ -28,12 +31,12 @@ docker run --rm --network none \
   --env WT_RELEASE_ARTIFACT=/release/workshop-terminal.pex \
   --env WT_RELEASE_MANIFEST=/release/release-manifest.json \
   --env WT_SOURCE_ROOT=/source \
-  python:3.11-slim-bookworm \
+  "${SMOKE_IMAGE}" \
   /bin/sh -c 'PEX_INTERPRETER=1 /release/workshop-terminal.pex /source/scripts/smoke_release.py'
 
 docker run --rm --network none \
   --volume "${ROOT}:/source:ro" \
   --volume "${DIST}:/release:ro" \
   --env WT_RELEASE_ARTIFACT=/release/workshop-terminal.pex \
-  python:3.11-slim-bookworm \
+  "${SMOKE_IMAGE}" \
   python /source/scripts/smoke_otel_entrypoint.py

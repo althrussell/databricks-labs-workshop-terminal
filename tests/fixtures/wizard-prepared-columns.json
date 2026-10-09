@@ -1,0 +1,681 @@
+{
+  "automotive_mobility.campaign_vehicles": [
+    "campaign_id",
+    "vin",
+    "completed",
+    "completed_date"
+  ],
+  "automotive_mobility.charging_sessions": [
+    "session_id",
+    "vin",
+    "station_id",
+    "started_at",
+    "ended_at",
+    "duration_min",
+    "kwh_delivered",
+    "charger_kw",
+    "cost_usd"
+  ],
+  "automotive_mobility.customer360": [
+    "customer_id",
+    "full_name",
+    "email",
+    "city",
+    "state",
+    "segment",
+    "acquisition_date",
+    "marketing_consent",
+    "vehicles_current",
+    "vehicles_lifetime",
+    "first_vehicle_date",
+    "lifetime_sales_value",
+    "lifetime_service_value",
+    "lifetime_parts_value",
+    "lifetime_value",
+    "service_visits",
+    "last_service_date",
+    "days_since_last_service",
+    "dealers_visited",
+    "service_defection_flag",
+    "next_best_action"
+  ],
+  "automotive_mobility.dtc_codes": [
+    "description",
+    "dtc_code",
+    "severity",
+    "vehicle_system"
+  ],
+  "automotive_mobility.parts": [
+    "category",
+    "description",
+    "introduced_year",
+    "list_price",
+    "part_number",
+    "superseded_by",
+    "supplier_id",
+    "unit_cost",
+    "weight_kg"
+  ],
+  "automotive_mobility.parts360": [
+    "part_number",
+    "description",
+    "category",
+    "supplier_id",
+    "supplier_name",
+    "supplier_country",
+    "supplier_tier",
+    "supplier_quality_rating",
+    "lead_time_days",
+    "unit_cost",
+    "list_price",
+    "superseded_by",
+    "current_part_number",
+    "supersession_depth",
+    "units_consumed_12m",
+    "revenue_12m",
+    "vehicles_fitted_12m",
+    "warranty_claims_12m",
+    "warranty_cost_12m",
+    "claims_per_1000_vehicles",
+    "on_hand_total",
+    "on_order_total",
+    "stocking_locations",
+    "worst_stockout_days_12m",
+    "affected_models"
+  ],
+  "automotive_mobility.parts_inventory": [
+    "part_number",
+    "location_id",
+    "on_hand",
+    "on_order",
+    "reorder_point",
+    "stockout_days_12m",
+    "as_of_date"
+  ],
+  "automotive_mobility.recall_campaigns": [
+    "campaign_id",
+    "is_safety_recall",
+    "launched_date",
+    "remedy_part_number",
+    "title",
+    "vehicle_system"
+  ],
+  "automotive_mobility.telematics_events": [
+    "vin",
+    "event_ts",
+    "odometer_km",
+    "speed_kph",
+    "state_of_charge_pct",
+    "fuel_level_pct",
+    "ambient_temp_c",
+    "latitude",
+    "longitude",
+    "dtc_code",
+    "harsh_braking",
+    "harsh_accel"
+  ],
+  "automotive_mobility.vehicle360": [
+    "vin",
+    "make",
+    "model",
+    "trim",
+    "model_year",
+    "powertrain",
+    "colour",
+    "assembly_plant",
+    "build_date",
+    "current_customer_id",
+    "current_tenure_type",
+    "owned_since",
+    "owner_count",
+    "service_visits",
+    "lifetime_service_spend",
+    "last_service_date",
+    "days_since_last_service",
+    "last_known_odometer_km",
+    "warranty_claim_count",
+    "warranty_spend",
+    "open_recall_count",
+    "top_failing_system",
+    "avg_state_of_charge_pct",
+    "battery_soh_pct",
+    "service_due"
+  ],
+  "automotive_mobility.warranty_claims": [
+    "claim_id",
+    "ro_id",
+    "vin",
+    "part_number",
+    "dealer_id",
+    "claim_date",
+    "failure_code",
+    "parts_amount",
+    "labour_amount",
+    "total_amount",
+    "status"
+  ],
+  "cross_industry.customers": [
+    "city",
+    "country",
+    "customer_id",
+    "email",
+    "full_name",
+    "plan",
+    "signed_up_on"
+  ],
+  "cross_industry.products": [
+    "category",
+    "cost_price",
+    "product_id",
+    "product_name",
+    "unit_price"
+  ],
+  "cross_industry.sales": [
+    "order_id",
+    "customer_id",
+    "product_id",
+    "quantity",
+    "amount",
+    "ordered_at",
+    "channel"
+  ],
+  "cross_industry.web_events": [
+    "event_id",
+    "customer_id",
+    "session_id",
+    "event_type",
+    "occurred_at",
+    "device",
+    "path"
+  ],
+  "energy_utilities.customers": [
+    "account_type",
+    "customer_id",
+    "is_vulnerable",
+    "joined_on",
+    "postcode",
+    "region"
+  ],
+  "energy_utilities.meter_readings": [
+    "meter_id",
+    "region",
+    "reading_at",
+    "consumption_kwh"
+  ],
+  "energy_utilities.meters": [
+    "customer_id",
+    "installed_on",
+    "meter_id",
+    "meter_type",
+    "region",
+    "tariff_code"
+  ],
+  "energy_utilities.outages": [
+    "outage_id",
+    "region",
+    "cause",
+    "started_at",
+    "restored_at",
+    "duration_minutes",
+    "customers_affected"
+  ],
+  "financial_services.accounts": [
+    "account_id",
+    "account_type",
+    "balance",
+    "customer_id",
+    "opened_on",
+    "status"
+  ],
+  "financial_services.arrears": [
+    "loan_id",
+    "customer_id",
+    "product",
+    "branch_id",
+    "snapshot_month",
+    "days_past_due",
+    "arrears_balance",
+    "hardship_flag"
+  ],
+  "financial_services.branches": [
+    "branch_id",
+    "branch_name",
+    "city",
+    "opened_on",
+    "staff_count",
+    "state"
+  ],
+  "financial_services.customers": [
+    "customer_id",
+    "date_of_birth",
+    "full_name",
+    "onboarded_on",
+    "risk_rating",
+    "segment",
+    "state"
+  ],
+  "financial_services.fraud_labels": [
+    "transaction_id",
+    "is_fraud",
+    "label_source",
+    "labelled_at"
+  ],
+  "financial_services.loans": [
+    "loan_id",
+    "customer_id",
+    "branch_id",
+    "state",
+    "product",
+    "originated_on",
+    "principal",
+    "balance",
+    "interest_rate_pct",
+    "term_months",
+    "loan_to_value_pct",
+    "status"
+  ],
+  "financial_services.merchants": [
+    "category",
+    "country",
+    "merchant_id",
+    "merchant_name",
+    "risk_score"
+  ],
+  "financial_services.transactions": [
+    "transaction_id",
+    "account_id",
+    "customer_id",
+    "merchant_id",
+    "category",
+    "occurred_at",
+    "amount",
+    "channel",
+    "is_international"
+  ],
+  "healthcare.claims": [
+    "claim_id",
+    "encounter_id",
+    "patient_id",
+    "department",
+    "billed_amount",
+    "paid_amount",
+    "status",
+    "submitted_at"
+  ],
+  "healthcare.diagnoses": [
+    "encounter_id",
+    "patient_id",
+    "icd10_code",
+    "description",
+    "is_primary"
+  ],
+  "healthcare.encounters": [
+    "encounter_id",
+    "patient_id",
+    "provider_id",
+    "department",
+    "encounter_type",
+    "admitted_at",
+    "discharged_at",
+    "length_of_stay_days",
+    "age_at_encounter",
+    "readmitted_30d"
+  ],
+  "healthcare.patients": [
+    "birth_year",
+    "insurance_type",
+    "patient_id",
+    "registered_on",
+    "sex",
+    "state"
+  ],
+  "healthcare.providers": [
+    "department",
+    "provider_id",
+    "provider_name",
+    "specialty",
+    "years_practising"
+  ],
+  "manufacturing.defects": [
+    "defect_id",
+    "work_order_id",
+    "machine_id",
+    "plant",
+    "shift",
+    "defect_type",
+    "severity",
+    "units_affected",
+    "detected_at"
+  ],
+  "manufacturing.machines": [
+    "installed_on",
+    "line",
+    "machine_id",
+    "machine_type",
+    "plant",
+    "rated_throughput_per_hour"
+  ],
+  "manufacturing.sensor_readings": [
+    "machine_id",
+    "machine_type",
+    "plant",
+    "reading_at",
+    "temperature_c",
+    "vibration_mm_s",
+    "spindle_rpm",
+    "power_kw"
+  ],
+  "manufacturing.work_orders": [
+    "work_order_id",
+    "machine_id",
+    "plant",
+    "shift",
+    "started_at",
+    "units_planned",
+    "units_produced",
+    "duration_minutes"
+  ],
+  "media.churn_labels": [
+    "viewer_id",
+    "churned",
+    "recent_sessions",
+    "avg_completion",
+    "observed_on"
+  ],
+  "media.content": [
+    "content_id",
+    "content_type",
+    "genre",
+    "is_original",
+    "release_year",
+    "runtime_minutes",
+    "title"
+  ],
+  "media.subscriptions": [
+    "subscription_id",
+    "viewer_id",
+    "plan",
+    "monthly_price",
+    "started_on",
+    "cancelled_on",
+    "is_active"
+  ],
+  "media.view_events": [
+    "event_id",
+    "viewer_id",
+    "content_id",
+    "genre",
+    "started_at",
+    "device",
+    "watched_minutes",
+    "completion_pct"
+  ],
+  "media.viewers": [
+    "age_band",
+    "country",
+    "household_size",
+    "signed_up_on",
+    "viewer_id"
+  ],
+  "mining.assets": [
+    "asset_id",
+    "asset_type",
+    "commissioned_on",
+    "model",
+    "operating_hours",
+    "replacement_value",
+    "site_id"
+  ],
+  "mining.failure_labels": [
+    "asset_id",
+    "failed_within_30d",
+    "failure_mode",
+    "downtime_hours",
+    "avg_bearing_temp_c",
+    "max_vibration_mm_s",
+    "avg_oil_pressure_kpa",
+    "observed_on"
+  ],
+  "mining.production_daily": [
+    "site_id",
+    "commodity",
+    "production_date",
+    "tonnes_mined",
+    "tonnes_shipped",
+    "grade_pct",
+    "equipment_availability_pct",
+    "unplanned_downtime_hours"
+  ],
+  "mining.sensor_readings": [
+    "asset_id",
+    "site_id",
+    "asset_type",
+    "reading_at",
+    "engine_temp_c",
+    "bearing_temp_c",
+    "vibration_mm_s",
+    "oil_pressure_kpa",
+    "payload_tonnes",
+    "fuel_rate_lph"
+  ],
+  "mining.sites": [
+    "commissioned_on",
+    "commodity",
+    "site_id",
+    "site_name",
+    "state",
+    "target_grade_pct"
+  ],
+  "public_sector.budgets": [
+    "allocated_amount",
+    "budget_id",
+    "fiscal_year",
+    "service_area",
+    "spent_amount",
+    "ward"
+  ],
+  "public_sector.facilities": [
+    "annual_operating_cost",
+    "facility_id",
+    "facility_name",
+    "facility_type",
+    "opened_on",
+    "ward"
+  ],
+  "public_sector.permits": [
+    "permit_id",
+    "facility_id",
+    "ward",
+    "permit_type",
+    "applicant",
+    "address",
+    "submitted_at",
+    "status",
+    "days_in_process",
+    "fee"
+  ],
+  "public_sector.service_requests": [
+    "request_id",
+    "facility_id",
+    "ward",
+    "category",
+    "priority",
+    "reported_at",
+    "closed_at",
+    "resolution_days",
+    "target_days",
+    "within_target",
+    "status"
+  ],
+  "retail.inventory_daily": [
+    "store_id",
+    "product_id",
+    "snapshot_date",
+    "on_hand",
+    "on_order",
+    "units_sold"
+  ],
+  "retail.order_items": [
+    "order_id",
+    "product_id",
+    "quantity",
+    "unit_price",
+    "line_amount",
+    "discount_pct"
+  ],
+  "retail.orders": [
+    "order_id",
+    "store_id",
+    "customer_id",
+    "ordered_at",
+    "channel"
+  ],
+  "retail.products": [
+    "brand",
+    "category",
+    "product_id",
+    "product_name",
+    "unit_cost",
+    "unit_price"
+  ],
+  "retail.stores": [
+    "city",
+    "opened_on",
+    "region",
+    "square_feet",
+    "state",
+    "store_id",
+    "store_name"
+  ],
+  "superannuation.contributions": [
+    "contribution_id",
+    "member_id",
+    "contribution_type",
+    "amount",
+    "received_at",
+    "payment_frequency"
+  ],
+  "superannuation.investment_options": [
+    "benchmark_return_pct",
+    "fee_bps",
+    "growth_allocation_pct",
+    "option_id",
+    "option_name",
+    "risk_profile"
+  ],
+  "superannuation.member_holdings": [
+    "member_id",
+    "option_id",
+    "units",
+    "balance"
+  ],
+  "superannuation.members": [
+    "account_status",
+    "balance",
+    "date_of_birth",
+    "employer_name",
+    "full_name",
+    "insurance_cover",
+    "joined_on",
+    "member_id",
+    "state"
+  ],
+  "superannuation.rollout_labels": [
+    "member_id",
+    "rolled_out",
+    "destination_fund",
+    "contributed_12m",
+    "contributions_12m",
+    "last_contribution_at",
+    "observed_on"
+  ],
+  "telco.cdr": [
+    "cdr_id",
+    "subscriber_id",
+    "cell_id",
+    "cell_region",
+    "technology",
+    "record_type",
+    "started_at",
+    "duration_seconds",
+    "data_mb",
+    "dropped"
+  ],
+  "telco.churn_labels": [
+    "subscriber_id",
+    "churned",
+    "data_mb_90d",
+    "dropped_calls_90d",
+    "records_90d",
+    "observed_on"
+  ],
+  "telco.network_cells": [
+    "capacity_mbps",
+    "cell_id",
+    "commissioned_on",
+    "region",
+    "site_name",
+    "technology"
+  ],
+  "telco.plans": [
+    "included_data_gb",
+    "included_minutes",
+    "monthly_price",
+    "plan_id",
+    "plan_name"
+  ],
+  "telco.subscribers": [
+    "activated_on",
+    "contract_months",
+    "device_brand",
+    "plan_id",
+    "region",
+    "subscriber_id"
+  ],
+  "travel.booking_items": [
+    "item_id",
+    "booking_id",
+    "component_type",
+    "supplier_name",
+    "item_amount",
+    "confirmed"
+  ],
+  "travel.bookings": [
+    "booking_id",
+    "customer_id",
+    "destination_code",
+    "route_type",
+    "product_type",
+    "channel",
+    "booked_at",
+    "departure_date",
+    "lead_time_days",
+    "passengers",
+    "gross_value",
+    "margin_pct",
+    "margin_amount"
+  ],
+  "travel.cancellation_labels": [
+    "booking_id",
+    "cancelled",
+    "cancelled_at",
+    "cancellation_reason",
+    "refund_amount"
+  ],
+  "travel.customers": [
+    "corporate_account",
+    "customer_id",
+    "email",
+    "first_booked_on",
+    "full_name",
+    "home_city",
+    "loyalty_tier"
+  ],
+  "travel.destinations": [
+    "city",
+    "country",
+    "destination_code",
+    "route_type",
+    "typical_flight_hours"
+  ]
+}

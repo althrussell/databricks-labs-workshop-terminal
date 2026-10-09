@@ -3,6 +3,7 @@
 import os
 import shutil
 import subprocess
+import pytest
 
 from .conftest import ALICE
 
@@ -115,6 +116,66 @@ def test_type_into_session_owner_gated(client, monkeypatch, launchable_agents):
     resp = client.post(f"/api/sessions/{sid}/type", json={"text": "  \n "},
                        headers=ALICE)
     assert resp.status_code == 422
+
+
+def test_typing_a_full_wizard_prompt_acknowledges_every_character(client, monkeypatch):
+    import hashlib
+    from types import SimpleNamespace
+    import server.main as main
+
+    typed = []
+    monkeypatch.setattr(main.session_manager, "get", lambda _sid, _owner: SimpleNamespace(write_input=typed.append))
+    text = "A full selected task and original words. " * 35 + "\nConfirm only the useful next step."
+    response = client.post("/api/sessions/synthetic/type", json={"text": text}, headers=ALICE)
+    assert response.status_code == 200
+    flattened = text.replace("\n", " ")
+    assert typed == [flattened]
+    assert response.json()["typed_characters"] == len(flattened)
+    assert response.json()["typed_sha256"] == hashlib.sha256(flattened.encode()).hexdigest()
+    too_large = client.post("/api/sessions/synthetic/type", json={"text": "x" * 12001}, headers=ALICE)
+    assert too_large.status_code == 422 and typed == [flattened]
+
+
+def test_retried_prompt_delivery_is_idempotent_even_for_parallel_requests(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from server.sessions import Session
+
+    session = Session("synthetic@example.invalid", "claude", "Simulated", -1, -1)
+    writes = []
+    # Simulate a PTY accepting partial writes; the full UTF-8 input must arrive.
+    def write(_fd, data):
+        taken = min(17, len(data))
+        writes.append(data[:taken])
+        return taken
+    monkeypatch.setattr("server.sessions.os.write", write)
+    text = "Bakery orders 🥐 " * 45
+    with ThreadPoolExecutor(2) as pool:
+        acknowledgements = list(pool.map(lambda _: session.deliver_prompt(text, "same-delivery"), range(2)))
+    assert b"".join(writes).decode() == text
+    assert acknowledgements[0] == acknowledgements[1]
+    with pytest.raises(ValueError, match="different prompt"):
+        session.deliver_prompt("Different task", "same-delivery")
+
+
+@pytest.mark.parametrize("failure", ["error", "zero"])
+def test_interrupted_prompt_delivery_never_replays_the_partial_input(monkeypatch, failure):
+    from server.sessions import Session
+
+    session = Session("synthetic@example.invalid", "claude", "Simulated", -1, -1)
+    calls = []
+    def write(_fd, data):
+        calls.append(data)
+        if len(calls) == 1:
+            return 8
+        if failure == "zero":
+            return 0
+        raise OSError("simulated interrupted PTY")
+    monkeypatch.setattr("server.sessions.os.write", write)
+    for _ in range(2):
+        with pytest.raises(ValueError, match="delivery was interrupted"):
+            session.deliver_prompt("Bakery task with a longer goal", "interrupted-delivery")
+    assert len(calls) == 2
+    assert session.prompt_deliveries["interrupted-delivery"] == {"status": "interrupted"}
 
 
 def test_nuggets_include_phase_prompts(client, as_admin):

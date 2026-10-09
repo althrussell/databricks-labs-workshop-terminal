@@ -11,7 +11,9 @@ The [R01 closeout](remediation-validation.md#r01) records
 receipts, inspected screenshots, limitations, and independently verified cleanup.
 CT code and its working deployment are unchanged. R02 is accepted with recorded
 follow-ups and implemented in PR #89;
-R03–R10 remain proposed. The [R02 implementation report](workshop-interaction-contract-r02.md)
+R03 is an implemented local candidate with live qualification pending;
+[its report](wizard-journey-r03.md) records scope and remaining gates. R04–R10
+remain proposed. The [R02 implementation report](workshop-interaction-contract-r02.md)
 records policy delivery, local regressions, model probes and live Labs attempts.
 Browser tests qualified native Codex question transport and a static page, plus
 Claude's bakery clarification, recommendation, packing and reload. The fresh

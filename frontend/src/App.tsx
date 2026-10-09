@@ -12,6 +12,7 @@ import {
   Sparkles,
   Bot,
   X,
+  Settings2,
 } from "lucide-react";
 import {
   api,
@@ -29,6 +30,7 @@ import databricksLogo from "./assets/databricks-logo.svg";
 import BannerBar from "./components/BannerBar";
 import Hero from "./components/Hero";
 import Wizard from "./components/Wizard";
+import { PreferencesDialog } from "./components/HelpPreference";
 import LaunchBar from "./components/LaunchBar";
 import NuggetsPane from "./components/NuggetsPane";
 import OperatorPanel from "./components/OperatorPanel";
@@ -48,6 +50,7 @@ import {
   closeThenCreate,
   resolveSessionConflict,
 } from "./sessionSwitch";
+import { wizardDeliveryId } from "./wizardRequests";
 
 // An attendee who needs an idea gets one short choice before implementation.
 // This is typed UNSENT, like the other idea chips.
@@ -62,12 +65,13 @@ const STARTER_PROMPT =
  * immediately, then once more after a short pause, lands the text as soon as
  * the PTY is accepting it without making every attendee wait the worst case.
  */
-async function typeWhenSessionReady(sessionId: string, text: string) {
+async function typeWhenSessionReady(sessionId: string, text: string, deliveryId: string = crypto.randomUUID()) {
   try {
-    await api.typeIntoSession(sessionId, text);
-  } catch {
+    await api.typeIntoSession(sessionId, text, deliveryId);
+  } catch (caught) {
+    if (caught instanceof ApiError && caught.message.includes("delivery was interrupted")) throw caught;
     await new Promise((r) => setTimeout(r, 800));
-    await api.typeIntoSession(sessionId, text);
+    await api.typeIntoSession(sessionId, text, deliveryId);
   }
 }
 
@@ -103,6 +107,7 @@ export default function App() {
   const [helpUnread, setHelpUnread] = useState(0);
   const [helpRaised, setHelpRaised] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [brief, setBrief] = useState<WizardBrief | null>(null);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const helpChatOpenRef = useRef(false);
@@ -215,7 +220,7 @@ export default function App() {
    * empty array the state starts as, which is indistinguishable from a first
    * arrival and opens the modal over somebody's running terminal. */
   useEffect(() => {
-    if (!sessionsLoaded || wizardChecked.current) return;
+    if (!config || !sessionsLoaded || wizardChecked.current) return;
     // Once per load. Without the guard the wizard would reopen the moment an
     // attendee closed their last terminal, which is precisely when they are
     // least in the mood for it.
@@ -228,8 +233,8 @@ export default function App() {
           setWizardOpen(true);
         }
       })
-      .catch(() => undefined);
-  }, [sessionsLoaded, session]);
+      .catch(() => { if (config.onboarding_wizard.enabled && !session) setWizardOpen(true); });
+  }, [config, sessionsLoaded, session]);
 
   useEffect(() => {
     if (config?.help) setHelpRaised(config.help.raised);
@@ -395,12 +400,18 @@ export default function App() {
    * putting them in front of a terminal.
    */
   async function launchFromWizard(agentId: string, starterPrompt: string) {
-    setWizardOpen(false);
-    try {
-      await requestAgent(agentId, starterPrompt);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+    if (session && !session.exited) {
+      if (session.agent_id !== agentId) {
+        throw new Error("An agent is already open. Choose that agent, or close it before opening another.");
+      }
+      await api.typeIntoSession(session.id, starterPrompt, await wizardDeliveryId(session.id, starterPrompt));
+      setView("agent");
+    } else {
+      const created = await launch(agentId, false, starterPrompt);
+      if (!created) throw new Error("The agent could not open. Try again, or choose another ready agent.");
+      await typeWhenSessionReady(created.id, starterPrompt, await wizardDeliveryId(created.id, starterPrompt));
     }
+    setWizardOpen(false);
   }
 
   // Ideation chips / insight-card prompts: type the text into the attendee's
@@ -661,6 +672,9 @@ export default function App() {
             </a>
           )}
           {/* 3. Actions, then the promoted CTA at the far right */}
+          <button className="operator-toggle" onClick={() => setPreferencesOpen(true)} title="Change how your agent helps">
+            <Settings2 size={14} /> Agent preferences
+          </button>
           <button className="operator-toggle" onClick={openCertificate} title="Download your certificate">
             <Award size={14} />
             Certificate
@@ -696,6 +710,7 @@ export default function App() {
       </header>
 
       <BannerBar initial={config?.broadcast ?? null} />
+      {preferencesOpen && <PreferencesDialog onClose={() => setPreferencesOpen(false)} />}
       {/* The tab rule. Above the other banners because a stale sign-in is the
           cause of most of what they warn about. */}
       <SignInNotice
@@ -886,7 +901,10 @@ export default function App() {
           agents={agents}
           launching={launching}
           onLaunch={launchFromWizard}
+          onOpenAgent={() => { setView("agent"); setWizardOpen(false); }}
           onClose={closeWizard}
+          onSaved={setBrief}
+          draftKey={config ? `wt-wizard-draft:v1:${config.workspace_url}:${config.user.email}` : undefined}
         />
       )}
 

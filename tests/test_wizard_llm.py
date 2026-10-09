@@ -7,6 +7,30 @@ import pytest
 from server import demo_data, wizard, wizard_llm
 
 
+@pytest.fixture(autouse=True)
+def complete_model_fixture(monkeypatch):
+    original = wizard_llm.suggest
+    def wrapped(*args, **kwargs):
+        ask = wizard_llm._ask_model
+        def with_contract(*values, **options):
+            raw, model = ask(*values, **options)
+            for idea in raw.get("ideas", []):
+                idea.setdefault("fit_reason", idea.get("outcome", ""))
+                idea.setdefault("first_version", idea.get("prompt", ""))
+                idea.setdefault("data_mode", "demo" if idea.get("demo_tables") else "generate")
+                idea.setdefault("assumptions", ["Use synthetic workshop data"])
+                idea.setdefault("unresolved", ["Confirm the first useful task"])
+                idea.setdefault("intents", ["business_problem"])
+                idea.setdefault("products", [])
+                idea.setdefault("technical", False)
+                idea.setdefault("required_columns", [{"table": table, "columns": ["synthetic_id"]} for table in idea.get("demo_tables", [])])
+            return raw, model
+        with monkeypatch.context() as context:
+            context.setattr(wizard_llm, "_ask_model", with_contract)
+            return original(*args, **kwargs)
+    monkeypatch.setattr(wizard_llm, "suggest", wrapped)
+
+
 @pytest.fixture()
 def seeded(monkeypatch):
     import time
@@ -19,6 +43,7 @@ def seeded(monkeypatch):
     monkeypatch.setattr(demo_data, "_cache", inventory)
     monkeypatch.setattr(demo_data, "_cache_at", time.time())
     monkeypatch.setattr(demo_data, "_cache_ok", True)
+    monkeypatch.setattr(demo_data, "supports", lambda *_a, **_k: True)
     yield inventory
     demo_data.reset_cache()
 
@@ -84,7 +109,7 @@ def test_an_invented_table_is_dropped(seeded, monkeypatch):
         assert demo_data.verify(idea["demo_tables"])
 
 
-def test_a_healthcare_card_cannot_cite_vehicle360(seeded, monkeypatch):
+def test_healthcare_context_can_use_verified_vehicle_sources_for_a_fleet_task(seeded, monkeypatch):
     monkeypatch.setattr(wizard_llm.config, "llm_wizard_enabled", lambda: True)
 
     def fake(*_a, **_k):
@@ -93,9 +118,9 @@ def test_a_healthcare_card_cannot_cite_vehicle360(seeded, monkeypatch):
             "ideas": [
                 {
                     "id": "leaky",
-                    "label": "Fleet health",
-                    "outcome": "A car dashboard",
-                    "prompt": "Use vehicle360",
+                    "label": "Hospital fleet sample preview",
+                    "outcome": "See which sample ambulances need attention",
+                    "prompt": "Use automotive_mobility.vehicle360 for a labelled hospital fleet sample preview.",
                     "shape": "dashboard",
                     "demo_tables": ["automotive_mobility.vehicle360"],
                 }
@@ -103,11 +128,9 @@ def test_a_healthcare_card_cannot_cite_vehicle360(seeded, monkeypatch):
         }, "system.ai.gpt-5-4-mini"
 
     monkeypatch.setattr(wizard_llm, "_ask_model", fake)
-    result = wizard_llm.suggest("readmission", "healthcare")
-    for idea in result["ideas"]:
-        assert "vehicle360" not in idea["demo_tables"]
-        for ref in idea["demo_tables"]:
-            assert not ref.startswith("automotive_mobility.")
+    result = wizard_llm.suggest("Show hospital ambulances that need attention", "healthcare", industry_locked=True)
+    assert result["source"] == "llm" and result["industry"] == "healthcare"
+    assert result["ideas"][0]["demo_tables"] == ["automotive_mobility.vehicle360"]
 
 
 def test_an_unseeded_inferred_industry_is_ignored(seeded, monkeypatch):
@@ -216,7 +239,9 @@ def test_the_drop_rate_is_reported_so_a_model_swap_is_measurable(
     # The model that answered, not the one that was configured — a pin that
     # fell through to the chain head is otherwise invisible.
     assert result["model"] == "system.ai.gpt-oss-20b"
-    assert len(result["ideas"]) == wizard.IDEA_COUNT  # still padded to a full grid
+    assert len(result["ideas"]) == 1
+    assert result["accepted"] == 1
+    assert result["padded"] == 0
 
 
 def test_the_selector_fallback_reports_no_model(seeded, monkeypatch):

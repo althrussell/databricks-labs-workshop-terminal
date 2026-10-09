@@ -107,6 +107,8 @@ class FakeLocator:
         return True
 
     async def count(self):
+        if self.name in {"Continue", "Your goal is saved", "Skip onboarding"}:
+            return 0  # This fixture deliberately represents the historical UI.
         return self.page.close_count if self.name.startswith("Close ") else 1
 
     async def focus(self, **_options):

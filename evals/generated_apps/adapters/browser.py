@@ -224,7 +224,8 @@ class WorkshopBrowserDriver:
                 brief = body.get("brief", {})
                 saved_brief = {k: v for k, v in brief.items() if k in {
                     "record_id", "what_building", "industry", "industry_stated", "intent", "idea_id",
-                    "current_stack", "persona", "seen", "skipped", "completed_at", "revision"}}
+                    "current_stack", "persona", "seen", "skipped", "completed_at", "revision",
+                    "schema_version", "stage", "selected_idea", "discovery_record_id"}}
                 self.evidence.saved_brief = json.loads(redact_evidence(json.dumps(saved_brief), self.secrets))
                 self.evidence.starter_prompt_from_save = redact_evidence(
                     str(body.get("starter_prompt", "")), self.secrets)
@@ -233,6 +234,7 @@ class WorkshopBrowserDriver:
                 self.evidence.prompt_delivery_request = redact_evidence(
                     str(request_body.get("text", "")), self.secrets)
                 self.evidence.prompt_delivery_http_status = response.status
+                self._typed_sha256 = body.get("typed_sha256", "")
         except Exception as exc:
             # Never capture response bodies/headers as diagnostic exception text.
             self._response_errors.append(type(exc).__name__)
@@ -284,7 +286,9 @@ class WorkshopBrowserDriver:
                     raise BrowserJourneyError("wizard_disabled", "The run requested onboarding, but this WT has it disabled.")
                 await dialog.wait_for(state="visible", timeout=self._timeout_ms())
                 await dialog.locator("textarea").fill(config.opening_message, timeout=self._timeout_ms())
-                next_button = dialog.get_by_role("button", name="Next", exact=True)
+                next_button = dialog.get_by_role("button", name="Continue", exact=True)
+                if not await next_button.count():
+                    next_button = dialog.get_by_role("button", name="Next", exact=True)
                 if not await next_button.is_enabled():
                     self.evidence.friction.append("plain_goal_blocked_by_industry_gate")
                     if not config.allow_industry_step or not config.industry:
@@ -305,7 +309,10 @@ class WorkshopBrowserDriver:
                 if not (await saved.value).ok:
                     raise BrowserJourneyError("wizard_save_failed", "The normal UI could not save the novice brief.")
                 await self._wait_for(lambda: bool(self.evidence.saved_brief))
-                await dialog.get_by_role("heading", name="Pick your agent and go", exact=True).wait_for(
+                heading = dialog.get_by_role("heading", name="Your goal is saved", exact=True)
+                if not await heading.count():
+                    heading = dialog.get_by_role("heading", name="Pick your agent and go", exact=True)
+                await heading.wait_for(
                     state="visible", timeout=self._timeout_ms())
                 picker = dialog.locator(".hero-cards")
             else:
@@ -314,7 +321,10 @@ class WorkshopBrowserDriver:
                 if config.entry_path == "skip_wizard" and self.evidence.wizard_enabled:
                     if self._wizard["should_show"]:
                         await dialog.wait_for(state="visible", timeout=self._timeout_ms())
-                        await dialog.get_by_role("button", name="Skip", exact=True).click(timeout=self._timeout_ms())
+                        skip = dialog.get_by_role("button", name="Skip onboarding", exact=True)
+                        if not await skip.count():
+                            skip = dialog.get_by_role("button", name="Skip", exact=True)
+                        await skip.click(timeout=self._timeout_ms())
                 await dialog.wait_for(state="hidden", timeout=self._timeout_ms())
                 picker = self.page.locator(".hero .hero-cards")
                 await picker.wait_for(state="visible", timeout=self._timeout_ms())
@@ -336,7 +346,14 @@ class WorkshopBrowserDriver:
                 await self._wait_for(lambda: self.evidence.prompt_delivery_http_status is not None)
                 if self.evidence.prompt_delivery_http_status != 200:
                     raise BrowserJourneyError("prompt_delivery_failed", "The saved starter was not delivered to the PTY.")
-                if len(self.evidence.prompt_delivery_request) > 500:
+                delivery_digest = getattr(self, "_typed_sha256", "")
+                if delivery_digest:
+                    import hashlib
+
+                    flattened = self.evidence.prompt_delivery_request.replace("\n", " ").replace("\r", " ")
+                    if delivery_digest != hashlib.sha256(flattened.encode()).hexdigest():
+                        raise BrowserJourneyError("starter_prompt_truncated", "WT did not acknowledge the whole prompt delivery.")
+                elif len(self.evidence.prompt_delivery_request) > 500:
                     self.evidence.friction.append("starter_exceeds_current_server_500_character_type_limit")
                     raise BrowserJourneyError(
                         "starter_prompt_truncated",

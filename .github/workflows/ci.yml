@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, "codex/**"]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -128,3 +128,25 @@ jobs:
             dist/release-benchmark.json
           if-no-files-found: error
           retention-days: 7
+
+  wizard-browser:
+    name: rendered-wizard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.24"
+      - name: Install locked WT and pinned browser test dependencies
+        run: |
+          uv sync --frozen --no-group release
+          uv pip install --python .venv/bin/python -r evals/generated_apps/requirements-browser.txt
+          .venv/bin/python -m playwright install --with-deps chromium
+      - name: Exercise the committed WT frontend with local API fixtures
+        env:
+          WORKSHOP_E2E_BROWSER_TESTS: "1"
+        run: .venv/bin/python -m pytest tests/test_wizard_rendered.py -q

@@ -140,7 +140,9 @@ def _lifecycle(url: str, agent_id: str) -> str:
     status, typed = _request(
         "POST", f"{url}/api/sessions/{session['id']}/type", {"text": "smoke prompt"}
     )
-    if status != 200 or typed != {"status": "ok"}:
+    if (status != 200 or typed.get("status") != "ok"
+            or typed.get("typed_characters") != len("smoke prompt")
+            or typed.get("typed_sha256") != _sha256(b"smoke prompt")):
         raise AssertionError(f"{agent_id} session rejected input")
     return session["id"]
 

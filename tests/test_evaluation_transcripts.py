@@ -631,6 +631,23 @@ def test_quality_sol_alias_is_exact(returned, verified):
             _canary_response(body, "codex", "system.ai.gpt-6-1-sol")
 
 
+@pytest.mark.parametrize("returned,verified", [
+    ("gpt-5.4-mini-2026-03-17", True),
+    ("gpt-5.4-mini-2026-03-18", False),
+    ("gpt-5.4-2026-03-17", False),
+    ("gpt-5.4-nano-2026-03-17", False),
+])
+def test_preferred_wizard_mini_alias_is_exact(returned, verified):
+    from server.evaluation import _canary_response, CanaryUnverified
+    body = {"model": returned, "choices": [{"message": {"role": "assistant", "content": "OK"},
+            "finish_reason": "stop"}], "usage": {"prompt_tokens": 5, "completion_tokens": 1}}
+    if verified:
+        assert _canary_response(body, "wizard", "system.ai.gpt-5-4-mini")["ok_answer_verified"]
+    else:
+        with pytest.raises(CanaryUnverified, match="response_model_mismatch"):
+            _canary_response(body, "wizard", "system.ai.gpt-5-4-mini")
+
+
 def test_model_canary_does_not_echo_arbitrary_response_model_prose(client, as_admin, canary_runtime):
     canary_runtime.provider_body = {"model": "private-secret bearer response prose"}
     response = client.post(CANARY_ENDPOINT, headers=ALICE, json={"role": "driver"})

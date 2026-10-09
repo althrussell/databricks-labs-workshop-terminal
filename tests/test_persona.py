@@ -49,6 +49,7 @@ def _no_persona_yet(_test_env):
     home = os.path.join(config.users_root(), email_slug("alice@example.com"))
     try:
         os.remove(os.path.join(home, PERSONA_RELATIVE))
+        Path(home, ".workshop", "profile.json").unlink(missing_ok=True)
     except OSError:
         pass
     yield
@@ -242,58 +243,12 @@ def test_the_hint_offers_a_short_idea_choice_before_building():
     assert "Your coach is ready" not in app
 
 
-def test_the_ui_asks_before_the_session_starts():
-    """Asked in the UI while they read the page, it costs nothing. Asked by the
-    agent, it costs the first turn.
-
-    The question moved from a standalone toggle on the landing page into the
-    wizard's context step, where it sits beside the other optional questions
-    instead of being the only thing on Home that looks like a form. The guarantee
-    is unchanged: something other than the agent asks it, before any session.
-    """
-    wizard = (ROOT / "frontend" / "src" / "components" / "Wizard.tsx").read_text(
-        encoding="utf-8"
-    )
-
-    assert 'setPersona("business")' in wizard
-    assert 'setPersona("technical")' in wizard
-    # Framed as how things get explained, never as a profile field about them.
-    assert "How should your agent explain things?" in wizard
-    assert "Plain language" in wizard
-
-
-def test_choosing_is_optional():
-    """A required choice would be a gate in front of the workshop — the server
-    defaults instead, so an attendee can ignore it entirely.
-
-    Two ways out, both of which must leave the persona unset: Skip, and simply
-    not touching the chips before Next.
-    """
-    wizard = (ROOT / "frontend" / "src" / "components" / "Wizard.tsx").read_text(
-        encoding="utf-8"
-    )
-
-    assert "disabled={!persona}" not in wizard
-    # Continuing is gated on having said what they are building and which
-    # industry they are in, never on this. Matched as the whole expression
-    # rather than one line of it, because a persona term added anywhere in it
-    # is the regression this test exists to catch.
-    can_continue = wizard.split("const canContinue =", 1)[1].split(";", 1)[0]
-    assert 'what.trim().length > 0 || ideaId !== ""' in can_continue
-    assert "persona" not in can_continue
-    assert 'const [persona, setPersona] = useState("")' in wizard
-
-
-def test_the_landing_page_no_longer_carries_its_own_picker():
-    """One place to answer it, not two that can disagree.
-
-    Home used to own a persona toggle. Leaving it there alongside the wizard's
-    would let an attendee set it twice and see the second answer silently
-    overwrite the first — with no indication which one the agent got.
-    """
-    hero = (ROOT / "frontend" / "src" / "components" / "Hero.tsx").read_text(
-        encoding="utf-8"
-    )
-
-    assert "hero-persona" not in hero
-    assert "api.setPersona" not in hero
+def test_preferences_work_when_onboarding_is_disabled(client, monkeypatch):
+    from server import config
+    monkeypatch.setattr(config, "onboarding_wizard_enabled", lambda: False)
+    initial = client.get("/api/profile", headers=ALICE).json()
+    assert initial["help_preference"] == ""
+    saved = client.post("/api/profile", headers=ALICE, json={"expected_revision": initial["revision"], "help_preference": "concise"})
+    assert saved.status_code == 200
+    assert saved.json()["source"] == "attendee"
+    assert client.get("/api/wizard", headers=ALICE).json()["should_show"] is False

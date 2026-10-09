@@ -126,6 +126,11 @@ class WizardIdea(BaseModel):
     shape: str = "dashboard"
     technical: bool = False
     demo_tables: list[str] = Field(default_factory=list)
+    fit_reason: str = ""
+    first_version: str = ""
+    assumptions: list[str] = Field(default_factory=list)
+    unresolved: list[str] = Field(default_factory=list)
+    required_columns: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class ShellConfig(BaseModel):

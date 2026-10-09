@@ -30,6 +30,7 @@ store, reached through the event emitter.
 from __future__ import annotations
 
 import json
+import copy
 import logging
 import os
 import re
@@ -319,7 +320,7 @@ class DiscoveryStore:
 
     # -- writes --
 
-    def put(self, record: DiscoveryRecord) -> DiscoveryRecord | None:
+    def put(self, record: DiscoveryRecord, *, provided_fields: set[str] | None = None) -> DiscoveryRecord | None:
         """Store (or update) a record. Returns it, or None if it was dropped.
 
         Re-submitting a ``record_id`` is an update: the agent's understanding
@@ -344,6 +345,14 @@ class DiscoveryStore:
                 )
                 return None
             if existing is not None:
+                if provided_fields is not None:
+                    # Wizard facts and later agent enrichment are independent
+                    # writers. An omitted field is unchanged; explicit blanks
+                    # remain an intentional clear. The emitted CT shape stays
+                    # the complete merged record under the existing contract.
+                    for name in ("agent", "confidence", "session_intent", *_TEXT_FIELDS, *_LIST_FIELDS):
+                        if name not in provided_fields:
+                            setattr(record, name, copy.deepcopy(getattr(existing, name)))
                 record.revision = existing.revision + 1
             per_attendee[record.record_id] = record
         self._persist()
@@ -505,7 +514,7 @@ def record(attendee: str, raw: dict[str, Any], emitter=None) -> DiscoveryRecord 
     if not config.discovery_enabled():
         return None
     built = build_record(attendee, raw)
-    stored = discovery_store.put(built)
+    stored = discovery_store.put(built, provided_fields=set(raw))
     if stored is None:
         return None
     _emit(stored, emitter)
