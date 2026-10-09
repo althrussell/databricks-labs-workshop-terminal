@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Run a novice journey against an exact standalone WT simulation receipt.
+"""Run a simulated attendee journey against an exact standalone WT receipt.
 
 Default is a local plan. --execute performs read-only workspace verification and
-the ordinary attendee UI journey, including owned session cleanup. No Control
+the ordinary attendee UI journey, including owned session cleanup. The optional
+--generated-access-seed provisions exact CT-equivalent generated-SP read access
+on the receipt-owned catalog and schema. No Control
 Tower endpoint, deployment operation, credential impersonation or repair prompt
 is used. Generated app discovery is separate from independent app acceptance.
 """
@@ -639,9 +641,10 @@ class OperatorFetcher:
 
 
 class AppDiscovery:
-    """Inventory differences; observed deployments never imply app acceptance."""
-    def __init__(self, client, binding):
+    """Inventory differences and optional exact-SP test provisioning."""
+    def __init__(self, client, binding, *, read_access=None):
         self.client, self.binding = client, binding
+        self.read_access = read_access
         self.baseline = set()
         self.started = 0.0
         self.evidence = {"status": "not_started", "candidates": [], "unattributed_new_attendee_apps": 0}
@@ -662,7 +665,7 @@ class AppDiscovery:
     def observe(self):
         binding = self.binding
         creators = {binding["attendee"]["email"].casefold(), binding["app"]["service_principal_client_id"].casefold()}
-        candidates, unattributed = [], 0
+        candidates, unattributed, candidate_apps = [], 0, []
         for listed in self.inventory():
             if listed.id in self.baseline or listed.id == binding["app"]["id"]:
                 continue
@@ -687,12 +690,18 @@ class AppDiscovery:
                                "deployment_id": getattr(deployment, "deployment_id", None),
                                "deployment_state": enum(getattr(getattr(deployment, "status", None), "state", None)),
                                "app_state": enum(getattr(app.app_status, "state", None)), "url": app.url})
+            candidate_apps.append(app)
         self.evidence.update(candidates=candidates, unattributed_new_attendee_apps=unattributed)
         if len(candidates) > 1 or unattributed:
             self.evidence["status"] = "attribution_needs_review"
             return AppObservation("needs_review", source="live workspace app inventory difference")
         if len(candidates) == 1:
             candidate = candidates[0]
+            if self.read_access is not None:
+                ready = self.read_access.qualify(candidate_apps[0], started_at=self.started)
+                candidate["generated_app_read_access"] = "qualified" if ready else "awaiting_generated_sp"
+                if not ready:
+                    return AppObservation(source="live workspace app inventory difference")
             if candidate["deployment_state"] == "SUCCEEDED" and candidate["app_state"] == "RUNNING" and candidate["url"]:
                 deployed = self.client.apps.get_deployment(candidate["app_name"], candidate["deployment_id"])
                 require(deployed.deployment_id == candidate["deployment_id"]
@@ -766,6 +775,7 @@ def parser():
     p.add_argument("--industry")
     p.add_argument("--show-browser", action="store_true")
     p.add_argument("--execute", action="store_true")
+    p.add_argument("--generated-access-seed", help="Verified seed receipt: provision CT-equivalent read access only for the freshly attributed generated app SP")
     p.add_argument("--output", required=True)
     return p
 
@@ -812,7 +822,14 @@ async def execute(args, binding, budget, report, *, client=None):
         # Config can perform credential/host discovery; keep it off the event loop.
         client = await asyncio.wait_for(asyncio.to_thread(workspace_client, binding["profile"]), timeout=30)
     report["deployment_verification"] = await asyncio.wait_for(asyncio.to_thread(verify_deployment, binding, client), timeout=180)
-    discovery = AppDiscovery(client, binding) if args.mode == "build" else None
+    access = None
+    if getattr(args, "generated_access_seed", None):
+        from evals.generated_apps.generated_access import GeneratedAppReadAccess
+        require(args.mode == "build" and binding.get("package"), "generated_access_requires_ct_package_build")
+        access = GeneratedAppReadAccess(client, binding, json.loads(Path(args.receipt).read_text()),
+            args.generated_access_seed, str(args.output) + ".generated-access.json")
+        report["generated_app_read_access"] = access.evidence
+    discovery = AppDiscovery(client, binding, read_access=access) if args.mode == "build" else None
     if discovery:
         await asyncio.wait_for(asyncio.to_thread(discovery.start), timeout=30)
     scenario = load_simulator_scenario()
@@ -874,6 +891,8 @@ def main(argv=None):
     inputs = [Path(args.receipt), Path(args.budget)] + ([Path(args.wt_browser_state)] if args.wt_browser_state else [])
     if args.qualification:
         inputs.append(Path(args.qualification))
+    if args.generated_access_seed:
+        inputs.append(Path(args.generated_access_seed))
     temporary = destination.with_name(destination.name + ".tmp")
     artifacts = wt_artifact_dir(destination)
     startup_artifacts = startup_artifact_dir(destination)
@@ -888,7 +907,7 @@ def main(argv=None):
     evaluator_files = ("scripts/run_generated_app_journey.py", "evals/generated_apps/journey.py",
         "evals/generated_apps/simulator.py", "evals/generated_apps/interactions.py", "evals/generated_apps/report.py",
         "evals/generated_apps/adapters/browser.py", "evals/generated_apps/adapters/harness.py",
-        "evals/generated_apps/adapters/simulated_control_tower.py")
+        "evals/generated_apps/adapters/simulated_control_tower.py", "evals/generated_apps/generated_access.py")
     evaluator = [{"path": name, "sha256": hashlib.sha256((ROOT / name).read_bytes()).hexdigest()}
                  for name in evaluator_files]
     report = {"schema_version": 1, "scope": "simulated_control_tower", "control_tower_requests": 0,
@@ -896,6 +915,7 @@ def main(argv=None):
               "accepted": False, "verdict": "unverified", "status": "planning", "mode": args.mode,
               "entry_path": args.entry_path, "agent_id": args.agent,
               "startup_qualification_requested": args.qualify_startup,
+              "generated_app_read_access_requested": bool(args.generated_access_seed),
               "unverified_checks": ["event_attendee_equivalence", "obo_consent", "token_and_spend_enforcement",
                                     "tool_and_worker_attribution", "implementation_timing", "native_transcript_authenticity",
                                     "critical_user_task", "backend_persistence", "app_restart_persistence", "first_and_final_ux"],
@@ -904,6 +924,8 @@ def main(argv=None):
         receipt = json.loads(Path(args.receipt).read_text())
         require(not args.qualify_startup or args.entry_path == "skip_wizard", "startup_qualification_requires_skip_wizard")
         binding = validate_receipt(receipt)
+        require(not args.generated_access_seed or (args.mode == "build" and binding.get("package")),
+                "generated_access_requires_ct_package_build")
         if binding.get("package"):
             require(args.qualification, "ct_package_model_qualification_required")
             qualification = json.loads(Path(args.qualification).read_text())

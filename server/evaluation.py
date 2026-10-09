@@ -53,6 +53,11 @@ CANARY_TIMEOUT_SECONDS = 30
 CANARY_MAX_RESPONSE_BYTES = 64 * 1024
 _CANARY_LOCK = threading.Lock()
 _CANARY_ROLES = frozenset({"driver", "codex", "wizard"})
+_CLAUDE_TASK_NOTIFICATION = re.compile(
+    r"<task-notification>\s*<task-id>[A-Za-z0-9_-]{1,160}</task-id>\s*"
+    r"<status>(?:completed|failed|stopped)</status>\s*"
+    r"<summary>[^\n]{1,4000}</summary>[\s\S]*</task-notification>"
+)
 
 
 class CanaryUnverified(RuntimeError):
@@ -594,6 +599,11 @@ def _message(record: dict, agent: str, native_id: str, offset: int, question_cal
         return None
     if not text.strip():
         return None
+    # Native background task completions use user-role records too. Preserve
+    # their outcomes through independent platform observations, not as replies
+    # from the simulated attendee. Unknown or partial envelopes still fail closed.
+    if agent == "claude" and role == "user" and _CLAUDE_TASK_NOTIFICATION.fullmatch(text.strip()):
+        return None
     if len(text) > MAX_MESSAGE_CHARS:
         raise Unverified("native_message_size_budget")
     timestamp = record.get("timestamp")
@@ -639,6 +649,7 @@ def native_format(request: Request):
                     raise Unverified("native_scan_budget")
                 metadata, question_formats, oversized_text_records = [], [], []
                 compaction_summary_count = 0
+                task_notification_count = 0
                 for _offset, record in _records(raw):
                     message = record.get("message", {})
                     content = message.get("content", []) if isinstance(message, dict) else []
@@ -646,6 +657,13 @@ def native_format(request: Request):
                         compact = (record.get("type") == "user" and isinstance(message, dict)
                                    and message.get("role") == "user" and record.get("isCompactSummary") is True)
                         compaction_summary_count += int(compact)
+                        authored_text = content if isinstance(content, str) else "\n".join(
+                            block["text"] for block in content if isinstance(block, dict)
+                            and block.get("type") == "text" and isinstance(block.get("text"), str)
+                        ) if isinstance(content, list) else ""
+                        if (record.get("type") == "user" and isinstance(message, dict)
+                                and message.get("role") == "user" and _CLAUDE_TASK_NOTIFICATION.fullmatch(authored_text.strip())):
+                            task_notification_count += 1
                         text_chars = len(content) if isinstance(content, str) else sum(
                             len(block["text"]) for block in content if isinstance(block, dict)
                             and block.get("type") == "text" and isinstance(block.get("text"), str)
@@ -687,6 +705,7 @@ def native_format(request: Request):
                               "max_record_bytes": max((len(line) for line in raw.splitlines(keepends=True)), default=0),
                               "records": metadata, "question_formats": question_formats,
                               "compaction_summary_count": compaction_summary_count,
+                              "task_notification_count": task_notification_count,
                               "oversized_text_records": oversized_text_records})
         projects = home / "projects"
         project_count = 0

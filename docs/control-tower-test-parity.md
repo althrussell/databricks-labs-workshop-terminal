@@ -62,6 +62,17 @@ The test uses one app in the existing Labs workspace, not a new isolated attende
 workspace. CT's workspace-wide `account users` grants must not be copied into
 Labs; use grants restricted to this test's SP and owned catalog instead.
 
+Generated apps need this equivalence as well as WT. In the isolated runner,
+`--generated-access-seed` watches the fresh app inventory and grants only the
+new app's verified service principal `USE_CATALOG`/`SELECT` on the receipt-owned
+catalog and `USE_SCHEMA`/`SELECT` on the verified fixture schema. Direct and
+effective readbacks are required before it records qualification. It checks the
+app creator/time/SP, catalog owner/creation/metastore and live fixture table UUID;
+ambiguous inventory receives no grants. The permission ledger is a separate
+artifact. It changes no account group or shared catalog. This polling adapter is
+specific to the one-app Labs simulation; CT's contained grant exists before app
+creation, so actual CT integration and fleet timing still need separate testing.
+
 The simulator initially omitted model access setup, selected the dedicated gateway
 instead of CT's explicit workspace-hosted URL, transferred catalog ownership to
 the attendee, and gave the attendee `CAN_USE` rather than CT's `CAN_MANAGE`. It also

@@ -155,6 +155,29 @@ def test_oversized_authored_message_is_not_hidden_as_compaction(client, as_admin
     assert result["status"] == "unverified" and result["reason"] == "native_message_size_budget"
 
 
+@pytest.mark.parametrize("status", ["completed", "failed", "stopped"])
+def test_claude_native_task_notification_is_not_an_attendee_reply(client, as_admin, evaluation_seat, status):
+    seat = evaluation_seat
+    notification = ("<task-notification>\n<task-id>kxpugrgrd</task-id>\n"
+        f"<status>{status}</status>\n<summary>MCP task finished.</summary>\n"
+        "<result>private task output</result>\n</task-notification>")
+    write_claude(seat, [claude(seat, "Bakery please", role="user"),
+        claude(seat, notification, role="user"), claude(seat, "I'll inspect the deployment error.")])
+    payload = client.get(endpoint(seat), headers=ALICE).json()
+    assert [message["text"] for message in payload["messages"]] == ["Bakery please", "I'll inspect the deployment error."]
+    assert "private task output" not in json.dumps(payload)
+    metadata = client.get("/api/admin/evaluation/native-format", headers=ALICE).json()["files"][0]
+    assert metadata["task_notification_count"] == 1
+
+
+@pytest.mark.parametrize("text", ["Can you explain <task-notification>?", "<task-notification>real attendee text</task-notification>",
+    "<task-notification><task-id>test</task-id><status>unknown</status><summary>Question</summary></task-notification>"])
+def test_task_notification_fragments_are_not_silently_dropped(client, as_admin, evaluation_seat, text):
+    write_claude(evaluation_seat, [claude(evaluation_seat, text, role="user")])
+    payload = client.get(endpoint(evaluation_seat), headers=ALICE).json()
+    assert payload["messages"][0]["text"] == text
+
+
 def question_record(seat):
     record = claude(seat, complete=False)
     record["message"]["content"] = [{"type": "thinking", "thinking": "private chain"},

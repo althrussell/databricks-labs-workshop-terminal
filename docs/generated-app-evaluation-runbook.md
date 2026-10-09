@@ -88,7 +88,8 @@ uv run --frozen --with-requirements evals/generated_apps/requirements-browser.tx
   --receipt /private/tmp/wt-test-deploy.json --qualification /private/tmp/wt-test-qualified.json \
   --wt-browser-state /private/tmp/wt-test-attendee-state.json \
   --budget /private/tmp/wt-test-budget.json --agent claude --mode build \
-  --entry-path skip_wizard --qualify-startup --execute \
+  --entry-path skip_wizard --qualify-startup \
+  --generated-access-seed /private/tmp/wt-test-seed.json --execute \
   --output /private/tmp/wt-test-journey.json
 
 uv run --frozen python scripts/qualify_ct_compatible_wt_test.py cleanup \
@@ -610,6 +611,18 @@ screenshots; responsive/accessibility/error-state checks; duration/usage evidenc
 and exact cleanup. A URL, RUNNING app, imported observation JSON, successful local
 test, or text-only MLflow judge cannot supply those missing proofs. Screenshot
 paths are not images seen by a text judge. Keep missing evidence unverified.
+
+In the isolated CT-compatible package build, pass the verified current seed receipt
+with `--generated-access-seed`. Actual CT grants catalog/schema read access to
+`account users` inside each contained attendee workspace, covering future app
+principals. The Labs simulation instead provisions only the fresh, uniquely
+attributed generated app's exact SP on the receipt-owned catalog and fixture
+schema. The separate `.generated-access.json` ledger records direct and effective
+readbacks and any partial grant. Include that ledger in evidence and generated-app
+cleanup; remove only its recorded added privileges before deleting the app. Never
+copy CT's account-group grant into shared Labs. This polling equivalence does not
+qualify CT's static provisioning timing or allow extra write permissions to repair
+a generated app.
 
 Currently supported CLI syntax can be inspected locally without cloud mutations:
 
