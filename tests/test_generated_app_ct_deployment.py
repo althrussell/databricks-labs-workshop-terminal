@@ -12,6 +12,7 @@ import pytest
 
 from evals.generated_apps.ct_deployment import (
     verify_package, plan_package, package_sources, validate_policy, grant, sha256, PACKAGE_FILES, deploy_package,
+    grant_demo_read_access,
 )
 
 ROOT = Path(__file__).parents[1]
@@ -86,6 +87,44 @@ def test_package_plan_retains_owner_and_exact_ct_gateway_and_immutable_pins():
     assert not any(name.startswith(("assets/", "content/", "server/")) for name in files)
     assert "control_tower_wt_callers" not in json.dumps(plan)
     assert artifact == package()[1]
+
+
+def test_existing_demo_catalog_is_optional_and_reaches_packaged_environment():
+    raw, artifact, pin = package()
+    value = spec(pin) | {"demo_catalog": "workshop_demo"}
+    plan = plan_package(value, raw, artifact)
+    assert plan["environment"]["WORKSHOP_DEMO_CATALOG"] == "workshop_demo"
+    assert plan["ct_compatible_contract"]["demo_catalog"] == "workshop_demo"
+    assert b"WORKSHOP_DEMO_CATALOG" in package_sources(plan, raw)["app.yaml"]
+    assert plan_package(spec(pin), raw, artifact)["environment"]["WORKSHOP_DEMO_CATALOG"] == ""
+
+
+@pytest.mark.parametrize("name", ["system", "hive_metastore", "a.b", "", "workshop_demo;drop", 1])
+def test_invalid_shared_demo_catalog_is_rejected_before_workspace_access(name):
+    raw, artifact, pin = package()
+    with pytest.raises(ValueError):
+        plan_package(spec(pin) | {"demo_catalog": name}, raw, artifact)
+
+
+def test_demo_catalog_cannot_alias_the_owned_catalog_with_different_case():
+    raw, artifact, pin = package()
+    value = spec(pin)
+    owned = plan_package(value, raw, artifact)["names"]["catalog"]
+    with pytest.raises(ValueError, match="distinct"):
+        plan_package(value | {"demo_catalog": owned.upper()}, raw, artifact)
+
+
+def test_demo_provisioning_uses_only_read_grants_and_records_shared_identity(tmp_path, monkeypatch):
+    from evals.generated_apps import ct_deployment as deployment
+    catalog = SimpleNamespace(name="workshop_demo", created_at=123, metastore_id="meta", owner="owner")
+    client = SimpleNamespace(catalogs=SimpleNamespace(get=lambda name: catalog))
+    receipt = {"plan": {"ct_compatible_contract": {"demo_catalog": catalog.name}}}
+    calls = []
+    monkeypatch.setattr(deployment, "grant", lambda c,r,p,k,n,s,required: calls.append((k,n,s,required)))
+    grant_demo_read_access(client, receipt, tmp_path / "receipt.json", "test-sp")
+    assert calls == [("CATALOG", "workshop_demo", "test-sp", {"USE_CATALOG", "USE_SCHEMA", "SELECT", "READ_VOLUME"})]
+    assert receipt["shared_demo_catalog"]["state"] == "independently_verified"
+    assert receipt["shared_demo_catalog"]["read_only"] is True
 
 
 @pytest.mark.parametrize("change", ["restart", "overlap", "missing_chat", "wrong_namespace", "duplicate"])

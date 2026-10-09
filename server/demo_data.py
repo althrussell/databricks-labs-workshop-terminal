@@ -169,7 +169,9 @@ def _load() -> tuple[dict[str, set[str]], dict[str, str]]:
     # One call for the whole catalog rather than one per schema. Summaries carry
     # the full name, which is all the filtering and manifests need; anything
     # wanting column detail should DESCRIBE the table at the point of use.
-    for summary in client.tables.list_summaries(catalog_name=cat, schema_name_pattern="*"):
+    # The API accepts SQL LIKE patterns, not shell globs. Omitting the optional
+    # filter includes every schema; "*" silently matches no seeded schema.
+    for summary in client.tables.list_summaries(catalog_name=cat):
         full = getattr(summary, "full_name", None)
         if not full:
             continue

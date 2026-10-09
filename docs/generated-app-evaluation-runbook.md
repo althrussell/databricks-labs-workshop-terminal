@@ -95,6 +95,20 @@ Choose a fresh marker and an explicitly approved current model-policy snapshot.
 6. Clean receipt-identified resources and exact test-SP deltas. Preserve failed
    receipts and the attendee home directory. Expired bounds cannot be extended.
 
+When the workshop has prepared data, declare its existing catalog with
+`demo_catalog` (the example uses `workshop_demo`). The simulator sets
+`WORKSHOP_DEMO_CATALOG` and mirrors CT's seed-notebook read privileges
+(`USE_CATALOG`, `USE_SCHEMA`, `SELECT`, `READ_VOLUME`) for the exact temporary
+WT SP. It records and rechecks catalog identity and effective access. The external
+generated-app observer grants the same read access only to freshly attributed
+app SPs. No CT group or deployment changes are involved. Omitting this setting
+is a separate no-prepared-data cell and must not be described as demo-data parity.
+Shared demo tables are read-only sources; app updates use owned working data.
+Revoke recorded generated-SP shared-demo deltas before deleting those apps, then
+clean WT's exact deltas. Preserve the shared catalog and all other principals'
+grants. Generated apps and their exact test project folders require independent
+cleanup in addition to the WT deployment receipt.
+
 ```bash
 uv run --frozen python scripts/deploy_ct_compatible_wt_test.py \
   --spec docs/examples/ct-compatible-wt-test.json \

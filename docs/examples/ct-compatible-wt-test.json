@@ -12,6 +12,7 @@
   "onboarding_wizard": true,
   "llm_wizard": true,
   "evaluation_observation": true,
+  "demo_catalog": "workshop_demo",
   "package": {
     "manifest_sha256": "345509ef449a910f7e901a2ab7aaf8580aa4a7ade976ee9c4c4281d5652f9f63"
   },

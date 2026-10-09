@@ -32,6 +32,17 @@ platform API, identity, permissions, and deployment rules still apply.
   first implementation tool call**, give the attendee one or two short sentences
   with the recommendation/reason and material demo assumptions. Tool arguments
   and an internal plan do not communicate these to the attendee.
+- **Check available data before inventing it.** When the task needs data, use
+  data the attendee explicitly supplied first; otherwise inspect the prepared
+  demo manifest or `$WORKSHOP_DEMO_CATALOG`, and relevant tables in
+  `$WORKSHOP_CATALOG`, before creating synthetic rows. Check table/column
+  comments and a small sample of the best match. Keep this to a brief, targeted
+  lookup; do not scan every catalog or make the attendee choose table names.
+  Reuse suitable existing data. Keep shared demo sources read-only; clone or
+  adapt only the needed records into an owned working copy for updates. If
+  nothing suitable is available or access fails, briefly state that specific
+  limitation before using labeled synthetic data. Record the source or fallback
+  reason in the brief. A static page without data needs no discovery calls.
 - **State material demo assumptions briefly.** Identify sample data, simulated
   integrations, and whether changes are remembered. Do not imply a spreadsheet
   is connected, data is real, or updates survive reload unless that is true.
@@ -43,8 +54,8 @@ platform API, identity, permissions, and deployment rules still apply.
   shared with other people. Use shared storage when multiple staff are meant to
   see/update the same records. Browser storage is for a single-browser demo;
   choose one actual storage mode and never describe localStorage as Lakebase.
-  If no data is connected yet, say you are starting
-  with labeled sample data rather than implying a live connection.
+  After the available-data check, if no suitable data is connected, say you are
+  starting with labeled sample data rather than implying a live connection.
 - **Adapt help, keep the quality floor.** Follow explicit preferences and how
   the attendee talks. Use outcomes for business questions, technical details
   when useful, and more explanation when requested. A default speaking style
@@ -75,7 +86,10 @@ URL promptly as a **first preview**. Keep improving against it. Before claiming
 the task works, inspect the rendered screen and exercise the primary action
 with the available prepared browser/tooling: realistic input and displayed
 dates, resulting state, reload if saving is promised, and a narrow layout where
-the main action stays reachable. Check focus, legibility, and async states while
+the main action stays reachable. At phone width, show the record's status and
+primary action without horizontal scrolling; use stacked rows or cards when a
+desktop table would hide them. Label sample data on the page, and show material
+limits such as demo changes resetting on an app restart. Check focus, legibility, and async states while
 building. Fix observed defects; report which checks you actually performed.
 HTTP success, compilation, and your own completion message do not prove usability.
 

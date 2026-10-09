@@ -1,12 +1,15 @@
 # R02: workshop interaction and quality contract
 
-Committed on 9 October 2026 in PR #89. Policy delivery tests and bounded
-model probes pass. Three genuine-labuser journeys were attempted on an isolated
-Labs package; their generated-app outcome remains **unverified** because of
-observer failures and a simulation permission gap. The validated observer and
-permission fixes are pushed; the final native persistence issue remains open.
-All owned test resources were cleaned. No Control Tower changes or wizard
-re-enablement were performed. R01's recorded baseline and verdict are unchanged.
+Implementation is in PR #89; R02 acceptance remains open. Policy delivery tests
+and bounded model probes pass. Earlier genuine-labuser attempts retained observer
+failures and a simulation permission gap. A subsequent native Browser run on
+9 October qualified Codex question/reply delivery and a clear static-page build,
+then Claude's consequential bakery question, recommendation, deployed app,
+packing action and reload. The bakery first preview failed the phone action
+check; a simple user request produced a working repair. The agent invented data
+without exploring the prepared inventory. Those failures remain recorded and
+require a fresh packaged run after the fixes below. No Control Tower changes or
+wizard re-enablement were performed. R01's baseline and verdict are unchanged.
 
 ## What changed
 
@@ -138,6 +141,45 @@ directory was preserved. The CT app stayed on deployment
 `01f1bbc1de2911cb93356caa765f77a3`, and all seven reviewed CT source hashes matched.
 Authentication state was excluded from evidence and removed after teardown.
 
+## Data-first and first-preview follow-up
+
+The native run exposed two concrete defects. `workshop-init-project --appkit`
+mixed scaffold progress with its stdout path, so the documented command
+substitution passed that prose to `cd`. The helper now sends progress to stderr
+and emits only its final directory on stdout; the regression runs the actual
+documented `cd` expression with noisy and warning-only scaffold outputs.
+
+Prepared-data inventory used `schema_name_pattern="*"`, although the API accepts
+SQL LIKE patterns. A read-only Labs comparison returned zero tables with `*`
+and 110 without that filter. The lookup now lists all schemas, and the observed
+manifest is included in committed project instructions as well as home
+instructions. The workshop contract requires bounded exploration of supplied
+data, prepared demo data and relevant attendee data before inventing samples;
+reuse suitable sources, keep shared sources read-only and explain a specific
+fallback when none fits. Static pages skip discovery.
+
+The isolated CT-compatible runner now optionally declares the existing demo
+catalog and grants CT-equivalent read access only to exact temporary WT and
+generated-app SPs. Shared identity/effective access and exact privilege removal
+are verified; CT code, configuration and permanent groups are untouched. The
+earlier cell had an empty demo-catalog setting and therefore cannot qualify
+prepared-data parity.
+
+The phone requirement now explicitly keeps status and the primary action
+visible without horizontal scrolling, using stacked rows/cards where needed.
+Sample data and any reset-on-restart limitation must be visible on the page.
+The original bakery held shared state in server memory: reload preserved it,
+but its repair redeploy reset it. A successful repair does not turn the original
+first preview into a pass. Native Codex UI question transport passed separately;
+its collector still reported `native_message_size_budget`, so that collector
+is unqualified. Claude's final repair collector was ready and correlated the
+actual user messages.
+
+The combined local suite for helper/policy/inventory and deployment/access/
+cleanup passed 180 tests. A wizard API test reused an attendee whose brief an
+earlier policy test had saved; it now uses its own attendee identity. Live
+qualification of these latest changes still requires a fresh immutable package.
+
 ## Limits and remaining qualification
 
 These are five synthetic scenarios per model, not a statistically meaningful
@@ -146,8 +188,8 @@ deterministic; a passing final sanity subset does not establish repeatability.
 Direct model probes do not qualify native Claude/Codex/Omnigent
 execution, delegation behavior, model fleet consistency, generated-app UX, or
 persistence. Policy delivery tests prove composition and propagation, not that
-every third-party CLI will obey every instruction. R01's date/mobile findings
-are not fixed by this policy change.
+every third-party CLI will obey every instruction. Those earlier model probes
+do not establish a fix for R01's date/mobile findings.
 
 Existing warm installations and already seeded project adoption still need R04's
 versioned reconciliation. R03 still owns wizard flow, card/typed-goal integrity,

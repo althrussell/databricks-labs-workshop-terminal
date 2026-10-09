@@ -104,6 +104,12 @@ def plan_package(spec, manifest_bytes, artifact, *, now=None):
     if set(package_input) != {"manifest_sha256"}:
         raise ValueError("Package declaration requires the reviewed manifest SHA256")
     policy = validate_policy(spec.pop("model_policy"))
+    demo_catalog = spec.pop("demo_catalog", None)
+    if demo_catalog is not None and (
+            not isinstance(demo_catalog, str)
+            or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,254}", demo_catalog)
+            or demo_catalog.lower() in {"system", "hive_metastore"}):
+        raise ValueError("Demo catalog requires an explicit existing Unity Catalog name")
     mirror = spec.pop("toolchain_mirror", None)
     if mirror is not None and (not isinstance(mirror, dict) or set(mirror) != {"source_volume", "strict"}
             or not re.fullmatch(r"/Volumes/[A-Za-z0-9_]+/[A-Za-z0-9_]+/[A-Za-z0-9_]+", mirror.get("source_volume", ""))
@@ -121,6 +127,7 @@ def plan_package(spec, manifest_bytes, artifact, *, now=None):
         "catalog_owner_strategy": "retain_operator", "attendee_app_permission": "CAN_MANAGE",
         "work_sync_path": f"/Workspace/Users/{plan['attendee']['email']}/projects",
         "toolchain_mirror": mirror,
+        "demo_catalog": demo_catalog,
         "simulation_limits": ["Existing shared Labs workspace; no new workspace assignment",
             "Exact app-SP privileges replace permanent CT account group membership",
             "No workspace-wide account users grant; generated-app SPs need exact owned-catalog access",
@@ -139,6 +146,10 @@ def plan_package(spec, manifest_bytes, artifact, *, now=None):
     if mirror:
         plan["environment"].update(WORKSHOP_TOOLCHAIN_MIRROR_PATH=f"/Volumes/{plan['names']['catalog']}/_wt_runtime/toolchain",
                                    WORKSHOP_TOOLCHAIN_MIRROR_STRICT=str(mirror["strict"]).lower())
+    if demo_catalog:
+        if demo_catalog.lower() == plan["names"]["catalog"].lower():
+            raise ValueError("Shared demo catalog must be distinct from the attendee's owned catalog")
+        plan["environment"]["WORKSHOP_DEMO_CATALOG"] = demo_catalog
     return plan
 
 
@@ -233,6 +244,25 @@ def grant(client, receipt, path, kind, name, principal, required):
     write_evidence(path, receipt)
 
 
+def grant_demo_read_access(client, receipt, path, principal):
+    """Mirror CT's seeded read grants for only this temporary WT identity."""
+    name = receipt["plan"]["ct_compatible_contract"].get("demo_catalog")
+    if not name:
+        return
+    catalog = client.catalogs.get(name)
+    identity = {key: getattr(catalog, key) for key in ("name", "created_at", "metastore_id")}
+    receipt["shared_demo_catalog"] = {**identity, "owner": catalog.owner,
+        "principal": principal, "read_only": True, "state": "granting"}
+    write_evidence(path, receipt)
+    grant(client, receipt, path, "CATALOG", name, principal,
+          {"USE_CATALOG", "USE_SCHEMA", "SELECT", "READ_VOLUME"})
+    observed = client.catalogs.get(name)
+    if identity != {key: getattr(observed, key) for key in identity}:
+        raise ValueError("Shared demo catalog identity changed during provisioning")
+    receipt["shared_demo_catalog"]["state"] = "independently_verified"
+    write_evidence(path, receipt)
+
+
 def deploy_package(client, plan, manifest_bytes, artifact, receipt_path):
     from databricks.sdk.service.apps import App, AppDeployment
     from databricks.sdk.service.iam import ComplexValue
@@ -314,6 +344,7 @@ def deploy_package(client, plan, manifest_bytes, artifact, receipt_path):
     catalog_resource["state"] = "created_and_grants_verified"; write_evidence(receipt_path, receipt)
     if plan["ct_compatible_contract"].get("toolchain_mirror"):
         stage_toolchain(client, receipt, receipt_path, artifact)
+    grant_demo_read_access(client, receipt, receipt_path, sp)
     grant(client, receipt, receipt_path, "SCHEMA", "system.ai", sp, {"USE_SCHEMA"})
     for entry in plan["ct_compatible_contract"]["model_policy"]["pool"]:
         grant(client, receipt, receipt_path, "MODEL_SERVICE", entry["service_name"], sp, {"EXECUTE"})

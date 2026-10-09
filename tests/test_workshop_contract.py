@@ -53,6 +53,20 @@ def test_broken_adapter_cannot_silently_omit_or_duplicate_contract(text):
         user_content._compose_workshop_contract(text)
 
 
+def test_data_first_policy_and_observed_manifest_reach_project_workers(client, monkeypatch):
+    monkeypatch.setenv("LAB_COACH", "false")
+    monkeypatch.setenv("DISCOVERY_ENABLED", "false")
+    monkeypatch.setattr(user_content, "_demo_data_overlay", lambda _: (
+        "<!-- workshop-demo-data -->\nRead `workshop_demo.retail.orders` before inventing rows."
+    ))
+    home = _provisioned_home(client, monkeypatch)
+    for parts in _MEMORY_CHANNELS:
+        text = Path(home, *parts).read_text()
+        assert "Check available data before inventing it" in text
+        assert "workshop_demo.retail.orders" in text
+        assert text.count("<!-- workshop-demo-data -->") == 1
+
+
 def test_project_only_worker_gets_policy_and_preserved_brief(tmp_path, monkeypatch):
     monkeypatch.setenv("DISCOVERY_ENABLED", "false")
     home = tmp_path / "attendee"

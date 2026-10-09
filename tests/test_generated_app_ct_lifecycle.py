@@ -92,6 +92,53 @@ def test_cleanup_only_removes_recorded_sp_deltas_and_tolerates_reordering(tmp_pa
     assert state["home_id"] == "home-id"
 
 
+@pytest.mark.parametrize("principal_absent", [True, False])
+def test_cleanup_retry_accepts_only_platform_removed_app_membership(tmp_path, principal_absent):
+    client, receipt, state, calls = lifecycle_client()
+    state["app"] = None
+    state["group"].members = [NS(value="123")]
+    def principal(_):
+        if principal_absent: raise NotFound("removed by Apps")
+        return NS(id="42", application_id="owned-sp")
+    client.service_principals = NS(get=principal)
+    source = tmp_path / "receipt.json"; source.write_text(json.dumps(receipt))
+    if principal_absent:
+        assert lifecycle.cleanup(client, source, tmp_path / "cleanup.json")["status"] == "cleanup_verified"
+        assert "delete:app" not in calls
+    else:
+        with pytest.raises(ValueError, match="principal still exists"):
+            lifecycle.cleanup(client, source, tmp_path / "cleanup.json")
+        assert calls == []
+
+
+def test_demo_cleanup_revokes_exact_read_delta_without_deleting_shared_catalog(tmp_path):
+    client, receipt, state, calls = lifecycle_client()
+    demo = NS(name="workshop_demo", created_at=2, metastore_id="meta")
+    receipt["plan"]["ct_compatible_contract"]["demo_catalog"] = demo.name
+    receipt["shared_demo_catalog"] = {"name":demo.name,"created_at":2,"metastore_id":"meta",
+        "principal":"owned-sp","read_only":True}
+    receipt["permission_deltas"] = [{"kind":"CATALOG","name":demo.name,"principal":"owned-sp",
+        "added":["SELECT","USE_CATALOG","USE_SCHEMA","READ_VOLUME"]}]
+    owned_get = client.catalogs.get
+    client.catalogs.get = lambda name: demo if name == demo.name else owned_get(name)
+    read_privileges = [Privilege.SELECT, Privilege.USE_CATALOG, Privilege.USE_SCHEMA, Privilege.READ_VOLUME]
+    def demo_grants(kind, name):
+        assert (kind, name) == ("CATALOG", demo.name)
+        rows = [PrivilegeAssignment(principal="ct-production-group", privileges=read_privileges)]
+        if state["model"]: rows.append(PrivilegeAssignment(principal="owned-sp", privileges=read_privileges))
+        return GetPermissionsResponse(privilege_assignments=rows)
+    def revoke_demo(kind, name, *, changes):
+        assert (kind, name) == ("CATALOG", demo.name)
+        assert len(changes) == 1 and changes[0].principal == "owned-sp"
+        assert set(changes[0].remove) == set(read_privileges) and not changes[0].add
+        calls.append("revoke:demo"); state["model"] = False
+    client.grants = NS(get=demo_grants, update=revoke_demo)
+    source = tmp_path / "receipt.json"; source.write_text(json.dumps(receipt))
+    assert lifecycle.cleanup(client, source, tmp_path / "cleanup.json")["status"] == "cleanup_verified"
+    assert state["catalog"] is None and client.catalogs.get(demo.name) is demo
+    assert calls[0] == "revoke:demo"
+
+
 @pytest.mark.parametrize("change", ["app", "owner", "group", "home", "shared_principal"])
 def test_cleanup_preflights_changed_identity_before_any_mutation(tmp_path, change):
     client, receipt, state, calls = lifecycle_client()

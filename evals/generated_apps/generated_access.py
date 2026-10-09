@@ -1,7 +1,8 @@
 """Exact generated-SP read grants replacing CT's contained workspace grant.
 
-External isolated-test provisioning only. No account groups, shared catalogs,
-warehouse ACLs or WT instructions are changed. A recorded fresh app and the
+External isolated-test provisioning only. No account groups, warehouse ACLs or
+WT instructions are changed. Read-only access to a declared shared demo catalog
+is granted only to exact temporary app SPs. A recorded fresh app and the
 receipt-owned catalog/fixture schema must all match before a grant is issued.
 """
 from datetime import datetime, timezone
@@ -35,6 +36,13 @@ class GeneratedAppReadAccess:
         require(len(owned) == 1 and owned[0]["name"] == plan["catalog"] == binding["marker"].replace("-", "_")
                 and owned[0]["owner"] == binding["catalog_owner"] == receipt["operator"]["email"], "generated_access_catalog_unverified")
         self.catalog, self.schema, self.table = dict(owned[0]), seed["schema_identity"], seed["table_identity"]
+        self.demo = receipt.get("shared_demo_catalog")
+        if self.demo:
+            require(self.demo["name"] == receipt["plan"]["ct_compatible_contract"].get("demo_catalog")
+                    and self.demo["principal"] == binding["app"]["service_principal_client_id"]
+                    and self.demo.get("read_only") is True
+                    and self.demo.get("state") == "independently_verified"
+                    and self.demo["name"] != self.catalog["name"], "generated_access_demo_binding_unverified")
         require(self.schema["full_name"] == plan["catalog"] + "." + plan["schema"], "generated_access_schema_unverified")
         require(self.table["full_name"] == plan["table"] and self.table.get("table_id"), "generated_access_table_unverified")
         self.verified = {}
@@ -82,6 +90,11 @@ class GeneratedAppReadAccess:
         table = client.tables.get(self.table["full_name"])
         require(table.table_id == self.table["table_id"] and table.full_name == self.table["full_name"],
                 "generated_access_table_identity_changed")
+        if self.demo:
+            actual_demo = client.catalogs.get(self.demo["name"])
+            require(all(getattr(actual_demo, key) == self.demo[key]
+                        for key in ("name", "created_at", "metastore_id")),
+                    "generated_access_demo_identity_changed")
         entry = {"app_id": app.id, "app_name": app.name, "creator": app.creator,
             "create_time": app.create_time, "principal": principal, "service_principal_id": numeric, "state": "granting"}
         self.evidence["apps"].append(entry)
@@ -90,6 +103,9 @@ class GeneratedAppReadAccess:
         grant(client, self.evidence, self.output, "CATALOG", self.catalog["name"], principal, {"USE_CATALOG", "SELECT"})
         require(datetime.now(timezone.utc).timestamp() < bound["expires_at"], "generated_access_expired_or_wrong_workspace")
         grant(client, self.evidence, self.output, "SCHEMA", self.schema["full_name"], principal, {"USE_SCHEMA", "SELECT"})
+        if self.demo:
+            grant(client, self.evidence, self.output, "CATALOG", self.demo["name"], principal,
+                  {"USE_CATALOG", "USE_SCHEMA", "SELECT", "READ_VOLUME"})
         entry.update(state="independently_verified", verified_at=datetime.now(timezone.utc).isoformat())
         self.evidence["status"] = "qualified"
         write_evidence(self.output, self.evidence)

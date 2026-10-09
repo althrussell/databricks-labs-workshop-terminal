@@ -11,12 +11,16 @@ The [R01 closeout](evidence/generated-app-r01/live-20261009-68bd/CLOSEOUT.md) re
 receipts, inspected screenshots, limitations, and independently verified cleanup.
 CT code and its working deployment are unchanged. R02 is committed and pushed;
 R03–R10 remain proposed. The [R02 implementation report](workshop-interaction-contract-r02.md)
-records policy delivery, local regressions, model probes, and three live Labs
-attempts. Those attempts exposed observer failures and a simulated generated-SP
-permission gap; generated-app UX acceptance remains unverified. The validated
-permission/notification/compaction fixes are pushed, and isolated resources were
-cleaned. Native assistant/question persistence still needs qualification before
-another build run or CT integration.
+records policy delivery, local regressions, model probes and live Labs attempts.
+The latest Browser run qualified native Codex question transport and a static
+page, plus Claude's bakery clarification, recommendation, packing and reload.
+Its first phone preview failed; a simple user request produced a working repair.
+WT's inventory filter hid prepared data, and noisy helper stdout broke the
+documented scaffold command. Those defects and stronger data-first/phone guidance
+are now covered locally, with optional prepared-demo read parity in the isolated
+runner. Acceptance requires a fresh package run; a repaired preview does not
+erase its first-preview failure. Codex collector qualification and actual CT
+integration remain separate.
 
 Audited on 8 October 2026 against commit `4d46461c6a0229892bdda5c153d8a6dd03d316c6`.
 Scope: attendee onboarding, prompts, coaching, skill installation, project setup,
@@ -478,7 +482,7 @@ product/design reviewer should participate in starter and rubric calibration.
 | Workstream | Deliverable and likely files | Depends on | Suggested owner | Estimate | Exit evidence |
 |---|---|---|---|---|---|
 | R01: Baseline benchmark | Completed failed baseline: eligible Claude/AppKit build, native-correlated consultation, real deployed app, independent UI task/screenshots and exact cleanup; WT-owned CT-compatible package runner and evidence in `evals/generated_apps/` and `docs/evidence/generated-app-r01/live-20261009-68bd/` | None | Evaluation engineer + harness engineer | 3-5 | Current-policy baseline from novice inputs with exact release/instrumentation identity; failures retained and independently classified; real deployed app or explicit failure verdict per run; CT integration qualified separately |
-| R02: Workshop interaction and quality contract | Rewrite base/coach/project/studio policy around the workshop pacing guidance; shared concise framing across typed/card entry; automatic compact brief; update contradictory text tests and refresh allowlist | Committed/pushed; delivery regressions and bounded native MLflow probes pass; three real Labs attempts preserved. Generated-app acceptance is unverified due to observer/setup failures. Fixes and cleanup recorded; native persistence qualification remains open | Agent-experience engineer + product reviewer | 2-3 | Clear requests go straight to building; ambiguous goals usually need one brief exchange and a reasoned recommendation; demo assumptions are transparent; no routine approval ceremony or production planning; policy agrees across adapters |
+| R02: Workshop interaction and quality contract | Rewrite base/coach/project/studio policy around workshop pacing; shared concise framing; automatic compact brief; bounded prepared-data discovery; update contradictory tests and refresh allowlist | Native question/recommendation and action/reload observed. First-preview phone and data-discovery failures retained; corrected package qualification pending. Codex UI transport passes; its collector remains unqualified | Agent-experience engineer + product reviewer | 2-3 | Clear requests go straight to building; ambiguous goals usually need one brief exchange and a reasoned recommendation; existing data explored before invention; demo assumptions transparent; no routine approval ceremony or production planning; policy agrees across adapters |
 | R03: Wizard journey and brief integrity | Goal/help-me-choose paths; optional industry; request coordinator/stable selections; versioned immutable static/dynamic snapshots and scoped IDs; atomic saves; recovery/a11y; recommendation/schema/dependency/fallback contracts; discovery/persona reconciliation; rendered tests. Detailed stages in the extended wizard audit | R02 contract; baseline from R01 | Full-stack engineer + product designer | 6-10, revised after extended audit | Plain goal can continue; obsolete requests never change current selection; suggestion → select → save → reload/restart → launch preserves exact task/industry/provenance; faults recover; relevance/feasibility gates and real novice-to-app journey pass |
 | R04: Reliable preparation | Shared local/remote preparation; required-step readiness/retry; composed digests and warm-install refresh; race reconciliation; helper stdout/status and migration | R02 policy shape; may run alongside R03 | Runtime engineer | 3-5 | Fresh, prewarmed, redeployed, UI-first remote and partial-failure paths receive identical current policy/skills/helper; noisy scaffold works in documented command |
 | R05: Strong starters | First operational queue, then analytics/AI; working routing/actions/states; truthful data/provenance; pin, compile, render; reconcile minimal examples | R02 acceptance contract | Frontend engineer + product designer | 4-7 | Starter journey passes at 390/768/1440px; all controls work; error/empty/loading/screenshots and accessibility evidence; approved first-preview appearance |

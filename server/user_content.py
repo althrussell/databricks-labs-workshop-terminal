@@ -462,7 +462,11 @@ def _install_project_helper(user: User) -> None:
     template_dst = os.path.join(user.home, ".config", "workshop", "project-memory.md")
     os.makedirs(os.path.dirname(template_dst), exist_ok=True)
     with open(template_dst, "w") as f:
-        f.write(_project_memory())
+        # Worktree workers cannot read the home-only demo manifest. Carry the
+        # same observed catalog context into their committed project policy.
+        f.write("\n\n".join(part for part in (
+            _project_memory(), _demo_data_overlay(user),
+        ) if part.strip()))
 
     helper_src = os.path.join(_ASSETS, "bin", "workshop-init-project")
     local_bin = os.path.join(user.home, ".local", "bin")

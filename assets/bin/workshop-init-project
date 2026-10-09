@@ -87,7 +87,9 @@ if [ "$APPKIT" = "1" ] && [ ! -e "$DEST" ]; then
   # already, and installing a second copy on top would be duplication, not a
   # fix. A warning that fires when its own premise is false teaches everyone
   # reading it — attendee and agent alike — to skim past warnings, so drop
-  # those two lines and leave every other line of scaffold output intact.
+  # those two lines and leave every other line of scaffold output intact on
+  # stderr. stdout is exclusively the final project path: callers use it in
+  # command substitution, including `cd "$(workshop-init-project ... --appkit)"`.
   #
   # PIPESTATUS, not the pipeline status: grep exits non-zero when it filters
   # everything out, and that must not read as a failed scaffold. `set +e` around
@@ -99,7 +101,7 @@ if [ "$APPKIT" = "1" ] && [ ! -e "$DEST" ]; then
     "${PASSTHRU[@]+"${PASSTHRU[@]}"}" 2>&1 \
     | grep -vF \
         -e "Databricks skills are not installed" \
-        -e "coding agents detected without Databricks skills"
+        -e "coding agents detected without Databricks skills" >&2
   SCAFFOLD_STATUS=${PIPESTATUS[0]}
   set -e
 

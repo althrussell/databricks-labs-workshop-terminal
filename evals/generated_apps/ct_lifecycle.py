@@ -130,6 +130,17 @@ def qualify(client, receipt_path, output, *, timeout_seconds=900):
         "size_bytes": len(artifact), "logical_content_verified": True}
     app = identity(client, receipt)
     sp = app.service_principal_client_id
+    demo = receipt.get("shared_demo_catalog")
+    if demo:
+        catalog = client.catalogs.get(demo["name"])
+        if (demo["name"] != contract.get("demo_catalog") or demo["principal"] != sp
+                or demo.get("read_only") is not True or demo.get("state") != "independently_verified"
+                or any(getattr(catalog, key) != demo[key] for key in ("name", "created_at", "metastore_id"))
+                or not {"USE_CATALOG", "USE_SCHEMA", "SELECT", "READ_VOLUME"} <=
+                    privileges(client.grants.get_effective("CATALOG", demo["name"], principal=sp), sp)):
+            raise ValueError("Shared demo catalog read access did not qualify")
+        result["shared_demo_catalog"] = {"name": demo["name"], "read_only": True,
+            "identity_and_effective_access_verified": True}
     result["effective_model_permissions"] = []
     for delta in receipt["permission_deltas"]:
         if delta["kind"] in {"MODEL_SERVICE", "SCHEMA"} and delta["name"].startswith("system.ai"):
@@ -194,8 +205,23 @@ def cleanup(client, receipt_path, output):
         group = client.groups.get(group_owned["id"]) if group_owned else None
     except NotFound:
         group = None
-    if group and (group.display_name != group_owned["name"] or {m.value for m in group.members} != {receipt["operator"]["id"], str(app_owned["service_principal_id"])}):
-        raise ValueError("Group identity or membership changed; cleanup refused")
+    if group:
+        members = {m.value for m in (group.members or [])}
+        expected = {receipt["operator"]["id"], str(app_owned["service_principal_id"])}
+        if group.display_name != group_owned["name"] or members not in (
+                expected, {receipt["operator"]["id"]}):
+            raise ValueError("Group identity or membership changed; cleanup refused")
+        if members != expected:
+            # Apps deletion also removes its SP and that membership. A cleanup
+            # retry may accept only that exact shrink after both absence checks.
+            if app is not None:
+                raise ValueError("Group membership changed while app still exists")
+            try:
+                client.service_principals.get(str(app_owned["service_principal_id"]))
+            except NotFound:
+                pass
+            else:
+                raise ValueError("Group membership changed while principal still exists")
     source_owned = owned.get("workspace_source")
     try:
         source = client.workspace.get_status(source_owned["path"]) if source_owned else None
@@ -206,13 +232,25 @@ def cleanup(client, receipt_path, output):
     if source:
         from scripts.run_generated_app_journey import verify_snapshot
         verify_snapshot(client, source_owned["path"], receipt["uploaded_source"])
+    demo = receipt.get("shared_demo_catalog")
+    if demo:
+        if (demo["name"] != plan["ct_compatible_contract"].get("demo_catalog")
+                or demo["principal"] != sp or demo.get("read_only") is not True
+                or demo["name"] == plan["names"]["catalog"]):
+            raise ValueError("Shared demo catalog receipt changed; cleanup refused")
+        actual = client.catalogs.get(demo["name"])
+        if any(getattr(actual, key) != demo[key] for key in ("name", "created_at", "metastore_id")):
+            raise ValueError("Shared demo catalog identity changed; cleanup refused")
     # Validate all shared deltas before any mutation, including partial runs.
     for delta in receipt.get("permission_deltas", []):
         if delta["name"] == plan["names"]["catalog"] or delta["name"].startswith(plan["names"]["catalog"] + ".") or not delta["added"]:
             continue
+        demo_delta = (demo and delta["kind"] == "CATALOG" and delta["name"] == demo["name"]
+                      and set(delta["added"]) <= {"USE_CATALOG", "USE_SCHEMA", "SELECT", "READ_VOLUME"})
         if (delta["principal"] != sp or not (
                 delta["kind"] == "SCHEMA" and delta["name"] == "system.ai"
-                or delta["kind"] == "MODEL_SERVICE" and delta["name"].startswith("system.ai."))):
+                or delta["kind"] == "MODEL_SERVICE" and delta["name"].startswith("system.ai.")
+                or demo_delta)):
             raise ValueError("Shared privilege delta is outside the test principal")
     for key, object_type in (("warehouse_access", "sql/warehouses"), ("work_sync", "directories")):
         delta = receipt.get(key)
@@ -235,8 +273,7 @@ def cleanup(client, receipt_path, output):
     for delta in receipt.get("permission_deltas", []):
         if delta["name"] == plan["names"]["catalog"] or delta["name"].startswith(plan["names"]["catalog"] + ".") or not delta["added"]:
             continue
-        if delta["principal"] != sp or not delta["name"].startswith("system.ai") or delta["kind"] not in {"SCHEMA", "MODEL_SERVICE"}:
-            raise ValueError("Shared privilege delta is outside the test principal")
+        # Every shared delta was identity/privilege checked above before mutation.
         def revoke(delta=delta):
             before = client.grants.get(delta["kind"], delta["name"]).as_dict()
             others = [row for row in before.get("privilege_assignments", []) if row.get("principal") != sp]
@@ -266,10 +303,11 @@ def cleanup(client, receipt_path, output):
     if app:
         def delete_app():
             client.apps.delete(app.name)
-            for attempt in range(30):
+            deadline = time.monotonic() + 900
+            while time.monotonic() < deadline:
                 try: client.apps.get(app.name)
                 except NotFound: return
-                time.sleep(2)
+                time.sleep(min(10, max(0, deadline - time.monotonic())))
             raise RuntimeError("App deletion did not converge")
         action("app", app.id, delete_app)
     if source:

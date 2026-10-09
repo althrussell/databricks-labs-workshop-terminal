@@ -10,12 +10,19 @@ from scripts import run_generated_app_journey as runner
 from .test_generated_app_journey_command import fixture, Client, new_app, APP_ID
 
 
-def seat(tmp_path):
+def seat(tmp_path, *, with_demo=False):
     receipt, _, now = fixture()
     bound = runner.validate_receipt(receipt, now=now)
     bound["package"] = {"version": 2}
     bound["catalog_owner"] = bound["attendee"]["email"]
     receipt["operator"] = {"email": bound["catalog_owner"]}
+    demo = None
+    if with_demo:
+        demo = NS(name="workshop_demo", created_at=456, metastore_id="metastore")
+        receipt["plan"]["ct_compatible_contract"] = {"demo_catalog": demo.name}
+        receipt["shared_demo_catalog"] = {"name": demo.name, "created_at": demo.created_at,
+            "metastore_id": demo.metastore_id, "principal": bound["app"]["service_principal_client_id"],
+            "read_only": True, "state": "independently_verified"}
     catalog = next(r for r in receipt["created_resources"] if r["kind"] == "catalog")
     catalog.update(owner=bound["catalog_owner"], created_by=bound["catalog_owner"], created_at=123, metastore_id="metastore")
     plan = build_plan(bound, deployment_receipt_sha256="a" * 64, epoch=now)
@@ -30,6 +37,7 @@ def seat(tmp_path):
              create_time=now.isoformat(), service_principal_id=789,
              service_principal_client_id="44444444-4444-4444-8444-444444444444")
     state = {(kind, name): set() for kind, name in [("CATALOG", catalog["name"]), ("SCHEMA", schema["full_name"])]}
+    if demo: state["CATALOG", demo.name] = set()
     updates = []
     effective = {"ok": True}
     def read(kind, name, *, principal=None):
@@ -45,12 +53,13 @@ def seat(tmp_path):
         state[kind, name].update(values)
     client = NS(config=NS(host=bound["workspace_host"]), apps=NS(get=lambda name: app),
         service_principals=NS(get=lambda id: NS(id=str(app.service_principal_id), application_id=app.service_principal_client_id)),
-        catalogs=NS(get=lambda name: NS(**{k: catalog[k] for k in ["owner", "created_by", "created_at", "metastore_id"]})),
+        catalogs=NS(get=lambda name: demo if demo and name == demo.name else
+                    NS(**{k: catalog[k] for k in ["owner", "created_by", "created_at", "metastore_id"]})),
         schemas=NS(get=lambda name: NS(**schema)), tables=NS(get=lambda name: NS(**table)),
         grants=NS(get=read, get_effective=read, update=update))
     access = GeneratedAppReadAccess(client, bound, receipt, seed, tmp_path / "access.json")
     return NS(access=access, client=client, bound=bound, app=app, catalog=catalog, schema=schema,
-              table=table, updates=updates, effective=effective, start=now.timestamp() - 1)
+              table=table, updates=updates, effective=effective, demo=demo, start=now.timestamp() - 1)
 
 
 def test_new_app_sp_gets_exact_ct_read_equivalence_before_successful_deploy(tmp_path):
@@ -62,6 +71,20 @@ def test_new_app_sp_gets_exact_ct_read_equivalence_before_successful_deploy(tmp_
     assert all(row["state"] == "independently_verified" for row in s.access.evidence["permission_deltas"])
     assert "account users" not in json.dumps(s.access.evidence)
     assert s.access.qualify(s.app, started_at=s.start) and len(s.updates) == 2
+
+
+def test_generated_app_gets_declared_demo_read_access_and_rejects_replaced_catalog(tmp_path):
+    s = seat(tmp_path, with_demo=True)
+    assert s.access.qualify(s.app, started_at=s.start)
+    assert s.updates[-1] == ("CATALOG", "workshop_demo", s.app.service_principal_client_id,
+                             {"USE_CATALOG", "USE_SCHEMA", "SELECT", "READ_VOLUME"})
+    assert len(s.updates) == 3
+    other = tmp_path / "changed"; other.mkdir()
+    changed = seat(other, with_demo=True)
+    changed.demo.created_at += 1
+    with pytest.raises(runner.GateError, match="demo_identity_changed"):
+        changed.access.qualify(changed.app, started_at=changed.start)
+    assert changed.updates == []
 
 
 @pytest.mark.parametrize("mutation", ["owner", "catalog_created", "metastore", "schema_owner", "table_uuid",
