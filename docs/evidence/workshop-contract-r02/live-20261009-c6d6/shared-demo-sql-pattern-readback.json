@@ -1,0 +1,37 @@
+{
+  "schemas": [
+    "_meta",
+    "automotive_mobility",
+    "cross_industry",
+    "default",
+    "energy_utilities",
+    "financial_services",
+    "healthcare",
+    "information_schema",
+    "manufacturing",
+    "media",
+    "mining",
+    "public_sector",
+    "retail",
+    "superannuation",
+    "telco",
+    "travel"
+  ],
+  "table_count": 110,
+  "matching_tables": [
+    "workshop_demo.retail.stores",
+    "workshop_demo.automotive_mobility.service_order_parts",
+    "workshop_demo.travel.customers",
+    "workshop_demo.automotive_mobility.customers",
+    "workshop_demo.manufacturing.work_orders",
+    "workshop_demo.automotive_mobility.service_orders",
+    "workshop_demo.retail.inventory_daily",
+    "workshop_demo.retail.order_items",
+    "workshop_demo.energy_utilities.customers",
+    "workshop_demo.cross_industry.customers",
+    "workshop_demo.retail.products",
+    "workshop_demo.retail.orders",
+    "workshop_demo.automotive_mobility.customer360",
+    "workshop_demo.financial_services.customers"
+  ]
+}

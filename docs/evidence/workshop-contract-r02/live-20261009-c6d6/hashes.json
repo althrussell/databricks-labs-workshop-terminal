@@ -1,0 +1,327 @@
+[
+  {
+    "path": "CLOSEOUT.md",
+    "size_bytes": 4430,
+    "sha256": "648a316f034823aa57e42238d0beabb9b3428a4288f9d4e831068f1543b3f921"
+  },
+  {
+    "path": "acceptance-criteria.json",
+    "size_bytes": 2000,
+    "sha256": "02d5a65a68ce5779e10c0feea4566f964c0294e6edd6edf7edb4121b05402643"
+  },
+  {
+    "path": "bakery-after-reload.jpg",
+    "size_bytes": 71169,
+    "sha256": "c2eea71001f5a94d5d9006367c77a5c02e92208d7804fed84b6fec680fd64a3e"
+  },
+  {
+    "path": "bakery-answer-submitted.json",
+    "size_bytes": 3826,
+    "sha256": "06ed8601969d51c6889e7a587133d144209ff6795e9d007fb8967ec9c99e2c12"
+  },
+  {
+    "path": "bakery-attention-question.jpg",
+    "size_bytes": 64554,
+    "sha256": "922e724226d95ac35ced811691df56e528225007ea0c1a1fa7239a1b9a163847"
+  },
+  {
+    "path": "bakery-desktop.jpg",
+    "size_bytes": 64065,
+    "sha256": "5479a4cc143a03f4b6d33264ddd16b1cf934dce4d1c8e85e1f65dcdced6f342b"
+  },
+  {
+    "path": "bakery-first-preview.jpg",
+    "size_bytes": 72175,
+    "sha256": "d10142c4293c2e28cd0a594db48102842e7621df7e8731c632423191e85ed56a"
+  },
+  {
+    "path": "bakery-first-response.json",
+    "size_bytes": 3825,
+    "sha256": "fa7bc41c4bf08d397f509f8dfa25baebeeea4430ce56ab4cafb16b53b55bd670"
+  },
+  {
+    "path": "bakery-mobile-after-repair.jpg",
+    "size_bytes": 29346,
+    "sha256": "ec44ca900f35874e2108ebfdea23fe6485cc6346e52b275c1d92abbdeafb6236"
+  },
+  {
+    "path": "bakery-mobile-packed-after-reload.jpg",
+    "size_bytes": 19340,
+    "sha256": "dfa1d2752e4485dbd746d52b7e4da15587a8aae0fccb9184193a90c7a1009e5d"
+  },
+  {
+    "path": "bakery-mobile-repair-ui.json",
+    "size_bytes": 1552,
+    "sha256": "c7a95da721ff1bf62cd53284ae3e2f4336e34d3fc0b0c667898ccad578612d26"
+  },
+  {
+    "path": "bakery-mobile-rows-before-repair.jpg",
+    "size_bytes": 26693,
+    "sha256": "bd73cb74f3b5a2ecdeeb9fcd51afc2df866b86da3ea502490652efbaf2b3b790"
+  },
+  {
+    "path": "bakery-order-packed.jpg",
+    "size_bytes": 71077,
+    "sha256": "fab28bdfd271cd0952202be775f078b8147b2670d9275d9ee27a9a3ff28f1fb6"
+  },
+  {
+    "path": "bakery-phone-repair-collector.json",
+    "size_bytes": 7309,
+    "sha256": "26d47fb346e8138f075969e2d9b01d0c4c548e1b880391ee1483bec5593d51e5"
+  },
+  {
+    "path": "bakery-phone-repair-final.jpg",
+    "size_bytes": 105519,
+    "sha256": "1de597b2e9cc38c714bfb05a1e8fc6948ccff744a5e1253172357ddbd78e3d50"
+  },
+  {
+    "path": "bakery-prebuild-framing.jpg",
+    "size_bytes": 114517,
+    "sha256": "3de501b9ac8f2e7109c690226288f097e35f1d5228267dad3b68526e7f9aa177"
+  },
+  {
+    "path": "bakery-repaired-source/README.md",
+    "size_bytes": 4831,
+    "sha256": "8874ff510b6f9202e89a1cc344715e7fbb9a531ce333c51b31cec0b205192f01"
+  },
+  {
+    "path": "bakery-repaired-source/app.yaml",
+    "size_bytes": 33,
+    "sha256": "401d032046dcaa81d770a84dbee8cde68f7253b7c433751f239153ebf9deba5d"
+  },
+  {
+    "path": "bakery-repaired-source/client/src/App.tsx",
+    "size_bytes": 880,
+    "sha256": "00642510db1ab8f2ed09133a790fba5b3bdaefeba3a1e70cfa687af2ca4fa1f3"
+  },
+  {
+    "path": "bakery-repaired-source/client/src/OrdersPage.tsx",
+    "size_bytes": 14389,
+    "sha256": "139856444dcd7c5a15c53e7ffebf04e30c265421a03751da721ddd779ca80ccf"
+  },
+  {
+    "path": "bakery-repaired-source/package.json",
+    "size_bytes": 2783,
+    "sha256": "8fd0cb5d9a149a87dbc9564b58c830ef1bfbeb1bb1bd2d50b3b65c06f910ba4c"
+  },
+  {
+    "path": "bakery-repaired-source/server/orders.ts",
+    "size_bytes": 1572,
+    "sha256": "c828335ce6f923c247ca9b0d4efa38115d60454e3d83715cc6558874e28a9555"
+  },
+  {
+    "path": "bakery-repaired-source/server/server.ts",
+    "size_bytes": 614,
+    "sha256": "b30e36c293c4bdedc067e27f81529bbe9834413414bfa7b164200f0e1b286f0e"
+  },
+  {
+    "path": "bakery-repaired-source/snapshot-manifest.json",
+    "size_bytes": 9230,
+    "sha256": "b095d6723a57259e2bffdd843ff38cd1d09be7c1452b130737fd6992774b7e89"
+  },
+  {
+    "path": "bakery-source/README.md",
+    "size_bytes": 4831,
+    "sha256": "8874ff510b6f9202e89a1cc344715e7fbb9a531ce333c51b31cec0b205192f01"
+  },
+  {
+    "path": "bakery-source/app.yaml",
+    "size_bytes": 33,
+    "sha256": "401d032046dcaa81d770a84dbee8cde68f7253b7c433751f239153ebf9deba5d"
+  },
+  {
+    "path": "bakery-source/client/src/App.tsx",
+    "size_bytes": 880,
+    "sha256": "00642510db1ab8f2ed09133a790fba5b3bdaefeba3a1e70cfa687af2ca4fa1f3"
+  },
+  {
+    "path": "bakery-source/client/src/OrdersPage.tsx",
+    "size_bytes": 10961,
+    "sha256": "fc406a4661d1e36b64a8cbb360dfe4a36d270ee9da654722330aa97de909002e"
+  },
+  {
+    "path": "bakery-source/package.json",
+    "size_bytes": 2783,
+    "sha256": "8fd0cb5d9a149a87dbc9564b58c830ef1bfbeb1bb1bd2d50b3b65c06f910ba4c"
+  },
+  {
+    "path": "bakery-source/server/orders.ts",
+    "size_bytes": 1572,
+    "sha256": "c828335ce6f923c247ca9b0d4efa38115d60454e3d83715cc6558874e28a9555"
+  },
+  {
+    "path": "bakery-source/server/server.ts",
+    "size_bytes": 614,
+    "sha256": "b30e36c293c4bdedc067e27f81529bbe9834413414bfa7b164200f0e1b286f0e"
+  },
+  {
+    "path": "bakery-source/snapshot-manifest.json",
+    "size_bytes": 9230,
+    "sha256": "97d78bc5ea27d1a620d96535ff5343f0131ba609aab8944f5eb8efe65bdca04f"
+  },
+  {
+    "path": "budget.json",
+    "size_bytes": 113,
+    "sha256": "8e10110c3496ed20725cf4c129db7617abc7ea55a0ad521bec75a4ac16050705"
+  },
+  {
+    "path": "ci-run.json",
+    "size_bytes": 13130,
+    "sha256": "dbe5a2619170e69ac12dadac157a6dbbddccb2f0ff408c9afc0acf716a42441c"
+  },
+  {
+    "path": "cleanup-independent-readback.json",
+    "size_bytes": 904,
+    "sha256": "05bc1b275ff2c71225a8a902b41705028274c5f60542ffa3bbab49fa4aed0bf0"
+  },
+  {
+    "path": "codex-acknowledgement.jpg",
+    "size_bytes": 94233,
+    "sha256": "7042469252695972b2395728ed47c404ffec79c69a2f1195cbeee95fdc44fe27"
+  },
+  {
+    "path": "codex-clear-request-first-response.jpg",
+    "size_bytes": 107325,
+    "sha256": "0f2425caee7c90f9209a5b769a1f12b6714fd301afc25b5f97cd5c752890a852"
+  },
+  {
+    "path": "codex-probe-answer.json",
+    "size_bytes": 846,
+    "sha256": "00d09a6475a723e1c6bb3ab32ede36a741ffdb3cd82b0c22d33df9d1243d7de6"
+  },
+  {
+    "path": "codex-probe-opening.json",
+    "size_bytes": 843,
+    "sha256": "3e4e877072430ea81afebca254d250c1d7df2b06a87e65c9edd5982b402e76b9"
+  },
+  {
+    "path": "codex-question.jpg",
+    "size_bytes": 87591,
+    "sha256": "5766fed757713e82ab5e79b625f79100982aaf6571a1c420c1a532965d00e78d"
+  },
+  {
+    "path": "ct-before.json",
+    "size_bytes": 330,
+    "sha256": "3cfc51dfb5e33c516a6607887854d0f1ab30b1dd1a2ce669ae59bb3c857a4dc9"
+  },
+  {
+    "path": "ct-source-before.json",
+    "size_bytes": 1876,
+    "sha256": "940e510a49ef65747d6dfc59247c016ee75e9bcbc0ccbb78dcb6b8b5a827f62f"
+  },
+  {
+    "path": "deployment-after-restart.json",
+    "size_bytes": 36936,
+    "sha256": "6aafef4c856b1ca83763de6162256ad9d2091f81d03b7e5959c3776378b54719"
+  },
+  {
+    "path": "deployment.json",
+    "size_bytes": 33159,
+    "sha256": "27a9681b561eb6f83958b5c3a0062ad81cd8334847888b85552f27ce9d4473b0"
+  },
+  {
+    "path": "generated-access.json",
+    "size_bytes": 2570,
+    "sha256": "59cfd0bcc446ee792ca12b58932d7b1da2e379e20aaa1145c9b357c15485e3b8"
+  },
+  {
+    "path": "generated-cleanup-plan.json",
+    "size_bytes": 4824,
+    "sha256": "45444377f0ba2f3f781a24301d69f5e7e5a781112795c74f62f7a976540c554c"
+  },
+  {
+    "path": "generated-cleanup.json",
+    "size_bytes": 1752,
+    "sha256": "42b071dbc381399f360ea3c1f166af3daa6e73e198b562af97614d732b776766"
+  },
+  {
+    "path": "generated-inventory.json",
+    "size_bytes": 1150,
+    "sha256": "bd8ffe42c71722f5d264a516b824de3ca75b11211f45b5111943ebbf6cd0efe6"
+  },
+  {
+    "path": "package-source-parity.json",
+    "size_bytes": 88813,
+    "sha256": "c844fdd377d56df9217f41822aa4890a471d6768df3b764be8701e8457924e93"
+  },
+  {
+    "path": "qualification-after-restart.json",
+    "size_bytes": 6529,
+    "sha256": "f02410ec593882d4151f63b3a5518b2995b15c8504f142caf7282325f386d273"
+  },
+  {
+    "path": "qualification.json",
+    "size_bytes": 287,
+    "sha256": "b3f4359ae60eb891baca6c0caad74fdc60c516d9bd6613b8cc6295dc0a487fdb"
+  },
+  {
+    "path": "retry-84d2-cleanup.json",
+    "size_bytes": 616,
+    "sha256": "5f64352c1b381772ae77cb74a3fcbad80dbfc557c34feee9502442c69fd9a1ef"
+  },
+  {
+    "path": "seed-after-restart.json",
+    "size_bytes": 29843,
+    "sha256": "850c80ef12970fb8b26e398aa41946ef94676fe051c16b5d5e913a6b1d29481b"
+  },
+  {
+    "path": "shared-demo-readback.json",
+    "size_bytes": 239,
+    "sha256": "6e783da9cd1005e4dc172799822c6484d56c00e8575b3f10202fd6478990465a"
+  },
+  {
+    "path": "shared-demo-sql-pattern-readback.json",
+    "size_bytes": 1015,
+    "sha256": "c6c1cdfc146821bd46cbe9ecd981bbaa4c89ce5b0252894437094f7f664d7bee"
+  },
+  {
+    "path": "spec.json",
+    "size_bytes": 1789,
+    "sha256": "89b0ea40954eea2951ed85a4e4846d4be37fd26471dc4d4a281cbee895d351a6"
+  },
+  {
+    "path": "summary.json",
+    "size_bytes": 1432,
+    "sha256": "2247e1fb37997ef65d93fb71e0c8ad24749d9fc64cf70a39c754e54aaaf06cdb"
+  },
+  {
+    "path": "welcome-page.jpg",
+    "size_bytes": 41342,
+    "sha256": "67c7a165eb71466865b814cdfe0d9c8926ae9b4867e2c2990b812263cadce009"
+  },
+  {
+    "path": "welcome-source/README.md",
+    "size_bytes": 4285,
+    "sha256": "fc141df004248beab544f506ca72b02549ce7cf2e93805884b1c1e54587a17b5"
+  },
+  {
+    "path": "welcome-source/app.yaml",
+    "size_bytes": 33,
+    "sha256": "401d032046dcaa81d770a84dbee8cde68f7253b7c433751f239153ebf9deba5d"
+  },
+  {
+    "path": "welcome-source/client/src/App.tsx",
+    "size_bytes": 1010,
+    "sha256": "6331358256d10fe9c0d93292599db60f9d3d1e0c7b9db7a06dc2432128038ac0"
+  },
+  {
+    "path": "welcome-source/package.json",
+    "size_bytes": 2782,
+    "sha256": "1c98368c5c367ed297c2a814ebb1f78f6474752ac43536e17b359ff0e61827d2"
+  },
+  {
+    "path": "welcome-source/server/server.ts",
+    "size_bytes": 126,
+    "sha256": "0a2011a0883b7f60520a566adcb8a07fc1fea219b56fc5cebb8a6d96a14b985b"
+  },
+  {
+    "path": "welcome-source/snapshot-manifest.json",
+    "size_bytes": 8915,
+    "sha256": "25fd406bccc97891b40947d0b0070f37a6e9f102b458040fc9bee3877ad49f58"
+  },
+  {
+    "path": "wt-cleanup.json",
+    "size_bytes": 1537,
+    "sha256": "748791192370942dface59967aaa51fa51860c7bf0ca4999ec929ab871520479"
+  }
+]

@@ -1,0 +1,39 @@
+{
+  "buttons": [
+    {
+      "height": 36,
+      "text": "Mark packed",
+      "width": 298,
+      "x": 41
+    },
+    {
+      "height": 36,
+      "text": "Mark packed",
+      "width": 298,
+      "x": 41
+    },
+    {
+      "height": 36,
+      "text": "Mark packed",
+      "width": 298,
+      "x": 41
+    },
+    {
+      "height": 36,
+      "text": "Mark packed",
+      "width": 298,
+      "x": 41
+    },
+    {
+      "height": 36,
+      "text": "Mark packed",
+      "width": 298,
+      "x": 41
+    }
+  ],
+  "height": 844,
+  "observedAt": "2026-10-09T06:25:22.761Z",
+  "overflow": false,
+  "text": "The Order Board\nOrder board\n\nLate, unpacked orders surface first so your team always knows what to pack next.\n\nNEEDS ATTENTION\n2\n\nlate and not yet packed\n\nDUE SOON\n2\n\npickup within the hour\n\nPACKED\n2\n\nready for pickup\n\nPriya N.\nORD-1042\nLate\n\n2x Sourdough loaf, 1x Dozen bagels\n\n3:27 PM · 57 min late\nMark packed\nThe Oak Cafe\nORD-1044\nLate\n\n3x Croissant box (12ct)\n\n4:17 PM · 7 min late\nMark packed\nDana R.\nORD-1045\nDue soon\n\n1x Gluten-free loaf, 6x Blueberry muffin\n\n4:37 PM · in 13 min\nMark packed\nSam W.\nORD-1046\nDue soon\n\n1x Dozen chocolate chip cookies\n\n5:02 PM · in 38 min\nMark packed\nElena F.\nORD-1047\nScheduled\n\n1x Wedding cake tasting box\n\n5:52 PM · in 88 min\nMark packed\nJordan K.\nORD-1041\nPacked\n\n1x Rye loaf, 2x Cinnamon rolls\n\n3:12 PM · 72 min late\nMarcus T.\nORD-1043\nPacked\n\n1x Birthday cake (chocolate, \"Happy 7th Leo\")\n\n4:02 PM · 22 min late",
+  "width": 390
+}
