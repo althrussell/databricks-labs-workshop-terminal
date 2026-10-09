@@ -152,11 +152,17 @@ are not fixed by this policy change.
 Existing warm installations and already seeded project adoption still need R04's
 versioned reconciliation. R03 still owns wizard flow, card/typed-goal integrity,
 idea relevance, persistence, and request coordination. R05/R06 own starter quality
-and practical browser/repair infrastructure. First qualify assistant/question
-persistence and reply delivery for the pinned native CLI, then repeat the isolated
-WT-to-app journey and independently check its generated UI. Actual CT integration
-follows a passing isolated result. R02 has been exercised live; those attempts
-have not established generated-app acceptance or CT integration.
+and practical browser/repair infrastructure. The subsequent
+[direct browser question-delivery probe](evidence/workshop-contract-r02/ui-question-capture-20261009-6b90/README.md)
+qualified Claude's plain-text question, inline custom answer and two-question
+form with multiple selections on the pinned Linux CLI. Both UI acknowledgements
+and collector correlation passed in those controlled cells. The earlier missing
+assistant records during a tool-using build remain unexplained; Codex exited at
+startup in both probe attempts, so its question delivery remains unverified.
+Repeat the isolated Claude WT-to-app journey through Computer/Browser and
+independently check its generated UI, recording collector gaps separately.
+Actual CT integration follows a passing isolated result. R02 has been exercised
+live; those attempts have not established generated-app acceptance or CT integration.
 
 To repeat the limited probe with an explicitly configured tracking store:
 

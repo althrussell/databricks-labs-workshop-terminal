@@ -1,0 +1,23 @@
+{
+  "attempts": [
+    {
+      "attempt": 1,
+      "session_prefix": "7a983034",
+      "created_timestamp": 1791519741,
+      "terminated_timestamp": 1791519753,
+      "exit_reason": "process_error",
+      "observed_startup_seconds": 12
+    },
+    {
+      "attempt": 2,
+      "session_prefix": "881786dc",
+      "created_timestamp": 1791519847,
+      "terminated_timestamp": 1791519857,
+      "exit_reason": "process_error",
+      "observed_startup_seconds": 10
+    }
+  ],
+  "classified_diagnostics_errors": [],
+  "root_cause": "unresolved",
+  "raw_logs_archived": false
+}

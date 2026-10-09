@@ -177,13 +177,32 @@ is committed and pushed with policy delivery tests and bounded native MLflow
 model probes. Three genuine-labuser Labs attempts are preserved in the
 [R02 live closeout](evidence/workshop-contract-r02/live-20261009-e569/CLOSEOUT.md).
 Observer failures and a simulated generated-SP permission gap prevented generated
-app acceptance; native assistant/question persistence remains unresolved. Qualify
-that delivery before another build run. Actual CT integration remains separate.
+app acceptance; native assistant/question persistence during those builds remains
+unresolved. A subsequent
+[direct Computer/Browser probe](evidence/workshop-contract-r02/ui-question-capture-20261009-6b90/README.md)
+qualified Claude's plain-text and structured question/reply UI paths, including
+an inline custom answer and two selected fields. The collector correlated both
+completed cells, but that does not explain the prior missing assistant records.
+The next Claude build can use the actual browser UI, with collector evidence
+recorded independently. Codex exited during startup twice and its question
+delivery remains unverified. Actual CT integration remains separate.
 The detailed independent evaluator is operator work; it must not turn the
 attendee's build into production planning or a prolonged acceptance ceremony.
 Current R01 artifacts and evaluator behavior retain their recorded policy and
 budgets. Qualify revised consultation criteria separately before comparing future
 runs; do not silently reinterpret the failed baseline.
+
+For this small operator transport gate, force one known question without an app
+build, capture the visible question before answering, deliver the ordinary reply
+through WT's actual terminal, and verify the agent's acknowledgement. Cover plain
+text and the native question form, including custom text and multiple selections.
+Keep each cell bounded and retain failed attempts. On the pinned Claude form,
+moving to `Type something` already focuses its inline editor: populate it before
+Enter, because Enter on an empty editor cancels the form. Verify the combined
+review screen before final submission. A missing native record is an observer
+result; it must not prevent a separately qualified UI driver from answering a
+question it can actually see. This gate adds no scope-agreement ceremony or
+extra questions to the attendee experience.
 
 1. Deploy a fresh isolated WT directly into Labs with simulated CT environment
    inputs and real Databricks resource bindings. Test real WT and generated apps.

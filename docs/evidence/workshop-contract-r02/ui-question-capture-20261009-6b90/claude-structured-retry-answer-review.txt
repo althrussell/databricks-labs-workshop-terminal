@@ -1,0 +1,96 @@
+- banner:
+  - img "Databricks"
+  - generic: Databricks
+  - navigation:
+    - button "Home":
+      - text: Home
+    - button "Claude Code":
+      - text: Claude Code
+    - link "Databricks Docs":
+      - /url: https://docs.databricks.com
+      - text: Databricks Docs
+    - link "AI Docs":
+      - /url: https://naveenb83.github.io/ai-dev-day-brisbane/
+      - text: AI Docs
+    - link "Customer Academy":
+      - /url: https://customer-academy.databricks.com
+      - text: Customer Academy
+    - link "Workspace":
+      - /url: https://dbc-e155652a-2cba.cloud.databricks.com
+      - text: Workspace
+    - button "Certificate":
+      - text: Certificate
+    - button "Raise hand":
+      - text: Raise hand
+    - button "Help":
+      - text: Help
+    - link "Get Free Edition":
+      - /url: https://www.databricks.com/learn/free-edition
+      - text: Get Free Edition
+  - generic: labuser+1@awsbricks.com
+- region "Notifications"
+- button "Claude Code":
+  - generic: Claude Code
+- button "Codex":
+  - generic: Codex
+- generic: Claude Code is running
+- button "Close Claude Code":
+- generic: 👋 Your coach is ready — tell it what you'd like to build.
+- button "Not sure? Start me off"
+- button:
+- textbox "Terminal input" [active]
+- generic: ▐
+- generic: ▛███▛█
+- generic: Claude Code
+- generic: v2.1.283
+- generic: ▝▜
+- generic: █████
+- generic: █▀
+- generic: Sonnet 5 · API Usage Billing
+- generic: ▝▝ ▝▝
+- generic: ~/projects
+- generic: ❯
+- generic: This is a question-and-answer check only. Do not build an app,
+- generic: create files or access data. Use your native AskUserQuestion form
+- generic: "to ask two questions together: (1) Which bakery orders should"
+- generic: appear first? with options Orders due today (recommended), All
+- generic: outstanding orders; (2) What order information should the page
+- generic: show? as a multi-select with options Pickup time, Customer name,
+- generic: Order status. Wait for my selections. After submission, state
+- generic: exactly which choices I selected, then stop.
+- generic: ──────────────────────────────────────────────────────────────────────
+- generic: ← ☒ Order priority ☒ Order info
+- generic: ✔ Submit
+- generic: →
+- generic: Review your answers
+- generic: ● Which bakery orders should appear first?
+- generic: → Orders due today that are not ready should appear first.
+- generic: ● What order information should the page show?
+- generic: → Pickup time, Order status
+- generic: Ready to submit your answers?
+- generic: ❯
+- generic: "1."
+- generic: Submit answers
+- generic: "2."
+- generic: Cancel
+- complementary:
+  - generic: Databricks insights
+  - generic: intro
+  - button "Collapse":
+  - article:
+    - heading "Welcome to the workshop" [level=3]
+    - paragraph:
+      - text: You're about to build on Databricks with an AI coding agent at your side. Click
+      - strong: Claude Code
+      - text: or
+      - strong: Codex
+      - text: above to launch a terminal — your credentials are wired up automatically, nothing to paste.
+  - article:
+    - heading "What makes an agent different from chat?" [level=3]
+    - paragraph:
+      - text: "A coding agent doesn't just suggest code — it runs commands, reads files, fixes its own mistakes, and iterates until the job is done. Treat it like a fast pair programmer: describe the"
+      - emphasis: outcome
+      - text: you want, not the steps.
+    - link "Agent systems on Databricks":
+      - /url: https://www.databricks.com/blog/ai-agent-systems
+      - text: Agent systems on Databricks
