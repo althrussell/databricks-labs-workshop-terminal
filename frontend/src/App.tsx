@@ -49,13 +49,12 @@ import {
   resolveSessionConflict,
 } from "./sessionSwitch";
 
-// The escape hatch for an attendee facing an empty prompt. Deliberately a real
-// build request rather than a greeting: the coach is told to build immediately
-// when the first message is concrete, so this lands them on something working
-// instead of in a conversation about what they might do.
+// An attendee who needs an idea gets one short choice before implementation.
+// This is typed UNSENT, like the other idea chips.
 const STARTER_PROMPT =
-  "Build me something real I can show off by the end of the session — " +
-  "pick a good example for a Databricks workshop and just go.";
+  "Suggest two small Databricks demo ideas I can finish in this workshop. " +
+  "Recommend one and explain why in a sentence, then ask which I'd like to try. " +
+  "Wait for my choice before building.";
 
 /** Type into a just-launched session as soon as it will take input.
  *
@@ -467,6 +466,15 @@ export default function App() {
     });
   }, []);
 
+  const finishSession = useCallback((id: string) => {
+    // Keep the mounted terminal and its final output until the attendee closes
+    // or relaunches it. Removing it here used to hide startup errors.
+    setSession((current) =>
+      current?.id === id ? { ...current, exited: true } : current
+    );
+    setHintSessionId((current) => current === id ? null : current);
+  }, []);
+
   async function confirmSwitch() {
     if (!session || !pendingSwitch) return;
     const current = session;
@@ -593,7 +601,7 @@ export default function App() {
           <button
             className={`operator-toggle ${view === "home" ? "operator-toggle-active" : ""}`}
             onClick={() => setView("home")}
-            title={session ? `Back to Home — ${session.label} keeps running` : "Back to Home"}
+            title={session && !session.exited ? `Back to Home — ${session.label} keeps running` : "Back to Home"}
           >
             <House size={14} />
             Home
@@ -769,7 +777,16 @@ export default function App() {
               <div className="toolbar">
                 <LaunchBar agents={agents} launching={launching} onLaunch={requestAgent} />
                 <div className="active-agent">
-                  <span>{session.label} is running</span>
+                  <span>{session.label} {session.exited ? "has ended" : "is running"}</span>
+                  {session.exited && (
+                    <button
+                      className="primary-btn"
+                      disabled={launching !== null}
+                      onClick={() => requestAgent(session.agent_id)}
+                    >
+                      <Rocket size={14} /> Relaunch
+                    </button>
+                  )}
                   <button
                     className="icon-btn"
                     aria-label={`Close ${session.label}`}
@@ -782,10 +799,10 @@ export default function App() {
               </div>
             )}
 
-            {session && hintSessionId === session.id && view === "agent" && (
+            {session && !session.exited && hintSessionId === session.id && view === "agent" && (
               <div className="coach-hint">
                 <span>
-                  👋 Your coach is ready — tell it what you'd like to build.
+                  👋 When the prompt appears, tell your coach what you'd like to build.
                 </span>
                 <button
                   className="coach-hint-action"
@@ -794,9 +811,9 @@ export default function App() {
                     ideaToSession(STARTER_PROMPT);
                   }}
                 >
-                  Not sure? Start me off
+                  Help me choose an idea
                 </button>
-                <button className="icon-btn" onClick={() => setHintSessionId(null)}>
+                <button className="icon-btn" aria-label="Dismiss coach hint" onClick={() => setHintSessionId(null)}>
                   <X size={12} />
                 </button>
               </div>
@@ -832,7 +849,7 @@ export default function App() {
                   eventName={branding?.event_name ?? ""}
                   workspaceUrl={config?.workspace_url ?? ""}
                   workspaceLinks={config?.shell.workspace_links ?? []}
-                  hasSessions={!!session}
+                  hasSessions={!!session && !session.exited}
                   launching={launching}
                   brief={brief}
                   canEditBrief={wizardAvailable}
@@ -846,7 +863,7 @@ export default function App() {
                   key={session.id}
                   sessionId={session.id}
                   active={view === "agent"}
-                  onExit={removeSession}
+                  onExit={finishSession}
                   onGatewayLimit={handleGatewayLimit}
                 />
               )}

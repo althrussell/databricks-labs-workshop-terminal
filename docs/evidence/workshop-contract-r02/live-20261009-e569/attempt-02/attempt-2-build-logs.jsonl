@@ -1,0 +1,76 @@
+{"source":"SYSTEM","timestamp":1791515047,"message":"[INFO] Starting Databricks Apps runtime..."}
+{"source":"BUILD","timestamp":1791515071,"message":"[INFO] Starting deployment 01f1c38e1e6a1f84a822908a0bee2a59..."}
+{"source":"BUILD","timestamp":1791515071,"message":"[INFO] Downloading source code from /Workspace/Users/2780d902-1b6b-4fee-b668-628ed1881f6f/src/01f1c38e1e6a1f84a822908a0bee2a59"}
+{"source":"BUILD","timestamp":1791515071,"message":"[INFO] Updated file: python/source_code/.prettierignore"}
+{"source":"BUILD","timestamp":1791515072,"message":"[INFO] Updated file: python/source_code/CLAUDE.md"}
+{"source":"BUILD","timestamp":1791515072,"message":"[INFO] Updated file: python/source_code/.prettierrc.json"}
+{"source":"BUILD","timestamp":1791515072,"message":"[INFO] Updated file: python/source_code/vitest.config.ts"}
+{"source":"BUILD","timestamp":1791515072,"message":"[INFO] Updated file: python/source_code/AGENTS.md"}
+{"source":"BUILD","timestamp":1791515072,"message":"[INFO] Updated file: python/source_code/tsconfig.client.json"}
+{"source":"BUILD","timestamp":1791515072,"message":"[INFO] Updated file: python/source_code/tsconfig.json"}
+{"source":"BUILD","timestamp":1791515072,"message":"[INFO] Updated file: python/source_code/tsdown.server.config.ts"}
+{"source":"BUILD","timestamp":1791515072,"message":"[INFO] Updated file: python/source_code/appkit.plugins.json"}
+{"source":"BUILD","timestamp":1791515072,"message":"[INFO] Updated file: python/source_code/.gitignore"}
+{"source":"BUILD","timestamp":1791515072,"message":"[INFO] Updated file: python/source_code/README.md"}
+{"source":"BUILD","timestamp":1791515072,"message":"[INFO] Updated file: python/source_code/package-lock.json"}
+{"source":"BUILD","timestamp":1791515073,"message":"[INFO] Updated file: python/source_code/tsconfig.server.json"}
+{"source":"BUILD","timestamp":1791515073,"message":"[INFO] Updated file: python/source_code/databricks.yml"}
+{"source":"BUILD","timestamp":1791515073,"message":"[INFO] Updated file: python/source_code/eslint.config.js"}
+{"source":"BUILD","timestamp":1791515073,"message":"[INFO] Updated file: python/source_code/package.json"}
+{"source":"BUILD","timestamp":1791515073,"message":"[INFO] Updated file: python/source_code/.env.example"}
+{"source":"BUILD","timestamp":1791515073,"message":"[INFO] Updated file: python/source_code/app.yaml"}
+{"source":"BUILD","timestamp":1791515073,"message":"[INFO] Updated file: python/source_code/tsconfig.shared.json"}
+{"source":"BUILD","timestamp":1791515073,"message":"[INFO] Updated file: python/source_code/server/server.ts"}
+{"source":"BUILD","timestamp":1791515073,"message":"[INFO] Updated file: python/source_code/server/example.test.ts"}
+{"source":"BUILD","timestamp":1791515073,"message":"[INFO] Updated file: python/source_code/client/tailwind.config.ts"}
+{"source":"BUILD","timestamp":1791515074,"message":"[INFO] Updated file: python/source_code/client/index.html"}
+{"source":"BUILD","timestamp":1791515074,"message":"[INFO] Updated file: python/source_code/client/components.json"}
+{"source":"BUILD","timestamp":1791515074,"message":"[INFO] Updated file: python/source_code/client/vite.config.ts"}
+{"source":"BUILD","timestamp":1791515074,"message":"[INFO] Updated file: python/source_code/client/postcss.config.js"}
+{"source":"BUILD","timestamp":1791515074,"message":"[INFO] Updated file: python/source_code/config/metric-views/definitions.json"}
+{"source":"BUILD","timestamp":1791515074,"message":"[INFO] Updated file: python/source_code/config/metric-views/metadata.generated.json"}
+{"source":"BUILD","timestamp":1791515074,"message":"[INFO] Updated file: python/source_code/config/queries/bakery_orders.sql"}
+{"source":"BUILD","timestamp":1791515074,"message":"[INFO] Updated file: python/source_code/shared/appkit-types/metric-views.d.ts"}
+{"source":"BUILD","timestamp":1791515074,"message":"[INFO] Updated file: python/source_code/shared/appkit-types/analytics.d.ts"}
+{"source":"BUILD","timestamp":1791515074,"message":"[INFO] Updated file: python/source_code/client/src/main.tsx"}
+{"source":"BUILD","timestamp":1791515075,"message":"[INFO] Updated file: python/source_code/client/src/App.tsx"}
+{"source":"BUILD","timestamp":1791515075,"message":"[INFO] Updated file: python/source_code/client/src/ErrorBoundary.tsx"}
+{"source":"BUILD","timestamp":1791515075,"message":"[INFO] Updated file: python/source_code/client/src/vite-env.d.ts"}
+{"source":"BUILD","timestamp":1791515075,"message":"[INFO] Updated file: python/source_code/client/src/index.css"}
+{"source":"BUILD","timestamp":1791515075,"message":"[INFO] Updated file: python/source_code/client/public/favicon-32x32.png"}
+{"source":"BUILD","timestamp":1791515075,"message":"[INFO] Updated file: python/source_code/client/public/site.webmanifest"}
+{"source":"BUILD","timestamp":1791515075,"message":"[INFO] Updated file: python/source_code/client/public/favicon-48x48.png"}
+{"source":"BUILD","timestamp":1791515075,"message":"[INFO] Updated file: python/source_code/client/public/favicon.svg"}
+{"source":"BUILD","timestamp":1791515075,"message":"[INFO] Updated file: python/source_code/client/public/favicon-512x512.png"}
+{"source":"BUILD","timestamp":1791515075,"message":"[INFO] Updated file: python/source_code/client/public/favicon-192x192.png"}
+{"source":"BUILD","timestamp":1791515076,"message":"[INFO] Updated file: python/source_code/client/public/apple-touch-icon.png"}
+{"source":"BUILD","timestamp":1791515076,"message":"[INFO] Updated file: python/source_code/client/public/favicon-16x16.png"}
+{"source":"BUILD","timestamp":1791515076,"message":"[INFO] Updated file: python/source_code/client/src/lib/utils.ts"}
+{"source":"BUILD","timestamp":1791515076,"message":"[INFO] Updated file: python/source_code/client/src/lib/formatters.ts"}
+{"source":"BUILD","timestamp":1791515076,"message":"[INFO] Updated file: python/source_code/client/src/pages/orders/OrdersPage.tsx"}
+{"source":"BUILD","timestamp":1791515076,"message":"[INFO] Installing dependencies..."}
+{"source":"BUILD","timestamp":1791515077,"message":"npm warn EBADENGINE Unsupported engine {\nnpm warn EBADENGINE   package: 'autoevals@0.3.0',\nnpm warn EBADENGINE   required: {\nnpm warn EBADENGINE     npm: 'please-use-pnpm',\nnpm warn EBADENGINE     pnpm: '\u003e=10.27.0',\nnpm warn EBADENGINE     yarn: 'please-use-pnpm'\nnpm warn EBADENGINE   },\nnpm warn EBADENGINE   current: { node: 'v22.16.0', npm: '10.9.2' }\nnpm warn EBADENGINE }"}
+{"source":"BUILD","timestamp":1791515080,"message":"npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead"}
+{"source":"BUILD","timestamp":1791515082,"message":"npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me"}
+{"source":"BUILD","timestamp":1791515093,"message":"\nadded 912 packages, and audited 913 packages in 17s"}
+{"source":"BUILD","timestamp":1791515093,"message":"\n205 packages are looking for funding\n  run `npm fund` for details"}
+{"source":"BUILD","timestamp":1791515093,"message":"\n37 vulnerabilities (21 moderate, 15 high, 1 critical)\n\nTo address issues that do not require attention, run:\n  npm audit fix\n\nTo address all issues (including breaking changes), run:\n  npm audit fix --force\n\nRun `npm audit` for details."}
+{"source":"BUILD","timestamp":1791515093,"message":"npm notice\nnpm notice New major version of npm available! 10.9.2 -\u003e 12.2.0\nnpm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0\nnpm notice To update run: npm install -g npm@12.2.0\nnpm notice"}
+{"source":"BUILD","timestamp":1791515093,"message":"[INFO] Dependencies installed successfully."}
+{"source":"BUILD","timestamp":1791515093,"message":"[INFO] Running build script npm run build:server \u0026\u0026 npm run build:client"}
+{"source":"BUILD","timestamp":1791515093,"message":"\n\u003e bakery-orders@1.0.0 prebuild\n\u003e npm run sync \u0026\u0026 npm run typegen -- --wait"}
+{"source":"BUILD","timestamp":1791515093,"message":"\n\u003e bakery-orders@1.0.0 sync\n\u003e appkit plugin sync --write --silent"}
+{"source":"BUILD","timestamp":1791515094,"message":"\n\u003e bakery-orders@1.0.0 typegen\n\u003e appkit generate-types --wait"}
+{"source":"BUILD","timestamp":1791515095,"message":"  Describing 1 query (0/1)   "}
+{"source":"BUILD","timestamp":1791515095,"message":"\r  Describing 1 query (0/1).  "}
+{"source":"BUILD","timestamp":1791515096,"message":"\r  Describing 1 query (0/1).. "}
+{"source":"BUILD","timestamp":1791515096,"message":"\u001b[2K\r  Describing 1 query (1/1)"}
+{"source":"BUILD","timestamp":1791515096,"message":""}
+{"source":"BUILD","timestamp":1791515096,"message":"  Typegen Queries (1)"}
+{"source":"BUILD","timestamp":1791515096,"message":"  ──────────────────────────────────────────────────"}
+{"source":"BUILD","timestamp":1791515096,"message":"  SQL ERR  bakery_orders  INSUFFICIENT_PERMISSIONS"}
+{"source":"BUILD","timestamp":1791515096,"message":"  ──────────────────────────────────────────────────"}
+{"source":"BUILD","timestamp":1791515096,"message":"  0 new, 0 from cache, 1 SQL error. 1.06s"}
+{"source":"BUILD","timestamp":1791515096,"message":"  Type generation failed\n  ────────────────────────────────────────────────────────────\n  DESCRIBE QUERY failed: 1 query could not be described against warehouse 72db7ec713837d92.\n  AppKit wrote generated types with result: unknown for the failed query.\n\n  SQL ERR  bakery_orders  [INSUFFICIENT_PERMISSIONS] Insufficient privileges:\nUser does not have USE CATALOG on Catalog 'wt_eval_r02_1009_e569'. SQLSTATE: 42501\n\n  Common causes\n  - SQL syntax errors\n  - missing tables or views\n  - warehouse format incompatibilities\n\n  Next step\n  Run each SQL ERR query directly in a Databricks SQL editor against warehouse 72db7ec713837d92."}
+{"source":"BUILD","timestamp":1791515096,"message":"[INFO] Deployment 01f1c38e1e6a1f84a822908a0bee2a59 ended in 25.243852364s"}
+{"source":"BUILD","timestamp":1791515096,"message":"[ERROR] Error building app"}

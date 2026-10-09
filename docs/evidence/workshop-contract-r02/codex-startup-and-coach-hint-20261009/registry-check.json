@@ -1,0 +1,11 @@
+{
+  "laptop_npm_fetch_host": "npm-proxy.cloud.databricks.com",
+  "laptop_npm_fetch_count": 35,
+  "pip_config_host": "pypi-proxy.cloud.databricks.com",
+  "uv_config_host": "pypi-proxy.dev.databricks.com",
+  "python_tests_used_existing_environment": true,
+  "committed_npm_registry": "registry.npmjs.org",
+  "committed_python_index": "https://pypi.org/simple",
+  "local_proxy_settings_changed": false,
+  "lockfiles_changed": false
+}

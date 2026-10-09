@@ -41,6 +41,9 @@ async def pump_terminal_output(websocket: WebSocket, queue, session_id: str) -> 
             await websocket.close(code=4408, reason="terminal consumer overflow")
             return
         await websocket.send_text(json.dumps(message))
+        if message.get("t") == "exit":
+            await websocket.close(code=1000)
+            return
 
 
 @router.websocket("/ws/sessions/{session_id}")
@@ -68,7 +71,9 @@ async def session_socket(websocket: WebSocket, session_id: str):
         if replay:
             await websocket.send_text(json.dumps({"t": "replay", "data": replay}))
         if exited:
-            await websocket.send_text(json.dumps({"t": "exit"}))
+            await websocket.send_text(json.dumps(session.exit_message()))
+            await websocket.close(code=1000)
+            return
 
         async def pump_output():
             await pump_terminal_output(websocket, queue, session_id)

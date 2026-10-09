@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "status": "r01_incomplete",
+  "accepted": false,
+  "control_tower_mutations": 0,
+  "active_marker": "wt-eval-r01-1009-68bd",
+  "deployed_observer_receipt": "deployment.json",
+  "quality_eligible_journeys": [],
+  "setup_classifications": {
+    "journey-1": "observer GET hidden by SPA fallback",
+    "journey-2": "driver background-card click raced wizard GET; no harness launched",
+    "journey-3": "current default-No trust screen unsupported; opening not submitted",
+    "journey-4": "native bookkeeping prevented binding; structured question adapter absent",
+    "journey-5": "same collector defect; manual question-control qualification only, excluded from quality scoring"
+  },
+  "jumping_root_cause": "Playwright repeatedly scrolled the obscured background agent card while the modal intercepted clicks",
+  "jumping_fix": "Wait for server wizard GET and its resulting modal state before selecting an agent",
+  "verification": {
+    "rendered_delayed_wizard_regression": "passed",
+    "browser_and_journey_contracts": 110,
+    "journey_and_command_contracts": 158,
+    "current_trust_and_command_contracts": 84,
+    "latest_full_suite_passed": 2641,
+    "localhost_sandbox_denials": 7,
+    "localhost_denials_rerun_passed": 7,
+    "native_binding_and_metadata_contracts": 70
+  },
+  "manual_ui_qualification": {
+    "journey": "journey-5",
+    "question_topic": "attention",
+    "typed_fact": "Orders that are late and haven't been packed yet. Show those first.",
+    "outcome": "Review answers reached; final submission not performed before runner closed browser",
+    "quality_eligible": false
+  },
+  "remaining": [
+    "Deploy and qualify bookkeeping binding correction",
+    "Collect exact native structured questions and answers",
+    "Drive normal interactive answer UI with simulator",
+    "Build and independently verify generated app and persistence/UX",
+    "Cleanup exact owned resources before original expiry"
+  ],
+  "auth_state_archived": false,
+  "provenance": [
+    {
+      "artifact": "deployment.json",
+      "source_sha256": "50bba42e78b4e5f1fd0ac54d1da869186d483f6d556ff03e079c892fc937dce2",
+      "archived_sha256": "50bba42e78b4e5f1fd0ac54d1da869186d483f6d556ff03e079c892fc937dce2"
+    },
+    {
+      "artifact": "qualification.json",
+      "source_sha256": "31ad86110a2b3718caa5c381cc50cbb5f08a2434416d8ce5f4f8441210947060",
+      "archived_sha256": "31ad86110a2b3718caa5c381cc50cbb5f08a2434416d8ce5f4f8441210947060"
+    },
+    {
+      "artifact": "seed.json",
+      "source_sha256": "5bcb82b0932d5a06185653ef2d8191820570668bcab6cf9902277ee5ada340c2",
+      "archived_sha256": "5bcb82b0932d5a06185653ef2d8191820570668bcab6cf9902277ee5ada340c2"
+    },
+    {
+      "artifact": "native-format-empty.json",
+      "source_sha256": "0bbbab34d8916c8d5df52c068e0e3221d33113a5ffc5556b69d02036aaf24b39",
+      "archived_sha256": "0bbbab34d8916c8d5df52c068e0e3221d33113a5ffc5556b69d02036aaf24b39"
+    },
+    {
+      "artifact": "native-format-live.json",
+      "source_sha256": "63511a13d45456a37ca0fed7273cbc16ba247ebdef67b9c6f135d540addd7a52",
+      "archived_sha256": "63511a13d45456a37ca0fed7273cbc16ba247ebdef67b9c6f135d540addd7a52"
+    },
+    {
+      "artifact": "journey-1.json",
+      "source_sha256": "a0cf1339e35a63ce2d67eea4a5b1c04baca3f39f5fbb147393ff76ed8764dd82",
+      "archived_sha256": "a0cf1339e35a63ce2d67eea4a5b1c04baca3f39f5fbb147393ff76ed8764dd82"
+    },
+    {
+      "artifact": "journey-2.json",
+      "source_sha256": "088ad8e923b09ce42a0cd9dfa13adb558e15524dffc7b605fe712913fe80c599",
+      "archived_sha256": "088ad8e923b09ce42a0cd9dfa13adb558e15524dffc7b605fe712913fe80c599"
+    },
+    {
+      "artifact": "journey-3.json",
+      "source_sha256": "00d1301acfbb7cb3a29ff551cd4e6994e984dc33ff0dc2bc94c11edd8998663d",
+      "archived_sha256": "00d1301acfbb7cb3a29ff551cd4e6994e984dc33ff0dc2bc94c11edd8998663d"
+    },
+    {
+      "artifact": "journey-4.json",
+      "source_sha256": "da0d87af3b075a79720f8b294a9405e2ca53c2beef9db7440a35a916643881f3",
+      "archived_sha256": "da0d87af3b075a79720f8b294a9405e2ca53c2beef9db7440a35a916643881f3"
+    },
+    {
+      "artifact": "journey-5.json",
+      "source_sha256": "cb4934e00bf8c9ed804f17bab00de17647273aeb87970f65da9e419ad670b79c",
+      "archived_sha256": "cb4934e00bf8c9ed804f17bab00de17647273aeb87970f65da9e419ad670b79c"
+    }
+  ]
+}

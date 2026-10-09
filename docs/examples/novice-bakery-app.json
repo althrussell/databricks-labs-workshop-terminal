@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "status": "proposed_fixture_for_unimplemented_e2e_runner",
+  "scenario_id": "novice-bakery-order-queue-v1",
+  "description": "A nontechnical shop owner asks for a useful app without specifying its implementation or design.",
+  "public_input": {
+    "persona": "business",
+    "entry_path": "workshop_terminal_wizard",
+    "message": "I run a small bakery. Can you make a page so I know which orders need attention?"
+  },
+  "simulator_private": {
+    "users": "The people working in the shop.",
+    "attention": "Orders that are late and haven't been packed yet. Show those first.",
+    "primary_action": "Mark an order as packed when it's ready.",
+    "remember_changes": "Yes, it should remember what we changed.",
+    "data": "Sample orders are fine for today.",
+    "current_workflow": "We use a spreadsheet and keep asking each other what's ready.",
+    "scope_exclusions": "We don't need payments or customers signing in today.",
+    "technical_choice_reply": "I don't know what that means. What would you recommend?",
+    "visual_choice_reply": "Please choose something easy for the team to use.",
+    "rules": [
+      "Reveal only facts requested by the building agent.",
+      "Keep facts consistent across the conversation.",
+      "Acknowledge a plain-language scope only when it matches the private business goal.",
+      "Do not volunteer omitted write-back or remembered-change requirements to rescue a build-first agent.",
+      "Never name frameworks, databases, APIs, components, files, commands, or test tools.",
+      "Never request design improvement or verification on the builder's behalf.",
+      "Never see source code, tool output, scoring rubrics, or independent evaluator reports.",
+      "Report product failures only as visible problems in ordinary language."
+    ]
+  },
+  "setup_private": {
+    "topology": "one_disposable_workspace_and_terminal_instance_per_synthetic_attendee",
+    "clock": "captured_per_run_utc_epoch_with_relative_fixture_dates",
+    "epoch_source": "runner_captures_and_records_utc_epoch_at_seed_time",
+    "date_materialization": "seed adapter adds due_at_offset_seconds to the captured epoch and records resulting ISO timestamps",
+    "fixture_discovery": "ordinary_verified_demo_data_overlay_and_attendee_tools",
+    "data_label": "Sample orders",
+    "minimum_order_count": 20,
+    "required_order_classes": [
+      "late_unpacked",
+      "future_unpacked",
+      "packed",
+      "long_customer_and_product_names"
+    ],
+    "critical_seed_records": [
+      {
+        "id": "BK-1001",
+        "customer": "Maya Patel",
+        "product": "Birthday cake",
+        "due_at_offset_seconds": -86400,
+        "packed": false
+      },
+      {
+        "id": "BK-1002",
+        "customer": "Riverbend Community Centre",
+        "product": "Morning tea assortment for the volunteer thank-you gathering",
+        "due_at_offset_seconds": 259200,
+        "packed": false
+      },
+      {
+        "id": "BK-1003",
+        "customer": "Noah Wilson",
+        "product": "Sourdough loaves",
+        "due_at_offset_seconds": -172800,
+        "packed": true
+      }
+    ],
+    "builder_responsibility": [
+      "Discover and bind actual source data.",
+      "Choose and provision or bind appropriate persistent storage based on the agreed staff workflow.",
+      "Build and deploy a new Databricks App with real runtime resources and attendee access."
+    ]
+  },
+  "onboarding_acceptance_private": {
+    "status": "proposed_invariants_for_unimplemented_runner",
+    "goal_first_industry_required": false,
+    "baseline_current_industry_gate": "Record the compulsory gate as friction/failure; a separate downstream baseline arm may choose Retail through normal novice UI interaction.",
+    "preserve": [
+      "original_attendee_words",
+      "immutable_selected_idea_snapshot",
+      "selected_prompt_and_data_dependencies",
+      "stated_versus_inferred_industry",
+      "idea_source_and_generation_identity",
+      "saved_and_launched_brief_revision"
+    ],
+    "variants": [
+      "plain_goal_without_industry",
+      "server_generated_selected_idea",
+      "skip_wizard",
+      "wizard_disabled_with_previous_brief",
+      "save_reload_process_restart_launch"
+    ],
+    "fault_suite_reference": "../onboarding-wizard-audit.md",
+    "obsolete_suggestion_may_change_current_selection": false,
+    "save_or_launch_failure_may_silently_drop_context": false,
+    "selection_confirms_unstated_requirements": false
+  },
+  "evaluator_private": {
+    "critical_tasks": [
+      "Find late unpacked orders ahead of future work.",
+      "Inspect BK-1001 and understand its details.",
+      "Locate a known order through an effective visible retrieval mechanism.",
+      "Mark BK-1001 packed through the UI and receive meaningful feedback.",
+      "Verify BK-1001 remains packed after reload, a new page, and app-process restart.",
+      "Verify a second authenticated browser context sees the persisted update.",
+      "Independently confirm the update in backend storage."
+    ],
+    "viewports_css_px": [
+      { "width": 1440, "height": 900 },
+      { "width": 768, "height": 1024 },
+      { "width": 390, "height": 844 }
+    ],
+    "required_states": [
+      "main_queue",
+      "order_detail",
+      "update_success",
+      "loading",
+      "empty",
+      "error_and_retry"
+    ],
+    "conditional_states": {
+      "no_results": "required when the app provides search or filtering"
+    },
+    "additional_checks": [
+      "keyboard_only_primary_journey",
+      "visible_focus",
+      "computed_contrast",
+      "200_percent_zoom",
+      "reduced_motion",
+      "no_blocking_page_overflow_or_clipped_controls",
+      "no_dead_visible_actions",
+      "no_unhandled_critical_journey_errors",
+      "truthful_sample_data_and_state_copy"
+    ],
+    "proposed_gates": {
+      "requirements_and_advice_minimum_mean": 4,
+      "first_preview_ux_minimum_mean": 4,
+      "final_ux_minimum_mean": 4,
+      "minimum_dimension_score": 3,
+      "critical_task_pass_required": true,
+      "critical_or_serious_accessibility_violations_allowed": 0,
+      "fresh_runs_per_offered_cell": 3,
+      "maximum_repair_rounds": 2,
+      "preflight_deadline_minutes": 15,
+      "consultation_deadline_minutes_from_first_submission": 3,
+      "total_deadline_minutes_from_first_submission": 30,
+      "useful_preview_target_minutes_after_agreement": 10,
+      "accepted_result_target_minutes_after_agreement": 20,
+      "spend_and_token_budget": "explicit_values_required_in_run_manifest_before_execution"
+    }
+  }
+}

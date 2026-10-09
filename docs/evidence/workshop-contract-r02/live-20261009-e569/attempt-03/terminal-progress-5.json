@@ -1,0 +1,14 @@
+{
+  "observed_at": "2026-10-09T03:28:56.651906+00:00",
+  "source": "read_only_attendee_websocket_replay_diagnostic",
+  "session_id": "b809e2a2-2e07-4361-b8f1-87cca8dd89c9",
+  "assigned_identity_verified": true,
+  "input_frames_sent": 0,
+  "resize_frames_sent": 0,
+  "auth_state_exported": false,
+  "not_assistant_turn_evidence": true,
+  "capture": "/private/tmp/wt-eval-r02-1009-e569/terminal-progress-5.txt",
+  "frame_types": [
+    "replay"
+  ]
+}

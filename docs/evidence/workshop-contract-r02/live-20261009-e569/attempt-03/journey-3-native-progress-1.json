@@ -1,0 +1,39 @@
+{
+  "observed_at": "2026-10-09T03:28:03.724870+00:00",
+  "session": {
+    "id": "b809e2a2-2e07-4361-b8f1-87cca8dd89c9",
+    "agent_id": "claude",
+    "label": "Claude Code",
+    "created_at": 1791516245.076445,
+    "last_activity": 1791516465.1929138,
+    "exited": false
+  },
+  "messages": {
+    "schema_version": 1,
+    "instrumentation": "read_only_native_transcript_v1",
+    "status": "ready",
+    "binding_verified": true,
+    "harness_id": "claude",
+    "harness_version": "2.1.283",
+    "wt_session_id": "b809e2a2-2e07-4361-b8f1-87cca8dd89c9",
+    "native_session_id": "0f3a7e14-fbd9-4c68-a364-5550d6257cf0",
+    "messages": [
+      {
+        "message_id": "6d466adbbb58f2a49ec51260c9c1b9eeca50dfc3b777e6d0ae22e3aa74810a34",
+        "timestamp": "2026-10-09T03:24:06.846Z",
+        "role": "user",
+        "visibility": "user",
+        "complete": true,
+        "text": "I run a small bakery. Can you make a page so I know which orders need attention?"
+      }
+    ],
+    "next_cursor": "eyJmIjoiNmE1MTc3MDM2MGZiODNmMDQwYTExMDAyZGNmMDJjODU5NzFhNDFmODM0MGZkNTUzNDdhMjdhMWNhMjU2ZWI5NyIsIm4iOiIwZjNhN2UxNC1mYmQ5LTRjNjgtYTM2NC01NTUwZDYyNTdjZjAiLCJvIjoxMjE4MDYsInYiOjEsInciOiJiODA5ZTJhMi0yZTA3LTQzNjEtYjhmMS04N2NjYThkZDg5YzkifS44NTBkMjVjZjcyNTAwZWU0NmNhZjQ2M2E5MjM1NzQwYzNjMmI4MTc2N2EwYjllZjljYWRiMjZjYzRhZjQ2YmIz",
+    "tool_and_worker_coverage_verified": false,
+    "transcript_authenticity_verified": false,
+    "unverified_checks": [
+      "tool_and_worker_attribution",
+      "implementation_timing",
+      "native_transcript_authenticity"
+    ]
+  }
+}

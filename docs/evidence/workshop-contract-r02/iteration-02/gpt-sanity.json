@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "kind": "direct_model_policy_sanity",
+  "model": "databricks-gpt-5-6-terra",
+  "wire": "responses",
+  "judge_model": "databricks-claude-sonnet-4-6",
+  "experiment_id": "1",
+  "dataset_id": "d-88b80b967a6340899ceb02b0a310bf5f",
+  "scorer": "wt_workshop_interaction_v1_4bc6284cb4",
+  "prompt_sha256": {
+    "home": "adbb0d3103ef0f151d7274cf4dfc4fd81590c69bfcdcd697e890356f352889d9",
+    "project": "d6936ae3cdf6b65205f7a0a473ded303b184c98b80deb185c69edad5dd5cdb92"
+  },
+  "tracing": {
+    "verified": true,
+    "trace_count": 1,
+    "span_count": 2
+  },
+  "evaluations": [
+    {
+      "run_id": "1d94e3a2c8a34c34981a4b45c90a4e16",
+      "metrics": {
+        "wt_workshop_interaction_v1_4bc6284cb4/mean": 1.0
+      }
+    },
+    {
+      "run_id": "b6dffcb3669f4a218e0a6e6518057d8a",
+      "metrics": {
+        "wt_workshop_interaction_v1_4bc6284cb4/mean": 1.0
+      }
+    }
+  ],
+  "limitations": [
+    "Five synthetic scenarios; no statistical or fleet claim",
+    "Direct model with a stub implementation tool, not a native CLI harness",
+    "No generated app or UX acceptance; R01 evidence unchanged"
+  ]
+}

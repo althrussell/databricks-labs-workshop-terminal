@@ -268,12 +268,14 @@ def test_agent_crash_reports_its_process_exit_code(monkeypatch, tmp_path):
     from server.sessions import SessionManager
 
     observed = []
+    delivered = []
     monkeypatch.setattr(
         telemetry,
         "session_exited",
         lambda *args, **kwargs: observed.append((args, kwargs)),
     )
     manager = SessionManager()
+    monkeypatch.setattr(manager, "_fanout", lambda _session, message: delivered.append(message))
     user = SimpleNamespace(
         email="alice@example.com",
         home=str(tmp_path),
@@ -289,6 +291,7 @@ def test_agent_crash_reports_its_process_exit_code(monkeypatch, tmp_path):
     assert observed
     assert observed[0][0][2] == "process_error"
     assert observed[0][1]["exit_code"] == 17
+    assert delivered == [{"t": "exit", "reason": "process_error", "exit_code": 17, "exit_signal": None}]
 
 
 def test_signalled_agent_reports_the_process_signal(monkeypatch, tmp_path):
@@ -317,3 +320,28 @@ def test_signalled_agent_reports_the_process_signal(monkeypatch, tmp_path):
     assert observed
     assert observed[0][0][2] == "process_signal"
     assert observed[0][1]["process_signal"] == 15
+
+
+@pytest.mark.parametrize("agent", ["codex", "claude"])
+def test_only_codex_gets_a_short_home_and_cwd_remains_the_attendee_projects(monkeypatch, tmp_path, agent):
+    from server import sessions
+
+    seen = []
+    original_popen = sessions.subprocess.Popen
+
+    def spawn(command, **kwargs):
+        seen.append(kwargs)
+        return original_popen(command, **kwargs)
+
+    monkeypatch.setattr(sessions.subprocess, "Popen", spawn)
+    monkeypatch.setattr(sessions, "codex_shell_home", lambda _home: "/tmp/owned-short-alias")
+    user = SimpleNamespace(email="alice@example.com", home=str(tmp_path), shell_env=lambda: {**os.environ, "HOME": str(tmp_path)})
+    manager = sessions.SessionManager()
+    manager.create(user, agent, ["/bin/sh", "-c", "exit 0"], agent)
+    deadline = time.time() + 2
+    while manager.count_all() and time.time() < deadline:
+        time.sleep(0.01)
+    assert manager.count_all() == 0
+    assert seen[0]["env"]["HOME"] == ("/tmp/owned-short-alias" if agent == "codex" else str(tmp_path))
+    assert seen[0]["cwd"] == str(tmp_path / "projects")
+    assert "CODEX_HOME" not in seen[0]["env"]

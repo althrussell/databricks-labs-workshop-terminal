@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "kind": "direct_model_policy_sanity",
+  "model": "databricks-claude-sonnet-4-6",
+  "wire": "chat",
+  "judge_model": "databricks-claude-sonnet-4-6",
+  "experiment_id": "1",
+  "dataset_id": "d-88b80b967a6340899ceb02b0a310bf5f",
+  "scorer": "wt_workshop_interaction_v1_4bc6284cb4",
+  "prompt_sha256": {
+    "home": "46095a42b36e8fd2a626b3ed2311f8bafeda63dce8e9bc953a8d68357326dfdd",
+    "project": "c66160818f78d230ae391b2080c24681daf015884d4531eef75cde8d09bcfe22"
+  },
+  "tracing": {
+    "verified": true,
+    "trace_count": 1,
+    "span_count": 2
+  },
+  "evaluations": [
+    {
+      "run_id": "9732a23e64ce45df9fe713eecb378e85",
+      "metrics": {
+        "wt_workshop_interaction_v1_4bc6284cb4/mean": 1.0
+      }
+    },
+    {
+      "run_id": "9ffe355177404f99af6f3841b3fc5b8e",
+      "metrics": {
+        "wt_workshop_interaction_v1_4bc6284cb4/mean": 1.0
+      }
+    }
+  ],
+  "limitations": [
+    "Five synthetic scenarios; no statistical or fleet claim",
+    "Direct model with a stub implementation tool, not a native CLI harness",
+    "No generated app or UX acceptance; R01 evidence unchanged"
+  ]
+}

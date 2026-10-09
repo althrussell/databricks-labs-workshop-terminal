@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "contract": "workshop-interaction-r02",
+  "source_commit": "28c80f1a3bcc9de953c090bdde694ef162e92206",
+  "entry": "skip_wizard path with deployment wizard disabled and controlled native startup",
+  "opening": "I run a small bakery. Can you make a page so I know which orders need attention?",
+  "attendee": "labuser+1@awsbricks.com",
+  "interaction_checks": [
+    "Clarify undefined attention rule before implementation; use one short exchange when sufficient",
+    "Give a visible useful recommendation with a reason before implementation",
+    "State material sample-data/storage assumptions before implementation",
+    "No required scope-approval or technology/expertise questionnaire",
+    "Describe preview versus checks actually performed honestly"
+  ],
+  "independent_app_checks": [
+    "Create or use a realistic order",
+    "Mark the order packed and verify resulting state after reload",
+    "Display a valid due date without Invalid Date",
+    "Reach primary action at desktop and 390px width"
+  ],
+  "raw_journey_rubric": "R01 runner retains historical scope-agreement assessment; it is observation only and not the R02 interaction verdict.",
+  "claim_limits": [
+    "Single Claude cell; broader harness/model qualification remains pending",
+    "CT integration remains pending; CT mutations forbidden",
+    "UI evidence is independent of agent completion claims"
+  ],
+  "wizard_enabled": false
+}

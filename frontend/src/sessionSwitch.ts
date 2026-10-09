@@ -16,7 +16,7 @@ export function agentSelection(
   active: SessionInfo | null,
   requestedAgentId: string
 ): AgentSelection {
-  if (!active) return "launch";
+  if (!active || active.exited) return "launch";
   return active.agent_id === requestedAgentId ? "focus" : "confirm";
 }
 
@@ -32,7 +32,7 @@ export function resolveSessionConflict(
   requestedAgentId: string,
   starterPrompt: string
 ): SessionConflictResolution {
-  if (!active) return { action: "missing" };
+  if (!active || active.exited) return { action: "missing" };
   if (active.agent_id === requestedAgentId) {
     return { action: "focus", active };
   }

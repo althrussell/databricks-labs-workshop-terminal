@@ -1,0 +1,30 @@
+ ▐▛███▛█   Claude Code v2.1.283                                                                                                           
+▝▜██████▀  Sonnet 5 · API Usage Billing                                                                                                   
+ ▝▝   ▝▝   ~/projects                                                                                                                     
+                                                                                                                                          
+                                                                                                                                          
+❯ I run a small bakery. Can you make a page so I know which orders need attention?                                                        
+                                                                                                                                          
+  Recalled 1 memory (ctrl+o to expand)                                                                                                    
+                                                                                                                                          
+● No prior memory yet — this is a fresh start. Before I build, I want to get the one thing that actually changes the first version: what  
+  makes an order "need attention" for you?                                                                                                
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+←  ☐ Needs attention  ✔ Submit  →                                                                                                         
+                                                                                                                                          
+What makes an order need attention?                                                                                                       
+                                                                                                                                          
+❯ 1. [ ] Running late                                                                                                                     
+         Orders past their pickup/delivery time or due today and not yet started                                                          
+  2. [ ] Not paid yet                                                                                                                     
+         Orders where payment hasn't come through                                                                                         
+  3. [ ] Not started/packed                                                                                                               
+         Orders that still need to be baked, prepped, or packed                                                                           
+  4. [ ] Not sure, you choose                                                                                                             
+         I'll default to late or unpacked orders so your team knows what to prioritize                                                    
+  5. [ ] Type something                                                                                                                   
+     Submit                                                                                                                               
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  6. Chat about this                                                                                                                      
+                                                                                                                                          
+Enter to select · ↑/↓ to navigate · Esc to cancel

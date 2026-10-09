@@ -34,6 +34,7 @@ REQUIRED_RUNTIME_FILES = frozenset(
         "assets/artifacts/manifest.json",
         "assets/bin/workshop-app-deploy",
         "assets/instructions/CLAUDE.md",
+        "assets/instructions/workshop_contract.md",
         "assets/skills/SKILLS_SOURCE.md",
     }
 )

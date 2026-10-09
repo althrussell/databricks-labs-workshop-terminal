@@ -1,0 +1,25 @@
+{
+  "total_count": 1,
+  "artifacts": [
+    {
+      "id": 11599038811,
+      "node_id": "MDg6QXJ0aWZhY3QxMTU5OTAzODgxMQ==",
+      "name": "workshop-terminal-31bb22a8994200b65c8e89809b54b4f0d2611a2e",
+      "size_in_bytes": 36902311,
+      "url": "https://api.github.com/repos/althrussell/databricks-labs-workshop-terminal/actions/artifacts/11599038811",
+      "archive_download_url": "https://api.github.com/repos/althrussell/databricks-labs-workshop-terminal/actions/artifacts/11599038811/zip",
+      "expired": false,
+      "digest": "sha256:c202771bb25d52f16615ee6b31b63b62157b4444c86c61b486e3e5c08d7076a1",
+      "created_at": "2026-10-09T06:29:30Z",
+      "updated_at": "2026-10-09T06:29:30Z",
+      "expires_at": "2026-10-16T06:29:28Z",
+      "workflow_run": {
+        "id": 37893721330,
+        "repository_id": 1265876877,
+        "head_repository_id": 1265876877,
+        "head_branch": "codex/wt-r01-ct-compatible",
+        "head_sha": "4c8b8d761037bb9b785750acac3e9a52d935bb07"
+      }
+    }
+  ]
+}

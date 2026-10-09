@@ -26,9 +26,9 @@ list. Several skill names from older Databricks skill kits were renamed or
 merged; asking for one of those gets you nothing at all, silently. If a name you
 half-remember isn't in that directory, check the directory rather than guessing.
 
-There is no process/workflow skill layer in this workshop — no planning,
-test-first, code-review, or verification ritual to invoke before building.
-Build the thing, deploy it, show it to them.
+Use the workshop interaction contract below for pacing and readiness.
+Upstream workflow advice does not add a production planning or testing ritual
+to a short workshop.
 
 ## Databricks CLI
 
@@ -164,52 +164,16 @@ Before starting any new project:
    committed `CLAUDE.md`/`AGENTS.md` also guarantee the AppKit baseline is
    followed no matter which agent or harness picks up the work.
 3. **Then start building** — commit early and often. Keep the generated
-   `README.md` current: one line on what the app is for, and the live URL once
-   you have one. It is the attendee's take-home reminder and it costs a
-   sentence.
+   `README.md` current: a short purpose line, the live URL once you have one,
+   and the `<!-- workshop-brief:v1 -->` continuity section required by the
+   workshop contract below. Preserve attendee-authored notes.
 
-## Tempo — get something on their screen fast
-
-The attendee came to see their idea become real. Everything below serves the
-shortest path from what they asked for to a URL they can open.
-
-- **Show something early.** Build a thin but real version, deploy it, and give
-  them the URL as soon as it renders. Then keep improving it. Never disappear
-  into a long build with nothing on screen — a 25-minute silent stretch is a
-  failure even if the result is good.
-- **Iterate against the live URL.** After the first deploy, every enhancement
-  is: change it, redeploy, tell them what to look at.
-- **At most one or two questions, and about purpose rather than spec.** "Who's
-  going to use this, and what do they do today?" makes the app materially better
-  and takes one line to answer. "What should the header colour be?" does neither
-  — decide it yourself. Never ask a question whose only purpose is to fill in a
-  field, and never run a requirements round: ask, then build.
-- **Even a toy gets one.** A page, a script, a query, a game — ask what it's for,
-  then build it. Take the answer at face value: "because it's fun" is complete
-  and needs no follow-up. Zero questions is still right when they've already told
-  you enough to build the right thing.
-- **Confirm only when it costs something.** State a one-line plan and get a yes
-  before provisioning real resources (Lakebase, warehouses, serving endpoints)
-  or when the request is genuinely ambiguous. Never for a self-contained build.
-- **Short todo lists.** Scaffold, build, deploy, share. If a todo is not on the
-  path to something the attendee can see, it does not belong on the list. Name
-  todos by outcome ("build the fraud-scoring page"), never by step number.
-- **Scaffold minimally.** Only the AppKit features and plugins the app actually
-  needs. No Lakebase, SQL, or Genie wiring for an app that has no data.
-- **Lead with your recommendation.** When you do ask, give your recommended
-  option first with a one-line "why", then alternatives. Never a bare list.
-- **Never announce process.** No design systems, no gates, no methodology.
-  Describe what their product does.
-- **End every build with the payoff:** the live URL (clickable) and a short,
-  plain-language recap of what it does.
-- **Keep noticing.** Fewer questions does not mean less listening. Record what
-  they already told you about their stack, their problem, and what is blocking
-  them, as it comes up — never as a wrap-up interview.
+<!-- workshop-contract-slot -->
 
 ## Building apps — always use AppKit
 
 AppKit is the required baseline for every app. For this workshop, **every app,
-dashboard, tool, or UI you build MUST use AppKit** (Node.js + TypeScript +
+interactive tool, or custom UI you build MUST use AppKit** (Node.js + TypeScript +
 React) via the **`databricks-apps`** skill — scaffolded for you by
 `workshop-init-project --appkit` (see Project setup above; do not call
 `databricks apps init` directly). This applies no matter which agent you are
@@ -227,9 +191,11 @@ Three more skills are not optional:
   a KPI or overview page, a report, a chart, a table, query results, or a
   Genie/chat assistant. It decides chart choice, semantic color, and how to
   show AI-result provenance, mapped to real AppKit components.
-- **`databricks-lakebase`** — required when the app needs to **save data**.
+- **`databricks-lakebase`** — required for shared or database-backed saved data.
   Provision it non-interactively; never tell the attendee to click resources
-  together in the Databricks UI. Apps with no saved state skip Lakebase.
+  together in the Databricks UI. A clearly labeled browser-only demo can use
+  browser storage; do not represent that as shared staff data. Apps with no
+  saved state skip Lakebase.
 
 **Where they overlap, the split is by surface.** `databricks-apps` owns
 scaffolding, APIs, and deployment. **Inside a data surface** — charts, KPIs,
@@ -243,8 +209,8 @@ not apply to it.
 
 ### Design happens silently
 
-Attendees are not designers and most are not engineers — they must never be
-asked to make a design decision, and never told the machinery exists.
+Attendees bring different experience levels. Choose visual defaults for them;
+adapt explanation to their preferences and requests.
 
 - **Never ask a design question.** No palette, layout, or creative-direction
   choices. Infer from what they asked for and decide the rest yourself.
@@ -281,16 +247,13 @@ forms — start from those.
 - **Accessible by construction:** text contrast at least 4.5:1, visible focus
   states on every interactive element, alt text on meaningful images, and
   layouts that survive a narrow window. Apply these as you write the markup —
-  there is no gate that will catch them later.
+  check the rendered result with the available tooling.
 - **One memorable moment per app.** A considered hero, a satisfying transition,
   a chart that reads instantly. One is enough.
 
-**After the first deploy, take one look at your own work** before you move on:
-is there a clear focal point, is the type scale doing real work, is spacing
-consistent, does the accent mean something, do the states exist, is contrast
-and focus right? Fix what is cheap, then tell the attendee what changed in
-product terms. That is one pass, in your head, against the live URL — not a
-script, not a browser run, not a document.
+After the first deploy, inspect the primary screen and useful task as described
+in the workshop interaction contract. Fix observed defects and describe the
+change in product terms.
 
 Do **not** reach for a Python framework (Streamlit / Dash / Gradio / Flask /
 FastAPI / Reflex), and do not use `databricks-apps-python` by default — it is
@@ -299,15 +262,15 @@ insistently** asks for one. In that case confirm that's really what they want,
 then proceed. Otherwise it is always AppKit.
 
 A plain "build me a dashboard" with no app-specific need is a managed AI/BI
-dashboard (`databricks-aibi-dashboards`), not an app. Offer both and let the
-attendee choose rather than defaulting to an app.
+dashboard (`databricks-aibi-dashboards`). Recommend that with a reason; an
+explicit app request or interactive workflow uses AppKit.
 
-### The ship gate — typecheck, deploy, open the URL
+### Deployment — typecheck, deploy, share the preview
 
-**Ship when the app is deployed and the URL loads.** That is the whole gate:
+Use these deployment steps alongside the contract's practical task checks:
 
-1. **Typecheck and build** (`npx tsc --noEmit`, then the app's build). Seconds,
-   no browser, and it prevents a failed-deploy loop. Before writing code
+1. **Typecheck and build** (`npx tsc --noEmit`, then the app's build). This
+   prevents a failed-deploy loop. Before writing code
    against an AppKit API, check the real signature with
    `npx @databricks/appkit docs <section>` — invented shapes fail `tsc`. Never
    write `as unknown as <T>`.
@@ -329,15 +292,6 @@ attendee choose rather than defaulting to an app.
 3. **Give the attendee the URL** and keep improving against it.
 
 <!-- discovery-anchor -->
-
-**Do not** run `databricks apps validate`, install Playwright browsers, or
-write or update `tests/smoke.spec.ts` — unless the attendee asks for tests, or
-a deploy has already failed and you are debugging it. Never install Chromium
-as a condition of calling something done. Never put "update smoke tests",
-"run validate", or "run the design gate" on a todo list.
-
-This overrides the `databricks-apps` skill's instruction to always update the
-smoke test before validating. In this workshop, the live URL is the gate.
 
 If something breaks, read the actual error before changing code. Fix the thing
 the error names — no root-cause ceremony, no test-first ritual.

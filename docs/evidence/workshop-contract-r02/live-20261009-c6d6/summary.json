@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "scope": "simulated_control_tower",
+  "control_tower_mutations": 0,
+  "runtime_source_commit": "8febeb83b6863ef36c12a3fda21e9598a88091b1",
+  "entry": "genuine labuser Browser/Computer, wizard disabled",
+  "codex_ui_transport": "passed_exact_question_and_answer",
+  "codex_collector": "unverified_native_message_size_budget",
+  "codex_clear_request": "passed_no_questionnaire_static_page",
+  "claude_consultation": "passed_one_consequential_question_reply_and_visible_recommendation",
+  "bakery_first_preview": {
+    "dates": "passed",
+    "packing_and_reload": "passed",
+    "desktop": "passed",
+    "phone": "failed_offscreen_status_and_action",
+    "data_discovery": "failed_no_exploration"
+  },
+  "bakery_phone_repair": {
+    "simple_user_request": "On my phone I can't see the order status or the packing buttons. Can you make those easy to use?",
+    "status_and_action_without_horizontal_scroll": "passed",
+    "pack_marcus_and_reload": "passed",
+    "collector": "ready"
+  },
+  "storage": "shared_server_memory; reload persists; repair_redeploy_reset_observed",
+  "full_r02_acceptance": false,
+  "fresh_package_required_for_latest_fixes": true,
+  "cleanup": "independently_verified",
+  "limits": [
+    "Single native Claude bakery and Codex transport/static control",
+    "No wizard, actual CT integration, fleet, restart/fault or calibrated UX acceptance",
+    "Spend not measured/enforced"
+  ]
+}

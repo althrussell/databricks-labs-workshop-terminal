@@ -1,0 +1,68 @@
+{
+  "status": "failed",
+  "model_requests": 0,
+  "control_tower_mutations": 0,
+  "version": "codex-cli 0.157.1",
+  "cells": [
+    {
+      "name": "long_home_workshop_config",
+      "home_bytes": 76,
+      "original_home_bytes": 76,
+      "control_socket_bytes": 126,
+      "alias_resolves_to_original": true,
+      "elapsed_s": 11.464,
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Installing daemon from CLI version 0.157.1 into /app/python/source_code/data/wt-eval-qcap-1009-6b90/users/labuser-1-e2e66dc8/.codex/packages/app-server-daemon...\nError: app server did not become ready on /app/python/source_code/data/wt-eval-qcap-1009-6b90/users/labuser-1-e2e66dc8/.codex/app-server-control/app-server-control.sock\n\nDaemon used app-server:\n  path: /app/python/source_code/data/wt-eval-qcap-1009-6b90/users/labuser-1-e2e66dc8/.codex/packages/app-server-daemon/current/bin/codex\n  version: 0.157.1\n\nManaged app-server stderr (/app/python/source_code/data/wt-eval-qcap-1009-6b90/users/labuser-1-e2e66dc8/.codex/app-server-daemon/daemon.stderr.log):\n  \u001b[2m2026-10-09T04:57:45.146969Z\u001b[0m \u001b[31mERROR\u001b[0m \u001b[2mcodex_login::auth::manager\u001b[0m\u001b[2m:\u001b[0m Failed to resolve external auth: provider auth command `cat` produced an empty token\n  \u001b[2m2026-10-09T04:57:45.148339Z\u001b[0m \u001b[31mERROR\u001b[0m \u001b[2mcodex_login::auth::manager\u001b[0m\u001b[2m:\u001b[0m Failed to resolve external auth: provider auth command `cat` produced an empty token\n  \u001b[2m2026-10-09T04:57:45.381160Z\u001b[0m \u001b[31mERROR\u001b[0m \u001b[2mcodex_models_manager::manager\u001b[0m\u001b[2m:\u001b[0m failed to refresh available models: Connection failed: error sending request\n\nCaused by:\n    0: failed to connect to /app/python/source_code/data/wt-eval-qcap-1009-6b90/users/labuser-1-e2e66dc8/.codex/app-server-control/app-server-control.sock\n    1: path must be shorter than SUN_LEN\n",
+      "daemon_stderr": [
+        {
+          "name": ".codex/app-server-daemon/daemon.stderr.log",
+          "tail": "\u001b[2m2026-10-09T04:57:45.146969Z\u001b[0m \u001b[31mERROR\u001b[0m \u001b[2mcodex_login::auth::manager\u001b[0m\u001b[2m:\u001b[0m Failed to resolve external auth: provider auth command `cat` produced an empty token\n\u001b[2m2026-10-09T04:57:45.148339Z\u001b[0m \u001b[31mERROR\u001b[0m \u001b[2mcodex_login::auth::manager\u001b[0m\u001b[2m:\u001b[0m Failed to resolve external auth: provider auth command `cat` produced an empty token\n\u001b[2m2026-10-09T04:57:45.381160Z\u001b[0m \u001b[31mERROR\u001b[0m \u001b[2mcodex_models_manager::manager\u001b[0m\u001b[2m:\u001b[0m failed to refresh available models: Connection failed: error sending request\n"
+        }
+      ],
+      "stop_exit_code": 0
+    },
+    {
+      "name": "short_home_workshop_config",
+      "home_bytes": 25,
+      "original_home_bytes": 25,
+      "control_socket_bytes": 75,
+      "alias_resolves_to_original": true,
+      "elapsed_s": 0.298,
+      "exit_code": 0,
+      "stdout": "{\"status\":\"started\",\"backend\":\"pid\",\"pid\":883,\"managedCodexPath\":\"/tmp/wt-codex-probe-short/.codex/packages/app-server-daemon/current/bin/codex\",\"managedCodexVersion\":\"0.162.0\",\"socketPath\":\"/tmp/wt-codex-probe-short/.codex/app-server-control/app-server-control.sock\",\"cliVersion\":\"0.157.1\",\"appServerVersion\":\"0.162.0\"}\n",
+      "stderr": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home: AbsolutePathBuf(\"/tmp/wt-codex-probe-short/.codex\"))\n",
+      "daemon_stderr": [
+        {
+          "name": ".codex/app-server-daemon/daemon.stderr.log",
+          "tail": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home: AbsolutePathBuf(\"/tmp/wt-codex-probe-short/.codex\"))\n\u001b[2m2026-10-09T04:57:55.326631Z\u001b[0m \u001b[31mERROR\u001b[0m \u001b[2mcodex_login::auth::manager\u001b[0m\u001b[2m:\u001b[0m Failed to resolve external auth: provider auth command `cat` produced an empty token\n\u001b[2m2026-10-09T04:57:55.328068Z\u001b[0m \u001b[31mERROR\u001b[0m \u001b[2mcodex_login::auth::manager\u001b[0m\u001b[2m:\u001b[0m Failed to resolve external auth: provider auth command `cat` produced an empty token\n"
+        },
+        {
+          "name": ".codex/app-server-daemon/daemon-updater.stderr.log",
+          "tail": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home: AbsolutePathBuf(\"/tmp/wt-codex-probe-short/.codex\"))\nWARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home: AbsolutePathBuf(\"/tmp/wt-codex-probe-short/.codex\"))\n"
+        }
+      ],
+      "stop_exit_code": 0
+    },
+    {
+      "name": "long_home_default_config",
+      "home_bytes": 79,
+      "original_home_bytes": 79,
+      "control_socket_bytes": 129,
+      "alias_resolves_to_original": true,
+      "elapsed_s": 11.499,
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Installing daemon from CLI version 0.157.1 into /app/python/source_code/data/wt-eval-codex-1009-diag/users/synthetic-diagnostic/.codex/packages/app-server-daemon...\nError: app server did not become ready on /app/python/source_code/data/wt-eval-codex-1009-diag/users/synthetic-diagnostic/.codex/app-server-control/app-server-control.sock\n\nDaemon used app-server:\n  path: /app/python/source_code/data/wt-eval-codex-1009-diag/users/synthetic-diagnostic/.codex/packages/app-server-daemon/current/bin/codex\n  version: 0.157.1\n\nManaged app-server stderr (/app/python/source_code/data/wt-eval-codex-1009-diag/users/synthetic-diagnostic/.codex/app-server-daemon/daemon.stderr.log):\n  \u001b[2m2026-10-09T04:57:58.749831Z\u001b[0m \u001b[31mERROR\u001b[0m \u001b[2mcodex_app_server\u001b[0m\u001b[2m:\u001b[0m Codex could not find bubblewrap on PATH. Install bubblewrap with your OS package manager. See the sandbox prerequisites: https://developers.openai.com/codex/concepts/sandboxing#prerequisites. Codex will use the bundled bubblewrap in the meantime.\n\nCaused by:\n    0: failed to connect to /app/python/source_code/data/wt-eval-codex-1009-diag/users/synthetic-diagnostic/.codex/app-server-control/app-server-control.sock\n    1: path must be shorter than SUN_LEN\n",
+      "daemon_stderr": [
+        {
+          "name": ".codex/app-server-daemon/daemon.stderr.log",
+          "tail": "\u001b[2m2026-10-09T04:57:58.749831Z\u001b[0m \u001b[31mERROR\u001b[0m \u001b[2mcodex_app_server\u001b[0m\u001b[2m:\u001b[0m Codex could not find bubblewrap on PATH. Install bubblewrap with your OS package manager. See the sandbox prerequisites: https://developers.openai.com/codex/concepts/sandboxing#prerequisites. Codex will use the bundled bubblewrap in the meantime.\n"
+        }
+      ],
+      "stop_exit_code": 0
+    }
+  ],
+  "error_type": "FileExistsError",
+  "detail": "[Errno 17] File exists: '/app/python/source_code/data/wt-eval-qcap-1009-6b90/users/labuser-1-e2e66dc8' -> '/tmp/wt-cx-7de130c232337f4ec9210a1c37629cc1'"
+}

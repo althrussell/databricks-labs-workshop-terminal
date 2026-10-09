@@ -1,0 +1,1201 @@
+{
+  "schema_version": 1,
+  "operation": "seed_bakery_fixture",
+  "scope": "simulated_control_tower",
+  "control_tower_requests": 0,
+  "executed": true,
+  "accepted": false,
+  "status": "seed_verified",
+  "plan": {
+    "schema_version": 1,
+    "operation": "seed_bakery_fixture",
+    "scope": "simulated_control_tower",
+    "control_tower_requests": 0,
+    "fixture_version": "bakery-orders-v2",
+    "marker": "wt-eval-r01-1008-b53c",
+    "workspace_host": "https://dbc-e155652a-2cba.cloud.databricks.com",
+    "workspace_id": "7474655950495189",
+    "profile": "labs",
+    "terminal_app_id": "6bff7044-f479-43bc-834b-4cf40b5ed654",
+    "terminal_app_name": "wt-eval-r01-1008-b53c-wt",
+    "terminal_deployment_id": "01f1c2e7c80c1e8c89d3098ad707d5ce",
+    "principal": "6bff7044-f479-43bc-834b-4cf40b5ed654",
+    "attendee_email": "labuser+1@awsbricks.com",
+    "terminal_created_at_epoch": 1791441599.0,
+    "deployment_receipt_sha256": "c4efbe26aa7fcdaac94fc587412586df3e7f223a6db293b195974f5f59f67b1f",
+    "catalog": "wt_eval_r01_1008_b53c",
+    "schema": "generated_apps",
+    "table": "wt_eval_r01_1008_b53c.generated_apps.bakery_orders",
+    "epoch": "2026-10-08T07:01:20+00:00",
+    "expires_at_epoch": 1791448799.0,
+    "rows": [
+      {
+        "order_id": "BK-1001",
+        "customer_name": "Maya Patel",
+        "items": "Birthday cake",
+        "quantity": 1,
+        "order_total": "16.50",
+        "due_at": "2026-10-07T07:01:20+00:00",
+        "due_at_epoch": 1791356480,
+        "packed": false,
+        "created_at": "2026-10-01T07:01:20+00:00",
+        "created_at_epoch": 1790838080
+      },
+      {
+        "order_id": "BK-1002",
+        "customer_name": "Riverbend Community Centre",
+        "items": "Morning tea assortment for the volunteer thank-you gathering",
+        "quantity": 40,
+        "order_total": "192.00",
+        "due_at": "2026-10-11T07:01:20+00:00",
+        "due_at_epoch": 1791702080,
+        "packed": false,
+        "created_at": "2026-10-01T07:01:20+00:00",
+        "created_at_epoch": 1790838080
+      },
+      {
+        "order_id": "BK-1003",
+        "customer_name": "Noah Wilson",
+        "items": "Sourdough loaves",
+        "quantity": 6,
+        "order_total": "39.00",
+        "due_at": "2026-10-06T07:01:20+00:00",
+        "due_at_epoch": 1791270080,
+        "packed": true,
+        "created_at": "2026-10-01T07:01:20+00:00",
+        "created_at_epoch": 1790838080
+      },
+      {
+        "order_id": "BK-1004",
+        "customer_name": "Elena Garc\u00eda",
+        "items": "Croissant box",
+        "quantity": 12,
+        "order_total": "66.00",
+        "due_at": "2026-10-07T07:01:20+00:00",
+        "due_at_epoch": 1791356480,
+        "packed": false,
+        "created_at": "2026-10-01T07:01:20+00:00",
+        "created_at_epoch": 1790838080
+      },
+      {
+        "order_id": "BK-1005",
+        "customer_name": "Northside Primary School",
+        "items": "Mini muffins",
+        "quantity": 30,
+        "order_total": "147.00",
+        "due_at": "2026-10-06T07:01:20+00:00",
+        "due_at_epoch": 1791270080,
+        "packed": false,
+        "created_at": "2026-10-01T07:01:20+00:00",
+        "created_at_epoch": 1790838080
+      },
+      {
+        "order_id": "BK-1006",
+        "customer_name": "Sam O'Brien",
+        "items": "Chocolate celebration cake",
+        "quantity": 1,
+        "order_total": "16.50",
+        "due_at": "2026-10-05T07:01:20+00:00",
+        "due_at_epoch": 1791183680,
+        "packed": false,
+        "created_at": "2026-10-01T07:01:20+00:00",
+        "created_at_epoch": 1790838080
+      },
+      {
+        "order_id": "BK-1007",
+        "customer_name": "Harbour Dental",
+        "items": "Birthday cake",
+        "quantity": 1,
+        "order_total": "16.50",
+        "due_at": "2026-10-07T07:01:20+00:00",
+        "due_at_epoch": 1791356480,
+        "packed": false,
+        "created_at": "2026-10-01T07:01:20+00:00",
+        "created_at_epoch": 1790838080
+      },
+      {
+        "order_id": "BK-1008",
+        "customer_name": "Ava Chen",
+        "items": "Morning tea assortment for the volunteer thank-you gathering",
+        "quantity": 40,
+        "order_total": "192.00",
+        "due_at": "2026-10-14T07:01:20+00:00",
+        "due_at_epoch": 1791961280,
+        "packed": false,
+        "created_at": "2026-10-01T07:01:20+00:00",
+        "created_at_epoch": 1790838080
+      },
+      {
+        "order_id": "BK-1009",
+        "customer_name": "Lee's Corner Store",
+        "items": "Sourdough loaves",
+        "quantity": 6,
+        "order_total": "39.00",
+        "due_at": "2026-10-05T07:01:20+00:00",
+        "due_at_epoch": 1791183680,
+        "packed": false,
+        "created_at": "2026-10-01T07:01:20+00:00",
+        "created_at_epoch": 1790838080
+      },
+      {
+        "order_id": "BK-1010",
+        "customer_name": "Lakeside Football Club",
+        "items": "Croissant box",
+        "quantity": 12,
+        "order_total": "66.00",
+        "due_at": "2026-10-07T07:01:20+00:00",
+        "due_at_epoch": 1791356480,
+        "packed": false,
+        "created_at": "2026-10-01T07:01:20+00:00",
+        "created_at_epoch": 1790838080
+      },
+      {
+        "order_id": "BK-1011",
+        "customer_name": "Priya Shah",
+        "items": "Mini muffins",
+        "quantity": 30,
+        "order_total": "147.00",
+        "due_at": "2026-10-06T07:01:20+00:00",
+        "due_at_epoch": 1791270080,
+        "packed": false,
+        "created_at": "2026-10-01T07:01:20+00:00",
+        "created_at_epoch": 1790838080
+      },
+      {
+        "order_id": "BK-1012",
+        "customer_name": "Daniel Brooks",
+        "items": "Chocolate celebration cake",
+        "quantity": 1,
+        "order_total": "16.50",
+        "due_at": "2026-10-05T07:01:20+00:00",
+        "due_at_epoch": 1791183680,
+        "packed": false,
+        "created_at": "2026-10-01T07:01:20+00:00",
+        "created_at_epoch": 1790838080
+      },
+      {
+        "order_id": "BK-1013",
+        "customer_name": "Neighbourhood Garden Volunteers",
+        "items": "Birthday cake",
+        "quantity": 1,
+        "order_total": "16.50",
+        "due_at": "2026-10-07T07:01:20+00:00",
+        "due_at_epoch": 1791356480,
+        "packed": true,
+        "created_at": "2026-10-01T07:01:20+00:00",
+        "created_at_epoch": 1790838080
+      },
+      {
+        "order_id": "BK-1014",
+        "customer_name": "Sofia Rossi",
+        "items": "Morning tea assortment for the volunteer thank-you gathering",
+        "quantity": 40,
+        "order_total": "192.00",
+        "due_at": "2026-10-12T07:01:20+00:00",
+        "due_at_epoch": 1791788480,
+        "packed": false,
+        "created_at": "2026-10-01T07:01:20+00:00",
+        "created_at_epoch": 1790838080
+      },
+      {
+        "order_id": "BK-1015",
+        "customer_name": "Oliver Jones",
+        "items": "Sourdough loaves",
+        "quantity": 6,
+        "order_total": "39.00",
+        "due_at": "2026-10-05T07:01:20+00:00",
+        "due_at_epoch": 1791183680,
+        "packed": false,
+        "created_at": "2026-10-01T07:01:20+00:00",
+        "created_at_epoch": 1790838080
+      },
+      {
+        "order_id": "BK-1016",
+        "customer_name": "Mia Williams",
+        "items": "Croissant box",
+        "quantity": 12,
+        "order_total": "66.00",
+        "due_at": "2026-10-07T07:01:20+00:00",
+        "due_at_epoch": 1791356480,
+        "packed": false,
+        "created_at": "2026-10-01T07:01:20+00:00",
+        "created_at_epoch": 1790838080
+      },
+      {
+        "order_id": "BK-1017",
+        "customer_name": "Hillcrest Retirement Village",
+        "items": "Mini muffins",
+        "quantity": 30,
+        "order_total": "147.00",
+        "due_at": "2026-10-11T07:01:20+00:00",
+        "due_at_epoch": 1791702080,
+        "packed": false,
+        "created_at": "2026-10-01T07:01:20+00:00",
+        "created_at_epoch": 1790838080
+      },
+      {
+        "order_id": "BK-1018",
+        "customer_name": "Lucas Brown",
+        "items": "Chocolate celebration cake",
+        "quantity": 1,
+        "order_total": "16.50",
+        "due_at": "2026-10-05T07:01:20+00:00",
+        "due_at_epoch": 1791183680,
+        "packed": false,
+        "created_at": "2026-10-01T07:01:20+00:00",
+        "created_at_epoch": 1790838080
+      },
+      {
+        "order_id": "BK-1019",
+        "customer_name": "Amelia Davis",
+        "items": "Birthday cake",
+        "quantity": 1,
+        "order_total": "16.50",
+        "due_at": "2026-10-07T07:01:20+00:00",
+        "due_at_epoch": 1791356480,
+        "packed": true,
+        "created_at": "2026-10-01T07:01:20+00:00",
+        "created_at_epoch": 1790838080
+      },
+      {
+        "order_id": "BK-1020",
+        "customer_name": "Eastbank Book Club",
+        "items": "Morning tea assortment for the volunteer thank-you gathering",
+        "quantity": 40,
+        "order_total": "192.00",
+        "due_at": "2026-10-14T07:01:20+00:00",
+        "due_at_epoch": 1791961280,
+        "packed": false,
+        "created_at": "2026-10-01T07:01:20+00:00",
+        "created_at_epoch": 1790838080
+      }
+    ],
+    "rows_digest": "dcab80d520282e83625b8422f59d19a2d48fd96426b28506ac1b747569c5c7e7",
+    "statements": [
+      {
+        "name": "create_schema",
+        "statement": "CREATE SCHEMA `wt_eval_r01_1008_b53c`.`generated_apps` COMMENT 'Isolated synthetic workshop evaluation data'"
+      },
+      {
+        "name": "create_table",
+        "statement": "CREATE TABLE `wt_eval_r01_1008_b53c`.`generated_apps`.`bakery_orders` (order_id STRING NOT NULL, customer_name STRING NOT NULL, items STRING NOT NULL, quantity INT NOT NULL, order_total DECIMAL(10,2) NOT NULL, due_at TIMESTAMP NOT NULL, packed BOOLEAN NOT NULL, created_at TIMESTAMP NOT NULL) USING DELTA COMMENT 'Sample bakery orders for workshop evaluation'"
+      },
+      {
+        "name": "insert_orders",
+        "statement": "INSERT INTO `wt_eval_r01_1008_b53c`.`generated_apps`.`bakery_orders` VALUES (decode(unhex('424b2d31303031'), 'UTF-8'), decode(unhex('4d61796120506174656c'), 'UTF-8'), decode(unhex('42697274686461792063616b65'), 'UTF-8'), 1, 16.50, to_timestamp(decode(unhex('323032362d31302d30375430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303032'), 'UTF-8'), decode(unhex('526976657262656e6420436f6d6d756e6974792043656e747265'), 'UTF-8'), decode(unhex('4d6f726e696e6720746561206173736f72746d656e7420666f722074686520766f6c756e74656572207468616e6b2d796f7520676174686572696e67'), 'UTF-8'), 40, 192.00, to_timestamp(decode(unhex('323032362d31302d31315430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303033'), 'UTF-8'), decode(unhex('4e6f61682057696c736f6e'), 'UTF-8'), decode(unhex('536f7572646f756768206c6f61766573'), 'UTF-8'), 6, 39.00, to_timestamp(decode(unhex('323032362d31302d30365430373a30313a32302b30303a3030'), 'UTF-8')), true, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303034'), 'UTF-8'), decode(unhex('456c656e612047617263c3ad61'), 'UTF-8'), decode(unhex('43726f697373616e7420626f78'), 'UTF-8'), 12, 66.00, to_timestamp(decode(unhex('323032362d31302d30375430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303035'), 'UTF-8'), decode(unhex('4e6f72746873696465205072696d617279205363686f6f6c'), 'UTF-8'), decode(unhex('4d696e69206d756666696e73'), 'UTF-8'), 30, 147.00, to_timestamp(decode(unhex('323032362d31302d30365430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303036'), 'UTF-8'), decode(unhex('53616d204f27427269656e'), 'UTF-8'), decode(unhex('43686f636f6c6174652063656c6562726174696f6e2063616b65'), 'UTF-8'), 1, 16.50, to_timestamp(decode(unhex('323032362d31302d30355430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303037'), 'UTF-8'), decode(unhex('486172626f75722044656e74616c'), 'UTF-8'), decode(unhex('42697274686461792063616b65'), 'UTF-8'), 1, 16.50, to_timestamp(decode(unhex('323032362d31302d30375430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303038'), 'UTF-8'), decode(unhex('417661204368656e'), 'UTF-8'), decode(unhex('4d6f726e696e6720746561206173736f72746d656e7420666f722074686520766f6c756e74656572207468616e6b2d796f7520676174686572696e67'), 'UTF-8'), 40, 192.00, to_timestamp(decode(unhex('323032362d31302d31345430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303039'), 'UTF-8'), decode(unhex('4c6565277320436f726e65722053746f7265'), 'UTF-8'), decode(unhex('536f7572646f756768206c6f61766573'), 'UTF-8'), 6, 39.00, to_timestamp(decode(unhex('323032362d31302d30355430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303130'), 'UTF-8'), decode(unhex('4c616b657369646520466f6f7462616c6c20436c7562'), 'UTF-8'), decode(unhex('43726f697373616e7420626f78'), 'UTF-8'), 12, 66.00, to_timestamp(decode(unhex('323032362d31302d30375430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303131'), 'UTF-8'), decode(unhex('50726979612053686168'), 'UTF-8'), decode(unhex('4d696e69206d756666696e73'), 'UTF-8'), 30, 147.00, to_timestamp(decode(unhex('323032362d31302d30365430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303132'), 'UTF-8'), decode(unhex('44616e69656c2042726f6f6b73'), 'UTF-8'), decode(unhex('43686f636f6c6174652063656c6562726174696f6e2063616b65'), 'UTF-8'), 1, 16.50, to_timestamp(decode(unhex('323032362d31302d30355430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303133'), 'UTF-8'), decode(unhex('4e65696768626f7572686f6f642047617264656e20566f6c756e7465657273'), 'UTF-8'), decode(unhex('42697274686461792063616b65'), 'UTF-8'), 1, 16.50, to_timestamp(decode(unhex('323032362d31302d30375430373a30313a32302b30303a3030'), 'UTF-8')), true, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303134'), 'UTF-8'), decode(unhex('536f66696120526f737369'), 'UTF-8'), decode(unhex('4d6f726e696e6720746561206173736f72746d656e7420666f722074686520766f6c756e74656572207468616e6b2d796f7520676174686572696e67'), 'UTF-8'), 40, 192.00, to_timestamp(decode(unhex('323032362d31302d31325430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303135'), 'UTF-8'), decode(unhex('4f6c69766572204a6f6e6573'), 'UTF-8'), decode(unhex('536f7572646f756768206c6f61766573'), 'UTF-8'), 6, 39.00, to_timestamp(decode(unhex('323032362d31302d30355430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303136'), 'UTF-8'), decode(unhex('4d69612057696c6c69616d73'), 'UTF-8'), decode(unhex('43726f697373616e7420626f78'), 'UTF-8'), 12, 66.00, to_timestamp(decode(unhex('323032362d31302d30375430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303137'), 'UTF-8'), decode(unhex('48696c6c6372657374205265746972656d656e742056696c6c616765'), 'UTF-8'), decode(unhex('4d696e69206d756666696e73'), 'UTF-8'), 30, 147.00, to_timestamp(decode(unhex('323032362d31302d31315430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303138'), 'UTF-8'), decode(unhex('4c756361732042726f776e'), 'UTF-8'), decode(unhex('43686f636f6c6174652063656c6562726174696f6e2063616b65'), 'UTF-8'), 1, 16.50, to_timestamp(decode(unhex('323032362d31302d30355430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303139'), 'UTF-8'), decode(unhex('416d656c6961204461766973'), 'UTF-8'), decode(unhex('42697274686461792063616b65'), 'UTF-8'), 1, 16.50, to_timestamp(decode(unhex('323032362d31302d30375430373a30313a32302b30303a3030'), 'UTF-8')), true, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303230'), 'UTF-8'), decode(unhex('4561737462616e6b20426f6f6b20436c7562'), 'UTF-8'), decode(unhex('4d6f726e696e6720746561206173736f72746d656e7420666f722074686520766f6c756e74656572207468616e6b2d796f7520676174686572696e67'), 'UTF-8'), 40, 192.00, to_timestamp(decode(unhex('323032362d31302d31345430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8')))"
+      },
+      {
+        "name": "grant_schema",
+        "statement": "GRANT USE SCHEMA ON SCHEMA `wt_eval_r01_1008_b53c`.`generated_apps` TO `6bff7044-f479-43bc-834b-4cf40b5ed654`"
+      },
+      {
+        "name": "grant_table",
+        "statement": "GRANT SELECT, MODIFY ON TABLE `wt_eval_r01_1008_b53c`.`generated_apps`.`bakery_orders` TO `6bff7044-f479-43bc-834b-4cf40b5ed654`"
+      }
+    ],
+    "provisioning_attribution": "external_setup_fixture_not_app_created",
+    "accepted": false,
+    "plan_digest": "93360e679c90d11674e8783d94d6056bc38f85d20cb9b5af788c17bad99fd257"
+  },
+  "created_resources": [
+    {
+      "kind": "schema",
+      "name": "wt_eval_r01_1008_b53c.generated_apps",
+      "state": "created"
+    },
+    {
+      "kind": "table",
+      "name": "wt_eval_r01_1008_b53c.generated_apps.bakery_orders",
+      "state": "created"
+    }
+  ],
+  "statements": [
+    {
+      "name": "read_before_setup_repair",
+      "statement_sha256": "0868849fd18a3cf21f29d05086e29c6bbb1e9b4dd2926fb9975625afd39db9d7",
+      "status": "SUCCEEDED",
+      "statement_id": "01f1c2e8-7a43-1704-a133-ccd52fdde51c"
+    },
+    {
+      "name": "correct_customer_BK-1006",
+      "statement_sha256": "2417d7ff12373a3c470253f83d8de7ab46d4276c9caff26a848cfd322123a06f",
+      "status": "SUCCEEDED",
+      "statement_id": "01f1c2e8-7ab7-18a5-9fe6-c8183f4a09d4"
+    },
+    {
+      "name": "correct_customer_BK-1009",
+      "statement_sha256": "dfada559090190eadd5ef878c6b89a56c0079b3b14d989a1baf4083f78b00c37",
+      "status": "SUCCEEDED",
+      "statement_id": "01f1c2e8-7de5-1043-8d59-f2a0f2256d4f"
+    },
+    {
+      "name": "read_seed",
+      "statement_sha256": "0868849fd18a3cf21f29d05086e29c6bbb1e9b4dd2926fb9975625afd39db9d7",
+      "status": "SUCCEEDED",
+      "statement_id": "01f1c2e8-7f86-13e2-8c14-1c68ae3989d8"
+    }
+  ],
+  "warehouse_id": "72db7ec713837d92",
+  "setup_repair_provenance": {
+    "previous_receipt": "/private/tmp/wt-eval-r01-bakery-seed-b53c.json",
+    "previous_receipt_sha256": "86f2d153dfe93018fdd09a5c012aaf250f46971cdbff68594bb26cbb18da24a9",
+    "previous_statements": [
+      {
+        "name": "create_schema",
+        "statement_sha256": "73431d9501301e3cb95232e285f851d038e9d8ef0a43f2a4c42b26a7e9238ad2",
+        "status": "SUCCEEDED",
+        "statement_id": "01f1c2e6-9f20-113b-a622-9575b1d14c20"
+      },
+      {
+        "name": "create_table",
+        "statement_sha256": "b1b62988b6a1fabd49d1ebfab3661c2b8cb53160335a256a25d1471bab579c19",
+        "status": "SUCCEEDED",
+        "statement_id": "01f1c2e6-9fe5-1633-8d92-7cfa0d4a891b"
+      },
+      {
+        "name": "insert_orders",
+        "statement_sha256": "069d024b356fd1e835a02c5d653536707642848f3d131bc2a09ca921c88e9790",
+        "status": "SUCCEEDED",
+        "statement_id": "01f1c2e6-a205-19f7-adb4-beff46b040fa"
+      },
+      {
+        "name": "grant_schema",
+        "statement_sha256": "b41ccb45e892e24174e2baf280c697fe5b06b4f2d3c6ae712d47fde46d03980d",
+        "status": "SUCCEEDED",
+        "statement_id": "01f1c2e6-a677-1769-98cd-6b3192503104"
+      },
+      {
+        "name": "grant_table",
+        "statement_sha256": "b9dbdb9d579b257a148266b4de5e7dcc9e967d5816cdc72cf96bc9292d6f4a81",
+        "status": "SUCCEEDED",
+        "statement_id": "01f1c2e6-a6f8-16a3-8506-c09342e7af75"
+      },
+      {
+        "name": "read_seed",
+        "statement_sha256": "0868849fd18a3cf21f29d05086e29c6bbb1e9b4dd2926fb9975625afd39db9d7",
+        "status": "SUCCEEDED",
+        "statement_id": "01f1c2e6-a751-13cf-ac2c-a948cd14d4c1"
+      }
+    ],
+    "previous_fixture_version": "bakery-orders-v1",
+    "new_resource_creation": false,
+    "builder_session_started": false,
+    "reason": "SQL adjacent string concatenation removed two customer-name apostrophes",
+    "exact_repair_order_ids": [
+      "BK-1006",
+      "BK-1009"
+    ],
+    "correction_plan": {
+      "schema_version": 1,
+      "operation": "repair_bakery_literal_fixture",
+      "scope": "simulated_control_tower",
+      "control_tower_requests": 0,
+      "accepted": false,
+      "read_only_plan": true,
+      "plan": {
+        "schema_version": 1,
+        "operation": "seed_bakery_fixture",
+        "scope": "simulated_control_tower",
+        "control_tower_requests": 0,
+        "fixture_version": "bakery-orders-v2",
+        "marker": "wt-eval-r01-1008-b53c",
+        "workspace_host": "https://dbc-e155652a-2cba.cloud.databricks.com",
+        "workspace_id": "7474655950495189",
+        "profile": "labs",
+        "terminal_app_id": "6bff7044-f479-43bc-834b-4cf40b5ed654",
+        "terminal_app_name": "wt-eval-r01-1008-b53c-wt",
+        "terminal_deployment_id": "01f1c2e7c80c1e8c89d3098ad707d5ce",
+        "principal": "6bff7044-f479-43bc-834b-4cf40b5ed654",
+        "attendee_email": "labuser+1@awsbricks.com",
+        "terminal_created_at_epoch": 1791441599.0,
+        "deployment_receipt_sha256": "c4efbe26aa7fcdaac94fc587412586df3e7f223a6db293b195974f5f59f67b1f",
+        "catalog": "wt_eval_r01_1008_b53c",
+        "schema": "generated_apps",
+        "table": "wt_eval_r01_1008_b53c.generated_apps.bakery_orders",
+        "epoch": "2026-10-08T07:01:20+00:00",
+        "expires_at_epoch": 1791448799.0,
+        "rows": [
+          {
+            "order_id": "BK-1001",
+            "customer_name": "Maya Patel",
+            "items": "Birthday cake",
+            "quantity": 1,
+            "order_total": "16.50",
+            "due_at": "2026-10-07T07:01:20+00:00",
+            "due_at_epoch": 1791356480,
+            "packed": false,
+            "created_at": "2026-10-01T07:01:20+00:00",
+            "created_at_epoch": 1790838080
+          },
+          {
+            "order_id": "BK-1002",
+            "customer_name": "Riverbend Community Centre",
+            "items": "Morning tea assortment for the volunteer thank-you gathering",
+            "quantity": 40,
+            "order_total": "192.00",
+            "due_at": "2026-10-11T07:01:20+00:00",
+            "due_at_epoch": 1791702080,
+            "packed": false,
+            "created_at": "2026-10-01T07:01:20+00:00",
+            "created_at_epoch": 1790838080
+          },
+          {
+            "order_id": "BK-1003",
+            "customer_name": "Noah Wilson",
+            "items": "Sourdough loaves",
+            "quantity": 6,
+            "order_total": "39.00",
+            "due_at": "2026-10-06T07:01:20+00:00",
+            "due_at_epoch": 1791270080,
+            "packed": true,
+            "created_at": "2026-10-01T07:01:20+00:00",
+            "created_at_epoch": 1790838080
+          },
+          {
+            "order_id": "BK-1004",
+            "customer_name": "Elena Garc\u00eda",
+            "items": "Croissant box",
+            "quantity": 12,
+            "order_total": "66.00",
+            "due_at": "2026-10-07T07:01:20+00:00",
+            "due_at_epoch": 1791356480,
+            "packed": false,
+            "created_at": "2026-10-01T07:01:20+00:00",
+            "created_at_epoch": 1790838080
+          },
+          {
+            "order_id": "BK-1005",
+            "customer_name": "Northside Primary School",
+            "items": "Mini muffins",
+            "quantity": 30,
+            "order_total": "147.00",
+            "due_at": "2026-10-06T07:01:20+00:00",
+            "due_at_epoch": 1791270080,
+            "packed": false,
+            "created_at": "2026-10-01T07:01:20+00:00",
+            "created_at_epoch": 1790838080
+          },
+          {
+            "order_id": "BK-1006",
+            "customer_name": "Sam O'Brien",
+            "items": "Chocolate celebration cake",
+            "quantity": 1,
+            "order_total": "16.50",
+            "due_at": "2026-10-05T07:01:20+00:00",
+            "due_at_epoch": 1791183680,
+            "packed": false,
+            "created_at": "2026-10-01T07:01:20+00:00",
+            "created_at_epoch": 1790838080
+          },
+          {
+            "order_id": "BK-1007",
+            "customer_name": "Harbour Dental",
+            "items": "Birthday cake",
+            "quantity": 1,
+            "order_total": "16.50",
+            "due_at": "2026-10-07T07:01:20+00:00",
+            "due_at_epoch": 1791356480,
+            "packed": false,
+            "created_at": "2026-10-01T07:01:20+00:00",
+            "created_at_epoch": 1790838080
+          },
+          {
+            "order_id": "BK-1008",
+            "customer_name": "Ava Chen",
+            "items": "Morning tea assortment for the volunteer thank-you gathering",
+            "quantity": 40,
+            "order_total": "192.00",
+            "due_at": "2026-10-14T07:01:20+00:00",
+            "due_at_epoch": 1791961280,
+            "packed": false,
+            "created_at": "2026-10-01T07:01:20+00:00",
+            "created_at_epoch": 1790838080
+          },
+          {
+            "order_id": "BK-1009",
+            "customer_name": "Lee's Corner Store",
+            "items": "Sourdough loaves",
+            "quantity": 6,
+            "order_total": "39.00",
+            "due_at": "2026-10-05T07:01:20+00:00",
+            "due_at_epoch": 1791183680,
+            "packed": false,
+            "created_at": "2026-10-01T07:01:20+00:00",
+            "created_at_epoch": 1790838080
+          },
+          {
+            "order_id": "BK-1010",
+            "customer_name": "Lakeside Football Club",
+            "items": "Croissant box",
+            "quantity": 12,
+            "order_total": "66.00",
+            "due_at": "2026-10-07T07:01:20+00:00",
+            "due_at_epoch": 1791356480,
+            "packed": false,
+            "created_at": "2026-10-01T07:01:20+00:00",
+            "created_at_epoch": 1790838080
+          },
+          {
+            "order_id": "BK-1011",
+            "customer_name": "Priya Shah",
+            "items": "Mini muffins",
+            "quantity": 30,
+            "order_total": "147.00",
+            "due_at": "2026-10-06T07:01:20+00:00",
+            "due_at_epoch": 1791270080,
+            "packed": false,
+            "created_at": "2026-10-01T07:01:20+00:00",
+            "created_at_epoch": 1790838080
+          },
+          {
+            "order_id": "BK-1012",
+            "customer_name": "Daniel Brooks",
+            "items": "Chocolate celebration cake",
+            "quantity": 1,
+            "order_total": "16.50",
+            "due_at": "2026-10-05T07:01:20+00:00",
+            "due_at_epoch": 1791183680,
+            "packed": false,
+            "created_at": "2026-10-01T07:01:20+00:00",
+            "created_at_epoch": 1790838080
+          },
+          {
+            "order_id": "BK-1013",
+            "customer_name": "Neighbourhood Garden Volunteers",
+            "items": "Birthday cake",
+            "quantity": 1,
+            "order_total": "16.50",
+            "due_at": "2026-10-07T07:01:20+00:00",
+            "due_at_epoch": 1791356480,
+            "packed": true,
+            "created_at": "2026-10-01T07:01:20+00:00",
+            "created_at_epoch": 1790838080
+          },
+          {
+            "order_id": "BK-1014",
+            "customer_name": "Sofia Rossi",
+            "items": "Morning tea assortment for the volunteer thank-you gathering",
+            "quantity": 40,
+            "order_total": "192.00",
+            "due_at": "2026-10-12T07:01:20+00:00",
+            "due_at_epoch": 1791788480,
+            "packed": false,
+            "created_at": "2026-10-01T07:01:20+00:00",
+            "created_at_epoch": 1790838080
+          },
+          {
+            "order_id": "BK-1015",
+            "customer_name": "Oliver Jones",
+            "items": "Sourdough loaves",
+            "quantity": 6,
+            "order_total": "39.00",
+            "due_at": "2026-10-05T07:01:20+00:00",
+            "due_at_epoch": 1791183680,
+            "packed": false,
+            "created_at": "2026-10-01T07:01:20+00:00",
+            "created_at_epoch": 1790838080
+          },
+          {
+            "order_id": "BK-1016",
+            "customer_name": "Mia Williams",
+            "items": "Croissant box",
+            "quantity": 12,
+            "order_total": "66.00",
+            "due_at": "2026-10-07T07:01:20+00:00",
+            "due_at_epoch": 1791356480,
+            "packed": false,
+            "created_at": "2026-10-01T07:01:20+00:00",
+            "created_at_epoch": 1790838080
+          },
+          {
+            "order_id": "BK-1017",
+            "customer_name": "Hillcrest Retirement Village",
+            "items": "Mini muffins",
+            "quantity": 30,
+            "order_total": "147.00",
+            "due_at": "2026-10-11T07:01:20+00:00",
+            "due_at_epoch": 1791702080,
+            "packed": false,
+            "created_at": "2026-10-01T07:01:20+00:00",
+            "created_at_epoch": 1790838080
+          },
+          {
+            "order_id": "BK-1018",
+            "customer_name": "Lucas Brown",
+            "items": "Chocolate celebration cake",
+            "quantity": 1,
+            "order_total": "16.50",
+            "due_at": "2026-10-05T07:01:20+00:00",
+            "due_at_epoch": 1791183680,
+            "packed": false,
+            "created_at": "2026-10-01T07:01:20+00:00",
+            "created_at_epoch": 1790838080
+          },
+          {
+            "order_id": "BK-1019",
+            "customer_name": "Amelia Davis",
+            "items": "Birthday cake",
+            "quantity": 1,
+            "order_total": "16.50",
+            "due_at": "2026-10-07T07:01:20+00:00",
+            "due_at_epoch": 1791356480,
+            "packed": true,
+            "created_at": "2026-10-01T07:01:20+00:00",
+            "created_at_epoch": 1790838080
+          },
+          {
+            "order_id": "BK-1020",
+            "customer_name": "Eastbank Book Club",
+            "items": "Morning tea assortment for the volunteer thank-you gathering",
+            "quantity": 40,
+            "order_total": "192.00",
+            "due_at": "2026-10-14T07:01:20+00:00",
+            "due_at_epoch": 1791961280,
+            "packed": false,
+            "created_at": "2026-10-01T07:01:20+00:00",
+            "created_at_epoch": 1790838080
+          }
+        ],
+        "rows_digest": "dcab80d520282e83625b8422f59d19a2d48fd96426b28506ac1b747569c5c7e7",
+        "statements": [
+          {
+            "name": "create_schema",
+            "statement": "CREATE SCHEMA `wt_eval_r01_1008_b53c`.`generated_apps` COMMENT 'Isolated synthetic workshop evaluation data'"
+          },
+          {
+            "name": "create_table",
+            "statement": "CREATE TABLE `wt_eval_r01_1008_b53c`.`generated_apps`.`bakery_orders` (order_id STRING NOT NULL, customer_name STRING NOT NULL, items STRING NOT NULL, quantity INT NOT NULL, order_total DECIMAL(10,2) NOT NULL, due_at TIMESTAMP NOT NULL, packed BOOLEAN NOT NULL, created_at TIMESTAMP NOT NULL) USING DELTA COMMENT 'Sample bakery orders for workshop evaluation'"
+          },
+          {
+            "name": "insert_orders",
+            "statement": "INSERT INTO `wt_eval_r01_1008_b53c`.`generated_apps`.`bakery_orders` VALUES (decode(unhex('424b2d31303031'), 'UTF-8'), decode(unhex('4d61796120506174656c'), 'UTF-8'), decode(unhex('42697274686461792063616b65'), 'UTF-8'), 1, 16.50, to_timestamp(decode(unhex('323032362d31302d30375430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303032'), 'UTF-8'), decode(unhex('526976657262656e6420436f6d6d756e6974792043656e747265'), 'UTF-8'), decode(unhex('4d6f726e696e6720746561206173736f72746d656e7420666f722074686520766f6c756e74656572207468616e6b2d796f7520676174686572696e67'), 'UTF-8'), 40, 192.00, to_timestamp(decode(unhex('323032362d31302d31315430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303033'), 'UTF-8'), decode(unhex('4e6f61682057696c736f6e'), 'UTF-8'), decode(unhex('536f7572646f756768206c6f61766573'), 'UTF-8'), 6, 39.00, to_timestamp(decode(unhex('323032362d31302d30365430373a30313a32302b30303a3030'), 'UTF-8')), true, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303034'), 'UTF-8'), decode(unhex('456c656e612047617263c3ad61'), 'UTF-8'), decode(unhex('43726f697373616e7420626f78'), 'UTF-8'), 12, 66.00, to_timestamp(decode(unhex('323032362d31302d30375430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303035'), 'UTF-8'), decode(unhex('4e6f72746873696465205072696d617279205363686f6f6c'), 'UTF-8'), decode(unhex('4d696e69206d756666696e73'), 'UTF-8'), 30, 147.00, to_timestamp(decode(unhex('323032362d31302d30365430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303036'), 'UTF-8'), decode(unhex('53616d204f27427269656e'), 'UTF-8'), decode(unhex('43686f636f6c6174652063656c6562726174696f6e2063616b65'), 'UTF-8'), 1, 16.50, to_timestamp(decode(unhex('323032362d31302d30355430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303037'), 'UTF-8'), decode(unhex('486172626f75722044656e74616c'), 'UTF-8'), decode(unhex('42697274686461792063616b65'), 'UTF-8'), 1, 16.50, to_timestamp(decode(unhex('323032362d31302d30375430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303038'), 'UTF-8'), decode(unhex('417661204368656e'), 'UTF-8'), decode(unhex('4d6f726e696e6720746561206173736f72746d656e7420666f722074686520766f6c756e74656572207468616e6b2d796f7520676174686572696e67'), 'UTF-8'), 40, 192.00, to_timestamp(decode(unhex('323032362d31302d31345430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303039'), 'UTF-8'), decode(unhex('4c6565277320436f726e65722053746f7265'), 'UTF-8'), decode(unhex('536f7572646f756768206c6f61766573'), 'UTF-8'), 6, 39.00, to_timestamp(decode(unhex('323032362d31302d30355430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303130'), 'UTF-8'), decode(unhex('4c616b657369646520466f6f7462616c6c20436c7562'), 'UTF-8'), decode(unhex('43726f697373616e7420626f78'), 'UTF-8'), 12, 66.00, to_timestamp(decode(unhex('323032362d31302d30375430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303131'), 'UTF-8'), decode(unhex('50726979612053686168'), 'UTF-8'), decode(unhex('4d696e69206d756666696e73'), 'UTF-8'), 30, 147.00, to_timestamp(decode(unhex('323032362d31302d30365430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303132'), 'UTF-8'), decode(unhex('44616e69656c2042726f6f6b73'), 'UTF-8'), decode(unhex('43686f636f6c6174652063656c6562726174696f6e2063616b65'), 'UTF-8'), 1, 16.50, to_timestamp(decode(unhex('323032362d31302d30355430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303133'), 'UTF-8'), decode(unhex('4e65696768626f7572686f6f642047617264656e20566f6c756e7465657273'), 'UTF-8'), decode(unhex('42697274686461792063616b65'), 'UTF-8'), 1, 16.50, to_timestamp(decode(unhex('323032362d31302d30375430373a30313a32302b30303a3030'), 'UTF-8')), true, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303134'), 'UTF-8'), decode(unhex('536f66696120526f737369'), 'UTF-8'), decode(unhex('4d6f726e696e6720746561206173736f72746d656e7420666f722074686520766f6c756e74656572207468616e6b2d796f7520676174686572696e67'), 'UTF-8'), 40, 192.00, to_timestamp(decode(unhex('323032362d31302d31325430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303135'), 'UTF-8'), decode(unhex('4f6c69766572204a6f6e6573'), 'UTF-8'), decode(unhex('536f7572646f756768206c6f61766573'), 'UTF-8'), 6, 39.00, to_timestamp(decode(unhex('323032362d31302d30355430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303136'), 'UTF-8'), decode(unhex('4d69612057696c6c69616d73'), 'UTF-8'), decode(unhex('43726f697373616e7420626f78'), 'UTF-8'), 12, 66.00, to_timestamp(decode(unhex('323032362d31302d30375430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303137'), 'UTF-8'), decode(unhex('48696c6c6372657374205265746972656d656e742056696c6c616765'), 'UTF-8'), decode(unhex('4d696e69206d756666696e73'), 'UTF-8'), 30, 147.00, to_timestamp(decode(unhex('323032362d31302d31315430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303138'), 'UTF-8'), decode(unhex('4c756361732042726f776e'), 'UTF-8'), decode(unhex('43686f636f6c6174652063656c6562726174696f6e2063616b65'), 'UTF-8'), 1, 16.50, to_timestamp(decode(unhex('323032362d31302d30355430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303139'), 'UTF-8'), decode(unhex('416d656c6961204461766973'), 'UTF-8'), decode(unhex('42697274686461792063616b65'), 'UTF-8'), 1, 16.50, to_timestamp(decode(unhex('323032362d31302d30375430373a30313a32302b30303a3030'), 'UTF-8')), true, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8'))),\n(decode(unhex('424b2d31303230'), 'UTF-8'), decode(unhex('4561737462616e6b20426f6f6b20436c7562'), 'UTF-8'), decode(unhex('4d6f726e696e6720746561206173736f72746d656e7420666f722074686520766f6c756e74656572207468616e6b2d796f7520676174686572696e67'), 'UTF-8'), 40, 192.00, to_timestamp(decode(unhex('323032362d31302d31345430373a30313a32302b30303a3030'), 'UTF-8')), false, to_timestamp(decode(unhex('323032362d31302d30315430373a30313a32302b30303a3030'), 'UTF-8')))"
+          },
+          {
+            "name": "grant_schema",
+            "statement": "GRANT USE SCHEMA ON SCHEMA `wt_eval_r01_1008_b53c`.`generated_apps` TO `6bff7044-f479-43bc-834b-4cf40b5ed654`"
+          },
+          {
+            "name": "grant_table",
+            "statement": "GRANT SELECT, MODIFY ON TABLE `wt_eval_r01_1008_b53c`.`generated_apps`.`bakery_orders` TO `6bff7044-f479-43bc-834b-4cf40b5ed654`"
+          }
+        ],
+        "provisioning_attribution": "external_setup_fixture_not_app_created",
+        "accepted": false,
+        "plan_digest": "93360e679c90d11674e8783d94d6056bc38f85d20cb9b5af788c17bad99fd257"
+      },
+      "original_failed_plan_digest": "08231a59af71d2a16ed9e2eecf514c71a2fb221af3003a5377db7c195c64f829",
+      "observed_before_digest": "7706cd124b105e5cbc68183d28afde0981d83cefb471b516b9642963c7917f9a",
+      "changes": [
+        {
+          "order_id": "BK-1006",
+          "field": "customer_name",
+          "before": "Sam OBrien",
+          "after": "Sam O'Brien"
+        },
+        {
+          "order_id": "BK-1009",
+          "field": "customer_name",
+          "before": "Lees Corner Store",
+          "after": "Lee's Corner Store"
+        }
+      ],
+      "statements": [
+        {
+          "name": "correct_customer_BK-1006",
+          "statement": "UPDATE `wt_eval_r01_1008_b53c`.`generated_apps`.`bakery_orders` SET customer_name = decode(unhex('53616d204f27427269656e'), 'UTF-8') WHERE order_id = decode(unhex('424b2d31303036'), 'UTF-8') AND customer_name = decode(unhex('53616d204f427269656e'), 'UTF-8')"
+        },
+        {
+          "name": "correct_customer_BK-1009",
+          "statement": "UPDATE `wt_eval_r01_1008_b53c`.`generated_apps`.`bakery_orders` SET customer_name = decode(unhex('4c6565277320436f726e65722053746f7265'), 'UTF-8') WHERE order_id = decode(unhex('424b2d31303039'), 'UTF-8') AND customer_name = decode(unhex('4c65657320436f726e65722053746f7265'), 'UTF-8')"
+        }
+      ],
+      "provisioning_attribution": "external_setup_literal_correction_not_builder_repair",
+      "required_proofs": [
+        "same_live_table_id_before_and_after",
+        "rebound_terminal_deployment",
+        "full_data_readback",
+        "scoped_grant_readback",
+        "preserved_original_failure_receipt"
+      ]
+    },
+    "provisioning_attribution": "external_setup_literal_correction_not_builder_repair",
+    "table_identity_before": {
+      "table_id": "a62d6102-d75e-4025-a3d4-cb3187229091",
+      "full_name": "wt_eval_r01_1008_b53c.generated_apps.bakery_orders",
+      "catalog_name": "wt_eval_r01_1008_b53c",
+      "schema_name": "generated_apps",
+      "owner": "labuser+1@awsbricks.com"
+    },
+    "observed_rows_before": [
+      {
+        "order_id": "BK-1001",
+        "customer_name": "Maya Patel",
+        "items": "Birthday cake",
+        "quantity": "1",
+        "order_total": "16.50",
+        "due_at_epoch": "1791356480",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1002",
+        "customer_name": "Riverbend Community Centre",
+        "items": "Morning tea assortment for the volunteer thank-you gathering",
+        "quantity": "40",
+        "order_total": "192.00",
+        "due_at_epoch": "1791702080",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1003",
+        "customer_name": "Noah Wilson",
+        "items": "Sourdough loaves",
+        "quantity": "6",
+        "order_total": "39.00",
+        "due_at_epoch": "1791270080",
+        "packed": "true",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1004",
+        "customer_name": "Elena Garc\u00eda",
+        "items": "Croissant box",
+        "quantity": "12",
+        "order_total": "66.00",
+        "due_at_epoch": "1791356480",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1005",
+        "customer_name": "Northside Primary School",
+        "items": "Mini muffins",
+        "quantity": "30",
+        "order_total": "147.00",
+        "due_at_epoch": "1791270080",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1006",
+        "customer_name": "Sam OBrien",
+        "items": "Chocolate celebration cake",
+        "quantity": "1",
+        "order_total": "16.50",
+        "due_at_epoch": "1791183680",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1007",
+        "customer_name": "Harbour Dental",
+        "items": "Birthday cake",
+        "quantity": "1",
+        "order_total": "16.50",
+        "due_at_epoch": "1791356480",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1008",
+        "customer_name": "Ava Chen",
+        "items": "Morning tea assortment for the volunteer thank-you gathering",
+        "quantity": "40",
+        "order_total": "192.00",
+        "due_at_epoch": "1791961280",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1009",
+        "customer_name": "Lees Corner Store",
+        "items": "Sourdough loaves",
+        "quantity": "6",
+        "order_total": "39.00",
+        "due_at_epoch": "1791183680",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1010",
+        "customer_name": "Lakeside Football Club",
+        "items": "Croissant box",
+        "quantity": "12",
+        "order_total": "66.00",
+        "due_at_epoch": "1791356480",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1011",
+        "customer_name": "Priya Shah",
+        "items": "Mini muffins",
+        "quantity": "30",
+        "order_total": "147.00",
+        "due_at_epoch": "1791270080",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1012",
+        "customer_name": "Daniel Brooks",
+        "items": "Chocolate celebration cake",
+        "quantity": "1",
+        "order_total": "16.50",
+        "due_at_epoch": "1791183680",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1013",
+        "customer_name": "Neighbourhood Garden Volunteers",
+        "items": "Birthday cake",
+        "quantity": "1",
+        "order_total": "16.50",
+        "due_at_epoch": "1791356480",
+        "packed": "true",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1014",
+        "customer_name": "Sofia Rossi",
+        "items": "Morning tea assortment for the volunteer thank-you gathering",
+        "quantity": "40",
+        "order_total": "192.00",
+        "due_at_epoch": "1791788480",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1015",
+        "customer_name": "Oliver Jones",
+        "items": "Sourdough loaves",
+        "quantity": "6",
+        "order_total": "39.00",
+        "due_at_epoch": "1791183680",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1016",
+        "customer_name": "Mia Williams",
+        "items": "Croissant box",
+        "quantity": "12",
+        "order_total": "66.00",
+        "due_at_epoch": "1791356480",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1017",
+        "customer_name": "Hillcrest Retirement Village",
+        "items": "Mini muffins",
+        "quantity": "30",
+        "order_total": "147.00",
+        "due_at_epoch": "1791702080",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1018",
+        "customer_name": "Lucas Brown",
+        "items": "Chocolate celebration cake",
+        "quantity": "1",
+        "order_total": "16.50",
+        "due_at_epoch": "1791183680",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1019",
+        "customer_name": "Amelia Davis",
+        "items": "Birthday cake",
+        "quantity": "1",
+        "order_total": "16.50",
+        "due_at_epoch": "1791356480",
+        "packed": "true",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1020",
+        "customer_name": "Eastbank Book Club",
+        "items": "Morning tea assortment for the volunteer thank-you gathering",
+        "quantity": "40",
+        "order_total": "192.00",
+        "due_at_epoch": "1791961280",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      }
+    ]
+  },
+  "terminal_verification": {
+    "verified": true,
+    "workspace_id": "7474655950495189",
+    "workspace_host": "https://dbc-e155652a-2cba.cloud.databricks.com",
+    "app_name": "wt-eval-r01-1008-b53c-wt",
+    "app_id": "6bff7044-f479-43bc-834b-4cf40b5ed654",
+    "app_url": "https://wt-eval-r01-1008-b53c-wt-7474655950495189.aws.databricksapps.com",
+    "service_principal_id": 70742253194359,
+    "operator_email": "al.thrussell+genai@databricks.com",
+    "attendee_mode": "synthetic_attendee",
+    "deployment_id": "01f1c2e7c80c1e8c89d3098ad707d5ce",
+    "deployment_state": "SUCCEEDED",
+    "runtime_snapshot": {
+      "snapshot_path": "/Workspace/Users/6bff7044-f479-43bc-834b-4cf40b5ed654/src/01f1c2e7c80c1e8c89d3098ad707d5ce",
+      "manifest_digest": "9a23981f1705dd0ad9e0544dceaadcb77be87f9f832c3bf9c01a8e9a46636e81",
+      "file_count": 419,
+      "bytes_verified": 5258226,
+      "all_file_hashes_verified": true
+    },
+    "instrumented_release": true,
+    "control_tower_requests": 0,
+    "obo_consent_verified": false,
+    "event_attendee_equivalence_verified": false
+  },
+  "seed_observation": {
+    "source": "live_sql_readback",
+    "statement_id": "01f1c2e8-7f86-13e2-8c14-1c68ae3989d8",
+    "rows": [
+      {
+        "order_id": "BK-1001",
+        "customer_name": "Maya Patel",
+        "items": "Birthday cake",
+        "quantity": "1",
+        "order_total": "16.50",
+        "due_at_epoch": "1791356480",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1002",
+        "customer_name": "Riverbend Community Centre",
+        "items": "Morning tea assortment for the volunteer thank-you gathering",
+        "quantity": "40",
+        "order_total": "192.00",
+        "due_at_epoch": "1791702080",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1003",
+        "customer_name": "Noah Wilson",
+        "items": "Sourdough loaves",
+        "quantity": "6",
+        "order_total": "39.00",
+        "due_at_epoch": "1791270080",
+        "packed": "true",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1004",
+        "customer_name": "Elena Garc\u00eda",
+        "items": "Croissant box",
+        "quantity": "12",
+        "order_total": "66.00",
+        "due_at_epoch": "1791356480",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1005",
+        "customer_name": "Northside Primary School",
+        "items": "Mini muffins",
+        "quantity": "30",
+        "order_total": "147.00",
+        "due_at_epoch": "1791270080",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1006",
+        "customer_name": "Sam O'Brien",
+        "items": "Chocolate celebration cake",
+        "quantity": "1",
+        "order_total": "16.50",
+        "due_at_epoch": "1791183680",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1007",
+        "customer_name": "Harbour Dental",
+        "items": "Birthday cake",
+        "quantity": "1",
+        "order_total": "16.50",
+        "due_at_epoch": "1791356480",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1008",
+        "customer_name": "Ava Chen",
+        "items": "Morning tea assortment for the volunteer thank-you gathering",
+        "quantity": "40",
+        "order_total": "192.00",
+        "due_at_epoch": "1791961280",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1009",
+        "customer_name": "Lee's Corner Store",
+        "items": "Sourdough loaves",
+        "quantity": "6",
+        "order_total": "39.00",
+        "due_at_epoch": "1791183680",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1010",
+        "customer_name": "Lakeside Football Club",
+        "items": "Croissant box",
+        "quantity": "12",
+        "order_total": "66.00",
+        "due_at_epoch": "1791356480",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1011",
+        "customer_name": "Priya Shah",
+        "items": "Mini muffins",
+        "quantity": "30",
+        "order_total": "147.00",
+        "due_at_epoch": "1791270080",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1012",
+        "customer_name": "Daniel Brooks",
+        "items": "Chocolate celebration cake",
+        "quantity": "1",
+        "order_total": "16.50",
+        "due_at_epoch": "1791183680",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1013",
+        "customer_name": "Neighbourhood Garden Volunteers",
+        "items": "Birthday cake",
+        "quantity": "1",
+        "order_total": "16.50",
+        "due_at_epoch": "1791356480",
+        "packed": "true",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1014",
+        "customer_name": "Sofia Rossi",
+        "items": "Morning tea assortment for the volunteer thank-you gathering",
+        "quantity": "40",
+        "order_total": "192.00",
+        "due_at_epoch": "1791788480",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1015",
+        "customer_name": "Oliver Jones",
+        "items": "Sourdough loaves",
+        "quantity": "6",
+        "order_total": "39.00",
+        "due_at_epoch": "1791183680",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1016",
+        "customer_name": "Mia Williams",
+        "items": "Croissant box",
+        "quantity": "12",
+        "order_total": "66.00",
+        "due_at_epoch": "1791356480",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1017",
+        "customer_name": "Hillcrest Retirement Village",
+        "items": "Mini muffins",
+        "quantity": "30",
+        "order_total": "147.00",
+        "due_at_epoch": "1791702080",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1018",
+        "customer_name": "Lucas Brown",
+        "items": "Chocolate celebration cake",
+        "quantity": "1",
+        "order_total": "16.50",
+        "due_at_epoch": "1791183680",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1019",
+        "customer_name": "Amelia Davis",
+        "items": "Birthday cake",
+        "quantity": "1",
+        "order_total": "16.50",
+        "due_at_epoch": "1791356480",
+        "packed": "true",
+        "created_at_epoch": "1790838080"
+      },
+      {
+        "order_id": "BK-1020",
+        "customer_name": "Eastbank Book Club",
+        "items": "Morning tea assortment for the volunteer thank-you gathering",
+        "quantity": "40",
+        "order_total": "192.00",
+        "due_at_epoch": "1791961280",
+        "packed": "false",
+        "created_at_epoch": "1790838080"
+      }
+    ]
+  },
+  "data_readback": {
+    "verified": true,
+    "row_count": 20,
+    "normalized_rows_digest": "bedc79284beff6991b276b99829b364ce40c73b5677bbe82ed3aa7de7c88e501",
+    "provisioning_attribution": "external_setup_fixture_not_app_created"
+  },
+  "grant_readback": {
+    "schema": {
+      "full_name": "wt_eval_r01_1008_b53c.generated_apps",
+      "principal": "6bff7044-f479-43bc-834b-4cf40b5ed654",
+      "required": [
+        "USE_SCHEMA"
+      ],
+      "observed": [
+        "USE_SCHEMA"
+      ]
+    },
+    "table": {
+      "full_name": "wt_eval_r01_1008_b53c.generated_apps.bakery_orders",
+      "principal": "6bff7044-f479-43bc-834b-4cf40b5ed654",
+      "required": [
+        "MODIFY",
+        "SELECT"
+      ],
+      "observed": [
+        "MODIFY",
+        "SELECT"
+      ]
+    }
+  },
+  "table_identity": {
+    "table_id": "a62d6102-d75e-4025-a3d4-cb3187229091",
+    "full_name": "wt_eval_r01_1008_b53c.generated_apps.bakery_orders",
+    "catalog_name": "wt_eval_r01_1008_b53c",
+    "schema_name": "generated_apps",
+    "owner": "labuser+1@awsbricks.com"
+  },
+  "seeded_at": "2026-10-08T07:18:50.979546+00:00",
+  "provisioning_attribution": "external_setup_fixture_not_app_created"
+}

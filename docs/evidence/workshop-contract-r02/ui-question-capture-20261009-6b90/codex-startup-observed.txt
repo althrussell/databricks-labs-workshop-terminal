@@ -1,0 +1,65 @@
+- banner:
+  - img "Databricks"
+  - generic: Databricks
+  - navigation:
+    - button "Home":
+      - text: Home
+    - button "Codex":
+      - text: Codex
+    - link "Databricks Docs":
+      - /url: https://docs.databricks.com
+      - text: Databricks Docs
+    - link "AI Docs":
+      - /url: https://naveenb83.github.io/ai-dev-day-brisbane/
+      - text: AI Docs
+    - link "Customer Academy":
+      - /url: https://customer-academy.databricks.com
+      - text: Customer Academy
+    - link "Workspace":
+      - /url: https://dbc-e155652a-2cba.cloud.databricks.com
+      - text: Workspace
+    - button "Certificate":
+      - text: Certificate
+    - button "Raise hand":
+      - text: Raise hand
+    - button "Help":
+      - text: Help
+    - link "Get Free Edition":
+      - /url: https://www.databricks.com/learn/free-edition
+      - text: Get Free Edition
+  - generic: labuser+1@awsbricks.com
+- region "Notifications"
+- button "Claude Code":
+  - generic: Claude Code
+- button "Codex":
+  - generic: Codex
+- generic: Codex is running
+- button "Close Codex":
+- generic: 👋 Your coach is ready — tell it what you'd like to build.
+- button "Not sure? Start me off"
+- button:
+- textbox "Terminal input" [active]
+- generic: Installing daemon from CLI version 0.157.1 into /app/python/source_cod
+- generic: e/data/wt-eval-qcap-1009-6b90/users/labuser-1-e2e66dc8/.codex/packages
+- generic: /app-server-daemon...
+- complementary:
+  - generic: Databricks insights
+  - generic: intro
+  - button "Collapse":
+  - article:
+    - heading "Welcome to the workshop" [level=3]
+    - paragraph:
+      - text: You're about to build on Databricks with an AI coding agent at your side. Click
+      - strong: Claude Code
+      - text: or
+      - strong: Codex
+      - text: above to launch a terminal — your credentials are wired up automatically, nothing to paste.
+  - article:
+    - heading "What makes an agent different from chat?" [level=3]
+    - paragraph:
+      - text: "A coding agent doesn't just suggest code — it runs commands, reads files, fixes its own mistakes, and iterates until the job is done. Treat it like a fast pair programmer: describe the"
+      - emphasis: outcome
+      - text: you want, not the steps.
+    - link "Agent systems on Databricks":
+      - /url: https://www.databricks.com/blog/ai-agent-systems
+      - text: Agent systems on Databricks

@@ -182,15 +182,13 @@ def test_both_harnesses_are_told_who_they_are_working_with(
         text = f.read()
 
     assert "Who you are working with" in text
-    assert "never ask them whether they are technical or business" in text
+    assert "speaking preference, not an assessment of expertise" in text
 
 
-def test_the_instructions_forbid_reading_it_from_a_file(client, monkeypatch):
-    """A file read is a tool call, and on the first turn that call is the
-    difference between an agent that starts building and one doing admin."""
+def test_the_instructions_adapt_help_without_an_extra_questionnaire(client, monkeypatch):
     home = _provisioned_home(client, monkeypatch)
 
-    assert "never read it from a file" in _instructions(home)
+    assert "do not add an experience questionnaire" in _instructions(home)
 
 
 def test_the_coach_no_longer_runs_a_persona_question(client, monkeypatch):
@@ -200,7 +198,7 @@ def test_the_coach_no_longer_runs_a_persona_question(client, monkeypatch):
     assert "~/.workshop/persona" not in coach
     assert "AskUserQuestion" not in coach
     assert "Check for a saved persona" not in coach
-    assert "Never ask them which they are" in coach
+    assert "shared workshop interaction and quality contract" in coach
 
 
 def test_the_coach_still_adapts_its_language_to_the_persona():
@@ -231,15 +229,17 @@ def test_the_attendee_is_no_longer_told_to_say_hi():
     assert "Say hi to begin" not in pack
 
 
-def test_the_hint_offers_a_real_build_instead():
-    """An attendee facing an empty prompt needs a way through that is not a
-    greeting. The starter has to be a concrete build request, because that is
-    what triggers the coach's build-immediately path."""
+def test_the_hint_offers_a_short_idea_choice_before_building():
+    """Uncertainty gets one useful choice, consistent with the R02 contract."""
     app = (ROOT / "frontend" / "src" / "App.tsx").read_text(encoding="utf-8")
 
     assert "STARTER_PROMPT" in app
-    assert "Build me something real" in app
-    assert "tell it what you'd like to build" in app.lower()
+    assert "Suggest two small Databricks demo ideas" in app
+    assert "Recommend one" in app
+    assert "Wait for my choice before building" in app
+    assert "pick a good example for a Databricks workshop and just go" not in app
+    assert "When the prompt appears" in app
+    assert "Your coach is ready" not in app
 
 
 def test_the_ui_asks_before_the_session_starts():

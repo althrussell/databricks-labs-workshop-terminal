@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "operation": "stop_exact_stalled_observer_test",
+  "scope": "simulated_control_tower",
+  "control_tower_mutations": 0,
+  "session_id": "b809e2a2-2e07-4361-b8f1-87cca8dd89c9",
+  "observed_at": "2026-10-09T03:35:29.420133+00:00",
+  "reason": "Visible native question is absent from bounded native message projection; no simulator answer or technical rescue was sent",
+  "question_diagnostic": "terminal-progress-5.txt",
+  "native_metadata": "journey-3-native-progress-2.json",
+  "status": "exact_session_stopped",
+  "http_status": 200
+}

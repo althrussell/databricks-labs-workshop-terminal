@@ -146,7 +146,7 @@ def test_project_memory_keeps_the_build_mandate_alongside_discovery(client, monk
     home = _provisioned_home(client, monkeypatch)
     text = open(os.path.join(home, PROJECT_MEMORY)).read()
     assert "<!-- workshop-project-memory -->" in text, "the init helper keys off this"
-    assert "The ship gate" in text
+    assert "Deployment — typecheck, deploy, share the preview" in text
     assert text.count("<!-- workshop-discovery -->") == 1
 
 

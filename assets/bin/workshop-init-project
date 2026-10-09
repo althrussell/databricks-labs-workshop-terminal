@@ -87,7 +87,9 @@ if [ "$APPKIT" = "1" ] && [ ! -e "$DEST" ]; then
   # already, and installing a second copy on top would be duplication, not a
   # fix. A warning that fires when its own premise is false teaches everyone
   # reading it — attendee and agent alike — to skim past warnings, so drop
-  # those two lines and leave every other line of scaffold output intact.
+  # those two lines and leave every other line of scaffold output intact on
+  # stderr. stdout is exclusively the final project path: callers use it in
+  # command substitution, including `cd "$(workshop-init-project ... --appkit)"`.
   #
   # PIPESTATUS, not the pipeline status: grep exits non-zero when it filters
   # everything out, and that must not read as a failed scaffold. `set +e` around
@@ -99,7 +101,7 @@ if [ "$APPKIT" = "1" ] && [ ! -e "$DEST" ]; then
     "${PASSTHRU[@]+"${PASSTHRU[@]}"}" 2>&1 \
     | grep -vF \
         -e "Databricks skills are not installed" \
-        -e "coding agents detected without Databricks skills"
+        -e "coding agents detected without Databricks skills" >&2
   SCAFFOLD_STATUS=${PIPESTATUS[0]}
   set -e
 
@@ -148,10 +150,9 @@ if [ -f "$TEMPLATE" ]; then
   git add AGENTS.md CLAUDE.md
 fi
 
-# A README, always. The agent is told to keep it current (one line on what the
-# app is for, plus the live URL), and it is the attendee's take-home reminder of
-# what they built once the workspace is torn down. If a scaffold already wrote
-# one, its content stays and the two prompts are appended.
+# A README, always: purpose and live URL here, followed by the continuity brief
+# below. It is the attendee's take-home reminder once the workspace is torn down.
+# Preserve scaffold and attendee content; append the missing prompts and brief.
 if [ ! -f README.md ]; then
   cat > README.md <<EOF
 # ${NAME}
@@ -166,6 +167,23 @@ elif ! grep -q "_Live URL:_" README.md 2>/dev/null; then
 _What this is for:_ (one line — the agent fills this in as soon as it knows)
 
 _Live URL:_ (added once the app is deployed)
+EOF
+fi
+
+# A compact continuity note, filled by the agent from the conversation. Keep
+# existing attendee content and never replace a brief on helper reruns.
+if ! grep -q '<!-- workshop-brief:v1 -->' README.md; then
+  cat >> README.md <<'EOF'
+
+<!-- workshop-brief:v1 -->
+## Workshop brief
+
+- Original request: (fill from the attendee's words)
+- First version and primary action: (fill as the task becomes known)
+- Stated facts: (reuse what the attendee supplied)
+- Demo assumptions: (label sample data, integration and storage defaults)
+- Checks: (observed results and anything still unverified)
+<!-- /workshop-brief -->
 EOF
 fi
 

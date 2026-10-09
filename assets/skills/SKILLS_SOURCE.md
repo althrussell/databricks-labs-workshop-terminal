@@ -31,6 +31,12 @@ the one boot installs.
 - `promote` — handoff document generation, on explicit request only
 - `refresh-databricks-skills` — the refresh skill itself
 
+The shared workshop interaction policy lives separately in
+`assets/instructions/workshop_contract.md`. Home and project instructions inline
+that single source; the fork-only design studio follows it. Refresh replaces
+only upstream skill directories, preserving this policy and the studio via
+`FORK_ONLY`. Platform/API content remains verbatim upstream.
+
 ## Removed on purpose
 
 The development-workflow set (`using-superpowers`, `brainstorming`,

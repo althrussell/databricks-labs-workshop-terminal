@@ -6,6 +6,8 @@ import subprocess
 import time
 import uuid
 
+import pytest
+
 from .conftest import ALICE
 
 # Canonical AppKit mandate sentence — must appear verbatim in every memory
@@ -110,20 +112,20 @@ _MEMORY_CHANNELS = (
 )
 
 
-def test_mandate_ships_on_a_live_url_not_a_browser_suite(client, monkeypatch):
-    """The ship gate is typecheck, deploy, open the URL.
+def test_memory_distinguishes_preview_from_verified_task(client, monkeypatch):
+    """Every agent receives practical checks and truthful completion language.
 
-    It used to be `databricks apps validate`, which runs Playwright and pulls
-    Chromium onto a cold workshop box. For a standalone game with no data that
-    is minutes of download and a smoke test to rewrite, all before the attendee
-    can see anything — so the gate now stops at the cheap check that actually
-    prevents a failed deploy.
+    This checks instruction delivery, not whether an LLM follows the policy.
+    Behavior probes and generated-app E2E provide separate evidence.
     """
     home = _provisioned_home(client, monkeypatch)
     for parts in _MEMORY_CHANNELS:
         text = open(os.path.join(home, *parts)).read()
         assert "tsc --noEmit" in text
-        assert "the URL loads" in text or "open the URL" in text
+        assert "first preview" in text
+        assert "exercise the primary action" in text
+        assert "reload if saving is promised" in text
+        assert "what remains unverified" in text
 
 
 def test_no_memory_channel_puts_playwright_on_the_critical_path(client, monkeypatch):
@@ -134,7 +136,7 @@ def test_no_memory_channel_puts_playwright_on_the_critical_path(client, monkeypa
     home = _provisioned_home(client, monkeypatch)
     for parts in _MEMORY_CHANNELS:
         text = open(os.path.join(home, *parts)).read()
-        assert "Do not" in text and "databricks apps validate" in text, (
+        assert "Do not install Playwright browsers" in text and "databricks apps validate" in text, (
             "the override has to name the command it is overriding"
         )
         assert "workshop-design-gate" not in text
@@ -371,7 +373,8 @@ def test_a_failed_appkit_scaffold_still_leaves_a_usable_project(
     project = fake_home / "projects" / "unlucky"
     assert (project / "CLAUDE.md").is_file()
     assert APPKIT_MANDATE in (project / "CLAUDE.md").read_text()
-    assert out.stdout.strip().endswith("projects/unlucky")
+    assert out.stdout == str(project) + "\n"
+    assert "boom" in out.stderr
 
 
 def test_the_appkit_flag_scaffolds_into_the_project_root(
@@ -413,6 +416,37 @@ def test_the_appkit_flag_scaffolds_into_the_project_root(
         "the parent, so the scaffold lands at projects/<name> and never nests"
     )
     assert "--features" in argv and "analytics" in argv, "flags pass through"
+
+
+@pytest.mark.parametrize("warnings_only", [False, True])
+def test_noisy_scaffold_supports_the_documented_cd_command(
+    client, monkeypatch, tmp_path, warnings_only,
+):
+    home = _provisioned_home(client, monkeypatch)
+    helper = os.path.join(home, ".local", "bin", "workshop-init-project")
+    fake_home, env = _attendee_env(home, tmp_path)
+    shim = tmp_path / "shim"
+    shim.mkdir()
+    progress = "" if warnings_only else "echo 'Cloning template'\necho 'Installing dependencies' >&2\n"
+    (shim / "databricks").write_text(
+        "#!/bin/sh\n" + progress +
+        "echo 'Databricks skills are not installed'\n"
+        "echo 'coding agents detected without Databricks skills' >&2\n"
+        "exit 0\n"
+    )
+    (shim / "databricks").chmod(0o755)
+    env = {**env, "PATH": f"{shim}:{env['PATH']}", "WORKSHOP_TEST_HELPER": helper}
+    out = subprocess.run(
+        ["bash", "-c", 'cd "$(bash "$WORKSHOP_TEST_HELPER" bakery-orders --appkit)" && pwd'],
+        env=env, capture_output=True, text=True, timeout=60,
+    )
+    assert out.returncode == 0, out.stderr
+    assert out.stdout == str(fake_home / "projects/bakery-orders") + "\n"
+    assert "Databricks skills are not installed" not in out.stderr
+    assert "coding agents detected without Databricks skills" not in out.stderr
+    if not warnings_only:
+        assert "Cloning template" in out.stderr
+        assert "Installing dependencies" in out.stderr
 
 
 def test_the_readme_survives_a_missing_git_identity(client, monkeypatch, tmp_path):

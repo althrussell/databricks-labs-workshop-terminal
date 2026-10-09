@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "scope": "simulated_control_tower",
+  "control_tower_requests": 0,
+  "deployment_receipt_sha256": "2fba8ed6dfbbc86a04f3fe4673790aa3318bcaa679e977acc9788fe6366d19a5",
+  "operations": [
+    {
+      "kind": "shared_privilege_delta",
+      "identity": "system.ai",
+      "state": "verified"
+    },
+    {
+      "kind": "shared_privilege_delta",
+      "identity": "system.ai.claude-sonnet-5",
+      "state": "verified"
+    },
+    {
+      "kind": "shared_privilege_delta",
+      "identity": "system.ai.claude-haiku-4-5",
+      "state": "verified"
+    },
+    {
+      "kind": "shared_privilege_delta",
+      "identity": "system.ai.gpt-5-6-terra",
+      "state": "verified"
+    },
+    {
+      "kind": "shared_privilege_delta",
+      "identity": "system.ai.gpt-oss-120b",
+      "state": "verified"
+    },
+    {
+      "kind": "shared_acl_delta",
+      "identity": "72db7ec713837d92",
+      "state": "verified"
+    },
+    {
+      "kind": "shared_acl_delta",
+      "identity": "1462869392157865",
+      "state": "verified"
+    },
+    {
+      "kind": "app",
+      "identity": "245e0b42-da94-4a24-b7f3-0f213bc721cb",
+      "state": "verified"
+    },
+    {
+      "kind": "workspace_source",
+      "identity": "3605309324094535",
+      "state": "verified"
+    },
+    {
+      "kind": "catalog",
+      "identity": "wt_eval_r01_1009_68bd",
+      "state": "verified"
+    },
+    {
+      "kind": "group",
+      "identity": "2120673294523943",
+      "state": "verified"
+    }
+  ],
+  "status": "cleanup_verified",
+  "accepted": false
+}

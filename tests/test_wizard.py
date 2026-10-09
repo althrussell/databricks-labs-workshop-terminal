@@ -413,20 +413,24 @@ def test_an_industry_no_notebook_has_ever_heard_of_is_still_ignored(
 
 # -- starter prompt ---------------------------------------------------------
 
-def test_a_chosen_card_supplies_its_own_prompt(user):
+def test_a_chosen_card_preserves_its_prompt_with_shared_framing(user):
     """The card's prompt was written to produce a good first build; the sentence
     was written to describe an ambition."""
     idea = next(i for i in content.content_service.ideas() if i.demo_tables)
     brief = wizard.save(user, {"idea_id": idea.id, "what_building": idea.outcome})
-    assert wizard.starter_prompt(brief) == idea.prompt
+    prompt = wizard.starter_prompt(brief)
+    assert prompt.startswith(idea.prompt + "\n\n")
+    assert "follow the workshop interaction contract" in prompt
+    assert "Start building this with me now" not in prompt
 
 
-def test_a_typed_sentence_is_framed_so_the_agent_starts_building(user):
+def test_a_typed_sentence_uses_the_same_workshop_framing(user):
     brief = wizard.save(user, {"what_building": "A warranty dashboard"})
     prompt = wizard.starter_prompt(brief)
 
     assert prompt.startswith("A warranty dashboard")
-    assert "Start building this with me now" in prompt
+    assert "follow the workshop interaction contract" in prompt
+    assert "at most one question" not in prompt
 
 
 def test_skipping_produces_no_starter_prompt(user):
@@ -462,21 +466,23 @@ def test_a_dismissal_over_http_keeps_the_saved_brief(client):
 
 
 def test_the_wizard_endpoint_round_trips(client):
-    from tests.conftest import ALICE
+    # User homes are session-scoped; another policy test may have saved Alice's
+    # brief. This round trip needs an attendee who has not completed the wizard.
+    who = {"X-Forwarded-Email": "wizard-round-trip@example.com"}
 
-    initial = client.get("/api/wizard", headers=ALICE).json()
+    initial = client.get("/api/wizard", headers=who).json()
     assert initial["should_show"] is True
     assert len(initial["ideas"]) == wizard.IDEA_COUNT
 
     saved = client.post(
         "/api/wizard",
-        headers=ALICE,
+        headers=who,
         json={"what_building": "A warranty dashboard", "industry": "automotive_mobility"},
     ).json()
     assert saved["brief"]["record_id"]
     assert saved["starter_prompt"]
 
-    assert client.get("/api/wizard", headers=ALICE).json()["should_show"] is False
+    assert client.get("/api/wizard", headers=who).json()["should_show"] is False
 
 
 # -- the operator's switch --------------------------------------------------
@@ -888,6 +894,31 @@ def test_a_refused_schema_listing_costs_labels_not_the_inventory(monkeypatch):
     client = types.SimpleNamespace(schemas=types.SimpleNamespace(list=boom))
 
     assert demo_data._load_labels(client, "workshop_demo") == {}
+
+
+def test_live_demo_inventory_does_not_use_a_shell_glob(monkeypatch, user):
+    """The real API treats '*' literally; cached fixtures hid this failure."""
+    monkeypatch.setenv("WORKSHOP_DEMO_CATALOG", "workshop_demo")
+    demo_data.reset_cache()
+    calls = []
+    def summaries(**kwargs):
+        calls.append(kwargs)
+        if kwargs.get("schema_name_pattern") == "*":
+            return []
+        return [types.SimpleNamespace(full_name="workshop_demo.retail.orders"),
+                types.SimpleNamespace(full_name="workshop_demo._meta.seed_manifest")]
+    sdk = types.SimpleNamespace(
+        tables=types.SimpleNamespace(list_summaries=summaries),
+        schemas=types.SimpleNamespace(list=lambda **_: []),
+    )
+    monkeypatch.setattr(demo_data.credentials, "workspace_client", lambda: sdk)
+    try:
+        assert demo_data.inventory(refresh=True) == {"retail": {"orders"}}
+        assert calls == [{"catalog_name": "workshop_demo"}]
+        assert "workshop_demo" in user_content._demo_data_overlay(user)
+        assert "orders" in user_content._demo_data_overlay(user)
+    finally:
+        demo_data.reset_cache()
 
 
 def test_a_schema_with_no_label_property_falls_back_rather_than_blanking(monkeypatch):

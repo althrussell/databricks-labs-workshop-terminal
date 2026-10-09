@@ -1,0 +1,24 @@
+                                                                                                                                          
+  Called workshop (ctrl+o to expand)                                                                                                      
+                                                                                                                                          
+● A first deploy spins up fresh app compute, so this can take a few minutes — I'll let it run and check in once it's done.                
+                                                                                                                                          
+● Bash(sleep 2; echo waiting)                                                                                                             
+  ⎿  waiting                                                                                                                              
+                                                                                                                                          
+● I'll let the deploy finish in the background and update you as soon as it's live.                                                       
+                                                                                                                                          
+● That was the wrong tool for this — I'll just wait for the deployment task's own completion notification instead.                        
+                                                                                                                                          
+✻ Worked for 8m 59s · done 3:04 AM                                                                                                        
+                                                                                                                                          
+● MCP task kxpugrgr (workshop/deploy_databricks_app) failed.                                                                              
+                                                                                                                                          
+✢ Beaming…                                                                                                                                
+  ⎿  Tip: Use Plan Mode to prepare for a complex request before making changes. Press shift+tab twice to enable.                          
+                                                                                                                                          
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯                                                                                                                                         
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt · ← for agents                                  1% until auto-compact  
+                                                                                                                                          

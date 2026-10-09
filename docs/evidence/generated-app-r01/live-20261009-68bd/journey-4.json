@@ -1,0 +1,579 @@
+{
+  "schema_version": 1,
+  "scope": "simulated_control_tower",
+  "control_tower_requests": 0,
+  "accepted": false,
+  "verdict": "unverified",
+  "status": "journey_finished",
+  "mode": "build",
+  "entry_path": "skip_wizard",
+  "agent_id": "claude",
+  "startup_qualification_requested": true,
+  "unverified_checks": [
+    "event_attendee_equivalence",
+    "obo_consent",
+    "token_and_spend_enforcement",
+    "tool_and_worker_attribution",
+    "implementation_timing",
+    "native_transcript_authenticity",
+    "critical_user_task",
+    "backend_persistence",
+    "app_restart_persistence",
+    "first_and_final_ux"
+  ],
+  "limitations": [
+    "A consultation probe or deployed-app observation does not establish full app acceptance."
+  ],
+  "model_qualification": {
+    "receipt_sha256": "b0348c899bd027b43aaf892bdf555e84a86b775b33abe0461046a88215c280eb",
+    "all_roles_invoked": true,
+    "application_id": "245e0b42-da94-4a24-b7f3-0f213bc721cb"
+  },
+  "target": {
+    "marker": "wt-eval-r01-1009-68bd",
+    "workspace_host": "https://dbc-e155652a-2cba.cloud.databricks.com",
+    "workspace_id": "7474655950495189",
+    "deployment_id": "01f1c3721e7b17489bd1d61cbde63a92",
+    "source_path": "/Workspace/Shared/wt-eval-r01-1009-68bd/workshop-terminal",
+    "attendee": {
+      "email": "labuser+1@awsbricks.com",
+      "mode": "synthetic_attendee",
+      "persona": "synthetic_nontechnical",
+      "identity_verified": false,
+      "event_attendee_equivalence_verified": false
+    },
+    "app_id": "245e0b42-da94-4a24-b7f3-0f213bc721cb",
+    "app_name": "wt-eval-r01-1009-68bd-wt",
+    "app_url": "https://wt-eval-r01-1009-68bd-wt-7474655950495189.aws.databricksapps.com"
+  },
+  "declared_budget": {
+    "total_seconds": 1800,
+    "consultation_seconds": 180,
+    "token_ceiling": 100000,
+    "spend_ceiling_usd": 5
+  },
+  "deployment_verification": {
+    "verified": true,
+    "workspace_id": "7474655950495189",
+    "workspace_host": "https://dbc-e155652a-2cba.cloud.databricks.com",
+    "app_name": "wt-eval-r01-1009-68bd-wt",
+    "app_id": "245e0b42-da94-4a24-b7f3-0f213bc721cb",
+    "app_url": "https://wt-eval-r01-1009-68bd-wt-7474655950495189.aws.databricksapps.com",
+    "service_principal_id": 78655089022656,
+    "operator_email": "al.thrussell+genai@databricks.com",
+    "attendee_mode": "synthetic_attendee",
+    "deployment_id": "01f1c3721e7b17489bd1d61cbde63a92",
+    "deployment_state": "SUCCEEDED",
+    "runtime_snapshot": {
+      "snapshot_path": "/Workspace/Users/245e0b42-da94-4a24-b7f3-0f213bc721cb/src/01f1c3721e7b17489bd1d61cbde63a92",
+      "manifest_digest": "9930d392159701d5c4acbefb2a2feafc507340209d4ac0b1dbc8d6b10e444e0b",
+      "file_count": 6,
+      "bytes_verified": 41650,
+      "all_file_hashes_verified": true
+    },
+    "instrumented_release": true,
+    "control_tower_requests": 0,
+    "obo_consent_verified": false,
+    "event_attendee_equivalence_verified": false
+  },
+  "effective_budget": {
+    "total_seconds": 1800,
+    "consultation_seconds": 180,
+    "token_ceiling": 100000,
+    "spend_ceiling_usd": 5,
+    "token_and_spend_enforcement_verified": false
+  },
+  "journey": {
+    "mode": "build",
+    "status": "failed",
+    "stop_reason": "no_material_consultation_within_budget",
+    "entry": {
+      "identity": "labuser+1@awsbricks.com",
+      "entry_path": "skip_wizard",
+      "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+      "agent_id": "claude",
+      "wizard_enabled": true,
+      "wizard_should_show": false,
+      "saved_brief": {},
+      "starter_prompt_from_save": "",
+      "prompt_delivery_request": "",
+      "prompt_delivery_http_status": null,
+      "friction": [
+        "owned_folder_trust_requires_confirmation",
+        "evaluator_confirmed_owned_folder_trust"
+      ],
+      "opening_submitted": true,
+      "harness_readiness_verified": true,
+      "prompt_preservation_verified": false,
+      "error_code": "",
+      "error_detail": ""
+    },
+    "native_session_id": "",
+    "harness_id": "claude",
+    "harness_version": "2.1.283",
+    "messages": [],
+    "deliveries": [
+      {
+        "text": "I run a small bakery. Can you make a page so I know which orders need attention?",
+        "decision": "opening",
+        "in_reply_to": null,
+        "fact_ids": [],
+        "ui_submitted": true,
+        "native_correlated": false,
+        "submitted_elapsed_seconds": 3.4636567079869565
+      }
+    ],
+    "simulator": {
+      "schema_version": 1,
+      "scenario_id": "novice-bakery-order-queue-v1",
+      "scenario_sha256": "7eeb44e2c4ec6b9fef7c622198741fdb5ed350b0d3367ef5f7614efc8efa9b13",
+      "policy": "deterministic-bakery-v1",
+      "scope_agreed": false,
+      "reply_count": 1,
+      "stop_reason": "consultation_deadline",
+      "events": [
+        {
+          "sequence": 1,
+          "elapsed_seconds": 7e-06,
+          "builder_message_id": null,
+          "builder_message_sha256": null,
+          "decision": "opening",
+          "reply_text": "I run a small bakery. Can you make a page so I know which orders need attention?",
+          "fact_ids": [],
+          "provenance": "public_opening",
+          "agreement": false,
+          "reason": null
+        }
+      ]
+    },
+    "first_complete_assistant": null,
+    "material_consultation_observed": false,
+    "scope_agreement_delivered": false,
+    "consultation_deadline_enforced": true,
+    "consultation_status": "unverified",
+    "consultation_stop_reason": "no_material_consultation_within_budget",
+    "consultation_closed_elapsed_seconds": 180.0008092079952,
+    "no_question_before_scope_agreement_observed": false,
+    "total_deadline_enforced": false,
+    "polls": 77,
+    "elapsed_seconds": 181.48692574999586,
+    "budget_start": "before_normal_ui_entry",
+    "cleanup": {
+      "status": "closed_owned_ui_session",
+      "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56"
+    },
+    "app_observations": [
+      {
+        "status": "awaiting",
+        "app_url": "",
+        "artifacts": [],
+        "source": "live workspace app inventory difference",
+        "observed_elapsed_seconds": 4.032217540996498
+      }
+    ],
+    "full_app_acceptance_verified": false,
+    "accepted": false,
+    "unverified_checks": [
+      "tool_and_worker_attribution",
+      "implementation_timing",
+      "native_transcript_authenticity",
+      "full_app_acceptance"
+    ]
+  },
+  "startup_qualification": {
+    "enabled": true,
+    "source": "attendee_browser_existing_pty_startup_screen",
+    "status": "qualified",
+    "expected_cwd": "/app/python/source_code/data/wt-eval-r01-1009-68bd/users/labuser-1-e2e66dc8/projects",
+    "actions": [
+      {
+        "kind": "select_owned_folder_trust",
+        "key": "ArrowDown",
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "cwd": "/app/python/source_code/data/wt-eval-r01-1009-68bd/users/labuser-1-e2e66dc8/projects"
+      },
+      {
+        "kind": "selected_owned_folder_trust",
+        "key": "Enter",
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "cwd": "/app/python/source_code/data/wt-eval-r01-1009-68bd/users/labuser-1-e2e66dc8/projects"
+      }
+    ],
+    "captures": [
+      {
+        "label": "owned-folder-trust-default-no",
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "screenshot": "/private/tmp/wt-r01-bakery-journey4-68bd.json.startup-browser/1-owned-folder-trust-default-no.png",
+        "screen_text": "/private/tmp/wt-r01-bakery-journey4-68bd.json.startup-browser/1-owned-folder-trust-default-no.txt",
+        "screenshot_sha256": "b684eaafd34e2eb8a624c3ae0b768319ca28eefc5450d2cc8b46eb97ac9e0f87",
+        "screen_text_sha256": "cb43db5e35a8cab4d859b79c3b42189eda8c8bc8bff879f1cdb099250dfa625a"
+      },
+      {
+        "label": "owned-folder-trust",
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "screenshot": "/private/tmp/wt-r01-bakery-journey4-68bd.json.startup-browser/2-owned-folder-trust.png",
+        "screen_text": "/private/tmp/wt-r01-bakery-journey4-68bd.json.startup-browser/2-owned-folder-trust.txt",
+        "screenshot_sha256": "5b118588c314e240af81d69c9e23147b91b0a073a9c45a3eade1c4bbb14f2bc3",
+        "screen_text_sha256": "2a60d857f061f6e6d4ec2c0e79ac03387494c642782fd8403948d338308ae009"
+      },
+      {
+        "label": "native-prompt",
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "screenshot": "/private/tmp/wt-r01-bakery-journey4-68bd.json.startup-browser/3-native-prompt.png",
+        "screen_text": "/private/tmp/wt-r01-bakery-journey4-68bd.json.startup-browser/3-native-prompt.txt",
+        "screenshot_sha256": "a3c594a2f4dc0f22aee1b96148b7741191b86bac9aae33896cda76deac9d478e",
+        "screen_text_sha256": "85e7ed0993f25ac6b9123e2ddfd67d971047b455cb3ffcc6cbcebe70b78f6146"
+      }
+    ],
+    "native_prompt_verified": true,
+    "user_scope_consent_inferred": false,
+    "assistant_turns_inferred": false,
+    "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+    "owned_folder_trust_confirmed": true
+  },
+  "terminal_browser": {
+    "status": "captured",
+    "source": "identified_attendee_terminal_browser",
+    "artifacts": {
+      "screenshot": "/private/tmp/wt-r01-bakery-journey4-68bd.json.wt-browser/final-wt.png",
+      "accessibility_snapshot": "/private/tmp/wt-r01-bakery-journey4-68bd.json.wt-browser/final-wt.aria.txt"
+    }
+  },
+  "operator_observation": {
+    "separate_from_attendee_browser": true,
+    "requests": [
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      },
+      {
+        "session_id": "2796a79c-35fd-452f-89d8-1137a0753f56",
+        "http_status": 200
+      }
+    ],
+    "collection_failure": null
+  },
+  "app_discovery": {
+    "status": "observing",
+    "candidates": [],
+    "unattributed_new_attendee_apps": 0,
+    "baseline_count": 7
+  },
+  "assessment": {
+    "verdict": "unverified",
+    "complete_assistant_text_available": false,
+    "consultation": {
+      "verdict": "unverified",
+      "reason": "no_material_consultation_within_budget",
+      "closed_elapsed_seconds": 180.0008092079952,
+      "deadline_enforced": true,
+      "scope_agreement_delivered": false,
+      "no_question_before_scope_agreement_observed": false
+    },
+    "native_format_qualification_verified": false,
+    "quality_failure_inferred_from_silence": false,
+    "reason": "native_assistant_coverage_unverified",
+    "operational_status": "failed",
+    "operational_stop_reason": "no_material_consultation_within_budget"
+  }
+}

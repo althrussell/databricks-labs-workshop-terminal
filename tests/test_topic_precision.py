@@ -115,7 +115,8 @@ def test_the_main_instructions_anchor_the_discovery_call(monkeypatch):
     body = _base_instructions()
     # Flattened: the anchor is hard-wrapped, so every phrase below spans a line
     # break in the source file.
-    gate = " ".join(body.split("The ship gate")[1].split("## ")[0].split()).lower()
+    gate = " ".join(body.split("Deployment — typecheck, deploy, share the preview")[1]
+                    .split("## ")[0].split()).lower()
     assert "workshop-discovery" in gate, (
         "the shipping moment must point at the call, or the appended discovery "
         "section is the only thing asking for it and it gets read as ceremony"

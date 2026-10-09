@@ -1,0 +1,107 @@
+{
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "9ab0e6a304437ccd03a377b956fbd637b8dcabd2a6dd094a4cfcd5b458cb7b0e",
+      "size_bytes": 5382
+    },
+    {
+      "path": "cleanup.json",
+      "sha256": "d264e0c709837e54a4e71884f618b47b5d2a14841d1e9114e4747ca8f91f85b7",
+      "size_bytes": 608
+    },
+    {
+      "path": "ct-source-readback.json",
+      "sha256": "940e510a49ef65747d6dfc59247c016ee75e9bcbc0ccbb78dcb6b8b5a827f62f",
+      "size_bytes": 1876
+    },
+    {
+      "path": "focused-tests.txt",
+      "sha256": "cab88b6178d407077662325448da6fd0da767002a142e2fa02d3d367ab73aaf8",
+      "size_bytes": 1077
+    },
+    {
+      "path": "frontend-tests.txt",
+      "sha256": "7b48b89caca9e3ae8bade797e3f1a2397dc63b6dcbc9aa6a1f4bcc922046346d",
+      "size_bytes": 8090
+    },
+    {
+      "path": "local-banner.jpg",
+      "sha256": "4013c49307a767c3a8a6161967014eb29ff9f9c66dfbf6f43e0f979698f7bb62",
+      "size_bytes": 98717
+    },
+    {
+      "path": "local-error-detail.jpg",
+      "sha256": "c16a8b6c095cef4d6fcf3c015c34d2aea6507dab06f3635c4add9b0284b34da4",
+      "size_bytes": 63622
+    },
+    {
+      "path": "local-final-retained-error.jpg",
+      "sha256": "b0bae3670f6336aec1e8b558959092cc4a558503581ffc538187d726ff1d02eb",
+      "size_bytes": 97853
+    },
+    {
+      "path": "local-starter-submitted.jpg",
+      "sha256": "b5fbff88044bfe94755ef2d7a3579c9242a45ac9c63ef251507203bec9ae66aa",
+      "size_bytes": 124317
+    },
+    {
+      "path": "local-starter-unsent.jpg",
+      "sha256": "d85bc8ed3dd898c79fd229bb6fc2aac3d40720593fc37fedebcdc644d5c31e57",
+      "size_bytes": 101336
+    },
+    {
+      "path": "local-ui-fixture.py",
+      "sha256": "9b9677e19538fd405f0cf8dec1bb52d45afd3d2e5c7633277f522639605a56ab",
+      "size_bytes": 1204
+    },
+    {
+      "path": "native-baseline.json",
+      "sha256": "d00fc3fbad9250eabd5029ac4c0c7d1a40504f0b2e0f02a9e2ff0f875f938ec3",
+      "size_bytes": 6603
+    },
+    {
+      "path": "native-continuation-failed.json",
+      "sha256": "5cc46a01366789bf4110d40f8d3e054aeb6b66c1f1a79aa340b7ced0ea816d75",
+      "size_bytes": 7220
+    },
+    {
+      "path": "native-temporary-alias.json",
+      "sha256": "0075dd18a9302bb1a51bcbe78c0c875311490e8694969244927a19f12e6274d9",
+      "size_bytes": 8549
+    },
+    {
+      "path": "native-wt-helper.json",
+      "sha256": "55609d0b370f61f57cccc9adf03a81c65faa1d2dc9f2580c9bfd28befb6d77b9",
+      "size_bytes": 1671
+    },
+    {
+      "path": "prior-wt-codex-uc-staging.json",
+      "sha256": "fb63803575cab33873598f4f8558ec9a0174cfb45138ca85e97f607db1a4eb85",
+      "size_bytes": 514
+    },
+    {
+      "path": "probe-final.py",
+      "sha256": "3f06c4b54879cae341481d089beabb0e3fa032fcc4fb0807170665c81b83d5fe",
+      "size_bytes": 5305
+    },
+    {
+      "path": "probe-identity.json",
+      "sha256": "20920a34dc64e00008595aed34a65158679dc75d2f41800954439252b3e3570b",
+      "size_bytes": 1661
+    },
+    {
+      "path": "registry-check.json",
+      "sha256": "2019e75ed50625153a95a93a3ef351e0a76edc9e882ab07dc3179068c997f128",
+      "size_bytes": 431
+    },
+    {
+      "path": "repaired-source-hashes.json",
+      "sha256": "568235e9ccdfcebba19d3f11eaac2a9864175a8457fe134c7a4030d799a9e4a1",
+      "size_bytes": 1015
+    }
+  ],
+  "authentication_state_archived": false,
+  "raw_attendee_logs_archived": false,
+  "native_logs_source": "credential-free synthetic probe"
+}

@@ -1,0 +1,56 @@
+{
+  "operation": "cleanup_exact_generated_apps_and_test_projects",
+  "scope": "simulated_control_tower",
+  "control_tower_mutations": 0,
+  "plan_sha256": "45444377f0ba2f3f781a24301d69f5e7e5a781112795c74f62f7a976540c554c",
+  "status": "cleanup_verified",
+  "operations": [
+    {
+      "kind": "generated_sp_read_deltas",
+      "state": "removed_other_principals_preserved"
+    },
+    {
+      "kind": "generated_app_and_sp",
+      "app_id": "bf5286e1-b83f-444b-8540-2a8d426c1977",
+      "name": "welcome-demo",
+      "state": "absence_verified"
+    },
+    {
+      "kind": "generated_app_and_sp",
+      "app_id": "c616606d-3a0a-4593-a743-21fd4f42d8f7",
+      "name": "bakery-orders",
+      "state": "absence_verified"
+    },
+    {
+      "kind": "exact_test_directory",
+      "path": "/Workspace/Users/a53d8bb2-243a-461b-95ee-f187cc254213/.bundle/welcome-demo",
+      "id": "690328949447825",
+      "state": "absence_verified"
+    },
+    {
+      "kind": "exact_test_directory",
+      "path": "/Workspace/Users/bf5286e1-b83f-444b-8540-2a8d426c1977/src",
+      "id": "690328949447881",
+      "state": "absence_verified"
+    },
+    {
+      "kind": "exact_test_directory",
+      "path": "/Workspace/Users/a53d8bb2-243a-461b-95ee-f187cc254213/.bundle/bakery-orders",
+      "id": "553747446591241",
+      "state": "absence_verified"
+    },
+    {
+      "kind": "exact_test_directory",
+      "path": "/Workspace/Users/c616606d-3a0a-4593-a743-21fd4f42d8f7/src",
+      "id": "553747446591299",
+      "state": "absence_verified"
+    }
+  ],
+  "attendee_projects": {
+    "path": "/Workspace/Users/labuser+1@awsbricks.com/projects",
+    "id": "1462869392157865",
+    "other_entries": [],
+    "preserved": true
+  },
+  "completed_at": "2026-10-09T06:31:52.194364+00:00"
+}

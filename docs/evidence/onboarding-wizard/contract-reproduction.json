@@ -1,0 +1,168 @@
+{
+  "purpose": "Offline defect demonstration; assertions document current broken behavior and are not acceptance tests.",
+  "dynamic_card_roundtrip": {
+    "returned_card": {
+      "id": "fresh-bakery-app",
+      "label": "Bakery staff orders",
+      "outcome": "Manage bakery pickup orders",
+      "prompt": "Build a staff app: save pickup orders, search by customer, mark fulfilled; use Lakebase.",
+      "industries": [
+        "retail"
+      ],
+      "intents": [
+        "business_problem"
+      ],
+      "products": [
+        "Databricks Apps",
+        "Lakebase"
+      ],
+      "shape": "app",
+      "technical": false,
+      "demo_tables": [],
+      "data_ready": false,
+      "data_mode": "generate"
+    },
+    "submitted_payload": {
+      "what_building": "Manage bakery pickup orders",
+      "industry": "retail",
+      "industry_stated": true,
+      "idea_id": "fresh-bakery-app"
+    },
+    "saved_brief": {
+      "record_id": "b26f14fc591c445082db184c0ce54cf0",
+      "what_building": "Manage bakery pickup orders",
+      "industry": "",
+      "intent": "",
+      "idea_id": "fresh-bakery-app",
+      "current_stack": [],
+      "persona": "",
+      "seen": true,
+      "skipped": false,
+      "completed_at": "2026-10-07T23:21:07.363940+00:00",
+      "industry_stated": false
+    },
+    "starter_prompt": "Manage bakery pickup orders\n\nStart building this with me now. Ask me at most one question if you genuinely cannot start without the answer, otherwise make a sensible choice and tell me what you chose.",
+    "discovery": {
+      "record_id": "b26f14fc591c445082db184c0ce54cf0",
+      "agent": "wizard",
+      "confidence": "high",
+      "session_intent": "",
+      "industry": "",
+      "use_case_title": "Manage bakery pickup orders",
+      "use_case_summary": "Manage bakery pickup orders",
+      "goal": "Manage bakery pickup orders",
+      "current_stack": [],
+      "interest_signals": [
+        "wizard_mode:typed"
+      ]
+    },
+    "overlay": "<!-- workshop-brief -->\n## What this attendee came to build\n\nIn their own words: **Manage bakery pickup orders**\n\nThey told us this on the way in, so **do not ask them again**. No restating it back as a requirements summary, no clarifying round \u2014 open with the build. If it turns out you misread what they wanted, correct course mid-build rather than stopping to re-scope.\n\nA discovery record already exists for this: `b26f14fc591c445082db184c0ce54cf0`. When you learn more about what they are trying to do, **update that record** by passing the same `record_id` \u2014 do not open a new one. A second record for the same attendee reads downstream as a second, conflicting use case.\n"
+  },
+  "dynamic_static_id_collision": {
+    "id": "auto-part-failures",
+    "shown_prompt": "Build a staff app: save pickup orders, search by customer, mark fulfilled; use Lakebase.",
+    "submitted_industry": "retail",
+    "saved_industry": "automotive_mobility",
+    "launched_prompt": "Build me a dashboard ranking parts by warranty claims per 1,000 vehicles fitted, using parts360. Show the worst 20, break them down by supplier and by affected model, and flag any part where the rate is rising.",
+    "static_label": "Find the parts that fail early"
+  },
+  "omitted_idea_id_on_goal_edit": {
+    "new_goal": "Actually I need a staff booking calendar",
+    "old_idea_id_retained": "auto-part-failures",
+    "launched_prompt": "Build me a dashboard ranking parts by warranty claims per 1,000 vehicles fitted, using parts360. Show the worst 20, break them down by supplier and by affected model, and flag any part where the rate is rising.",
+    "caveat": "Supported partial API contract; frontend editing normally clears idea_id."
+  },
+  "clear_all_leaves_discovery": {
+    "saved_has_content": false,
+    "saved_goal": "",
+    "discovery_goal": "Actually I need a staff booking calendar",
+    "same_record_id": true
+  },
+  "partial_agent_refinement_replaces_wizard_fields": {
+    "saved_brief": {
+      "record_id": "5ad7273f2a90444f9ff646ab9949b11d",
+      "what_building": "Bakery pickup orders",
+      "industry": "retail",
+      "intent": "business_problem",
+      "idea_id": "",
+      "current_stack": [
+        "Spreadsheets"
+      ],
+      "persona": "",
+      "seen": true,
+      "skipped": false,
+      "completed_at": "2026-10-07T23:21:07.368494+00:00",
+      "industry_stated": true
+    },
+    "record_after_partial_refinement": {
+      "record_id": "5ad7273f2a90444f9ff646ab9949b11d",
+      "captured_at": "2026-10-07T23:21:07.368895+00:00",
+      "revision": 2,
+      "blockers": [
+        "orders duplicated between staff"
+      ]
+    }
+  },
+  "wizard_edit_replaces_agent_refinement": {
+    "record": {
+      "record_id": "5ad7273f2a90444f9ff646ab9949b11d",
+      "captured_at": "2026-10-07T23:21:07.369361+00:00",
+      "revision": 3,
+      "agent": "wizard",
+      "confidence": "high",
+      "session_intent": "business_problem",
+      "use_case_title": "Bakery pickup orders and fulfillment",
+      "use_case_summary": "Bakery pickup orders and fulfillment",
+      "goal": "Bakery pickup orders and fulfillment",
+      "industry": "retail",
+      "current_stack": [
+        "Spreadsheets"
+      ],
+      "interest_signals": [
+        "wizard_mode:typed"
+      ]
+    }
+  },
+  "live_pack_changes_completed_prompt": {
+    "before": "Build me a dashboard ranking parts by warranty claims per 1,000 vehicles fitted, using parts360. Show the worst 20, break them down by supplier and by affected model, and flag any part where the rate is rising.",
+    "after": "Build an unrelated new replacement task"
+  },
+  "two_concurrent_first_saves_mint_two_records": {
+    "record_ids": [
+      "a22fabafdb67419a8169a69c4cf79147",
+      "d0186f83d403433ca9550b25086001c7"
+    ],
+    "discovery_count": 2,
+    "persisted_record_id": "a22fabafdb67419a8169a69c4cf79147"
+  },
+  "capture_enable_unchanged_brief_claims_nonexistent_record": {
+    "actual_record_count": 0,
+    "overlay_claims_existing_record": true
+  },
+  "persona_file_and_wizard_brief_diverge": {
+    "current_persona_file": "technical",
+    "saved_brief_persona": "business"
+  },
+  "metadata": {
+    "audited_head": "4d46461c6a0229892bdda5c153d8a6dd03d316c6",
+    "generated_at_utc": "2026-10-07T23:21:07.385918+00:00",
+    "evidence_type": "synthetic_offline_current_defect_demonstration",
+    "is_synthetic": true,
+    "assertions_are_acceptance_tests": false,
+    "assertion_status": "all_current_defect_demonstrations_reproduced",
+    "demonstration_count": 10,
+    "network_access": "blocked_during_imports_and_reproduction",
+    "external_services_exercised": [],
+    "model": "mock-model",
+    "attendees": "synthetic audit identities with temporary homes",
+    "discovery": "isolated in-memory stores; event emission mocked",
+    "limitations": [
+      "No evidence of event incidence or real model response quality.",
+      "Concurrency overlap is deliberately synchronized to demonstrate the race.",
+      "Record replacement is documented behavior; the demonstration shows its destructive effects across writers.",
+      "Partial API goal edits normally clear idea_id in the current frontend."
+    ],
+    "temporary_homes_cleaned": true,
+    "temporary_home_count": 6
+  }
+}

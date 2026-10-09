@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "operation": "generated_app_attendee_preview",
+  "scope": "simulated_control_tower",
+  "control_tower_requests": 0,
+  "accepted": false,
+  "input_sha256": {
+    "terminal_receipt": "2fba8ed6dfbbc86a04f3fe4673790aa3318bcaa679e977acc9788fe6366d19a5",
+    "journey": "23725a512442bd44ad8c7ac213044948fae6c98bca942f59e92343615c1cfc0d",
+    "seed_receipt": "34a2d2076469b40d73f536375236db41cc6bfd9982fdcda4f3d733fd7035e54f"
+  },
+  "deployment_followup_sha256": "93391aff17b3185711a392e2c61371ed6e801332c2156dba798cb4d8202b46c5",
+  "deployment": {
+    "new_app_verified": true,
+    "app_id": "5d8f6f22-85b3-4cc9-a2d6-104b667619c1",
+    "app_name": "bakery-orders",
+    "deployment_id": "01f1c37b69a410419a2b6fa1f563290f",
+    "source_code_path": "/Workspace/Users/245e0b42-da94-4a24-b7f3-0f213bc721cb/.bundle/bakery-orders/default/files",
+    "creator": "245e0b42-da94-4a24-b7f3-0f213bc721cb",
+    "url": "https://bakery-orders-7474655950495189.aws.databricksapps.com",
+    "create_time": "2026-10-09T00:47:09Z",
+    "deployment_create_time": "2026-10-09T00:50:24Z",
+    "source_identity_verified": "current_successful_deployment_source_path",
+    "process_restart_verified": false
+  },
+  "auth_state_in_evidence": false,
+  "observed_at": "2026-10-09T01:01:39.005675+00:00",
+  "normal_test_user_consent": {
+    "assigned_identity_verified": true,
+    "requested_scopes": "platform_default_identity_login",
+    "additional_user_api_scopes": false
+  },
+  "first_preview": {
+    "independently_observed": true,
+    "viewports": [
+      {
+        "name": "first-preview-desktop",
+        "width": 1440,
+        "height": 900,
+        "screenshot": "/private/tmp/wt-r01-generated-app13-preview3-68bd/first-preview-desktop.png",
+        "accessibility_snapshot": "/private/tmp/wt-r01-generated-app13-preview3-68bd/first-preview-desktop.aria.txt",
+        "layout_observation": {
+          "viewport": 1440,
+          "content": 1440,
+          "horizontalOverflow": false
+        },
+        "state": "first-preview",
+        "accessibility_snapshot_text": "- region \"Notifications alt+T\"\n- banner:\n  - text: Order Board.\n  - button \"New order\"\n- main:\n  - heading \"Today's orders\" [level=1]\n  - paragraph: Late and unpacked orders surface first, so you always know what to grab next.\n  - paragraph: Needs attention\n  - text: 0 order late and unpacked \u2014 you're all caught up No orders yet Add your first order and it'll show up here, sorted by what needs attention.\n  - button \"Add an order\"",
+        "horizontal_overflow_observed": false
+      },
+      {
+        "name": "first-preview-tablet",
+        "width": 768,
+        "height": 1024,
+        "screenshot": "/private/tmp/wt-r01-generated-app13-preview3-68bd/first-preview-tablet.png",
+        "accessibility_snapshot": "/private/tmp/wt-r01-generated-app13-preview3-68bd/first-preview-tablet.aria.txt",
+        "layout_observation": {
+          "viewport": 768,
+          "content": 768,
+          "horizontalOverflow": false
+        },
+        "state": "first-preview",
+        "accessibility_snapshot_text": "- region \"Notifications alt+T\"\n- banner:\n  - text: Order Board.\n  - button \"New order\"\n- main:\n  - heading \"Today's orders\" [level=1]\n  - paragraph: Late and unpacked orders surface first, so you always know what to grab next.\n  - paragraph: Needs attention\n  - text: 0 order late and unpacked \u2014 you're all caught up No orders yet Add your first order and it'll show up here, sorted by what needs attention.\n  - button \"Add an order\"",
+        "horizontal_overflow_observed": false
+      },
+      {
+        "name": "first-preview-mobile",
+        "width": 390,
+        "height": 844,
+        "screenshot": "/private/tmp/wt-r01-generated-app13-preview3-68bd/first-preview-mobile.png",
+        "accessibility_snapshot": "/private/tmp/wt-r01-generated-app13-preview3-68bd/first-preview-mobile.aria.txt",
+        "layout_observation": {
+          "viewport": 390,
+          "content": 390,
+          "horizontalOverflow": false
+        },
+        "state": "first-preview",
+        "accessibility_snapshot_text": "- region \"Notifications alt+T\"\n- banner:\n  - text: Order Board.\n  - button \"New order\"\n- main:\n  - heading \"Today's orders\" [level=1]\n  - paragraph: Late and unpacked orders surface first, so you always know what to grab next.\n  - paragraph: Needs attention\n  - text: 0 order late and unpacked \u2014 you're all caught up No orders yet Add your first order and it'll show up here, sorted by what needs attention.\n  - button \"Add an order\"",
+        "horizontal_overflow_observed": false
+      }
+    ],
+    "task_results": []
+  },
+  "page_errors": [],
+  "final_deployment_verification": {
+    "new_app_verified": true,
+    "app_id": "5d8f6f22-85b3-4cc9-a2d6-104b667619c1",
+    "app_name": "bakery-orders",
+    "deployment_id": "01f1c37b69a410419a2b6fa1f563290f",
+    "source_code_path": "/Workspace/Users/245e0b42-da94-4a24-b7f3-0f213bc721cb/.bundle/bakery-orders/default/files",
+    "creator": "245e0b42-da94-4a24-b7f3-0f213bc721cb",
+    "url": "https://bakery-orders-7474655950495189.aws.databricksapps.com",
+    "create_time": "2026-10-09T00:47:09Z",
+    "deployment_create_time": "2026-10-09T00:50:24Z",
+    "source_identity_verified": "current_successful_deployment_source_path",
+    "process_restart_verified": false
+  },
+  "binding_current_at_end_verified": true,
+  "status": "ui_observed",
+  "verdict": "unverified"
+}

@@ -1,0 +1,61 @@
+Tracing verified: 1 prediction trace(s), 2 spans
+Resources discovered: 1 datasets, 2 scorers; using wt_workshop_contract_r02_sanity_v1
+
+✨ Evaluation completed.
+
+Metrics and evaluation results are logged to the MLflow run:
+  Run name: [94menchanting-sow-265[0m
+  Run ID: [94m78aa931fafff4f60bd8b351d4e7a2b8c[0m
+
+To view the detailed evaluation results with sample-wise scores,
+open the [93m[1mTraces[0m tab in the Run page in the MLflow UI.
+
+Dry run completed with numeric scorer output; evaluating the remaining two scenarios
+
+✨ Evaluation completed.
+
+Metrics and evaluation results are logged to the MLflow run:
+  Run name: [94mdapper-fly-784[0m
+  Run ID: [94mac3a8360daea4d4c9369a14f8645cc58[0m
+
+To view the detailed evaluation results with sample-wise scores,
+open the [93m[1mTraces[0m tab in the Run page in the MLflow UI.
+
+{
+  "schema_version": 1,
+  "kind": "direct_model_policy_sanity",
+  "model": "databricks-claude-sonnet-4-6",
+  "wire": "chat",
+  "judge_model": "databricks-claude-sonnet-4-6",
+  "experiment_id": "1",
+  "dataset_id": "d-88b80b967a6340899ceb02b0a310bf5f",
+  "scorer": "wt_workshop_interaction_v1_4bc6284cb4",
+  "prompt_sha256": {
+    "home": "81683b7ec7a47a1712e90cb35490c209ab7b595d6c9bc820e187507140757f98",
+    "project": "400b91a294f6f80261deb29d2bfce2185ee21b07180e9bc401ea4e25f0234361"
+  },
+  "tracing": {
+    "verified": true,
+    "trace_count": 1,
+    "span_count": 2
+  },
+  "evaluations": [
+    {
+      "run_id": "78aa931fafff4f60bd8b351d4e7a2b8c",
+      "metrics": {
+        "wt_workshop_interaction_v1_4bc6284cb4/mean": 1.0
+      }
+    },
+    {
+      "run_id": "ac3a8360daea4d4c9369a14f8645cc58",
+      "metrics": {
+        "wt_workshop_interaction_v1_4bc6284cb4/mean": 1.0
+      }
+    }
+  ],
+  "limitations": [
+    "Five synthetic scenarios; no statistical or fleet claim",
+    "Direct model with a stub implementation tool, not a native CLI harness",
+    "No generated app or UX acceptance; R01 evidence unchanged"
+  ]
+}

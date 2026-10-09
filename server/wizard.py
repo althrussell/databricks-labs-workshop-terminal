@@ -534,15 +534,11 @@ def starter_prompt(brief: WizardBrief) -> str:
     """The first thing typed into the terminal, unsent.
 
     A chosen idea card wins over the typed sentence, because its prompt was
-    written to produce a good first build and the sentence was written to
-    describe an ambition. When the attendee typed their own, it is handed to the
-    agent as their words plus enough framing that the agent starts building
-    rather than starts interviewing.
+    written to describe that build. Both entry paths get the same workshop
+    framing; choosing a card is not permission to skip material unknowns.
     """
     idea = idea_by_id(brief.idea_id)
-    if idea:
-        return idea.prompt
-    text = brief.what_building.strip()
+    text = idea.prompt if idea else brief.what_building.strip()
     if not text:
         return ""
     stated = brief.stated_industry
@@ -560,9 +556,8 @@ def starter_prompt(brief: WizardBrief) -> str:
         extra = ""
     return (
         f"{text}\n\n"
-        "Start building this with me now. Ask me at most one question if you "
-        "genuinely cannot start without the answer, otherwise make a sensible "
-        "choice and tell me what you chose."
+        "Help me make a useful workshop demo. Reuse what I've told you and "
+        "follow the workshop interaction contract."
         f"{extra}"
     )
 

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "control_tower_requests": 0,
+  "status": "genuine_attendee_identity_verified",
+  "app_id": "245e0b42-da94-4a24-b7f3-0f213bc721cb",
+  "expected_email": "labuser+1@awsbricks.com",
+  "operator_bearer_in_browser": false,
+  "authentication_state_in_evidence": false,
+  "identity": "labuser+1@awsbricks.com"
+}

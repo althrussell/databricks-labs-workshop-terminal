@@ -52,6 +52,7 @@ from .credentials import (
 from .entitlements import entitlement_manager
 from .event_emitter import event_emitter, flush_loop
 from .events import event_hub
+from .evaluation import router as evaluation_router
 from .log_collector import install_app_error_journal, log_collector
 from .omnigent_remote import remote_host_manager
 from .sessions import SessionConfigurationError, SessionConflictError, session_manager
@@ -214,6 +215,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Databricks Workshop Terminal", lifespan=lifespan)
 app.include_router(admin_router)
+app.include_router(evaluation_router)
 app.include_router(ws_router)
 
 

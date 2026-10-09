@@ -1,0 +1,37 @@
+{
+  "name": "wt-eval-codex-1009-82f1",
+  "app_id": "0d5b848f-41e9-43e7-8593-a236613d4463",
+  "sp_id": 73977174062455,
+  "source_id": 1892386422186774,
+  "expires_at": 1791522100.197765,
+  "deployment_id": "01f1c39e26e81f2e82b98c484300c20f",
+  "source_hashes": {
+    "probe.py": "3f06c4b54879cae341481d089beabb0e3fa032fcc4fb0807170665c81b83d5fe",
+    "codex_artifacts.py": "6d91e5802e6544dd67f29faec540a06100b71c555e6d7e6ffa7c145bb0e70b48",
+    "pins.json": "783f0bca83f675766b7830089363bdf7475a68a564dc9f042406f1abbb2862b8",
+    "requirements.txt": "74c1b9d7e6103576c1f8c7bf2bf255e088ee5ab2c8f5d7f70dc757c0ae596011",
+    "app.yaml": "dffe117051a89960a86c8d4139c066a756031e0f14d83239a049a27ea438a2ad",
+    "codex_home.py": "ce3c1d563767ded87e481d8864dd1768f780c7b6d678b70d922afb463ab2206f"
+  },
+  "ct_before": {
+    "id": "4f1951af-9397-4462-b283-9a66c76b234f",
+    "deployment": "01f1bbc1de2911cb93356caa765f77a3",
+    "compute": "ACTIVE"
+  },
+  "control_tower_mutations": 0,
+  "model_requests": 0,
+  "native_package_identity": {
+    "codex_native_package_linux_x64": {
+      "executable_sha256": "3e2584f3f3829a43a0495011a1cecb2facbe64a2403e2b682351fd9c2983f970",
+      "sha256": "7f12677740f439fe4884c7031d9d703e571cecf5ea9fa3a05abd1bbccc2162a8",
+      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.157.1-linux-x64.tgz",
+      "version": "0.157.1-linux-x64"
+    },
+    "codex_npm_launcher_package": {
+      "sha256": "813e2a944f4474b7e1826d9ce8bf696ad8d80c68f43f7a7067beec51fa8f5b73",
+      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.157.1.tgz",
+      "version": "0.157.1"
+    }
+  },
+  "helper_matches_local_source": true
+}

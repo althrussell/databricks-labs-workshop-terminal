@@ -1,0 +1,412 @@
+{
+  "conclusion": "success",
+  "headSha": "8febeb83b6863ef36c12a3fda21e9598a88091b1",
+  "jobs": [
+    {
+      "completedAt": "2026-10-09T05:09:00Z",
+      "conclusion": "success",
+      "databaseId": 113679511753,
+      "name": "packaged-runtime",
+      "startedAt": "2026-10-09T05:08:12Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-09T05:08:16Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-09T05:08:13Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:18Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-10-09T05:08:16Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:18Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5",
+          "number": 3,
+          "startedAt": "2026-10-09T05:08:18Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:20Z",
+          "conclusion": "success",
+          "name": "Run astral-sh/setup-uv@v6",
+          "number": 4,
+          "startedAt": "2026-10-09T05:08:18Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:20Z",
+          "conclusion": "success",
+          "name": "Materialize the uv-locked build environment",
+          "number": 5,
+          "startedAt": "2026-10-09T05:08:20Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:28Z",
+          "conclusion": "success",
+          "name": "Build the release twice",
+          "number": 6,
+          "startedAt": "2026-10-09T05:08:20Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:28Z",
+          "conclusion": "success",
+          "name": "Verify byte reproducibility",
+          "number": 7,
+          "startedAt": "2026-10-09T05:08:28Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:55Z",
+          "conclusion": "success",
+          "name": "Smoke in clean Linux without a network",
+          "number": 8,
+          "startedAt": "2026-10-09T05:08:28Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:57Z",
+          "conclusion": "success",
+          "name": "Publish CI evidence",
+          "number": 9,
+          "startedAt": "2026-10-09T05:08:55Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:57Z",
+          "conclusion": "success",
+          "name": "Post Run astral-sh/setup-uv@v6",
+          "number": 16,
+          "startedAt": "2026-10-09T05:08:57Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:58Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@v5",
+          "number": 17,
+          "startedAt": "2026-10-09T05:08:57Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:58Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 18,
+          "startedAt": "2026-10-09T05:08:58Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:58Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 19,
+          "startedAt": "2026-10-09T05:08:58Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/althrussell/databricks-labs-workshop-terminal/actions/runs/37887122695/job/113679511753"
+    },
+    {
+      "completedAt": "2026-10-09T05:10:43Z",
+      "conclusion": "success",
+      "databaseId": 113679511945,
+      "name": "pytest (3.12)",
+      "startedAt": "2026-10-09T05:08:21Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-09T05:08:23Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-09T05:08:22Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:25Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-10-09T05:08:23Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:26Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5",
+          "number": 3,
+          "startedAt": "2026-10-09T05:08:25Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:27Z",
+          "conclusion": "success",
+          "name": "Run astral-sh/setup-uv@v6",
+          "number": 4,
+          "startedAt": "2026-10-09T05:08:26Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:27Z",
+          "conclusion": "success",
+          "name": "Validate uv lock and source-deployment exports",
+          "number": 5,
+          "startedAt": "2026-10-09T05:08:27Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:28Z",
+          "conclusion": "success",
+          "name": "Install dependencies",
+          "number": 6,
+          "startedAt": "2026-10-09T05:08:27Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:10:40Z",
+          "conclusion": "success",
+          "name": "Run tests",
+          "number": 7,
+          "startedAt": "2026-10-09T05:08:28Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:10:40Z",
+          "conclusion": "success",
+          "name": "Post Run astral-sh/setup-uv@v6",
+          "number": 12,
+          "startedAt": "2026-10-09T05:10:40Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:10:40Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@v5",
+          "number": 13,
+          "startedAt": "2026-10-09T05:10:40Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:10:40Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 14,
+          "startedAt": "2026-10-09T05:10:40Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:10:40Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 15,
+          "startedAt": "2026-10-09T05:10:40Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/althrussell/databricks-labs-workshop-terminal/actions/runs/37887122695/job/113679511945"
+    },
+    {
+      "completedAt": "2026-10-09T05:09:00Z",
+      "conclusion": "success",
+      "databaseId": 113679511985,
+      "name": "test-and-build",
+      "startedAt": "2026-10-09T05:08:13Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-09T05:08:42Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-09T05:08:14Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:44Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-10-09T05:08:42Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:51Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-node@v4",
+          "number": 3,
+          "startedAt": "2026-10-09T05:08:44Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:54Z",
+          "conclusion": "success",
+          "name": "Install dependencies",
+          "number": 4,
+          "startedAt": "2026-10-09T05:08:51Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:56Z",
+          "conclusion": "success",
+          "name": "Run frontend tests",
+          "number": 5,
+          "startedAt": "2026-10-09T05:08:54Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:57Z",
+          "conclusion": "success",
+          "name": "Build production frontend",
+          "number": 6,
+          "startedAt": "2026-10-09T05:08:56Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:57Z",
+          "conclusion": "success",
+          "name": "Verify committed frontend assets",
+          "number": 7,
+          "startedAt": "2026-10-09T05:08:57Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:57Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-node@v4",
+          "number": 13,
+          "startedAt": "2026-10-09T05:08:57Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:57Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 14,
+          "startedAt": "2026-10-09T05:08:57Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:57Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 15,
+          "startedAt": "2026-10-09T05:08:57Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/althrussell/databricks-labs-workshop-terminal/actions/runs/37887122695/job/113679511985"
+    },
+    {
+      "completedAt": "2026-10-09T05:10:46Z",
+      "conclusion": "success",
+      "databaseId": 113679511987,
+      "name": "pytest (3.11)",
+      "startedAt": "2026-10-09T05:08:12Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-09T05:08:14Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-09T05:08:13Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:15Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-10-09T05:08:14Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:16Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5",
+          "number": 3,
+          "startedAt": "2026-10-09T05:08:15Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:17Z",
+          "conclusion": "success",
+          "name": "Run astral-sh/setup-uv@v6",
+          "number": 4,
+          "startedAt": "2026-10-09T05:08:16Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:17Z",
+          "conclusion": "success",
+          "name": "Validate uv lock and source-deployment exports",
+          "number": 5,
+          "startedAt": "2026-10-09T05:08:17Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:08:17Z",
+          "conclusion": "success",
+          "name": "Install dependencies",
+          "number": 6,
+          "startedAt": "2026-10-09T05:08:17Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:10:44Z",
+          "conclusion": "success",
+          "name": "Run tests",
+          "number": 7,
+          "startedAt": "2026-10-09T05:08:17Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:10:44Z",
+          "conclusion": "success",
+          "name": "Post Run astral-sh/setup-uv@v6",
+          "number": 12,
+          "startedAt": "2026-10-09T05:10:44Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:10:44Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@v5",
+          "number": 13,
+          "startedAt": "2026-10-09T05:10:44Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:10:44Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 14,
+          "startedAt": "2026-10-09T05:10:44Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-09T05:10:44Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 15,
+          "startedAt": "2026-10-09T05:10:44Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/althrussell/databricks-labs-workshop-terminal/actions/runs/37887122695/job/113679511987"
+    }
+  ],
+  "status": "completed",
+  "url": "https://github.com/althrussell/databricks-labs-workshop-terminal/actions/runs/37887122695"
+}

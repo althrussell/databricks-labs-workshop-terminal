@@ -64,6 +64,35 @@ def workshop_unit_id() -> str:
     return _env("WORKSHOP_UNIT_ID")
 
 
+def evaluation_observation_binding() -> dict[str, str] | None:
+    """Explicit synthetic CT deployment gate; ordinary events remain disabled.
+
+    The expected run/unit IDs must match the deployment's injected attribution
+    (real CT IDs in CT deployments, simulated contract IDs in local evaluation). The
+    separate wt-eval marker asserts this is a disposable evaluation deployment.
+    A persisted/self-bound attendee is insufficient: CT must inject the owner.
+    """
+    if not _env_bool("WORKSHOP_EVALUATION_ENABLED", False):
+        return None
+    marker = _env("WORKSHOP_EVALUATION_MARKER")
+    owner = _env("WORKSHOP_EVALUATION_ATTENDEE_EMAIL").lower()
+    run = _env("WORKSHOP_EVALUATION_RUN_ID")
+    unit = _env("WORKSHOP_EVALUATION_UNIT_ID")
+    try:
+        configured_owner = workshop_attendee_email()
+    except ValueError:
+        return None
+    if (not re.fullmatch(r"wt-eval-[A-Za-z0-9][A-Za-z0-9_.-]{0,80}", marker)
+            or not valid_attendee_email(owner)
+            or owner != configured_owner
+            or not run or len(run) > 256 or run != workshop_run_id()
+            or not unit or len(unit) > 256 or unit != workshop_unit_id()
+            or allow_shared_topology()
+            or max_sessions_per_user() != 1 or max_sessions_global() != 1):
+        return None
+    return {"marker": marker, "attendee_email": owner, "run_id": run, "unit_id": unit}
+
+
 def workspace_id() -> str:
     return _env("DATABRICKS_WORKSPACE_ID")
 

@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "operation": "native_mlflow_live_clarification_evaluation",
+  "experiment_id": "2",
+  "dataset_id": "d-f4903f16f14d4444be45f4f3593d7d74",
+  "discovered_datasets": [
+    "wt_r02_live_bakery_clarification_v1"
+  ],
+  "discovered_scorers": [
+    "wt_r02_live_clarification_161ba66f11"
+  ],
+  "scorer": "wt_r02_live_clarification_161ba66f11",
+  "run_id": "5dbdb2cde0aa4251890b899bcbc15045",
+  "metrics": {
+    "wt_r02_live_clarification_161ba66f11/mean": 1.0
+  },
+  "trace_validation": {
+    "trace_id": "tr-75b8232ecec7e6299f13ad88f01b0ad1",
+    "span_count": 1,
+    "verified": true
+  },
+  "limitations": [
+    "Single live Claude bakery case; no statistical or all-harness claim",
+    "Only clarification is scored; recommendation, assumptions and pre-implementation ordering require separate evidence",
+    "App usability and persistence are independently observed and are not inferred by this judge"
+  ]
+}

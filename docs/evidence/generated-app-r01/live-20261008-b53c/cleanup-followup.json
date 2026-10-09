@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-10-08T08:49:02.286583+00:00",
+  "scope": "simulated_control_tower",
+  "control_tower_requests": 0,
+  "accepted": false,
+  "marker": "wt-eval-r01-1008-b53c",
+  "status": "historical_window_expired_cleanup_verified",
+  "cleanup_receipt": {
+    "path": "cleanup.json",
+    "source": "/private/tmp/wt-eval-r01-cleanup-b53c.json",
+    "sha256": "17cd3255b5f467e55774c2916c9c6af8561fdfac537a7a6db0e65ed2626d554a",
+    "size": 2063,
+    "byte_identical_copy": true
+  },
+  "previous_followup": {
+    "path": "history-update.json",
+    "sha256": "4062cb1325bef43849a2adb76d8a961192ee1375e81cc31ce00e6aa282142e2f",
+    "bytes_unchanged": true
+  },
+  "local_artifact_consistency": {
+    "cloud_calls_performed": 0,
+    "terminal_binding_matches_preserved_deployment": true,
+    "exact_previously_granted_models_removed": true,
+    "other_recorded_principals_unchanged": true,
+    "all_four_test_resource_removals_recorded_verified": true
+  },
+  "native_wire_canary_verified": false,
+  "generated_app_observed": false,
+  "ux_score": null,
+  "next_run": {
+    "marker": "wt-eval-r01-1008-c72d",
+    "status": "specification_prepared_deployment_and_canary_unverified"
+  },
+  "limitations": [
+    "Cleanup and specification preparation are recorded by the executing operator; this follow-up performs only local receipt consistency checks.",
+    "No canary, generated-app quality, app acceptance, or CT integration success is established by grant or cleanup receipts."
+  ]
+}

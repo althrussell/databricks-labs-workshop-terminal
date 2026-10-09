@@ -1,0 +1,22 @@
+{
+  "name": "wt-eval-codex-1009-82f1",
+  "app_id": "0d5b848f-41e9-43e7-8593-a236613d4463",
+  "sp_id": 73977174062455,
+  "control_tower_mutations": 0,
+  "model_requests": 0,
+  "app_delete_previously_requested": true,
+  "app_absent": true,
+  "source_absent": true,
+  "sp_absent": true,
+  "ct_before": {
+    "id": "4f1951af-9397-4462-b283-9a66c76b234f",
+    "deployment": "01f1bbc1de2911cb93356caa765f77a3",
+    "compute": "ACTIVE"
+  },
+  "ct_after": {
+    "id": "4f1951af-9397-4462-b283-9a66c76b234f",
+    "deployment": "01f1bbc1de2911cb93356caa765f77a3",
+    "compute": "ACTIVE"
+  },
+  "ct_unchanged": true
+}

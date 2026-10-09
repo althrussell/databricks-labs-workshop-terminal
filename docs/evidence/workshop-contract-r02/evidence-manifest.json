@@ -1,0 +1,167 @@
+{
+  "schema_version": 1,
+  "evidence_kind": "r02_local_delivery_and_direct_model_policy_sanity",
+  "authentication_state_archived": false,
+  "files": [
+    {
+      "path": "claude-eval.stderr.log",
+      "sha256": "0535ecb194dcf3fc3a155e3d024fa607409fb0c1ccd3387c2755bbc38f0743d3",
+      "bytes": 2402
+    },
+    {
+      "path": "claude-eval.stdout.log",
+      "sha256": "a7a06bfcefc4e5074e3de11e0c83cb745dbc8019ddbaf75e9e1c095b779d6b02",
+      "bytes": 1977
+    },
+    {
+      "path": "claude-sanity-traces.json",
+      "sha256": "37d960661296ec5900064dea25d81d9d953a425703a82183fa5ae6501c7091b3",
+      "bytes": 267252
+    },
+    {
+      "path": "claude-sanity.json",
+      "sha256": "877e5c8a463b9182e8e36fc51f60b0ec5423ecc39e1828b597d5cf96965b9029",
+      "bytes": 1131
+    },
+    {
+      "path": "final-consistency-tests.log",
+      "sha256": "6f11687e8384fbac176648b6cfd63b555fd0759548b11534600d011270751b9b",
+      "bytes": 1078
+    },
+    {
+      "path": "gpt-eval.stderr.log",
+      "sha256": "d7b83364ae329dda94275e14aae360ebca7a3ea7c8c56b3b8d6404293027715e",
+      "bytes": 2484
+    },
+    {
+      "path": "gpt-eval.stdout.log",
+      "sha256": "3678f7b65676796ee44b4c3981fbaaac33fe0f5aa50e63d34b1f4e387e399791",
+      "bytes": 1984
+    },
+    {
+      "path": "gpt-sanity-traces.json",
+      "sha256": "416d92aff192b561f06ec985dbdaf610f94c10e95aa3cf38ffcc0836f8d0626e",
+      "bytes": 286811
+    },
+    {
+      "path": "gpt-sanity.json",
+      "sha256": "f2703e56465405b9e702a36d87f294fb6a45bc44f38db567c6f3659de4150719",
+      "bytes": 1132
+    },
+    {
+      "path": "iteration-01/claude-eval.stderr.log",
+      "sha256": "f5dfdb20d776ca295de997b3a3414ee9c23cdc80aea0c2f249626a385757d969",
+      "bytes": 2402
+    },
+    {
+      "path": "iteration-01/claude-eval.stdout.log",
+      "sha256": "8c865225cf32efb60d60c3fb61951ec8b54a7d004b5794de19754a15465ea17f",
+      "bytes": 1976
+    },
+    {
+      "path": "iteration-01/claude-sanity-traces.json",
+      "sha256": "4e1929991ebab4e804b2b5adc320ee0b20760bd3b0a9047f64fb0ed89bf370f0",
+      "bytes": 253909
+    },
+    {
+      "path": "iteration-01/claude-sanity.json",
+      "sha256": "ef341a09ccb726cbc9895b94386af77ff3719e3bcb30206c829055c17a673cb2",
+      "bytes": 1128
+    },
+    {
+      "path": "iteration-01/gpt-setup-wire-error.log",
+      "sha256": "54c3014fc6aff746cd113e30814127e9f46b9409960807e2bcfb74b48231500c",
+      "bytes": 4764
+    },
+    {
+      "path": "iteration-02/claude-sanity-traces.json",
+      "sha256": "1fd5dba332de8f4a7b085bb4b87bd9a4162011f952c9177632eb7caea620e19e",
+      "bytes": 221244
+    },
+    {
+      "path": "iteration-02/claude-sanity.json",
+      "sha256": "00f169196adcabf899661e0f49d188b65246a9928a60119b6458c950036f6a18",
+      "bytes": 1146
+    },
+    {
+      "path": "iteration-02/gpt-sanity-traces.json",
+      "sha256": "6913243a272e627c54ea7ebf3a8cc6cfd1e5e0a164eaab13e66c2b55d88545ca",
+      "bytes": 278796
+    },
+    {
+      "path": "iteration-02/gpt-sanity.json",
+      "sha256": "415c307b357e5dead9f9e741c04de95b309107c114132d9962d1622322baf3cb",
+      "bytes": 1132
+    },
+    {
+      "path": "iteration-03/claude-sanity-traces.json",
+      "sha256": "80bc9dcd20feb2150044bc9ec30045624c910e4d8b8f9f1736a71dd9324e3503",
+      "bytes": 263420
+    },
+    {
+      "path": "iteration-03/claude-sanity.json",
+      "sha256": "569bd8f8ce227509a40415d7ab2f07bcf5e4f8a2c8debfe4870c1e514887a0ea",
+      "bytes": 1131
+    },
+    {
+      "path": "iteration-03/gpt-sanity-traces.json",
+      "sha256": "9086316ed1417931f9ab77380e12e40fc407c2263fdfca659ff15ee18e097040",
+      "bytes": 284278
+    },
+    {
+      "path": "iteration-03/gpt-sanity.json",
+      "sha256": "5c2df77d0047f939a55037dddb517f6852cb8a51e0c4827b013f0473db42f0fb",
+      "bytes": 1132
+    },
+    {
+      "path": "iteration-04/claude-sanity-traces.json",
+      "sha256": "5e55b009f98a581c841ae8441d7c7a4dd248c988674bba618811ef889d8e5050",
+      "bytes": 265700
+    },
+    {
+      "path": "iteration-04/claude-sanity.json",
+      "sha256": "2141f32a0c0415f4d9c657ca07308d416e712b88534395e71542def545759c47",
+      "bytes": 1146
+    },
+    {
+      "path": "local-tests.log",
+      "sha256": "543086f1b39154ec5ff62847ab4f47e4500f96f8dfc409fbe6c02cbdc818064b",
+      "bytes": 1339
+    },
+    {
+      "path": "policy-checks.log",
+      "sha256": "43bfebab437400dc55d3093501fd7d2dfca81da77c12686a075591aebfa69a00",
+      "bytes": 996
+    },
+    {
+      "path": "prompt-home.md",
+      "sha256": "81683b7ec7a47a1712e90cb35490c209ab7b595d6c9bc820e187507140757f98",
+      "bytes": 30744
+    },
+    {
+      "path": "prompt-project.md",
+      "sha256": "400b91a294f6f80261deb29d2bfce2185ee21b07180e9bc401ea4e25f0234361",
+      "bytes": 12111
+    },
+    {
+      "path": "release-tests.log",
+      "sha256": "a2dbe273429729f1071c5249f9332a0c51c031834a6a9b14f20be47f13aae9c6",
+      "bytes": 995
+    },
+    {
+      "path": "scored-cases.json",
+      "sha256": "d68b219d5c3640191eceb504f4e02efd12595e2c4a9aeccd6730337fd3971bdf",
+      "bytes": 29250
+    },
+    {
+      "path": "source-provenance.json",
+      "sha256": "92a2ec7c06d2a2040249013e64b08f67e5cd47d25c2f40b17a720edaa794d813",
+      "bytes": 1803
+    },
+    {
+      "path": "workshop_contract.md",
+      "sha256": "5d6daa38987965dc420f7477354d0bc789ec24aae6102d9ca9d62750ecc259ce",
+      "bytes": 5864
+    }
+  ]
+}

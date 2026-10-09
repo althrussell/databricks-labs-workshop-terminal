@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { terminalGatewayLimit } from "../gatewayLimit";
+import { terminalExitNotice } from "../terminalExit";
 import type { AttendeeErrorCode } from "../telemetry";
 
 interface Props {
@@ -84,8 +85,10 @@ export default function TerminalView({ sessionId, active, onExit, onGatewayLimit
             onGatewayLimit?.(limit);
           }
         } else if (data.t === "exit") {
+          if (closedRef.current) return;
           closedRef.current = true;
-          term.write("\r\n\x1b[90m[session ended]\x1b[0m\r\n");
+          term.write(`\r\n\x1b[33m[${terminalExitNotice(data)}]\x1b[0m\r\n`);
+          socket.close();
           onExit(sessionId);
         }
       };
@@ -96,7 +99,7 @@ export default function TerminalView({ sessionId, active, onExit, onGatewayLimit
           // Session is gone server-side (reaped or restart) — don't retry. The
           // server now accepts before closing, so this code actually arrives.
           closedRef.current = true;
-          term.write("\r\n\x1b[90m[session no longer exists — the workshop may have restarted. Relaunch it from Home.]\x1b[0m\r\n");
+          term.write("\r\n\x1b[33m[session no longer exists — the workshop may have restarted. Select Relaunch to continue.]\x1b[0m\r\n");
           onExit(sessionId);
           return;
         }
@@ -124,14 +127,14 @@ export default function TerminalView({ sessionId, active, onExit, onGatewayLimit
 
     function sendResize() {
       const socket = socketRef.current;
-      if (socket?.readyState === WebSocket.OPEN) {
+      if (!closedRef.current && socket?.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ t: "resize", cols: term.cols, rows: term.rows }));
       }
     }
 
     const inputDisposable = term.onData((data) => {
       const socket = socketRef.current;
-      if (socket?.readyState === WebSocket.OPEN) {
+      if (!closedRef.current && socket?.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ t: "input", data }));
       }
     });
@@ -144,7 +147,7 @@ export default function TerminalView({ sessionId, active, onExit, onGatewayLimit
 
     const heartbeat = setInterval(() => {
       const socket = socketRef.current;
-      if (socket?.readyState === WebSocket.OPEN) {
+      if (!closedRef.current && socket?.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ t: "ping" }));
       }
     }, 20000);

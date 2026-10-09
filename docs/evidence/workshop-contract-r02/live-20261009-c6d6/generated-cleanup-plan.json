@@ -1,0 +1,122 @@
+{
+  "operation": "exact_generated_app_cleanup_plan",
+  "scope": "simulated_control_tower",
+  "control_tower_mutations": 0,
+  "apps": [
+    {
+      "active_deployment": {
+        "create_time": "2026-10-09T05:59:05Z",
+        "creator": "a53d8bb2-243a-461b-95ee-f187cc254213",
+        "deployment_artifacts": {
+          "source_code_path": "/Workspace/Users/bf5286e1-b83f-444b-8540-2a8d426c1977/src/01f1c3a688ec13548f24b28d73474cd8"
+        },
+        "deployment_id": "01f1c3a688ec13548f24b28d73474cd8",
+        "mode": "SNAPSHOT",
+        "source_code_path": "/Workspace/Users/a53d8bb2-243a-461b-95ee-f187cc254213/.bundle/welcome-demo/default/files",
+        "status": {
+          "message": "App started successfully",
+          "state": "SUCCEEDED"
+        },
+        "update_time": "2026-10-09T05:59:54Z"
+      },
+      "app_status": {
+        "message": "App has status: App is running",
+        "state": "RUNNING"
+      },
+      "compute_size": "MEDIUM",
+      "compute_status": {
+        "message": "App compute is running.",
+        "state": "ACTIVE"
+      },
+      "create_time": "2026-10-09T05:55:40Z",
+      "creator": "a53d8bb2-243a-461b-95ee-f187cc254213",
+      "default_source_code_path": "/Workspace/Users/a53d8bb2-243a-461b-95ee-f187cc254213/.bundle/welcome-demo/default/files",
+      "description": "A Databricks App powered by AppKit",
+      "effective_user_api_scopes": [
+        "iam.access-control:read",
+        "iam.current-user:read"
+      ],
+      "id": "bf5286e1-b83f-444b-8540-2a8d426c1977",
+      "name": "welcome-demo",
+      "oauth2_app_client_id": "79cf90fd-b958-4169-89eb-c77d56097402",
+      "oauth2_app_integration_id": "79cf90fd-b958-4169-89eb-c77d56097402",
+      "service_principal_client_id": "bf5286e1-b83f-444b-8540-2a8d426c1977",
+      "service_principal_id": 72125804144152,
+      "service_principal_name": "app-3di57i welcome-demo",
+      "thumbnail_url": "",
+      "update_time": "2026-10-09T05:59:05Z",
+      "updater": "a53d8bb2-243a-461b-95ee-f187cc254213",
+      "url": "https://welcome-demo-7474655950495189.aws.databricksapps.com"
+    },
+    {
+      "active_deployment": {
+        "create_time": "2026-10-09T06:22:16Z",
+        "creator": "a53d8bb2-243a-461b-95ee-f187cc254213",
+        "deployment_artifacts": {
+          "source_code_path": "/Workspace/Users/c616606d-3a0a-4593-a743-21fd4f42d8f7/src/01f1c3a9c6331bac9457244bb8d4260a"
+        },
+        "deployment_id": "01f1c3a9c6331bac9457244bb8d4260a",
+        "mode": "SNAPSHOT",
+        "source_code_path": "/Workspace/Users/a53d8bb2-243a-461b-95ee-f187cc254213/.bundle/bakery-orders/default/files",
+        "status": {
+          "message": "App started successfully",
+          "state": "SUCCEEDED"
+        },
+        "update_time": "2026-10-09T06:23:06Z"
+      },
+      "app_status": {
+        "message": "App has status: App is running",
+        "state": "RUNNING"
+      },
+      "compute_size": "MEDIUM",
+      "compute_status": {
+        "message": "App compute is running.",
+        "state": "ACTIVE"
+      },
+      "create_time": "2026-10-09T06:10:50Z",
+      "creator": "a53d8bb2-243a-461b-95ee-f187cc254213",
+      "default_source_code_path": "/Workspace/Users/a53d8bb2-243a-461b-95ee-f187cc254213/.bundle/bakery-orders/default/files",
+      "description": "A Databricks App powered by AppKit",
+      "effective_user_api_scopes": [
+        "iam.access-control:read",
+        "iam.current-user:read"
+      ],
+      "id": "c616606d-3a0a-4593-a743-21fd4f42d8f7",
+      "name": "bakery-orders",
+      "oauth2_app_client_id": "2ecc21d5-b0c6-4781-8567-f17aa5515c2f",
+      "oauth2_app_integration_id": "2ecc21d5-b0c6-4781-8567-f17aa5515c2f",
+      "service_principal_client_id": "c616606d-3a0a-4593-a743-21fd4f42d8f7",
+      "service_principal_id": 75620515999770,
+      "service_principal_name": "app-3di57i bakery-orders",
+      "thumbnail_url": "",
+      "update_time": "2026-10-09T06:22:16Z",
+      "updater": "a53d8bb2-243a-461b-95ee-f187cc254213",
+      "url": "https://bakery-orders-7474655950495189.aws.databricksapps.com"
+    }
+  ],
+  "directories": [
+    {
+      "path": "/Workspace/Users/a53d8bb2-243a-461b-95ee-f187cc254213/.bundle/welcome-demo",
+      "id": "690328949447825"
+    },
+    {
+      "path": "/Workspace/Users/bf5286e1-b83f-444b-8540-2a8d426c1977/src",
+      "id": "690328949447881"
+    },
+    {
+      "path": "/Workspace/Users/a53d8bb2-243a-461b-95ee-f187cc254213/.bundle/bakery-orders",
+      "id": "553747446591241"
+    },
+    {
+      "path": "/Workspace/Users/c616606d-3a0a-4593-a743-21fd4f42d8f7/src",
+      "id": "553747446591299"
+    }
+  ],
+  "attendee_projects": {
+    "path": "/Workspace/Users/labuser+1@awsbricks.com/projects",
+    "id": "1462869392157865",
+    "other_entries": []
+  },
+  "no_owned_lakebase_projects": true,
+  "created_at": "2026-10-09T06:29:34.027752+00:00"
+}

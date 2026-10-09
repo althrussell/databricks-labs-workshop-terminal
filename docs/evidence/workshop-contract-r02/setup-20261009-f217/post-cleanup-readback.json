@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "operation": "r02_preliminary_setup_closeout",
+  "observed_at": "2026-10-09T02:18:38.691127+00:00",
+  "control_tower_mutations": 0,
+  "control_tower": {
+    "id": "4f1951af-9397-4462-b283-9a66c76b234f",
+    "active_deployment_id": "01f1bbc1de2911cb93356caa765f77a3",
+    "state": "RUNNING",
+    "compute": "ACTIVE"
+  },
+  "control_tower_unchanged": true,
+  "reviewed_ct_source_hashes_unchanged": true,
+  "attendee_projects_id": "1462869392157865",
+  "attendee_projects_preserved_empty": true,
+  "attendee_journey_run": false,
+  "status": "cleanup_verified"
+}

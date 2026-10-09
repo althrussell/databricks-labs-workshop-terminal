@@ -11,8 +11,8 @@ into both files and committed on the first commit.
 
 ## Always build apps with AppKit
 
-AppKit is the required baseline for every app. Every app, dashboard, tool, or UI
-in this project MUST be built with **AppKit** (Node.js + TypeScript + React) via
+AppKit is the required baseline for every app. Every app, interactive tool, or
+custom UI in this project MUST be built with **AppKit** (Node.js + TypeScript + React) via
 the **`databricks-apps`** skill.
 
 Scaffold with `workshop-init-project <name> --appkit` (add
@@ -30,9 +30,10 @@ Also required:
   report, chart, table, query results, or a Genie/chat assistant. It sets chart
   choice, semantic color, and AI-result provenance, mapped to real AppKit
   components.
-- **`databricks-lakebase`** when the app needs to save data. Provision it
+- **`databricks-lakebase`** for shared or database-backed saved data. Provision it
   non-interactively — never click resources together in the Databricks UI. Apps
-  with no saved state skip Lakebase.
+  with no saved state skip Lakebase. A clearly labeled browser-only demo can
+  use browser storage; do not represent it as shared staff data.
 
 **Where they overlap, the split is by surface.** `databricks-apps` owns
 scaffolding, APIs, and deployment. **Inside a data surface** — charts, KPIs,
@@ -70,13 +71,13 @@ forms — start from those.
   stock cards on stock grey.
 - **Motion on state change**, brief and purposeful, honouring reduced motion.
 - **Accessible by construction:** contrast at least 4.5:1, visible focus states,
-  alt text on meaningful images, and layouts that survive a narrow window. There
-  is no gate that will catch these later.
+  alt text on meaningful images, and layouts that survive a narrow window. Check
+  the rendered result with the available tooling.
 - **One memorable moment per app.**
 
-After the first deploy, take one look at your own work against that list, fix
-what is cheap, and describe the change in product terms. One pass, in context —
-no script, no browser run, no document.
+After the first deploy, inspect the primary screen and useful task as described
+in the workshop interaction contract. Fix observed defects and describe the
+change in product terms.
 
 Do **not** reach for a Python framework (Streamlit / Dash / Gradio / Flask /
 FastAPI / Reflex), and do not default to `databricks-apps-python` — that is the
@@ -84,28 +85,14 @@ Python-backend alternative. The only exception is when the user **explicitly and
 insistently** asks for a specific Python framework — confirm that's really what
 they want, then proceed. Otherwise it is always AppKit.
 
-## Tempo — get something on their screen fast
+<!-- workshop-contract-slot -->
 
-- **Show something early.** Build a thin but real version, deploy it, and hand
-  over the URL as soon as it renders. Then keep improving it. Never disappear
-  into a long build with nothing on screen.
-- **Iterate against the live URL** — change, redeploy, say what to look at.
-- **At most one or two questions, and about purpose rather than spec.** "Who's
-  going to use this, and what do they do today?" makes the app better in one
-  line; the header colour is yours to decide. Never ask a question whose only
-  purpose is to fill in a field, and never run a requirements round.
-- **Even a toy gets one** — ask what it's for, then build. "Because it's fun" is
-  a complete answer and needs no follow-up.
-- **Short todo lists**, named by outcome, only for work the attendee can see.
-- **Scaffold minimally** — only the AppKit features the app actually needs.
-- **Never announce process.** Describe what the product does.
+## Deployment — typecheck, deploy, share the preview
 
-## The ship gate — typecheck, deploy, open the URL
+Use these deployment steps alongside the contract's practical task checks:
 
-**Ship when the app is deployed and the URL loads.** That is the whole gate:
-
-1. **Typecheck and build** (`npx tsc --noEmit`, then the build). Seconds, no
-   browser. Confirm AppKit API signatures with
+1. **Typecheck and build** (`npx tsc --noEmit`, then the build). Confirm AppKit
+   API signatures with
    `npx @databricks/appkit docs <section>` before writing against them, and
    never write `as unknown as <T>`.
 2. **Deploy with the `deploy_databricks_app` Workshop MCP tool**, passing this
@@ -120,12 +107,6 @@ they want, then proceed. Otherwise it is always AppKit.
 
 <!-- discovery-anchor -->
 
-**Do not** run `databricks apps validate`, install Playwright browsers, or
-write or update `tests/smoke.spec.ts` unless the user asks for tests or a
-deploy has already failed and you are debugging it. Never install Chromium as a
-condition of calling something done. This overrides the `databricks-apps`
-skill's instruction to always update the smoke test before validating.
-
 If something breaks, read the actual error and fix what it names. No root-cause
 ceremony, no test-first ritual.
 
@@ -135,5 +116,6 @@ Never generate a document unprompted — no architecture spec, security review,
 Jira stories, test cases, or build prompt unless the user asks. Do not pitch
 documentation after a build. When they do ask, use the **`promote`** skill.
 
-Keep `README.md` current instead: one line on what the app is for, plus the
-live URL once it exists.
+Keep `README.md` current instead: a short purpose line, the live URL once it
+exists, and the `<!-- workshop-brief:v1 -->` continuity section required by the
+workshop contract above. Preserve attendee-authored notes.

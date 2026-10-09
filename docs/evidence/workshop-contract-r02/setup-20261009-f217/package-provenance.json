@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "ci_run_id": 37873087440,
+  "pr_url": "https://github.com/althrussell/databricks-labs-workshop-terminal/pull/89",
+  "branch_commit": "9f0cab97c53f674aa0d739f4c68d127a187f841d",
+  "ci_package_source_commit": "6d8868cbe5930ea4dc42ea983f2d58eec51514ba",
+  "runtime_files_matched_to_branch_commit": 444,
+  "byte_equivalence_verified": true,
+  "manifest_sha256": "9d4b6935064735bc718b2892e65f6f5ee4cdae90dc1607f5149e93840441d20e",
+  "package_sha256": "ac7d56f2c219b34ddf1d453b0c0741c41f50c4d5fa3b1b3c845feb32ca53f2f0",
+  "linux_cp311_contract_verified": true
+}
