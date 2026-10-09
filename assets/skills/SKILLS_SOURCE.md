@@ -24,6 +24,8 @@ the one boot installs.
 
 ## Not vendored from upstream (preserved on refresh)
 
+- `workshop-agent-bricks-cli` — custom-agent CLI workflow for the WT identity,
+  project scaffold, resource handoff and UI baseline; upstream skills remain verbatim
 - `databricks-app-apx` — Control Tower / apx-specific, fork-only
 - `workshop-design-studio` — the visual baseline and copy-ready AppKit patterns
   for anything an attendee builds with a UI. Maintained here, not upstream; see

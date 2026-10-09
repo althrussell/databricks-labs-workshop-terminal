@@ -546,6 +546,8 @@ def evaluate(
     omnigent_enabled = _bool(env, "OMNIGENT_ENABLED", True)
     if omnigent_enabled:
         pin_names.append("OMNIGENT_VERSION")
+    if _bool(env, "AGENTBRICKS_ENABLED", False):
+        pin_names.append("AGENTBRICKS_VERSION")
     missing_pins = [name for name in pin_names if not env.get(name, "").strip()]
     # Unset is the expected state: the reviewed tag is repo-owned. Only an
     # explicitly configured branch tip is a missing pin.
@@ -571,6 +573,8 @@ def evaluate(
         "omnigent": "OMNIGENT_VERSION",
         "databricks_agent_skills": "SKILLS_REF",
     }
+    if _bool(env, "AGENTBRICKS_ENABLED", False):
+        env_names.update({"agentbricks": "AGENTBRICKS_VERSION", "uv": "UV_VERSION"})
     omnigent_tools = {"omnigent"}
     for tool, env_name in env_names.items():
         entry = raw_manifest.get(tool)
@@ -584,10 +588,9 @@ def evaluate(
         expected = str(entry.get("expected") or "")
         actual = str(entry.get("actual") or "")
         configured_expected = env.get(env_name, "").strip()
-        if tool == "databricks_agent_skills" and not configured_expected:
-            # The skills ref is repo-owned in assets/artifacts/manifest.json, so
-            # an unset SKILLS_REF is the normal case, not a missing pin. Setting
-            # it still has to agree with what bootstrap installed.
+        if tool in {"databricks_agent_skills", "uv"} and not configured_expected:
+            # Skills and uv have repo-owned pins; an unset environment override
+            # is normal. An explicit override must match the installed release.
             configured_expected = expected
         match = (
             enabled

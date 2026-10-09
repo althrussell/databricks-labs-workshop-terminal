@@ -25,26 +25,30 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'USAGE'
-usage: workshop-init-project <project-name> [--appkit [-- <databricks apps init flags>]]
+usage: workshop-init-project <project-name> [--appkit | --agentbricks] [-- <scaffold flags>]
 
   <project-name>   created (or adopted) at ~/projects/<project-name>
   --appkit         scaffold an AppKit app into it first, without nesting
-  --               everything after this is passed through to `databricks apps init`
+  --agentbricks    scaffold a custom-agent backend with the Agent Bricks CLI
+  --               remaining arguments go to the selected scaffolder
 
 examples:
   workshop-init-project my-app --appkit
   workshop-init-project my-app --appkit -- --features analytics
   workshop-init-project my-notes            # no scaffold, just the project
+  workshop-init-project my-agent --agentbricks -- --framework openai
 USAGE
 }
 
 NAME=""
 APPKIT=0
+AGENTBRICKS=0
 PASSTHRU=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --appkit) APPKIT=1; shift ;;
+    --agentbricks) AGENTBRICKS=1; shift ;;
     --) shift; PASSTHRU=("$@"); break ;;
     -h|--help) usage; exit 0 ;;
     -*) echo "workshop-init-project: unknown flag $1" >&2; usage; exit 2 ;;
@@ -61,6 +65,10 @@ if [ -z "$NAME" ]; then
   usage
   exit 2
 fi
+if [ "$APPKIT" = "1" ] && [ "$AGENTBRICKS" = "1" ]; then
+  echo "workshop-init-project: choose one scaffold per project" >&2
+  exit 2
+fi
 
 PROJECTS="${HOME}/projects"
 DEST="${PROJECTS}/${NAME}"
@@ -71,6 +79,24 @@ MARKER="<!-- workshop-project-memory -->"
 APPKIT_VERSION="${APPKIT_VERSION:-0.87.0}"
 
 mkdir -p "$PROJECTS"
+
+if [ "$AGENTBRICKS" = "1" ]; then
+  if ! command -v agentbricks >/dev/null || ! command -v uv >/dev/null; then
+    echo "workshop-init-project: Agent Bricks CLI and uv are not ready; ask the facilitator to enable/qualify AGENTBRICKS_ENABLED" >&2
+    exit 1
+  fi
+  if [ ! -e "$DEST" ]; then
+    # Scaffold BEFORE git/memory seeding: the CLI refuses an existing directory.
+    # Use the already provisioned profile; this path needs no login or credentials.
+    # API-only keeps the upstream demo UI from replacing the workshop UX baseline.
+    AGENT_PROFILE="${DATABRICKS_CONFIG_PROFILE:-DEFAULT}"
+    agentbricks --profile "$AGENT_PROFILE" init --profile "$AGENT_PROFILE" --disable-chat-app \
+      "$DEST" "${PASSTHRU[@]+"${PASSTHRU[@]}"}" >&2
+  elif [ ! -f "$DEST/agent.toml" ]; then
+    echo "workshop-init-project: existing project has no agent.toml; choose a clean name or use the Agent Bricks migration workflow" >&2
+    exit 1
+  fi
+fi
 
 if [ "$APPKIT" = "1" ] && [ ! -e "$DEST" ]; then
   # --output-dir is the PARENT: this produces ~/projects/<name> directly, which
@@ -120,33 +146,53 @@ if [ ! -d .git ]; then
   git init -q
 fi
 
+if [ "$AGENTBRICKS" = "1" ]; then
+  # Codex/Omnigent can run with an isolated CODEX_HOME in a git worktree.
+  # Commit this project's CLI skill so those workers retain the full workflow.
+  PROJECT_SKILL=".agents/skills/workshop-agent-bricks-cli"
+  if [ ! -f "$PROJECT_SKILL/SKILL.md" ]; then
+    SKILL_SOURCE="$HOME/.claude/skills/workshop-agent-bricks-cli"
+    if [ ! -f "$SKILL_SOURCE/SKILL.md" ]; then
+      echo "workshop-init-project: workshop-agent-bricks-cli skill is missing from this harness home" >&2
+      exit 1
+    fi
+    mkdir -p "$PROJECT_SKILL"
+    cp -R "$SKILL_SOURCE/." "$PROJECT_SKILL/"
+  fi
+  mkdir -p .claude/skills
+  if [ ! -e .claude/skills/workshop-agent-bricks-cli ]; then
+    ln -s ../../.agents/skills/workshop-agent-bricks-cli .claude/skills/workshop-agent-bricks-cli
+  fi
+  # The upstream Python template ignores .claude; stage only this skill link.
+  git add .agents/skills/workshop-agent-bricks-cli
+  git add -f .claude/skills/workshop-agent-bricks-cli
+fi
+
 # --- Seeding: additive only ---------------------------------------------------
 # Every write below either creates a file or appends to one. Nothing here
 # replaces content someone else wrote, because the file this most often collides
 # with — CLAUDE.md — is the one carrying the workshop's rules.
 
 if [ -f "$TEMPLATE" ]; then
-  if [ ! -f AGENTS.md ]; then
-    cp "$TEMPLATE" AGENTS.md
-  fi
-
-  if [ ! -f CLAUDE.md ]; then
-    cp "$TEMPLATE" CLAUDE.md
-  elif ! grep -q "$MARKER" CLAUDE.md 2>/dev/null; then
+  for MEMORY in AGENTS.md CLAUDE.md; do
+  if [ ! -f "$MEMORY" ]; then
+    cp "$TEMPLATE" "$MEMORY"
+  elif ! grep -q "$MARKER" "$MEMORY" 2>/dev/null; then
     # A scaffold (or the attendee) got here first. The workshop rules go on top
     # because they are authoritative, and the existing content is kept below
     # rather than discarded — the AppKit notes a scaffold writes are worth
     # having, they are just not the thing that decides how we build.
-    EXISTING="$(cat CLAUDE.md)"
+    EXISTING="$(cat "$MEMORY")"
     {
       cat "$TEMPLATE"
       printf '\n\n## Notes that were already in this project\n\n'
       printf 'Kept verbatim from the file that existed when the workshop set this\n'
-      printf 'project up (usually the AppKit scaffold). The rules above win on any\n'
+      printf 'project up (usually a scaffold). The rules above win on any\n'
       printf 'conflict.\n\n'
       printf '%s\n' "$EXISTING"
-    } > CLAUDE.md
+    } > "$MEMORY"
   fi
+  done
   git add AGENTS.md CLAUDE.md
 fi
 

@@ -98,6 +98,7 @@ def test_fork_only_skills_survive_a_refresh():
     from refresh_vendored_skills import FORK_ONLY
 
     for name in (
+        "workshop-agent-bricks-cli",
         "promote",
         "refresh-databricks-skills",
         "databricks-app-apx",

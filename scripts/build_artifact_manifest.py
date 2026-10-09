@@ -48,7 +48,7 @@ CLI_RELEASE = (
 )
 NPM_PUBLIC_REGISTRY = "https://registry.npmjs.org"
 CODEX_PACKAGE = "@openai/codex"
-UV_VERSION = "0.12.24"
+UV_VERSION = install.UV_VERSION
 PYTHON_RELEASE = "20261003"
 PYTHON_VERSION = "3.12.15"
 CODEX_NATIVE_EXECUTABLE = "vendor/x86_64-unknown-linux-musl/bin/codex"
@@ -270,6 +270,7 @@ def build() -> dict:
             "executable_relative_path": "python/bin/python3.12",
         },
         "omnigent_lock": _lock_entry(),
+        "agentbricks_lock": _lock_entry("agentbricks", install.AGENTBRICKS_VERSION),
         "databricks_agent_skills": _skills_entry(),
     }
 
@@ -308,14 +309,15 @@ def _vendored_script_entry(name: str, entry: dict) -> dict:
     }
 
 
-def _lock_entry() -> dict:
-    filename = f"omnigent-{install.OMNIGENT_VERSION}.lock"
+def _lock_entry(name: str = "omnigent", version: str | None = None) -> dict:
+    version = version or install.OMNIGENT_VERSION
+    filename = f"{name}-{version}.lock"
     path = os.path.join(REPO_ROOT, "assets", "artifacts", filename)
     if not os.path.isfile(path):
-        raise SystemExit(f"{filename} is missing; export it from deploy/omnigent-app")
+        raise SystemExit(f"{filename} is missing; regenerate its reviewed dependency lock")
     checksum = hashlib.sha256(open(path, "rb").read()).hexdigest()
     return {
-        "version": install.OMNIGENT_VERSION,
+        "version": version,
         "source": filename,
         "sha256": checksum,
         "lock_sha256": checksum,

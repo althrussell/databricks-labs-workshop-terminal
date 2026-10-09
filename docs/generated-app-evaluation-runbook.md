@@ -363,6 +363,11 @@ second digest after binding runtime environment/SP values into `app.yaml`.
 proven by the flag. An instrumented snapshot is a different source artifact from
 the previous deployed package even when its prompt policy is unchanged.
 
+To qualify the optional custom-agent CLI, add `"agentbricks": true` to this
+specification. The planner requires its reviewed artifact lock and sets
+`AGENTBRICKS_ENABLED=true` and the exact release pin. See
+[Agent Bricks CLI qualification](agent-bricks-cli.md) for the additional checks.
+
 Generate a local plan, inspect resource names, principal, scopes, release pins,
 source manifest, observation settings, and bounds:
 

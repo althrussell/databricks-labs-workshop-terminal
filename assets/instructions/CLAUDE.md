@@ -15,7 +15,7 @@ skills maintained here.
 | Category | Skills |
 |----------|--------|
 | Apps | databricks-apps (AppKit), workshop-design-studio, databricks-app-design, databricks-lakebase |
-| AI & Agents | databricks-agent-bricks, databricks-mlflow-evaluation, databricks-model-serving, databricks-vector-search |
+| AI & Agents | workshop-agent-bricks-cli (custom agents), databricks-agent-bricks (managed assistants/supervisors), databricks-mlflow-evaluation, databricks-model-serving, databricks-vector-search |
 | Analytics | databricks-aibi-dashboards, databricks-dbsql, databricks-metric-views, databricks-unity-catalog, databricks-data-discovery |
 | Data Engineering | databricks-pipelines, databricks-jobs, databricks-dabs, databricks-synthetic-data-gen, databricks-zerobus-ingest |
 | Development | databricks-core, databricks-python-sdk, databricks-apps-python |
@@ -136,7 +136,8 @@ Before starting any new project:
    ```bash
    cd "$(workshop-init-project my-app --appkit -- --features analytics)"
    ```
-   Drop `--appkit` for something that isn't an app (a script, a notes repo).
+   For a custom agent backend, use `--agentbricks` and the
+   `workshop-agent-bricks-cli` skill. Drop the scaffold flag for a script or notes repo.
 
    This makes `~/projects/my-app`, scaffolds AppKit **into that directory**,
    runs `git init`, and commits the workshop's project memory as both
@@ -178,6 +179,13 @@ React) via the **`databricks-apps`** skill — scaffolded for you by
 `workshop-init-project --appkit` (see Project setup above; do not call
 `databricks apps init` directly). This applies no matter which agent you are
 (Claude, Codex, or Omnigent).
+
+Custom agent backends use the **`workshop-agent-bricks-cli`** skill and its
+supported Python `DurableAgentServer` runtime when the optional CLI is enabled.
+That backend is an explicit exception to the UI framework rule; any accompanying
+attendee-facing UI still uses AppKit and the design skills below. Deploy the
+backend with `agentbricks deploy`, and its separate AppKit UI with the workshop
+app deployment tool.
 
 Three more skills are not optional:
 
@@ -255,7 +263,7 @@ After the first deploy, inspect the primary screen and useful task as described
 in the workshop interaction contract. Fix observed defects and describe the
 change in product terms.
 
-Do **not** reach for a Python framework (Streamlit / Dash / Gradio / Flask /
+For attendee-facing UI, do **not** reach for a Python framework (Streamlit / Dash / Gradio / Flask /
 FastAPI / Reflex), and do not use `databricks-apps-python` by default — it is
 the Python-backend alternative, for when an attendee **explicitly and
 insistently** asks for one. In that case confirm that's really what they want,

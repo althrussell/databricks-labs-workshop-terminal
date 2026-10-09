@@ -713,6 +713,7 @@ _VERSION_PINS = {
     "node_linux_arm64": ("NODE_VERSION", ""),
     "node_linux_x64": ("NODE_VERSION", ""),
     "omnigent_lock": ("OMNIGENT_VERSION", ""),
+    "agentbricks_lock": ("AGENTBRICKS_VERSION", ""),
 }
 
 
@@ -995,8 +996,9 @@ def test_skills_content_differing_from_the_manifest_is_an_error_not_a_fallback(
     assert "reviewed manifest" in step["error"]
 
 
-def test_skills_valid_persistent_stamp_skips_clone(
-    monkeypatch, tmp_path, restore_installer_state
+@pytest.mark.parametrize("prior_fork_content", [None, "outdated"])
+def test_skills_valid_persistent_stamp_refreshes_fork_without_clone(
+    monkeypatch, tmp_path, restore_installer_state, prior_fork_content
 ):
     prefix = tmp_path / "prefix"
     vendored = tmp_path / "vendored"
@@ -1005,6 +1007,12 @@ def test_skills_valid_persistent_stamp_skips_clone(
     upstream.mkdir(parents=True)
     installed.mkdir(parents=True)
     vendored.mkdir()
+    fork_name = "workshop-agent-bricks-cli"
+    (vendored / fork_name).mkdir()
+    (vendored / fork_name / "SKILL.md").write_text("current fork")
+    if prior_fork_content is not None:
+        (prefix / "skills" / fork_name).mkdir()
+        (prefix / "skills" / fork_name / "SKILL.md").write_text(prior_fork_content)
     (upstream / "SKILL.md").write_text("verified")
     (installed / "SKILL.md").write_text("verified")
     commit = "b" * 40
@@ -1039,6 +1047,9 @@ def test_skills_valid_persistent_stamp_skips_clone(
     install._install_skills()
 
     assert not any(argv[:2] == ["git", "clone"] for argv in calls)
+    assert (prefix / "skills" / fork_name / "SKILL.md").read_text() == "current fork"
+    assert (installed / "SKILL.md").read_text() == "verified"
+    assert install._fork_skills_current(str(prefix / "skills"))
     manifest = install.status()["release_manifest"]["databricks_agent_skills"]
     assert manifest["match"] is True
     assert manifest["source"] == "prewarmed"
@@ -1146,6 +1157,10 @@ def _lay_down_prewarmed_prefix(
     installed.mkdir(parents=True)
     (upstream / "SKILL.md").write_text("same")
     (installed / "SKILL.md").write_text("same")
+    for name in install.FORK_SKILLS:
+        source = Path(install._ASSETS_SKILLS) / name
+        if source.is_dir():
+            shutil.copytree(source, prefix / "skills" / name)
     commit = "d" * 40
     skills_checksum = install._directory_checksum(
         prefix / install.SKILLS_CLONE_DIR / install.SKILLS_UPSTREAM_DIR
@@ -1596,3 +1611,32 @@ def test_failed_skills_refresh_never_exposes_mixed_installed_content(
 
     assert (installed / "SKILL.md").read_text() == "old-complete"
     assert install.status()["release_manifest"]["databricks_agent_skills"]["match"] is False
+
+
+def test_failed_fork_skill_refresh_keeps_prior_complete_tree(monkeypatch, tmp_path):
+    prefix = tmp_path / "prefix"
+    target = prefix / "skills"
+    vendored = tmp_path / "vendored"
+    fork_name = "workshop-agent-bricks-cli"
+    (target / fork_name).mkdir(parents=True)
+    (target / fork_name / "SKILL.md").write_text("old complete")
+    (target / "upstream").mkdir()
+    (target / "upstream" / "SKILL.md").write_text("verified upstream")
+    (vendored / fork_name).mkdir(parents=True)
+    (vendored / fork_name / "SKILL.md").write_text("new fork")
+    original_checksum = install._directory_checksum(target)
+    real_copytree = install.shutil.copytree
+
+    def interrupted_copy(source, destination, *args, **kwargs):
+        if str(source).startswith(str(vendored)):
+            raise OSError("fork copy interrupted")
+        return real_copytree(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(install, "_ASSETS_SKILLS", str(vendored))
+    monkeypatch.setattr(install.shutil, "copytree", interrupted_copy)
+
+    with pytest.raises(OSError, match="fork copy interrupted"):
+        install._refresh_fork_skills(str(prefix), str(target))
+
+    assert install._directory_checksum(target) == original_checksum
+    assert not list(prefix.glob(".skills-fork-stage-*"))

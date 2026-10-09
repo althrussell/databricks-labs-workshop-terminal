@@ -39,12 +39,7 @@ VENDORED_DIR = os.path.normpath(
 # ceremony onto builds that need to reach a live URL in minutes. Keeping them out
 # of this set is deliberate -- a refresh now deletes them on sight, so a stray
 # reintroduction cannot survive.
-FORK_ONLY = frozenset({
-    "databricks-app-apx",
-    "promote",
-    "refresh-databricks-skills",
-    "workshop-design-studio",
-})
+FORK_ONLY = install.FORK_SKILLS
 
 
 def _directories(path: str) -> set[str]:

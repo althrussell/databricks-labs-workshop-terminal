@@ -33,6 +33,11 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in _TRUE
 
 
+def agentbricks_enabled() -> bool:
+    """Opt-in beta custom-agent CLI; independent of the coding harnesses."""
+    return _env_bool("AGENTBRICKS_ENABLED", False)
+
+
 def ensure_https(url: str) -> str:
     if url and not url.startswith(("http://", "https://")):
         return f"https://{url}"

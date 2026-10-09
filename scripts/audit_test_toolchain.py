@@ -87,6 +87,7 @@ def main():
         ("github", "uv", artifacts["uv_binary"]["version"], "astral-sh/uv"),
         ("node", "node-active-lts", artifacts["node_linux_x64"]["version"], ""),
         ("pypi", "omnigent", artifacts["omnigent_lock"]["version"], ""),
+        ("pypi", "databricks-agentbricks", artifacts["agentbricks_lock"]["version"], ""),
     })
     registry = subprocess.run(["npm", "config", "get", "registry"], check=True,
                               capture_output=True, text=True, timeout=10).stdout.strip().rstrip("/")

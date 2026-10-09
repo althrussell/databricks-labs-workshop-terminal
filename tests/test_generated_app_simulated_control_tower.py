@@ -39,6 +39,37 @@ def plan(value=None):
     return plan_simulation(value or spec(), manifest(), now=NOW)
 
 
+def test_agentbricks_opt_in_uses_reviewed_lock_without_ct_requests():
+    value = spec()
+    value["agentbricks"] = True
+    result = plan(value)
+    assert result["environment"]["AGENTBRICKS_ENABLED"] == "true"
+    assert result["environment"]["AGENTBRICKS_VERSION"] == manifest()["artifacts"]["agentbricks_lock"]["version"]
+    assert result["control_tower_requests"] == 0
+    assert plan()["environment"]["AGENTBRICKS_ENABLED"] == "false"
+
+
+def test_historical_manifest_remains_supported_without_agentbricks():
+    reviewed = manifest()
+    del reviewed["artifacts"]["agentbricks_lock"]
+    assert plan_simulation(spec(), reviewed, now=NOW)["environment"]["AGENTBRICKS_ENABLED"] == "false"
+    value = spec()
+    value["agentbricks"] = True
+    with pytest.raises(ValueError, match="requires its reviewed artifact lock"):
+        plan_simulation(value, reviewed, now=NOW)
+
+
+@pytest.mark.parametrize("mutation", ["unknown_artifact", "lock_digest"])
+def test_optional_artifact_does_not_relax_manifest_validation(mutation):
+    reviewed = manifest()
+    if mutation == "unknown_artifact":
+        reviewed["artifacts"]["unknown"] = reviewed["artifacts"]["agentbricks_lock"]
+    else:
+        reviewed["artifacts"]["agentbricks_lock"]["lock_sha256"] = "f" * 64
+    with pytest.raises(ValueError):
+        plan_simulation(spec(), reviewed, now=NOW)
+
+
 def pair():
     value = json.loads((ROOT / "docs/examples/omnigent-control-tower-payload.json").read_text())
     value["environment"]["WORKSHOP_ATTENDEE_EMAIL"] = "operator@example.com"
