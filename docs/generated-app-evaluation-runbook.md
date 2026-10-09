@@ -173,8 +173,12 @@ runbook describes what can be executed now and what remains to complete that pas
 The [workshop pacing guidance](app-quality-audit-and-remediation-plan.md#workshop-pacing-and-scope)
 governs future remediation: a small compelling demo, usually one short exchange,
 sensible defaults and practical checks. [R02](workshop-interaction-contract-r02.md)
-is implemented locally with policy delivery tests and a bounded native MLflow
-model probe; real harness/generated-app release qualification remains separate.
+is committed and pushed with policy delivery tests and bounded native MLflow
+model probes. Three genuine-labuser Labs attempts are preserved in the
+[R02 live closeout](evidence/workshop-contract-r02/live-20261009-e569/CLOSEOUT.md).
+Observer failures and a simulated generated-SP permission gap prevented generated
+app acceptance; native assistant/question persistence remains unresolved. Qualify
+that delivery before another build run. Actual CT integration remains separate.
 The detailed independent evaluator is operator work; it must not turn the
 attendee's build into production planning or a prolonged acceptance ceremony.
 Current R01 artifacts and evaluator behavior retain their recorded policy and

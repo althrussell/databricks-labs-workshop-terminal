@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "control_tower": {
+    "id": "4f1951af-9397-4462-b283-9a66c76b234f",
+    "active_deployment_id": "01f1bbc1de2911cb93356caa765f77a3",
+    "state": "RUNNING",
+    "compute": "ACTIVE"
+  },
+  "control_tower_unchanged": true,
+  "control_tower_mutations": 0
+}

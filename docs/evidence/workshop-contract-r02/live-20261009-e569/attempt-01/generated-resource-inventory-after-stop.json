@@ -1,0 +1,36 @@
+{
+  "observed_at": "2026-10-09T02:51:44.168165+00:00",
+  "owner": "bd6e0ccd-4b90-49a6-bca2-b92689893360",
+  "apps": [],
+  "lakebase_projects": [
+    {
+      "name": "projects/bakery-orders",
+      "uid": "b3ddb612-e749-4366-b03b-675dfb9ad538",
+      "owner": "bd6e0ccd-4b90-49a6-bca2-b92689893360",
+      "create_time": "2026-10-09T02:39:08Z"
+    }
+  ],
+  "workspace_paths": [
+    {
+      "path": "/Workspace/Users/bd6e0ccd-4b90-49a6-bca2-b92689893360",
+      "id": "2326414857888826",
+      "entries": [
+        {
+          "path": "/Workspace/Users/bd6e0ccd-4b90-49a6-bca2-b92689893360/.db_internal",
+          "object_id": "2326414857888828",
+          "object_type": "ObjectType.DIRECTORY"
+        },
+        {
+          "path": "/Workspace/Users/bd6e0ccd-4b90-49a6-bca2-b92689893360/src",
+          "object_id": "2326414857888829",
+          "object_type": "ObjectType.DIRECTORY"
+        }
+      ]
+    },
+    {
+      "path": "/Workspace/Users/labuser+1@awsbricks.com/projects",
+      "id": "1462869392157865",
+      "entries": []
+    }
+  ]
+}

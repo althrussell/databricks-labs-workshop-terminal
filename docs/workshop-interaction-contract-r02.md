@@ -1,10 +1,12 @@
 # R02: workshop interaction and quality contract
 
-Committed on 9 October 2026 in draft PR #89. The initial CI package passed
-standalone Labs package/model qualification; its resources were cleaned
-before a corrected package is used for the attendee journey. No Control Tower
-changes or wizard re-enablement were performed. R01's recorded baseline and
-verdict are unchanged.
+Committed on 9 October 2026 in PR #89. Policy delivery tests and bounded
+model probes pass. Three genuine-labuser journeys were attempted on an isolated
+Labs package; their generated-app outcome remains **unverified** because of
+observer failures and a simulation permission gap. The validated observer and
+permission fixes are pushed; the final native persistence issue remains open.
+All owned test resources were cleaned. No Control Tower changes or wizard
+re-enablement were performed. R01's recorded baseline and verdict are unchanged.
 
 ## What changed
 
@@ -101,6 +103,41 @@ stub probe; its corrected native scorer evaluates only interaction and build
 intent. Scores from those different scorer/policy versions are not a quantitative
 before/after comparison.
 
+## Isolated Labs native journeys
+
+The [live closeout](evidence/workshop-contract-r02/live-20261009-e569/CLOSEOUT.md)
+preserves all three attempts, exact package/observer identities, native MLflow
+traces, the failed generated source, cleanup receipts, and CT readbacks. The
+runtime used R02 instruction commit `28c80f1`, independently compared across all
+444 runtime files to its CI package. External observer refreshes retained the
+PEX bytes and original four-hour expiry. They do not imply that later evaluator
+commits were built into that immutable PEX.
+
+The attendee was genuinely signed in as `labuser+1@awsbricks.com`. Native Claude
+`2.1.283` selected Sonnet 5; this is a different route from the direct Sonnet 4.6
+and GPT 5.6 Terra probes above. Wizard and wizard LLM were disabled; these runs
+do not qualify onboarding or other harnesses. Every run used the same bakery
+opening and disclosed only facts requested by an observed question.
+
+| Attempt | Observed result | Interpretation |
+| --- | --- | --- |
+| 1, 695.3 seconds | One consequential question/reply; collector stopped with `native_message_size_budget`; no app observed | Compaction handling reproduced the collector failure; the original flag was not retained at observer refresh. Marked compaction summaries are now excluded; real oversized user replies still fail. Generated UX unverified. |
+| 2, 594.4 seconds | Short attention question and visible prioritization advice; actual reply; generated AppKit deployment failed for missing catalog access; collector then stopped on a task notification | CT's contained workspace grant covers future app SPs. The Labs simulation omitted that equivalence. Exact generated-SP read grants now pass direct/effective canary readbacks. Native task notifications are excluded from attendee replies. Recovery/final UX unverified because the collector interrupted it. |
+| 3, 688.5 seconds | Terminal showed a question set; primary native log exported only the opening; evaluator stopped the exact stalled session | The simulator never received the question and froze replies at its original deadline. Separate metadata inspection found no assistant records in that primary log. Native persistence/projection qualification remains unresolved; this is not an agent-quality verdict. |
+
+Native MLflow scored only the correlated clarification criterion in attempts 1
+and 2, at 1.0 each. That does not score complete consultation, assumptions,
+implementation ordering, UX or persistence. Attempt 3 was not scored as a
+policy failure from missing observer text. The legacy R01 scope-agreement result
+is retained in raw journeys but is not an R02 requirement.
+
+The final focused evaluator suite passed 287 checks, including the prepared
+browser/pyte checks. CI passed on `53ec03c`. Generated app/source/backend cleanup
+and WT teardown were independently verified; the attendee's existing projects
+directory was preserved. The CT app stayed on deployment
+`01f1bbc1de2911cb93356caa765f77a3`, and all seven reviewed CT source hashes matched.
+Authentication state was excluded from evidence and removed after teardown.
+
 ## Limits and remaining qualification
 
 These are five synthetic scenarios per model, not a statistically meaningful
@@ -115,9 +152,11 @@ are not fixed by this policy change.
 Existing warm installations and already seeded project adoption still need R04's
 versioned reconciliation. R03 still owns wizard flow, card/typed-goal integrity,
 idea relevance, persistence, and request coordination. R05/R06 own starter quality
-and practical browser/repair infrastructure. Run a fresh CT-compatible isolated
-WT-to-app journey and then CT integration when qualifying the resulting release.
-This report does not claim that either has been rerun for R02.
+and practical browser/repair infrastructure. First qualify assistant/question
+persistence and reply delivery for the pinned native CLI, then repeat the isolated
+WT-to-app journey and independently check its generated UI. Actual CT integration
+follows a passing isolated result. R02 has been exercised live; those attempts
+have not established generated-app acceptance or CT integration.
 
 To repeat the limited probe with an explicitly configured tracking store:
 

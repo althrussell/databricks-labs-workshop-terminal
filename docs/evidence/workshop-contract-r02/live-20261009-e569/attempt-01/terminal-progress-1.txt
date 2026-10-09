@@ -1,0 +1,24 @@
+     - [Alert](./docs/api/appkit-ui/ui/Alert.md): Displays important information with optional icon and multiple variants                 
+     - [AlertDialog](./docs/api/appkit-ui/ui/AlertDialog.md): Modal dialog that interrupts the user with critical information requiri     
+     … +9 lines (ctrl+o to expand)                                                                                                        
+                                                                                                                                          
+● All the components I need exist. Let me check Badge variants and Button props quickly to confirm the exact API.                         
+                                                                                                                                          
+● Bash(cd ~/projects/bakery-orders && npx @databricks/appkit docs "./docs/api/appkit-ui/ui/Badge.md" 2>&1 | head -40                      
+      echo "---BUTTON---"…)                                                                                                               
+  ⎿  # Badge                                                                                                                              
+                                                                                                                                          
+     Small label for displaying status, categories, or counts                                                                             
+     … +76 lines (ctrl+o to expand)                                                                                                       
+                                                                                                                                          
+● Bash(cd ~/projects/bakery-orders && grep -n "success\|warning\|destructive" client/tailwind.config.ts)                                  
+  ⎿  No matches found                                                                                                                     
+                                                                                                                                          
+✶ Compacting conversation… (1m 6s · ↓ 4.1k tokens)                                                                                        
+  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work                                                
+                                                                                                                                          
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯                                                                                                                                         
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt · ← for agents                                  0% until auto-compact  
+                                                                                                                                          

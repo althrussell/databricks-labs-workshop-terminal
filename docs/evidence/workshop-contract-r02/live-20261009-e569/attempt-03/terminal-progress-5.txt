@@ -1,0 +1,24 @@
+ ▝▝   ▝▝   ~/projects                                                                                                                     
+                                                                                                                                          
+                                                                                                                                          
+❯ I run a small bakery. Can you make a page so I know which orders need attention?                                                        
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+←  ☐ Needs attention  ☐ Order data  ✔ Submit  →                                                                                           
+                                                                                                                                          
+What should count as an order "needing attention"?                                                                                        
+                                                                                                                                          
+❯ 1. [ ] Running late                                                                                                                     
+         Orders past their pickup/delivery time that aren't done yet                                                                      
+  2. [ ] Not started yet                                                                                                                  
+         New orders that haven't been baked/prepped at all                                                                                
+  3. [ ] Close to due time                                                                                                                
+         Orders coming up soon so your team can get ahead of them                                                                         
+  4. [ ] Not sure — pick a sensible default                                                                                               
+         I'll start with late and not-yet-started orders, since that's what most bakeries act on first                                    
+  5. [ ] Type something                                                                                                                   
+     Next                                                                                                                                 
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  6. Chat about this                                                                                                                      
+                                                                                                                                          
+Enter to select · Tab/Arrow keys to navigate · Esc to cancel                                                                              
+                                                                                                                                          

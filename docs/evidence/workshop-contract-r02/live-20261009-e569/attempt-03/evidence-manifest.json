@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "kind": "r02_third_live_attempt",
+  "authentication_state_archived": false,
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "8412cdab711a2aab0609c465e0e341c557deeebd24c10e0b4921d8ee73246769",
+      "size": 2062
+    },
+    {
+      "path": "attempt-3-controlled-stop.json",
+      "sha256": "5ea21be8c198fe301e30785c1091b4c33c4fd1f3115674ae0342f7d680c32499",
+      "size": 562,
+      "source_sha256": "5ea21be8c198fe301e30785c1091b4c33c4fd1f3115674ae0342f7d680c32499",
+      "redacted": false
+    },
+    {
+      "path": "journey-3-native-progress-1.json",
+      "sha256": "7ab88a1dff61196783bb2a972d4dedacff6575f2c1e04e3f627629daf383fa6d",
+      "size": 1559,
+      "source_sha256": "7ab88a1dff61196783bb2a972d4dedacff6575f2c1e04e3f627629daf383fa6d",
+      "redacted": false
+    },
+    {
+      "path": "journey-3-native-progress-2.json",
+      "sha256": "aeb52d8849e37bba6ba6e00c85799fcf598d95a820bfd14e5906cf10b5a3b662",
+      "size": 5424,
+      "source_sha256": "aeb52d8849e37bba6ba6e00c85799fcf598d95a820bfd14e5906cf10b5a3b662",
+      "redacted": false
+    },
+    {
+      "path": "journey-3.json",
+      "sha256": "a1b5f4b47b48a2c8758bea794beb63ad478dc922fb7d9b5f7f57384bf4802e93",
+      "size": 45937,
+      "source_sha256": "a1b5f4b47b48a2c8758bea794beb63ad478dc922fb7d9b5f7f57384bf4802e93",
+      "redacted": false
+    },
+    {
+      "path": "journey-3.json.generated-access.json",
+      "sha256": "8452ba4634f682cca84ad326885bec046231628b5fd030df6bd8bd6985b472f3",
+      "size": 496,
+      "source_sha256": "8452ba4634f682cca84ad326885bec046231628b5fd030df6bd8bd6985b472f3",
+      "redacted": false
+    },
+    {
+      "path": "journey-3.json.startup-browser/1-owned-folder-trust-default-no.png",
+      "sha256": "0978b3e7c5a06e4e9527601e49fad03d4009e59af4aebadd837fdc1a9930a21c",
+      "size": 41338,
+      "source_sha256": "0978b3e7c5a06e4e9527601e49fad03d4009e59af4aebadd837fdc1a9930a21c",
+      "redacted": false
+    },
+    {
+      "path": "journey-3.json.startup-browser/1-owned-folder-trust-default-no.txt",
+      "sha256": "d561c2100d3498888604d38e14a05e1ea7f9485ef2f811205dda2f47385809db",
+      "size": 2536,
+      "source_sha256": "d561c2100d3498888604d38e14a05e1ea7f9485ef2f811205dda2f47385809db",
+      "redacted": false
+    },
+    {
+      "path": "journey-3.json.startup-browser/2-owned-folder-trust.png",
+      "sha256": "c69d38dd89b9f8058cf91e514d716f9ceac2926d48df1d392d6eca8e1e9bf88f",
+      "size": 41439,
+      "source_sha256": "c69d38dd89b9f8058cf91e514d716f9ceac2926d48df1d392d6eca8e1e9bf88f",
+      "redacted": false
+    },
+    {
+      "path": "journey-3.json.startup-browser/2-owned-folder-trust.txt",
+      "sha256": "c172407489251262327c7776045138d408794abbb5d6c70f0faf9fad1422a232",
+      "size": 2536,
+      "source_sha256": "c172407489251262327c7776045138d408794abbb5d6c70f0faf9fad1422a232",
+      "redacted": false
+    },
+    {
+      "path": "journey-3.json.startup-browser/3-native-prompt.png",
+      "sha256": "a3c594a2f4dc0f22aee1b96148b7741191b86bac9aae33896cda76deac9d478e",
+      "size": 20702,
+      "source_sha256": "a3c594a2f4dc0f22aee1b96148b7741191b86bac9aae33896cda76deac9d478e",
+      "redacted": false
+    },
+    {
+      "path": "journey-3.json.startup-browser/3-native-prompt.txt",
+      "sha256": "85e7ed0993f25ac6b9123e2ddfd67d971047b455cb3ffcc6cbcebe70b78f6146",
+      "size": 1854,
+      "source_sha256": "85e7ed0993f25ac6b9123e2ddfd67d971047b455cb3ffcc6cbcebe70b78f6146",
+      "redacted": false
+    },
+    {
+      "path": "journey-3.json.wt-browser/final-wt.aria.txt",
+      "sha256": "3ecb8878f47e4ad4f520f67f5ece0b813ba5342864ee07ead112186e934fe33b",
+      "size": 2751,
+      "source_sha256": "3ecb8878f47e4ad4f520f67f5ece0b813ba5342864ee07ead112186e934fe33b",
+      "redacted": false
+    },
+    {
+      "path": "journey-3.json.wt-browser/final-wt.png",
+      "sha256": "6236747498a8fbecb30501d1425531b3bf3faba695904d8aab8982370cc6a089",
+      "size": 230772,
+      "source_sha256": "6236747498a8fbecb30501d1425531b3bf3faba695904d8aab8982370cc6a089",
+      "redacted": false
+    },
+    {
+      "path": "native-schema-diagnostic.json.startup-browser/2-read-only-native-schema.png",
+      "sha256": "9b352029996cf911f86762b60b0f320686d8affd21b670892c26a06b4406588f",
+      "size": 95333,
+      "source_sha256": "9b352029996cf911f86762b60b0f320686d8affd21b670892c26a06b4406588f",
+      "redacted": false
+    },
+    {
+      "path": "native-schema-diagnostic.json.startup-browser/2-read-only-native-schema.txt",
+      "sha256": "df3b32a7f9e7b49eadaa312b8622c03f437c17265c3e1adb9d05aefad0674c05",
+      "size": 7228,
+      "source_sha256": "df3b32a7f9e7b49eadaa312b8622c03f437c17265c3e1adb9d05aefad0674c05",
+      "redacted": false
+    },
+    {
+      "path": "observer-native-notification-qualification.json",
+      "sha256": "3ddbabe3b1cee47c797a7e82e8fbf034cc91baf8f0b5cdeeae4502020daf0979",
+      "size": 6529,
+      "source_sha256": "3ddbabe3b1cee47c797a7e82e8fbf034cc91baf8f0b5cdeeae4502020daf0979",
+      "redacted": false
+    },
+    {
+      "path": "observer-native-notification-update.json",
+      "sha256": "ed45e0aed102fcded20816f77a3cb74dbb6f802bad9762dc343083d3f6d3be9e",
+      "size": 37071,
+      "source_sha256": "ed45e0aed102fcded20816f77a3cb74dbb6f802bad9762dc343083d3f6d3be9e",
+      "redacted": false
+    },
+    {
+      "path": "seed-continuation-3.json",
+      "sha256": "aa849f6931f35b3875bebae79da1b88ef2b6be293c179835bbe2eedec63fd7f0",
+      "size": 29925,
+      "source_sha256": "aa849f6931f35b3875bebae79da1b88ef2b6be293c179835bbe2eedec63fd7f0",
+      "redacted": false
+    },
+    {
+      "path": "terminal-progress-5.json",
+      "sha256": "e7fc7f42b0c5d17191e75757826118842fbb94d3ee1cf53f295a7616b7ccdb0a",
+      "size": 447,
+      "source_sha256": "e7fc7f42b0c5d17191e75757826118842fbb94d3ee1cf53f295a7616b7ccdb0a",
+      "redacted": false
+    },
+    {
+      "path": "terminal-progress-5.txt",
+      "sha256": "1068e62fa4551e2367980432ad42b47b197eeb013d73d47f9a5bb8edd879e625",
+      "size": 3913,
+      "source_sha256": "1068e62fa4551e2367980432ad42b47b197eeb013d73d47f9a5bb8edd879e625",
+      "redacted": false
+    }
+  ]
+}

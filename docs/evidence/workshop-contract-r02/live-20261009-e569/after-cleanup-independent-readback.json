@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "operation": "independent_isolated_run_after_cleanup_readback",
+  "scope": "simulated_control_tower",
+  "control_tower_mutations": 0,
+  "observed_at": "2026-10-09T03:44:45.698967+00:00",
+  "generated_apps": [],
+  "owned_lakebase_projects": [],
+  "prior_generated_app_absence_verified": true,
+  "prior_aborted_project_absence_verified": true,
+  "attendee_projects": {
+    "path": "/Workspace/Users/labuser+1@awsbricks.com/projects",
+    "id": "1462869392157865",
+    "preserved": true,
+    "entries": []
+  },
+  "control_tower": {
+    "id": "4f1951af-9397-4462-b283-9a66c76b234f",
+    "deployment_id": "01f1bbc1de2911cb93356caa765f77a3",
+    "state": "RUNNING",
+    "compute": "ACTIVE"
+  },
+  "reviewed_ct_files": [
+    {
+      "path": "src/control_tower/backend/orchestration/provisioning.py",
+      "sha256": "d09c6c0136e31db6993e62b4dcbc8f0420c300f299b758e129715376383eeac0",
+      "unchanged": true
+    },
+    {
+      "path": "src/control_tower/backend/orchestration/static_model_permissions.py",
+      "sha256": "c7214d8bf783d9e055a0a29f12737ea1c48bfefe790f9bba7d6a62e9436e9834",
+      "unchanged": true
+    },
+    {
+      "path": "src/control_tower/backend/orchestration/model_permissions.py",
+      "sha256": "97c11a428aa43f3508f0047ceabb0cab5e8be3d44c1030f211aad439ad909589",
+      "unchanged": true
+    },
+    {
+      "path": "src/control_tower/backend/orchestration/wt_caller.py",
+      "sha256": "394922ceb13f0ae2f3a632041472221db0230f4b24a11d14f20c6c0864ffbe35",
+      "unchanged": true
+    },
+    {
+      "path": "src/control_tower/backend/databricks/real.py",
+      "sha256": "8696bba8b6f8ef7a47a70ef2865f707d884df7223766f736e9148cb32f5c425d",
+      "unchanged": true
+    },
+    {
+      "path": "src/control_tower/backend/core/_config.py",
+      "sha256": "4b13ad6e8df3b472d4d74cbf29df73d5b1e696dfcf84bd01d2781fb4c8c3d868",
+      "unchanged": true
+    },
+    {
+      "path": "databricks.yml",
+      "sha256": "b303fa02be7df376c6f216d2ab70ec97353330817a1567dd47528bbc97cf203b",
+      "unchanged": true
+    }
+  ],
+  "reviewed_ct_files_unchanged": true,
+  "wt_resources_absence_verified": {
+    "app": true,
+    "catalog": true,
+    "group": true,
+    "workspace_source": true
+  }
+}

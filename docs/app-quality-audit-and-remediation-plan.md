@@ -9,10 +9,14 @@ status/action columns. Adding/packing worked through UI and survived reload/fres
 context; independent Lakebase storage proof and full acceptance remain unverified.
 The [R01 closeout](evidence/generated-app-r01/live-20261009-68bd/CLOSEOUT.md) records
 receipts, inspected screenshots, limitations, and independently verified cleanup.
-CT code and its working deployment are unchanged. R02 is implemented in the
-working tree; R03–R10 remain proposed. The [R02 implementation report](workshop-interaction-contract-r02.md)
-records policy delivery, local regressions, model probes, and their limits. No
-release deployment or generated-app UX acceptance is implied.
+CT code and its working deployment are unchanged. R02 is committed and pushed;
+R03–R10 remain proposed. The [R02 implementation report](workshop-interaction-contract-r02.md)
+records policy delivery, local regressions, model probes, and three live Labs
+attempts. Those attempts exposed observer failures and a simulated generated-SP
+permission gap; generated-app UX acceptance remains unverified. The validated
+permission/notification/compaction fixes are pushed, and isolated resources were
+cleaned. Native assistant/question persistence still needs qualification before
+another build run or CT integration.
 
 Audited on 8 October 2026 against commit `4d46461c6a0229892bdda5c153d8a6dd03d316c6`.
 Scope: attendee onboarding, prompts, coaching, skill installation, project setup,
@@ -474,7 +478,7 @@ product/design reviewer should participate in starter and rubric calibration.
 | Workstream | Deliverable and likely files | Depends on | Suggested owner | Estimate | Exit evidence |
 |---|---|---|---|---|---|
 | R01: Baseline benchmark | Completed failed baseline: eligible Claude/AppKit build, native-correlated consultation, real deployed app, independent UI task/screenshots and exact cleanup; WT-owned CT-compatible package runner and evidence in `evals/generated_apps/` and `docs/evidence/generated-app-r01/live-20261009-68bd/` | None | Evaluation engineer + harness engineer | 3-5 | Current-policy baseline from novice inputs with exact release/instrumentation identity; failures retained and independently classified; real deployed app or explicit failure verdict per run; CT integration qualified separately |
-| R02: Workshop interaction and quality contract | Rewrite base/coach/project/studio policy around the workshop pacing guidance; shared concise framing across typed/card entry; automatic compact brief; update contradictory text tests and refresh allowlist | Implemented locally; delivery regressions and bounded native MLflow model probes recorded in the R02 report; live harness/app release qualification remains separate | Agent-experience engineer + product reviewer | 2-3 | Clear requests go straight to building; ambiguous goals usually need one brief exchange and a reasoned recommendation; demo assumptions are transparent; no routine approval ceremony or production planning; policy agrees across adapters |
+| R02: Workshop interaction and quality contract | Rewrite base/coach/project/studio policy around the workshop pacing guidance; shared concise framing across typed/card entry; automatic compact brief; update contradictory text tests and refresh allowlist | Committed/pushed; delivery regressions and bounded native MLflow probes pass; three real Labs attempts preserved. Generated-app acceptance is unverified due to observer/setup failures. Fixes and cleanup recorded; native persistence qualification remains open | Agent-experience engineer + product reviewer | 2-3 | Clear requests go straight to building; ambiguous goals usually need one brief exchange and a reasoned recommendation; demo assumptions are transparent; no routine approval ceremony or production planning; policy agrees across adapters |
 | R03: Wizard journey and brief integrity | Goal/help-me-choose paths; optional industry; request coordinator/stable selections; versioned immutable static/dynamic snapshots and scoped IDs; atomic saves; recovery/a11y; recommendation/schema/dependency/fallback contracts; discovery/persona reconciliation; rendered tests. Detailed stages in the extended wizard audit | R02 contract; baseline from R01 | Full-stack engineer + product designer | 6-10, revised after extended audit | Plain goal can continue; obsolete requests never change current selection; suggestion → select → save → reload/restart → launch preserves exact task/industry/provenance; faults recover; relevance/feasibility gates and real novice-to-app journey pass |
 | R04: Reliable preparation | Shared local/remote preparation; required-step readiness/retry; composed digests and warm-install refresh; race reconciliation; helper stdout/status and migration | R02 policy shape; may run alongside R03 | Runtime engineer | 3-5 | Fresh, prewarmed, redeployed, UI-first remote and partial-failure paths receive identical current policy/skills/helper; noisy scaffold works in documented command |
 | R05: Strong starters | First operational queue, then analytics/AI; working routing/actions/states; truthful data/provenance; pin, compile, render; reconcile minimal examples | R02 acceptance contract | Frontend engineer + product designer | 4-7 | Starter journey passes at 390/768/1440px; all controls work; error/empty/loading/screenshots and accessibility evidence; approved first-preview appearance |
@@ -549,7 +553,7 @@ The simulation-first CT-compatible deployment, qualification, native journey,
 independent UI observation, and exact teardown have been exercised. Passing
 product remediation, independent Lakebase/restart/fault checks, calibrated UX
 scoring, the broader harness/framework matrix, and actual CT integration remain
-outstanding under R03–R10 and release qualification. R02 policy implementation
-and its small model probes do not establish generated-app quality. R01 closure is
+outstanding under R03–R10 and release qualification. R02 policy implementation,
+small model probes and interrupted live runs do not establish generated-app quality. R01 closure is
 not an app acceptance or fleet-readiness
 claim.
