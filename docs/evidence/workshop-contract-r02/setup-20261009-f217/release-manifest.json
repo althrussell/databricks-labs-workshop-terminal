@@ -1,0 +1,16 @@
+{
+  "artifact_name": "workshop-terminal.pex",
+  "artifact_type": "pex",
+  "entry_point": "server.otel_bootstrap:main",
+  "format_version": 1,
+  "logical_contents_file_count": 444,
+  "logical_contents_sha256": "acdda376bb238a657d578e339d61a082d40084f22cc536b1a631d08a364ef201",
+  "minimum_control_tower_contract_version": 1,
+  "platform": "linux_x86_64",
+  "python_abi": "cp311",
+  "python_implementation": "cpython",
+  "sha256": "ac7d56f2c219b34ddf1d453b0c0741c41f50c4d5fa3b1b3c845feb32ca53f2f0",
+  "size_bytes": 37923718,
+  "wt_git_sha": "6d8868cbe5930ea4dc42ea983f2d58eec51514ba",
+  "wt_release_tag": "unreleased"
+}

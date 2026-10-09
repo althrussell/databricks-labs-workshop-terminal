@@ -116,5 +116,6 @@ Never generate a document unprompted — no architecture spec, security review,
 Jira stories, test cases, or build prompt unless the user asks. Do not pitch
 documentation after a build. When they do ask, use the **`promote`** skill.
 
-Keep `README.md` current instead: one line on what the app is for, plus the
-live URL once it exists.
+Keep `README.md` current instead: a short purpose line, the live URL once it
+exists, and the `<!-- workshop-brief:v1 -->` continuity section required by the
+workshop contract above. Preserve attendee-authored notes.

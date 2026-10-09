@@ -1,0 +1,8 @@
+{
+  "sdk_version": "0.143.0",
+  "playwright_version": "1.60.0",
+  "pyte_version": "0.8.2",
+  "chromium_prepared": true,
+  "chromium_executable": "/Users/a/Library/Caches/ms-playwright/chromium-1223/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+  "browser_authentication_state_available": false
+}

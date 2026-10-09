@@ -164,9 +164,9 @@ Before starting any new project:
    committed `CLAUDE.md`/`AGENTS.md` also guarantee the AppKit baseline is
    followed no matter which agent or harness picks up the work.
 3. **Then start building** — commit early and often. Keep the generated
-   `README.md` current: one line on what the app is for, and the live URL once
-   you have one. It is the attendee's take-home reminder and it costs a
-   sentence.
+   `README.md` current: a short purpose line, the live URL once you have one,
+   and the `<!-- workshop-brief:v1 -->` continuity section required by the
+   workshop contract below. Preserve attendee-authored notes.
 
 <!-- workshop-contract-slot -->
 

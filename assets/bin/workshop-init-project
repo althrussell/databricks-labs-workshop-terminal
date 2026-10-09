@@ -148,10 +148,9 @@ if [ -f "$TEMPLATE" ]; then
   git add AGENTS.md CLAUDE.md
 fi
 
-# A README, always. The agent is told to keep it current (one line on what the
-# app is for, plus the live URL), and it is the attendee's take-home reminder of
-# what they built once the workspace is torn down. If a scaffold already wrote
-# one, its content stays and the two prompts are appended.
+# A README, always: purpose and live URL here, followed by the continuity brief
+# below. It is the attendee's take-home reminder once the workspace is torn down.
+# Preserve scaffold and attendee content; append the missing prompts and brief.
 if [ ! -f README.md ]; then
   cat > README.md <<EOF
 # ${NAME}

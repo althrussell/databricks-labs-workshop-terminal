@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "operation": "r02_pre_test_readback",
+  "workspace_mutations": 0,
+  "control_tower_mutations": 0,
+  "observed_at": "2026-10-09T02:04:29.783884+00:00",
+  "wt_commit": "9f0cab97c53f674aa0d739f4c68d127a187f841d",
+  "control_tower": {
+    "id": "4f1951af-9397-4462-b283-9a66c76b234f",
+    "active_deployment_id": "01f1bbc1de2911cb93356caa765f77a3",
+    "state": "RUNNING",
+    "compute": "ACTIVE"
+  },
+  "ct_checkout": {
+    "sha": "3d610173812ebbd71ed63c2e3f6d7210baf96fac",
+    "status": ""
+  },
+  "attendee_projects": {
+    "path": "/Workspace/Users/labuser+1@awsbricks.com/projects",
+    "id": "1462869392157865",
+    "entries": []
+  }
+}

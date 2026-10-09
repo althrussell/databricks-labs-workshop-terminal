@@ -40,6 +40,7 @@ def test_one_identical_contract_reaches_all_channels(
         assert "Even a toy gets one" not in text
         assert "That is the whole gate" not in text
         assert "no clarifying round" not in text
+        assert "one line on what the app is for" not in text
         if not discovery:
             assert "workshop-discovery" not in text
         if parts != _MEMORY_CHANNELS[-1]:

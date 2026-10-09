@@ -1,8 +1,10 @@
 # R02: workshop interaction and quality contract
 
-Implemented in the working tree on 9 October 2026. No WT release deployment,
-Control Tower changes, or wizard re-enablement were performed. R01's recorded
-baseline and verdict are unchanged.
+Committed on 9 October 2026 in draft PR #89. The initial CI package passed
+standalone Labs package/model qualification; its resources were cleaned
+before a corrected package is used for the attendee journey. No Control Tower
+changes or wizard re-enablement were performed. R01's recorded baseline and
+verdict are unchanged.
 
 ## What changed
 
@@ -45,6 +47,14 @@ The policy lives outside the refreshed upstream skill tree; the design adapter
 remains protected by the existing `FORK_ONLY` allowlist. Upstream skills and their
 reviewed digest were not edited. Release packaging now requires the shared
 policy asset explicitly, so a missing asset fails the inventory check.
+
+PR review found stale README advice in both the project and home instructions
+that reduced it to a purpose line and URL. Both adapters now explicitly retain
+the versioned continuity brief and attendee-authored notes; the helper comment
+was aligned too. A policy-delivery regression reproduced the contradictory
+advice before the correction and covers every composed instruction channel.
+The original direct-model evidence is preserved; that probe preceded this
+README wording correction, which leaves the shared contract unchanged.
 
 ## Validation and evidence
 
