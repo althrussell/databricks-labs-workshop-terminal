@@ -1,0 +1,60 @@
+Tracing verified: 1 prediction trace(s), 2 spans
+Resources discovered: 1 datasets, 1 scorers; using wt_workshop_contract_r02_sanity_v1
+
+✨ Evaluation completed.
+
+Metrics and evaluation results are logged to the MLflow run:
+  Run name: [94magreeable-ant-453[0m
+  Run ID: [94m1427d1f4e5fe4681b531ad845762f92a[0m
+
+To view the detailed evaluation results with sample-wise scores,
+open the [93m[1mTraces[0m tab in the Run page in the MLflow UI.
+
+Dry run completed with numeric scorer output; evaluating the remaining two scenarios
+
+✨ Evaluation completed.
+
+Metrics and evaluation results are logged to the MLflow run:
+  Run name: [94mfearless-gull-180[0m
+  Run ID: [94mf96975a14a5d4d029c21a0fd4290bfd4[0m
+
+To view the detailed evaluation results with sample-wise scores,
+open the [93m[1mTraces[0m tab in the Run page in the MLflow UI.
+
+{
+  "schema_version": 1,
+  "kind": "direct_model_policy_sanity",
+  "model": "databricks-claude-sonnet-4-6",
+  "judge_model": "databricks-claude-sonnet-4-6",
+  "experiment_id": "1",
+  "dataset_id": "d-88b80b967a6340899ceb02b0a310bf5f",
+  "scorer": "wt_workshop_interaction_v1_d5747878b4",
+  "prompt_sha256": {
+    "home": "e81025eb5175923db28452d7ad9f35d73ce7e2db869eb6d134d0a077acbf4b73",
+    "project": "5494715b121011717337b82096e81148b5650203f45c8587ac9a8b9405f21dd9"
+  },
+  "tracing": {
+    "verified": true,
+    "trace_count": 1,
+    "span_count": 2
+  },
+  "evaluations": [
+    {
+      "run_id": "1427d1f4e5fe4681b531ad845762f92a",
+      "metrics": {
+        "wt_workshop_interaction_v1_d5747878b4/mean": 0.6666666666666666
+      }
+    },
+    {
+      "run_id": "f96975a14a5d4d029c21a0fd4290bfd4",
+      "metrics": {
+        "wt_workshop_interaction_v1_d5747878b4/mean": 0.0
+      }
+    }
+  ],
+  "limitations": [
+    "Five synthetic scenarios; no statistical or fleet claim",
+    "Direct model with a stub implementation tool, not a native CLI harness",
+    "No generated app or UX acceptance; R01 evidence unchanged"
+  ]
+}

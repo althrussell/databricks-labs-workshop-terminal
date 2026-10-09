@@ -110,20 +110,20 @@ _MEMORY_CHANNELS = (
 )
 
 
-def test_mandate_ships_on_a_live_url_not_a_browser_suite(client, monkeypatch):
-    """The ship gate is typecheck, deploy, open the URL.
+def test_memory_distinguishes_preview_from_verified_task(client, monkeypatch):
+    """Every agent receives practical checks and truthful completion language.
 
-    It used to be `databricks apps validate`, which runs Playwright and pulls
-    Chromium onto a cold workshop box. For a standalone game with no data that
-    is minutes of download and a smoke test to rewrite, all before the attendee
-    can see anything — so the gate now stops at the cheap check that actually
-    prevents a failed deploy.
+    This checks instruction delivery, not whether an LLM follows the policy.
+    Behavior probes and generated-app E2E provide separate evidence.
     """
     home = _provisioned_home(client, monkeypatch)
     for parts in _MEMORY_CHANNELS:
         text = open(os.path.join(home, *parts)).read()
         assert "tsc --noEmit" in text
-        assert "the URL loads" in text or "open the URL" in text
+        assert "first preview" in text
+        assert "exercise the primary action" in text
+        assert "reload if saving is promised" in text
+        assert "what remains unverified" in text
 
 
 def test_no_memory_channel_puts_playwright_on_the_critical_path(client, monkeypatch):
@@ -134,7 +134,7 @@ def test_no_memory_channel_puts_playwright_on_the_critical_path(client, monkeypa
     home = _provisioned_home(client, monkeypatch)
     for parts in _MEMORY_CHANNELS:
         text = open(os.path.join(home, *parts)).read()
-        assert "Do not" in text and "databricks apps validate" in text, (
+        assert "Do not install Playwright browsers" in text and "databricks apps validate" in text, (
             "the override has to name the command it is overriding"
         )
         assert "workshop-design-gate" not in text

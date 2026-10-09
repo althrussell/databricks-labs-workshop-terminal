@@ -413,20 +413,24 @@ def test_an_industry_no_notebook_has_ever_heard_of_is_still_ignored(
 
 # -- starter prompt ---------------------------------------------------------
 
-def test_a_chosen_card_supplies_its_own_prompt(user):
+def test_a_chosen_card_preserves_its_prompt_with_shared_framing(user):
     """The card's prompt was written to produce a good first build; the sentence
     was written to describe an ambition."""
     idea = next(i for i in content.content_service.ideas() if i.demo_tables)
     brief = wizard.save(user, {"idea_id": idea.id, "what_building": idea.outcome})
-    assert wizard.starter_prompt(brief) == idea.prompt
+    prompt = wizard.starter_prompt(brief)
+    assert prompt.startswith(idea.prompt + "\n\n")
+    assert "follow the workshop interaction contract" in prompt
+    assert "Start building this with me now" not in prompt
 
 
-def test_a_typed_sentence_is_framed_so_the_agent_starts_building(user):
+def test_a_typed_sentence_uses_the_same_workshop_framing(user):
     brief = wizard.save(user, {"what_building": "A warranty dashboard"})
     prompt = wizard.starter_prompt(brief)
 
     assert prompt.startswith("A warranty dashboard")
-    assert "Start building this with me now" in prompt
+    assert "follow the workshop interaction contract" in prompt
+    assert "at most one question" not in prompt
 
 
 def test_skipping_produces_no_starter_prompt(user):

@@ -2,7 +2,7 @@
 name: workshop-design-studio
 description: 'Mandatory visual-quality skill for ANY interface built in the workshop. Use whenever creating, changing, reviewing, or finishing a Databricks App with a web app, website, dashboard, internal tool, AI experience, game, or other visual UI. Ships copy-ready AppKit patterns plus a non-negotiable visual baseline. Runs autonomously: it never asks the attendee design questions and never explains its own process. Brand-neutral — infer or preserve the product brand instead of imposing Databricks styling. Skip only for backend-only, infrastructure-only, or non-visual tasks.'
 metadata:
-  version: 4.0.0
+  version: 4.1.0
   workshop_default: true
   design_scope: databricks-apps
 ---
@@ -13,9 +13,11 @@ Every interface an attendee leaves with should look like a senior product
 designer and frontend engineer worked on it. Not "clean UI" — a coherent,
 credible product that reads as intentionally designed.
 
-Attendees are not designers, and most are not engineers. They will not ask for
-this and should never be made to think about it. You do the work; they get the
-result.
+Attendees bring different levels of experience. Apply this quality floor for
+everyone without making them art-direct their demo. Follow the shared workshop
+interaction contract in your instructions for consequential clarification,
+recommendations, assumptions, and readiness claims. This skill owns visual
+decisions, not product scope or permission to skip an unclear primary task.
 
 **This skill is for Databricks Apps built with AppKit.** That is the only
 target. There is no stack detection, no multi-framework support, and no
@@ -56,29 +58,30 @@ Apply this while writing components, not as a pass afterwards.
 - **Accessible by construction:** text contrast at least 4.5:1, visible focus on
   every interactive element, alt text on meaningful images, no colour-only
   meaning, and layouts that survive a narrow window. Apply these as you write
-  the markup — nothing downstream will catch them.
+  the markup and check the rendered result with available tooling.
 - **One memorable moment per app.** A considered hero, a satisfying transition,
   a chart that reads instantly. One is enough; do not spread glow, parallax, and
   animation across everything.
 
-## Tempo — this never delays the URL
+## Tempo — a useful preview, quickly
 
 Design happens inside the build, never as a phase in front of it.
 
 1. Scaffold, and pick the pattern that fits.
 2. Build a thin but real version to the baseline, and deploy it.
-3. Give the attendee the URL.
-4. Improve against the live URL from there.
+3. Give the attendee the URL as a first preview.
+4. Check the useful task and improve against the live URL from there.
 
-There is no discovery phase, no direction generation, no persisted design
-system, no moodboard, no audit script, and no design gate. Those were removed
-deliberately: they spent minutes of a short workshop before the attendee saw
-anything, and the baseline plus the patterns produce a better result sooner.
+No palette questionnaire, moodboard, or production design process before the
+demo. Brief product clarification follows the workshop interaction contract;
+it helps select the right pattern rather than adding a separate design phase.
 
-### One self-critique pass, after the first deploy
+### One practical review, after the first deploy
 
-Once the URL is live, re-read the primary screen once against this list, fix
-what is cheap, and describe what changed in product terms:
+Once the URL is live, inspect the rendered primary screen with prepared tooling,
+exercise the primary action, and use this list to guide fixes. Check dates and
+reload if saving is promised, and make the main action reachable at a narrow
+width. Describe what changed in product terms:
 
 - Is there a clear focal point, or does everything compete equally?
 - Is the type scale doing real hierarchy work, or is everything one size?
@@ -88,21 +91,23 @@ what is cheap, and describe what changed in product terms:
 - Contrast, visible focus, alt text on meaningful images.
 - Is there one moment worth remembering?
 
-In context, in your head. No script, no browser run, no artifacts, and no
-attendee wait — they already have a working app; this improves what they are
-looking at rather than delaying it.
+Use observed results, not a mental review alone. Do not install a cold browser
+or launch an extensive acceptance suite during the workshop. If tooling is
+unavailable, share the preview with the exact unverified check; do not claim
+that the task has been tested. Deeper qualification belongs in CI and rehearsal.
 
-## Autonomous operation — this overrides everything below
+## Autonomous visual decisions
 
 This skill runs silently. Four rules, and they are not negotiable:
 
 1. **Never ask the attendee a design question.** No "which direction do you
    prefer", no palette choices, no layout options, no brand questionnaire.
-   Infer product, audience, and tone from what they asked for and the data they
-   are working with. Where evidence is thin, decide.
-2. **Explore options internally, present none.** Consider genuinely different
+   Reuse known product and audience facts. Clarify an unclear primary task under
+   the shared contract; choose visual tone yourself.
+2. **Explore visual options internally, present none.** Consider different
    approaches, pick the one that best serves the audience and the primary task,
-   and build it. The deliberation is private.
+   and build it. Product recommendations and tradeoffs are still useful and
+   follow the shared contract; do not hide those as design deliberation.
 3. **Never narrate the process.** Do not mention design systems, baselines,
    patterns, critique passes, or this skill by name. The attendee hears what
    their product does, never how it was made.
@@ -182,7 +187,8 @@ itself.
 - loading, empty, and error states present wherever something can be slow,
   absent, or broken;
 - readable contrast, visible focus, and alt text on meaningful images;
-- the app deployed and the URL loading;
+- the app deployed, the primary task checked with available tooling, and any
+  material assumptions or unverified checks disclosed;
 - and the attendee never having been asked a single design question.
 
 ## References

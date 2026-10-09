@@ -1,24 +1,8 @@
-"""Every attendee leaves with something that looks designed, and never knew it.
+"""Delivery guards for the visual baseline and workshop pacing.
 
-Three promises hold this together, and all of them are enforced only by text an
-agent reads — nothing at runtime checks any of them any more:
-
-1. **Every UI gets the design treatment.** Not a suggestion an agent can skip
-   when it is in a hurry.
-2. **The attendee is never asked to participate in it.** They came to build
-   something, not to choose a colour palette.
-3. **The quality bar is concrete and always in context.** The scripted design
-   gate that used to enforce contrast, focus states, and alt text was deleted
-   along with the rest of the six-phase pipeline, because it cost minutes of a
-   short workshop before the attendee saw anything. What replaced it is a
-   written baseline in the always-loaded instructions plus a library of verified
-   AppKit patterns. If the baseline stops being specific, nothing catches it —
-   which is exactly why these assertions are worth their weight.
-
-These are pinned across every surface that has to agree, because the surfaces
-are read by different agents: Claude reads the home instructions, Codex and
-Omnigent's worktree worker read the project memory, and only Claude Code ever
-loads SKILL.md.
+These verify authored guidance and pattern availability. They do not prove
+runtime usability or visual quality; behavioral probes and independent browser
+journeys provide that evidence separately.
 """
 
 from __future__ import annotations
@@ -300,13 +284,14 @@ def test_no_memory_channel_still_gates_the_url_on_a_design_script(path: Path):
     assert ".design-studio" not in text
 
 
-def test_the_self_critique_replaces_the_scripted_passes(skill: str, instructions: str):
-    """One pass, in context, after the URL is already live — the judgement
-    without the ceremony. It must be explicitly *after* the deploy, or it
-    becomes another thing standing between the attendee and their app."""
-    assert "self-critique" in skill.lower()
-    assert "after the first deploy" in instructions.lower()
-    assert "not a script" in instructions.lower()
+def test_practical_review_uses_the_shared_contract(skill: str, instructions: str):
+    assert "after the first deploy" in skill.lower()
+    assert "exercise the primary action" in skill
+    assert "inspect the rendered primary screen" in skill
+    assert "exact unverified check" in skill
+    assert "workshop interaction contract" in instructions
+    for text in (skill, instructions):
+        assert "no browser run" not in text.lower()
 
 
 # --- the patterns are real ----------------------------------------------------

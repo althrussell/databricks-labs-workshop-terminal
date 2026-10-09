@@ -43,6 +43,7 @@ _DISCOVERY_MARKER = "<!-- workshop-discovery -->"
 # Placeholder inside CLAUDE.md's ship gate, swapped for the anchor when the
 # discovery tier is on and removed entirely when it is off.
 _DISCOVERY_ANCHOR_SLOT = "<!-- discovery-anchor -->"
+_WORKSHOP_CONTRACT_SLOT = "<!-- workshop-contract-slot -->"
 _CALLBACK_CAPABILITY = os.path.join(".config", "workshop", "callback-capability")
 
 DEFAULT_DEEPWIKI_MCP = "https://mcp.deepwiki.com/mcp"
@@ -215,7 +216,7 @@ def _overlay(text: str, name: str, marker: str) -> str:
 
 def _base_instructions() -> str:
     with open(os.path.join(_ASSETS, "instructions", "CLAUDE.md")) as f:
-        text = f.read()
+        text = _compose_workshop_contract(f.read())
     if config.lab_coach_enabled():
         text = _overlay(text, "lab_coach.md", _COACH_MARKER)
     # C6: the agent is the only thing positioned to notice what an attendee is
@@ -244,34 +245,41 @@ def _base_instructions() -> str:
     return text
 
 
-def _persona_overlay(user: User) -> str:
-    """The attendee's persona, stated in the instructions themselves.
+def _compose_workshop_contract(text: str) -> str:
+    """Inline one fork-owned contract in every always-read memory channel.
 
-    Inlined rather than left in a file for the agent to go and read: a file read
-    is a tool call, and on the first turn that call is the difference between an
-    agent that starts building and one that starts doing admin. The agent is
-    told the answer before it is asked the question.
+    It lives outside the upstream skills tree, so refreshing that tree cannot
+    overwrite it. A missing/duplicate slot is a packaging defect, not a reason
+    to silently ship an instruction channel with different behavior.
     """
+    if text.count(_WORKSHOP_CONTRACT_SLOT) != 1:
+        raise ValueError("Workshop instructions require exactly one contract slot")
+    with open(os.path.join(_ASSETS, "instructions", "workshop_contract.md")) as f:
+        return text.replace(_WORKSHOP_CONTRACT_SLOT, f.read().strip())
+
+
+def _persona_overlay(user: User) -> str:
+    """Inline the speaking preference; it is not an expertise assessment."""
     persona = read_persona(user) or DEFAULT_PERSONA
     if persona == "technical":
         described = (
-            "**technical** — they write code or know the Databricks components. "
+            "**technical** in speaking style — use component names and useful implementation detail. "
             "Use real names (AppKit, Lakebase, SQL warehouse, Unity Catalog) and "
             "explain the architecture choices you make."
         )
     else:
         described = (
-            "**business-oriented** — they care about the outcome, not the "
-            "plumbing. Talk about what their product does for them, and keep "
+            "**business-oriented** in speaking style — use outcomes and plain language. "
+            "Talk about what their product does for them, and keep "
             "Databricks component names out of it unless they ask."
         )
     return (
         f"{_PERSONA_MARKER}\n"
         "## Who you are working with\n\n"
         f"This attendee is {described}\n\n"
-        "This is already settled — never ask them whether they are technical or "
-        "business, and never read it from a file. If the conversation shows the "
-        "guess was wrong, just adjust how you talk and carry on.\n"
+        "Use this as a speaking preference, not an assessment of expertise. "
+        "Follow explicit requests for more or less help and adapt as the "
+        "conversation develops; do not add an experience questionnaire.\n"
     )
 
 
@@ -279,7 +287,7 @@ def _wizard_overlay(user: User) -> str:
     """What the attendee told the wizard, stated in the instructions.
 
     Two jobs. The obvious one is that the agent knows what they came to build
-    before the first token, so it can start building instead of interviewing.
+    before the first token, so it can reuse the facts without asking again.
 
     The less obvious one is ``record_id``. The wizard has already filed a
     discovery record; the agent must refine *that* record rather than open a
@@ -321,10 +329,11 @@ def _wizard_overlay(user: User) -> str:
 
     lines += [
         "",
-        "They told us this on the way in, so **do not ask them again**. No "
-        "restating it back as a requirements summary, no clarifying round — open "
-        "with the build. If it turns out you misread what they wanted, correct "
-        "course mid-build rather than stopping to re-scope.",
+        "They told us these facts on the way in, so **do not ask them again**. "
+        "Apply the workshop interaction contract: reuse this context, briefly "
+        "clarify only consequential gaps, and recommend a useful first version. "
+        "A picked idea provides context; it does not confirm unstated workflow "
+        "or integration assumptions.",
     ]
 
     if config.discovery_enabled() and brief.record_id:
@@ -427,7 +436,7 @@ def _project_memory() -> str:
     and the intent values inline.
     """
     with open(os.path.join(_ASSETS, "instructions", "project_memory.md")) as f:
-        text = f.read()
+        text = _compose_workshop_contract(f.read())
     if not config.discovery_enabled():
         return text.replace(f"\n{_DISCOVERY_ANCHOR_SLOT}\n", "")
     with open(os.path.join(_ASSETS, "instructions", "discovery_anchor.md")) as f:
@@ -481,9 +490,8 @@ def _install_cli_helpers(user: User) -> None:
       the stdio MCP server registered with Claude and Codex. It uses the rotated
       default profile, persists resumable state, and exposes no generic shell.
 
-    There is deliberately no design-gate helper. Design quality is applied while
-    the components are written, not audited afterwards by a command the attendee
-    waits on — see ``assets/skills/workshop-design-studio``.
+    There is no blocking design-gate helper. Build-time visual defaults and
+    practical checks with prepared tooling follow the shared workshop contract.
     """
     local_bin = os.path.join(user.home, ".local", "bin")
     os.makedirs(local_bin, exist_ok=True)

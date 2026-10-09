@@ -1,0 +1,55 @@
+scripts/evaluate_workshop_contract.py:94: DeprecationWarning: get_open_ai_client() is deprecated. Please install the databricks-openai package and use 'from databricks_openai import DatabricksOpenAI' instead. See https://api-docs.databricks.com/python/databricks-ai-bridge/latest/databricks_openai.html for more information.
+  client = WorkspaceClient(profile=args.profile).serving_endpoints.get_open_ai_client(timeout=90, max_retries=0)
+Traceback (most recent call last):
+  File "/private/tmp/wt-r01-evaluator-python.py", line 13, in <module>
+    runpy.run_path(sys.argv[0], run_name='__main__')
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "scripts/evaluate_workshop_contract.py", line 193, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "scripts/evaluate_workshop_contract.py", line 141, in main
+    probe = predict(**records()[1]["inputs"])
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/a/.pyenv/versions/3.12.8/lib/python3.12/site-packages/mlflow/tracing/fluent.py", line 354, in wrapper
+    _WrappingContext(fn, args, kwargs) as wrapping_coro,
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/a/.pyenv/versions/3.12.8/lib/python3.12/site-packages/mlflow/tracing/fluent.py", line 337, in __exit__
+    self.coro.throw(exc_value)
+  File "/Users/a/.pyenv/versions/3.12.8/lib/python3.12/site-packages/mlflow/tracing/fluent.py", line 314, in _wrapping_logic
+    result = yield  # sync/async function output to be sent here
+             ^^^^^
+  File "/Users/a/.pyenv/versions/3.12.8/lib/python3.12/site-packages/mlflow/tracing/fluent.py", line 356, in wrapper
+    return wrapping_coro.send(fn(*args, **kwargs))
+                              ^^^^^^^^^^^^^^^^^^^
+  File "scripts/evaluate_workshop_contract.py", line 122, in predict
+    result = client.chat.completions.create(model=args.model, messages=messages, tools=[tool], max_tokens=1000)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/a/.pyenv/versions/3.12.8/lib/python3.12/site-packages/mlflow/utils/autologging_utils/safety.py", line 484, in safe_patch_function
+    patch_function(call_original, *args, **kwargs)
+  File "/Users/a/.pyenv/versions/3.12.8/lib/python3.12/site-packages/mlflow/openai/autolog.py", line 266, in patched_call
+    raw_result = original(self, *args, **kwargs)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/a/.pyenv/versions/3.12.8/lib/python3.12/site-packages/mlflow/utils/autologging_utils/safety.py", line 475, in call_original
+    return call_original_fn_with_event_logging(_original_fn, og_args, og_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/a/.pyenv/versions/3.12.8/lib/python3.12/site-packages/mlflow/utils/autologging_utils/safety.py", line 426, in call_original_fn_with_event_logging
+    original_fn_result = original_fn(*og_args, **og_kwargs)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/a/.pyenv/versions/3.12.8/lib/python3.12/site-packages/mlflow/utils/autologging_utils/safety.py", line 472, in _original_fn
+    original_result = original(*_og_args, **_og_kwargs)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/a/.pyenv/versions/3.12.8/lib/python3.12/site-packages/openai/_utils/_utils.py", line 298, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/a/.pyenv/versions/3.12.8/lib/python3.12/site-packages/openai/resources/chat/completions/completions.py", line 1239, in create
+    return self._post(
+           ^^^^^^^^^^^
+  File "/Users/a/.pyenv/versions/3.12.8/lib/python3.12/site-packages/openai/_base_client.py", line 1332, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/a/.pyenv/versions/3.12.8/lib/python3.12/site-packages/openai/_base_client.py", line 1105, in request
+    raise self._make_status_error_from_response(err.response) from None
+openai.BadRequestError: Error code: 400 - {'error_code': 'BAD_REQUEST', 'message': '{\n  "error": {\n    "message": "Function tools with reasoning_effort are not supported for gpt-5.6-terra in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to \'none\'.",\n    "type": "invalid_request_error",\n    "param": "reasoning_effort",\n    "code": null\n  }\n}'}
+2026/10/09 11:42:31 INFO mlflow.tracing.export.async_export_queue: Flushing the async trace logging queue before program exit. This may take a while...

@@ -169,6 +169,23 @@ _Live URL:_ (added once the app is deployed)
 EOF
 fi
 
+# A compact continuity note, filled by the agent from the conversation. Keep
+# existing attendee content and never replace a brief on helper reruns.
+if ! grep -q '<!-- workshop-brief:v1 -->' README.md; then
+  cat >> README.md <<'EOF'
+
+<!-- workshop-brief:v1 -->
+## Workshop brief
+
+- Original request: (fill from the attendee's words)
+- First version and primary action: (fill as the task becomes known)
+- Stated facts: (reuse what the attendee supplied)
+- Demo assumptions: (label sample data, integration and storage defaults)
+- Checks: (observed results and anything still unverified)
+<!-- /workshop-brief -->
+EOF
+fi
+
 git add -A
 # Tolerate a commit failure (e.g. missing git identity): the attendee still gets
 # a working project directory with the files staged, which is far better than
