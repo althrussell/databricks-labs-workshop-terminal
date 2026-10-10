@@ -53,16 +53,31 @@ a same-app redeploy. The attendee saw an app-server socket error, not a wizard
 requirement. The catalog now launches `codex --no-daemon`, supported by the pinned
 0.162.0 CLI, so the interactive runtime belongs to the WT terminal process.
 The failed startup screenshot is retained outside Git; local catalog tests and
-the actual CLI option check passed. Live qualification of this fix is recorded
-separately from the previous successful post-Skip startup.
+the actual CLI option check passed. The live retest, with the wizard disabled,
+reached the normal GPT Sol 6.1 prompt using the supported catalog override on
+the unchanged package. This qualifies startup only. The exact `4bb3e48` CI
+package, with all checks green and the same catalog bytes, was then staged to
+the same app. Its empty wizard closed immediately on Skip, stayed dismissed
+after reload and allowed direct Claude launch to the normal Opus 5.5 prompt.
+The final Codex check on that package was unqualified: the owned-compute watchdog
+had stopped the app at 04:24:52 UTC before a terminal opened. The app identity,
+resources and earlier successful Codex screenshot remain available for reuse.
+No model/build prompt was submitted in these startup checks.
 
 Skip now dismisses immediately and saves dismissal in the background. A scoped
 tab-local marker prevents a failed or pending skip write from reopening the
 wizard on reload. Manual goal editing still opens it. Local rendered tests cover
 Claude, Codex and enabled Omnigent after Skip, with onboarding disabled, and with
 wizard loading/saving unavailable; a delayed skip write cannot block launch or
-reload. These frontend changes are locally qualified separately from the
-unchanged `673de90` package used for the live startup checks.
+reload. A further review found Skip and Escape disabled while saving or launching.
+Both now remain available throughout onboarding. Dismissal ignores late save
+callbacks and cancels queued starter delivery/retries; an already requested
+session remains owned and usable. An accepted server write may still finish and
+is preserved. Local rendered coverage exercises these races for every supported
+harness, as well as delayed loading, suggestions, prompt retries, launch failures
+and conflicts. All 39 rendered cases, 111 frontend unit tests and the production
+build passed. This additional hardening
+requires a fresh live check; it was not part of the `4bb3e48` deployment.
 
 Recommendation HTTP p95 was 9.822 seconds, maximum 11.747 seconds. This exceeds
 the audit's proposed eight-second p95 target; the twelve-second caller bound

@@ -65,12 +65,15 @@ const STARTER_PROMPT =
  * immediately, then once more after a short pause, lands the text as soon as
  * the PTY is accepting it without making every attendee wait the worst case.
  */
-async function typeWhenSessionReady(sessionId: string, text: string, deliveryId: string = crypto.randomUUID()) {
+async function typeWhenSessionReady(sessionId: string, text: string, deliveryId: string = crypto.randomUUID(), signal?: AbortSignal) {
+  if (signal?.aborted) return;
   try {
     await api.typeIntoSession(sessionId, text, deliveryId);
   } catch (caught) {
+    if (signal?.aborted) return;
     if (caught instanceof ApiError && caught.message.includes("delivery was interrupted")) throw caught;
     await new Promise((r) => setTimeout(r, 800));
+    if (signal?.aborted) return;
     await api.typeIntoSession(sessionId, text, deliveryId);
   }
 }
@@ -279,8 +282,10 @@ export default function App() {
     agentId: string,
     repairRetried = false,
     starterPrompt = "",
-    conflictRetried = false
+    conflictRetried = false,
+    signal?: AbortSignal
   ): Promise<SessionInfo | null> {
+    if (signal?.aborted) return null;
     setLaunching(agentId);
     setError("");
     try {
@@ -290,10 +295,12 @@ export default function App() {
       setHintSessionId(created.id);
       return created;
     } catch (e) {
+      if (signal?.aborted) return null;
       const conflict = sessionConflictFrom(e);
       if (conflict) {
         try {
           const active = await refreshSessions();
+          if (signal?.aborted) return null;
           const resolution = resolveSessionConflict(active, agentId, starterPrompt);
           if (resolution.action === "focus") {
             setView("agent");
@@ -312,13 +319,14 @@ export default function App() {
             // belongs to this launch. A bound avoids spinning if another tab
             // keeps winning and closing the slot.
             if (!conflictRetried) {
-              return await launch(agentId, repairRetried, starterPrompt, true);
+              return await launch(agentId, repairRetried, starterPrompt, true, signal);
             }
             setError(
               "The active agent changed while this one was opening. Try again."
             );
           }
         } catch (refreshError) {
+          if (signal?.aborted) return null;
           setError(
             refreshError instanceof Error ? refreshError.message : String(refreshError)
           );
@@ -336,8 +344,9 @@ export default function App() {
         message,
         { agentId }
       );
+      if (signal?.aborted) return null;
       if (canRetry && !repairRetried) {
-        return await launch(agentId, true, starterPrompt, conflictRetried);
+        return await launch(agentId, true, starterPrompt, conflictRetried, signal);
       }
       setError(message);
       return null;
@@ -410,18 +419,27 @@ export default function App() {
    * agent that started talking on its own would undercut the whole point of
    * putting them in front of a terminal.
    */
-  async function launchFromWizard(agentId: string, starterPrompt: string) {
+  async function launchFromWizard(agentId: string, starterPrompt: string, signal: AbortSignal) {
+    if (signal.aborted) return;
     if (session && !session.exited) {
       if (session.agent_id !== agentId) {
         throw new Error("An agent is already open. Choose that agent, or close it before opening another.");
       }
-      await api.typeIntoSession(session.id, starterPrompt, await wizardDeliveryId(session.id, starterPrompt));
+      const deliveryId = await wizardDeliveryId(session.id, starterPrompt);
+      if (signal.aborted) return;
+      await api.typeIntoSession(session.id, starterPrompt, deliveryId);
+      if (signal.aborted) return;
       setView("agent");
     } else {
-      const created = await launch(agentId, false, starterPrompt);
+      const created = await launch(agentId, false, starterPrompt, false, signal);
+      // Keep ownership of an already requested session, but stop the wizard's
+      // queued prompt delivery when the attendee dismisses onboarding.
+      if (signal.aborted) return;
       if (!created) throw new Error("The agent could not open. Try again, or choose another ready agent.");
-      await typeWhenSessionReady(created.id, starterPrompt, await wizardDeliveryId(created.id, starterPrompt));
+      const createdDeliveryId = await wizardDeliveryId(created.id, starterPrompt);
+      await typeWhenSessionReady(created.id, starterPrompt, createdDeliveryId, signal);
     }
+    if (signal.aborted) return;
     setWizardOpen(false);
   }
 

@@ -25,7 +25,7 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
                    interrupted=False, malformed_draft=False, new_project=False,
                    unavailable_suggestions=False, prepared_suggestions=False,
                    save_pending=False, direct_launch=None, wizard_mode="skipped", skip_failure=False,
-                   skip_pending=False):
+                   skip_pending=False, skip_during=None, skip_with_escape=False):
     web = pytest.importorskip("aiohttp.web")
     browser_api = pytest.importorskip("playwright.async_api")
     monkeypatch.setattr(config, "discovery_enabled", lambda: False)
@@ -51,6 +51,11 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
     suggestion_release = asyncio.Event()
     save_entered = asyncio.Event()
     save_release = asyncio.Event()
+    launch_entered = asyncio.Event()
+    launch_release = asyncio.Event()
+    delivery_entered = asyncio.Event()
+    load_entered = asyncio.Event()
+    load_release = asyncio.Event()
     requests = []
 
     async def handler(request):
@@ -90,7 +95,7 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
             body = {"raised": False, "messages": []}
         elif path == "/api/wizard/suggest":
             suggestion_entered.set()
-            if races:
+            if races or skip_during == "suggestion":
                 await suggestion_release.wait()
             if unavailable_suggestions:
                 body = {"industry": "", "ideas": [], "source": "selector",
@@ -100,6 +105,9 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
                 body = {"industry": "", "ideas": [offered], "source": "llm"}
         elif path == "/api/wizard":
             if request.method == "GET":
+                if skip_during == "load" and sum(path == "/api/wizard" and method == "GET" for path, method, _ in requests) == 2:
+                    load_entered.set()
+                    await load_release.wait()
                 if switches["load_errors"]:
                     switches["load_errors"] -= 1
                     return web.json_response({"detail": "Saved goal is temporarily unavailable"}, status=503)
@@ -110,7 +118,7 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
                 if skip_pending and payload.get("operation") == "skip":
                     save_entered.set()
                     await save_release.wait()
-                if save_pending and payload.get("operation") == "complete":
+                if (save_pending or skip_during == "save") and payload.get("operation") == "complete":
                     save_entered.set()
                     await save_release.wait()
                 if switches["save_errors"]:
@@ -128,6 +136,14 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
                 body = attendee_profile.save(user, payload["help_preference"], expected_revision=payload["expected_revision"]).to_json()
         elif path == "/api/sessions":
             if request.method == "POST":
+                if skip_during in {"launch", "launch_failure", "launch_conflict"} and not launch_entered.is_set():
+                    launch_entered.set()
+                    await launch_release.wait()
+                    if skip_during == "launch_failure":
+                        return web.json_response({"detail": "Simulated late launch failure"}, status=503)
+                    if skip_during == "launch_conflict":
+                        return web.json_response({"detail": {"code": "session_conflict", "active_session": {
+                            "id": "other-tab-session", "agent_id": "codex", "label": "Codex"}}}, status=409)
                 if switches["launch_errors"]:
                     switches["launch_errors"] -= 1
                     return web.json_response({"detail": "Simulated launch failure"}, status=503)
@@ -137,6 +153,9 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
             else:
                 body = {"sessions": sessions, "prior_sessions": []}
         elif path.endswith("/type"):
+            if skip_during == "delivery_retry" and not delivery_entered.is_set():
+                delivery_entered.set()
+                return web.json_response({"detail": "Session input is not ready yet"}, status=503)
             if interrupted:
                 interrupted_ids.append(payload["delivery_id"])
                 return web.json_response({"detail": "Prompt delivery was interrupted. Open the agent to clear its input, then start a new session to load your saved goal."}, status=409)
@@ -167,22 +186,60 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
             await page.goto(url)
             dialog = page.get_by_role("dialog", name="What would you like to build?")
             if direct_launch:
+                label = {"claude": "Claude Code", "codex": "Codex", "omnigent": "Omnigent"}[direct_launch]
                 if wizard_mode == "skipped":
-                    await dialog.get_by_role("button", name="Skip onboarding", exact=True).click()
+                    if skip_during == "load":
+                        await load_entered.wait()
+                    elif skip_during:
+                        await dialog.get_by_role("textbox", name="Your goal", exact=True).fill("Help bakery staff pack today's orders")
+                        if skip_during == "suggestion":
+                            await dialog.get_by_role("button", name="Suggest ideas for my goal").click()
+                            await suggestion_entered.wait()
+                        else:
+                            await dialog.get_by_role("button", name="Continue", exact=True).click()
+                            if skip_during == "save":
+                                await save_entered.wait()
+                            else:
+                                dialog = page.get_by_role("dialog", name="Your goal is saved")
+                                await dialog.get_by_role("button", name=label, exact=False).click()
+                                await (launch_entered if skip_during.startswith("launch") else delivery_entered).wait()
+                    assert await dialog.get_by_role("button", name="Skip onboarding", exact=True).is_enabled()
+                    if skip_with_escape:
+                        await page.keyboard.press("Escape")
+                    else:
+                        await dialog.get_by_role("button", name="Skip onboarding", exact=True).click()
                     await dialog.wait_for(state="hidden")
                     if skip_pending:
                         await save_entered.wait()
+                    load_release.set()
+                    suggestion_release.set()
+                    save_release.set()
+                    launch_release.set()
+                    if skip_during in {"launch", "delivery_retry"}:
+                        await page.get_by_role("button", name=f"Close {label}", exact=True).wait_for()
+                        await page.get_by_role("button", name="Home", exact=True).click()
+                    if skip_during:
+                        # Let the delayed response / 800ms prompt retry settle.
+                        # Dismissal must survive either, with no starter sent.
+                        await page.wait_for_timeout(1000)
+                        assert not deliveries
+                        assert await page.get_by_role("dialog").count() == 0
+                        if skip_during in {"launch_failure", "launch_conflict"}:
+                            assert sum(path == "/api/sessions" and method == "POST" for path, method, _ in requests) == 1
+                            assert not any(path == "/api/telemetry/error" for path, _, _ in requests)
                 await page.get_by_role("heading", name="What will you build today?").wait_for()
                 await page.reload()
-                label = {"claude": "Claude Code", "codex": "Codex", "omnigent": "Omnigent"}[direct_launch]
-                await page.get_by_role("button", name=label, exact=False).click()
+                await page.get_by_role("button", name=f"{label} Simulated", exact=False).click()
                 await page.get_by_role("button", name=f"Close {label}", exact=True).wait_for()
                 assert sessions[0]["agent_id"] == direct_launch
                 assert await dialog.count() == 0
                 brief = wizard.read_brief(user)
-                assert brief.what_building == "" and brief.selected_idea is None
+                # A write already accepted by the server may finish after Skip.
+                # Preserve it, while ignoring its late onboarding callback.
+                if skip_during not in {"save", "launch", "launch_failure", "launch_conflict", "delivery_retry"}:
+                    assert brief.what_building == "" and brief.selected_idea is None
                 assert not deliveries
-                assert not any(path == "/api/wizard/suggest" for path, _, _ in requests)
+                assert sum(path == "/api/wizard/suggest" for path, _, _ in requests) == int(skip_during == "suggestion")
                 assert not errors, errors
                 await context.close()
                 await browser.close()
@@ -335,6 +392,8 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
     finally:
         suggestion_release.set()
         save_release.set()
+        launch_release.set()
+        load_release.set()
         await runner.cleanup()
 
 
@@ -389,3 +448,16 @@ def test_rendered_wizard_service_failure_cannot_block_skip_or_harness_launch(tmp
 
 def test_rendered_pending_skip_write_cannot_block_direct_launch_or_reload(tmp_path, monkeypatch):
     asyncio.run(exercise(tmp_path, monkeypatch, direct_launch="claude", skip_pending=True))
+
+
+@pytest.mark.parametrize("skip_during", ["save", "launch"])
+@pytest.mark.parametrize("skip_with_escape", [False, True])
+@pytest.mark.parametrize("agent_id", ["claude", "codex", "omnigent"])
+def test_rendered_skip_remains_available_during_save_or_launch(tmp_path, monkeypatch, skip_during, skip_with_escape, agent_id):
+    asyncio.run(exercise(tmp_path, monkeypatch, direct_launch=agent_id,
+                        skip_during=skip_during, skip_with_escape=skip_with_escape))
+
+
+@pytest.mark.parametrize("skip_during", ["load", "suggestion", "delivery_retry", "launch_failure", "launch_conflict"])
+def test_rendered_skip_cancels_late_onboarding_results_and_prompt_retry(tmp_path, monkeypatch, skip_during):
+    asyncio.run(exercise(tmp_path, monkeypatch, direct_launch="claude", skip_during=skip_during))

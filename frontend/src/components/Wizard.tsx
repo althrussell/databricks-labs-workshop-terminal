@@ -10,7 +10,7 @@ import { trapDialogTab } from "../dialog";
 interface Props {
   agents: AgentInfo[];
   launching: string | null;
-  onLaunch: (agentId: string, starterPrompt: string) => Promise<void>;
+  onLaunch: (agentId: string, starterPrompt: string, signal: AbortSignal) => Promise<void>;
   onOpenAgent?: () => void;
   onClose: (skipped?: boolean) => void;
   draftKey?: string;
@@ -34,6 +34,7 @@ interface Draft {
 export default function Wizard({ agents, launching, onLaunch, onOpenAgent, onClose, draftKey, onSaved }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const coordinator = useRef(new WizardRequests());
+  const lifetime = useRef(new AbortController());
   const [state, setState] = useState<WizardState | null>(null);
   const [step, setStep] = useState(1);
   const [what, setWhat] = useState("");
@@ -107,6 +108,7 @@ export default function Wizard({ agents, launching, onLaunch, onOpenAgent, onClo
   }
 
   useEffect(() => {
+    lifetime.current = new AbortController();
     const element = dialog.current;
     const returnFocus = document.activeElement as HTMLElement | null;
     const priorOverflow = document.body.style.overflow;
@@ -114,6 +116,7 @@ export default function Wizard({ agents, launching, onLaunch, onOpenAgent, onClo
     element?.showModal();
     void load();
     return () => {
+      lifetime.current.abort();
       coordinator.current.cancel();
       element?.close();
       document.body.style.overflow = priorOverflow;
@@ -181,7 +184,8 @@ export default function Wizard({ agents, launching, onLaunch, onOpenAgent, onClo
   }
 
   async function skip() {
-    if (saving || launchBusy) return;
+    if (lifetime.current.signal.aborted) return;
+    lifetime.current.abort();
     cancelCandidates();
     try { if (draftKey) localStorage.removeItem(draftKey); } catch { /* Storage is optional. */ }
     // Dismiss immediately. An optional wizard must not trap an attendee behind
@@ -192,6 +196,7 @@ export default function Wizard({ agents, launching, onLaunch, onOpenAgent, onClo
   }
 
   async function continueToAgent(revision = state?.brief.revision ?? 0) {
+    const signal = lifetime.current.signal;
     cancelCandidates(); setSaving(true); setError("");
     try {
       const saved = await api.saveWizard({ operation: newProject ? "change" : "complete", expected_revision: revision,
@@ -199,6 +204,7 @@ export default function Wizard({ agents, launching, onLaunch, onOpenAgent, onClo
         intent, current_stack: stack, idea_id: selected?.id ?? "",
         selection_token: selected?.selection_token ?? "",
         ...(displayName.trim() ? { display_name: displayName.trim() } : {}) });
+      if (signal.aborted) return;
       if (!saved.starter_prompt) throw new Error("Add a goal or choose an idea before opening an agent.");
       setState((current) => current ? { ...current, brief: saved.brief } : current);
       onSaved?.(saved.brief);
@@ -206,30 +212,34 @@ export default function Wizard({ agents, launching, onLaunch, onOpenAgent, onClo
       setNewProject(false);
       if (draftKey) localStorage.removeItem(draftKey);
     } catch (caught) {
+      if (signal.aborted) return;
       setError(message(caught));
       if (caught instanceof ApiError && caught.status === 409 && caught.detail && typeof caught.detail === "object" && "brief" in caught.detail) {
         setConflict(caught.detail.brief as WizardBrief);
       }
-    } finally { setSaving(false); }
+    } finally { if (!signal.aborted) setSaving(false); }
   }
 
   async function launch(id: string) {
+    const signal = lifetime.current.signal;
     cancelCandidates(); setLaunchBusy(id); setError("");
-    try { await onLaunch(id, starter); }
-    catch (caught) { setError("Your goal is saved. " + message(caught)); }
-    finally { setLaunchBusy(null); }
+    try { await onLaunch(id, starter, signal); }
+    catch (caught) { if (!signal.aborted) setError("Your goal is saved. " + message(caught)); }
+    finally { if (!signal.aborted) setLaunchBusy(null); }
   }
 
   async function clearGoal() {
     if (!state) return;
+    const signal = lifetime.current.signal;
     cancelCandidates(); setSaving(true); setError("");
     try {
       const saved = await api.saveWizard({ operation: "clear", expected_revision: state.brief.revision ?? 0 });
+      if (signal.aborted) return;
       onSaved?.(saved.brief);
       if (draftKey) localStorage.removeItem(draftKey);
       onClose();
-    } catch (caught) { setError(message(caught)); }
-    finally { setSaving(false); }
+    } catch (caught) { if (!signal.aborted) setError(message(caught)); }
+    finally { if (!signal.aborted) setSaving(false); }
   }
 
   const canContinue = Boolean(what.trim() || selected);
@@ -238,10 +248,10 @@ export default function Wizard({ agents, launching, onLaunch, onOpenAgent, onClo
 
   return (
     <dialog ref={dialog} className="modal modal-wide wizard" aria-labelledby="wizard-title" aria-describedby="wizard-description" onKeyDown={trapDialogTab}
-      onCancel={(event) => { event.preventDefault(); if (!pending) void skip(); }}>
+      onCancel={(event) => { event.preventDefault(); void skip(); }}>
       <div className="wizard-head">
         <span className="wizard-step-count">Step {step} of 2</span>
-        <button className="wizard-skip" disabled={pending} onClick={() => void skip()}>Skip onboarding</button>
+        <button className="wizard-skip" onClick={() => void skip()}>Skip onboarding</button>
       </div>
       <div className="wizard-body">
         <h2 id="wizard-title" className="wizard-title">{step === 1 ? "What would you like to build?" : "Your goal is saved"}</h2>

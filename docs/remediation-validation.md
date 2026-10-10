@@ -34,7 +34,7 @@ the working-data, starter and first-preview follow-ups. Disposable cleanup passe
 ## R03
 
 **Acceptance pending; PR92 remains unmerged and the event wizard stays disabled.**
-Current packaged native candidate: `673de90`, with green exact-head push and PR CI on
+Current failed native candidate: `673de90`, with green exact-head push and PR CI on
 10 October. The `d811500` held-out run completed 60/60 inputs once: 59 visible
 recommendations and one false website-path rejection. Native MLflow run
 `63881b78be7e4f3b8f3003c4d6fa184c` finished all 360 Boolean assessments with 354
@@ -88,16 +88,33 @@ shared daemon referred to the old container-local HOME. The failed screenshot
 remains in the external archive. The catalog now uses `codex --no-daemon`, which
 the pinned 0.162.0 CLI accepts; catalog/adapter tests passed. This change prevents
 the standalone WT terminal from depending on a daemon left by a prior container.
+The live disabled-wizard retest reached Codex's normal GPT Sol 6.1 prompt using
+that supported catalog override. No model/build prompt was submitted. All CI
+checks passed for `4bb3e48`, and its exact package was staged to the same app;
+package SHA256 is `4b9198e0fe82860d64f8b2ab8f18b6130b5a7cc1f8aa2d38d9d6072cd0f70658`.
+That package passed immediate Skip, reload without onboarding and direct Claude
+startup to Opus 5.5. Its final Codex check is unqualified because the bounded
+owned-compute watchdog stopped the app before a terminal opened. Stop was verified
+at 04:24:52 UTC; the app identity and resources were retained for reuse.
+The follow-up startup window reserves $3 from the previous unallocated remainder,
+bringing maximum aggregate allocation to $248.0091810627888. Earlier receipts
+and closed model ledgers stay unchanged; no holds were released or reused.
 
 The optional wizard also now dismisses immediately if its skip write is slow or
 fails. A scoped browser-tab dismissal survives reload, while explicit goal
-editing remains available. The 21-case rendered suite passed, including all three
-supported harnesses with Skip, disabled onboarding and failed wizard service
-requests. A separate delayed-write regression also passed. Six real local PTY
+editing remains available. The prior 22 rendered cases passed, including all three
+supported harnesses with Skip, disabled onboarding, failed wizard service requests
+and a delayed skip write. Six real local PTY
 cases prove disabled/skipped onboarding does not gate session creation or command
 execution; package/observer contract checks passed. The frontend production build
-passed. The new skip behavior is locally qualified; the live startup checks used
-the existing `673de90` product package.
+passed. Additional hardening keeps Skip and Escape available while a goal save or
+agent launch is pending, ignores late save callbacks, and cancels queued starter
+delivery/retries after dismissal. Already accepted writes and requested sessions
+remain owned and preserved. Local rendered coverage exercises these races for all
+three harnesses, plus pending loading, suggestions, prompt retries, launch failures
+and conflicts. All 39 rendered cases passed; the 111 frontend unit tests and
+production build also passed. This additional hardening was not deployed in the
+bounded startup window and needs a fresh live check.
 
 The workshop continuity review also found that **Start a different project** is
 hidden under Optional context. WT keeps one current goal and can send a changed
@@ -135,11 +152,14 @@ attempted 143/180, returned 129 nonempty/14 empty and left 37 missing; all 1,080
 recommendation verdicts are unexecuted/missing. Synthetic judge controls and
 successful transport qualification do not override those failed outcomes.
 
-The latest cleanup verified 11 owned operations, with zero CT calls. Under the
+An earlier cleanup verified 11 owned operations, with zero CT calls. At that
+checkpoint, under the
 approved **$250 total**, conservative consumption/reservations are
 **$99.7527710279376**, leaving **$150.2472289720624**. These are not invoice costs.
-Fresh exact-commit CI/package/live qualification, a new held-out native MLflow
-evaluation and genuine Claude/Codex wizard-to-app journeys remain required.
+Later exact-commit CI/package checks and the held-out native MLflow evaluation
+are recorded above. The failed native app journeys and pending latest-code live
+checks remain outstanding; completed evaluation must not be repeated merely to
+replace a failed result.
 
 ## Toolchain
 
