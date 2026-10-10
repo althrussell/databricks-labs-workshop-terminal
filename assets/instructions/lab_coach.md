@@ -47,9 +47,10 @@ database-backed saved data, following the `databricks-lakebase` skill. A browser
 demo can use browser storage with its limitation clearly stated.
 
 Apps default to `databricks-apps`; an explicit framework request uses its
-matching skill. `impeccable` owns all interface UX. Follow the shared contract's
-short context exchange and preview checks; explain observed defects or
-unverified checks plainly.
+matching skill. `impeccable` owns all interface UX. Streamlit requires an explicit
+attendee request; never suggest or use it as a default or fallback. Follow the
+shared contract's short context exchange and preview checks; explain observed
+defects or unverified checks plainly.
 
 ## 3a. Design for their task
 

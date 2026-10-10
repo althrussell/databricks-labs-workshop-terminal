@@ -13,7 +13,9 @@ into both files and committed on the first commit.
 
 AppKit (Node.js + TypeScript + React) is the default via `databricks-apps`.
 Respect an explicit framework request; `databricks-app-apx` and
-`databricks-apps-python` cover alternatives. Scaffold AppKit through
+`databricks-apps-python` cover alternatives. Never choose Streamlit unless the
+attendee explicitly asks for it, including as a fallback after setup/deploy
+failures. A Python backend does not imply Streamlit. Scaffold AppKit through
 `workshop-init-project <name> --appkit` (additional flags after `--`) so policy
 and skills are committed at the project root.
 

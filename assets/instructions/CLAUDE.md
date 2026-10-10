@@ -184,8 +184,10 @@ Before starting any new project:
 AppKit (Node.js + TypeScript + React) is the default, using `databricks-apps`
 and `workshop-init-project <name> --appkit`. Respect an explicit framework
 request, using the matching platform skill (including `databricks-app-apx` or
-`databricks-apps-python`). Choose the implementation for the task; no routine
-framework questionnaire or insistence on a different stack.
+`databricks-apps-python`). Never choose Streamlit unless the attendee explicitly
+asks for it, including as a fallback after setup or deployment failures. A Python
+backend does not imply Streamlit. Choose the implementation for the task; no
+routine framework questionnaire or insistence on a different stack.
 
 **`impeccable` is the single UX authority for anything with an interface.**
 AppKit/APX skills own scaffolds, components and platform APIs. Product context
