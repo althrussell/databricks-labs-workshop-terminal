@@ -45,7 +45,7 @@ Focused regressions cover raw/projected provenance, retired routes, warm trees,
 home links, project copies, preserved notes and real Git worktree content.
 CI adds the same supported-installer check on Linux.
 
-All eight CI jobs passed on `90ad0ce`: Python 3.11/3.12, frontend build/tests,
+All eight CI jobs passed on `effb42e`: Python 3.11/3.12, frontend build/tests,
 packaged runtime, actual Linux Impeccable installation, rendered wizard,
 evaluator API and Agent Bricks CLI. Raw receipts and screenshots remain outside
 Git.
@@ -53,11 +53,14 @@ Git.
 Live tests reuse `wt-eval-r03-1009-f601-wt`, with wizard and evaluation disabled,
 as `labuser+1@awsbricks.com`. They use ordinary attendee sentences without
 framework or visual instructions. No CT code, CT call or working CT deployment
-was changed. The current live WT package is `87723ba6c29ef4be23965ccb69eea16e808a724e`
-with SHA256 `48cb1e87ad1c8e27522341d9681f922290aa8fe841b342fe84e3d93b473222ce`,
-deployment `01f1c489d0d913cdae6517c6ce701464`. The subsequent APX guide cleanup
-does not change the tested default AppKit/Impeccable path; APX has not been live
-qualified here.
+was changed. The current live WT package is `effb42ee570bc4cf275be270d3edf40bfd54e39a`
+with SHA256 `26cd4dc7e9f7a7aaa91339331026222e4ec1c65051ed1b8bb570dfd460bd4c30`,
+deployment `01f1c48de81411c3a8e4e8156cb0371a`. Its startup log independently
+witnesses that package digest being loaded from Unity Catalog. The deployed
+snapshot and unchanged model policy were verified. Native direct launch with
+wizard off passed, and the actual project helper/skill/engine fingerprints and
+absence of retired home/project assets match the reviewed inputs. APX has not
+been live qualified here.
 
 | Path | Observed result |
 | --- | --- |
@@ -79,8 +82,8 @@ project. The 740 skill problems disappeared; the three application problems
 remained and the committed configuration retained the exclusions for worktrees.
 All 26 preparation regressions pass, including preservation of attendee edits,
 application rules and unrelated staged files. This narrow live helper check is
-separate from the WT package identity above; the correction has not yet been
-redeployed as a WT package. The initial garden build took 12m 27s, including
+followed by deployment and native fingerprint qualification of the complete
+package above. The initial garden build took 12m 27s, including
 deployment recovery; it is not a comparison measurement against APX.
 
 The first Claude/Opus 5.5 repair-desk preview exposed an AppKit theme collision:
@@ -89,8 +92,16 @@ dark. Compilation and simulated DOM checks missed the rendered contrast defect.
 The workshop integration now requires scoped product tokens or consistent use
 of the framework theme. The feedback repair passed; the fresh Codex build's
 independent browser qualification is still pending. The failed first Claude
-preview is retained, and a fresh corrected Claude first preview has not been
-rerun.
+preview is retained. A fresh Claude session on the final package rebuilt the
+same phone workflow as Repair Desk in approximately four minutes, loaded the
+actual platform/Impeccable skills and used scoped product tokens. Its rendered
+preview has readable colours. Reusing the existing app origin exposed a separate
+continuity failure: old saved rows use `owner` and `finishedAt`, while the new
+loader requires `visitor` and `status` and silently filters them out. Waiting and
+Finished both showed zero. No reset or new save was performed; ordinary attendee
+feedback requested recovery without clearing the saved repairs. Recovery and
+independent phone actions are still in progress. Carry schema compatibility and
+preserving earlier app data into R08's focused continuity checks.
 
 Data discovery remains a material limitation: Claude consulted the supplied
 demo-table index but did not query the working catalog, so its original claim
