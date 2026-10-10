@@ -117,6 +117,30 @@ def test_background_skill_publication_reconciles_fallback_and_retired_links(atte
     assert (target / "my-skill").resolve() == custom
 
 
+def test_current_ux_links_retire_legacy_managed_discovery(attendee, monkeypatch):
+    from server import user_content as content
+    from server.bootstrap import install
+
+    source = Path(content.shared_skills_dir())
+    for relative in (".claude/skills", ".codex/skills"):
+        target = Path(attendee.home) / relative
+        target.mkdir(parents=True, exist_ok=True)
+        for name in ("workshop-design-studio", "databricks-app-design"):
+            (target / name).symlink_to(source / name)
+    legacy = Path(attendee.home) / ".codex/skills"
+    custom = legacy / "my-skill"
+    custom.mkdir()
+    (custom / "SKILL.md").write_text("attendee-owned")
+    monkeypatch.setattr(install, "skills_ready", lambda: False)
+    content._link_skills(attendee)
+    for relative in content.HARNESS_SKILL_DIRS.values():
+        target = Path(attendee.home) / relative
+        assert (target / "impeccable/SKILL.md").is_file()
+        assert not any((target / name).is_symlink() for name in ("workshop-design-studio", "databricks-app-design"))
+    assert sorted(path.name for path in legacy.iterdir()) == ["my-skill"]
+    assert (custom / "SKILL.md").read_text() == "attendee-owned"
+
+
 def test_launcher_follows_reinstalled_binary(attendee, tmp_path):
     from server import config
 
@@ -355,11 +379,45 @@ def test_isolated_worktree_receives_actual_skills_and_can_refresh(attendee, tmp_
     skill = worktree / ".agents/skills/databricks-apps/SKILL.md"
     assert skill.is_file() and not skill.is_symlink()
     assert skill.read_bytes() == (Path(attendee.home) / ".claude/skills/databricks-apps/SKILL.md").read_bytes()
+    ux = worktree / ".agents/skills/impeccable"
+    assert (ux / "SKILL.md").read_bytes() == (Path(attendee.home) / ".claude/skills/impeccable/SKILL.md").read_bytes()
+    assert not (ux / "scripts/bin").exists()
+    for name in ("workshop-design-studio", "databricks-app-design"):
+        assert not (worktree / ".agents/skills" / name).exists()
     # A .git file marks a real worktree. Adopting it must not reinitialize Git.
     before = (worktree / ".git").read_text()
     result = subprocess.run(["bash", helper, "worker-copy", "--json"], env=env, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr
     assert (worktree / ".git").read_text() == before
+
+
+def test_project_refresh_retires_managed_ux_copies_and_keeps_notes(attendee):
+    from server import user_content as content
+
+    content.provision(attendee)
+    env = {**os.environ, "HOME": attendee.home, "GIT_CONFIG_GLOBAL": "/dev/null",
+           "GIT_AUTHOR_NAME": "Attendee", "GIT_AUTHOR_EMAIL": "alice@example.com",
+           "GIT_COMMITTER_NAME": "Attendee", "GIT_COMMITTER_EMAIL": "alice@example.com"}
+    helper = str(Path(content._ASSETS) / "bin/workshop-init-project")
+    subprocess.run(["bash", helper, "ux-refresh"], env=env, capture_output=True, check=True, timeout=30)
+    project = Path(attendee.home) / "projects/ux-refresh"
+    manifest = project / ".agents/workshop-skills.json"
+    prior = json.loads(manifest.read_text())
+    for name in ("workshop-design-studio", "databricks-app-design"):
+        old = project / ".agents/skills" / name
+        old.mkdir()
+        (old / "SKILL.md").write_text("old managed UX")
+        (project / ".claude/skills" / name).symlink_to("../../.agents/skills/" + name)
+        prior["skills"][name] = "previous-release"
+    manifest.write_text(json.dumps(prior))
+    with (project / "AGENTS.md").open("a") as handle:
+        handle.write("\nAttendee note: use kilograms.\n")
+    subprocess.run(["bash", helper, "ux-refresh"], env=env, capture_output=True, check=True, timeout=30)
+    for name in ("workshop-design-studio", "databricks-app-design"):
+        assert not (project / ".agents/skills" / name).exists()
+        assert not (project / ".claude/skills" / name).is_symlink()
+    assert "Attendee note: use kilograms." in (project / "AGENTS.md").read_text()
+    assert (project / ".agents/skills/impeccable/SKILL.md").is_file()
 
 
 @pytest.mark.parametrize("name", ["../other", "a/b", ".", "space name", "-bad"])

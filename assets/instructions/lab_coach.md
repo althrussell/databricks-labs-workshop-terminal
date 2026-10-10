@@ -46,37 +46,18 @@ for that version; provision and bind Lakebase non-interactively for shared or
 database-backed saved data, following the `databricks-lakebase` skill. A browser-only
 demo can use browser storage with its limitation clearly stated.
 
-Apps use `databricks-apps`, `databricks-app-design` for data surfaces, and
-`workshop-design-studio` for visible interfaces. Share the first preview promptly
-and perform the contract's practical render/action/reload checks with prepared
-tooling. Explain an observed defect or unverified check plainly.
+Apps default to `databricks-apps`; an explicit framework request uses its
+matching skill. `impeccable` owns all interface UX. Follow the shared contract's
+short context exchange and preview checks; explain observed defects or
+unverified checks plainly.
 
-## 3a. Design is your job, not theirs
+## 3a. Design for their task
 
-The attendee should be quietly amazed at how their app looks and never be asked
-to think about it. They came to build something, not to art-direct it.
-
-- **Never ask a design question.** No "which style do you prefer", no palette or
-  layout options, no creative directions to choose between. Infer what suits
-  their product and audience, decide, and build it.
-- **Never narrate the design process.** Do not mention design systems,
-  baselines, patterns, critique, or the skill by name. Tell them what their
-  product now *does*.
-- **Their app is not a Databricks app.** Do not paint it in Databricks colours
-  or console chrome unless they ask. It should look like *their* product.
-
-Meeting the bar is not optional: real type hierarchy, generous consistent
-spacing, one accent colour that carries meaning, a clear focal point, genuine
-loading and empty states, readable contrast, and visible focus. Start from the
-`workshop-design-studio` patterns — they are faster than inventing and they
-already clear that bar.
-
-If they raise branding or design themselves, or hand you a logo or brand kit,
-talk it through with them properly — at that point it is their topic.
-
-When you fix something visual, describe it the way you would to a colleague,
-not a designer: "the text was too faint to read against that background, fixed
-it" — never "resolved a WCAG AA contrast finding".
+Infer a useful interface from the goal, audience, task and available data.
+Respect supplied branding and visual requests. Make design decisions for them
+unless a consequential product fact is unknown or they want to discuss design.
+No obligatory palette interview, concept picker or review ceremony. Explain
+changes in product terms: “the text was too faint to read, so I fixed it.”
 
 ## 3b. Showing the attendee THEIR data
 

@@ -16,8 +16,8 @@ Build full-stack Databricks applications using APX framework (FastAPI + React).
 **Do NOT invoke for a generic "build me a Databricks app" request.** The default
 for a new app is **[databricks-apps](../databricks-apps/SKILL.md)** (AppKit —
 Node.js + TypeScript + React), paired with
-[databricks-app-design](../databricks-app-design/SKILL.md) for any screen that
-displays data. Load those instead unless one of the two conditions above holds.
+[impeccable](../impeccable/SKILL.md) for interface UX.
+Load those instead unless one of the two conditions above holds.
 
 **Do NOT invoke if user specifies**: Streamlit, Dash, Node.js, Shiny, Gradio, Flask, or other frameworks.
 
@@ -253,7 +253,7 @@ Read these files only when actively writing that type of code or debugging issue
 ## Related Skills
 
 - **[databricks-apps](../databricks-apps/SKILL.md)** - AppKit (Node/TypeScript/React), the default for a new Databricks App
-- **[databricks-app-design](../databricks-app-design/SKILL.md)** - data-screen UX for AppKit apps
+- **[impeccable](../impeccable/SKILL.md)** - task-appropriate UX for every interface
 - **[databricks-apps-python](../databricks-apps-python/SKILL.md)** - for Streamlit, Dash, Gradio, or Flask apps
 - **[databricks-dabs](../databricks-dabs/SKILL.md)** - deploying APX apps via DABs
 - **[databricks-python-sdk](../databricks-python-sdk/SKILL.md)** - backend SDK integration

@@ -11,7 +11,7 @@ Refreshes before local/remote launches after the HOME is bootstrapped:
 - ~/.claude/agents/         — retired workshop chain removed; custom agents kept
 - ~/.claude/skills          — per-skill symlinks into the shared skills library
                               (reviewed databricks-agent-skills, fetched at boot);
-                              ~/.codex/skills gets the same set, which is where
+                              ~/.agents/skills gets the same set, which is where
                               Codex and Omnigent's Codex worker discover them
 - ~/.claude.json            — onboarding skipped + the local deploy MCP tool;
                               optional public MCP servers remain opt-in
@@ -583,11 +583,11 @@ def _install_subagents(user: User) -> None:
 # Each harness reads its own directory, and `databricks aitools install` is the
 # reference for which: it keeps one canonical copy of the skills and symlinks
 # each skill into every detected agent's real skills directory. Claude Code
-# loads ~/.claude/skills; Codex CLI loads ~/.codex/skills, which is also the
+# loads ~/.claude/skills; current Codex CLI loads ~/.agents/skills, which is also the
 # CODEX_HOME configure_codex() writes, so Omnigent's Codex worker inherits it.
 HARNESS_SKILL_DIRS = {
     "claude": os.path.join(".claude", "skills"),
-    "codex": os.path.join(".codex", "skills"),
+    "codex": os.path.join(".agents", "skills"),
 }
 
 
@@ -622,6 +622,11 @@ def _link_skills(user: User) -> None:
                           *(root for root in previous if isinstance(root, str) and os.path.isabs(root))}))
     for relative in HARNESS_SKILL_DIRS.values():
         _link_skill_set(source, os.path.join(user.home, relative), names, owned_roots=roots)
+    # Move managed links out of Codex's legacy discovery path so one skill is
+    # discovered once. Preserve attendee-owned files and links there.
+    legacy = os.path.join(user.home, ".codex", "skills")
+    if os.path.lexists(legacy):
+        _link_skill_set(source, legacy, [], owned_roots=roots)
     _atomic_write(state_path, json.dumps({"version": 1, "roots": roots}), 0o600)
     _write_aitools_state(user, source, names)
 
