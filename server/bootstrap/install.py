@@ -397,36 +397,33 @@ def _remove_retired_pi_install() -> None:
 
 
 def _ready_from(steps: dict) -> dict:
-    return {
-        "bash": True,
-        "claude": steps.get("claude", {}).get("status") == "complete",
-        "codex": steps.get("codex", {}).get("status") == "complete",
-        # Both the meta-harness and tmux (its terminal backend) must land
-        # before any omnigent session type is launchable.
-        "omnigent": (
-            steps.get("omnigent", {}).get("status") == "complete"
-            and steps.get("tmux", {}).get("status") == "complete"
-        ),
-    }
+    return {"bash": True, **{
+        binary: all(steps.get(name, {}).get("status") == "complete" for name in names)
+        for binary, names in STEPS_BY_BINARY.items()
+    }}
 
 
 # Which install steps a launchable binary actually waits on. ``_ready_from``
 # encodes the same relationships; naming them here lets a card say *which* step
 # failed instead of spinning on "installing" until the workshop ends.
 STEPS_BY_BINARY = {
-    "claude": ("claude",),
-    "codex": ("codex",),
-    "omnigent": ("omnigent", "tmux"),
+    "claude": ("node", "databricks", "claude"),
+    "codex": ("node", "databricks", "codex"),
+    "omnigent": ("node", "databricks", "claude", "codex", "omnigent", "tmux"),
 }
+
+
+def skills_ready() -> bool:
+    """This boot has verified the shared tree; existence alone is insufficient."""
+    with _state_lock:
+        return _state.get("skills", {}).get("status") == "complete"
 
 
 def failure_for(requires) -> str:
     """Why a card needing these binaries will never go ready — ``""`` if it may.
 
-    An install step that ends in ``error`` or ``degraded`` is terminal: nothing
-    retries it, so the spinner an attendee is watching will spin until they give
-    up and ask. Reporting the step and its message turns that into something an
-    operator can act on and an attendee can stop waiting for.
+    A step ending in ``error`` or ``degraded`` needs an explicit setup retry.
+    Reporting the dependency lets the card offer recovery instead of a spinner.
     """
     with _state_lock:
         steps = dict(_state)
@@ -1828,6 +1825,11 @@ def _guard_installer(
                 expected_version=expected_version,
                 source=source,
             )
+        finally:
+            if step == "skills":
+                from .. import user_content
+
+                user_content.refresh_skill_links()
 
     return guarded
 
@@ -1871,6 +1873,48 @@ def _install_agentbricks() -> None:
 _install_agentbricks = _guard_installer(
     "agentbricks", _install_agentbricks, expected_version=AGENTBRICKS_VERSION
 )
+
+_retry_lock = threading.Lock()
+_retry_active = False
+
+
+def retry_failed(requires) -> bool:
+    """Retry failed dependencies of a requested harness on demand.
+
+    Serialize against boot installation and other retries. Pending/running
+    installs and unrelated optional utilities are never restarted.
+    """
+    global _retry_active
+    names = {name for binary in requires or () for name in STEPS_BY_BINARY.get(binary, (binary,))}
+    with _retry_lock:
+        if _retry_active:
+            return False
+        with _state_lock:
+            failed = {name for name in names if _state.get(name, {}).get("status") in {"error", "degraded"}}
+        if not failed:
+            return False
+        _retry_active = True
+
+    def run():
+        global _retry_active
+        try:
+            with _install_file_lock(exclusive=True):
+                for name, operation in (
+                    ("node", _install_node), ("databricks", _install_databricks_cli),
+                    ("claude", _install_claude), ("codex", _install_codex),
+                    ("tmux", _install_tmux), ("omnigent", _install_omnigent),
+                ):
+                    with _state_lock:
+                        still_failed = _state.get(name, {}).get("status") in {"error", "degraded"}
+                        node_ready = _state.get("node", {}).get("status") == "complete"
+                    if name in failed and still_failed and (name != "codex" or node_ready):
+                        operation()
+        finally:
+            with _retry_lock:
+                _retry_active = False
+
+    threading.Thread(target=run, daemon=True, name="bootstrap-retry").start()
+    return True
 
 
 def _run_parallel_installers(tasks, *, max_workers: int) -> None:

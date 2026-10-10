@@ -1,6 +1,6 @@
 """Per-user workshop content: instructions, subagents, skills, git, MCP.
 
-Runs once per user (on their first session) after their HOME is bootstrapped:
+Refreshes before local/remote launches after the HOME is bootstrapped:
 
 - ~/.claude/CLAUDE.md       — workshop instructions (+ lab coach when enabled)
 - ~/.codex/AGENTS.md        — the same instructions adapted for Codex
@@ -8,7 +8,7 @@ Runs once per user (on their first session) after their HOME is bootstrapped:
                               mandate as project-level CLAUDE.md + AGENTS.md (the
                               only channel Omnigent's worktree-bound Codex worker
                               reads), backed by ~/.config/workshop/project-memory.md
-- ~/.claude/agents/         — kept empty; the TDD subagent chain was removed
+- ~/.claude/agents/         — retired workshop chain removed; custom agents kept
 - ~/.claude/skills          — per-skill symlinks into the shared skills library
                               (reviewed databricks-agent-skills, fetched at boot);
                               ~/.codex/skills gets the same set, which is where
@@ -30,10 +30,10 @@ import os
 import re
 from datetime import datetime, timezone
 import secrets
-import shutil
+import subprocess
 
 from . import config
-from .users import User, email_slug
+from .users import User, _atomic_write, email_slug
 
 logger = logging.getLogger(__name__)
 
@@ -49,31 +49,45 @@ _CALLBACK_CAPABILITY = os.path.join(".config", "workshop", "callback-capability"
 DEFAULT_DEEPWIKI_MCP = "https://mcp.deepwiki.com/mcp"
 DEFAULT_EXA_MCP = "https://mcp.exa.ai/mcp"
 
-_provisioned: set[str] = set()
+class PreparationError(RuntimeError):
+    """Required workshop content could not be prepared; a retry repairs it."""
+
+    def __init__(self, steps: list[str]):
+        self.steps = steps
+        super().__init__("Workshop preparation failed: " + ", ".join(steps))
 
 
 def provision(user: User) -> None:
-    """Idempotent per-user setup; never fatal to a session launch."""
-    if user.email in _provisioned:
-        return
-    for step in (
-        _write_callback_capability,
-        _write_persona,
-        _write_instructions,
-        _install_project_helper,
-        _install_cli_helpers,
-        _install_subagents,
-        _link_skills,
-        _write_claude_json,
-        _write_git_setup,
-        _write_npm_setup,
-    ):
-        try:
-            step(user)
-        except Exception as e:  # noqa: BLE001 — content must never block a terminal
-            logger.warning("user content step %s failed for %s: %s",
-                           step.__name__, user.email, e)
-    _provisioned.add(user.email)
+    """Refresh launch content, retrying failed/missing writes on every launch.
+
+    Only git/npm conveniences are optional. Never cache an email as ready.
+    """
+    failures = []
+    with user.content_lock:
+        steps = (
+            user.refresh_launchers,
+            _write_callback_capability,
+            _write_persona,
+            _write_instructions,
+            _install_project_helper,
+            _install_cli_helpers,
+            _install_subagents,
+            _link_skills,
+            _write_claude_json,
+        )
+        for step in (*steps, _write_git_setup, _write_npm_setup):
+            try:
+                if step == user.refresh_launchers:
+                    step()
+                else:
+                    step(user)
+            except Exception as e:  # noqa: BLE001 — report all failed steps
+                logger.warning("user content step %s failed for %s: %s",
+                               step.__name__, user.email, e)
+                if step in steps:
+                    failures.append(step.__name__.lstrip("_"))
+    if failures:
+        raise PreparationError(failures)
 
 
 def callback_capability_path(user: User) -> str:
@@ -428,6 +442,11 @@ def _demo_data_overlay(user: User) -> str:
 
 
 def _write_instructions(user: User) -> None:
+    with user.content_lock:
+        _write_instructions_locked(user)
+
+
+def _write_instructions_locked(user: User) -> None:
     parts = [
         _base_instructions(),
         _persona_overlay(user),
@@ -438,15 +457,13 @@ def _write_instructions(user: User) -> None:
 
     claude_md = os.path.join(user.home, ".claude", "CLAUDE.md")
     os.makedirs(os.path.dirname(claude_md), exist_ok=True)
-    with open(claude_md, "w") as f:
-        f.write(text)
+    _atomic_write(claude_md, text, 0o600)
 
     # Codex reads AGENTS.md; same content, only the top header is swapped.
     agents_md = os.path.join(user.home, ".codex", "AGENTS.md")
     os.makedirs(os.path.dirname(agents_md), exist_ok=True)
     adapted = re.sub(r"^#\s+.*$", "# Codex Agent Instructions", text, count=1, flags=re.MULTILINE)
-    with open(agents_md, "w") as f:
-        f.write(adapted)
+    _atomic_write(agents_md, adapted, 0o600)
 
 
 # -- project memory (project-level CLAUDE.md / AGENTS.md via a bootstrap helper) --
@@ -489,19 +506,17 @@ def _install_project_helper(user: User) -> None:
     """
     template_dst = os.path.join(user.home, ".config", "workshop", "project-memory.md")
     os.makedirs(os.path.dirname(template_dst), exist_ok=True)
-    with open(template_dst, "w") as f:
-        # Worktree workers cannot read the home-only demo manifest. Carry the
-        # same observed catalog context into their committed project policy.
-        f.write("\n\n".join(part for part in (
-            _project_memory(), _demo_data_overlay(user),
-        ) if part.strip()))
+    # Worktree workers cannot read the home-only demo manifest.
+    _atomic_write(template_dst, "\n\n".join(part for part in (
+        _project_memory(), _demo_data_overlay(user),
+    ) if part.strip()), 0o600)
 
     helper_src = os.path.join(_ASSETS, "bin", "workshop-init-project")
     local_bin = os.path.join(user.home, ".local", "bin")
     os.makedirs(local_bin, exist_ok=True)
     helper_dst = os.path.join(local_bin, "workshop-init-project")
-    shutil.copy2(helper_src, helper_dst)
-    os.chmod(helper_dst, 0o755)
+    with open(helper_src) as f:
+        _atomic_write(helper_dst, f.read(), 0o755)
 
 
 def _install_cli_helpers(user: User) -> None:
@@ -535,10 +550,10 @@ def _install_cli_helpers(user: User) -> None:
     ):
         src = os.path.join(_ASSETS, "bin", name)
         if not os.path.isfile(src):
-            continue
+            raise FileNotFoundError(f"Required workshop helper missing: {name}")
         dst = os.path.join(local_bin, name)
-        shutil.copy2(src, dst)
-        os.chmod(dst, 0o755)
+        with open(src) as f:
+            _atomic_write(dst, f.read(), 0o755)
 
 
 # -- subagents --
@@ -551,15 +566,16 @@ def _install_subagents(user: User) -> None:
     X", which turns a ten-minute app into an interview plus a test suite. The
     workshop's whole proposition is idea to live URL fast, so the chain is gone.
 
-    The directory is still created (and emptied) because a HOME can outlive a
+    The directory is still created because a HOME can outlive a
     deploy: leaving a stale prd-writer.md behind would keep the old behaviour
     running for exactly the attendees who already have a session open.
     """
     target = os.path.join(user.home, ".claude", "agents")
     os.makedirs(target, exist_ok=True)
-    for name in os.listdir(target):
-        if name.endswith(".md"):
-            os.remove(os.path.join(target, name))
+    for name in ("build-feature.md", "implementer.md", "prd-writer.md", "test-generator.md"):
+        path = os.path.join(target, name)
+        if os.path.lexists(path):
+            os.unlink(path)
 
 
 # -- skills (shared library, fetched latest at boot) --
@@ -580,17 +596,46 @@ def shared_skills_dir() -> str:
 
 
 def _link_skills(user: User) -> None:
+    from .bootstrap import install
+
     source = shared_skills_dir()
-    if not os.path.isdir(source):
-        source = os.path.join(_ASSETS, "skills")  # boot fetch not done yet — vendored
+    # A directory surviving the last deployment is not proof of current content.
+    # Use this package's assets until this boot verifies/publishes the shared set.
+    if not install.skills_ready() or not os.path.isdir(source):
+        source = os.path.join(_ASSETS, "skills")
     names = sorted(
         name
         for name in os.listdir(source)
-        if os.path.isdir(os.path.join(source, name))
+        if os.path.isfile(os.path.join(source, name, "SKILL.md"))
     )
+    # Packaged fallback paths change with PEX versions. Remember ownership so
+    # a link into the previous package is refreshed on the next deployment.
+    state_path = os.path.join(user.home, ".config", "workshop", "skill-links.json")
+    try:
+        with open(state_path) as f:
+            previous = json.load(f).get("roots", [])
+    except (OSError, ValueError, AttributeError):
+        previous = []
+    if not isinstance(previous, list):
+        previous = []
+    roots = tuple(sorted({source, shared_skills_dir(), os.path.join(_ASSETS, "skills"),
+                          *(root for root in previous if isinstance(root, str) and os.path.isabs(root))}))
     for relative in HARNESS_SKILL_DIRS.values():
-        _link_skill_set(source, os.path.join(user.home, relative), names)
+        _link_skill_set(source, os.path.join(user.home, relative), names, owned_roots=roots)
+    _atomic_write(state_path, json.dumps({"version": 1, "roots": roots}), 0o600)
     _write_aitools_state(user, source, names)
+
+
+def refresh_skill_links() -> None:
+    """Reconcile early-launch fallback links after background publication."""
+    from .users import user_manager
+
+    for user in user_manager.all():
+        with user.content_lock:
+            try:
+                _link_skills(user)
+            except OSError:
+                logger.warning("skill reconciliation failed for %s; next launch retries", user.email)
 
 
 # The CLI tracks which skills it installed in its own state file, and reports
@@ -655,7 +700,7 @@ def _write_aitools_state(user: User, source: str, names: list[str]) -> None:
         json.dump(payload, f, indent=2)
 
 
-def _link_skill_set(source: str, target: str, names: list[str]) -> None:
+def _link_skill_set(source: str, target: str, names: list[str], *, owned_roots: tuple[str, ...] = ()) -> None:
     """Symlink each skill into one harness directory, per-skill like the CLI.
 
     Per-skill links rather than one directory link: a harness or the attendee
@@ -666,13 +711,30 @@ def _link_skill_set(source: str, target: str, names: list[str]) -> None:
     if os.path.islink(target):
         os.unlink(target)
     os.makedirs(target, exist_ok=True)
+    managed_roots = (*owned_roots, os.path.abspath(shared_skills_dir()), os.path.join(_ASSETS, "skills"))
+    for name in os.listdir(target):
+        link = os.path.join(target, name)
+        if name not in names and os.path.islink(link):
+            destination = os.path.abspath(os.path.join(target, os.readlink(link)))
+            if any(destination.startswith(root + os.sep) for root in managed_roots):
+                os.unlink(link)
     for name in names:
         link = os.path.join(target, name)
         if os.path.islink(link):
-            os.unlink(link)
+            destination = os.path.abspath(os.path.join(target, os.readlink(link)))
+            if not any(destination.startswith(root + os.sep) for root in managed_roots):
+                continue  # preserve attendee-owned links too
+            if os.readlink(link) == os.path.join(source, name):
+                continue
         elif os.path.exists(link):
             continue  # the attendee's own copy wins
-        os.symlink(os.path.join(source, name), link)
+        temporary = link + ".workshop-" + secrets.token_hex(6)
+        try:
+            os.symlink(os.path.join(source, name), temporary)
+            os.replace(temporary, link)
+        finally:
+            if os.path.lexists(temporary):
+                os.unlink(temporary)
 
 
 # -- ~/.claude.json (onboarding + MCP servers) --
@@ -705,9 +767,13 @@ def _write_claude_json(user: User) -> None:
     except (OSError, json.JSONDecodeError):
         existing = {}
     existing["hasCompletedOnboarding"] = True
-    existing["mcpServers"] = mcp_servers
-    with open(path, "w") as f:
-        json.dump(existing, f, indent=2)
+    retained = existing.get("mcpServers", {})
+    if not isinstance(retained, dict):
+        retained = {}
+    for name in ("workshop", "deepwiki", "exa"):
+        retained.pop(name, None)
+    existing["mcpServers"] = {**retained, **mcp_servers}
+    _atomic_write(path, json.dumps(existing, indent=2), 0o600)
 
 
 # -- git identity + workspace-sync hook --
@@ -857,16 +923,11 @@ def _write_git_setup(user: User) -> None:
 
     display = user.email.split("@")[0].replace(".", " ").title()
     gitconfig = os.path.join(user.home, ".gitconfig")
-    with open(gitconfig, "w") as f:
-        f.write(
-            "[user]\n"
-            f"\temail = {user.email}\n"
-            f"\tname = {display}\n"
-            "[core]\n"
-            f"\thooksPath = {hooks_dir}\n"
-            "[init]\n"
-            "\tdefaultBranch = main\n"
-        )
+    # Refresh workshop-owned keys while preserving attendee aliases/settings.
+    for key, value in (("user.email", user.email), ("user.name", display),
+                       ("core.hooksPath", hooks_dir), ("init.defaultBranch", "main")):
+        subprocess.run(["git", "config", "--file", gitconfig, "--replace-all", key, value],
+                       check=True, capture_output=True, timeout=5)
 
     post_commit = os.path.join(hooks_dir, "post-commit")
     with open(post_commit, "w") as f:

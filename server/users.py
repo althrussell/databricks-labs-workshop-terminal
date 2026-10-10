@@ -87,6 +87,9 @@ class User:
         # Serializes all per-user config writes. Lock-held helpers avoid
         # recursion, so a plain Lock also catches accidental nested acquisition.
         self.lock = threading.Lock()
+        # Content preparation can call config helpers that acquire self.lock.
+        # Keep its lock separate; profile/brief refreshes share it as well.
+        self.content_lock = threading.RLock()
         self._credential_revision = 0
         self._bootstrapped = False
         self.cli_ready: set[str] = set()  # agent ids with configs written
@@ -141,12 +144,28 @@ class User:
                 continue
             source = os.path.join(shared_bin, name)
             target = os.path.join(local_bin, name)
-            if os.path.lexists(target):
+            if os.path.islink(target):
+                previous = os.path.realpath(target)
+                if not previous.startswith(os.path.realpath(config.shared_prefix()) + os.sep):
+                    continue  # attendee-owned launcher
+                if os.readlink(target) == source:
+                    continue
+                os.unlink(target)
+            elif os.path.lexists(target):
                 continue
             try:
-                os.symlink(os.path.realpath(source), target)
+                # Follow the stable shared launcher, including an atomic upgrade.
+                os.symlink(source, target)
             except OSError:
-                pass
+                if not os.path.exists(target):
+                    raise
+
+    def refresh_launchers(self) -> None:
+        """Reconcile launchers installed after this HOME was first opened."""
+        with self.lock:
+            self._link_shared_binaries()
+            self._write_databricks_cli_wrapper()
+            self._write_omnigent_helper()
 
     @staticmethod
     def _remove_retired_binary_links(local_bin: str) -> frozenset[str]:
@@ -201,7 +220,7 @@ class User:
             "  export DATABRICKS_CONFIG_FILE\n"
             "  unset DATABRICKS_CONFIG_PROFILE\n"
             "fi\n"
-            f'exec "{os.path.realpath(real)}" "$@"\n'
+            f'exec "{real}" "$@"\n'
         )
         self._write_generated(path, content)
 

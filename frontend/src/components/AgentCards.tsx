@@ -12,7 +12,8 @@ import {
   SquareTerminal,
   Workflow,
 } from "lucide-react";
-import { AgentInfo } from "../api";
+import { useState } from "react";
+import { AgentInfo, api } from "../api";
 import omnigentLogo from "../assets/omnigent.svg";
 
 export const ICONS: Record<string, typeof Bot> = {
@@ -71,12 +72,10 @@ function cardState(agent: AgentInfo): { text: string; kind: string; title?: stri
     };
   }
   if (agent.install_error) {
-    // Nothing retries a failed install step, so the spinner this
-    // replaces would have run until the attendee gave up and asked.
     return {
-      text: "install failed",
+      text: "retry setup",
       kind: "is-failed",
-      title: `${agent.install_error} — tell your host; use another available agent meanwhile.`,
+      title: `${agent.install_error} — click to retry setup, or use another ready agent.`,
     };
   }
   return { text: "installing", kind: "" };
@@ -96,12 +95,23 @@ interface Props {
  * and a card state fixed in one place must not stay broken in the other.
  */
 export default function AgentCards({ agents, launching, onLaunch }: Props) {
+  const [retrying, setRetrying] = useState<string | null>(null);
+  const [retryError, setRetryError] = useState("");
+
+  async function retry(agentId: string) {
+    setRetrying(agentId);
+    setRetryError("");
+    try { await api.retryAgentSetup(agentId); }
+    catch (error) { setRetryError(error instanceof Error ? error.message : "Setup retry failed. Try again or ask your host."); }
+    finally { setRetrying(null); }
+  }
   return (
     <div className="hero-cards">
+      {retryError && <p role="alert" className="hero-boot-error">{retryError}</p>}
       {agents.map((agent, i) => {
           const Icon = ICONS[agent.icon] ?? SquareTerminal;
           const imageIcon = IMAGE_ICONS[agent.icon];
-          const busy = launching === agent.id;
+          const busy = launching === agent.id || retrying === agent.id;
           const state = cardState(agent);
           return (
             <button
@@ -110,9 +120,12 @@ export default function AgentCards({ agents, launching, onLaunch }: Props) {
                 agent.ready ? "" : state.kind
               }`}
               style={{ animationDelay: `${i * 90}ms` }}
-              disabled={!agent.ready || busy}
+              disabled={(!agent.ready && !agent.install_error) || !!agent.blocked || busy}
               title={state.title}
-              onClick={() => onLaunch(agent.id)}
+              onClick={() => {
+                if (!agent.ready && agent.install_error) void retry(agent.id);
+                else onLaunch(agent.id);
+              }}
             >
               <span className="hero-card-icon">
                 {busy ? (
@@ -143,7 +156,7 @@ export default function AgentCards({ agents, launching, onLaunch }: Props) {
                     }`}
                   />
                 )}{" "}
-                {state.text}
+                {retrying === agent.id ? "retrying setup" : state.text}
               </span>
             </button>
           );
@@ -200,8 +213,8 @@ export function SetupProgress({
       )}
       {failedSteps.length > 0 && (
         <div className="hero-boot-note">
-          Tell your host — this will not fix itself. Everything marked ready above
-          still works.
+          Click a failed agent card to retry its setup. If it keeps failing, ask
+          your host. Everything marked ready above still works.
         </div>
       )}
     </div>

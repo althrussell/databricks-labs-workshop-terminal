@@ -146,6 +146,13 @@ Before starting any new project:
    worktrees). The command prints the project path, so `cd "$(...)"` lands you
    inside it.
 
+   Read preparation warnings: a usable directory does not prove scaffolding or
+   the memory commit succeeded. `.workshop/preparation.json` records each result;
+   `workshop-init-project <name> --json` returns structured status and a nonzero
+   exit when incomplete. Repair the reported failure before delegating to an
+   isolated worktree. Rerun the helper to refresh only workshop-managed memory;
+   keep attendee notes and the project's README brief current.
+
    **Never run `databricks apps init` yourself.** It always creates a
    subdirectory named after the app, and it refuses to write into a directory
    that already exists — so scaffolding by hand leaves you with

@@ -1,8 +1,16 @@
 # Workshop Terminal: generated-app quality audit and remediation plan
 
-Status on 9 October: **R01 is complete with a failed current-release baseline**.
-The branch uses latest `main`, `440232b953a5050c965838b42a594e1592ee3d33`, also
-the CT-pinned WT `v2026.09.28.1` PEX revision. One eligible Claude/AppKit run
+Status on 10 October: **R01–R04 are closed; R05–R10 are proposed**. The owner
+has refined the remaining scope around workshop pacing, one upstream UX skill,
+creative freedom and thorough single-deployment qualification. Large-scale fleet
+tests are excluded. After the WT work is complete, publish the final WT release,
+then open a separate CT PR for Agent Bricks CLI/skill enablement and WT release
+selection, defaulting to latest. This document changes the plan;
+it does not claim those remaining runtime changes have been implemented.
+
+R01 completed with a failed baseline against
+`440232b953a5050c965838b42a594e1592ee3d33`, the then-current `main` and CT-pinned
+WT `v2026.09.28.1` PEX revision. One eligible Claude/AppKit run
 created a real bakery app from simple nontechnical inputs. Independent observation
 proved missing scope agreement, an Invalid Date display, and offscreen mobile
 status/action columns. Adding/packing worked through UI and survived reload/fresh
@@ -11,17 +19,23 @@ The [R01 closeout](remediation-validation.md#r01) records
 receipts, inspected screenshots, limitations, and independently verified cleanup.
 CT code and its working deployment are unchanged. R02 is accepted with recorded
 follow-ups and implemented in PR #89;
-R03 is an implemented local candidate with live qualification pending;
-[its report](wizard-journey-r03.md) records scope and remaining gates. R04–R10
-remain proposed. The [R02 implementation report](workshop-interaction-contract-r02.md)
+R03 was closed by the project owner on 10 October after merging PR92
+(`2cf9fdd`); its historical test results remain in
+[its report](wizard-journey-r03.md). R04 preparation passed local/CI checks and
+focused live Claude/Codex qualification on the reused Labs app; its
+[closeout](preparation-r04.md) records results and limits. R05–R10 remain
+proposed. On 10 October,
+the owner reduced R06 to preview handoff and attendee-led iteration; detailed
+browser, UX and fault checks belong to development and release testing.
+The [R02 implementation report](workshop-interaction-contract-r02.md)
 records policy delivery, local regressions, model probes and live Labs attempts.
 Browser tests qualified native Codex question transport and a static page, plus
 Claude's bakery clarification, recommendation, packing and reload. The fresh
 corrected package passed first-preview phone status/actions. Shared demo lookup
 worked, but the agent missed a suitable working-catalog fixture and omitted
 on-page sample/reset disclosure until a simple user repair request. Preserve
-those failures: carry working-data delivery into R04, truthful starter defaults
-into R05, and completion verification into R06. Codex collector qualification,
+those failures: carry working-data delivery into R04, truthful generated-app defaults
+into R05, and release regression coverage into R09/R10. Codex collector qualification,
 broader generated-app quality and actual CT integration remain separate.
 
 Audited on 8 October 2026 against commit `4d46461c6a0229892bdda5c153d8a6dd03d316c6`.
@@ -29,14 +43,16 @@ Scope: attendee onboarding, prompts, coaching, skill installation, project setup
 Claude/Codex/Omnigent instruction delivery, AppKit/APX guidance, UI patterns,
 deployment acceptance, telemetry, CI, and workshop rehearsal.
 
-CT's local Labs deployment bundle pins WT `v2026.09.28.1`. The working branch and
-verified package now agree with that release. The [CT provisioning comparison](control-tower-test-parity.md) records
+At baseline qualification, CT's local Labs deployment bundle pinned WT
+`v2026.09.28.1`, and the baseline package matched it.
+The [CT provisioning comparison](control-tower-test-parity.md) records
 the source versions, actual attendee/app-SP/model setup, simulation gaps, and
 corrected R01 execution order. The original finding line numbers refer to August.
 Before R02, the latest-source comparison confirmed the build-immediately and
 no-browser policies, wizard UI, brief storage, and design-studio instructions.
-R02 replaces the conflicting interaction/readiness prose; the broader wizard
-flow and storage fixes remain R03 work.
+R02 replaced the conflicting interaction/readiness prose; R03 subsequently
+addressed the wizard flow and storage. Their reports retain the observed outcomes
+and limitations; this plan does not reopen either completed workstream.
 September added governed model selection and a resumable deployment MCP tool;
 the August model-access/deploy-loop observations must not be attributed to this
 release. Pi is absent from the current offered toolchain. Broader historical
@@ -48,8 +64,8 @@ findings need the same explicit version comparison before remediation.
 
 The workshop gives attendees a quick, compelling taste of what they can build.
 The target is a polished working demo within the session. This guidance governs
-R02 implementation. Keep the detailed
-audit and operator qualification checks separate from the attendee conversation.
+the remaining work as well as the shared R02 contract. Keep detailed audit and
+operator qualification checks separate from the attendee conversation.
 
 - Start from the attendee's goal. If it is clear enough, recommend a small demo
   and build. Otherwise ask one or two consequential questions together in one
@@ -59,46 +75,95 @@ audit and operator qualification checks separate from the attendee conversation.
   and sensible demo assumptions in a sentence or two, then proceed. Request a
   separate confirmation only when a consequential choice is unresolved; do not
   make every attendee approve a formal scope or proposal.
-- Choose the framework, components, sample data and straightforward storage
-  defaults for the attendee. Label sample data clearly. Defer production
-  architecture, enterprise authentication, integrations, exhaustive edge cases
-  and extra features unless they are essential to the requested demonstration.
-- Get the main workflow on screen early. Check that it works, dates and labels
-  make sense, controls are visible at the relevant size, and claimed remembered
-  changes survive reload. Fix obvious issues with a bounded repair effort.
+- Choose framework, component and storage defaults when the attendee has not
+  expressed a preference. Explore prepared workshop data before creating sample
+  data, and label sample data clearly. Preserve requested capabilities; defer
+  unsolicited production architecture and extra features. If an integration or
+  resource is unavailable, explain that constraint and suggest a workable demo.
+- Get the main workflow on screen early and share the URL so the attendee can
+  explore. Resolve obvious build/startup errors and respond to reported problems.
+  Describe sample data and remembered changes accurately; deeper task and layout
+  checks run during development and release testing.
 - Adapt explanation to the attendee's experience. Prefer a compact walkthrough
   and an invitation to try or change the demo over more analysis. Mention material
   demo limitations briefly; do not turn the handoff into a production checklist.
 
 The workshop quality floor remains real: readable and attractive presentation,
 working primary actions, truthful data/state claims, and appropriate platform
-permissions. Broader accessibility, fault, restart, visual calibration and fleet
-checks belong in reusable starters, CI and operator rehearsal. They must not
+permissions. Accessibility, fault, restart and rendered UX checks belong in
+development, CI and thorough testing of one deployed instance. They must not
 become a lengthy planning or approval ceremony for each attendee.
 
-Fix the workshop's product and quality contract first, and judge the result by
-real app builds. The two observed problems have direct causes in this repository:
-the agent is repeatedly told to avoid requirements validation, and it is forbidden
-to run the browser checks that would expose poor UX. These are deliberate policies,
-not merely omissions or an agent occasionally ignoring a good prompt.
+### Creative freedom and release scope
+
+An attendee can bring an idea, choose a suggestion, skip onboarding, change
+direction or start another build. Suggestions and release-test examples are
+examples, never a catalog of allowed outcomes. WT supports apps, dashboards,
+agents, notebooks, pipelines and other workshop-relevant Databricks work; the UX
+skill applies when the result has an interface. Respect an explicit product,
+framework or visual request. When permissions, available data or an external
+dependency constrain the idea, explain the specific limitation and recommend a
+useful demonstration of the same goal.
+
+Shared rails cover access, current tooling, policy/skill delivery, project
+continuity and deployment. Shared visual guidance sets usability and craft
+expectations; it does not prescribe one app shell, palette, heading scale,
+sidebar, KPI row or page structure. The audience, task, content and requested
+tone determine those decisions. Reuse components where useful. Preserve a
+coherent design within each app without making unrelated apps share a design.
+Distinctness must improve the experience, rather than adding decoration or random
+variation for its own sake.
+
+The remaining release work stays focused:
+
+- R04 prepares every offered path reliably; it adds no evaluation gate to opening
+  a harness.
+- R05 delivers one upstream UX skill and proves task-appropriate first previews
+  across contrasting use cases.
+- R06 shares previews and supports attendee-led changes as a small follow-up.
+- R07 compares frameworks on representative builds; R08 preserves multiple
+  projects and harness handoffs. Neither requires a new workflow engine.
+- R09 adds focused regression coverage to existing CI; R10 thoroughly qualifies
+  one deployment and the final CT-compatible candidate.
+
+Additional persona axes, unoffered harnesses, numerical design scoring, a full
+framework × model × persona × scenario matrix and a new acceptance/telemetry
+service are outside this release scope. Large-scale fleet tests, staged concurrent
+build campaigns and sixty generated-app builds are excluded. Preserve local
+operational regressions and thoroughly exercise identity, isolation, credentials,
+recovery and build quality on one deployment. Earlier runbook fleet procedures
+are not requirements for this remediation. CT code stays unchanged during WT
+remediation; the later requested CT feature PR is a separate step, and CT's working
+Labs deployment remains protected throughout.
+
+Each remaining workstream has a concrete change and focused acceptance checks
+before implementation begins. Run a meaningful live test early, fix observed
+failures, and close the item when those checks pass. Reuse completed evidence and
+rerun only affected checks after fixes. Avoid extending a workstream into a new
+evaluation campaign or treating every historical audit finding as a prerequisite.
+
+Judge the remediation by real app builds. The original audit traced the observed
+problems to explicit instructions to skip requirements validation and browser
+checks. R02 changed that interaction contract. The remaining work must prove
+current delivery and task-appropriate output rather than add more policy prose.
 
 AppKit is the current default. Its strategic connection to the upcoming Genie app
 builder is the workshop's stated rationale, not a compatibility guarantee verified
-by this audit. Retain AppKit during remediation, build a much stronger executable
-starter, and compare it with a refreshed, pinned APX path using the same novice
-scenario. Ship the default that passes the functional and UX gates. If AppKit
-cannot meet that bar within the agreed implementation timebox, use APX for the
-next event and treat Genie familiarity as a secondary goal.
+by this audit. Retain AppKit during remediation, deliver context-aware design
+guidance, and compare it with a refreshed, pinned APX path on a representative
+attendee task. Choose the default from working, usable previews and setup
+reliability; treat Genie familiarity as a secondary goal.
 
 The desired experience is: the attendee describes a problem; the agent helps
 shape the product with a few useful questions and recommendations; the attendee
-gets a polished, working app; the agent demonstrates that its central task works.
+gets a polished, working app; the attendee explores it and asks for improvements.
 The attendee should not need to name a framework, database, component, or testing
 tool to receive this experience.
 
-The decisive test and simulator contract are in
-[generated-app-e2e-acceptance.md](generated-app-e2e-acceptance.md). A machine-readable
-proposed scenario is in
+The existing simulator/test mechanics are in
+[generated-app-e2e-acceptance.md](generated-app-e2e-acceptance.md). The current
+release-test criteria below supersede broader campaign requirements in earlier
+evaluation plans. A machine-readable example scenario is in
 [novice-bakery-app.json](examples/novice-bakery-app.json).
 The implementation status and simulation-first operating steps are in
 [generated-app-evaluation-runbook.md](generated-app-evaluation-runbook.md).
@@ -106,10 +171,17 @@ The implementation status and simulation-first operating steps are in
 The extended [onboarding-wizard audit](onboarding-wizard-audit.md) adds 40 detailed
 findings and reproducible synthetic evidence. The wizard needs an optional
 goal-first journey, stable request/selection state, preserved generated tasks,
-useful recommendations, and recoverable launch. Keep it disabled for events until
-the full wizard-to-generated-app gates pass; qualify the disabled entry path too.
+useful recommendations, and recoverable launch. Choose whether to enable it from
+the recorded R03 outcomes and a focused release smoke check of the intended event
+configuration. Qualify skipped and disabled entry too; optional onboarding never
+becomes a prerequisite for building.
 
 ## Evidence and limits
+
+This section and the findings inventory retain dated audit evidence. They are
+not an additional shipping checklist, and a historical unresolved test does not
+reopen R01–R03. The current remaining scope is defined in the architecture,
+workstream and release-test sections below.
 
 The later R01 [isolated Labs evidence](remediation-validation.md#r01)
 records genuine labuser authentication, all 419 runtime file hashes, and 20 real
@@ -175,7 +247,9 @@ bound to the genuinely authenticated labuser as a synthetic attendee; actual
 CT assignment, model-caller provisioning, and event workspace isolation remain
 separate qualifications. The earlier operator-bound receipt is preserved. Actual CT
 provisioning/integration follows only after WT passes the isolated E2E gates.
-Control Tower code and its working Labs deployment remain outside this remediation.
+Control Tower code and its working Labs deployment remain outside WT remediation.
+The separate CT feature PR described below follows completion and the final WT
+release; it does not authorize changes to the working CT deployment.
 
 Priority definitions: P0 changes are needed to change the failed experience;
 P1 changes are needed for dependable all-harness delivery and acceptance; P2
@@ -212,8 +286,8 @@ priorities, not security severity ratings.
 | F17 | P2 | `assets/skills/promote/build-prompt.md:39-57` | Take-home guidance prescribes AppKit and workshop-only helpers even when the actual project uses another stack. It does not reliably carry the approved product brief or validation gaps into the next harness. | R08 |
 
 These are defects or risks in the defaults, not evidence that every generated app
-copies them unchanged. A more elaborate prose baseline cannot substitute for a
-starter whose visible controls and states are exercised.
+copies them unchanged. Validate design-skill improvements through actual generated
+apps whose visible controls and states are exercised in development/release tests.
 
 ### Instruction delivery and project continuity
 
@@ -260,7 +334,8 @@ identity separation, resource-grant reconciliation, PTY reconnect behavior,
 verified toolchain/skill provenance, typed SQL generation, manifest-first resource
 discovery, current API-doc checks, semantic color guidance, KPI polarity, brand
 neutrality, and Genie identity/SQL transparency. The existing operational tests
-remain required; app quality adds another acceptance layer.
+remain required; focused generated-app checks supplement them during release
+qualification.
 
 Keep onboarding short and skippable. Keep aesthetic decisions with the agent.
 Do not restore a lengthy universal PRD or ask business attendees to choose
@@ -275,14 +350,16 @@ without the existing consent/configuration rules and a reviewed contract change.
 
 ```mermaid
 flowchart LR
-  A[Attendee goal or idea] --> B[Clarify material unknowns]
-  B --> C[Recommendation and agreed scope]
-  C --> D[Executable starter and real data]
-  D --> E[Useful deployed preview]
-  E --> F[Browser tasks and UX assessment]
-  F --> G{Acceptance passes?}
-  G -->|Repair| D
-  G -->|Yes| H[Verified result and portable handoff]
+  A[Attendee goal or idea] --> B{Material unknown?}
+  B -->|Yes| C[One brief exchange]
+  B -->|No| D[Recommendation and first version]
+  C --> D
+  D --> E[Build for the task and available data]
+  E --> F[Useful deployed preview]
+  F --> G[Attendee opens and explores]
+  G --> H[Feedback and requested improvements]
+  H --> E
+  G --> I[Portable project handoff]
 ```
 
 1. **Understand quickly.** Reuse wizard facts. Ask only what would materially
@@ -296,18 +373,21 @@ flowchart LR
 3. **Choose internally.** Decide app versus managed dashboard and the storage/data
    path from the agreed outcome. Discover resource IDs through tools. Explain
    user-visible tradeoffs plainly; offer architecture detail when requested.
-4. **Build with working defaults.** Select an operational queue, analytics, or AI
-   starter; bind real data; implement all visible actions, routes, and states.
-5. **Show a useful preview.** Share it early with a truthful status. A blank shell,
-   unbound sample page, dead navigation, or broken primary workflow is not a useful
-   preview. A preview URL is not the completion criterion.
-6. **Observe and repair briefly.** Verify the primary journey, dates/labels,
-   persistence where claimed, and desktop/narrow presentation. Fix visible
-   blockers promptly. Reusable starter and operator tests provide deeper state,
-   fault and accessibility coverage outside the attendee's build conversation.
-7. **Demonstrate and hand off.** Say what was checked, provide the URL and a short
-   product walkthrough, and disclose any remaining material limitation. Preserve
-   the brief, source, actual framework, and validation evidence for another agent.
+4. **Build for the task.** Use the framework's scaffold and components, apply the
+   context-aware design skill, bind appropriate data, and implement the useful
+   actions, routes and states selected for this particular app.
+5. **Share the preview promptly.** Run the normal build/type checks needed to
+   deploy, resolve obvious build or startup errors, and share the live URL. State
+   demo-data and persistence limitations plainly. An immediately available,
+   inexpensive smoke check is useful, but browser automation and UX review are
+   not prerequisites for sharing the preview.
+6. **Let the attendee explore and iterate.** Explain one thing to try, such as
+   marking an order packed. The attendee plays with the app and tells the agent
+   what failed or what they want to change. Respond to that feedback directly;
+   do not start an automatic review/repair loop or require an acceptance ceremony.
+7. **Hand off honestly.** Provide the URL, a short walkthrough and any material
+   limitation. State only checks actually performed. Preserve the compact brief,
+   source and actual framework for another agent.
 
 For example, first ask: "What makes an order need attention?" After the bakery
 answer, say: "I'll make a simple list with late, unpacked orders first and a button
@@ -327,125 +407,188 @@ persona with a business default; the wizard exposes an optional choice. That
 controls vocabulary but cannot express coding familiarity, Databricks familiarity,
 or a preference for concise versus guided collaboration.
 
-In R02, define one requirements and UX contract for everyone. Adapt explanation,
+Use the shared workshop contract for everyone. Adapt explanation,
 recommendation detail and pacing to the request and an optional help preference:
 "Guide me", "Keep it concise", or "Discuss technical choices". An experienced
 user's complete request can go straight to implementation once material choices
-are known. No preference bypasses persistence, permissions, usability or observed
-completion checks. Avoid inferring expertise from job title or the absence of a
+are known. The same usability, permission and truthful-state expectations apply
+to each preference. Avoid inferring expertise from job title or the absence of a
 toggle; observed familiarity may suggest a preference but is not a confirmed fact.
 
-In R03, expose the preference in optional onboarding context and a changeable
-session/settings control, including when the wizard is disabled. If useful, allow
-separate optional coding and Databricks familiarity settings; never make these a
-mandatory questionnaire. Store explicit choice and provenance in a versioned
-profile, migrate the old persona conservatively, and refresh all harness adapters
-without discarding the product brief or changing the current build. Propagate the
-minimum relevant preference across workers, reconnect and agent switching under
-the existing privacy rules. R08 verifies that continuity.
-
-Evaluate the same business goal with a nontechnical user, a developer new to
-Databricks, a Databricks practitioner new to UI development, and an experienced
-app developer. Record consultation usefulness and unnecessary questions by cell,
-while applying the same functional and UX acceptance floor. R01 preserves its
-original nontechnical scenario; this coverage is added to R02/R03 qualification.
+Reuse the existing optional preference/persona controls and let the attendee
+change the help they want in the conversation, including with onboarding off.
+R08 checks that the choice survives switching and reconnect without replacing
+the project brief. Separate coding/Databricks familiarity axes, a new profile
+schema and a multi-persona qualification matrix are unnecessary for this release.
+Include a concise experienced-user request alongside the nontechnical release
+test to catch repeated questions and unsolicited explanations.
 
 ### One canonical contract, with harness adapters
 
-Create a fork-owned app-build policy and product-brief schema. Generate concise
-Claude, Codex, project, and verified Omnigent adapters from it. Avoid another
-late appended prose override. Keep upstream skills intact and map platform/API
-guidance into the workshop workflow explicitly.
+Reuse R02's shared workshop contract and existing project brief. Deliver concise
+Claude, Codex, project and offered Omnigent adapters from that source. Keep
+upstream skills intact and map platform/API guidance into the workshop workflow
+explicitly. Add no parallel policy engine or competing brief schema.
 
 Keep the internal brief compact and automatically maintained; its fields must
 not become questions the attendee has to answer before seeing a demo. Record
 known facts, the small first version and clearly identified assumptions. Expand
 the brief only when the requested work needs it.
 
-Proposed project contract fields: schema/policy version, original attendee words,
-idea snapshot and provenance, user group, primary task, data source, read/write
-behavior, persistence, access assumptions, proposed MVP, exclusions, agreed
-decisions, unresolved questions, and observable acceptance criteria. Record what
-was stated versus inferred. Do not call inferred requirements confirmed.
+The working brief needs the current goal in the attendee's words, known audience,
+main task, useful first version, actual data/state choices and consequential
+assumptions or open decisions. Reuse R03's saved idea/provenance where present.
+Omit unknown or irrelevant fields rather than filling a PRD. PRODUCT.md carries
+product context into Impeccable and DESIGN.md records visual decisions; derive
+their initial context from the existing brief and maintain changes together.
+Avoid duplicate independent requirements records and new synchronization services.
+Record what was stated versus inferred; do not call inferred requirements confirmed.
 
 Commit the current compact brief and policy before worker delegation. Preserve
 attendee-authored instructions; use versioned managed sections in CLAUDE.md and
 AGENTS.md. Update the managed sections on resume/adoption. Runtime persona and
-consent-sensitive information need not be committed; only include what is needed
-for product continuity, with an export review for real attendee projects.
+consent-sensitive information need not be committed; include only what is needed
+for product continuity. Keep credentials and consent-sensitive workshop telemetry
+out of the portable handoff by default.
 
 Workshop Terminal launches third-party CLIs rather than owning every model turn.
 Prompt text alone cannot enforce arbitrary tool use or prevent an agent bypassing
 a helper. Enforce preparation and artifact integrity in runtime; exercise behavior
-through real harness probes and E2E release gates; derive verified completion from
-independent checks rather than accepting the building agent's claim.
+through focused real-harness and E2E release checks. Report only checks actually
+performed; normal attendee builds do not need a verified-completion state machine.
 
 ### Shared preparation and versioned delivery
 
-Introduce one idempotent runtime-preparation operation for local session launch and
-remote-host activation. Separate required instruction/skills/CLI/runtime steps
-from optional conveniences, track results per step, retry failures, and expose
-an actionable build-ready verdict.
+Use one idempotent preparation path for local session launch and remote-host
+activation. Reconcile required instructions, skills, CLI and selected-path runtime
+dependencies; retry failed steps and show a useful recovery action. Optional
+conveniences may degrade independently. Evaluation qualification, wizard completion
+and another project's build state must never gate opening a harness. Reuse
+existing readiness reporting rather than creating a new workflow service.
 
 Maintain separate upstream skills and workshop overlay digests. Reconcile overlays
 and per-user links on release changes even when upstream content is reusable.
-Record helper/template/policy versions. Prove isolated worker and Pi delivery
-against the pinned Omnigent installation; do not infer it from home symlinks.
+Record helper/policy versions. Prove delivery to enabled isolated workers against
+the pinned Omnigent installation; do not infer it from home symlinks. Adding Pi
+or another unoffered harness is separate work, not a dependency of this remediation.
 
 Reserve helper stdout for a path or JSON result, send progress to stderr, return
 explicit scaffold and commit status, and test the exact documented composition.
 Name validation and existing-project migration belong in the same helper contract.
 
-### Executable starters and framework adapters
+### One upstream UX skill and framework adapters
 
-Replace copy-only composition fragments with complete, versioned, rendered starter
-apps. Initial genres: an operational work queue with write-back, read-only
-analytics, and conversational/Genie assistance. Finish the operational queue first
-because it exercises navigation, filtering, detail, validation, feedback, and
-persistence in one modest app.
+R05 adopts [upstream Impeccable](https://github.com/pbakaus/impeccable) as the
+single UX skill, installed through its supported provider-specific delivery.
+AppKit/APX supply scaffolding, components, APIs and platform integration. Retire
+`workshop-design-studio` from active delivery and remove `databricks-app-design`
+as a competing auto-discovered UX authority. Do not create a third design skill
+or another collection of fixed app templates. The available Databricks-branded
+Impeccable derivative is not the selected upstream package; attendee apps use
+their supplied brand or a product-appropriate visual direction.
 
-Each starter supplies real routing, required callbacks, query/mutation wiring,
-theme/tokens and typography, responsive chrome, truthful loading/empty/no-results/
-error/partial states, accessible controls, focus behavior, and an obvious primary
-task. Use fixtures with long names, large values, empty results, and delayed/failed
-requests. Sample data and summaries must be clearly labeled or replaced before
-acceptance. Remove inert affordances rather than advertising unimplemented actions.
+The conflict is broader than those two directories. Base, coach, project-memory
+and promotion instructions repeat their mandates. `databricks-apps` requires
+`databricks-app-design`, and the APX and AI/BI skills also reference it. Reconcile
+these transitive routes explicitly in the single workshop integration policy,
+while preserving vendored upstream platform/API files verbatim. Keep necessary
+data correctness, units, periods, source/freshness and AI provenance guidance in
+narrow technical references; those references do not choose layout, typography,
+brand or the user's interaction flow. Confirm retired skills cannot return via
+network installs, vendored fallback, refresh scripts, warm caches or old per-user
+links. Verify actual discovery in each offered harness and isolated worker.
 
-Compile and render starters against a reviewed dependency lock. Add template
-version, AppKit package version, and screenshot evidence to the event release.
-Inspect the installed manifest/API rather than assuming UI 0.50.0 forever. Use the
-CLI's supported template mechanism after verifying it for the pinned release.
+Reuse the attendee's request, saved brief when present, known audience, discovered
+prepared data and requested actions to supply Impeccable's `PRODUCT.md` context.
+Record facts and demo assumptions distinctly; do not fabricate audience, metrics
+or evidence. Use its `DESIGN.md` for the app's visual decisions. Keep these aligned
+with the project's brief when direction changes, with each build's context
+separate. Distinguish attendee coaching preferences from the generated app's
+audience. Closing or disabling onboarding must not prevent this context from
+being captured from the ordinary conversation.
+
+The upstream skill inspected on 10 October reports version 4.5.2 and distinguishes
+Operate, Read, Persuade and Experience surfaces. Apply that context-sensitive
+judgment: a packing queue foregrounds orders needing action; an analysis screen
+foregrounds the relevant comparison; an interactive learning app foregrounds
+exploration. Dense working screens need not have a giant heading or decorative
+hero. Charts, KPI cards and navigation need a purpose in that particular app.
+
+Use the [official installer](https://impeccable.style/tutorials/getting-started/)
+with explicit providers and scope during WT preparation/project initialization,
+not an interactive install initiated by each attendee. Qualify the latest release,
+then pin the npm launcher, engine and exact skill bundle with license/provenance
+and an offline/prewarmed path. Pinning only the npm version is insufficient: the
+inspected installer separately resolves the current remote skill bundle. Its
+supported `IMPECCABLE_BUNDLE_PATH` permits a captured, verified bundle to be reused.
+Codex's upstream skill destination is `.agents/skills`, whereas WT currently
+links skills into `.codex/skills`; preparation must reconcile that difference and
+prove worker discovery. Support every offered harness through its actual provider path.
+Use public npm sources in shipped configuration; the laptop uses its configured
+Databricks proxy for local qualification.
+
+Installing upstream unchanged does not by itself meet workshop pacing. Its
+current init/new-work references require an answer/confirmation and can open a
+visual-direction selection flow; choosing a code-first build alone does not
+remove those interactions. The user's workshop contract takes precedence over
+those workflow defaults. Reuse supplied facts, ask only material missing product
+questions, and let the agent make ordinary visual decisions. Use code-first as
+the workshop default. Keep upstream design guidance intact and the pacing/context
+bridge small and centralized, rather than forking its aesthetic rules. A scored
+review, concept tournament, image mockup round or repeated polish cycle is not a
+prerequisite for an attendee's preview; richer exploration remains available when
+the attendee asks for it.
+
+The official installer also offers [automatic design hooks](https://impeccable.style/docs/hooks/).
+Start qualification with the supported `--no-hooks` install path so skill quality
+and delivery can be assessed independently. Evaluate lightweight detector hooks
+separately for feedback value and actual time-to-preview; Codex hook trust and
+worker loading must be verified before claiming they run. Local live-mode editing
+is optional and cannot be assumed to work against a deployed HTTPS Databricks App.
+Deeper browser/review testing remains development/release work under R06/R09.
+
+Validate the actual generated first previews across contrasting scenarios and
+harnesses in development/release testing: operational work, analysis and an
+interactive experience. Review whether each UX fits its users, task and data as
+well as whether it works. Compare information hierarchy, density, navigation and
+primary interactions; changing colours and labels on the same sidebar/KPI/table
+composition does not establish context-aware design. A packing queue should help
+staff prioritize and act, an analysis screen should support comparison and
+explanation, and a learning experience should invite exploration. These are test
+examples, not prescribed app genres or visual recipes. Shared controls and useful
+conventions are welcome; differences must follow the task and any attendee brief.
+Retain screenshots outside Git. Pin the qualified skill,
+framework and tool versions for the event. During the workshop, share the preview
+promptly and let attendee feedback drive improvements under R06.
 
 Quality requirements apply equally to AppKit and APX. Framework adapters own their
-actual build/deploy commands and platform integrations; the acceptance criteria
+actual build/deploy commands and platform integrations; release-test criteria
 do not mention a preferred component library. Both paths need real attendee
-identity, app resource grants, data bindings, and persistence proof where relevant.
+identity, app resource grants and appropriate data bindings. Persistence is
+described accurately to attendees and exercised in starter/release tests.
 
-### Browser verification and attestation
+### Attendee exploration and release verification
 
-Preinstall a reviewed browser/driver in the evaluation environment. For attendee
-builds, provide an available supported browser tool or a shared verification
-service with an authenticated session and bounded execution time. No attendee
-should wait for an agent to download a browser on the first task. Verify access to
-private preview/deployed URLs before choosing the service architecture.
+R06 is a small preview-and-iterate workstream. After the normal build/deployment
+checks, the agent shares the URL, says what to try and describes demo limitations.
+The attendee opens the app, explores it and requests fixes or changes. A readily
+available smoke check may catch an obvious blocker; automated browser suites,
+visual scoring, accessibility reviews and repeated repair loops do not delay the
+attendee's first preview. No shared verification service or per-build acceptance
+state machine is required for this release. Opening a harness and skipping the
+wizard remain independent of any checks.
 
-Use framework-specific build/type checks plus journey-specific browser checks.
-Re-enable useful existing AppKit validation after repairing stale smoke selectors;
-avoid repeating expensive full runs when a focused check answers the question.
-The gate observes actual DOM, screenshots, task outcomes, and console/network
-failures. An HTTP response, Apps RUNNING state, first h1, or successful typecheck
-is individually insufficient.
-
-Record distinct states such as `preview_available`, `deployment_verified`,
-`critical_journey_passed`, `ux_review_passed`, and `accepted`. Local structured
-events should carry project/run ID and version/evidence references. They should not
-persist raw production terminal output. Synthetic E2E traces can be retained under
-explicit evaluation settings. Keep the current `shipped` interpretation stable
-until a schema-versioned migration is agreed with Control Tower.
+Thorough checks happen when developing R05's design guidance and qualifying the
+release under R09/R10. Use the operator's test browser with genuine attendee
+access to exercise tasks, persistence, narrow layouts, accessibility and injected
+faults on disposable data. Keep screenshots and raw evidence outside Git. A
+successful build or running deployment establishes availability; release reports
+describe the functional and UX checks actually observed separately. Existing CT
+telemetry semantics remain unchanged.
 
 ## AppKit versus APX: measured decision
 
-APX supplies concrete affordances that should inform our AppKit starter:
+APX supplies concrete affordances that should inform our framework and design guidance:
 
 - A complete sidebar frame with a rail, user footer, sticky header, mode control,
   and padded bounded content region
@@ -459,51 +602,59 @@ APX supplies concrete affordances that should inform our AppKit starter:
   ([Claude](https://github.com/databricks-solutions/apx/blob/a88ee32f22669eac0df57198006bdba7db44a878/src/apx/templates/addons/claude/CLAUDE.md.jinja2),
   [Codex](https://github.com/databricks-solutions/apx/blob/a88ee32f22669eac0df57198006bdba7db44a878/src/apx/templates/addons/codex/AGENTS.md.jinja2)).
 
-These are verified starting-point differences, not proof that every APX app is
-better. First measure the unchanged current AppKit release as the overall
-improvement baseline, keeping its existing policy. Then compare remediated AppKit
-with pinned APX under the same new consultation and quality contract. Match
-scenario, data, harness/model, resource conditions, time/cost budgets, and starting
-state across the framework comparison. Run repeated fresh builds, blind
-screenshot/task review where practical, and report each cell's failures.
-Framework-specific setup costs still count. Do not attribute combined policy and
-starter improvements over the unchanged baseline solely to the framework.
+These are useful implementation affordances, not a mandatory sidebar layout or
+proof that every APX app is better. Reuse R01's completed baseline. Once the
+Impeccable path works, compare AppKit and refreshed/pinned APX on a representative
+task with the same brief, data, harness/model and resource conditions. Record
+whether the main action works, the UX fits the task and a useful preview arrives
+promptly. Repeat or widen the comparison only when a failure or an inconclusive
+result warrants it; a blind scoring panel and full cross-product matrix are not
+release requirements. Do not attribute combined policy and design-skill
+improvements solely to the framework.
 
-Selection rule: every offered default must meet hard functional/UX gates. Among
-passing paths, prefer the one with dependable first-preview quality, lower novice
-friction, and acceptable duration/cost. Use strategic familiarity as a tiebreaker.
-Set the comparison timebox and release deadline before running it; do not move
-them to accommodate a failing preferred framework.
+Choose the reliable default with the stronger task-appropriate preview and
+reasonable workshop latency. Genie familiarity is a tiebreaker. A qualified
+framework default helps attendees who want a recommendation; it does not override
+an explicit compatible stack choice. No framework guarantees a good product
+composition, and sharing a component library does not require sharing an app shell.
 
 ## Ordered remediation workstreams
 
+R01–R03 rows retain the original scope for traceability; their owner-accepted
+closeouts remain authoritative. R04–R10 define the remaining work.
 The estimates below are planning ranges in engineer-days, not commitments. Browser
-authentication and upstream Omnigent adapters are the largest uncertainties. A
-product/design reviewer should participate in starter and rubric calibration.
+authentication and upstream Omnigent adapters are the largest uncertainties.
+Review actual previews for usability and task fit; numerical design calibration
+and a dedicated review panel are optional.
 
 | Workstream | Deliverable and likely files | Depends on | Suggested owner | Estimate | Exit evidence |
 |---|---|---|---|---|---|
 | R01: Baseline benchmark | Completed failed baseline: eligible Claude/AppKit build, native-correlated consultation, real deployed app, independent UI task/screenshots and exact cleanup; WT-owned CT-compatible package runner and evidence in `evals/generated_apps/` and `docs/remediation-validation.md` | None | Evaluation engineer + harness engineer | 3-5 | Current-policy baseline from novice inputs with exact release/instrumentation identity; failures retained and independently classified; real deployed app or explicit failure verdict per run; CT integration qualified separately |
 | R02: Workshop interaction and quality contract | Rewrite base/coach/project/studio policy around workshop pacing; shared concise framing; automatic compact brief; bounded prepared-data discovery; update contradictory tests and refresh allowlist | Accepted by the project owner on 9 October with recorded follow-ups. Native question/recommendation, action/reload and corrected first-preview phone checks passed. Working-data and first-page disclosure gaps remain for R04/R05/R06; Codex collector remains unqualified | Agent-experience engineer + product reviewer | 2-3 | Clear requests go straight to building; ambiguous goals usually need one brief exchange and a reasoned recommendation; existing data explored before invention; demo assumptions transparent; no routine approval ceremony or production planning; policy agrees across adapters |
 | R03: Wizard journey and brief integrity | Goal/help-me-choose paths; optional industry; request coordinator/stable selections; versioned immutable static/dynamic snapshots and scoped IDs; atomic saves; recovery/a11y; recommendation/schema/dependency/fallback contracts; discovery/persona reconciliation; rendered tests. Detailed stages in the extended wizard audit | R02 contract; baseline from R01 | Full-stack engineer + product designer | 6-10, revised after extended audit | Plain goal can continue; obsolete requests never change current selection; suggestion → select → save → reload/restart → launch preserves exact task/industry/provenance; faults recover; relevance/feasibility gates and real novice-to-app journey pass |
-| R04: Reliable preparation | Shared local/remote preparation; required-step readiness/retry; composed digests and warm-install refresh; race reconciliation; helper stdout/status and migration | R02 policy shape; may run alongside R03 | Runtime engineer | 3-5 | Fresh, prewarmed, redeployed, UI-first remote and partial-failure paths receive identical current policy/skills/helper; noisy scaffold works in documented command |
-| R05: Strong starters | First operational queue, then analytics/AI; working routing/actions/states; truthful data/provenance; pin, compile, render; reconcile minimal examples | R02 acceptance contract | Frontend engineer + product designer | 4-7 | Starter journey passes at 390/768/1440px; all controls work; error/empty/loading/screenshots and accessibility evidence; approved first-preview appearance |
-| R06: Observed completion gate | Browser integration/evaluator, task assertions, a11y and visual rubric, bounded repair loop, preview/accepted distinction; replace anti-verification tests | R01, R04, first R05 starter | Evaluation engineer + frontend engineer | 3-5 | Independent browser evidence passes local and deployed primary journey; injected faults are detected; failed app cannot earn accepted verdict |
-| R07: Framework bake-off | Refresh/pin APX CLI/skills and supported registry tools; common adapters; repeat AppKit/APX matrix and decide event default | R01-R06 | Tech lead + evaluation engineer | 2-4 | Matched baseline/remediated runs; blind calibrated scoring; versioned decision with failing cells visible |
-| R08: Harness continuity/handoff | Brain/worker/Pi delivery probes; committed brief/managed-policy migration; switch/reconnect/worktree cases; visible active project and separate change-goal/new-build actions; return to earlier projects; framework-accurate portable promote output | R03, R04, R06 | Harness engineer | 2-3 | Same scope survives delegation, agent switch, and reconnect; build A, change A's direction, build B separately, then return to A with the correct brief and retained files, in both harnesses and with onboarding disabled; actual reference assets accessible; exported project runs without workshop-only helper assumptions |
-| R09: Quality evidence and CI | Synthetic evidence/reporting using MLflow native datasets/scorers/evaluation; generation/selection/brief/launch correlation and bounded spans; structured production outcome metadata; versioned shipped migration; PR starter/wizard tests, nightly builds, release gates, operator docs | R01, R03, R06, agreed privacy/CT contract | Platform engineer + evaluation engineer | 3-5, revised for wizard evidence | Reports separate recommendation, preserved task, preview, deployed, task-verified, accepted; CI detects faults; production collection respects existing consent |
-| R10: Event qualification | Every offered path/model; repeated scenario suite; canary; 5→15→30→60 concurrent builds; rollback/fallback guidance | R07-R09 | Workshop operator + tech lead | 2-3 plus rehearsal elapsed time | All offered cells pass, 60-attendee quality and infrastructure evidence recorded, pinned release and fallback pretested |
+| R04: Reliable preparation | Reuse one local/remote preparation path; selected-path dependency status/retry; digests and warm-install refresh; race reconciliation; helper stdout/status and managed-section migration. No evaluation or onboarding launch gate | Closed R02/R03 contracts | Runtime engineer | 3-5 | Fresh, prewarmed, redeployed, UI-first remote and recoverable failure paths receive current policy/skills/helper; noisy scaffold works; wizard skip/off permits normal harness use |
+| R05: Context-aware app UX | One upstream Impeccable UX skill via its supported installer; pinned launcher/engine/bundle; project context from goal/users/data; retire studio and competing app-design routes, including warm installs and transitive mandates. Use AppKit/APX for scaffolds/components/APIs, with one small workshop pacing/context integration policy | R02 contract; R04 skill delivery; R03 goal context when present | Frontend engineer + product designer | Scope after delivery audit | Actual harness/worker discovery proves one UX authority; contrasting generated apps suit their users/tasks/data, have useful responsive first previews and working controls. Development/release tests verify results without an attendee design interview, mandatory concept picker or scored review loop |
+| R06: Preview and attendee iteration | Prompt preview handoff after normal build/deployment checks; one useful action to try; clear demo limitations; accurate check claims; fixes driven by attendee feedback. Optional inexpensive smoke check, with no mandatory browser/review loop or acceptance service | R02 contract, R05 design guidance | Agent-experience engineer | Small follow-up; scope after R05 | An attendee receives the URL promptly, can explore and request a change, and gets a useful repair without waiting for a review suite. Development/release tests own deeper functional, UX and fault coverage |
+| R07: Focused framework comparison | Refresh/pin APX CLI/skills and registry tools; compare a representative build with AppKit under the same UX guidance; select the event default | R04/R05 delivery and real previews | Tech lead | Scope after R05 trial | Main task, task-fit UX, setup reliability and time-to-preview support the choice; failures recorded; expand only if inconclusive |
+| R08: Project continuity/handoff | Offered harness/worker delivery; existing brief/managed-section updates; switch/reconnect/worktree cases; visible active project, change-goal/new-build actions and return to earlier projects; recovery of workspace-backed projects after runtime replacement; framework-accurate portable promote output | R03/R04; reuse R05/R06 builds | Harness engineer | 2-3 | Build A, change A, build B separately, then return to A with correct context/files; switching, reconnect and onboarding-off work; a worker reads the actual skill assets; exported instructions match the project; local runtime resets do not silently strand an earlier workspace-backed build |
+| R09: Focused regression coverage | Add regressions for changed delivery, skill precedence, wizard skip/off and project continuity to existing CI; a compact live-build release report; evidence outside Git. No new telemetry/acceptance service | R04/R05/R08 changes | Platform engineer | Scope after first UX trial | CI catches representative regressions; a few contrasting live previews demonstrate task fit, working controls and narrow-screen usability; observed checks reported accurately |
+| R10: Single-deployment event qualification | Thoroughly test one immutable WT candidate on the reused isolated Labs deployment: attendee auth/permissions, offered harnesses, actual builds, UX, saved state, multiple projects, reconnect, restart, warm redeploy and recoverable failures; fallback/rollback instructions. No fleet/load campaign | Assembled remaining work | Workshop operator + tech lead | Reuse existing checks and deployment | One deployment works through the intended event journey and recovery cases; local operational CI passes; tool/release identity and observed outcomes recorded; ready to publish the final WT release |
 
 Suggested milestones:
 
-1. **Baseline:** R01 records unchanged-policy outcomes and observed app UX; repeated qualification cells are needed to estimate a failure rate.
+1. **Baseline:** retain R01's completed results as the comparison point.
 2. **Behavior:** R02/R03/R04 prove useful consultation and consistent delivery.
-3. **Quality:** first R05 starter plus R06 produce a polished accepted bakery app.
+3. **Quality:** R05 design guidance plus R06 give attendees useful previews whose
+   UX fits their different goals; development/release testing checks the results.
 4. **Choice:** R07 selects the framework default from measured outcomes.
-5. **Release:** R08/R09/R10 prove continuity, broader scenarios, and event scale.
+5. **Release:** R08/R09/R10 prove continuity, focused regressions and reliable
+   single-deployment operation; publish the final WT release.
+6. **CT follow-up:** open the requested enablement/release-selection PR and verify
+   CT-to-WT deployment on one disposable attendee deployment.
 
-Do not wait for all three starter genres to finish before running the first E2E.
-Do not release a prompt-only fix while claiming the UX problem is resolved.
+Run the first R05 app build as soon as the design skill is delivered correctly,
+then use contrasting scenarios to qualify context-sensitive results. Written
+guidance alone does not establish improved UX.
 
 ## Release and rollout
 
@@ -514,66 +665,116 @@ workstream that produced them. Merge each PR after review, local CI and its
 appropriate isolated CT-compatible Labs checks. A merge does not deploy or
 change CT's pinned workshop release.
 
-Run final CT-to-WT integration against one immutable assembled WT candidate after
-the dependent workstreams land, before changing the event release pin or rolling
-out. Use a disposable workshop/attendee deployment and preserve CT's working
-deployment and code. If an integration finding spans workstreams, fix it in a
-focused follow-up PR and requalify that candidate. Do not leave every PR open until
-the end: that creates a growing dependency stack and defers integration problems.
+Complete WT work and single-deployment qualification, then publish the final WT
+release through the existing tagged PEX/manifest release workflow. Create the
+separate CT feature PR after that release exists. Verify final CT-to-WT integration
+using the released artifact on one disposable workshop/attendee deployment. Keep
+the working CT deployment unchanged. If integration exposes a WT defect, fix it
+in a focused WT PR and publish a corrected release. Merge workstream PRs after
+their relevant checks rather than maintaining a growing stack until the end.
 
-Use one immutable release identifier covering WT revision, instructions/overlay
-digest, starter version, AppKit/APX dependencies, CLI/harness versions, resolved
-models, and evaluator version. Add the quality matrix to
-`docs/verification-gate.md` and `docs/omnigent-acceptance-checklist.md`; keep their
-existing operational gates intact.
+Use the existing release manifest to record the WT revision, instruction/skill
+digests, framework/tool versions and resolved models used in the live tests. Keep
+a compact outcome report linked to it; no new quality-matrix service or evaluator
+version contract is required. Reuse the applicable local and single-instance checks
+from `docs/verification-gate.md` and `docs/omnigent-acceptance-checklist.md`.
+Their fleet/scale procedures are excluded from this release's acceptance scope.
 
-Start on disposable rehearsal instances, then a small facilitator canary. Verify
-warm persistent trees receive the new overlay and existing projects migrate
-managed sections. Run the supported harness cells repeatedly before increasing
-concurrency to 60. Isolate outcomes by harness/model and framework; fleet averages
-must not conceal a bad attendee path.
-The wizard rehearsal requires sixty independent attendee apps, with synchronized
-cold arrival and realistic editing before build. Shared-process cache tests cannot
-stand in for shared-gateway demand across the fleet. Record actual requests/tokens,
-fallback, deadlines, stale-result discard, save/launch success, and task integrity.
+For isolated Labs tests, reuse the owned WT test app and its provisioned compute
+where practical, with separate project/data fixtures. Reset or create fresh state
+only when a preparation/identity case requires it. Verify warm installs and
+managed-section migration once against the release candidate and after relevant
+fixes. Use the requested Claude Opus 5.5 and Codex GPT Sol 6.1 where available;
+record the actual resolved endpoint/tool versions and explain any unavailable path.
 
-Ship only launch paths that have evidence. Current documented modes 1-3 are in
-scope: bare agents, local Omnigent, paired self-hosted Omnigent. Modes 4-5 are
-unsupported/unavailable in the documented fleet and must remain explicitly
-excluded until separately qualified. Recheck actual offered native workers and
-Auto routing from the deployed catalog rather than inventing a static model list.
+Thoroughly test one deployment in the intended event configuration. Exercise real
+attendee browser auth, app/model/data permissions, enabled/skip/off onboarding,
+offered harness launches, distinct generated apps, saved changes, multiple builds,
+switch/reconnect, token renewal, restart/warm redeploy and useful failure recovery.
+Use existing local regressions and focused fault tests where they provide the
+proof more directly. Record failing offered routes individually. Repeat affected
+checks after relevant fixes; do not rerun completed suites by default. Run no
+large-scale fleet tests or staged concurrent app-build campaign. Single-instance
+qualification establishes the tested behavior, not a measured fleet throughput.
+
+Check the launch paths actually enabled for the event, including bare agents and
+any offered local/paired Omnigent path. A lightweight delivery/launch probe covers
+each; representative real builds check generated output and worker delivery.
+Qualifying unoffered modes or new harnesses is separate work. Recheck actual
+offered workers and Auto routing from the deployed catalog. Test coverage selects
+supported execution paths; it never limits the attendee's product ideas.
 
 On regression, roll back the immutable release or deploy a pretested alternate
-framework release. The repository has no framework-switching operator control;
-if one is needed, implement and qualify it under R07. Existing operator controls
+framework release through existing deployment controls. A new framework-switching
+operator control is outside this release scope. Existing operator controls
 can demote Omnigent to bare CLIs, but only if those fallback builds meet the same
 app-quality bar. Do not quietly drop UX checks to keep a failing route available.
 
-## Completion criteria for this remediation
+### Follow-up Control Tower PR after the final WT release
 
-- A simulated nontechnical attendee creates the bakery app through the actual
-  Workshop Terminal UI and a real coding harness, without technical rescue prompts.
-- Enabled, skipped, and disabled wizard paths reuse the same consultation contract;
-  selected generated tasks survive save/reload/restart and every offered launch
-  route. The enabled path also passes the dedicated wizard release gates.
-- The conversation validates meaningful requirements, offers a concrete reasoned
-  recommendation, and uses the attendee's answer in the agreed scope.
-- A useful first preview and final deployed app pass separate recorded UX review.
-- The independently exercised core journey works, including persisted changes,
-  failure recovery, responsive behavior, and accessible controls.
-- Every event-offered harness/model route has repeated passing evidence; remote
-  UI-first entry, delegation, reconnect, and warm-release delivery are covered.
-- The same scenario provides an honest AppKit/APX comparison and a documented
-  default decision.
-- The quality release report supplements the existing auth, topology, soak,
-  readiness, entitlement, and 60-instance operational checks.
+This is explicitly requested follow-up work after WT remediation and release,
+not a change to CT during the remaining WT builds. Open one focused CT PR with:
 
-The audit, test specification, and R01 failed baseline are complete deliverables.
-The simulation-first CT-compatible deployment, qualification, native journey,
-independent UI observation, and exact teardown have been exercised. Passing
-product remediation, independent Lakebase/restart/fault checks, calibrated UX
-scoring, the broader harness/framework matrix, and actual CT integration remain
-outstanding under R03–R10 and release qualification. R02 policy implementation,
-small model probes and interrupted live runs do not establish generated-app quality. R01 closure is
-not an app acceptance or fleet-readiness
-claim.
+- **Enable Agent Bricks CLI and skill:** an operator setting passes
+  `AGENTBRICKS_ENABLED` to WT and uses the toolchain/skill packaged in the selected
+  WT release. Preserve the current opt-in default unless the owner changes it.
+  Enabled qualification proves the real CLI and `workshop-agent-bricks-cli` skill
+  are usable in attendee harnesses/workers; disabled qualification confirms normal
+  harness use and avoids advertising an unavailable CLI workflow.
+- **Workshop Terminal release:** offer `Latest` by default and an explicit
+  published-release selection. Latest means the latest published stable release,
+  excluding drafts and prereleases. Resolve it once for the workshop deployment,
+  record the exact tag, Git SHA and verified artifact/manifest identity, and reuse
+  that resolution across retries and attendee provisioning. Existing deployments
+  retain their recorded release until the operator explicitly changes it.
+
+Reuse CT's existing immutable WT artifact validation/download/deployment path.
+Display the resolved release to the operator. Reject an unavailable/incompatible
+release clearly rather than silently falling back or selecting another version;
+explain when a selected older release lacks Agent Bricks support. Preserve saved
+explicit release selections and existing workshop configuration.
+
+Test the CT configuration/resolution logic locally, then use one disposable
+attendee deployment to verify latest/default, an explicit release and the Agent
+Bricks option, reusing compute across redeploys where practical. Confirm the
+enabled CLI can perform a useful agent/model/tool turn with correct identities.
+The PR must not modify, redeploy or disturb CT's working Labs deployment.
+
+## Release-test criteria for this remediation
+
+Use a small representative set of real builds on the assembled release. These
+checks run in development/release qualification; attendees receive previews and
+drive changes through feedback. Expand coverage when failures or relevant changes
+justify it, rather than running every scenario against every combination.
+
+- Simulated nontechnical attendees describe contrasting goals through WT and real
+  Claude/Codex harnesses, without technical rescue prompts. Include operational,
+  analytical and interactive work on the selected default framework, plus a concise
+  experienced-user request. Reuse the results for other checks where possible.
+- The first useful previews fit their different users and tasks. Check structure,
+  hierarchy, density and primary interactions, not just palette changes. Flag a
+  generic shell reused inappropriately across unrelated goals. Open each preview,
+  exercise its main action and inspect a narrow screen; numerical scoring and
+  separate first-preview/final design panels are unnecessary.
+- Observe data discovery before invention, clear demo-data disclosure and accurate
+  storage claims. Exercise saved changes/reload when the app promises persistence.
+  Add failure/restart checks where the changed implementation warrants them.
+- Enabled, skipped and disabled wizard paths can launch an offered harness. Saved
+  task identity survives relevant save/reload paths. Reuse R03's existing regression
+  coverage; this is a smoke check of integration, not another recommendation campaign.
+- A user can change A's direction, start B and return to A with the right files and
+  context. A harness switch/reconnect and an enabled isolated-worker probe preserve
+  the current instructions, skill assets and project context.
+- The focused AppKit/APX comparison supports the default decision. Applicable
+  local and single-instance identity, isolation, readiness, credential and recovery
+  checks pass on the assembled WT candidate. No fleet-scale live test is required.
+- Publish the tested final WT release, then open the CT feature PR above. Its
+  single-deployment integration proves the requested release selection and Agent
+  Bricks enablement without affecting CT's working Labs deployment.
+
+R01–R03 remain closed with their recorded outcomes and limitations. R04–R10 must
+deliver reliable current instructions/tooling, one UX authority, distinct task-fit
+previews, project continuity, focused regressions and final deployment integration.
+Publish the final WT release before beginning the requested CT feature PR.
+The number of skills, policy pages or passing text assertions is not evidence of
+better attendee output; the rendered working results provide that evidence.
