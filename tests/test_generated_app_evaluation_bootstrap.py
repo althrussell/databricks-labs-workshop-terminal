@@ -1,5 +1,6 @@
 """The external observer must work with the release's real SPA route precedence."""
 import os
+import pytest
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -7,6 +8,32 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from evals.generated_apps.runtime import wt_evaluation_bootstrap as bootstrap
+
+
+@pytest.mark.parametrize("evaluation", ["true", "false", ""])
+def test_package_launcher_loads_evaluation_only_when_explicitly_enabled(monkeypatch, evaluation):
+    from evals.generated_apps.runtime import wt_bootstrap as launcher
+
+    class Executed(BaseException):
+        pass
+
+    monkeypatch.setenv("WORKSHOP_PACKAGE_SHA256", "a" * 64)
+    monkeypatch.setenv("WORKSHOP_EVALUATION_ENABLED", evaluation)
+    monkeypatch.setenv("PEX_MODULE", "offline-original")
+    monkeypatch.setenv("PEX_EXTRA_SYS_PATH", "offline-original")
+    monkeypatch.setenv("WT_EVALUATION_SOURCE_ROOT", "offline-original")
+    monkeypatch.setenv("PYTHONPATH", "offline-original")
+    monkeypatch.setattr(launcher, "oauth_token", lambda: "offline-test-token")
+    monkeypatch.setattr(launcher, "download_pex", lambda *_args: None)
+    def execute(_python, _args):
+        assert os.environ["PEX_MODULE"] == (
+            "wt_evaluation_bootstrap:main" if evaluation == "true" else "server.otel_bootstrap:main"
+        )
+        raise Executed
+    monkeypatch.setattr(launcher.os, "execv", execute)
+    # A successful exec never returns; bypass the startup retry handler.
+    with pytest.raises(Executed):
+        launcher.main()
 
 
 def test_observer_get_precedes_spa_without_reordering_release_routes(monkeypatch, tmp_path):

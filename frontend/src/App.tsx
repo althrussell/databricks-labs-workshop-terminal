@@ -151,18 +151,26 @@ export default function App() {
   // modal their run had switched off. Unknown therefore means unavailable, which
   // costs the control a moment of lateness and nothing else.
   const wizardAvailable = config?.onboarding_wizard.enabled === true;
+  const wizardDismissalKey = config
+    ? `wt-wizard-dismissed:v1:${config.workspace_url}:${config.user.email}`
+    : "";
 
   const openWizard = useCallback(() => {
     if (!wizardAvailable) return;
     setWizardOpen(true);
   }, [wizardAvailable]);
 
-  const closeWizard = useCallback(() => {
+  const closeWizard = useCallback((skipped = false) => {
+    if (skipped && wizardDismissalKey) {
+      try {
+        sessionStorage.setItem(wizardDismissalKey, "true");
+      } catch { /* Browser storage is optional; the mounted view still closes. */ }
+    }
     setWizardOpen(false);
     // Pick up whatever the wizard saved so Home's recap line is right
     // immediately, rather than after the next reload.
     api.wizard().then((s) => setBrief(s.brief)).catch(() => undefined);
-  }, []);
+  }, [wizardDismissalKey]);
 
   const refreshIdentity = useCallback(async () => {
     const cfg = await api.config();
@@ -208,11 +216,10 @@ export default function App() {
 
   /* The wizard opens once, on the first arrival, and never again.
    *
-   * `should_show` is the server's answer, not the browser's: it is keyed on the
-   * brief file rather than localStorage so a reload, a second tab, or the
-   * reconnect after a wifi flap cannot re-present a modal someone already
-   * skipped. In a workshop room all three of those happen, usually to the person
-   * least able to shrug it off.
+   * `should_show` normally comes from the durable brief, so reloads and other
+   * tabs respect Skip. The current tab also remembers immediate dismissal in
+   * sessionStorage, covering a slow or failed skip write without trapping the
+   * attendee. An explicit goal-edit action can still reopen the wizard.
    *
    * Suppressed when a session already exists — a returning attendee is mid-build,
    * and a modal asking what they intend to build is at best late. That check has
@@ -225,16 +232,20 @@ export default function App() {
     // attendee closed their last terminal, which is precisely when they are
     // least in the mood for it.
     wizardChecked.current = true;
+    let dismissed = false;
+    try {
+      dismissed = sessionStorage.getItem(wizardDismissalKey) === "true";
+    } catch { /* The server's durable state remains the normal dismissal source. */ }
     api
       .wizard()
       .then((state) => {
         setBrief(state.brief);
-        if (state.enabled && state.should_show && !session) {
+        if (state.enabled && state.should_show && !session && !dismissed) {
           setWizardOpen(true);
         }
       })
-      .catch(() => { if (config.onboarding_wizard.enabled && !session) setWizardOpen(true); });
-  }, [config, sessionsLoaded, session]);
+      .catch(() => { if (config.onboarding_wizard.enabled && !session && !dismissed) setWizardOpen(true); });
+  }, [config, sessionsLoaded, session, wizardDismissalKey]);
 
   useEffect(() => {
     if (config?.help) setHelpRaised(config.help.raised);

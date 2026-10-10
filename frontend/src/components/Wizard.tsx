@@ -12,7 +12,7 @@ interface Props {
   launching: string | null;
   onLaunch: (agentId: string, starterPrompt: string) => Promise<void>;
   onOpenAgent?: () => void;
-  onClose: () => void;
+  onClose: (skipped?: boolean) => void;
   draftKey?: string;
   onSaved?: (brief: WizardBrief) => void;
 }
@@ -182,13 +182,13 @@ export default function Wizard({ agents, launching, onLaunch, onOpenAgent, onClo
 
   async function skip() {
     if (saving || launchBusy) return;
-    cancelCandidates(); setSaving(true); setError("");
-    try {
-      await api.saveWizard({ operation: "skip", expected_revision: state?.brief.revision ?? 0 });
-      if (draftKey) localStorage.removeItem(draftKey);
-      onClose();
-    } catch (caught) { setError("Your dismissal could not be saved. " + message(caught)); }
-    finally { setSaving(false); }
+    cancelCandidates();
+    try { if (draftKey) localStorage.removeItem(draftKey); } catch { /* Storage is optional. */ }
+    // Dismiss immediately. An optional wizard must not trap an attendee behind
+    // a slow, unavailable, or conflicting brief write.
+    onClose(true);
+    try { await api.saveWizard({ operation: "skip", expected_revision: state?.brief.revision ?? 0 }); }
+    catch { /* The current browser also remembers dismissal; harness access remains available. */ }
   }
 
   async function continueToAgent(revision = state?.brief.revision ?? 0) {
@@ -322,7 +322,7 @@ export default function Wizard({ agents, launching, onLaunch, onOpenAgent, onClo
           <SetupProgress steps={steps} installing={installing} />
           {!agents.some((agent) => agent.ready) && <p className="wizard-industry-note">No agent is ready yet. You can wait here or pick one later; your goal is saved.</p>}
           <div className="wizard-foot"><button className="btn btn-ghost" disabled={pending} onClick={() => { cancelCandidates(); setStep(1); setError(""); }}><ArrowLeft size={14} /> Edit goal</button>
-            <button className="btn btn-ghost" disabled={pending} onClick={onClose}>I'll pick an agent later</button></div>
+            <button className="btn btn-ghost" disabled={pending} onClick={() => onClose()}>I'll pick an agent later</button></div>
         </>}
       </div>
     </dialog>

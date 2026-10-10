@@ -105,13 +105,16 @@ def main() -> None:
                 f"Verified Workshop Terminal package {digest} from Unity Catalog",
                 flush=True,
             )
-            # The package bytes remain unchanged. The isolated observation
-            # launcher is separately hashed in the Apps source receipt.
-            source = str(Path(__file__).resolve().parent)
-            os.environ["WT_EVALUATION_SOURCE_ROOT"] = source
-            os.environ["PEX_EXTRA_SYS_PATH"] = source
-            os.environ["PEX_MODULE"] = "wt_evaluation_bootstrap:main"
-            os.environ["PYTHONPATH"] = source
+            # Normal attendee use must run the product's own entry point.
+            # Evaluation instrumentation is an explicit disposable-test mode.
+            if os.environ.get("WORKSHOP_EVALUATION_ENABLED") == "true":
+                source = str(Path(__file__).resolve().parent)
+                os.environ["WT_EVALUATION_SOURCE_ROOT"] = source
+                os.environ["PEX_EXTRA_SYS_PATH"] = source
+                os.environ["PEX_MODULE"] = "wt_evaluation_bootstrap:main"
+                os.environ["PYTHONPATH"] = source
+            else:
+                os.environ["PEX_MODULE"] = "server.otel_bootstrap:main"
             os.execv(sys.executable, [sys.executable, str(target)])
         except Exception as error:
             print(

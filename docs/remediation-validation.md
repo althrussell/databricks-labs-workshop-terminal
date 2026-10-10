@@ -34,7 +34,7 @@ the working-data, starter and first-preview follow-ups. Disposable cleanup passe
 ## R03
 
 **Acceptance pending; PR92 remains unmerged and the event wizard stays disabled.**
-Current product candidate: `673de90`, with green exact-head push and PR CI on
+Current packaged native candidate: `673de90`, with green exact-head push and PR CI on
 10 October. The `d811500` held-out run completed 60/60 inputs once: 59 visible
 recommendations and one false website-path rejection. Native MLflow run
 `63881b78be7e4f3b8f3003c4d6fa184c` finished all 360 Boolean assessments with 354
@@ -67,12 +67,37 @@ an unsupported request field with public references to `messages` and
 Claude documentation says disabling adaptive thinking does not apply to Opus 5.5,
 so that setting is not a qualified workaround. No speculative CLI flag was changed.
 The native guard stopped subsequent admission before upstream, and normal closure
-reaped Claude with no project source. Codex remains unstarted. The continuation's
+reaped Claude with no project source. Codex's scored app journey remains unstarted. The continuation's
 $23.1150707260704 conservative settlement preserves the full HTTP400 hold; combined
 native consumption/holds are $46.2302752125984. The reviewed aggregate allocation
 was $245.0091810627888 within $250. This remains a failed app journey and blocks
 R03 acceptance and merge; current Claude/gateway compatibility needs a verified
 repair before another native app test. No CT code, deployment or permissions changed.
+
+An attendee's direct Claude launch subsequently exposed a scratch evaluation
+gate after wizard dismissal. The same Labs app was restored to the normal WT
+entry point, with evaluation disabled and closed evaluation evidence/holds
+preserved. Claude and Codex then reached their normal interactive prompts after
+Skip, without a saved goal or a submitted build prompt. The test expiry remains
+unchanged. This restores harness access; it does not accept model transport or
+generated-app behavior. No Control Tower operations were performed.
+
+With onboarding disabled, Claude reached its normal prompt. Codex exposed a
+separate app-server daemon socket failure after same-app redeployment. Its default
+shared daemon referred to the old container-local HOME. The failed screenshot
+remains in the external archive. The catalog now uses `codex --no-daemon`, which
+the pinned 0.162.0 CLI accepts; catalog/adapter tests passed. This change prevents
+the standalone WT terminal from depending on a daemon left by a prior container.
+
+The optional wizard also now dismisses immediately if its skip write is slow or
+fails. A scoped browser-tab dismissal survives reload, while explicit goal
+editing remains available. The 21-case rendered suite passed, including all three
+supported harnesses with Skip, disabled onboarding and failed wizard service
+requests. A separate delayed-write regression also passed. Six real local PTY
+cases prove disabled/skipped onboarding does not gate session creation or command
+execution; package/observer contract checks passed. The frontend production build
+passed. The new skip behavior is locally qualified; the live startup checks used
+the existing `673de90` product package.
 
 The workshop continuity review also found that **Start a different project** is
 hidden under Optional context. WT keeps one current goal and can send a changed

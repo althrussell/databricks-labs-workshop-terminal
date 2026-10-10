@@ -22,7 +22,7 @@
     "label": "Codex",
     "description": "OpenAI's coding agent, wired to Databricks model serving.",
     "icon": "bot",
-    "command": "codex",
+    "command": "codex --no-daemon",
     "requires": ["codex"],
     "order": 6
   }

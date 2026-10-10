@@ -24,7 +24,8 @@ ROOT = Path(__file__).resolve().parents[1]
 async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=False,
                    interrupted=False, malformed_draft=False, new_project=False,
                    unavailable_suggestions=False, prepared_suggestions=False,
-                   save_pending=False):
+                   save_pending=False, direct_launch=None, wizard_mode="skipped", skip_failure=False,
+                   skip_pending=False):
     web = pytest.importorskip("aiohttp.web")
     browser_api = pytest.importorskip("playwright.async_api")
     monkeypatch.setattr(config, "discovery_enabled", lambda: False)
@@ -41,7 +42,7 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
             required_columns={"retail.orders": ["order_id"]},
             prompt="Review clearly labelled sample bakery orders from retail.orders.")
     user = SimpleNamespace(email="simulated-attendee@example.invalid", home=str(tmp_path / "attendee"))
-    switches = {"enabled": True, "load_errors": 2 if faults else 0, "save_errors": 0,
+    switches = {"enabled": wizard_mode != "disabled", "load_errors": 2 if (faults or skip_failure) else 0, "save_errors": int(skip_failure),
                 "launch_errors": 0, "delivery_errors": 0}
     sessions = []
     deliveries = []
@@ -78,6 +79,9 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
         elif path == "/api/agents":
             body = {"agents": [{"id": "claude", "label": "Claude Code", "description": "Simulated ready harness", "icon": "terminal", "order": 1, "ready": True, "needs_credentials": False},
                 {"id": "codex", "label": "Codex", "description": "Simulated installing harness", "icon": "terminal", "order": 2, "ready": False, "needs_credentials": False}]}
+            if direct_launch:
+                body["agents"][1]["ready"] = True
+                body["agents"].append({"id": "omnigent", "label": "Omnigent", "description": "Simulated ready harness", "icon": "terminal", "order": 3, "ready": True, "needs_credentials": False})
         elif path == "/api/setup/status":
             body = {"steps": {"claude": {"status": "done"}, "codex": {"status": "installing"}}, "installing": True, "ready": {"claude": True}}
         elif path == "/api/nuggets":
@@ -103,6 +107,9 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
                 body["enabled"] = switches["enabled"]
                 body["should_show"] = switches["enabled"] and not body["brief"]["seen"]
             else:
+                if skip_pending and payload.get("operation") == "skip":
+                    save_entered.set()
+                    await save_release.wait()
                 if save_pending and payload.get("operation") == "complete":
                     save_entered.set()
                     await save_release.wait()
@@ -124,7 +131,7 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
                 if switches["launch_errors"]:
                     switches["launch_errors"] -= 1
                     return web.json_response({"detail": "Simulated launch failure"}, status=503)
-                created = {"id": "local-session", "agent_id": payload["agent_id"], "label": "Claude Code", "created_at": 0, "last_activity": 0, "exited": False}
+                created = {"id": "local-session", "agent_id": payload["agent_id"], "label": {"claude": "Claude Code", "codex": "Codex", "omnigent": "Omnigent"}[payload["agent_id"]], "created_at": 0, "last_activity": 0, "exited": False}
                 sessions[:] = [created]
                 body = {"session": created}
             else:
@@ -159,6 +166,27 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
             page.on("pageerror", lambda error: errors.append(str(error)))
             await page.goto(url)
             dialog = page.get_by_role("dialog", name="What would you like to build?")
+            if direct_launch:
+                if wizard_mode == "skipped":
+                    await dialog.get_by_role("button", name="Skip onboarding", exact=True).click()
+                    await dialog.wait_for(state="hidden")
+                    if skip_pending:
+                        await save_entered.wait()
+                await page.get_by_role("heading", name="What will you build today?").wait_for()
+                await page.reload()
+                label = {"claude": "Claude Code", "codex": "Codex", "omnigent": "Omnigent"}[direct_launch]
+                await page.get_by_role("button", name=label, exact=False).click()
+                await page.get_by_role("button", name=f"Close {label}", exact=True).wait_for()
+                assert sessions[0]["agent_id"] == direct_launch
+                assert await dialog.count() == 0
+                brief = wizard.read_brief(user)
+                assert brief.what_building == "" and brief.selected_idea is None
+                assert not deliveries
+                assert not any(path == "/api/wizard/suggest" for path, _, _ in requests)
+                assert not errors, errors
+                await context.close()
+                await browser.close()
+                return
             await dialog.wait_for()
             if faults:
                 await dialog.get_by_role("alert").wait_for()
@@ -346,3 +374,18 @@ def test_rendered_prepared_card_discloses_demo_source_and_date_checks(tmp_path, 
 
 def test_rendered_pending_save_preserves_the_displayed_and_delivered_task(tmp_path, monkeypatch):
     asyncio.run(exercise(tmp_path, monkeypatch, save_pending=True))
+
+
+@pytest.mark.parametrize("wizard_mode", ["skipped", "disabled"])
+@pytest.mark.parametrize("agent_id", ["claude", "codex", "omnigent"])
+def test_rendered_direct_harness_launch_without_onboarding(tmp_path, monkeypatch, wizard_mode, agent_id):
+    asyncio.run(exercise(tmp_path, monkeypatch, direct_launch=agent_id, wizard_mode=wizard_mode))
+
+
+@pytest.mark.parametrize("agent_id", ["claude", "codex", "omnigent"])
+def test_rendered_wizard_service_failure_cannot_block_skip_or_harness_launch(tmp_path, monkeypatch, agent_id):
+    asyncio.run(exercise(tmp_path, monkeypatch, direct_launch=agent_id, skip_failure=True))
+
+
+def test_rendered_pending_skip_write_cannot_block_direct_launch_or_reload(tmp_path, monkeypatch):
+    asyncio.run(exercise(tmp_path, monkeypatch, direct_launch="claude", skip_pending=True))

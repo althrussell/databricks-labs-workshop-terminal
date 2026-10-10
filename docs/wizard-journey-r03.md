@@ -33,10 +33,36 @@ an unsupported request field and references `messages` and `output_config`.
 The prior error's exact cause remains unproven. Official Claude documentation
 says the adaptive-thinking disable flag does not apply to Opus 5.5; no guessed
 workaround was applied. The guard blocked later dispatches and was closed/drained;
-normal UI closure reaped the child and confirmed no project sources. Codex remains
-unstarted. Both native attempts retain their full failed-request holds, totalling
+normal UI closure reaped the child and confirmed no project sources. Codex's scored
+app journey remains unstarted. Both native attempts retain their full failed-request holds, totalling
 $46.2302752125984 conservatively. A verified current-CLI/gateway compatibility
 repair and genuine app journeys remain required before acceptance or merge.
+
+Onboarding is optional for every offered harness. The closed scratch native
+evaluation intercepted ordinary Home launches and returned “Native evaluation
+is waiting for qualification or is closed.” The reused Labs app was restored to
+the product entry point with evaluation disabled; its prior closed ledgers,
+conservative holds and expiry were retained. Claude and Codex reached their
+normal prompts after Skip without a saved goal or a submitted build prompt.
+This startup check does not qualify their model transport or an app build.
+
+With onboarding disabled, Claude also reached its normal prompt. Codex's direct
+launch exposed a separate lifecycle failure: its default shared app-server
+daemon retained a socket pointing into the previous container-local HOME after
+a same-app redeploy. The attendee saw an app-server socket error, not a wizard
+requirement. The catalog now launches `codex --no-daemon`, supported by the pinned
+0.162.0 CLI, so the interactive runtime belongs to the WT terminal process.
+The failed startup screenshot is retained outside Git; local catalog tests and
+the actual CLI option check passed. Live qualification of this fix is recorded
+separately from the previous successful post-Skip startup.
+
+Skip now dismisses immediately and saves dismissal in the background. A scoped
+tab-local marker prevents a failed or pending skip write from reopening the
+wizard on reload. Manual goal editing still opens it. Local rendered tests cover
+Claude, Codex and enabled Omnigent after Skip, with onboarding disabled, and with
+wizard loading/saving unavailable; a delayed skip write cannot block launch or
+reload. These frontend changes are locally qualified separately from the
+unchanged `673de90` package used for the live startup checks.
 
 Recommendation HTTP p95 was 9.822 seconds, maximum 11.747 seconds. This exceeds
 the audit's proposed eight-second p95 target; the twelve-second caller bound
