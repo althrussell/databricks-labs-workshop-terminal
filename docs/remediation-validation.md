@@ -34,7 +34,55 @@ the working-data, starter and first-preview follow-ups. Disposable cleanup passe
 ## R03
 
 **Acceptance pending; PR92 remains unmerged and the event wizard stays disabled.**
-Latest reviewed live candidate: `54c73ba`. The exact green CI package matches all
+Current product candidate: `673de90`, with green exact-head push and PR CI on
+10 October. The `d811500` held-out run completed 60/60 inputs once: 59 visible
+recommendations and one false website-path rejection. Native MLflow run
+`63881b78be7e4f3b8f3003c4d6fa184c` finished all 360 Boolean assessments with 354
+true, six false, zero errors, zero missing and zero disagreements. All failures
+concern that one empty result. The bounded parser repair passed a fresh genuine
+website-path UI check; the original result remains failed. Generation p95 was
+9.822 seconds, above the proposed eight-second target; maximum was 11.747 seconds.
+No repeat-stability claim is made and scoring must not be repeated merely to
+replace a failed result.
+
+The reused app/compute then completed a genuine bakery wizard save and normal
+Claude launch with the exact offered task. First-run trust retained the unsent
+starter. A scratch proxy concurrency rejection prevented the first main request;
+a later main request received HTTP 400 whose exact cause was not retained.
+Claude was normally closed, its owned process was reaped, and admission closed
+and drained. Two admitted requests total $23.115204486528 conservatively, including
+the full HTTP400 hold. No source/app was built and Codex was not launched.
+These are failed native acceptance results, not proof of an attendee permission
+problem. Any continued test must retain the hold within the approved $250 total.
+No CT calls or changes occurred. Raw records are in the external
+`/private/tmp/wt-r03-qualification/` run archive.
+
+The same app/compute was reused for a reviewed scratch continuation. Its 102
+offline transport/activation checks passed, and five closure-helper checks passed.
+A fresh genuine bakery wizard save cost $0.0990702576864 conservatively. Native
+Claude then serialized two concurrent requests correctly: the small request
+succeeded, and the main request received HTTP 400. The bounded diagnostic reports
+an unsupported request field with public references to `messages` and
+`output_config`; it does not retain arbitrary provider explanation. Official
+Claude documentation says disabling adaptive thinking does not apply to Opus 5.5,
+so that setting is not a qualified workaround. No speculative CLI flag was changed.
+The native guard stopped subsequent admission before upstream, and normal closure
+reaped Claude with no project source. Codex remains unstarted. The continuation's
+$23.1150707260704 conservative settlement preserves the full HTTP400 hold; combined
+native consumption/holds are $46.2302752125984. The reviewed aggregate allocation
+was $245.0091810627888 within $250. This remains a failed app journey and blocks
+R03 acceptance and merge; current Claude/gateway compatibility needs a verified
+repair before another native app test. No CT code, deployment or permissions changed.
+
+The workshop continuity review also found that **Start a different project** is
+hidden under Optional context. WT keeps one current goal and can send a changed
+goal into the existing agent conversation; it does not provide a project-history
+picker. Goal changes, a second independent build, preservation of earlier files
+and return to the first build require explicit UI/acceptance work, including the
+wizard-disabled path. This acceptance journey is now explicit in R08; the detailed
+scope is in `wizard-journey-r03.md`. It has not been implemented or passed.
+
+Earlier reviewed live candidate: `54c73ba`. The exact green CI package matches all
 471 committed runtime files and modes. On the same reused Labs app, its consumed
 regression attempted all 13 inputs once: 12 visible cards, one rejected/empty,
 zero missing or transport errors, 107.299 seconds. Native runs and HTTP spans are

@@ -1,12 +1,67 @@
 # R03: goal-first onboarding and saved-task integrity
 
-Status: acceptance remains pending. The latest held-out run completed all 60
-unique inputs once, returning 59 visible cards and one false rejection. Independent
-review found that website-path analysis was incorrectly treated as a request to
-build a website. Native scoring and actual Claude/Codex app journeys remain.
+Status: acceptance remains pending; PR92 is unmerged. The held-out run completed
+all 60 unique inputs once, returning 59 visible cards and one false rejection.
+Native MLflow evaluation completed all 360 Boolean assessments: 354 passed and six
+failed, with no errors, missing cells or model disagreements. All six failures
+concern the same empty website-path result. The repair is in `673de90`; the original
+outcome remains failed. Actual Claude/Codex app journeys remain unqualified.
 The R03 branch includes
 main through merged Agent Bricks PR91 (`2a19cde`); that feature remains opt-in.
 This work does not change Control Tower.
+
+## Current acceptance and workshop continuity
+
+The exact `673de90` push and PR CI passed on 10 October. Its reused Labs WT
+completed a genuine bakery suggestion, selection and saved-goal handoff as the
+assigned attendee. Claude 2.1.295 received the actual offered starter unsent, and
+the starter survived its first-run folder-trust prompt. Native Opus 5.5 transport
+completed one small request. A concurrent main request was rejected before
+upstream by the scratch evaluation proxy; a subsequent main request received
+HTTP 400. The proxy retained only the error response hash, so its exact cause is
+unproven. This is not an accepted app journey: no source or generated app was
+created, and Codex 0.162.0 was not launched. Normal closure reaped Claude and
+closed/drained admission. The $23.115204486528 conservative total includes the
+full failed-request hold; it is not an invoice charge. Raw records stay outside
+Git, and a continuation must preserve that hold within the approved $250 total.
+
+The reviewed continuation reused the same app and compute and passed 102 offline
+activation/transport checks. Its fresh genuine wizard save and unsent starter
+delivery worked. Serialization removed the previous concurrent-request rejection;
+the main Claude request still received HTTP 400. Its bounded diagnostic classifies
+an unsupported request field and references `messages` and `output_config`.
+The prior error's exact cause remains unproven. Official Claude documentation
+says the adaptive-thinking disable flag does not apply to Opus 5.5; no guessed
+workaround was applied. The guard blocked later dispatches and was closed/drained;
+normal UI closure reaped the child and confirmed no project sources. Codex remains
+unstarted. Both native attempts retain their full failed-request holds, totalling
+$46.2302752125984 conservatively. A verified current-CLI/gateway compatibility
+repair and genuine app journeys remain required before acceptance or merge.
+
+Recommendation HTTP p95 was 9.822 seconds, maximum 11.747 seconds. This exceeds
+the audit's proposed eight-second p95 target; the twelve-second caller bound
+alone is not a latency acceptance verdict. The extra 120 repetitions and 720
+assessment cells remain unexecuted. Same-app redeployment reused compute and
+browser sign-in, but restarted the container and reset local attendee HOME,
+brief and model policy. State survival across code deployment is unqualified.
+
+Workshops also need evolving goals and several builds per attendee. The current
+Home exposes **Change what I'm building**. **Start a different project** is hidden
+inside the goal wizard's Optional context; it creates a new brief identity when
+saved, but WT keeps one current brief rather than a navigable project history.
+Existing source directories remain separate from that brief. An existing agent
+can receive the new starter in its current conversation; editing the goal does
+not clear that conversation or immediately update all project instructions.
+When onboarding is disabled, the wizard's goal-edit entry is also hidden.
+
+Before claiming clear support for multiple builds, expose **Change this goal**
+and **Build something else** together, state that earlier files are retained,
+and make the active task and conversation behavior explicit. Keep this a short
+choice rather than another requirements exercise. Verify one attendee builds A,
+changes A's direction, starts B in its own directory without overwriting A, and
+returns to A with its correct brief. Check both harnesses and the wizard-disabled
+path. R04/R08 must qualify project/worker propagation and returning to prior
+work; a new discovery-record identity alone does not establish project switching.
 
 The follow-up on `4c1825d` reused the original Labs app and its provisioned compute
 under a new bounded receipt. CI passed, including the offline release smoke after
