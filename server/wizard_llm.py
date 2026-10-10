@@ -8,6 +8,7 @@ Background work is capped per app; client abort does not restart or duplicate it
 from __future__ import annotations
 
 import ast
+import copy
 import json
 import logging
 import re
@@ -166,7 +167,9 @@ _CARD_SCHEMA["properties"]["fit_reason"]["description"] += (
     "Never describe row values, records or distributions as verified or confirmed."
 )
 _CARD_SCHEMA["properties"]["prompt"]["description"] += (
-    " Describe the attendee's object and primary action. The server adds source discovery and "
+    " First describe the attendee's object and primary action independently of available sources. "
+    " Keep that action in the first version, even when a neutral working sample is needed. "
+    " The server adds source discovery and "
     "verified dependencies; never explain sample generation by claiming a dataset is absent. "
     "Use the simplest requested comparison or action; do not add optional metrics and controls."
 )
@@ -182,6 +185,17 @@ _CARD_SCHEMA["properties"]["unresolved"]["items"]["description"] = (
     "A material unknown. Describe missing source attributes as unverified, never absent from the catalog. "
     "Sample row values and distributions remain uninspected; no other field may claim they are verified."
 )
+# Enforce the source-mode relationship at generation, as well as at validation.
+# A generate card must not retain a prepared source selected earlier in the
+# reply. Nested anyOf is part of the strict structured-output schema contract.
+_SOURCE_MODE_SCHEMAS = []
+for _mode in ("demo", "generate"):
+    _variant = copy.deepcopy(_CARD_SCHEMA)
+    _variant["properties"]["data_mode"]["enum"] = [_mode]
+    for _field in ("demo_tables", "required_columns"):
+        _variant["properties"][_field]["minItems" if _mode == "demo" else "maxItems"] = 1 if _mode == "demo" else 0
+    _SOURCE_MODE_SCHEMAS.append(_variant)
+_RESPONSE_FORMAT["json_schema"]["schema"]["properties"]["ideas"]["items"] = {"anyOf": _SOURCE_MODE_SCHEMAS}
 
 
 class ModelUnavailable(RuntimeError):
@@ -641,7 +655,9 @@ def _unsupported_source_absence(text: str) -> bool:
     assertion = re.compile(
         r"\b(?:no\s+(?:(?!updates?\b|changes?\b|writes?\b|edits?\b|new\b)[\w-]+\s+){0,5}"
         + nouns + r"|" + nouns
-        + r"[^.!?;\n]{0,60}\b(?:not available|unavailable|absent|(?:does?|do) not exist))\b",
+        + r"[^.!?;\n]{0,60}\b(?:not available|unavailable|absent|(?:does?|do) not exist)|"
+        r"(?:workflow|task|request|object)[^.!?;\n]{0,40}\b(?:is|are) not represented "
+        r"(?:by|in) (?:a |any |the )?(?:prepared|seeded|workshop) (?:source|data|table))\b",
         re.IGNORECASE,
     )
     for sentence in re.split(r"[.!?;\n]", text):
@@ -654,8 +670,9 @@ def _unsupported_source_absence(text: str) -> bool:
             if match.group().lower().startswith("no ") and (
                 re.match(r"no\s+(?:verified|confirmed)\b", match.group(), re.IGNORECASE)
                 or re.match(
-                    r"\s+(?:(?:have|has|had|is|are|was|were)\s+)?(?:been\s+)?"
-                    r"(?:verified|confirmed|identified|connected|provided|supplied|updates?|writes?|edits?|changes?)\b",
+                    r"\s+(?:(?:for|about)\s+(?:[\w-]+\s+){1,6}?)?"
+                    r"(?:(?:have|has|had|is|are|was|were)\s+)?(?:been\s+)?"
+                    r"(?:verified|confirmed|identified|inspected|reviewed|read|connected|provided|supplied|updates?|writes?|edits?|changes?)\b",
                     sentence[match.end():], re.IGNORECASE,
                 )
                 or re.match(r"\s+(?:is|are)\s+(?:needed|required|necessary)\b",
@@ -816,7 +833,8 @@ def _prompt(text: str, industry: str, intent: str = "", *, industry_locked: bool
         'Return JSON only: {"industry": "slug", "ideas": [one card]}.\n\n'
         "Rules:\n"
         f"{locked}{suggested}"
-        "- Match the central task, stated users, device and actions. Keep an app request an app; "
+        "- Decide the central object and useful action from the attendee's words BEFORE choosing data. "
+        "A source's fields cannot establish that action. Match stated users and device. Keep an app request an app; "
         "respect a dashboard request or refusal of apps, including products and prompt. "
         "Do not substitute related reporting for the requested action, or redefine the business object "
         "to fit an available dataset. If a term is ambiguous, state a small proposed interpretation "
@@ -825,7 +843,11 @@ def _prompt(text: str, industry: str, intent: str = "", *, industry_locked: bool
         "workflow. If the type of team, work or business object is unspecified, use a neutral "
         "small example, or visibly describe a chosen domain as one possible example in fit_reason "
         "and assumptions. Never present a convenient source's domain as the attendee's actual "
-        "team; leave that missing context unresolved. Fun and learning goals are valid.\n"
+        "team; leave that missing context unresolved. A proposed interpretation must still "
+        "perform the requested action. Choose a neutral working example when the inventory "
+        "would change that action. Fun and learning goals are valid.\n"
+        "- Choose a shape that can perform that action. A first version that creates or edits "
+        "remembered workflow state needs an app; a read-only dashboard cannot implement those updates.\n"
         "- Every idea is a proposed demo. Put 'demo' or 'sample preview' in its label and outcome. "
         "Never title it live/current/real-time or imply the attendee's records are connected. "
         "For today/live requests, propose a labelled demo day; fit_reason must state the real source "
@@ -902,10 +924,13 @@ def _prompt(text: str, industry: str, intent: str = "", *, industry_locked: bool
         "material unknowns. Keep both short. Use durable working storage for remembered changes; "
         "do not prescribe local SQLite or temporary storage. Avoid production architecture and questionnaires.\n\n"
         f"Optional intent: {intent or '(not stated)'}. Keep a stated intent; use only these intent tags: {', '.join(wizard.INTENTS)}.\n"
-        f"Attendee sentence:\n{text or '(they have not typed anything yet)'}\n\n"
         f"Current industry chip: {industry or '(none)'}\n\n"
         f"Seeded tables and verified columns (metadata only; not query or join verification):\n"
         f"{_inventory_lines(industry if industry_locked else '', query=text, deadline=deadline)}\n\n"
+        "The inventory above is evidence for source selection, not a list of goals. "
+        "Now propose the smallest useful first version for the following attendee goal. "
+        "Preserve its action in the handoff and first_version before choosing any sources.\n"
+        f"Attendee sentence:\n{text or '(they have not typed anything yet)'}\n\n"
     )
 
 

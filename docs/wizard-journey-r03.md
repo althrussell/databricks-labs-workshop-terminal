@@ -1,7 +1,9 @@
 # R03: goal-first onboarding and saved-task integrity
 
 Status: acceptance remains pending. The latest consumed regression returned 11
-visible cards and two empty/rejected results, with one primary task/source mismatch. The R03 branch includes
+visible cards and two empty/rejected results. Independent review found wrong-object
+data selection, version-tracking task drift, an unsupported source-suitability
+claim and a false rejection of inspection-limited wording. The R03 branch includes
 main through merged Agent Bricks PR91 (`2a19cde`); that feature remains opt-in.
 This work does not change Control Tower.
 
@@ -27,6 +29,17 @@ data mode, and reject the observed margin/markup arithmetic contradiction.
 Prompts request the simplest useful comparison and avoid unnecessary percentage
 metrics. The bounded metadata rule still rejects unproven catalogue absence.
 These repairs and all later live results require separate qualification.
+
+Candidate `7f0e5e4` again completed all 13 attempts, with 11 visible model cards,
+two rejected/empty results and no missing or transport failures. Its permit
+stand-in for room bookings was rightly rejected, while honest uninspected-source
+wording was wrongly rejected. A shown kiln card asserted unproven source absence;
+another replaced version tracking with recall prioritisation. The follow-up
+requires the source-mode relationship in the structured schema, distinguishes
+bounded inspection limitations from absence claims, and places the attendee's
+goal after source evidence so the requested action governs selection. Editable
+workflow state needs an app. Local controls do not establish live quality; the
+failed regression and full denominator remain retained outside Git.
 
 The wizard now asks for a useful goal or offers a deliberate choice of ideas,
 then opens a ready agent with the saved task. Industry and collaboration style

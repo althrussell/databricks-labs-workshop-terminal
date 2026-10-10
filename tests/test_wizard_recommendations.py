@@ -113,6 +113,7 @@ def test_prepared_demo_period_also_binds_visible_assumptions(monkeypatch):
     "No staffing or capacity table is available.",
     "There is no matching dataset in the prepared catalog.",
     "Prepared sources contain no volunteer records.",
+    "The requested workflow is not represented by a prepared source, so generate a small demo.",
 ])
 def test_bounded_metadata_cannot_establish_source_absence(field, claim):
     value = [claim] if field in {"assumptions", "unresolved"} else claim
@@ -133,11 +134,23 @@ def test_source_unknowns_and_exploration_warnings_remain_useful():
     "No connected source is required for this workshop demo.",
     "No prepared sources have been verified for this proposal.",
     "No verified prepared dataset has been identified yet.",
+    "No prepared streaming-plan source is verified.",
+    "No prepared source for streaming subscriptions was inspected.",
+    "No prepared data about room bookings has been reviewed.",
     "No prepared table updates are allowed; use owned working storage.",
     "Make no changes to prepared tables.",
 ])
 def test_source_verification_unknowns_and_write_restrictions_are_not_absence(limitation):
     assert wizard_llm._coerce_idea(idea(assumptions=[limitation]), "") is not None
+
+
+@pytest.mark.parametrize("claim", [
+    "No prepared source for streaming subscriptions exists.",
+    "No prepared source for streaming subscriptions was inspected. No prepared subscription data exists.",
+    "No prepared source for streaming subscriptions was inspected, and no prepared data exists.",
+])
+def test_inspection_limitation_cannot_excuse_a_separate_absence_claim(claim):
+    assert wizard_llm._coerce_idea(idea(unresolved=[claim]), "") is None
 
 
 def test_generated_scope_is_visibly_proposed_before_selection():
@@ -597,8 +610,15 @@ def test_named_task_sources_are_not_displaced_by_unrelated_curated_dependencies(
 
 
 def test_structured_data_mode_is_limited_to_supported_choices():
-    field = wizard_llm._RESPONSE_FORMAT["json_schema"]["schema"]["properties"]["ideas"]["items"]["properties"]["data_mode"]
-    assert set(field.get("enum", [])) == {"demo", "generate"}
+    variants = wizard_llm._RESPONSE_FORMAT["json_schema"]["schema"]["properties"]["ideas"]["items"]["anyOf"]
+    assert len(variants) == 2
+    modes = {variant["properties"]["data_mode"]["enum"][0]: variant for variant in variants}
+    assert set(modes) == {"demo", "generate"}
+    for mode, variant in modes.items():
+        assert variant["additionalProperties"] is False
+        assert set(variant["required"]) == set(variant["properties"])
+        for field in ("demo_tables", "required_columns"):
+            assert variant["properties"][field]["minItems" if mode == "demo" else "maxItems"] == (1 if mode == "demo" else 0)
 
 
 @pytest.mark.parametrize("field", ["prompt", "outcome", "fit_reason", "first_version", "assumptions", "unresolved"])
@@ -778,7 +798,8 @@ def test_schema_less_generation_keeps_the_complete_card_contract(wire, monkeypat
     assert "response_format" not in request and request["model"] == model == "approved-model"
     supplied = json.loads(request["messages"][0]["content"].split("JSON contract (all required fields and types):\n", 1)[1])
     assert supplied == wizard_llm._RESPONSE_FORMAT["json_schema"]["schema"]
-    assert set(supplied["properties"]["ideas"]["items"]["required"]) == set(card)
+    for variant in supplied["properties"]["ideas"]["items"]["anyOf"]:
+        assert set(variant["required"]) == set(card)
     verified, offered = wizard_llm._verified_ideas(raw["ideas"], raw["industry"])
     assert offered == 1 and len(verified) == 1
 
