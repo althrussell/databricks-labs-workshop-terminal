@@ -1,6 +1,8 @@
 # Workshop Terminal: generated-app quality audit and remediation plan
 
-Status on 10 October: **R01–R04 are closed; R05–R10 are proposed**. The owner
+Status on 10 October: **R01–R04 are closed; R05's live browser tasks have passed,
+with garden attendee-identity confirmation pending; R06–R10
+are proposed**. The owner
 has refined the remaining scope around workshop pacing, one upstream UX skill,
 creative freedom and thorough single-deployment qualification. Large-scale fleet
 tests are excluded. After the WT work is complete, publish the final WT release,
@@ -23,8 +25,12 @@ R03 was closed by the project owner on 10 October after merging PR92
 (`2cf9fdd`); its historical test results remain in
 [its report](wizard-journey-r03.md). R04 preparation passed local/CI checks and
 focused live Claude/Codex qualification on the reused Labs app; its
-[closeout](preparation-r04.md) records results and limits. R05–R10 remain
-proposed. On 10 October,
+[closeout](preparation-r04.md) records results and limits. R05's
+[delivery and live report](context-aware-ux-r05.md) records the Impeccable
+installation, native discovery, failed first AppKit theme and subsequent repair.
+Bring the focused R07 APX comparison forward after R05 closeout;
+the framework default remains AppKit until that comparison. R06–R10
+remain proposed. On 10 October,
 the owner reduced R06 to preview handoff and attendee-led iteration; detailed
 browser, UX and fault checks belong to development and release testing.
 The [R02 implementation report](workshop-interaction-contract-r02.md)

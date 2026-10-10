@@ -68,6 +68,39 @@ managed AI/BI with a brief reason; build an app when interaction is the point.
 An explicit request for an app is sufficient. Do not turn this into a routine
 framework decision for the attendee.
 
+Never choose Streamlit unless the attendee explicitly asks for it. A Python
+backend, a quick prototype or an analytics use case is not a Streamlit request.
+Do not switch to Streamlit as a fallback when another scaffold or deploy fails.
+
+### Context-aware UX in a short workshop
+
+Use upstream `impeccable` as the single interface design authority. Apply its
+craft and usability guidance to the actual audience, primary task, content and
+available data; AppKit/APX provide implementation guidance. Honor an explicit
+framework, branding or visual request. The platform does not prescribe the
+app's brand, shell, palette, heading size, sidebar or KPI row.
+
+When importing framework styles, keep custom product colors in scoped,
+distinctively named tokens (for example, `--repair-surface`). AppKit owns generic
+tokens such as `--card`, `--background` and `--foreground`, including its theme
+overrides. Either use that theme consistently or keep the product's surface/text
+pair independent of it; do not mix dark framework surfaces with light-theme text.
+
+Reuse the conversation, optional wizard and tiny README brief to maintain a
+short `PRODUCT.md` in Impeccable's format: users, purpose, platform/stack,
+workflow, available data and material constraints. Label assumptions and unknowns;
+update it when the goal changes. Preserve existing product facts and attendee
+text. Read the installed skill and run its `scripts/impeccable context` once
+from the project before UI work; use its relevant references as needed.
+
+This contract overrides upstream workflow ceremony: choose a task-appropriate
+direction and build in code. A clear request needs no extra confirmation,
+mandatory init interview, concept picker, image-generation step, finish-reviewer,
+documenter or scored repair loop. Use the one brief product exchange above when
+needed, then show a useful preview. Keep durable visual decisions concise in
+`DESIGN.md` when useful. Explicit requests for deeper design exploration remain
+supported; ordinary builds follow the practical preview checks below.
+
 ### Keep a tiny brief for continuity
 
 Automatically maintain the `<!-- workshop-brief:v1 -->` section in `README.md`

@@ -9,88 +9,25 @@ runs in an isolated `CODEX_HOME` + git worktree and therefore only ever sees a
 *committed, project-level* `AGENTS.md`. That is why this content is duplicated
 into both files and committed on the first commit.
 
-## Always build apps with AppKit
+## Building apps
 
-AppKit is the required baseline for every app. Every app, interactive tool, or
-custom UI in this project MUST be built with **AppKit** (Node.js + TypeScript + React) via
-the **`databricks-apps`** skill.
+AppKit (Node.js + TypeScript + React) is the default via `databricks-apps`.
+Respect an explicit framework request; `databricks-app-apx` and
+`databricks-apps-python` cover alternatives. Never choose Streamlit unless the
+attendee explicitly asks for it, including as a fallback after setup/deploy
+failures. A Python backend does not imply Streamlit. Scaffold AppKit through
+`workshop-init-project <name> --appkit` (additional flags after `--`) so policy
+and skills are committed at the project root.
 
-Custom agent backends use **`workshop-agent-bricks-cli`** and its supported
-Python `DurableAgentServer` runtime when the optional CLI is enabled. This is
-an explicit exception for the backend; any attendee-facing UI still uses
-AppKit and the workshop design skills. Scaffold with
-`workshop-init-project <name> --agentbricks`. Deploy that backend with
-`agentbricks deploy`, and its separate AppKit UI with the workshop app tool.
+Use **`impeccable` as the single UX authority** for visible interfaces.
+AppKit/APX guidance owns components, scaffolds and APIs; the shared workshop
+contract owns pacing and product context. Do not impose a common visual shell.
 
-Scaffold with `workshop-init-project <name> --appkit` (add
-`-- --features <plugins>` to pass AppKit flags through). Do not run
-`databricks apps init` directly: it always creates a subdirectory named after
-the app and refuses to write into an existing directory, so calling it by hand
-produces `<name>/<name>` and a manual `mv` that overwrites this file.
-
-Also required:
-
-- **`workshop-design-studio`** for anything with a visible interface, every
-  time. It carries the visual baseline and ready-made AppKit patterns — start
-  from those rather than inventing layout from scratch.
-- **`databricks-app-design`** whenever the app shows any data — KPI page,
-  report, chart, table, query results, or a Genie/chat assistant. It sets chart
-  choice, semantic color, and AI-result provenance, mapped to real AppKit
-  components.
-- **`databricks-lakebase`** for shared or database-backed saved data. Provision it
-  non-interactively — never click resources together in the Databricks UI. Apps
-  with no saved state skip Lakebase. A clearly labeled browser-only demo can
-  use browser storage; do not represent it as shared staff data.
-
-**Where they overlap, the split is by surface.** `databricks-apps` owns
-scaffolding, APIs, and deployment. **Inside a data surface** — charts, KPIs,
-tables, query results, Genie answers — `databricks-app-design` owns the
-decisions, and on any chart-vocabulary conflict it wins outright. **Everywhere
-else** — page composition, navigation, brand, typography, spacing, motion,
-empty-state character — `workshop-design-studio` owns it. An app with no data
-surface (a game, a landing page, a toy) uses the design studio only.
-
-### Design runs silently
-
-Never ask the user a design question — no palette, layout, or creative-direction
-choices — and never narrate the process. Do not mention design systems or
-baselines; describe what the product *does*. Infer the brand from the product,
-and do not impose Databricks styling on it. The exception is when the user
-raises design or supplies a brand kit themselves, which makes it their topic and
-worth discussing properly.
-
-### The visual baseline — non-negotiable, applied while you build
-
-Apply this as you write components, not as a pass afterwards.
-`workshop-design-studio` has ready-made AppKit patterns for the app shell,
-first-run state, KPI row, chart card, table, empty/loading/error states, and
-forms — start from those.
-
-- **Type does the hierarchy** — a real scale with a genuinely large primary
-  heading. Never a page where everything is 14-16px.
-- **Space generously and consistently**, on one rhythm. Cramped default padding
-  is the clearest tell of an untouched template.
-- **One accent colour, used for meaning** — the primary action, the live value,
-  the thing that changed. Colour as decoration is worse than no colour.
-- **Give the page a focal point.** If everything competes equally, nothing reads.
-- **Real loading, empty, and error states** for anything asynchronous.
-- **Considered surfaces** — deliberate background, border, and elevation, not
-  stock cards on stock grey.
-- **Motion on state change**, brief and purposeful, honouring reduced motion.
-- **Accessible by construction:** contrast at least 4.5:1, visible focus states,
-  alt text on meaningful images, and layouts that survive a narrow window. Check
-  the rendered result with the available tooling.
-- **One memorable moment per app.**
-
-After the first deploy, inspect the primary screen and useful task as described
-in the workshop interaction contract. Fix observed defects and describe the
-change in product terms.
-
-For attendee-facing UI, do **not** reach for a Python framework (Streamlit / Dash / Gradio / Flask /
-FastAPI / Reflex), and do not default to `databricks-apps-python` — that is the
-Python-backend alternative. The only exception is when the user **explicitly and
-insistently** asks for a specific Python framework — confirm that's really what
-they want, then proceed. Otherwise it is always AppKit.
+Use `databricks-lakebase` for shared or database-backed saved data, provisioned
+non-interactively. Browser storage is for a labeled single-browser demo.
+Custom agent backends use `workshop-agent-bricks-cli` when enabled; scaffold
+with `workshop-init-project <name> --agentbricks` and deploy with `agentbricks
+deploy`. A separate frontend follows the same UX policy and app deployment tool.
 
 <!-- workshop-contract-slot -->
 

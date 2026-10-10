@@ -16,8 +16,8 @@ Build full-stack Databricks applications using APX framework (FastAPI + React).
 **Do NOT invoke for a generic "build me a Databricks app" request.** The default
 for a new app is **[databricks-apps](../databricks-apps/SKILL.md)** (AppKit —
 Node.js + TypeScript + React), paired with
-[databricks-app-design](../databricks-app-design/SKILL.md) for any screen that
-displays data. Load those instead unless one of the two conditions above holds.
+[impeccable](../impeccable/SKILL.md) for interface UX.
+Load those instead unless one of the two conditions above holds.
 
 **Do NOT invoke if user specifies**: Streamlit, Dash, Node.js, Shiny, Gradio, Flask, or other frameworks.
 
@@ -46,13 +46,11 @@ uvx --from git+https://github.com/databricks-solutions/apx.git apx init
 
 ## Workflow Overview
 
-Total time: 55-70 minutes
-
-1. **Initialize** (5 min) - Start servers, create todos
-2. **Backend** (15-20 min) - Models + routes with mock data
-3. **Frontend** (20-25 min) - Components + pages
-4. **Test** (5-10 min) - Type check + manual verification
-5. **Document** (10 min) - README + code structure guide
+Use only the steps needed for the requested first version. `impeccable` owns
+the interface's composition, navigation and visual choices; the shared workshop
+contract owns pacing, data discovery and truthful preview claims. The CRUD
+examples below explain APX APIs, rather than prescribing a sidebar, table,
+detail page or backend for every app. Reuse prepared data before sample rows.
 
 ## Phase 1: Initialize
 
@@ -62,13 +60,7 @@ mcp-cli call apx/start '{}'
 mcp-cli call apx/status '{}'
 ```
 
-Create TodoWrite with tasks:
-- Start servers ✓
-- Design models
-- Create API routes
-- Add UI components
-- Create pages
-- Test & document
+Keep a short implementation plan when useful; no separate planning ceremony.
 
 ## Phase 2: Backend Development
 
@@ -76,7 +68,7 @@ Create TodoWrite with tasks:
 
 In `src/{app_name}/backend/models.py`:
 
-**Follow 3-model pattern**:
+**For API-backed CRUD, use the 3-model pattern when appropriate**:
 - `EntityIn` - Input validation
 - `EntityOut` - Complete output with computed fields
 - `EntityListOut` - Performance-optimized summary
@@ -91,7 +83,7 @@ In `src/{app_name}/backend/router.py`:
 - Always include `response_model` (enables OpenAPI generation)
 - Always include `operation_id` (becomes frontend hook name)
 - Use naming pattern: `listX`, `getX`, `createX`, `updateX`, `deleteX`
-- Initialize 3-4 mock data samples for testing
+- Use suitable existing data, or clearly labelled samples after discovery
 
 **See [backend-patterns.md](backend-patterns.md) for complete CRUD templates.**
 
@@ -121,21 +113,23 @@ Run the command from project root with `--yes` flag.
 
 ### Create Pages
 
-**List page**: `src/{app_name}/ui/routes/_sidebar/{entity}.tsx`
-- Table view with all entities
-- Suspense boundaries with skeleton fallback
-- Formatted data (currency, dates, status colors)
+Choose the pages and layout for the actual task with `impeccable`. For an
+API-backed CRUD interface, these are implementation examples:
 
-**Detail page**: `src/{app_name}/ui/routes/_sidebar/{entity}.$id.tsx`
-- Complete entity view with cards
-- Update/delete mutations
-- Back navigation
+- A list route can live at `src/{app_name}/ui/routes/_sidebar/{entity}.tsx`
+  when the app actually needs a sidebar. Choose cards, rows or a table for the
+  content and screen size; include an appropriate Suspense fallback for async data.
+- A detail route can live at `src/{app_name}/ui/routes/_sidebar/{entity}.$id.tsx`
+  when a separate detail view serves the task. Expose relevant mutations and a
+  way back; a card layout is optional.
 
 **See [frontend-patterns.md](frontend-patterns.md) for complete page templates.**
 
 ### Update Navigation
 
-In `src/{app_name}/ui/routes/_sidebar/route.tsx`, add new item to `navItems` array.
+If using the sidebar, add relevant navigation in
+`src/{app_name}/ui/routes/_sidebar/route.tsx`. Do not add navigation the task
+does not need.
 
 ## Phase 4: Testing
 
@@ -151,12 +145,10 @@ curl http://localhost:8000/api/{entities}/{id} | jq .
 mcp-cli call apx/get_frontend_url '{}'
 ```
 
-Manually verify in browser:
-- List page displays data
-- Detail page shows complete info
-- Mutations work (update, delete)
-- Loading states work (skeletons)
-- Browser console errors are automatically captured in APX dev logs
+Share the preview promptly and use the workshop contract's practical checks:
+the requested action, saved state if promised and a narrow layout. Verify async
+states when the app has async data. Report unavailable checks accurately;
+development/release testing owns deeper coverage.
 
 ## Phase 5: Deployment & Monitoring
 
@@ -192,26 +184,9 @@ databricks apps logs <app-name> --profile <profile-name>
 
 ## Phase 6: Documentation
 
-Create two markdown files:
-
-**README.md**:
-- Features overview
-- Technology stack
-- How app was created (AI tools + MCP servers used)
-- Application architecture
-- Getting started instructions
-- API documentation
-- Development workflow
-
-**CODE_STRUCTURE.md**:
-- Directory structure explanation
-- Backend structure (models, routes, patterns)
-- Frontend structure (routes, components, hooks)
-- Auto-generated files warnings
-- Guide for adding new features
-- Best practices
-- Common patterns
-- Troubleshooting guide
+Maintain the compact README workshop brief and live URL. Write additional
+architecture, API or code-structure documentation only when requested or useful
+for a handoff; it is not a prerequisite for the attendee's first preview.
 
 ## Key Patterns
 
@@ -222,17 +197,17 @@ Create two markdown files:
 
 ### Frontend
 - **Suspense hooks**: `useXSuspense(selector())`
-- **Suspense boundaries**: Always provide skeleton fallback
+- **Suspense boundaries**: Provide an appropriate fallback for async hooks
 - **Formatters**: Currency, dates, status colors
 - **Never edit**: `lib/api.ts` or `types/routeTree.gen.ts`
 
 ## Success Criteria
 
 - [ ] Type checking passes (`apx dev check` succeeds)
-- [ ] API endpoints return correct data (curl verification)
-- [ ] Frontend displays and mutates data correctly
-- [ ] Loading states work (skeletons display)
-- [ ] Documentation complete
+- [ ] Relevant API endpoints return correct data when the app has a backend
+- [ ] The attendee's useful task works, with saved state when promised
+- [ ] The interface fits its task and remains usable at the requested screen size
+- [ ] The preview and material demo limitations are shared promptly
 
 ## Common Issues
 
@@ -253,7 +228,7 @@ Read these files only when actively writing that type of code or debugging issue
 ## Related Skills
 
 - **[databricks-apps](../databricks-apps/SKILL.md)** - AppKit (Node/TypeScript/React), the default for a new Databricks App
-- **[databricks-app-design](../databricks-app-design/SKILL.md)** - data-screen UX for AppKit apps
+- **[impeccable](../impeccable/SKILL.md)** - task-appropriate UX for every interface
 - **[databricks-apps-python](../databricks-apps-python/SKILL.md)** - for Streamlit, Dash, Gradio, or Flask apps
 - **[databricks-dabs](../databricks-dabs/SKILL.md)** - deploying APX apps via DABs
 - **[databricks-python-sdk](../databricks-python-sdk/SKILL.md)** - backend SDK integration

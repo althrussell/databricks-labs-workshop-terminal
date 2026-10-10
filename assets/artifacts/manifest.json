@@ -8,30 +8,31 @@
       "version": "0.4.0"
     },
     "claude_binary": {
-      "sha256": "4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358",
-      "source": "https://downloads.claude.ai/claude-code-releases/2.1.295/linux-x64/claude",
-      "version": "2.1.295"
+      "sha256": "24972e3bc859fab2b46ed4c1e51f7d6130f06d3bd550811a114640de3370d0de",
+      "source": "https://downloads.claude.ai/claude-code-releases/2.1.296/linux-x64/claude",
+      "version": "2.1.296"
     },
     "claude_installer": {
       "sha256": "cde4f1702d3b1695f92b73d26888364e17bca476e17f0fd676484c951d36c125",
       "source": "claude-code-bootstrap.sh",
       "upstream": "https://claude.ai/install.sh",
-      "version": "2.1.295"
+      "version": "2.1.296"
     },
     "codex_native_package_linux_x64": {
-      "executable_sha256": "50ed828f357c655a3c82054d346cab8434f24901f14ec19b8267571bdd008b38",
-      "sha256": "dbd342e7ad896d53dbb505e926f1b82314b79a9d33e209b0b7616ced6b06c983",
-      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.162.0-linux-x64.tgz",
-      "version": "0.162.0-linux-x64"
+      "executable_sha256": "628e35487d888a28f0427fc37501da529dd3d81fcbad7a2c3421c1e8670d92e1",
+      "sha256": "7417711678b464eee70664126e39e88bb3c84c2928da0e71f14b56e04ff5c09f",
+      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.162.1-linux-x64.tgz",
+      "version": "0.162.1-linux-x64"
     },
     "codex_npm_launcher_package": {
-      "sha256": "6cb67d6e7631af84f27580d8fe228ac437c34181d370dc5c5a5819e014c8c860",
-      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.162.0.tgz",
-      "version": "0.162.0"
+      "sha256": "0b4b2e33a65883e4f69c903484d8dd7770b3cb8b324f520068b6fd85d42b65ea",
+      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.162.1.tgz",
+      "version": "0.162.1"
     },
     "databricks_agent_skills": {
       "commit": "ba45d10df7413de14c32937bbd584aeee17d22a2",
       "content_sha256": "0ddf4467590698fd17b98ef7035ad4bee90e2a082a34467489e48c53da10d98a",
+      "effective_content_sha256": "3ad1b49a7d4bdf684371f260fbe6e9ac0eea54674013be04fb1e6f00d0956f91",
       "source": "https://github.com/databricks/databricks-agent-skills.git",
       "version": "v0.2.28"
     },
@@ -45,6 +46,22 @@
       "source": "databricks-cli-install.sh",
       "upstream": "https://raw.githubusercontent.com/databricks/setup-cli/v1.20.0/install.sh",
       "version": "1.20.0"
+    },
+    "impeccable_engine_linux_x64": {
+      "sha256": "3d31ec1a664ac35c815ea1d7c10abad1155ce364d0f461157eb837a34368efb6",
+      "source": "https://github.com/pbakaus/impeccable/releases/download/engine-v0.1.14/impeccable-linux-x64",
+      "version": "0.1.14"
+    },
+    "impeccable_npm_launcher": {
+      "sha256": "32cd058c6d57da9294335ea668228fd8aaef7f949149df60b422aa845be21b16",
+      "source": "https://registry.npmjs.org/impeccable/-/impeccable-4.1.0.tgz",
+      "version": "4.1.0"
+    },
+    "impeccable_skill_bundle": {
+      "content_sha256": "4ca760322bb282a22906fa3ff106896b9111dd0264fe1e82e76c0e7b931db950",
+      "sha256": "8b445a7529581a36626b328c3077e3d3dd7fbf247521e20ec8759ca939f77470",
+      "source": "https://github.com/pbakaus/impeccable/releases/download/skill-v4.5.2/universal.zip",
+      "version": "4.5.2"
     },
     "node_linux_arm64": {
       "sha256": "6ad1325edbdb5649c379b75a237147a666c95d4f9ae8d340fef2d1575d289ad2",

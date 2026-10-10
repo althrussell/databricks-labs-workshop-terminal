@@ -2,15 +2,15 @@
 """Re-vendor assets/skills from the skills ref the reviewed manifest pins.
 
 The vendored tree is the offline fallback for the boot-time overlay, so it must
-be the *same* content boot would install. This clones the manifest's pinned
+be the *same projected* content boot would install. This clones the manifest's pinned
 commit, verifies the clone against the manifest's ``content_sha256``, and only
 then replaces the upstream-sourced skill directories -- leaving the fork-only
-skills (the apx skill, the design studio, promote, and the refresh skill itself)
+skills (APX, Impeccable, Agent Bricks, promote and the refresh workflow)
 untouched.
 
 ``--check`` verifies the committed fallback without rewriting it, which is what
 CI runs; a drift means an operator hand-edited a vendored skill or bumped the
-manifest without re-vendoring.
+manifest/projection without re-vendoring.
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from server.bootstrap import install  # noqa: E402
 from server.bootstrap.artifacts import directory_checksum, load_manifest  # noqa: E402
+from server.bootstrap.skill_projection import project_skills  # noqa: E402
 
 
 VENDORED_DIR = os.path.normpath(
@@ -83,7 +84,11 @@ def _clone_reviewed_skills(destination: str) -> str:
 def refresh(*, write: bool) -> int:
     with tempfile.TemporaryDirectory(prefix="refresh-skills-") as clone:
         upstream = _clone_reviewed_skills(clone)
+        project_skills(upstream)
         upstream_names = _directories(upstream)
+        entry = load_manifest("")["artifacts"]["databricks_agent_skills"]
+        if directory_checksum(upstream, upstream_names) != entry["effective_content_sha256"]:
+            raise SystemExit("reviewed workshop projection differs; regenerate the manifest")
         vendored_names = _directories(VENDORED_DIR)
         retired = sorted(vendored_names - FORK_ONLY - upstream_names)
         added = sorted(upstream_names - vendored_names)
