@@ -28,6 +28,9 @@ each app's UX rather than a shared shell or palette.
   context with the existing README brief and optional wizard. It overrides
   mandatory interviews, concept choices and review machinery for ordinary
   workshop builds. Impeccable owns craft; platform skills own APIs/scaffolds.
+- The forked APX guide treats CRUD/sidebar/table patterns as optional API
+  examples and removes fixed build-time estimates and mandatory documentation.
+  Refreshing/pinning APX tooling and comparing frameworks remain R07 work.
 - Claude 2.1.296 and Codex 0.162.1 were refreshed from the latest-release audit
   before qualification. The chosen live models remain Opus 5.5 and GPT Sol 6.1.
 
