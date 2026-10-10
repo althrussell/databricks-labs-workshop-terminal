@@ -45,13 +45,15 @@ Focused regressions cover raw/projected provenance, retired routes, warm trees,
 home links, project copies, preserved notes and real Git worktree content.
 CI adds the same supported-installer check on Linux.
 
-All eight CI jobs passed on `e8d2c0e`: Python 3.11/3.12, frontend build/tests,
+All eight CI jobs passed on `f4145ce`: Python 3.11/3.12, frontend build/tests,
 packaged runtime, actual Linux Impeccable installation, rendered wizard,
 evaluator API and Agent Bricks CLI. Raw receipts and screenshots remain outside
 Git.
 
-Live tests reuse `wt-eval-r03-1009-f601-wt`, with wizard and evaluation disabled,
-as `labuser+1@awsbricks.com`. They use ordinary attendee sentences without
+Live builds reuse `wt-eval-r03-1009-f601-wt`, with wizard and evaluation disabled,
+as `labuser+1@awsbricks.com`. The repair preview's attendee access is qualified;
+the garden preview now opens, with its signed-in principal awaiting confirmation.
+The builds use ordinary attendee sentences without
 framework or visual instructions. No CT code, CT call or working CT deployment
 was changed. The current live WT package is `effb42ee570bc4cf275be270d3edf40bfd54e39a`
 with SHA256 `26cd4dc7e9f7a7aaa91339331026222e4ec1c65051ed1b8bb570dfd460bd4c30`,
@@ -65,14 +67,13 @@ been live qualified here.
 | Path | Observed result |
 | --- | --- |
 | Claude 2.1.296 / Opus 5.5 | Created a phone repair-cafe queue, read Impeccable and ran context once. The original preview failed contrast; attendee feedback repaired it. A fresh final-package build has readable scoped colours. Its reused-origin saved-data failure was also repaired through attendee feedback: earlier jobs returned, and independent add/finish/reload passed at 390px without horizontal overflow. |
-| Codex 0.162.1 / GPT Sol 6.1 | Created a distinct garden collection and planting plan from a simple phone-app request. Native trace confirms seven Impeccable instruction/reference reads and one context invocation. Used scoped product tokens under the corrected policy. Build and saved-plan tests passed; it shared the preview and accurately disclosed unavailable native browser checks. Independent browser tasks remain pending new-app attendee consent. |
+| Codex 0.162.1 / GPT Sol 6.1 | Created a distinct garden collection and planting plan from a simple phone-app request. Native trace confirms seven Impeccable instruction/reference reads and one context invocation. Used scoped product tokens under the corrected policy. Build and saved-plan tests passed; it shared the preview and accurately disclosed unavailable native browser checks. Independent desktop/390px appearance, Sunny/Shady filters, search, add/remove, notes and reload passed. The generated app does not display the signed-in account; attendee-principal confirmation remains pending. |
 | Isolated native discovery | Actual Codex `skills/list` with empty HOME/CODEX_HOME and Claude's native startup inventory with an isolated config/home both discovered repository Impeccable and neither retired UX skill in real detached Git worktrees. The Claude home contained no skills, and its worker was restricted to Read/Skill with no MCP servers. Both actual assets and launchers matched the reviewed skill digest and engine 0.1.14. Temporary worktrees were removed and the app files retained. |
 
 The generated repair queue and garden collection choose different navigation,
 composition, typography and content for their tasks, rather than sharing a
 dashboard shell. Neither build required a design interview or concept picker.
-The repair preview visibly labels sample data and browser-only storage; the
-garden source includes those disclosures, with browser verification pending.
+Both previews visibly label sample data and browser-only storage.
 Native handoffs distinguish compilation and local checks from rendered browser
 verification.
 
@@ -92,8 +93,8 @@ The first Claude/Opus 5.5 repair-desk preview exposed an AppKit theme collision:
 generic `--card` was overridden for browser dark mode while custom text stayed
 dark. Compilation and simulated DOM checks missed the rendered contrast defect.
 The workshop integration now requires scoped product tokens or consistent use
-of the framework theme. The feedback repair passed; the fresh Codex build's
-independent browser qualification is still pending. The failed first Claude
+of the framework theme. The feedback repair and the fresh Codex build's
+independent rendered checks passed. The failed first Claude
 preview is retained. A fresh Claude session on the final package rebuilt the
 same phone workflow as Repair Desk in approximately four minutes, loaded the
 actual platform/Impeccable skills and used scoped product tokens. Its rendered
@@ -113,6 +114,23 @@ reachable within the viewport, the text was readable and there was no horizontal
 overflow. Carry schema compatibility and preserving earlier app data into R08's
 focused continuity checks. This repair does not erase the initial saved-data
 failure.
+
+The independent garden browser check used the existing `pollinator-pocket` app
+identity and compute. Desktop pairs the plant collection with a planting-plan
+panel; at 390px, Browse plants and My planting plan are separate views, so the
+plan is reachable without scrolling past all plant cards. Sunny returned seven
+plants and excluded Native violet; Shady returned six including Native violet.
+Searching for violet narrowed the collection to that plant. Adding Native violet
+and Cut-leaf daisy produced a two-plant plan. A fictional note was entered,
+Cut-leaf daisy removed, and a reload preserved Native violet and the exact note.
+Desktop reload retained the same plan. Phone document/body width was 380px within
+the 390px viewport, with readable text and no horizontal overflow. The temporary
+viewport override was reset. A minor copy defect, `1 plants` in search results,
+is recorded without treating it as a functional failure. Screenshots remain
+outside Git. The app does not identify its browser principal, so these functional
+results do not yet establish that the garden check ran as the intended attendee;
+the identity-confirmation question remains pending. R05 acceptance and PR merge
+remain open for that confirmation.
 
 Data discovery remains a material limitation: Claude consulted the supplied
 demo-table index but did not query the working catalog, so its original claim

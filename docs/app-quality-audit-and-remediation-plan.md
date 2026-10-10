@@ -1,6 +1,7 @@
 # Workshop Terminal: generated-app quality audit and remediation plan
 
-Status on 10 October: **R01–R04 are closed; R05 is in live acceptance; R06–R10
+Status on 10 October: **R01–R04 are closed; R05's live browser tasks have passed,
+with garden attendee-identity confirmation pending; R06–R10
 are proposed**. The owner
 has refined the remaining scope around workshop pacing, one upstream UX skill,
 creative freedom and thorough single-deployment qualification. Large-scale fleet
@@ -27,8 +28,8 @@ focused live Claude/Codex qualification on the reused Labs app; its
 [closeout](preparation-r04.md) records results and limits. R05's
 [delivery and live report](context-aware-ux-r05.md) records the Impeccable
 installation, native discovery, failed first AppKit theme and subsequent repair.
-Bring the focused R07 APX comparison forward after R05's remaining browser
-checks; the framework default remains AppKit until that comparison. R06–R10
+Bring the focused R07 APX comparison forward after R05 closeout;
+the framework default remains AppKit until that comparison. R06–R10
 remain proposed. On 10 October,
 the owner reduced R06 to preview handoff and attendee-led iteration; detailed
 browser, UX and fault checks belong to development and release testing.
