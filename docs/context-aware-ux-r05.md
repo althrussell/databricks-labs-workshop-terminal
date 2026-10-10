@@ -44,3 +44,10 @@ harness/worker discovery, useful first previews, working controls and narrow
 layouts. Record observed results here before closing R05. Raw receipts and
 screenshots remain outside Git. CT code and the working CT deployment stay
 unchanged.
+
+The first Claude/Opus 5.5 repair-desk preview exposed an AppKit theme collision:
+generic `--card` was overridden for browser dark mode while custom text stayed
+dark. Compilation and simulated DOM checks missed the rendered contrast defect.
+The workshop integration now requires scoped product tokens or consistent use
+of the framework theme. Attendee feedback repair and fresh-build qualification
+of that correction are in progress; the failed first preview is retained.

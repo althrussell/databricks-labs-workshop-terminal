@@ -76,6 +76,12 @@ available data; AppKit/APX provide implementation guidance. Honor an explicit
 framework, branding or visual request. The platform does not prescribe the
 app's brand, shell, palette, heading size, sidebar or KPI row.
 
+When importing framework styles, keep custom product colors in scoped,
+distinctively named tokens (for example, `--repair-surface`). AppKit owns generic
+tokens such as `--card`, `--background` and `--foreground`, including its theme
+overrides. Either use that theme consistently or keep the product's surface/text
+pair independent of it; do not mix dark framework surfaces with light-theme text.
+
 Reuse the conversation, optional wizard and tiny README brief to maintain a
 short `PRODUCT.md` in Impeccable's format: users, purpose, platform/stack,
 workflow, available data and material constraints. Label assumptions and unknowns;
