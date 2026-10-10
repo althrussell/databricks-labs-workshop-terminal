@@ -33,24 +33,74 @@ each app's UX rather than a shared shell or palette.
   Refreshing/pinning APX tooling and comparing frameworks remain R07 work.
 - Claude 2.1.296 and Codex 0.162.1 were refreshed from the latest-release audit
   before qualification. The chosen live models remain Opus 5.5 and GPT Sol 6.1.
+- Project preparation excludes installed skill assets from AppKit's root-wide
+  ESLint scan, without changing application rules or upstream skill bytes. A
+  clean tracked configuration is committed for workers; attendee edits remain
+  uncommitted and unknown/symlinked configurations are preserved.
 
-## Validation status
+## Validation status on 10 October
 
 The pinned supported installer and native engine discovery passed on macOS.
 Focused regressions cover raw/projected provenance, retired routes, warm trees,
 home links, project copies, preserved notes and real Git worktree content.
 CI adds the same supported-installer check on Linux.
 
-Live acceptance is pending: reuse the isolated CT-compatible Labs WT app and
-build contrasting apps from simple simulated attendee inputs. Verify actual
-harness/worker discovery, useful first previews, working controls and narrow
-layouts. Record observed results here before closing R05. Raw receipts and
-screenshots remain outside Git. CT code and the working CT deployment stay
-unchanged.
+All eight CI jobs passed on `90ad0ce`: Python 3.11/3.12, frontend build/tests,
+packaged runtime, actual Linux Impeccable installation, rendered wizard,
+evaluator API and Agent Bricks CLI. Raw receipts and screenshots remain outside
+Git.
+
+Live tests reuse `wt-eval-r03-1009-f601-wt`, with wizard and evaluation disabled,
+as `labuser+1@awsbricks.com`. They use ordinary attendee sentences without
+framework or visual instructions. No CT code, CT call or working CT deployment
+was changed. The current live WT package is `87723ba6c29ef4be23965ccb69eea16e808a724e`
+with SHA256 `48cb1e87ad1c8e27522341d9681f922290aa8fe841b342fe84e3d93b473222ce`,
+deployment `01f1c489d0d913cdae6517c6ce701464`. The subsequent APX guide cleanup
+does not change the tested default AppKit/Impeccable path; APX has not been live
+qualified here.
+
+| Path | Observed result |
+| --- | --- |
+| Claude 2.1.296 / Opus 5.5 | Created a phone repair-cafe queue, read Impeccable and ran context once. The first preview failed rendered contrast. An ordinary attendee feedback request produced a working correction: add a request, finish it and reload all passed independently, with no horizontal overflow at 390px. |
+| Codex 0.162.1 / GPT Sol 6.1 | Created a distinct garden collection and planting plan from a simple phone-app request. Native trace confirms seven Impeccable instruction/reference reads and one context invocation. Used scoped product tokens under the corrected policy. Build and saved-plan tests passed; it shared the preview and accurately disclosed unavailable native browser checks. Independent browser tasks remain pending new-app attendee consent. |
+| Isolated native discovery | Actual Codex `skills/list` with empty HOME/CODEX_HOME in a detached Git worktree discovered enabled repository Impeccable, neither retired UX skill, and no discovery errors. Reading the actual asset and running its launcher returned the reviewed skill digest and engine 0.1.14. |
+
+The repair queue and garden collection choose different navigation, composition,
+typography and content for their tasks, rather than sharing a dashboard shell.
+Neither build required a design interview or concept picker. Both visibly label
+sample data and browser-only storage. Native handoffs distinguish compilation
+and local checks from rendered browser verification.
+
+The Codex build also exposed an integration defect: AppKit's `eslint .` scanned
+Impeccable's bundled JavaScript, producing 740 skill-asset problems plus three
+in the scaffold's `server/example.test.ts`. The corrected actual helper was
+downloaded as a checksum-verified fixture and run against the existing live
+project. The 740 skill problems disappeared; the three application problems
+remained and the committed configuration retained the exclusions for worktrees.
+All 26 preparation regressions pass, including preservation of attendee edits,
+application rules and unrelated staged files. This narrow live helper check is
+separate from the WT package identity above; the correction has not yet been
+redeployed as a WT package. The initial garden build took 12m 27s, including
+deployment recovery; it is not a comparison measurement against APX.
 
 The first Claude/Opus 5.5 repair-desk preview exposed an AppKit theme collision:
 generic `--card` was overridden for browser dark mode while custom text stayed
 dark. Compilation and simulated DOM checks missed the rendered contrast defect.
 The workshop integration now requires scoped product tokens or consistent use
-of the framework theme. Attendee feedback repair and fresh-build qualification
-of that correction are in progress; the failed first preview is retained.
+of the framework theme. The feedback repair passed; the fresh Codex build's
+independent browser qualification is still pending. The failed first Claude
+preview is retained, and a fresh corrected Claude first preview has not been
+rerun.
+
+Data discovery remains a material limitation: Claude consulted the supplied
+demo-table index but did not query the working catalog, so its original claim
+that no repair-cafe data existed in the workspace was too broad. Codex attempted
+a targeted working-schema lookup and accurately recorded that it was unavailable
+before using labelled samples. Carry bounded lookup and truthful fallback claims
+into the small R06 follow-up.
+
+Bring the focused R07 framework comparison forward next: refresh/pin the real
+APX CLI and skill, then compare one representative attendee brief under the same
+Impeccable guidance. Use task usability, reliable setup and time to preview to
+choose the default; Genie-builder familiarity is secondary. No framework switch
+or APX live qualification is claimed by R05.

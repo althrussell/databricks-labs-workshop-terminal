@@ -318,6 +318,78 @@ def test_helper_reports_scaffold_and_commit_failure_in_json(attendee, monkeypatc
     assert Path(status["project_path"]).is_dir()
 
 
+@pytest.mark.parametrize("attendee_edit", [False, True])
+def test_appkit_skill_lint_exclusion_preserves_rules_and_attendee_changes(attendee, attendee_edit):
+    from server import user_content as content
+
+    content.provision(attendee)
+    env = {**os.environ, "HOME": attendee.home, "GIT_CONFIG_GLOBAL": "/dev/null",
+           "GIT_AUTHOR_NAME": "Attendee", "GIT_AUTHOR_EMAIL": "alice@example.com",
+           "GIT_COMMITTER_NAME": "Attendee", "GIT_COMMITTER_EMAIL": "alice@example.com"}
+    helper = str(Path(content._ASSETS) / "bin/workshop-init-project")
+
+    def run():
+        result = subprocess.run(["bash", helper, "lint-app"], env=env,
+                                capture_output=True, text=True, timeout=30)
+        assert result.returncode == 0, result.stderr
+
+    def git(*args):
+        return subprocess.run(["git", "-C", str(project), *args], env=env,
+                              capture_output=True, text=True, check=True).stdout
+
+    run()
+    project = Path(attendee.home) / "projects/lint-app"
+    config = project / "eslint.config.js"
+    original = "export default tseslint.config(\n  { rules: { 'no-unused-vars': 'error' } },\n);\n"
+    config.write_text(original)
+    git("add", "eslint.config.js")
+    git("commit", "-m", "Application lint rules")
+    (project / "attendee.txt").write_text("Work in progress")
+    git("add", "attendee.txt")
+    if attendee_edit:
+        config.write_text(original + "// My application-specific note\n")
+
+    run()
+    updated = config.read_text()
+    assert "**/.agents/skills/**" in updated
+    assert "**/.claude/skills/**" in updated
+    assert "{ rules: { 'no-unused-vars': 'error' } }" in updated
+    assert "attendee.txt" not in git("ls-tree", "--name-only", "HEAD")
+    assert "attendee.txt" in git("diff", "--cached", "--name-only")
+    if attendee_edit:
+        assert "My application-specific note" in updated
+        assert git("show", "HEAD:eslint.config.js") == original
+    else:
+        assert git("show", "HEAD:eslint.config.js") == updated
+    revision = git("rev-parse", "HEAD")
+    run()
+    assert config.read_text() == updated
+    assert git("rev-parse", "HEAD") == revision
+
+
+def test_appkit_lint_exclusion_preserves_other_configs_and_symlinks(attendee, tmp_path):
+    from server import user_content as content
+
+    content.provision(attendee)
+    env = {**os.environ, "HOME": attendee.home, "GIT_CONFIG_GLOBAL": "/dev/null",
+           "GIT_AUTHOR_NAME": "Attendee", "GIT_AUTHOR_EMAIL": "alice@example.com",
+           "GIT_COMMITTER_NAME": "Attendee", "GIT_COMMITTER_EMAIL": "alice@example.com"}
+    helper = str(Path(content._ASSETS) / "bin/workshop-init-project")
+    command = ["bash", helper, "custom-lint"]
+    result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    project = Path(attendee.home) / "projects/custom-lint"
+    external = tmp_path / "attendee-eslint.js"
+    external.write_text("export default tseslint.config({ rules: {} });\n")
+    (project / "eslint.config.js").symlink_to(external)
+    custom = project / "eslint.config.mjs"
+    custom.write_text("export default [{ rules: { 'no-unused-vars': 'error' } }];\n")
+    result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    assert external.read_text() == "export default tseslint.config({ rules: {} });\n"
+    assert custom.read_text() == "export default [{ rules: { 'no-unused-vars': 'error' } }];\n"
+
+
 def test_fresh_scaffold_source_is_committed_for_workers(attendee, tmp_path):
     from server import user_content as content
 
