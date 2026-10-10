@@ -783,8 +783,8 @@ def list_agents(principal: Principal = Depends(get_current_user)):
         # "this will fail on a stale credential" from "still installing" so the
         # card can say which one it is instead of spinning.
         blocked = agents.launch_block(agent, principal.name) if installed else ""
-        # An install step that ended badly never retries, so the card would spin
-        # for the rest of the workshop. Say what failed instead.
+        # A failed step needs explicit recovery; show a setup retry instead of
+        # spinning or trying to launch the broken harness.
         install_error = "" if installed else install.failure_for(requires)
         catalog.append(
             {
@@ -798,6 +798,16 @@ def list_agents(principal: Principal = Depends(get_current_user)):
             }
         )
     return {"agents": catalog, "credential": credential_manager.status()}
+
+
+@app.post("/api/agents/{agent_id}/retry-setup")
+def retry_agent_setup(agent_id: str, principal: Principal = Depends(get_current_user)):
+    agent = agents.get_agent(agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Unknown or unavailable agent")
+    # Setup recovery is independent of session switching, credentials and
+    # onboarding. In particular, it must not stop an already running harness.
+    return {"retrying": install.retry_failed(agent.get("requires", []))}
 
 
 class CreateSessionBody(BaseModel):

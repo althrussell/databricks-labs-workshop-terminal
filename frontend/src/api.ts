@@ -384,6 +384,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  retryAgentSetup: (agentId: string) =>
+    request<{ retrying: boolean }>(`/api/agents/${encodeURIComponent(agentId)}/retry-setup`, { method: "POST" }),
   config: () => request<AppConfig>("/api/config"),
   setupStatus: () =>
     request<{

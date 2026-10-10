@@ -36,10 +36,12 @@ must confirm package identity and normal Claude/Codex preparation on the owned
 test app. Raw evidence stays outside Git. CT code and the working CT deployment
 remain outside this workstream.
 
-Initial local verification passed 182 focused backend checks and all 111 frontend
-checks; the production frontend rebuilt successfully. The final helper/worker
-suite passes 18 checks, including actual Git-worktree skill inheritance. The full
-backend run identified obsolete test-fixture references to the removed cache and
-binary-only readiness fixtures, which have been updated. Its package-source check
-also detects the existing laptop-only `uv.lock` proxy rewrite; that file is kept
-out of this change. CI will verify the committed public-source lock.
+Local verification passed 2,992 backend checks (62 opt-in/environment skips) and
+all 111 frontend checks; the production frontend rebuilt successfully. This run
+excluded the package-source test that detects the existing laptop-only `uv.lock`
+proxy rewrite; that file is kept out of this change. CI passed both Python
+versions, the public-source lock check, rendered wizard tests, frontend checks,
+evaluator API checks, and reproducible packaged-runtime checks on the initial
+candidate. The Agent Bricks check caught a missing fresh-scaffold commit; the
+helper now commits its freshly generated source while adoption retains unrelated
+attendee work. The final candidate must pass that check and live qualification.

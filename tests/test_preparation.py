@@ -134,6 +134,22 @@ def test_launcher_follows_reinstalled_binary(attendee, tmp_path):
     assert link.read_text() == "new"
 
 
+def test_redeploy_refreshes_links_into_previous_package(attendee, monkeypatch, tmp_path):
+    from server import user_content as content
+    from server.bootstrap import install
+
+    monkeypatch.setattr(install, "skills_ready", lambda: False)
+    for version in ("old-package", "new-package"):
+        assets = tmp_path / version
+        skill = assets / "skills/workshop-example"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(version)
+        monkeypatch.setattr(content, "_ASSETS", str(assets))
+        content._link_skills(attendee)
+    for relative in content.HARNESS_SKILL_DIRS.values():
+        assert (Path(attendee.home) / relative / "workshop-example/SKILL.md").read_text() == "new-package"
+
+
 @pytest.mark.parametrize("wizard", ["true", "false"])
 def test_direct_launch_without_wizard_brief(client, launchable_agents, monkeypatch, wizard):
     monkeypatch.setenv("WORKSHOP_ONBOARDING_WIZARD", wizard)
@@ -206,6 +222,22 @@ def test_selected_dependency_readiness_and_retry(monkeypatch):
     assert state["agentbricks"]["status"] == "error"
 
 
+def test_setup_retry_keeps_the_active_harness(client, launchable_agents, monkeypatch):
+    import server.main as main
+
+    response = client.post("/api/sessions", json={"agent_id": "claude"}, headers=ALICE)
+    assert response.status_code == 200
+    session = main.session_manager.active()
+    attempted = []
+    monkeypatch.setattr(main.install, "retry_failed", lambda requires: attempted.append(requires) or True)
+    response = client.post("/api/agents/codex/retry-setup", headers=ALICE)
+    assert response.status_code == 200 and response.json()["retrying"] is True
+    assert attempted == [["codex"]]
+    assert main.session_manager.active() is session
+    assert not session.exited
+    assert client.post("/api/agents/not-offered/retry-setup", headers=ALICE).status_code == 404
+
+
 def test_helper_refreshes_memory_without_committing_attendee_changes(attendee, tmp_path):
     from server import user_content as content
 
@@ -260,6 +292,28 @@ def test_helper_reports_scaffold_and_commit_failure_in_json(attendee, monkeypatc
     assert status["commit"] == "failed"
     assert "NOT committed" in result.stderr
     assert Path(status["project_path"]).is_dir()
+
+
+def test_fresh_scaffold_source_is_committed_for_workers(attendee, tmp_path):
+    from server import user_content as content
+
+    content.provision(attendee)
+    shim = tmp_path / "shim"
+    shim.mkdir()
+    (shim / "databricks").write_text(
+        '#!/bin/sh\nmkdir -p "$HOME/projects/fresh"\nprintf "source" > "$HOME/projects/fresh/server.ts"\n'
+    )
+    (shim / "databricks").chmod(0o755)
+    env = {**os.environ, "HOME": attendee.home, "PATH": f"{shim}:{os.environ['PATH']}",
+           "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_AUTHOR_NAME": "Attendee", "GIT_AUTHOR_EMAIL": "alice@example.com",
+           "GIT_COMMITTER_NAME": "Attendee", "GIT_COMMITTER_EMAIL": "alice@example.com"}
+    result = subprocess.run(["bash", str(Path(content._ASSETS) / "bin/workshop-init-project"),
+                             "fresh", "--appkit", "--json"], env=env, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    project = Path(attendee.home) / "projects/fresh"
+    result = subprocess.run(["git", "-C", str(project), "show", "HEAD:server.ts"],
+                            env=env, capture_output=True, text=True, check=True)
+    assert result.stdout == "source"
 
 
 def test_helper_migrates_legacy_memory_retaining_notes(attendee):

@@ -422,10 +422,8 @@ def skills_ready() -> bool:
 def failure_for(requires) -> str:
     """Why a card needing these binaries will never go ready — ``""`` if it may.
 
-    An install step that ends in ``error`` or ``degraded`` is terminal: nothing
-    retries it, so the spinner an attendee is watching will spin until they give
-    up and ask. Reporting the step and its message turns that into something an
-    operator can act on and an attendee can stop waiting for.
+    A step ending in ``error`` or ``degraded`` needs an explicit setup retry.
+    Reporting the dependency lets the card offer recovery instead of a spinner.
     """
     with _state_lock:
         steps = dict(_state)

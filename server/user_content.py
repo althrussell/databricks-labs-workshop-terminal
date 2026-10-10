@@ -8,7 +8,7 @@ Refreshes before local/remote launches after the HOME is bootstrapped:
                               mandate as project-level CLAUDE.md + AGENTS.md (the
                               only channel Omnigent's worktree-bound Codex worker
                               reads), backed by ~/.config/workshop/project-memory.md
-- ~/.claude/agents/         — kept empty; the TDD subagent chain was removed
+- ~/.claude/agents/         — retired workshop chain removed; custom agents kept
 - ~/.claude/skills          — per-skill symlinks into the shared skills library
                               (reviewed databricks-agent-skills, fetched at boot);
                               ~/.codex/skills gets the same set, which is where
@@ -30,7 +30,6 @@ import os
 import re
 from datetime import datetime, timezone
 import secrets
-import shutil
 import subprocess
 
 from . import config
@@ -609,8 +608,21 @@ def _link_skills(user: User) -> None:
         for name in os.listdir(source)
         if os.path.isfile(os.path.join(source, name, "SKILL.md"))
     )
+    # Packaged fallback paths change with PEX versions. Remember ownership so
+    # a link into the previous package is refreshed on the next deployment.
+    state_path = os.path.join(user.home, ".config", "workshop", "skill-links.json")
+    try:
+        with open(state_path) as f:
+            previous = json.load(f).get("roots", [])
+    except (OSError, ValueError, AttributeError):
+        previous = []
+    if not isinstance(previous, list):
+        previous = []
+    roots = tuple(sorted({source, shared_skills_dir(), os.path.join(_ASSETS, "skills"),
+                          *(root for root in previous if isinstance(root, str) and os.path.isabs(root))}))
     for relative in HARNESS_SKILL_DIRS.values():
-        _link_skill_set(source, os.path.join(user.home, relative), names)
+        _link_skill_set(source, os.path.join(user.home, relative), names, owned_roots=roots)
+    _atomic_write(state_path, json.dumps({"version": 1, "roots": roots}), 0o600)
     _write_aitools_state(user, source, names)
 
 
@@ -688,7 +700,7 @@ def _write_aitools_state(user: User, source: str, names: list[str]) -> None:
         json.dump(payload, f, indent=2)
 
 
-def _link_skill_set(source: str, target: str, names: list[str]) -> None:
+def _link_skill_set(source: str, target: str, names: list[str], *, owned_roots: tuple[str, ...] = ()) -> None:
     """Symlink each skill into one harness directory, per-skill like the CLI.
 
     Per-skill links rather than one directory link: a harness or the attendee
@@ -699,7 +711,7 @@ def _link_skill_set(source: str, target: str, names: list[str]) -> None:
     if os.path.islink(target):
         os.unlink(target)
     os.makedirs(target, exist_ok=True)
-    managed_roots = (os.path.abspath(shared_skills_dir()), os.path.join(_ASSETS, "skills"))
+    managed_roots = (*owned_roots, os.path.abspath(shared_skills_dir()), os.path.join(_ASSETS, "skills"))
     for name in os.listdir(target):
         link = os.path.join(target, name)
         if name not in names and os.path.islink(link):
@@ -714,10 +726,15 @@ def _link_skill_set(source: str, target: str, names: list[str]) -> None:
                 continue  # preserve attendee-owned links too
             if os.readlink(link) == os.path.join(source, name):
                 continue
-            os.unlink(link)
         elif os.path.exists(link):
             continue  # the attendee's own copy wins
-        os.symlink(os.path.join(source, name), link)
+        temporary = link + ".workshop-" + secrets.token_hex(6)
+        try:
+            os.symlink(os.path.join(source, name), temporary)
+            os.replace(temporary, link)
+        finally:
+            if os.path.lexists(temporary):
+                os.unlink(temporary)
 
 
 # -- ~/.claude.json (onboarding + MCP servers) --

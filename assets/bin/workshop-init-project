@@ -81,12 +81,13 @@ fi
 PROJECTS="${HOME}/projects"
 DEST="${PROJECTS}/${NAME}"
 TEMPLATE="${HOME}/.config/workshop/project-memory.md"
-# The template carries this marker so re-running the helper (or adopting a
-# project it already seeded) is a no-op rather than a second copy.
-MARKER="<!-- workshop-project-memory -->"
 APPKIT_VERSION="${APPKIT_VERSION:-0.87.0}"
 
 mkdir -p "$PROJECTS"
+CREATED=0
+if [ ! -e "$DEST" ]; then
+  CREATED=1
+fi
 if [ -L "$DEST" ] || { [ -e "$DEST" ] && [ ! -d "$DEST" ]; }; then
   echo "workshop-init-project: target must be a project directory, not a symlink or file" >&2
   exit 2
@@ -364,6 +365,14 @@ if [ -f .agents/workshop-skills.json ]; then
       fi
     done
   done < <(python3 -c 'import json; d=json.load(open(".agents/workshop-skills.json")); print("\n".join(sorted(set(d["skills"]) | set(d["retired"]))))')
+fi
+if [ "$CREATED" = "1" ]; then
+  # Everything in a fresh scaffold belongs to this invocation. Workers need
+  # its source/config as well as the policy. Adoption never stages other files.
+  git add -A
+  while IFS= read -r -d '' CREATED_FILE; do
+    MEMORY_FILES+=("$CREATED_FILE")
+  done < <(git ls-files -z)
 fi
 COMMIT="up_to_date"
 if ! git diff --cached --quiet -- "${MEMORY_FILES[@]}"; then
