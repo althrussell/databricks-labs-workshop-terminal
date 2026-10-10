@@ -1265,8 +1265,8 @@ def test_attendee_readiness_never_verifies_the_install_tree(
 
     monkeypatch.setattr(install, "_prewarm_status_unlocked", fail)
     with install._state_lock:
-        install._state["omnigent"] = {"status": "complete"}
-        install._state["tmux"] = {"status": "complete"}
+        for name in install.STEPS_BY_BINARY["omnigent"]:
+            install._state[name] = {"status": "complete"}
 
     assert install.ready()["omnigent"] is True
     # status() feeds the operator-facing endpoints and must stay cheap too;

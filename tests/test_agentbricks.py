@@ -60,7 +60,8 @@ def test_beta_cli_is_opt_in_and_configuration_is_dynamic(monkeypatch):
     assert config.agentbricks_enabled() is True
     assert install._release_specs()["agentbricks"][0] is True
     # Coding harness readiness is independent of the beta utility.
-    assert install._ready_from({"claude": {"status": "complete"}})["claude"] is True
+    assert install._ready_from({name: {"status": "complete"} for name in
+                               ("node", "databricks", "claude")})["claude"] is True
 
 
 def test_cli_installs_isolated_hashed_wheels_from_public_pypi(cli_install, monkeypatch):

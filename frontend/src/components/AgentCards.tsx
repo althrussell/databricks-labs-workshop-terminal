@@ -71,12 +71,10 @@ function cardState(agent: AgentInfo): { text: string; kind: string; title?: stri
     };
   }
   if (agent.install_error) {
-    // Nothing retries a failed install step, so the spinner this
-    // replaces would have run until the attendee gave up and asked.
     return {
-      text: "install failed",
+      text: "retry setup",
       kind: "is-failed",
-      title: `${agent.install_error} — tell your host; use another available agent meanwhile.`,
+      title: `${agent.install_error} — click to retry setup, or use another ready agent.`,
     };
   }
   return { text: "installing", kind: "" };
@@ -110,7 +108,7 @@ export default function AgentCards({ agents, launching, onLaunch }: Props) {
                 agent.ready ? "" : state.kind
               }`}
               style={{ animationDelay: `${i * 90}ms` }}
-              disabled={!agent.ready || busy}
+              disabled={(!agent.ready && !agent.install_error) || !!agent.blocked || busy}
               title={state.title}
               onClick={() => onLaunch(agent.id)}
             >
@@ -200,8 +198,8 @@ export function SetupProgress({
       )}
       {failedSteps.length > 0 && (
         <div className="hero-boot-note">
-          Tell your host — this will not fix itself. Everything marked ready above
-          still works.
+          Click a failed agent card to retry its setup. If it keeps failing, ask
+          your host. Everything marked ready above still works.
         </div>
       )}
     </div>

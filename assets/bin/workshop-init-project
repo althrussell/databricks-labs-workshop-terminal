@@ -25,11 +25,12 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'USAGE'
-usage: workshop-init-project <project-name> [--appkit | --agentbricks] [-- <scaffold flags>]
+usage: workshop-init-project <project-name> [--appkit | --agentbricks] [--json] [-- <scaffold flags>]
 
   <project-name>   created (or adopted) at ~/projects/<project-name>
   --appkit         scaffold an AppKit app into it first, without nesting
   --agentbricks    scaffold a custom-agent backend with the Agent Bricks CLI
+  --json           return preparation status (nonzero when incomplete)
   --               remaining arguments go to the selected scaffolder
 
 examples:
@@ -43,12 +44,15 @@ USAGE
 NAME=""
 APPKIT=0
 AGENTBRICKS=0
+JSON=0
+SCAFFOLD="not_requested"
 PASSTHRU=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --appkit) APPKIT=1; shift ;;
     --agentbricks) AGENTBRICKS=1; shift ;;
+    --json) JSON=1; shift ;;
     --) shift; PASSTHRU=("$@"); break ;;
     -h|--help) usage; exit 0 ;;
     -*) echo "workshop-init-project: unknown flag $1" >&2; usage; exit 2 ;;
@@ -65,6 +69,10 @@ if [ -z "$NAME" ]; then
   usage
   exit 2
 fi
+if [[ ! "$NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$ ]]; then
+  echo "workshop-init-project: use a project name of 1-63 letters, numbers, underscores or hyphens, starting with a letter or number" >&2
+  exit 2
+fi
 if [ "$APPKIT" = "1" ] && [ "$AGENTBRICKS" = "1" ]; then
   echo "workshop-init-project: choose one scaffold per project" >&2
   exit 2
@@ -79,6 +87,13 @@ MARKER="<!-- workshop-project-memory -->"
 APPKIT_VERSION="${APPKIT_VERSION:-0.87.0}"
 
 mkdir -p "$PROJECTS"
+if [ -L "$DEST" ] || { [ -e "$DEST" ] && [ ! -d "$DEST" ]; }; then
+  echo "workshop-init-project: target must be a project directory, not a symlink or file" >&2
+  exit 2
+fi
+if [ -d "$DEST" ]; then
+  SCAFFOLD="adopted"
+fi
 
 if [ "$AGENTBRICKS" = "1" ]; then
   if ! command -v agentbricks >/dev/null || ! command -v uv >/dev/null; then
@@ -92,6 +107,7 @@ if [ "$AGENTBRICKS" = "1" ]; then
     AGENT_PROFILE="${DATABRICKS_CONFIG_PROFILE:-DEFAULT}"
     agentbricks --profile "$AGENT_PROFILE" init --profile "$AGENT_PROFILE" --disable-chat-app \
       "$DEST" "${PASSTHRU[@]+"${PASSTHRU[@]}"}" >&2
+    SCAFFOLD="complete"
   elif [ ! -f "$DEST/agent.toml" ]; then
     echo "workshop-init-project: existing project has no agent.toml; choose a clean name or use the Agent Bricks migration workflow" >&2
     exit 1
@@ -132,17 +148,20 @@ if [ "$APPKIT" = "1" ] && [ ! -e "$DEST" ]; then
   set -e
 
   if [ "$SCAFFOLD_STATUS" -ne 0 ]; then
+    SCAFFOLD="failed"
     echo "workshop-init-project: AppKit scaffold failed — continuing with a" >&2
     echo "  plain project. To retry the scaffold, run it into a clean name:" >&2
     echo "    databricks apps init --version ${APPKIT_VERSION} --package-manager npm --name ${NAME} --output-dir ${PROJECTS}" >&2
     echo "  (it will not write into ${DEST} once that directory exists)" >&2
+  else
+    SCAFFOLD="complete"
   fi
 fi
 
 mkdir -p "$DEST"
 cd "$DEST"
 
-if [ ! -d .git ]; then
+if [ ! -e .git ]; then
   git init -q
 fi
 
@@ -168,33 +187,127 @@ if [ "$AGENTBRICKS" = "1" ]; then
   git add -f .claude/skills/workshop-agent-bricks-cli
 fi
 
-# --- Seeding: additive only ---------------------------------------------------
-# Every write below either creates a file or appends to one. Nothing here
-# replaces content someone else wrote, because the file this most often collides
-# with — CLAUDE.md — is the one carrying the workshop's rules.
+# --- Refresh only workshop-managed memory; keep attendee/scaffold notes -------
 
 if [ -f "$TEMPLATE" ]; then
-  for MEMORY in AGENTS.md CLAUDE.md; do
-  if [ ! -f "$MEMORY" ]; then
-    cp "$TEMPLATE" "$MEMORY"
-  elif ! grep -q "$MARKER" "$MEMORY" 2>/dev/null; then
-    # A scaffold (or the attendee) got here first. The workshop rules go on top
-    # because they are authoritative, and the existing content is kept below
-    # rather than discarded — the AppKit notes a scaffold writes are worth
-    # having, they are just not the thing that decides how we build.
-    EXISTING="$(cat "$MEMORY")"
-    {
-      cat "$TEMPLATE"
-      printf '\n\n## Notes that were already in this project\n\n'
-      printf 'Kept verbatim from the file that existed when the workshop set this\n'
-      printf 'project up (usually a scaffold). The rules above win on any\n'
-      printf 'conflict.\n\n'
-      printf '%s\n' "$EXISTING"
-    } > "$MEMORY"
-  fi
-  done
+  python3 - "$TEMPLATE" <<'PY'
+from pathlib import Path
+import os
+import tempfile
+
+begin, end = '<!-- workshop-managed:begin -->', '<!-- workshop-managed:end -->'
+template = Path(__import__('sys').argv[1]).read_text()
+managed = begin + '\n' + template.rstrip() + '\n' + end + '\n'
+for name in ('AGENTS.md', 'CLAUDE.md'):
+    path = Path(name)
+    if path.is_symlink():
+        raise SystemExit(f'workshop-init-project: {name} is a symlink; cannot safely refresh it')
+    old = path.read_text() if path.exists() else ''
+    if begin in old:
+        if old.count(begin) != 1 or old.count(end) != 1 or old.index(end) < old.index(begin):
+            raise SystemExit(f'workshop-init-project: malformed managed section in {name}; repair its markers and retry')
+        before, rest = old.split(begin, 1)
+        _, after = rest.split(end, 1)
+        new = before + managed.rstrip('\n') + after
+    elif '<!-- workshop-project-memory -->' in old:
+        # Legacy files had no closing boundary. Retain all content as a quoted
+        # reference, never guess which attendee edits belong to the old policy.
+        # Known additive notes remain active and verbatim outside the archive.
+        boundary = '\n## Notes that were already in this project\n'
+        legacy, separator, notes = old.partition(boundary)
+        if old.startswith(template):
+            new = managed + old[len(template):]
+        else:
+            new = (managed + '\n## Legacy notes (reference)\n\n'
+                   'Previous workshop rules in this quote are retired; the managed section above applies. '
+                   'Retain attendee facts and decisions recorded here.\n\n'
+                   + ''.join('> ' + line + '\n' for line in legacy.splitlines()))
+            if separator:
+                new += separator + notes
+    else:
+        new = managed + ('\n## Notes that were already in this project\n\n' + old if old else '')
+    if new != old:
+        fd, temporary = tempfile.mkstemp(prefix=f'.{name}.', dir='.')
+        try:
+            with os.fdopen(fd, 'w') as handle:
+                handle.write(new)
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+PY
   git add AGENTS.md CLAUDE.md
 fi
+
+# Home skills are unavailable to workers with isolated harness configuration.
+# Commit their actual contents in the standard project discovery directory.
+# Track ownership so future workshop releases can retire only their own copies.
+python3 - <<'PY'
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+
+source = Path.home() / '.claude/skills'
+manifest = Path('.agents/workshop-skills.json')
+previous = json.loads(manifest.read_text()) if manifest.is_file() else {'skills': {}, 'retired': []}
+if not isinstance(previous.get('skills'), dict) or any(
+    not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,127}', name) for name in previous['skills']
+):
+    raise SystemExit('workshop-init-project: invalid managed-skills manifest; repair it and retry')
+current = {}
+
+def digest(path):
+    result = hashlib.sha256()
+    for item in sorted(path.rglob('*')):
+        if item.is_file():
+            result.update(item.relative_to(path).as_posix().encode() + b'\0' + item.read_bytes())
+    return result.hexdigest()
+
+for skill in sorted(source.iterdir()) if source.is_dir() else []:
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,127}', skill.name):
+        continue
+    if not (skill / 'SKILL.md').is_file():
+        continue
+    target = Path('.agents/skills') / skill.name
+    if target.exists() and skill.name not in previous['skills']:
+        continue  # an attendee/scaffolder owns this copy
+    checksum = digest(skill.resolve())
+    if not target.is_dir() or digest(target) != checksum:
+        if target.is_symlink():
+            raise SystemExit(f'workshop-init-project: managed skill {target} became a symlink; retain it separately and retry')
+        if target.exists():
+            shutil.rmtree(target)
+        shutil.copytree(skill.resolve(), target)
+    current[skill.name] = checksum
+    link = Path('.claude/skills') / skill.name
+    link.parent.mkdir(parents=True, exist_ok=True)
+    relative = '../../.agents/skills/' + skill.name
+    if not link.exists() and not link.is_symlink():
+        link.symlink_to(relative)
+    subprocess.run(['git', 'add', '--', str(target)], check=True)
+    if link.is_symlink() and os.readlink(link) == relative:
+        subprocess.run(['git', 'add', '-f', '--', str(link)], check=True)
+
+retired = sorted(set(previous['skills']) - set(current))
+for name in retired:
+    target = Path('.agents/skills') / name
+    if target.is_dir() and not target.is_symlink():
+        shutil.rmtree(target)
+    link = Path('.claude/skills') / name
+    if link.is_symlink() and os.readlink(link) == '../../.agents/skills/' + name:
+        link.unlink()
+    for path in (target, link):
+        if subprocess.run(['git', 'ls-files', '--error-unmatch', '--', str(path)], capture_output=True).returncode == 0:
+            subprocess.run(['git', 'add', '-A', '--', str(path)], check=True)
+if current or previous['skills']:
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text(json.dumps({'skills': current, 'retired': retired}, sort_keys=True) + '\n')
+    subprocess.run(['git', 'add', '--', str(manifest)], check=True)
+PY
 
 # A README, always: purpose and live URL here, followed by the continuity brief
 # below. It is the attendee's take-home reminder once the workspace is torn down.
@@ -233,11 +346,63 @@ if ! grep -q '<!-- workshop-brief:v1 -->' README.md; then
 EOF
 fi
 
-git add -A
-# Tolerate a commit failure (e.g. missing git identity): the attendee still gets
-# a working project directory with the files staged, which is far better than
-# aborting project creation outright.
-git commit -q -m "Workshop bootstrap: project memory (CLAUDE.md + AGENTS.md) and README" || true
+git add README.md
+# Commit only workshop setup, retaining unrelated attendee changes in the index.
+MEMORY_FILES=(README.md)
+if [ -f "$TEMPLATE" ]; then
+  MEMORY_FILES+=(AGENTS.md CLAUDE.md)
+fi
+if [ "$AGENTBRICKS" = "1" ]; then
+  MEMORY_FILES+=(.agents/skills/workshop-agent-bricks-cli .claude/skills/workshop-agent-bricks-cli)
+fi
+if [ -f .agents/workshop-skills.json ]; then
+  MEMORY_FILES+=(.agents/workshop-skills.json)
+  while IFS= read -r SKILL; do
+    for SKILL_PATH in ".agents/skills/$SKILL" ".claude/skills/$SKILL"; do
+      if git ls-files --error-unmatch -- "$SKILL_PATH" >/dev/null 2>&1; then
+        MEMORY_FILES+=("$SKILL_PATH")
+      fi
+    done
+  done < <(python3 -c 'import json; d=json.load(open(".agents/workshop-skills.json")); print("\n".join(sorted(set(d["skills"]) | set(d["retired"]))))')
+fi
+COMMIT="up_to_date"
+if ! git diff --cached --quiet -- "${MEMORY_FILES[@]}"; then
+  if git commit -q --only -m "Workshop bootstrap: refresh project memory and README" -- "${MEMORY_FILES[@]}" >&2; then
+    COMMIT="complete"
+  else
+    COMMIT="failed"
+    echo "workshop-init-project: memory is written but NOT committed; isolated worktree workers cannot inherit it yet. Fix the git error and rerun this helper." >&2
+  fi
+fi
 
-# Print the path so the caller can `cd` into the new project.
-echo "$DEST"
+# The status is local state, never part of the attendee's project commit.
+mkdir -p .workshop
+EXCLUDE="$(git rev-parse --git-path info/exclude)"
+if ! grep -q '^/.workshop/preparation.json$' "$EXCLUDE" 2>/dev/null; then
+  mkdir -p "$(dirname "$EXCLUDE")"
+  printf '\n/.workshop/preparation.json\n' >> "$EXCLUDE"
+fi
+python3 - "$DEST" "$SCAFFOLD" "$COMMIT" "$TEMPLATE" "$JSON" <<'PY'
+import json
+import os
+from pathlib import Path
+import sys
+import tempfile
+
+dest, scaffold, commit, template, json_mode = sys.argv[1:]
+memory = 'complete' if Path(template).is_file() else 'missing'
+ready = scaffold != 'failed' and commit != 'failed' and memory == 'complete'
+status = dict(project_path=dest, ready=ready, scaffold=scaffold, memory=memory, commit=commit)
+fd, temporary = tempfile.mkstemp(prefix='.preparation.', dir='.workshop')
+with os.fdopen(fd, 'w') as handle:
+    json.dump(status, handle)
+os.replace(temporary, '.workshop/preparation.json')
+if memory == 'missing':
+    print('workshop-init-project: workshop template is missing; project created without workshop memory. Reopen a harness to repair preparation, then rerun.', file=sys.stderr)
+if json_mode == '1':
+    print(json.dumps(status))
+    sys.exit(0 if ready else 1)
+print(dest)
+PY
+
+# Default stdout remains exclusively the usable project path.

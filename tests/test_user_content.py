@@ -62,7 +62,6 @@ def _provisioned_home(client, monkeypatch):
         lambda: {"claude": True, "codex": True, "omnigent": True},
     )
     monkeypatch.setattr(main.agents, "launch_command", lambda _agent: ["/bin/bash"])
-    user_content._provisioned.discard("alice@example.com")
     resp = client.post("/api/sessions", json={"agent_id": "claude"}, headers=ALICE)
     assert resp.status_code == 200
     return user_manager.get("alice@example.com").home

@@ -890,6 +890,13 @@ def create_session(
     ready = install.ready()
     missing = [r for r in requires if not ready.get(r, False)]
     if missing:
+        failure = install.failure_for(requires)
+        if failure:
+            install.retry_failed(requires)
+            raise HTTPException(
+                status_code=503,
+                detail=f"{agent['label']} setup failed ({failure}). Retrying setup; try opening it again shortly.",
+            )
         # The installer step that is still pending is the actionable half: an
         # operator sees which dependency is holding the room up, not just that
         # somebody's launch bounced.
@@ -955,7 +962,14 @@ def create_session(
         raise HTTPException(status_code=503, detail=str(e))
 
     # Instructions, subagents, skills links, git identity, workspace-sync hook.
-    user_content.provision(user)
+    try:
+        user_content.provision(user)
+    except user_content.PreparationError as e:
+        telemetry.session_create_failed(principal.name, agent["id"], "preparation_failed", str(e))
+        raise HTTPException(
+            status_code=503,
+            detail="Workshop instructions or tools could not be prepared. Try opening this harness again; if it keeps failing, ask your facilitator to check setup.",
+        ) from e
 
     try:
         with spend.launch_guard(user, agent):

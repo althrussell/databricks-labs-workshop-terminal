@@ -562,6 +562,16 @@ class RemoteHostManager:
                 host.wake.wait(timeout=self._backoff_cap)
                 continue
 
+            from . import user_content
+
+            try:
+                user_content.provision(host.user)
+            except user_content.PreparationError:
+                logger.warning("Omnigent host waiting for workshop preparation for %s", email)
+                self._set_status(host, "error")
+                host.wake.wait(timeout=self._backoff_cap)
+                continue
+
             argv, env, cwd = build_host_launch(host.user, binary, server_url)
             self._set_status(host, "starting")
             with self._spawn_condition:

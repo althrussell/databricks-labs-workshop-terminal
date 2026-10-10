@@ -743,7 +743,6 @@ def test_claude_and_codex_register_and_allow_the_same_tool(client, monkeypatch):
         lambda: {"claude": True, "codex": True, "omnigent": True},
     )
     monkeypatch.setattr(main.agents, "launch_command", lambda _agent: ["/bin/bash"])
-    user_content._provisioned.discard("alice@example.com")
     response = client.post(
         "/api/sessions",
         json={"agent_id": "claude"},

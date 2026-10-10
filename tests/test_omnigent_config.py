@@ -588,7 +588,9 @@ def test_version_stamp_mismatch_reinstalls(monkeypatch, tmp_path):
 
 # -- readiness / catalog gating --
 
-def test_omnigent_ready_needs_both_tmux_and_omnigent():
+def test_omnigent_ready_needs_build_environment_and_tmux():
+    for name in ("node", "databricks", "claude", "codex"):
+        install._set(name, "complete")
     install._set("omnigent", "complete")
     install._set("tmux", "running")
     assert install.status()["ready"]["omnigent"] is False
