@@ -1,6 +1,6 @@
 # Workshop Terminal: generated-app quality audit and remediation plan
 
-Status on 10 October: **R01–R03 are closed; R04 is in progress; R05–R10 are proposed**. The owner
+Status on 10 October: **R01–R04 are closed; R05–R10 are proposed**. The owner
 has refined the remaining scope around workshop pacing, one upstream UX skill,
 creative freedom and thorough single-deployment qualification. Large-scale fleet
 tests are excluded. After the WT work is complete, publish the final WT release,
@@ -21,8 +21,9 @@ CT code and its working deployment are unchanged. R02 is accepted with recorded
 follow-ups and implemented in PR #89;
 R03 was closed by the project owner on 10 October after merging PR92
 (`2cf9fdd`); its historical test results remain in
-[its report](wizard-journey-r03.md). R04 preparation implementation and local
-regressions are underway; Labs qualification remains pending. R05–R10 remain
+[its report](wizard-journey-r03.md). R04 preparation passed local/CI checks and
+focused live Claude/Codex qualification on the reused Labs app; its
+[closeout](preparation-r04.md) records results and limits. R05–R10 remain
 proposed. On 10 October,
 the owner reduced R06 to preview handoff and attendee-led iteration; detailed
 browser, UX and fault checks belong to development and release testing.
@@ -635,7 +636,7 @@ and a dedicated review panel are optional.
 | R05: Context-aware app UX | One upstream Impeccable UX skill via its supported installer; pinned launcher/engine/bundle; project context from goal/users/data; retire studio and competing app-design routes, including warm installs and transitive mandates. Use AppKit/APX for scaffolds/components/APIs, with one small workshop pacing/context integration policy | R02 contract; R04 skill delivery; R03 goal context when present | Frontend engineer + product designer | Scope after delivery audit | Actual harness/worker discovery proves one UX authority; contrasting generated apps suit their users/tasks/data, have useful responsive first previews and working controls. Development/release tests verify results without an attendee design interview, mandatory concept picker or scored review loop |
 | R06: Preview and attendee iteration | Prompt preview handoff after normal build/deployment checks; one useful action to try; clear demo limitations; accurate check claims; fixes driven by attendee feedback. Optional inexpensive smoke check, with no mandatory browser/review loop or acceptance service | R02 contract, R05 design guidance | Agent-experience engineer | Small follow-up; scope after R05 | An attendee receives the URL promptly, can explore and request a change, and gets a useful repair without waiting for a review suite. Development/release tests own deeper functional, UX and fault coverage |
 | R07: Focused framework comparison | Refresh/pin APX CLI/skills and registry tools; compare a representative build with AppKit under the same UX guidance; select the event default | R04/R05 delivery and real previews | Tech lead | Scope after R05 trial | Main task, task-fit UX, setup reliability and time-to-preview support the choice; failures recorded; expand only if inconclusive |
-| R08: Project continuity/handoff | Offered harness/worker delivery; existing brief/managed-section updates; switch/reconnect/worktree cases; visible active project, change-goal/new-build actions and return to earlier projects; framework-accurate portable promote output | R03/R04; reuse R05/R06 builds | Harness engineer | 2-3 | Build A, change A, build B separately, then return to A with correct context/files; switching, reconnect and onboarding-off work; a worker reads the actual skill assets; exported instructions match the project |
+| R08: Project continuity/handoff | Offered harness/worker delivery; existing brief/managed-section updates; switch/reconnect/worktree cases; visible active project, change-goal/new-build actions and return to earlier projects; recovery of workspace-backed projects after runtime replacement; framework-accurate portable promote output | R03/R04; reuse R05/R06 builds | Harness engineer | 2-3 | Build A, change A, build B separately, then return to A with correct context/files; switching, reconnect and onboarding-off work; a worker reads the actual skill assets; exported instructions match the project; local runtime resets do not silently strand an earlier workspace-backed build |
 | R09: Focused regression coverage | Add regressions for changed delivery, skill precedence, wizard skip/off and project continuity to existing CI; a compact live-build release report; evidence outside Git. No new telemetry/acceptance service | R04/R05/R08 changes | Platform engineer | Scope after first UX trial | CI catches representative regressions; a few contrasting live previews demonstrate task fit, working controls and narrow-screen usability; observed checks reported accurately |
 | R10: Single-deployment event qualification | Thoroughly test one immutable WT candidate on the reused isolated Labs deployment: attendee auth/permissions, offered harnesses, actual builds, UX, saved state, multiple projects, reconnect, restart, warm redeploy and recoverable failures; fallback/rollback instructions. No fleet/load campaign | Assembled remaining work | Workshop operator + tech lead | Reuse existing checks and deployment | One deployment works through the intended event journey and recovery cases; local operational CI passes; tool/release identity and observed outcomes recorded; ready to publish the final WT release |
 
