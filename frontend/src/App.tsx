@@ -12,6 +12,7 @@ import {
   Sparkles,
   Bot,
   X,
+  Settings2,
 } from "lucide-react";
 import {
   api,
@@ -29,6 +30,7 @@ import databricksLogo from "./assets/databricks-logo.svg";
 import BannerBar from "./components/BannerBar";
 import Hero from "./components/Hero";
 import Wizard from "./components/Wizard";
+import { PreferencesDialog } from "./components/HelpPreference";
 import LaunchBar from "./components/LaunchBar";
 import NuggetsPane from "./components/NuggetsPane";
 import OperatorPanel from "./components/OperatorPanel";
@@ -48,6 +50,7 @@ import {
   closeThenCreate,
   resolveSessionConflict,
 } from "./sessionSwitch";
+import { wizardDeliveryId } from "./wizardRequests";
 
 // An attendee who needs an idea gets one short choice before implementation.
 // This is typed UNSENT, like the other idea chips.
@@ -62,12 +65,16 @@ const STARTER_PROMPT =
  * immediately, then once more after a short pause, lands the text as soon as
  * the PTY is accepting it without making every attendee wait the worst case.
  */
-async function typeWhenSessionReady(sessionId: string, text: string) {
+async function typeWhenSessionReady(sessionId: string, text: string, deliveryId: string = crypto.randomUUID(), signal?: AbortSignal) {
+  if (signal?.aborted) return;
   try {
-    await api.typeIntoSession(sessionId, text);
-  } catch {
+    await api.typeIntoSession(sessionId, text, deliveryId);
+  } catch (caught) {
+    if (signal?.aborted) return;
+    if (caught instanceof ApiError && caught.message.includes("delivery was interrupted")) throw caught;
     await new Promise((r) => setTimeout(r, 800));
-    await api.typeIntoSession(sessionId, text);
+    if (signal?.aborted) return;
+    await api.typeIntoSession(sessionId, text, deliveryId);
   }
 }
 
@@ -103,6 +110,7 @@ export default function App() {
   const [helpUnread, setHelpUnread] = useState(0);
   const [helpRaised, setHelpRaised] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [brief, setBrief] = useState<WizardBrief | null>(null);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const helpChatOpenRef = useRef(false);
@@ -146,18 +154,26 @@ export default function App() {
   // modal their run had switched off. Unknown therefore means unavailable, which
   // costs the control a moment of lateness and nothing else.
   const wizardAvailable = config?.onboarding_wizard.enabled === true;
+  const wizardDismissalKey = config
+    ? `wt-wizard-dismissed:v1:${config.workspace_url}:${config.user.email}`
+    : "";
 
   const openWizard = useCallback(() => {
     if (!wizardAvailable) return;
     setWizardOpen(true);
   }, [wizardAvailable]);
 
-  const closeWizard = useCallback(() => {
+  const closeWizard = useCallback((skipped = false) => {
+    if (skipped && wizardDismissalKey) {
+      try {
+        sessionStorage.setItem(wizardDismissalKey, "true");
+      } catch { /* Browser storage is optional; the mounted view still closes. */ }
+    }
     setWizardOpen(false);
     // Pick up whatever the wizard saved so Home's recap line is right
     // immediately, rather than after the next reload.
     api.wizard().then((s) => setBrief(s.brief)).catch(() => undefined);
-  }, []);
+  }, [wizardDismissalKey]);
 
   const refreshIdentity = useCallback(async () => {
     const cfg = await api.config();
@@ -203,11 +219,10 @@ export default function App() {
 
   /* The wizard opens once, on the first arrival, and never again.
    *
-   * `should_show` is the server's answer, not the browser's: it is keyed on the
-   * brief file rather than localStorage so a reload, a second tab, or the
-   * reconnect after a wifi flap cannot re-present a modal someone already
-   * skipped. In a workshop room all three of those happen, usually to the person
-   * least able to shrug it off.
+   * `should_show` normally comes from the durable brief, so reloads and other
+   * tabs respect Skip. The current tab also remembers immediate dismissal in
+   * sessionStorage, covering a slow or failed skip write without trapping the
+   * attendee. An explicit goal-edit action can still reopen the wizard.
    *
    * Suppressed when a session already exists — a returning attendee is mid-build,
    * and a modal asking what they intend to build is at best late. That check has
@@ -215,21 +230,25 @@ export default function App() {
    * empty array the state starts as, which is indistinguishable from a first
    * arrival and opens the modal over somebody's running terminal. */
   useEffect(() => {
-    if (!sessionsLoaded || wizardChecked.current) return;
+    if (!config || !sessionsLoaded || wizardChecked.current) return;
     // Once per load. Without the guard the wizard would reopen the moment an
     // attendee closed their last terminal, which is precisely when they are
     // least in the mood for it.
     wizardChecked.current = true;
+    let dismissed = false;
+    try {
+      dismissed = sessionStorage.getItem(wizardDismissalKey) === "true";
+    } catch { /* The server's durable state remains the normal dismissal source. */ }
     api
       .wizard()
       .then((state) => {
         setBrief(state.brief);
-        if (state.enabled && state.should_show && !session) {
+        if (state.enabled && state.should_show && !session && !dismissed) {
           setWizardOpen(true);
         }
       })
-      .catch(() => undefined);
-  }, [sessionsLoaded, session]);
+      .catch(() => { if (config.onboarding_wizard.enabled && !session && !dismissed) setWizardOpen(true); });
+  }, [config, sessionsLoaded, session, wizardDismissalKey]);
 
   useEffect(() => {
     if (config?.help) setHelpRaised(config.help.raised);
@@ -263,8 +282,10 @@ export default function App() {
     agentId: string,
     repairRetried = false,
     starterPrompt = "",
-    conflictRetried = false
+    conflictRetried = false,
+    signal?: AbortSignal
   ): Promise<SessionInfo | null> {
+    if (signal?.aborted) return null;
     setLaunching(agentId);
     setError("");
     try {
@@ -274,10 +295,12 @@ export default function App() {
       setHintSessionId(created.id);
       return created;
     } catch (e) {
+      if (signal?.aborted) return null;
       const conflict = sessionConflictFrom(e);
       if (conflict) {
         try {
           const active = await refreshSessions();
+          if (signal?.aborted) return null;
           const resolution = resolveSessionConflict(active, agentId, starterPrompt);
           if (resolution.action === "focus") {
             setView("agent");
@@ -296,13 +319,14 @@ export default function App() {
             // belongs to this launch. A bound avoids spinning if another tab
             // keeps winning and closing the slot.
             if (!conflictRetried) {
-              return await launch(agentId, repairRetried, starterPrompt, true);
+              return await launch(agentId, repairRetried, starterPrompt, true, signal);
             }
             setError(
               "The active agent changed while this one was opening. Try again."
             );
           }
         } catch (refreshError) {
+          if (signal?.aborted) return null;
           setError(
             refreshError instanceof Error ? refreshError.message : String(refreshError)
           );
@@ -320,8 +344,9 @@ export default function App() {
         message,
         { agentId }
       );
+      if (signal?.aborted) return null;
       if (canRetry && !repairRetried) {
-        return await launch(agentId, true, starterPrompt, conflictRetried);
+        return await launch(agentId, true, starterPrompt, conflictRetried, signal);
       }
       setError(message);
       return null;
@@ -394,13 +419,28 @@ export default function App() {
    * agent that started talking on its own would undercut the whole point of
    * putting them in front of a terminal.
    */
-  async function launchFromWizard(agentId: string, starterPrompt: string) {
-    setWizardOpen(false);
-    try {
-      await requestAgent(agentId, starterPrompt);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+  async function launchFromWizard(agentId: string, starterPrompt: string, signal: AbortSignal) {
+    if (signal.aborted) return;
+    if (session && !session.exited) {
+      if (session.agent_id !== agentId) {
+        throw new Error("An agent is already open. Choose that agent, or close it before opening another.");
+      }
+      const deliveryId = await wizardDeliveryId(session.id, starterPrompt);
+      if (signal.aborted) return;
+      await api.typeIntoSession(session.id, starterPrompt, deliveryId);
+      if (signal.aborted) return;
+      setView("agent");
+    } else {
+      const created = await launch(agentId, false, starterPrompt, false, signal);
+      // Keep ownership of an already requested session, but stop the wizard's
+      // queued prompt delivery when the attendee dismisses onboarding.
+      if (signal.aborted) return;
+      if (!created) throw new Error("The agent could not open. Try again, or choose another ready agent.");
+      const createdDeliveryId = await wizardDeliveryId(created.id, starterPrompt);
+      await typeWhenSessionReady(created.id, starterPrompt, createdDeliveryId, signal);
     }
+    if (signal.aborted) return;
+    setWizardOpen(false);
   }
 
   // Ideation chips / insight-card prompts: type the text into the attendee's
@@ -661,6 +701,9 @@ export default function App() {
             </a>
           )}
           {/* 3. Actions, then the promoted CTA at the far right */}
+          <button className="operator-toggle" onClick={() => setPreferencesOpen(true)} title="Change how your agent helps">
+            <Settings2 size={14} /> Agent preferences
+          </button>
           <button className="operator-toggle" onClick={openCertificate} title="Download your certificate">
             <Award size={14} />
             Certificate
@@ -696,6 +739,7 @@ export default function App() {
       </header>
 
       <BannerBar initial={config?.broadcast ?? null} />
+      {preferencesOpen && <PreferencesDialog onClose={() => setPreferencesOpen(false)} />}
       {/* The tab rule. Above the other banners because a stale sign-in is the
           cause of most of what they warn about. */}
       <SignInNotice
@@ -886,7 +930,10 @@ export default function App() {
           agents={agents}
           launching={launching}
           onLaunch={launchFromWizard}
+          onOpenAgent={() => { setView("agent"); setWizardOpen(false); }}
           onClose={closeWizard}
+          onSaved={setBrief}
+          draftKey={config ? `wt-wizard-draft:v1:${config.workspace_url}:${config.user.email}` : undefined}
         />
       )}
 

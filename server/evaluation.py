@@ -36,7 +36,7 @@ from .users import email_slug
 
 router = APIRouter(prefix="/api/admin/evaluation", dependencies=[Depends(require_admin)])
 
-SUPPORTED_PINS = {"claude": "2.1.237", "codex": "0.148.0"}
+SUPPORTED_PINS = {"claude": "2.1.295", "codex": "0.162.0"}
 MAX_FILES = 32
 MAX_DIRECTORY_ENTRIES = 256
 MAX_FILE_BYTES = 4 * 1024 * 1024
@@ -160,7 +160,9 @@ def _canary_response(body: dict | None, role: str, model: str) -> dict:
         raise CanaryUnverified("invalid_provider_response")
     # Provider IDs can differ from the UC routing name. These exact aliases
     # were observed in reviewed qualification runs; unrelated models still fail.
-    aliases = {"gpt-5-6-terra": "gpt-5.6-terra", "gpt-6-1-sol": "gpt-6.1-sol", "gpt-oss-120b": "gpt-oss-120b-080525"}
+    aliases = {"gpt-5-6-terra": "gpt-5.6-terra", "gpt-6-1-sol": "gpt-6.1-sol",
+               "gpt-oss-120b": "gpt-oss-120b-080525",
+               "gpt-5-4-mini": "gpt-5.4-mini-2026-03-17"}
     expected = models.short_name(model)
     if body.get("model") is not None and (not isinstance(body["model"], str)
             or models.short_name(body["model"]) not in {expected, aliases.get(expected, expected)}):

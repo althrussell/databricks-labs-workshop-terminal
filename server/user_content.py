@@ -181,6 +181,9 @@ def set_persona(user: User, persona: str) -> str:
     persona = persona.strip().lower()
     if persona not in PERSONAS:
         raise ValueError(f"unknown persona {persona!r}")
+    from . import attendee_profile
+
+    attendee_profile.save(user, "technical" if persona == "technical" else "guided", expected_revision=None)
     _store_persona(user, persona)
     _write_instructions(user)
     return persona
@@ -194,13 +197,9 @@ def set_wizard_brief(user: User, brief) -> None:
     before their first session or after one is already running with instructions
     that predate it.
 
-    The brief also carries a persona, which the wizard collects as an optional
-    aside rather than its own screen. Storing it here keeps the landing-page
-    toggle and the wizard writing to one place.
+    Preferences belong to the separately revisioned profile. An older product
+    brief cannot overwrite a newer session preference.
     """
-    persona = (getattr(brief, "persona", "") or "").strip().lower()
-    if persona in PERSONAS:
-        _store_persona(user, persona)
     _write_instructions(user)
 
 
@@ -260,23 +259,43 @@ def _compose_workshop_contract(text: str) -> str:
 
 def _persona_overlay(user: User) -> str:
     """Inline the speaking preference; it is not an expertise assessment."""
-    persona = read_persona(user) or DEFAULT_PERSONA
-    if persona == "technical":
+    from . import attendee_profile
+
+    try:
+        profile = attendee_profile.read(user)
+    except attendee_profile.ProfileReadError:
+        logger.warning("Using adaptive help while attendee profile is unreadable")
+        profile = attendee_profile.Profile(source="unavailable")
+    preference = profile.help_preference
+    if preference == "technical":
         described = (
             "**technical** in speaking style — use component names and useful implementation detail. "
             "Use real names (AppKit, Lakebase, SQL warehouse, Unity Catalog) and "
             "explain the architecture choices you make."
         )
-    else:
+    elif preference == "guided":
         described = (
             "**business-oriented** in speaking style — use outcomes and plain language. "
             "Talk about what their product does for them, and keep "
-            "Databricks component names out of it unless they ask."
+            "Databricks component names out of it unless they ask. Explain the next "
+            "useful step briefly, and help them try the result."
+        )
+    elif preference == "concise":
+        described = (
+            "asking you to **keep it concise** — lead with the result, give useful "
+            "recommendations briefly, and avoid unnecessary questions."
+        )
+    else:
+        described = (
+            "using **adaptive, business-oriented plain language** by default. "
+            "They have not stated an experience level or help preference. "
+            "Adapt explanation detail to their requests."
         )
     return (
         f"{_PERSONA_MARKER}\n"
         "## Who you are working with\n\n"
         f"This attendee is {described}\n\n"
+        f"Profile version 1, revision {profile.revision}; preference source: {profile.source}.\n\n"
         "Use this as a speaking preference, not an assessment of expertise. "
         "Follow explicit requests for more or less help and adapt as the "
         "conversation develops; do not add an experience questionnaire.\n"
@@ -298,17 +317,19 @@ def _wizard_overlay(user: User) -> str:
     Empty when the attendee skipped, which leaves the agent in exactly the state
     it was in before the wizard existed — free to ask.
     """
-    from . import wizard
+    from . import content, wizard
 
     brief = wizard.read_brief(user)
-    if brief.skipped or not brief.has_content:
+    if brief.skipped or brief.stage != "complete" or not brief.has_content:
         return ""
 
     lines = [_WIZARD_MARKER, "## What this attendee came to build", ""]
     what = brief.what_building.strip()
-    idea = wizard.idea_by_id(brief.idea_id)
+    idea = content.WizardIdea.model_validate(brief.selected_idea) if brief.selected_idea else None
     if what:
-        lines.append(f"In their own words: **{what}**")
+        authored = {"legacy_unverified": "Saved goal (legacy authorship unverified)",
+                    "confirmed_goal": "They confirmed this saved goal"}.get(brief.words_source, "In their own words")
+        lines.append(f"{authored}: **{what}**")
     elif idea:
         lines.append(f"They picked this from a list of ideas: **{idea.label}** — {idea.outcome}.")
     if idea and what:
@@ -336,10 +357,13 @@ def _wizard_overlay(user: User) -> str:
         "or integration assumptions.",
     ]
 
-    if config.discovery_enabled() and brief.record_id:
+    lines += ["", "Canonical task context (selected suggestions are not attendee-authored words):",
+              "```json", json.dumps(wizard.launch_context(brief), ensure_ascii=False), "```"]
+
+    if config.discovery_enabled() and brief.discovery_record_id:
         lines += [
             "",
-            f"A discovery record already exists for this: `{brief.record_id}`. "
+            f"A discovery record already exists for this: `{brief.discovery_record_id}`. "
             "When you learn more about what they are trying to do, **update that "
             "record** by passing the same `record_id` — do not open a new one. A "
             "second record for the same attendee reads downstream as a second, "
@@ -365,6 +389,10 @@ def _demo_data_overlay(user: User) -> str:
         return ""
     brief = wizard.read_brief(user)
     scoped = brief.stated_industry
+    if not scoped and brief.stage == "complete" and not brief.skipped and brief.selected_idea:
+        schemas = {ref.partition(".")[0] for ref in brief.selected_idea.get("demo_tables", [])}
+        if len(schemas) == 1:
+            scoped = next(iter(schemas))
     manifest = demo_data.manifest(scoped)
     if not manifest:
         # Nothing readable, so nothing to say — including the note below about

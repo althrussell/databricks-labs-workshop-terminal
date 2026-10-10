@@ -1174,7 +1174,7 @@ def test_only_omnigent_catalog_uses_helper():
     catalog = {agent["id"]: agent for agent in agents.load_catalog()}
     assert catalog["omnigent"]["command"] == "workshop-omnigent"
     assert catalog["claude"]["command"] == "claude"
-    assert catalog["codex"]["command"] == "codex"
+    assert catalog["codex"]["command"] == "codex --no-daemon"
 
 
 def test_config_api_exposes_only_remote_url_and_sanitized_status(client, monkeypatch):

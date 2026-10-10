@@ -509,6 +509,7 @@ def resolve_all(available: Catalogue | Iterable[str]) -> dict[str, str]:
 # does not quietly swap the attendee's first-arrival model, and so the existing
 # role tests do not have to learn a sixth slot. Pin with WORKSHOP_WIZARD_MODEL.
 _WIZARD = (
+    "gpt-6-1-sol",
     "gpt-5-4-mini",
     "gpt-5-6-luna",
     "claude-haiku-4-5",
@@ -520,8 +521,9 @@ def wizard_chain() -> tuple[str, ...]:
     """Candidates for the opening wizard as wire-ready service names, pin first.
 
     Unlike :func:`chain` this renders, because its caller walks the whole list
-    itself rather than handing it to :func:`resolve` — the wizard tries each
-    candidate against a live endpoint and takes the first that answers.
+    itself rather than handing it to :func:`resolve`. It chooses the first
+    service available on its wire; a generation failure returns curated help
+    instead of silently switching models.
     """
     pin = short_name(os.environ.get("WORKSHOP_WIZARD_MODEL", "").strip())
     names = (pin,) + tuple(n for n in _WIZARD if n != pin) if pin else _WIZARD

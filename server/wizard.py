@@ -1,27 +1,8 @@
-"""The opening wizard: what the attendee wants to build, before they build it.
+"""Goal-first onboarding with immutable selections and revisioned attendee saves.
 
-Three screens over the landing page, all skippable. It exists because the worst
-moment in this product is a working terminal, a blinking cursor and no idea what
-to type — and because the answer to "what are you here to build" is the single
-most valuable thing an account team can learn from the day.
-
-Two jobs, one conversation. It is deliberately not a form:
-
-- **Launch.** Whatever the attendee types (or picks) becomes the first prompt in
-  the terminal, so the wizard ends with something running rather than with a
-  saved profile.
-- **Discovery.** The same answer becomes a ``discovery.record`` at
-  ``confidence: high`` — stated by the attendee rather than inferred by an agent
-  mid-conversation, which is the difference between a brief that quotes someone
-  and one that guesses at them.
-
-Two rules shape everything here:
-
-1. **The record_id is minted here and reused.** The agent is told the id and
-   refines that record as it learns more. Without this the wizard's version and
-   the agent's version arrive at Control Tower as two unrelated use cases for one
-   person, and the brief reads as though they wanted two different things.
-2. **Only provably buildable ideas are shown.** See ``select_ideas``.
+The two optional steps capture a task and open a ready agent. Product context is
+independent of optional discovery capture; a selected recommendation never
+becomes attendee-authored wording or a confirmed industry by implication.
 """
 
 from __future__ import annotations
@@ -31,21 +12,19 @@ import logging
 import os
 import random
 import re
-import threading
+import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from . import config, content, demo_data, discovery
+from . import attendee_state, config, content, demo_data, discovery, wizard_selections
 from .users import User
 
 logger = logging.getLogger(__name__)
 
 _BRIEF_RELATIVE = os.path.join(".workshop", "brief.json")
 
-# Six cards. Enough that someone with no idea finds one that lands, few enough to
-# read in the few seconds they will actually give it before their attention goes
-# back to the room.
+# At most six curated choices. A stated task can yield a shorter relevant set.
 IDEA_COUNT = 6
 
 # Matches discovery.SESSION_INTENTS. The wizard asks the question in the
@@ -99,29 +78,54 @@ class WizardBrief:
     seen: bool = False
     skipped: bool = False
     completed_at: str = ""
-    # True only when the attendee continued with the industry chip visible, or
-    # picked a card that named one. Pack/env default_industry may preselect the
-    # UI; it must not reach discovery or the overlay until they confirm it.
+    # Only an explicit industry choice is stated. Room defaults and idea tags
+    # remain suggestions and never establish an attendee's industry.
     industry_stated: bool = False
+    schema_version: int = 2
+    revision: int = 0
+    stage: str = "draft"
+    selected_idea: dict[str, Any] | None = None
+    selection_token: str = ""
+    discovery_record_id: str = ""
+    words_source: str = "attendee"
 
     def to_json(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
     def from_json(cls, raw: dict[str, Any]) -> "WizardBrief":
-        stack = raw.get("current_stack") or []
+        if not isinstance(raw, dict) or raw.get("stage", "draft") not in {"draft", "complete", "skipped"}:
+            raise ValueError("Invalid saved goal")
+        version = raw.get("schema_version", 1)
+        if version not in {1, 2} or ("revision" in raw and (type(raw["revision"]) is not int or raw["revision"] < 0)):
+            raise ValueError("Unsupported saved goal version or revision")
+        if raw.get("words_source", "attendee") not in {"attendee", "legacy_unverified", "confirmed_goal"}:
+            raise ValueError("Invalid saved goal authorship")
+        if raw.get("selected_idea") is not None:
+            if not isinstance(raw["selected_idea"], dict):
+                raise ValueError("Invalid saved idea")
+            wizard_selections.validate_snapshot(raw["selected_idea"])
+            if raw.get("idea_id") != raw["selected_idea"].get("id"):
+                raise ValueError("Saved idea does not match the saved goal")
+        stack = _clean_list(raw.get("current_stack"))
         return cls(
             record_id=str(raw.get("record_id") or ""),
             what_building=str(raw.get("what_building") or ""),
             industry=str(raw.get("industry") or ""),
             intent=str(raw.get("intent") or ""),
             idea_id=str(raw.get("idea_id") or ""),
-            current_stack=[str(v) for v in stack if str(v).strip()],
+            current_stack=stack,
             persona=str(raw.get("persona") or ""),
             seen=bool(raw.get("seen")),
             skipped=bool(raw.get("skipped")),
             completed_at=str(raw.get("completed_at") or ""),
             industry_stated=bool(raw.get("industry_stated")),
+            revision=max(0, int(raw.get("revision") or 0)),
+            stage=str(raw.get("stage") or ("skipped" if raw.get("skipped") else "complete" if raw.get("seen") else "draft")),
+            selected_idea=raw.get("selected_idea") if isinstance(raw.get("selected_idea"), dict) else None,
+            selection_token=str(raw.get("selection_token") or ""),
+            discovery_record_id=str(raw.get("discovery_record_id") or ""),
+            words_source=str(raw.get("words_source") or ("legacy_unverified" if version == 1 and raw.get("idea_id") else "attendee")),
         )
 
     @property
@@ -132,8 +136,7 @@ class WizardBrief:
         not reach discovery: a row saying an attendee exists and wants nothing is
         worse than no row, because it looks like a finding.
         """
-        stated = self.industry if self.industry_stated else ""
-        return bool(self.what_building.strip() or self.idea_id or stated)
+        return bool(self.what_building.strip() or self.selected_idea)
 
     @property
     def stated_industry(self) -> str:
@@ -143,15 +146,22 @@ class WizardBrief:
 
 # -- storage (one file per attendee, beside the persona) --
 
-_write_lock = threading.Lock()
+class BriefConflict(ValueError):
+    def __init__(self, brief: WizardBrief):
+        super().__init__("Your goal changed in another tab. Review the saved goal before replacing it.")
+        self.brief = brief
+
+
+class BriefReadError(RuntimeError):
+    pass
 
 
 def brief_path(user: User) -> str:
     return os.path.join(user.home, _BRIEF_RELATIVE)
 
 
-def read_brief(user: User) -> WizardBrief:
-    """The attendee's brief, or an empty one. Never raises."""
+def read_brief(user: User, *, strict: bool = False) -> WizardBrief:
+    """Read a goal; strict callers preserve corrupt files and receive an error."""
     try:
         with open(brief_path(user), encoding="utf-8") as fh:
             return WizardBrief.from_json(json.load(fh))
@@ -159,17 +169,15 @@ def read_brief(user: User) -> WizardBrief:
         return WizardBrief()
     except Exception as exc:  # noqa: BLE001 — a corrupt brief must not block the UI
         logger.warning("wizard brief unreadable for %s: %s", user.email, exc)
+        if strict:
+            raise BriefReadError("Your saved goal could not be loaded. Retry before saving changes.") from exc
         return WizardBrief()
 
 
 def write_brief(user: User, brief: WizardBrief) -> None:
     path = brief_path(user)
-    with _write_lock:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = f"{path}.tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(brief.to_json(), fh)
-        os.replace(tmp, path)
+    with attendee_state.locked(path):
+        attendee_state.write_json(path, brief.to_json())
 
 
 # -- sanitising --
@@ -233,25 +241,18 @@ def industry_of(idea: content.WizardIdea) -> str:
     return ""
 
 
-def _buildable(idea: content.WizardIdea) -> bool:
-    """Whether this card can actually be built with the data in this deployment.
+def _buildable(idea: content.WizardIdea, *, deadline: float | None = None) -> bool:
+    """Check declared table/column metadata; generic choices survive faults.
 
-    When there is no demo catalog at all, every card passes. That looks
-    permissive, but it is the honest reading: without demo data nobody's tables
-    exist, so filtering on them would empty the grid for the one attendee least
-    able to recover from an empty grid. They get the full catalogue and an agent
-    that will generate what it needs.
-
-    The same applies when a catalog is configured but unreadable — a permission
-    error, a cold warehouse, a Unity Catalog blip. That used to be treated as
-    "no tables exist", which silently withdrew every data-backed card from the
-    grid for the duration, and the attendee saw a thin list of generics with
-    nothing saying why. We do not know, so we do not filter; the ``data_ready``
-    badge is what carries the uncertainty to the card.
+    Metadata is not a promise of SELECT access, resources or meaningful joins.
+    Those still need checking under the execution identity at use.
     """
-    if not demo_data.enabled() or not demo_data.readable():
+    if not idea.demo_tables:
         return True
-    return demo_data.verify(idea.demo_tables)
+    if set(idea.required_columns) != set(idea.demo_tables) or not demo_data.verify(idea.demo_tables):
+        return False
+    remaining = .25 if deadline is None else max(0, deadline - time.monotonic())
+    return demo_data.supports(idea.required_columns, timeout=remaining)
 
 
 def idea_payload(idea: content.WizardIdea) -> dict[str, Any]:
@@ -265,18 +266,84 @@ def idea_payload(idea: content.WizardIdea) -> dict[str, Any]:
     """
     payload = idea.model_dump()
     payload["data_ready"] = demo_data.data_ready(idea.demo_tables)
-    # Honest to the attendee: a card that names no tables will generate data,
-    # including generic padding. Do not infer "demo" from a non-empty list the
-    # catalog could not verify — ``data_ready`` is the promise, this is the mode.
+    # This badge means table presence. It never claims query access or that a
+    # generated app already has the necessary resources.
     payload["data_mode"] = "demo" if idea.demo_tables else "generate"
+    payload["fit_reason"] = idea.fit_reason or idea.outcome
+    payload["first_version"] = idea.first_version or idea.prompt
+    payload["assumptions"] = idea.assumptions or [
+        "Prepared workshop data is synthetic; validate its columns and access before use."
+        if idea.demo_tables else "Explore available workshop data first; label any sample data used."
+    ]
+    payload["unresolved"] = idea.unresolved or ["Your agent will confirm the useful first task and check data access."]
     return payload
 
 
 _TOKEN = re.compile(r"[a-z0-9]+")
+_DECLINED_APP = re.compile(
+    r"\b(?:no|not|without|instead of|rather than|don't (?:want|need|build)|do not (?:want|need|build))"
+    r"(?:\s+(?:an?|any|new|another|web|custom|separate)){0,3}\s+(?:app|website)\b", re.I)
+_APP_SOURCE_METRICS = re.compile(
+    r"\b(?:app|website)\s+(?:visits?|sessions?|traffic|events?|usage|logs?|"
+    r"telemetry|performance|crashes|downloads|ratings?|reviews?|paths?)\b", re.I)
+
+
+def app_intent(query: str) -> str:
+    """Respect explicit app choices; a generic page or tool leaves format open."""
+    if _DECLINED_APP.search(query):
+        return "no_app"
+    # An existing app/website can be the data source for a chart or analysis.
+    # Keep a separate explicit output choice: "an app for website visits".
+    output_words = _APP_SOURCE_METRICS.sub("source metrics", query)
+    return "app" if re.search(r"\b(app|website)\b", output_words, re.I) else ""
 
 
 def _tokens(text: str) -> set[str]:
     return {t for t in _TOKEN.findall(text.lower()) if len(t) > 2}
+
+
+_TASK_FILLER = frozenset((
+    "a about an and app apps are as build can could dashboard don easy for from "
+    "give help how i in instead internal is it keep let make me my need new not "
+    "of on only our own page phone please rather read see separate show simple "
+    "small staff team teams than that the their them there these this to tool "
+    "use want way we web website what where which with without would you your "
+    "friendly manager managers view running know work next should prepared into some useful try turning"
+).split())
+
+_TASK_EQUIVALENTS = {
+    "aggregate": "summary", "aggregated": "summary", "aggregating": "summary",
+    "aggregation": "summary", "summaries": "summary", "summarise": "summary",
+    "summarize": "summary", "summarised": "summary", "summarized": "summary",
+}
+
+
+def _task_tokens(text: str) -> set[str]:
+    # Format and generic workshop wording cannot make an unrelated task fit.
+    # Singular/plural matching is useful for catalog labels such as orders.
+    words = {_TASK_EQUIVALENTS.get(word, word) for word in _tokens(text) if word not in _TASK_FILLER}
+    words = {word[:-1] if word.endswith("s") and not word.endswith("ss") and len(word) > 4 else word
+             for word in words}
+    return {_TASK_EQUIVALENTS.get(word, word) for word in words}
+
+
+def _task_terms(idea: content.WizardIdea) -> set[str]:
+    return _task_tokens(f"{idea.label} {idea.outcome} {idea.prompt}")
+
+
+def _task_matches(idea: content.WizardIdea, task: set[str]) -> bool:
+    terms = _task_terms(idea)
+    # Cleaning readings does not fulfil a requested summary. Normalised
+    # aggregate/summary wording preserves that action across curated sources.
+    if "summary" in task and "summary" not in terms:
+        return False
+    return len(task & terms) / len(task) >= .5
+
+
+def uses_app(idea: content.WizardIdea) -> bool:
+    return idea.shape == "app" or any(
+        re.search(r"\bapps?\b", product, re.I) for product in idea.products
+    ) or app_intent(idea.prompt) == "app"
 
 
 def _score(
@@ -284,14 +351,27 @@ def _score(
 ) -> int:
     score = 0
     if industry and industry in idea.industries:
-        score += 100
+        score += 20
     elif not idea.industries:
         score += 10  # generic: always plausible, never preferred over a match
     if intent and intent in idea.intents:
         score += 20
     if query:
-        overlap = _tokens(query) & _tokens(f"{idea.label} {idea.outcome}")
-        score += 5 * len(overlap)
+        terms = _task_terms(idea)
+        overlap = _task_tokens(query) & terms
+        score += 30 * len(overlap)
+        # Prefer a focused stock task to a broad stock/sales page on a tie.
+        score += int(100 * len(overlap) / max(1, len(terms)))
+        # A device constraint must influence the first card, rather than only
+        # appearing in a broader alternative below it. Task overlap still
+        # determines eligibility in select_ideas.
+        device_words = {"phone", "mobile", "tablet"}
+        requested_devices = _tokens(query) & device_words
+        card_devices = _tokens(f"{idea.label} {idea.outcome} {idea.prompt}") & device_words
+        if requested_devices:
+            score += 100 if requested_devices & card_devices else -100
+        if app_intent(query) == "app":
+            score += 100 if idea.shape == "app" else -100
     return score
 
 
@@ -303,49 +383,69 @@ def select_ideas(
     rng: random.Random | None = None,
     query: str = "",
 ) -> list[content.WizardIdea]:
-    """The cards to show someone who said they are not sure yet.
+    """Stable task-ranked curated choices, with one shared metadata budget.
 
-    Four properties, in priority order:
-
-    1. **Every card is buildable.** Anything naming demo tables this deployment
-       has not seeded is excluded outright, not shown-but-unbadged.
-    2. **The grid stays inside the chosen industry.** Tagged matches first,
-       then untagged generics. A foreign industry is never pulled in to fill a
-       shape — that was how a healthcare attendee saw a random automotive ML
-       card.
-    3. **The shapes are spread.** Six dashboards tells an attendee who wanted
-       to build an app that this workshop is not for them.
-    4. **It is never empty.** An unseeded or unset industry degrades to generic
-       cards, which need no demo data.
+    Named-table choices require declared columns. A stated task is never padded
+    with unrelated generic ideas. Shape variety applies when no task was stated.
     """
-    rng = rng or random.Random()
-    buildable = [i for i in content.content_service.ideas() if _buildable(i)]
-    if not buildable:
-        return []
+    # Curated ordering is stable across refreshes and restarts. Surprise owns
+    # deliberate randomness; ranking owns task fit before shape variety.
+    rng = rng or random.Random(0)
+    deadline = time.monotonic() + .25
 
     # ``industry_slug``, not ``normalize_industry``: the latter answers with the
     # seeded schema or nothing, so an unreadable catalog discarded the chip the
     # attendee had just pressed and served them generics instead of their own
     # industry's cards.
     industry = demo_data.industry_slug(industry) if industry else ""
-    generics = [i for i in buildable if not i.industries]
+    available = content.content_service.ideas()
+    generics = [i for i in available if not i.industries]
     if industry:
-        tagged = [i for i in buildable if industry in i.industries]
+        tagged = [i for i in available if industry in i.industries]
         # Exhaust the industry catalogue before padding with generics, including
         # extra cards of a shape already taken — three retail ideas plus three
         # "build a pipeline" generics reads as nothing here for you.
         pool = tagged + generics
     elif demo_data.enabled():
-        # No industry chosen: generics only. No generic has shape ``ml``, and
-        # filling that hole from a random industry is the leak this filter
-        # exists to close. Without a catalog the whole list is reachable.
-        pool = list(generics) or buildable
+        # A stated task may find prepared data in another sector. Unstated
+        # goals still get generics rather than a random industry assignment.
+        pool = list(available) if _task_tokens(query) else list(generics)
     else:
-        pool = buildable
+        pool = available
+
+    task = _task_tokens(query)
+    if query.strip() and not task and app_intent(query) != "app":
+        # Generic wording cannot justify a sector-specific task. The goal is
+        # still usable directly; explicit idea exploration has an empty query.
+        return []
+    if task:
+        # An industry/shape match cannot replace the actual task. If no curated
+        # task fits, the attendee can keep their own words and open the agent.
+        pool = [idea for idea in pool if _task_matches(idea, task)]
+        pool = sorted(pool, key=lambda idea: _score(idea, industry, intent, query), reverse=True)
+
+    app_choice = app_intent(query)
+    if app_choice == "app":
+        pool = [idea for idea in pool if idea.shape == "app"]
+    elif app_choice == "no_app":
+        pool = [idea for idea in pool if not uses_app(idea)]
+
+    # One bounded background read warms relevant dependencies rather than paying
+    # a separate cold metadata wait per card. It never blocks the goal path.
+    requirements: dict[str, list[str]] = {}
+    for idea in pool[:max(limit, 12)] if task else pool:
+        for table, columns in idea.required_columns.items():
+            requirements[table] = sorted(set(requirements.get(table, ())) | set(columns))
+    if requirements and demo_data.enabled():
+        demo_data.supports(requirements, timeout=0)
+    pool = [idea for idea in pool if _buildable(idea, deadline=deadline)]
 
     rng.shuffle(pool)
     pool.sort(key=lambda i: _score(i, industry, intent, query), reverse=True)
 
+    if query.strip():
+        # Do not pad a clear request with unrelated shapes to fill six slots.
+        return pool[:limit]
     chosen: list[content.WizardIdea] = []
     seen_shapes: set[str] = set()
     for idea in pool:
@@ -388,16 +488,14 @@ def idea_by_id(idea_id: str) -> content.WizardIdea | None:
 def to_discovery(brief: WizardBrief) -> dict[str, Any]:
     """The brief as a ``discovery.record`` submission.
 
-    ``confidence`` is high without qualification: the attendee typed this about
-    their own work, unprompted by an agent's interpretation. That is the
-    strongest provenance any record in this system has, and a brief built from it
-    should not hedge the way one built from a mid-build inference must.
+    Completed choices have explicit provenance. Legacy selected-card wording
+    has unverified authorship and receives medium confidence.
 
     ``timeline`` is never set. The wizard does not ask — a workshop attendee has
     no authority over their employer's timeline, so a captured answer would be a
     guess that reads downstream as a commitment.
     """
-    idea = idea_by_id(brief.idea_id) if brief.idea_id else None
+    idea = content.WizardIdea.model_validate(brief.selected_idea) if brief.selected_idea else None
     title = brief.what_building.strip()
     if idea and not title:
         title = idea.label
@@ -413,7 +511,7 @@ def to_discovery(brief: WizardBrief) -> dict[str, Any]:
     out: dict[str, Any] = {
         "record_id": brief.record_id,
         "agent": "wizard",
-        "confidence": "high",
+        "confidence": "medium" if brief.words_source == "legacy_unverified" else "high",
         "session_intent": brief.intent,
         "industry": brief.stated_industry,
         "use_case_title": title[:120],
@@ -421,145 +519,147 @@ def to_discovery(brief: WizardBrief) -> dict[str, Any]:
         "goal": brief.what_building.strip(),
         "current_stack": list(brief.current_stack),
     }
-    if products:
-        out["databricks_products"] = products
-    if signal:
-        out["interest_signals"] = [signal]
+    out["databricks_products"] = products
+    out["interest_signals"] = [signal] if signal else []
+    if idea and not brief.what_building.strip():
+        out["use_case_summary"] = f"Selected idea: {idea.label}. {idea.outcome}"
+        out["goal"] = idea.outcome
     return out
 
 
 def save(user: User, payload: dict[str, Any]) -> WizardBrief:
-    """Persist what the wizard collected and push it to discovery.
-
-    Called when the attendee leaves the second step, not the third: by then they
-    have said everything the record needs, and the third step is agent selection.
-    Someone who picks an agent from the landing page instead of the wizard's own
-    cards must not lose what they already told us.
-
-    **An absent key means unchanged, not cleared.** The dismissal path sends only
-    ``{"skipped": true}``, and it fires from the third step too — where the
-    attendee has already told us everything. Rebuilding the brief from the
-    payload alone would blank a completed brief the moment someone pressed Escape
-    on the agent picker, taking the home recap and the agent's instruction
-    overlay with it while the discovery record it no longer matches was already
-    at Control Tower.
-    """
-    existing = read_brief(user)
-
-    def given(key: str, clean: Any, previous: Any) -> Any:
-        return clean(payload[key]) if key in payload else previous
-
-    brief = WizardBrief(
-        # Minted once and kept for the life of the session. Everything downstream
-        # — the agent's refinements, CT's de-duplication — hangs off this id
-        # being stable across saves.
-        record_id=existing.record_id or uuid.uuid4().hex,
-        what_building=given("what_building", _clean_text, existing.what_building),
-        industry=existing.industry,
-        intent=given("intent", lambda v: _clean_text(v).lower(), existing.intent),
-        idea_id=given("idea_id", lambda v: _clean_text(v)[:64], existing.idea_id),
-        current_stack=given("current_stack", _clean_list, existing.current_stack),
-        persona=given("persona", lambda v: _clean_text(v).lower(), existing.persona),
-        seen=True,
-        completed_at=existing.completed_at,
-        industry_stated=existing.industry_stated,
-    )
-    if brief.intent not in INTENTS:
-        brief.intent = ""
-
-    # A tagged card owns the industry: its schema is a fact, the chip is a
-    # suggestion. A generic card must not wipe a chip the attendee already
-    # confirmed — picking "build a pipeline" is not a choice to forget they
-    # said retail. Only an empty derived industry *and* no chip in the payload
-    # is a choice not to steer.
-    if "idea_id" in payload and brief.idea_id:
-        idea = idea_by_id(brief.idea_id)
-        if idea:
-            derived = industry_of(idea)
-            if derived:
-                brief.industry = derived
-                brief.industry_stated = True
-            elif "industry" in payload:
-                brief.industry = demo_data.industry_slug(
-                    _clean_text(payload["industry"])[:64]
-                )
-                if "industry_stated" in payload:
-                    brief.industry_stated = bool(payload["industry_stated"])
-                else:
-                    brief.industry_stated = bool(brief.industry)
-    elif "industry" in payload:
-        # ``industry_slug`` rather than ``normalize_industry``: an attendee who
-        # typed "shipping logistics" told us the most useful thing on the
-        # record, and resolving that against seeded schemas — which is what
-        # normalize does — discarded it for everyone whose industry the
-        # notebook had not created.
-        brief.industry = demo_data.industry_slug(_clean_text(payload["industry"])[:64])
-        if "industry_stated" in payload:
-            brief.industry_stated = bool(payload["industry_stated"])
+    """Serialize the entire revisioned update; optional capture never owns the goal."""
+    with attendee_state.locked(brief_path(user)):
+        existing = read_brief(user, strict=True)
+        expected = payload.get("expected_revision")
+        operation = payload.get("operation") or ("skip" if payload.get("skipped") else "complete")
+        if expected is not None and expected != existing.revision:
+            # A lost response or two identical first saves is safe to retry.
+            # Different content always requires explicit stale-write recovery.
+            matches = operation in {"draft", "complete"} and existing.stage == operation
+            for name in ("what_building", "industry", "intent", "idea_id", "industry_stated", "current_stack"):
+                if name in payload and payload[name] != getattr(existing, name):
+                    matches = False
+            if payload.get("selection_token") and payload["selection_token"] != existing.selection_token:
+                matches = False
+            if matches:
+                return existing
+            raise BriefConflict(existing)
+        if operation not in {"draft", "complete", "skip", "clear", "change"}:
+            raise ValueError("Unknown goal operation")
+        brief = WizardBrief.from_json(existing.to_json())
+        brief.record_id = existing.record_id or uuid.uuid4().hex
+        if operation == "change":
+            brief = WizardBrief(record_id=uuid.uuid4().hex, revision=existing.revision)
+        if operation == "clear":
+            brief = WizardBrief(record_id=brief.record_id, revision=existing.revision,
+                                seen=True, skipped=True, stage="skipped",
+                                discovery_record_id=existing.discovery_record_id)
+        elif operation == "skip":
+            # Closing a completed goal does not revoke or replace it. Skipping
+            # an unfinished draft withholds it from launch and discovery.
+            brief.seen = True
+            if existing.stage != "complete" or not existing.has_content:
+                brief.skipped = True
+                brief.stage = "skipped"
         else:
-            # Sending the key is a choice, including clearing it.
-            brief.industry_stated = True
-    elif "industry_stated" in payload:
-        brief.industry_stated = bool(payload["industry_stated"])
-
-    # Skipped means "I declined to tell you", which someone who has already told
-    # us cannot retroactively do. Both the home recap and the instruction overlay
-    # read this flag, so honouring it on a step-three dismissal would silently
-    # withhold a brief the attendee filled in.
-    brief.skipped = bool(payload.get("skipped")) and not brief.has_content
-    if brief.has_content:
-        brief.completed_at = brief.completed_at or discovery._now()
-
-    write_brief(user, brief)
-
-    if brief.skipped or not brief.has_content:
-        # Skipping is an answer, and the answer is "leave me alone". Recording it
-        # anyway would make the record the one thing the attendee explicitly
-        # declined to give.
+            what_changed = ("what_building" in payload
+                            and _clean_text(payload["what_building"]) != existing.what_building)
+            for name in ("what_building", "industry", "intent", "persona"):
+                if name in payload:
+                    setattr(brief, name, _clean_text(payload[name]))
+            if "what_building" in payload:
+                brief.words_source = "confirmed_goal" if existing.words_source == "legacy_unverified" and not what_changed else "attendee"
+            if "industry" in payload:
+                brief.industry = demo_data.industry_slug(brief.industry[:64])
+                brief.industry_stated = bool(payload.get("industry_stated", True))
+            elif "industry_stated" in payload:
+                brief.industry_stated = bool(payload["industry_stated"])
+            if brief.intent not in INTENTS:
+                brief.intent = ""
+            if "current_stack" in payload:
+                brief.current_stack = _clean_list(payload["current_stack"])
+            requested = _clean_text(payload.get("idea_id"))
+            if "idea_id" in payload and requested:
+                token = _clean_text(payload.get("selection_token"))
+                # A committed snapshot outlives its offer expiry. Only the same
+                # saved selection can reuse it; new choices need a live receipt.
+                if not (existing.selected_idea and requested == existing.idea_id
+                        and (not token or token == existing.selection_token)):
+                    brief.selected_idea = wizard_selections.resolve(user, token, requested)
+                    brief.selection_token = token
+                brief.idea_id = requested
+            elif "idea_id" in payload or what_changed:
+                brief.idea_id = ""
+                brief.selected_idea = None
+                brief.selection_token = ""
+            brief.stage = "draft" if operation == "draft" else "complete"
+            brief.seen = operation != "draft"
+            brief.skipped = False
+            if brief.stage == "complete" and not brief.has_content:
+                raise ValueError("Add a goal or choose an idea before continuing.")
+            if brief.stage == "complete" and brief.has_content:
+                brief.completed_at = existing.completed_at or discovery._now()
+        if brief.to_json() != existing.to_json():
+            brief.revision = existing.revision + 1
+        attendee_state.write_json(brief_path(user), brief.to_json())
+        # Drafts are product state, not a finding about the attendee. Capture is
+        # an independent, optional projection of the explicitly completed goal.
+        records = discovery.discovery_store.for_attendee(user.email) if config.discovery_enabled() else []
+        captured = next((row for row in records if row.record_id == brief.record_id), None)
+        should_capture = (operation == "clear" and captured is not None) or (
+            brief.stage == "complete" and brief.has_content and operation != "skip"
+            and (captured is None or to_discovery(existing) != to_discovery(brief)))
+        if should_capture:
+            try:
+                stored = discovery.record(user.email, to_discovery(brief))
+                if stored is not None:
+                    brief.discovery_record_id = stored.record_id
+                    attendee_state.write_json(brief_path(user), brief.to_json())
+            except Exception:
+                logger.exception("optional wizard discovery capture failed")
         return brief
 
-    if existing.has_content and to_discovery(existing) == to_discovery(brief):
-        # A dismissal, or a second save of an unchanged brief. Re-emitting would
-        # burn a revision on identical content and make the record look like it
-        # was being actively refined when nobody touched it.
-        return brief
 
-    # No-ops when capture is off, which is the whole consent boundary: a
-    # deployment that never opted in holds nothing, wizard or not.
-    discovery.record(user.email, to_discovery(brief))
-    return brief
+def launch_context(brief: WizardBrief) -> dict[str, Any]:
+    """One portable product context for home, project and harness adapters."""
+    return {
+        "schema_version": 1,
+        "brief_revision": brief.revision,
+        "project_id": brief.record_id,
+        "stage": brief.stage,
+        "attendee_words": brief.what_building,
+        "words_source": brief.words_source,
+        "selected_idea": brief.selected_idea,
+        "stated_industry": brief.stated_industry,
+        "suggested_industry": brief.industry if not brief.industry_stated else "",
+        "intent": brief.intent,
+        "current_stack": list(brief.current_stack),
+        "discovery_record_id": brief.discovery_record_id,
+        "consultation": "Clarify only material unknowns, recommend a small first version, then build.",
+    }
 
 
 def starter_prompt(brief: WizardBrief) -> str:
-    """The first thing typed into the terminal, unsent.
-
-    A chosen idea card wins over the typed sentence, because its prompt was
-    written to describe that build. Both entry paths get the same workshop
-    framing; choosing a card is not permission to skip material unknowns.
-    """
-    idea = idea_by_id(brief.idea_id)
-    text = idea.prompt if idea else brief.what_building.strip()
-    if not text:
+    """Use the committed task, never a mutable catalog ID or model-authored quote."""
+    if brief.skipped or brief.stage != "complete" or not brief.has_content:
         return ""
-    stated = brief.stated_industry
-    if stated and demo_data.enabled() and demo_data.has_industry(stated):
-        extra = (
-            f" Use the {stated.replace('_', ' ')} demo data already in this "
-            f"workspace (schema `{stated}`)."
-        )
-    elif stated:
-        extra = (
-            f" Their industry is {stated.replace('_', ' ')}; generate the data "
-            "you need rather than substituting another industry's tables."
-        )
-    else:
-        extra = ""
-    return (
-        f"{text}\n\n"
-        "Help me make a useful workshop demo. Reuse what I've told you and "
-        "follow the workshop interaction contract."
-        f"{extra}"
-    )
+    lines = []
+    if brief.what_building.strip():
+        lines.append(brief.what_building.strip())
+    idea = brief.selected_idea
+    if idea:
+        lines.extend(["", f"I picked the idea: {idea['label']}.", idea["prompt"]])
+        if idea.get("first_version"):
+            lines.append("Suggested first version: " + idea["first_version"])
+        for assumption in idea.get("assumptions", []):
+            lines.append("Demo assumption to check: " + assumption)
+    elif brief.idea_id:
+        lines.append("A previous idea selection needs review; use my words above and confirm the intended task.")
+    if brief.stated_industry:
+        lines.append("My industry is " + brief.stated_industry.replace("_", " ") + ".")
+    lines.extend(["", "Help me make a useful workshop demo. Reuse what I've told you, explore the workshop's prepared data first, and follow the workshop interaction contract."])
+    return "\n".join(lines)
 
 
 def _effective_model() -> str:
@@ -569,24 +669,21 @@ def _effective_model() -> str:
     return str(wizard_llm.effective_model()["model"])
 
 
-def state(user: User, industry: str = "", query: str = "") -> dict[str, Any]:
+def state(user: User, industry: str | None = None, query: str = "") -> dict[str, Any]:
     """Everything the frontend needs to render the wizard.
 
     ``industry`` is the filter chip the attendee just pressed, which is not yet
     in the brief — they are still choosing what to build, and the whole point of
     the chip is to see the grid change before committing to anything.
 
-    The shuffle is seeded on the attendee's identity, so the grid is theirs and
-    stays theirs. An unseeded selector answers the same question differently
-    every time it is asked, which turns a reconnect, a second tab, or a pressed
-    filter chip into six new cards under someone who was halfway through reading
-    the old ones. Seeding keeps the property the shuffle exists for — the room
-    does not all see the same six — without that cost.
+    Stable ordering survives reconnects. A deliberate industry filter affects
+    candidates but cannot replace a committed selection.
     """
-    brief = read_brief(user)
-    industry = demo_data.industry_slug(_clean_text(industry)[:64]) or (
-        brief.stated_industry or default_industry()
-    )
+    brief = read_brief(user, strict=True)
+    if industry is None:
+        industry = brief.industry if brief.revision or brief.seen else default_industry()
+    else:
+        industry = demo_data.industry_slug(_clean_text(industry)[:64])
     enabled = config.onboarding_wizard_enabled()
     seeded = demo_data.industries()
     offered = demo_data.offered_industries()
@@ -615,7 +712,7 @@ def state(user: User, industry: str = "", query: str = "") -> dict[str, Any]:
         "intent_labels": intent_labels,
         "stacks": stacks,
         "ideas": [
-            idea_payload(i)
+            wizard_selections.offer(user, idea_payload(i), source="catalog")
             for i in select_ideas(
                 industry, rng=random.Random(user.email), query=query
             )

@@ -126,6 +126,10 @@ class TerminalSubscriberQueue(asyncio.Queue):
             super().put_nowait({"t": "overflow"})
 
 
+class PartialInputError(OSError):
+    """Input began reaching the PTY, so an automatic replay would duplicate it."""
+
+
 class Session:
     def __init__(self, owner_email: str, agent_id: str, label: str,
                  master_fd: int, pid: int):
@@ -137,6 +141,9 @@ class Session:
         self.pid = pid
         self.scrollback = ByteScrollback()
         self.lock = threading.Lock()
+        self.input_lock = threading.Lock()
+        self.delivery_lock = threading.Lock()
+        self.prompt_deliveries: dict[str, dict] = {}
         self.created_at = time.time()
         self.last_activity = time.time()
         self.exited = False
@@ -151,8 +158,46 @@ class Session:
             self.last_activity = time.time()
 
     def write_input(self, data: str) -> None:
-        os.write(self.master_fd, data.encode())
+        encoded = data.encode()
+        with self.input_lock:
+            offset = 0
+            while offset < len(encoded):
+                try:
+                    written = os.write(self.master_fd, encoded[offset:])
+                except OSError as exc:
+                    if offset:
+                        raise PartialInputError("Prompt delivery was interrupted. Clear the visible input before retrying.") from exc
+                    raise
+                if written <= 0:
+                    if offset:
+                        raise PartialInputError("Prompt delivery was interrupted. Clear the visible input before retrying.")
+                    raise OSError("PTY did not accept the complete input")
+                offset += written
         self.touch()
+
+    def deliver_prompt(self, text: str, delivery_id: str) -> dict:
+        """Retry a completed unsent delivery without typing it a second time."""
+        import hashlib
+
+        acknowledgement = {"status": "ok", "typed_characters": len(text),
+                           "typed_sha256": hashlib.sha256(text.encode()).hexdigest()}
+        with self.delivery_lock:
+            existing = self.prompt_deliveries.get(delivery_id)
+            if existing:
+                if existing.get("status") == "interrupted":
+                    raise ValueError("Prompt delivery was interrupted. Open the agent to clear its input, then start a new session to load your saved goal.")
+                if existing != acknowledgement:
+                    raise ValueError("This delivery request was already used for a different prompt")
+                return existing
+            if len(self.prompt_deliveries) >= 128:
+                self.prompt_deliveries.pop(next(iter(self.prompt_deliveries)))
+            try:
+                self.write_input(text)
+            except PartialInputError:
+                self.prompt_deliveries[delivery_id] = {"status": "interrupted"}
+                raise ValueError("Prompt delivery was interrupted. Open the agent to clear its input, then start a new session to load your saved goal.") from None
+            self.prompt_deliveries[delivery_id] = acknowledgement
+        return acknowledgement
 
     def resize(self, cols: int, rows: int) -> None:
         try:

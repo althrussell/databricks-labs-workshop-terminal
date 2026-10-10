@@ -536,7 +536,7 @@ def submit_discovery(body: _DiscoveryBody, request: Request):
     principal = _callback_identity(body, request)
     if not config.discovery_enabled():
         return {"captured": False, "reason": "disabled"}
-    raw = body.model_dump(exclude={"email"})
+    raw = body.model_dump(exclude={"email"}, exclude_unset=True)
     stored = discovery.record(principal.name, raw)
     if stored is None:
         # Withdrawn by the attendee, or the per-attendee cap is reached. Both are
@@ -615,6 +615,9 @@ def set_persona(body: _PersonaBody, principal: Principal = Depends(get_current_u
 
 
 class _WizardBody(BaseModel):
+    expected_revision: int | None = Field(default=None, ge=0)
+    operation: str = "complete"
+    selection_token: str = ""
     what_building: str = ""
     industry: str = ""
     industry_stated: bool = False
@@ -630,9 +633,43 @@ class _WizardBody(BaseModel):
     display_name: str = ""
 
 
+class _ProfileBody(BaseModel):
+    expected_revision: int = Field(ge=0)
+    help_preference: str
+
+
+@app.get("/api/profile")
+def get_profile(principal: Principal = Depends(get_current_user)):
+    from . import attendee_profile
+    from .users import user_manager
+
+    try:
+        return attendee_profile.read(user_manager.get(principal.name)).to_json()
+    except attendee_profile.ProfileReadError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/api/profile")
+def save_profile(body: _ProfileBody, principal: Principal = Depends(get_current_user)):
+    from . import attendee_profile, user_content
+    from .users import user_manager
+
+    user = user_manager.get(principal.name)
+    try:
+        profile = attendee_profile.save(user, body.help_preference, expected_revision=body.expected_revision)
+    except attendee_profile.ProfileConflict as exc:
+        raise HTTPException(status_code=409, detail={"message": str(exc), "profile": exc.profile.to_json()}) from exc
+    except attendee_profile.ProfileReadError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    user_content._write_instructions(user)
+    return profile.to_json()
+
+
 @app.get("/api/wizard")
 def get_wizard(
-    industry: str = "",
+    industry: str | None = None,
     q: str = "",
     principal: Principal = Depends(get_current_user),
 ):
@@ -647,7 +684,10 @@ def get_wizard(
     from . import wizard
     from .users import user_manager
 
-    return wizard.state(user_manager.get(principal.name), industry, query=q)
+    try:
+        return wizard.state(user_manager.get(principal.name), industry, query=q)
+    except wizard.BriefReadError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.post("/api/wizard")
@@ -673,7 +713,14 @@ def save_wizard(body: _WizardBody, principal: Principal = Depends(get_current_us
     # Only the keys the attendee actually sent: the dismissal path posts nothing
     # but ``skipped``, and the defaults on the model would otherwise read as an
     # instruction to blank every answer they had already given.
-    brief = wizard.save(user, payload)
+    try:
+        brief = wizard.save(user, payload)
+    except wizard.BriefConflict as exc:
+        raise HTTPException(status_code=409, detail={"message": str(exc), "brief": exc.brief.to_json()}) from exc
+    except wizard.BriefReadError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     # The brief is inlined into the agent's instructions, so they have to be
     # rewritten now. Sessions are almost always launched from the wizard's last
     # step, after this call, so the first agent to start already has it.
@@ -685,9 +732,10 @@ def save_wizard(body: _WizardBody, principal: Principal = Depends(get_current_us
 
 
 class _WizardSuggestBody(BaseModel):
-    text: str = ""
-    industry: str = ""
+    text: str = Field(default="", max_length=2000)
+    industry: str = Field(default="", max_length=64)
     industry_locked: bool = False
+    intent: str = ""
 
 
 @app.post("/api/wizard/suggest")
@@ -700,11 +748,16 @@ def suggest_wizard(
     switched-off flag returns the deterministic selector so the modal never
     waits on a model that is not answering.
     """
-    from . import wizard_llm
+    from . import wizard_llm, wizard_selections
+    from .users import user_manager
 
-    return wizard_llm.suggest(
-        body.text, body.industry, industry_locked=body.industry_locked
+    result = wizard_llm.suggest(
+        body.text, body.industry, industry_locked=body.industry_locked,
+        intent=body.intent, attendee_key=principal.name,
     )
+    user = user_manager.get(principal.name)
+    result["ideas"] = [wizard_selections.offer(user, idea, source=idea.get("source", "catalog"), model=result.get("model", "")) for idea in result["ideas"]]
+    return result
 
 
 @app.get("/api/wizard/surprise")
@@ -712,10 +765,11 @@ def surprise_wizard(
     industry: str = "", principal: Principal = Depends(get_current_user)
 ):
     """One verified idea, for the Surprise me button."""
-    from . import wizard
+    from . import wizard, wizard_selections
+    from .users import user_manager
 
     idea = wizard.surprise(industry)
-    return {"idea": wizard.idea_payload(idea) if idea else None}
+    return {"idea": wizard_selections.offer(user_manager.get(principal.name), wizard.idea_payload(idea), source="catalog") if idea else None}
 
 
 @app.get("/api/agents")
@@ -951,7 +1005,8 @@ def create_session(
 
 
 class TypeBody(BaseModel):
-    text: str
+    text: str = Field(max_length=12000)
+    delivery_id: str = Field(default="", max_length=160)
 
 
 @app.post("/api/sessions/{session_id}/type")
@@ -964,14 +1019,23 @@ def type_into_session(
     session = session_manager.get(session_id, principal.name)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
-    text = body.text.replace("\n", " ").replace("\r", " ")[:500]
+    # Flatten line breaks to keep the prompt UNSENT. Reject oversized requests
+    # in the schema rather than reporting success after silently cutting a task.
+    text = body.text.replace("\n", " ").replace("\r", " ")
     if not text.strip():
         raise HTTPException(status_code=422, detail="Nothing to type")
     try:
+        if body.delivery_id:
+            return session.deliver_prompt(text, body.delivery_id)
         session.write_input(text)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except OSError:
         raise HTTPException(status_code=409, detail="Session is not accepting input")
-    return {"status": "ok"}
+    import hashlib
+
+    return {"status": "ok", "typed_characters": len(text),
+            "typed_sha256": hashlib.sha256(text.encode()).hexdigest()}
 
 
 @app.delete("/api/sessions/{session_id}")

@@ -44,6 +44,7 @@ import time
 from typing import Any
 
 from . import config, credentials
+from .bounded_work import Singleflight
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,11 @@ _FAILURE_TTL_SECONDS = 60
 _MANIFEST_TABLE_CAP = 14
 
 _lock = threading.Lock()
+_loads = Singleflight()
+_cache_generation = 0
+_capabilities = Singleflight(capacity=2)
+_column_cache: dict[tuple[str, str], tuple[float, set[str]]] = {}
+_description_cache: dict[tuple[str, str], tuple[float, str]] = {}
 _cache: dict[str, set[str]] | None = None
 _cache_labels: dict[str, str] = {}
 _cache_at = 0.0
@@ -210,7 +216,7 @@ def _load_labels(client: Any, cat: str) -> dict[str, str]:
     return labels
 
 
-def inventory(*, refresh: bool = False) -> dict[str, set[str]]:
+def inventory(*, refresh: bool = False, timeout: float = 0.25) -> dict[str, set[str]]:
     """schema -> table names for the demo catalog. Empty when unavailable.
 
     Never raises. Every caller is on a page-render path, and a wizard that fails
@@ -228,27 +234,31 @@ def inventory(*, refresh: bool = False) -> dict[str, set[str]]:
         if _cache is not None and not refresh and age < ttl:
             return _cache
 
-    try:
-        found, labels = _load()
-        ok = True
-    except Exception as e:
-        # Debug, not warning: in local dev there is no workspace client and this
-        # is the expected path every time, so anything louder trains people to
-        # ignore it.
-        logger.debug("demo data catalog %s unavailable: %s", catalog(), e)
-        found, labels, ok = {}, {}, False
+    generation = _cache_generation
 
-    with _lock:
-        _cache, _cache_labels = found, labels
-        _cache_at, _cache_ok = time.time(), ok
-    if ok:
-        logger.info(
-            "demo data catalog %s: %d schemas, %d tables",
-            catalog(),
-            len(found),
-            sum(len(v) for v in found.values()),
-        )
-    return found
+    def load():
+        global _cache, _cache_labels, _cache_at, _cache_ok
+        try:
+            found, labels = _load()
+            ok = True
+        except Exception as exc:
+            logger.debug("demo data catalog unavailable: %s", exc)
+            found, labels, ok = {}, {}, False
+        with _lock:
+            if generation == _cache_generation:
+                _cache, _cache_labels = found, labels
+                _cache_at, _cache_ok = time.time(), ok
+        return found
+
+    try:
+        return _loads.run((catalog(), generation), load, timeout)
+    except TimeoutError:
+        # Cold metadata never blocks onboarding. The one bounded loader may
+        # warm this cache later; subsequent calls do not start another loader.
+        with _lock:
+            if _cache is None:
+                _cache, _cache_at, _cache_ok = {}, time.time(), False
+            return _cache
 
 
 def industries() -> list[str]:
@@ -361,8 +371,8 @@ def verify(tables: list[str]) -> bool:
     the wizard into the terminal, where it costs the attendee their time instead
     of ours.
 
-    An unreadable catalog answers False for everything. Callers deciding whether
-    to *show* a card must check :func:`readable` first — see ``wizard._buildable``.
+    An unreadable catalog answers False for named tables. Callers keep generic
+    choices available instead of implying that unseen tables are usable.
     """
     if not tables:
         return True  # needs no demo data, so nothing can be missing
@@ -385,6 +395,108 @@ def data_ready(tables: list[str]) -> bool:
     badge is a promise, and we cannot keep one we cannot check.
     """
     return bool(tables) and verify(tables)
+
+
+def supports(required_columns: dict[str, list[str]], *, timeout: float = 0.25) -> bool:
+    """Read required-column metadata as the WT app identity within a UI budget.
+
+    This proves available metadata, not SELECT permission, data semantics or a
+    generated app's resources. The coding agent still checks those at use.
+    """
+    if not required_columns:
+        return False
+    current_catalog = catalog()
+    generation = _cache_generation
+    wanted = tuple(sorted((table, tuple(columns)) for table, columns in required_columns.items()))
+    # Warm curated and model checks need no thread or network round trip. Missing
+    # columns fail immediately; absent metadata starts bounded background work.
+    with _lock:
+        all_cached = True
+        for table, columns in wanted:
+            cached = _column_cache.get((current_catalog, table))
+            if cached and time.monotonic() - cached[0] < _TTL_SECONDS:
+                if not {column.casefold() for column in columns} <= cached[1]:
+                    return False
+            else:
+                all_cached = False
+        if all_cached:
+            return True
+    client = credentials.workspace_client()
+    if client is None:
+        return False
+
+    def check():
+        metadata_only = all(not columns for _table, columns in wanted)
+        complete = True
+        for table, columns in wanted:
+            key = (current_catalog, table)
+            with _lock:
+                cached = _column_cache.get(key)
+            if cached and time.monotonic() - cached[0] < _TTL_SECONDS:
+                available = cached[1]
+            else:
+                try:
+                    info = client.tables.get(full_name=f"{current_catalog}.{table}")
+                    available = {column.name.casefold() for column in info.columns or [] if column.name}
+                except Exception:
+                    if metadata_only:
+                        # A metadata inventory can retain other known tables;
+                        # a dependency check still fails at the first error.
+                        complete = False
+                        continue
+                    return False
+                with _lock:
+                    if generation == _cache_generation:
+                        _column_cache[key] = (time.monotonic(), available)
+                        # Use the same metadata read for row/domain hints. Column
+                        # names alone cannot distinguish viewing from web visits.
+                        comment = getattr(info, "comment", None)
+                        if isinstance(comment, str) and comment.strip():
+                            _description_cache[key] = (time.monotonic(), " ".join(comment.split())[:400])
+                        else:
+                            _description_cache.pop(key, None)
+            if not {column.casefold() for column in columns} <= available:
+                return False
+        return complete
+
+    try:
+        return _capabilities.run((current_catalog, generation, wanted), check, timeout)
+    except TimeoutError:
+        return False
+
+
+def column_inventory(tables: list[str], *, timeout: float = 0.75) -> dict[str, list[str]]:
+    """Actual cached column names for a bounded list of prepared tables.
+
+    Missing metadata is omitted rather than guessed. The same bounded worker
+    and cache used by dependency validation warms these names as the app SP.
+    """
+    wanted = list(dict.fromkeys(tables))[:24]
+    if not wanted or not verify(wanted):
+        return {}
+    supports({table: [] for table in wanted}, timeout=timeout)
+    current_catalog = catalog()
+    with _lock:
+        return {
+            table: sorted(cached[1]) for table in wanted
+            if (cached := _column_cache.get((current_catalog, table)))
+            and time.monotonic() - cached[0] < _TTL_SECONDS
+        }
+
+
+def table_descriptions(tables: list[str]) -> dict[str, str]:
+    """Cached source comments from column reads; no additional network work.
+
+    Comments describe the source's intended domain. They establish neither
+    actual row content nor suitability, and are never invented from table names.
+    """
+    current_catalog = catalog()
+    with _lock:
+        return {
+            table: cached[1] for table in list(dict.fromkeys(tables))[:24]
+            if (cached := _description_cache.get((current_catalog, table)))
+            and time.monotonic() - cached[0] < _TTL_SECONDS
+        }
 
 
 def _rank(table: str) -> tuple[int, str]:
@@ -453,7 +565,10 @@ def manifest(industry: str = "") -> str:
 
 def reset_cache() -> None:
     """Drop the cache. For tests and the admin reload path."""
-    global _cache, _cache_labels, _cache_at, _cache_ok
+    global _cache, _cache_labels, _cache_at, _cache_ok, _cache_generation
     with _lock:
+        _cache_generation += 1
+        _column_cache.clear()
+        _description_cache.clear()
         _cache, _cache_labels = None, {}
         _cache_at, _cache_ok = 0.0, False

@@ -36,6 +36,36 @@ def _create(client, headers, agent="claude"):
     return resp.json()["session"]
 
 
+@pytest.mark.parametrize("wizard_mode", ["skipped", "disabled"])
+@pytest.mark.parametrize("agent_id", ["claude", "codex", "omnigent"])
+def test_harness_session_does_not_require_onboarding(client, monkeypatch, tmp_path, wizard_mode, agent_id):
+    from server import config, wizard
+    from server.users import user_manager
+
+    monkeypatch.setenv("OMNIGENT_ENABLED", "true")
+    monkeypatch.setenv("WORKSHOP_AGENTS", "claude,codex,omnigent")
+    monkeypatch.setenv("DATA_ROOT", str(tmp_path))
+    monkeypatch.setattr(config, "onboarding_wizard_enabled", lambda: wizard_mode != "disabled")
+    if wizard_mode == "skipped":
+        response = client.post("/api/wizard", json={"operation": "skip", "expected_revision": 0}, headers=ALICE)
+        assert response.status_code == 200, response.text
+    user = user_manager.get("alice@example.com")
+    before = wizard.read_brief(user).to_json()
+    session = _create(client, ALICE, agent=agent_id)
+    assert session["agent_id"] == agent_id
+    with client.websocket_connect(f"/ws/sessions/{session['id']}", headers=ALICE) as ws:
+        ws.send_json({"t": "input", "data": "printf 'onboarding-%s\\n' independent\r"})
+        output = ""
+        for _ in range(50):
+            message = ws.receive_json()
+            if message.get("t") in {"output", "replay"}:
+                output += message.get("data", "")
+            if "onboarding-independent" in output:
+                break
+        assert "onboarding-independent" in output
+    assert wizard.read_brief(user).to_json() == before
+
+
 def test_sessions_are_owner_scoped(client):
     session = _create(client, ALICE)
 

@@ -19,6 +19,14 @@ export interface IdeaPrompt {
 
 export type Persona = "technical" | "business";
 
+export interface AttendeeProfile {
+  schema_version: 1;
+  revision: number;
+  help_preference: "" | "guided" | "concise" | "technical";
+  source: string;
+  legacy_persona: string;
+}
+
 export interface WizardIdea {
   id: string;
   label: string;
@@ -36,9 +44,26 @@ export interface WizardIdea {
   data_ready?: boolean;
   /** Whether this card uses seeded demo tables (`demo`) or generated data. */
   data_mode?: "demo" | "generate";
+  selection_token?: string;
+  selection_expires_at?: number;
+  schema_version?: number;
+  source?: "catalog" | "generated";
+  model?: string;
+  content_digest?: string;
+  fit_reason?: string;
+  first_version?: string;
+  assumptions?: string[];
+  unresolved?: string[];
 }
 
 export interface WizardBrief {
+  schema_version?: number;
+  revision?: number;
+  stage?: "draft" | "complete" | "skipped";
+  selected_idea?: WizardIdea | null;
+  selection_token?: string;
+  discovery_record_id?: string;
+  words_source?: "attendee" | "legacy_unverified" | "confirmed_goal";
   record_id: string;
   what_building: string;
   industry: string;
@@ -76,6 +101,9 @@ export interface WizardState {
 }
 
 export interface WizardSave {
+  expected_revision?: number;
+  operation?: "draft" | "complete" | "skip" | "clear" | "change";
+  selection_token?: string;
   what_building?: string;
   industry?: string;
   industry_stated?: boolean;
@@ -377,10 +405,10 @@ export const api = {
   closeSession: (id: string) => request(`/api/sessions/${id}`, { method: "DELETE" }),
   ackPriorSession: (id: string) =>
     request(`/api/sessions/prior/${encodeURIComponent(id)}`, { method: "DELETE" }),
-  typeIntoSession: (id: string, text: string) =>
+  typeIntoSession: (id: string, text: string, deliveryId?: string) =>
     request(`/api/sessions/${id}/type`, {
       method: "POST",
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, ...(deliveryId ? { delivery_id: deliveryId } : {}) }),
     }),
   recover: () =>
     request<{ recovered: boolean; actions: string[] }>("/api/recover", {
@@ -391,12 +419,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ persona }),
     }),
-  wizard: (industry?: string, query?: string) => {
+  profile: () => request<AttendeeProfile>("/api/profile"),
+  saveProfile: (body: { expected_revision: number; help_preference: AttendeeProfile["help_preference"] }) =>
+    request<AttendeeProfile>("/api/profile", { method: "POST", body: JSON.stringify(body) }),
+  wizard: (industry?: string, query?: string, signal?: AbortSignal) => {
     const params = new URLSearchParams();
-    if (industry) params.set("industry", industry);
+    if (industry !== undefined) params.set("industry", industry);
     if (query) params.set("q", query);
     const qs = params.toString();
-    return request<WizardState>(qs ? `/api/wizard?${qs}` : "/api/wizard");
+    return request<WizardState>(qs ? `/api/wizard?${qs}` : "/api/wizard", { signal });
   },
   saveWizard: (body: WizardSave) =>
     request<{ brief: WizardBrief; starter_prompt: string }>("/api/wizard", {
@@ -404,18 +435,18 @@ export const api = {
       body: JSON.stringify(body),
     }),
   wizardSuggest: (
-    body: { text: string; industry: string; industry_locked?: boolean },
+    body: { text: string; industry: string; industry_locked?: boolean; intent?: string; persona?: string },
     signal?: AbortSignal
   ) =>
-    request<{ industry: string; ideas: WizardIdea[]; source: string }>(
+    request<{ industry: string; ideas: WizardIdea[]; source: string; fallback_reason?: string }>(
       "/api/wizard/suggest",
       { method: "POST", body: JSON.stringify(body), signal }
     ),
-  wizardSurprise: (industry?: string) =>
+  wizardSurprise: (industry?: string, signal?: AbortSignal) =>
     request<{ idea: WizardIdea | null }>(
       industry
         ? `/api/wizard/surprise?industry=${encodeURIComponent(industry)}`
-        : "/api/wizard/surprise"
+        : "/api/wizard/surprise", { signal }
     ),
   nuggets: () =>
     request<{ phase: string; nuggets: Nugget[]; prompts: IdeaPrompt[] }>("/api/nuggets"),

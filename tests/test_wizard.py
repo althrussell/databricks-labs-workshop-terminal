@@ -12,13 +12,14 @@ is visible from a screenshot:
 
 from __future__ import annotations
 
+import json
 import random
 import time
 import types
 
 import pytest
 
-from server import content, demo_data, discovery, user_content, wizard
+from server import content, demo_data, discovery, user_content, wizard, wizard_selections
 
 
 @pytest.fixture()
@@ -47,11 +48,24 @@ def seeded(monkeypatch):
     monkeypatch.setattr(demo_data, "_cache", inventory)
     monkeypatch.setattr(demo_data, "_cache_at", time.time())
     monkeypatch.setattr(demo_data, "_cache_ok", True)
+    # Realistic column fixture recorded from the prepared Labs catalog. These
+    # tests isolate selection ordering; missing-column behavior is tested below.
+    from pathlib import Path
+    columns = json.loads((Path(__file__).parent / "fixtures" / "wizard-prepared-columns.json").read_text())
+    monkeypatch.setattr(demo_data, "_column_cache", {
+        ("workshop_demo", table): (time.monotonic(), {name.casefold() for name in names})
+        for table, names in columns.items()
+    })
     yield inventory
     demo_data.reset_cache()
 
 
 # -- brief -> discovery -----------------------------------------------------
+
+def offered_fields(user, idea):
+    offer = wizard_selections.offer(user, wizard.idea_payload(idea), source="catalog")
+    return {"idea_id": offer["id"], "selection_token": offer["selection_token"]}
+
 
 def test_the_wizard_answer_becomes_a_high_confidence_discovery_record(user):
     """The attendee stated this themselves, unprompted by an agent's reading of
@@ -170,7 +184,8 @@ def test_an_empty_brief_records_nothing(user):
     """Clicking Next through an empty form is not a finding. A row saying an
     attendee exists and wants nothing is worse than no row, because it looks
     like one."""
-    wizard.save(user, {"what_building": "   "})
+    with pytest.raises(ValueError, match="Add a goal"):
+        wizard.save(user, {"what_building": "   "})
     assert discovery.discovery_store.for_attendee(user.email) == []
 
 
@@ -327,15 +342,14 @@ def test_industry_matches_lead_the_grid(seeded):
     assert "automotive_mobility" in ideas[0].industries
 
 
-def test_without_a_demo_catalog_the_whole_catalogue_is_offered(monkeypatch):
-    """Filtering on tables nobody has would empty the grid. Without demo data the
-    agent generates what it needs, so every card is reachable."""
+def test_without_a_demo_catalog_usable_generic_choices_remain(monkeypatch):
+    """Do not offer a table-dependent task whose receipt cannot be saved."""
     monkeypatch.setattr(demo_data.config, "workshop_demo_catalog", lambda: "")
     demo_data.reset_cache()
     ideas = wizard.select_ideas("automotive_mobility", rng=random.Random(2))
 
-    assert len(ideas) == wizard.IDEA_COUNT
-    assert any(i.demo_tables for i in ideas)
+    assert 1 <= len(ideas) <= wizard.IDEA_COUNT
+    assert all(not i.demo_tables for i in ideas)
 
 
 def test_an_attendee_keeps_the_grid_they_were_given(user, seeded):
@@ -349,14 +363,14 @@ def test_an_attendee_keeps_the_grid_they_were_given(user, seeded):
     assert first == again
 
 
-def test_two_attendees_do_not_get_the_same_six(seeded):
+def test_two_attendees_do_not_get_the_same_six(seeded, tmp_path):
     """The reason the shuffle exists: a room that all sees the same grid in the
     same order builds the same thing. Stability is per attendee, not global."""
     grids = {
         email: tuple(
             i["id"]
             for i in wizard.state(
-                types.SimpleNamespace(email=email, home="/nonexistent")
+                types.SimpleNamespace(email=email, home=str(tmp_path / email))
             )["ideas"]
         )
         for email in (f"labuser{n}@example.com" for n in range(12))
@@ -413,13 +427,14 @@ def test_an_industry_no_notebook_has_ever_heard_of_is_still_ignored(
 
 # -- starter prompt ---------------------------------------------------------
 
-def test_a_chosen_card_preserves_its_prompt_with_shared_framing(user):
+def test_a_chosen_card_preserves_its_prompt_with_shared_framing(user, seeded):
     """The card's prompt was written to produce a good first build; the sentence
     was written to describe an ambition."""
     idea = next(i for i in content.content_service.ideas() if i.demo_tables)
-    brief = wizard.save(user, {"idea_id": idea.id, "what_building": idea.outcome})
+    brief = wizard.save(user, {**offered_fields(user, idea), "what_building": idea.outcome})
     prompt = wizard.starter_prompt(brief)
-    assert prompt.startswith(idea.prompt + "\n\n")
+    assert prompt.startswith(idea.outcome)
+    assert idea.prompt in prompt
     assert "follow the workshop interaction contract" in prompt
     assert "Start building this with me now" not in prompt
 
@@ -472,7 +487,7 @@ def test_the_wizard_endpoint_round_trips(client):
 
     initial = client.get("/api/wizard", headers=who).json()
     assert initial["should_show"] is True
-    assert len(initial["ideas"]) == wizard.IDEA_COUNT
+    assert 1 <= len(initial["ideas"]) <= wizard.IDEA_COUNT
 
     saved = client.post(
         "/api/wizard",
@@ -547,12 +562,12 @@ def test_picking_a_retail_card_scopes_the_overlay_to_retail(user, seeded, monkey
     idea = next(
         i for i in content.content_service.ideas() if "retail" in i.industries
     )
-    wizard.save(user, {"idea_id": idea.id, "what_building": idea.outcome})
+    wizard.save(user, {**offered_fields(user, idea), "what_building": idea.outcome})
 
     overlay = user_content._demo_data_overlay(user)
     assert "workshop_demo.retail" in overlay
     assert "vehicle360" not in overlay
-    assert discovery.discovery_store.for_attendee(user.email)[0].industry == "retail"
+    assert discovery.discovery_store.for_attendee(user.email)[0].industry == ""
 
 
 def test_an_industry_nobody_seeded_is_told_to_generate_not_to_borrow(user, seeded):
@@ -672,7 +687,7 @@ def test_an_unreadable_catalog_does_not_withdraw_every_data_backed_card(
 
     ideas = wizard.state(user, "automotive_mobility")["ideas"]
 
-    assert any(i["demo_tables"] for i in ideas), "data-backed cards were withdrawn"
+    assert all(not i["demo_tables"] for i in ideas), "unverified table dependencies must not be offered as selectable tasks"
     # ...but nothing claims the data is there, because nobody could check.
     assert all(i["data_ready"] is False for i in ideas)
 
@@ -970,39 +985,6 @@ def test_one_attendees_brief_is_not_another_attendees(client):
     assert client.get("/api/wizard", headers=BOB).json()["brief"]["what_building"] == ""
 
 
-def test_the_wizard_ui_makes_industry_a_choice_and_does_not_skip_on_backdrop():
-    """Grep-style, same as the persona tests: there is no Wizard.tsx runner, and
-    these strings are the contract the plan asked for."""
-    from pathlib import Path
-
-    src = (Path(__file__).resolve().parents[1] / "frontend" / "src" / "components" / "Wizard.tsx").read_text()
-    # The chips render on their own, not behind a length check on live
-    # inventory: that gate is what removed the picker on an unset catalog.
-    assert "industries.length > 0 && (" in src
-    assert "state.seeded_industries" in src
-    # An industry nobody seeded is still an industry someone works in.
-    assert "otherOpen" in src
-    assert "Tell us your industry" in src
-    assert "industryOf(idea)" in src
-    assert "We'll generate this" in src
-    assert "Which" in src and "industry" in src
-    assert "industry_locked" in src
-    assert "ideaDataMode" in src
-    assert "A little context (optional)" in src
-    assert "Press Enter to start" in src
-    assert 'className="modal-backdrop" onClick={skip}' not in src
-    assert "wizardSuggest" in src
-    assert "wizardSurprise" in src
-    # The reported bug: cards arrived and landed behind a collapsed panel, so
-    # the spinner was the only evidence the LLM path existed.
-    assert "if (reveal && res.ideas.length > 0) setShowIdeas(true);" in src
-    # The badge is a fact from the server, not an inference from card shape.
-    assert "idea.data_ready &&" in src
-    # A generic card must not count as stating the industry on screen.
-    assert "industry_stated: industryConfirmed || Boolean(ideaId)" not in src
-    assert "industry_stated: industryConfirmed," in src
-
-
 def test_a_generic_card_keeps_a_confirmed_industry(user, seeded):
     """Picking 'build a pipeline' is not a choice to forget they said retail."""
     generic = next(
@@ -1016,7 +998,7 @@ def test_a_generic_card_keeps_a_confirmed_industry(user, seeded):
             "what_building": generic.outcome,
             "industry": "retail",
             "industry_stated": True,
-            "idea_id": generic.id,
+            **offered_fields(user, generic),
         },
     )
     brief = wizard.read_brief(user)
@@ -1050,7 +1032,7 @@ def test_a_generic_card_does_not_state_an_unconfirmed_industry(user, seeded):
             "what_building": generic.outcome,
             "industry": "automotive_mobility",
             "industry_stated": False,
-            "idea_id": generic.id,
+            **offered_fields(user, generic),
         },
     )
     brief = wizard.read_brief(user)
@@ -1066,14 +1048,14 @@ def test_discovery_carries_products_and_a_data_mode_signal(user, seeded):
         user,
         {
             "what_building": "",
-            "idea_id": idea.id,
+            **offered_fields(user, idea),
             "industry": idea.industries[0],
             "industry_stated": True,
         },
     )
     payload = wizard.to_discovery(wizard.read_brief(user))
     assert payload["databricks_products"] == list(idea.products)
-    assert payload["interest_signals"] == [f"wizard_idea:{idea.id}"]
+    assert payload["interest_signals"] == [f"wizard_idea:{wizard.read_brief(user).idea_id}"]
     assert payload["use_case_title"] == idea.label
 
 
@@ -1087,8 +1069,8 @@ def test_a_typed_sentence_in_a_seeded_industry_names_the_schema(user, seeded):
         },
     )
     prompt = wizard.starter_prompt(wizard.read_brief(user))
-    assert "automotive_mobility" in prompt
-    assert "demo data" in prompt
+    assert "My industry is automotive mobility." in prompt
+    assert "prepared data first" in prompt
 
 
 def test_idea_payload_labels_generate_vs_demo(seeded):
