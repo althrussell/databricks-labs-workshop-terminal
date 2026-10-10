@@ -45,7 +45,7 @@ Focused regressions cover raw/projected provenance, retired routes, warm trees,
 home links, project copies, preserved notes and real Git worktree content.
 CI adds the same supported-installer check on Linux.
 
-All eight CI jobs passed on `effb42e`: Python 3.11/3.12, frontend build/tests,
+All eight CI jobs passed on `e8d2c0e`: Python 3.11/3.12, frontend build/tests,
 packaged runtime, actual Linux Impeccable installation, rendered wizard,
 evaluator API and Agent Bricks CLI. Raw receipts and screenshots remain outside
 Git.
@@ -66,7 +66,7 @@ been live qualified here.
 | --- | --- |
 | Claude 2.1.296 / Opus 5.5 | Created a phone repair-cafe queue, read Impeccable and ran context once. The original preview failed contrast; attendee feedback repaired it. A fresh final-package build has readable scoped colours. Its reused-origin saved-data failure was also repaired through attendee feedback: earlier jobs returned, and independent add/finish/reload passed at 390px without horizontal overflow. |
 | Codex 0.162.1 / GPT Sol 6.1 | Created a distinct garden collection and planting plan from a simple phone-app request. Native trace confirms seven Impeccable instruction/reference reads and one context invocation. Used scoped product tokens under the corrected policy. Build and saved-plan tests passed; it shared the preview and accurately disclosed unavailable native browser checks. Independent browser tasks remain pending new-app attendee consent. |
-| Isolated native discovery | Actual Codex `skills/list` with empty HOME/CODEX_HOME in a detached Git worktree discovered enabled repository Impeccable, neither retired UX skill, and no discovery errors. Reading the actual asset and running its launcher returned the reviewed skill digest and engine 0.1.14. |
+| Isolated native discovery | Actual Codex `skills/list` with empty HOME/CODEX_HOME and Claude's native startup inventory with an isolated config/home both discovered repository Impeccable and neither retired UX skill in real detached Git worktrees. The Claude home contained no skills, and its worker was restricted to Read/Skill with no MCP servers. Both actual assets and launchers matched the reviewed skill digest and engine 0.1.14. Temporary worktrees were removed and the app files retained. |
 
 The generated repair queue and garden collection choose different navigation,
 composition, typography and content for their tasks, rather than sharing a
