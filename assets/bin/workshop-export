@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+"""Zip attendee project source and verify its copy in the assigned UC volume."""
+
+from __future__ import annotations
+
+import argparse
+import configparser
+from datetime import datetime, timezone
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
+from urllib.parse import quote
+import uuid
+import zipfile
+
+
+VOLUME = "workshop_exports"
+SKIP_DIRS = frozenset({
+    ".git", ".agents", ".claude", ".codex", ".databricks", ".workshop",
+    "node_modules", ".venv", "venv", "__pycache__", ".cache", ".pytest_cache",
+    ".ruff_cache", ".mypy_cache", ".next", ".nuxt", ".parcel-cache",
+    "dist", "build", "coverage", ".ssh",
+})
+SKIP_FILES = frozenset({
+    ".databrickscfg", ".netrc", ".npmrc", ".pypirc", "credentials.json",
+    "id_rsa", "id_ed25519", ".DS_Store",
+})
+ENV_EXAMPLES = frozenset({".env.example", ".env.sample", ".env.template"})
+
+
+class ExportError(RuntimeError):
+    pass
+
+
+def excluded_file(name: str) -> bool:
+    return (name in SKIP_FILES
+            or (name.startswith(".env") and name not in ENV_EXAMPLES)
+            or Path(name).suffix.lower() in {".pem", ".key", ".p12", ".pfx", ".pyc"})
+
+
+def build_archive(source: Path, destination: Path, *, single_project: bool) -> dict:
+    """Include uncommitted/untracked source; never follow links outside a project."""
+    included = []
+    omitted = []
+    with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for directory, dirs, files in os.walk(source, followlinks=False):
+            parent = Path(directory)
+            for name in list(dirs):
+                path = parent / name
+                if name in SKIP_DIRS or path.is_symlink():
+                    dirs.remove(name)
+                    omitted.append(path.relative_to(source).as_posix() + "/")
+            dirs.sort()
+            for name in sorted(files):
+                path = parent / name
+                relative = path.relative_to(source)
+                if path.is_symlink() or excluded_file(name) or not path.is_file():
+                    omitted.append(relative.as_posix())
+                    continue
+                member = Path(source.name) / relative if single_project else relative
+                archive.write(path, arcname=(Path("workshop-code") / member).as_posix())
+                included.append(member.as_posix())
+        if not included:
+            raise ExportError("No project source files were found to export.")
+        archive.writestr("workshop-code/EXPORT_INFO.txt", (
+            "Workshop source export\n\n"
+            "Contains current files, including uncommitted changes, tests, assets,\n"
+            "dependency manifests/lockfiles and existing project notes.\n"
+            "Git history, installed dependencies, generated builds, harness skills,\n"
+            "environment/credential files and symlinks are excluded.\n"
+            "Databricks resources and stored application data are not copied.\n"
+            "Restore dependencies using each project's existing manifest/lockfile\n"
+            "and configure access to your own Databricks workspace.\n\n"
+            "Omitted paths:\n" + "\n".join(omitted) + "\n"
+        ))
+    return {"files": len(included), "omitted": omitted,
+            "projects": sorted({Path(name).parts[0] for name in included})}
+
+
+def cli_command() -> list[str]:
+    # Export is build plumbing. CT's default coding identity has MANAGE on the
+    # assigned catalog; the attendee's SQL/metadata OBO scopes exclude Volumes.
+    return ["databricks"]
+
+
+def run_cli(args: list[str], *, allow_failure: bool = False) -> subprocess.CompletedProcess:
+    result = subprocess.run([*cli_command(), *args], capture_output=True, text=True)
+    if result.returncode and not allow_failure:
+        # Do not echo a subprocess's authentication/configuration output.
+        reason = "Permission denied or session expired" if re.search(
+            r"(?i)permission|unauthor|forbidden|expired|401|403", result.stderr + result.stdout
+        ) else "Databricks operation failed"
+        raise ExportError(f"{reason} during {' '.join(args[:2])}. "
+                          "Return to the WT tab and retry, or ask the workshop organizer "
+                          "to check access to your assigned catalog and schema.")
+    return result
+
+
+def ensure_self_privileges(kind: str, name: str, principal: str, required: set[str]) -> None:
+    """Use CT's existing MANAGE grant, restricted to this export's namespace."""
+    response = run_cli(["grants", "get-effective", kind, name,
+                        "--principal", principal, "--output", "json"])
+    assignments = json.loads(response.stdout).get("privilege_assignments", [])
+    held = set()
+    for assignment in assignments:
+        if assignment.get("principal", "").casefold() == principal.casefold():
+            for entry in assignment.get("privileges", []):
+                held.add(entry.get("privilege") if isinstance(entry, dict) else entry)
+    missing = required - held if "ALL_PRIVILEGES" not in held else set()
+    if missing:
+        body = json.dumps({"changes": [{"principal": principal, "add": sorted(missing)}]})
+        run_cli(["grants", "update", kind, name, "--json", body, "--output", "json"])
+
+
+def namespace() -> tuple[str, str]:
+    catalog = os.environ.get("WORKSHOP_CATALOG", "").strip()
+    schema = os.environ.get("WORKSHOP_SCHEMA", "").strip()
+    if not catalog or not schema:
+        raise ExportError("The assigned WORKSHOP_CATALOG and WORKSHOP_SCHEMA are required. "
+                          "Ask the workshop organizer to configure them; no default catalog is guessed.")
+    for value in (catalog, schema):
+        if not re.fullmatch(r"[\w-]+", value):
+            raise ExportError("The assigned catalog/schema contains an unsupported path character.")
+    return catalog, schema
+
+
+def upload_archive(archive: Path, catalog: str, schema: str) -> str:
+    schema_name = f"{catalog}.{schema}"
+    run_cli(["schemas", "get", schema_name, "--output", "json"])
+    identity = json.loads(run_cli(["current-user", "me", "--output", "json"]).stdout)
+    principal = identity.get("userName")
+    if not isinstance(principal, str) or not principal.strip():
+        raise ExportError("The coding identity could not be determined; no permissions were changed.")
+    ensure_self_privileges("schema", schema_name, principal, {"USE_SCHEMA", "CREATE_VOLUME"})
+    volume_name = f"{catalog}.{schema}.{VOLUME}"
+    existing = run_cli(["volumes", "read", volume_name, "--output", "json"], allow_failure=True)
+    if existing.returncode:
+        # Create only in the existing, CT-assigned schema. An existing volume
+        # race is reconciled by read; every other failure is reported.
+        created = run_cli(["volumes", "create", catalog, schema, VOLUME, "MANAGED",
+                           "--comment", "Workshop source ZIPs: download before event teardown.",
+                           "--output", "json"], allow_failure=True)
+        if created.returncode:
+            run_cli(["volumes", "read", volume_name, "--output", "json"])
+    ensure_self_privileges("volume", volume_name, principal, {"READ_VOLUME", "WRITE_VOLUME"})
+    folder = f"/Volumes/{catalog}/{schema}/{VOLUME}/code"
+    path = f"{folder}/{archive.name}"
+    run_cli(["fs", "mkdirs", "dbfs:" + folder])
+    run_cli(["fs", "cp", str(archive), "dbfs:" + path])
+    with tempfile.TemporaryDirectory(prefix=".verify-", dir=archive.parent) as temporary:
+        downloaded = Path(temporary) / archive.name
+        run_cli(["fs", "cp", "dbfs:" + path, str(downloaded)])
+        with archive.open("rb") as local, downloaded.open("rb") as remote:
+            matches = hashlib.file_digest(local, "sha256").digest() == hashlib.file_digest(remote, "sha256").digest()
+        if not matches:
+            raise ExportError("The uploaded ZIP did not match the local ZIP. The local copy is retained.")
+    return path
+
+
+def workspace_host() -> str:
+    host = os.environ.get("DATABRICKS_HOST", "").strip()
+    if not host:
+        config = configparser.ConfigParser(interpolation=None)
+        config.read(Path.home() / ".databrickscfg")
+        profile = os.environ.get("OBO_PROFILE_NAME") or os.environ.get("DATABRICKS_CONFIG_PROFILE", "DEFAULT")
+        host = config.get(profile, "host", fallback="")
+    return host.rstrip("/")
+
+
+def export(project: str | None = None) -> dict:
+    catalog, schema = namespace()
+    projects = Path.home() / "projects"
+    source = Path(project).expanduser().absolute() if project else projects
+    if source.is_symlink() or not source.is_dir():
+        raise ExportError("The project source directory does not exist or is a symlink.")
+    if not source.resolve().is_relative_to(projects.resolve()):
+        raise ExportError("Export a project inside your ~/projects directory.")
+    cache = Path.home() / ".cache/workshop/exports"
+    cache.mkdir(parents=True, exist_ok=True, mode=0o700)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    archive = cache / f"workshop-code-{stamp}-{uuid.uuid4().hex[:8]}.zip"
+    # A local copy survives an upload/authentication failure; it is outside the
+    # source tree so repeat exports never recursively include previous ZIPs.
+    archive.touch(mode=0o600, exist_ok=False)
+    result = build_archive(source, archive, single_project=project is not None)
+    try:
+        path = upload_archive(archive, catalog, schema)
+    except (ExportError, OSError, ValueError) as error:
+        raise ExportError(f"{error}\nLocal ZIP retained at {archive}") from None
+    host = workspace_host()
+    return {**result, "local_zip": str(archive), "volume_path": path,
+            "volume": f"{catalog}.{schema}.{VOLUME}", "filename": archive.name,
+            "verified": True,
+            "volume_url": (host + "/explore/data/volumes/" + "/".join(
+                quote(part, safe="") for part in (catalog, schema, VOLUME)
+            )) if host else ""}
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--project", help="Export one project; otherwise export all of ~/projects")
+    parser.add_argument("--json", action="store_true", help="Return the verified export receipt as JSON")
+    args = parser.parse_args()
+    try:
+        result = export(args.project)
+    except (ExportError, OSError, configparser.Error) as error:
+        print(f"workshop-export: {error}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(result))
+    else:
+        print(f"Exported {result['files']} source files. Uploaded ZIP read-back matches the local ZIP.")
+        print(f"Volume: {result['volume']}\nZIP: {result['volume_path']}")
+        if result["volume_url"]:
+            print(f"Open: {result['volume_url']}")
+        print("Download to your computer before the workshop environment is deleted:")
+        print("1. In Databricks, open Catalog and select your catalog and schema.")
+        print(f"2. Open Volumes → {VOLUME} → code.")
+        print(f"3. For {result['filename']}, open File options → Download file, then unzip it on your computer.")
+        print("The Volume is temporary workshop storage; the downloaded ZIP is your take-home copy.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -271,6 +271,7 @@ def grant_demo_read_access(client, receipt, path, principal):
 
 
 def deploy_package(client, plan, manifest_bytes, artifact, receipt_path):
+    from databricks.sdk.errors import NotFound
     from databricks.sdk.service.apps import App, AppDeployment
     from databricks.sdk.service.iam import ComplexValue
     from databricks.sdk.service.catalog import VolumeType
@@ -330,6 +331,17 @@ def deploy_package(client, plan, manifest_bytes, artifact, receipt_path):
     grant(client, receipt, receipt_path, "CATALOG", catalog.name, operator.user_name, {"ALL_PRIVILEGES", "MANAGE"})
     grant(client, receipt, receipt_path, "CATALOG", catalog.name, plan["attendee"]["email"], {"ALL_PRIVILEGES", "MANAGE"})
     grant(client, receipt, receipt_path, "CATALOG", catalog.name, sp, {"USE_CATALOG", "CREATE_SCHEMA", "MANAGE"})
+    # CT provisions the attendee's default schema as well as the catalog.
+    # Runtime/toolchain schemas do not replace that assigned build/export target.
+    attendee_schema_name = f"{catalog.name}.{names['schema']}"
+    try:
+        attendee_schema = client.schemas.get(attendee_schema_name)
+    except NotFound:
+        attendee_schema = client.schemas.create(name=names["schema"], catalog_name=catalog.name)
+    catalog_resource["attendee_schema"] = {"name": attendee_schema.full_name, "id": attendee_schema.schema_id}
+    write_evidence(receipt_path, receipt)
+    grant(client, receipt, receipt_path, "SCHEMA", attendee_schema.full_name,
+          plan["attendee"]["email"], {"ALL_PRIVILEGES"})
     schema = client.schemas.create(name="_wt_runtime", catalog_name=catalog.name)
     catalog_resource["runtime_schema"] = {"name": schema.full_name, "id": schema.schema_id}
     write_evidence(receipt_path, receipt)

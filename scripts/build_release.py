@@ -33,6 +33,7 @@ REQUIRED_RUNTIME_FILES = frozenset(
         "content/default_pack.json",
         "assets/artifacts/manifest.json",
         "assets/bin/workshop-app-deploy",
+        "assets/bin/workshop-export",
         "assets/instructions/CLAUDE.md",
         "assets/instructions/workshop_contract.md",
         "assets/skills/SKILLS_SOURCE.md",
