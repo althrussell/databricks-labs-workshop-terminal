@@ -130,6 +130,7 @@ def test_source_unknowns_and_exploration_warnings_remain_useful():
 
 
 @pytest.mark.parametrize("limitation", [
+    "No connected source is required for this workshop demo.",
     "No prepared sources have been verified for this proposal.",
     "No verified prepared dataset has been identified yet.",
     "No prepared table updates are allowed; use owned working storage.",

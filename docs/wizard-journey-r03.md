@@ -16,6 +16,18 @@ zero rows, and requires consistency with unresolved row inspection. Honest metad
 wording and the actual false device-value claim have positive/negative controls.
 This repair still needs a new live run; the failed run remains failed.
 
+The next candidate, `2907e36`, completed all 13 regression attempts: 11 model
+cards and two rejected/empty outcomes, with no missing or transport failures.
+The device-value claim was corrected. Independent review found that a connection
+requirement was incorrectly treated as a dataset-absence claim; an optional
+wrong-object stand-in escaped validation in generated-data mode; and markup was
+explicitly labelled as margin. Follow-up controls distinguish connection
+requirements from absence, check stand-ins against the original task in either
+data mode, and reject the observed margin/markup arithmetic contradiction.
+Prompts request the simplest useful comparison and avoid unnecessary percentage
+metrics. The bounded metadata rule still rejects unproven catalogue absence.
+These repairs and all later live results require separate qualification.
+
 The wizard now asks for a useful goal or offers a deliberate choice of ideas,
 then opens a ready agent with the saved task. Industry and collaboration style
 are optional. There is no model request on mount or typing. Removing Surprise

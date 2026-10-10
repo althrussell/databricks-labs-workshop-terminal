@@ -12,7 +12,7 @@ def product_card(**changes):
         "outcome": "Compare sample selling and cost prices.",
         "prompt": "Compare unit_price with cost_price in the sample products.",
         "fit_reason": "A simple calculation suits the requested sample comparison.",
-        "first_version": "Compute margin = unit_price - cost_price and margin_pct = margin / cost_price, then sort by margin_pct.",
+        "first_version": "Compute margin = unit_price - cost_price and margin_pct = margin / unit_price, then sort by margin_pct.",
         "shape": "app", "intents": ["business_problem"], "products": [],
         "technical": False, "demo_tables": ["cross_industry.products"], "data_mode": "demo",
         "required_columns": [{"table": "cross_industry.products", "columns": ["unit_price", "cost_price"]}],
@@ -22,13 +22,13 @@ def product_card(**changes):
 
 def test_explicit_calculated_identifier_does_not_become_an_invented_source_column(monkeypatch):
     # nf-38's actual card was rejected for margin_pct, despite a complete
-    # arithmetic definition. This checks dependencies, not its metric label.
+    # arithmetic definition. Correct margin divides by selling price.
     monkeypatch.setattr(demo_data, "verify", lambda _: True)
     monkeypatch.setattr(demo_data, "supports", lambda *_a, **_k: True)
     card = product_card()
     coerced = wizard_llm._coerce_idea(card, "cross_industry")
     assert coerced is not None
-    assert "margin_pct = margin / cost_price" in coerced.first_version
+    assert "margin_pct = margin / unit_price" in coerced.first_version
     assert coerced.required_columns == {"cross_industry.products": ["unit_price", "cost_price"]}
 
 
@@ -36,6 +36,24 @@ def test_parenthesised_calculation_keeps_its_verified_operands(monkeypatch):
     monkeypatch.setattr(demo_data, "verify", lambda _: True)
     monkeypatch.setattr(demo_data, "supports", lambda *_a, **_k: True)
     card = product_card(first_version="Calculate gross_margin_pct = (unit_price - cost_price) / unit_price * 100.")
+    assert wizard_llm._coerce_idea(card, "") is not None
+
+
+@pytest.mark.parametrize("formula", [
+    "Margin percent = (unit_price - cost_price) / cost_price.",
+    "Calculate margin_pct = (unit_price - cost_price) / cost_price * 100.",
+    "Compute margin = unit_price - cost_price; margin_pct = margin / cost_price.",
+])
+def test_explicit_markup_cannot_be_labelled_as_margin(monkeypatch, formula):
+    monkeypatch.setattr(demo_data, "verify", lambda _: True)
+    monkeypatch.setattr(demo_data, "supports", lambda *_a, **_k: True)
+    assert wizard_llm._coerce_idea(product_card(first_version=formula), "") is None
+
+
+def test_explicit_markup_with_the_correct_name_remains_usable(monkeypatch):
+    monkeypatch.setattr(demo_data, "verify", lambda _: True)
+    monkeypatch.setattr(demo_data, "supports", lambda *_a, **_k: True)
+    card = product_card(first_version="Calculate markup_pct = (unit_price - cost_price) / cost_price * 100.")
     assert wizard_llm._coerce_idea(card, "") is not None
 
 
@@ -146,6 +164,31 @@ def test_declaring_a_different_source_object_as_a_stand_in_does_not_establish_ta
         assumptions=[interpretation],
     )
     assert wizard_llm._coerce_idea(card, "") is None
+
+
+def test_generated_data_mode_does_not_excuse_a_wrong_object_stand_in(monkeypatch):
+    monkeypatch.setattr(demo_data, "verify", lambda _: True)
+    card = product_card(
+        demo_tables=[], required_columns=[], data_mode="generate",
+        prompt="Use the prepared public-sector service request workflow as a labelled stand-in for meeting-room booking requests.",
+    )
+    assert wizard_llm._coerce_idea(card, "") is None
+
+
+def test_optional_stand_in_is_checked_against_the_original_task(monkeypatch):
+    monkeypatch.setattr(demo_data, "verify", lambda _: True)
+    card = product_card(
+        demo_tables=[], required_columns=[], data_mode="generate",
+        prompt="Use the prepared public-sector service request workflow as a labelled stand-in if needed, but keep the attendee's object as meeting-room booking requests.",
+    )
+    assert wizard_llm._coerce_idea(card, "", query="Help our office share meeting-room booking requests in one small page.") is None
+
+
+def test_same_object_optional_stand_in_keeps_the_task(monkeypatch):
+    monkeypatch.setattr(demo_data, "verify", lambda _: True)
+    monkeypatch.setattr(demo_data, "supports", lambda *_a, **_k: True)
+    card = product_card(prompt="Use sample products as a labelled stand-in if needed.")
+    assert wizard_llm._coerce_idea(card, "", query="Compare our products' selling and cost prices.") is not None
 
 
 @pytest.mark.parametrize("interpretation", [

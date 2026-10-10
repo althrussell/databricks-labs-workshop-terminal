@@ -139,7 +139,9 @@ _CARD_SCHEMA["properties"]["data_mode"]["enum"] = ["demo", "generate"]
 _CARD_SCHEMA["properties"]["data_mode"]["description"] = (
     "Use demo only when prepared rows represent the requested object and workflow. "
     "A different kind of record described as a stand-in is not task-fitting prepared data; "
-    "use generate, preserving the task and exploring prepared sources first."
+    "use generate, preserving the task and exploring prepared sources first. "
+    "For generate, explain the proposed task without a catalogue-absence claim or a different "
+    "source's stand-in workflow. Source discovery instructions are added by the server."
 )
 for _field in ("assumptions", "unresolved"):
     _CARD_SCHEMA["properties"][_field] = {"type": "array", "items": {"type": "string"}}
@@ -165,7 +167,8 @@ _CARD_SCHEMA["properties"]["fit_reason"]["description"] += (
 )
 _CARD_SCHEMA["properties"]["prompt"]["description"] += (
     " Describe the attendee's object and primary action. The server adds source discovery and "
-    "verified dependencies; never explain sample generation by claiming a dataset is absent."
+    "verified dependencies; never explain sample generation by claiming a dataset is absent. "
+    "Use the simplest requested comparison or action; do not add optional metrics and controls."
 )
 for _field in ("assumptions", "unresolved"):
     _CARD_SCHEMA["properties"][_field].update(maxItems=12)
@@ -378,7 +381,7 @@ def _coerce_idea(raw: Any, industry: str, *, deadline: float | None = None,
         ("label", "outcome", "prompt", "fit_reason", "first_version")] + raw["assumptions"] + raw["unresolved"])
     if _unsupported_source_absence(card_text):
         return reject("unsupported_source_absence")
-    if tables and _explicit_source_substitution(card_text):
+    if _explicit_source_substitution(card_text, query=query):
         return reject("different_source_object_stand_in")
     if _unsupported_row_verification(card_text):
         return reject("unsupported_row_verification")
@@ -401,6 +404,8 @@ def _coerce_idea(raw: Any, industry: str, *, deadline: float | None = None,
     if _streaming_allowance_conflict(query or card_text, required_columns):
         return reject("different_source_object_allowances")
     source_fields = {column for columns in required_columns.values() for column in columns}
+    if _margin_uses_cost_denominator(card_text, source_fields):
+        return reject("margin_markup_conflict")
     if tables:
         # A valid typed dependency list cannot legitimise extra source columns
         # in the handoff, visible card or assumptions. New workflow fields can
@@ -591,6 +596,26 @@ def _calculated_definitions(text: str, source_fields: set[str]) -> dict[str, tup
     return calculated
 
 
+def _margin_uses_cost_denominator(text: str, source_fields: set[str]) -> bool:
+    """Reject the observed explicitly defined markup labelled as margin.
+
+    This checks a bounded arithmetic contradiction, not general financial
+    correctness. Expressions are inspected as syntax and never executed.
+    """
+    normalized = re.sub(r"\bmargin\s+(?:percent|percentage)\b", "margin_pct", text,
+                        flags=re.IGNORECASE)
+    costs = {"cost", "cost_price", "unit_cost", "cogs"}
+    for name, (start, end) in _calculated_definitions(normalized, source_fields).items():
+        if "margin" not in name.lower():
+            continue
+        tree = ast.parse(normalized[start:end], mode="eval")
+        if any(isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div)
+               and isinstance(node.right, ast.Name) and node.right.id.lower() in costs
+               for node in ast.walk(tree)):
+            return True
+    return False
+
+
 def _streaming_allowance_conflict(task: str, dependencies: dict[str, list[str]]) -> bool:
     """Reject the observed streaming/mobile source contradiction, not sectors.
 
@@ -633,6 +658,8 @@ def _unsupported_source_absence(text: str) -> bool:
                     r"(?:verified|confirmed|identified|connected|provided|supplied|updates?|writes?|edits?|changes?)\b",
                     sentence[match.end():], re.IGNORECASE,
                 )
+                or re.match(r"\s+(?:is|are)\s+(?:needed|required|necessary)\b",
+                            sentence[match.end():], re.IGNORECASE)
             ):
                 continue
             prefix = sentence[:match.start()]
@@ -669,7 +696,7 @@ def _unsupported_row_verification(text: str) -> bool:
     return False
 
 
-def _explicit_source_substitution(text: str) -> bool:
+def _explicit_source_substitution(text: str, *, query: str = "") -> bool:
     """Reject a disclosed replacement of one record kind with another.
 
     This catches explicit stand-in/proxy assertions, not general semantic fit.
@@ -679,7 +706,7 @@ def _explicit_source_substitution(text: str) -> bool:
     substitutions = re.compile(
         r"\b(?:use|using|treat|treating)\s+([^.;\n]{1,100}?)\s+as\s+"
         r"(?:(?:a|the|proposed|labelled|labeled)\s+)*"
-        r"(?:stand[- ]in|proxy|substitute|surrogate)\s+for\s+([^.;\n]{1,100})",
+        r"(?:stand[- ]in|proxy|substitute|surrogate)(?:\s+for\s+([^.;\n]{1,100}))?",
         re.IGNORECASE,
     )
     modifiers = {"live", "connected", "real", "actual", "current", "production",
@@ -691,9 +718,12 @@ def _explicit_source_substitution(text: str) -> bool:
             if re.search(r"(?:do\s+not|don['’]t|never|avoid|without)\s+(?:ever\s+)?$",
                          sentence[:match.start()], re.IGNORECASE):
                 continue
+            target_text = match.group(2) or query
+            if not target_text:
+                continue
             source, target = (
                 {object_aliases.get(word, word) for word in _source_terms(value)} - modifiers
-                for value in match.groups()
+                for value in (match.group(1), target_text)
             )
             if source != target and not ((source & target) - generic):
                 return True
@@ -826,7 +856,9 @@ def _prompt(text: str, industry: str, intent: str = "", *, industry_locked: bool
         "- Calling a different record kind a stand-in, proxy or substitute does not make its source "
         "fit. Shared words such as request, plan or status are insufficient. If only a different "
         "workflow is verified, choose generate with empty source declarations, preserve the requested "
-        "object and action, and let the build agent explore prepared data before creating samples.\n"
+        "object and action, and let the build agent explore prepared data before creating samples. "
+        "For generated working samples, describe the requested object and action without "
+        "recommending a different prepared workflow or asserting that a source does not exist.\n"
         "A streaming-service subscription is not a mobile voice/data plan. Preserve its viewer "
         "options; mobile minutes or data allowances do not become streaming-plan options.\n"
         "- required_columns is an array of {table, columns} for EVERY demo_tables entry, including join "
@@ -852,6 +884,9 @@ def _prompt(text: str, industry: str, intent: str = "", *, industry_locked: bool
         "abs and round functions are allowed; today/current_date may anchor a date difference "
         "over a declared source field without implying current-day records. Keep calculated "
         "fields out of required_columns and label the calculation accurately.\n"
+        "- Keep comparisons simple. Do not add margin or markup percentages unless requested. "
+        "If requested, gross margin percent divides price minus cost by selling price; markup "
+        "percent divides price minus cost by cost. Use the correct name and handle a zero divisor.\n"
         "- Every filter, comparison and action in first_version needs declared source fields or "
         "an explicit labelled working-data default in assumptions. A general source-verification "
         "warning does not cover an extra promised feature. Omit optional controls that the source "
