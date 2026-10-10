@@ -1,9 +1,0 @@
-{
-  "schema_version": 1,
-  "operation": "remove_current_run_private_browser_export",
-  "status": "absence_verified",
-  "removed_export_count": 1,
-  "authentication_state_archived": false,
-  "existing_browser_login_modified": false,
-  "completed_at": "2026-10-09T03:45:49.966605+00:00"
-}

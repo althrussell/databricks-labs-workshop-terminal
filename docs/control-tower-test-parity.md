@@ -16,7 +16,7 @@ deployment checkout is
 at `3d61017`; it includes permanent model-pool permissions and package deployment.
 Its bundle pins WT's `v2026.09.28.1` release manifest. Live CT app metadata reports
 a 29 September deployment. The
-[source-review receipt](evidence/generated-app-r01/control-tower-local-source-review-20261008.json)
+[source-review receipt](remediation-validation.md#r01)
 records the exact full CT revision and reviewed file hashes. Live CT source byte
 equivalence remains unverified; the local checkout is not silently promoted into
 proof of the deployed source.
@@ -112,7 +112,7 @@ actual caller/request contract rather than keep adding grants speculatively.
    CT deployment/integration follows after the isolated WT test passes.
 
 R01 is now closed with the
-[eligible current-release failed baseline](evidence/generated-app-r01/live-20261009-68bd/CLOSEOUT.md).
+[eligible current-release failed baseline](remediation-validation.md#r01).
 It includes native-correlated simple inputs, an actual generated app, independent
 UI tasks/screenshots, and exact cleanup before the original expiry. The generated
 app failed scope agreement and due-date presentation; full acceptance remains
