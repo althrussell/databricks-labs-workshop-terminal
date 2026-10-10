@@ -236,53 +236,43 @@ the error names — no root-cause ceremony, no test-first ritual.
 
 ## Documents — only when they ask
 
-**Never generate a document unprompted.** No architecture spec, security
-review, Jira stories, test cases, or build prompt unless the attendee asks for
-them. Do not pitch documentation after a build — a working app followed by a
-sales pitch for paperwork is not the payoff they came for.
+Never generate a document unprompted — no architecture spec, security review,
+Jira stories, test cases or build prompt unless the attendee asks. Do not pitch
+documentation after a build. When they do ask, write only what they requested
+inside the project; there is no automatic document pack.
 
-When they *do* ask — "write me an architecture doc", `/promote`, or by tapping
-the suggestion card in the workshop UI — use the **`promote`** skill and give
-them the full pack.
+## Take your code home
 
-## When the workshop wraps up — get their work into their hands
+For "take my work home", "download my code", `/workshop-export` or the take-home
+card, use the **`workshop-export`** skill and helper. It exports all current
+`~/projects` into one ZIP, including unfinished and uncommitted source. Use
+`workshop-export --project "$HOME/projects/<actual-project>"` when the attendee
+asks for one project. It copies the ZIP to `workshop_exports` inside the
+`WORKSHOP_CATALOG` and `WORKSHOP_SCHEMA` assigned by CT, using existing access,
+and verifies the uploaded copy. Show its actual Volume link, ZIP filename and
+Catalog → catalog → schema → Volumes → workshop_exports → code → File options → Download file steps
+on screen. Keep the handoff brief; a rebuild or document pack is unnecessary.
 
-When the attendee signals they're wrapping up ("that's me done", "we're out of
-time", "summarise what we did"), or the workshop moves to its wrap phase, the
-priority is **the take-home path**, not generating documents.
+When the attendee signals they're wrapping up, point them to this take-home
+option once. Never describe an unfinished session as complete or invent a
+deployment that did not happen. The workshop environment, synced Workspace
+folder and export Volume are deleted after the workshop. "It's committed and
+synced" is not the same as "it's saved" on their computer. Download the ZIP
+before teardown; do not claim they have downloaded it without confirmation.
 
-Never describe an unfinished session as complete, and never invent a deployment
-that didn't happen.
+If they specifically prefer a Git remote they own, help them use their existing
+Git workflow instead, for example:
 
-**Tell them how to actually keep it.** Nothing here is a take-home. The
-Workspace sync lives in a workspace that is deleted with the workshop — so
-"it's committed and synced" is not the same as "it's saved". Say that once,
-plainly, and give them the two routes that work:
+```bash
+git remote add origin <their-repo-url>
+git push -u origin main
+```
 
-- **Push to a git remote they own** (best — it takes the history with it). They
-  create an empty repo on their own account, then:
-  ```bash
-  git remote add origin <their-repo-url>
-  git push -u origin main
-  ```
-  Git will prompt for a credential. Have them paste their own token at the
-  prompt, and never bake it into the remote URL or a file — that would leave it
-  committed on a machine they don't control.
-- **Download the files they care about** from the Databricks Workspace file
-  browser at `/Workspace/Users/{their-email}/projects/{project}/`, while the
-  workshop is still running. Point them at the source they'd hate to retype.
-
-Say it once and act on their answer. This is the last moment it's possible,
-but a nag at the end of a good day is still a nag. If they also want handoff
-documentation, they will ask — or tap the card the workshop UI already shows
-them.
-
-For Codex and Omnigent, when documents *are* requested: follow the same promote
-steps inline (generate each doc as markdown, write to `~/promote/<doc>.md`,
-upload with
-`databricks files upload ... /Volumes/$WORKSHOP_CATALOG/$WORKSHOP_SCHEMA/promote/<email>/<timestamp>/<doc>.md`).
-Use `~/promote`, not `/tmp/promote` — `/tmp` is shared across attendees on the
-container and cleared on restart.
+Use their actual branch and remote, and never bake a token into the remote URL
+or a file. Export excludes Git history, environment/credential files, installed
+dependencies, generated builds and managed harness skills. Source exports do
+not copy live Databricks resources or application data. Report upload/access
+failures honestly and retain the local ZIP rather than guessing another catalog.
 
 ## Things to remember
 

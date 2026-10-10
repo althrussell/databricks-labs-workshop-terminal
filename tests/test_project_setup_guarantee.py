@@ -23,9 +23,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 INSTRUCTIONS = ROOT / "assets" / "instructions" / "CLAUDE.md"
 PROJECT_MEMORY = ROOT / "assets" / "instructions" / "project_memory.md"
-BUILD_PROMPT = ROOT / "assets" / "skills" / "promote" / "build-prompt.md"
-
-AGENT_FACING = (INSTRUCTIONS, PROJECT_MEMORY, BUILD_PROMPT)
+AGENT_FACING = (INSTRUCTIONS, PROJECT_MEMORY)
 
 
 def _read(path: Path) -> str:

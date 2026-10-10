@@ -75,14 +75,15 @@ def test_the_wrap_guidance_names_both_routes_out(instructions: str):
     reaches a machine they keep."""
     assert "git remote add origin" in instructions
     assert "git push -u origin main" in instructions
-    assert "Download the files they care about" in instructions
+    assert "workshop-export" in instructions
+    assert "Download steps" in instructions
 
 
 def test_the_agent_is_told_not_to_persist_the_attendee_s_token(instructions: str):
     """The obvious way to make `git push` work unattended is to bake a token into
     the remote URL — which commits the attendee's credential into a repo on a
     machine they are about to lose control of."""
-    assert "never bake it into the remote URL" in instructions
+    assert "never bake a token into the remote URL" in instructions
 
 
 def test_the_wrap_guidance_distinguishes_committed_from_saved(instructions: str):
@@ -118,7 +119,7 @@ def test_the_wrap_pane_is_specific_about_what_disappears(pack: dict):
     markdown = _nugget(pack, "wrap-take-it-with-you")["markdown"]
 
     assert "workspace folder your commits sync to" in markdown
-    assert "Volume your handoff docs go to" in markdown
+    assert "export Volume" in markdown
 
 
 def test_one_click_hands_the_problem_to_the_agent(pack: dict):
@@ -130,12 +131,9 @@ def test_one_click_hands_the_problem_to_the_agent(pack: dict):
     )
 
     assert nugget["prompt"] == chip["prompt"]
-    assert "git remote I own" in chip["prompt"]
+    assert "all my workshop projects as one ZIP" in chip["prompt"]
 
 
-def test_the_promote_card_no_longer_implies_the_volume_is_durable(pack: dict):
-    """The promote docs are worth generating, but the Volume they land in is
-    dropped with the catalog — so the card offers them for today, not forever."""
-    markdown = _nugget(pack, "wrap-promote-anyway")["markdown"]
-
-    assert "so you can read them today" in markdown
+def test_export_card_requires_a_download_before_teardown(pack: dict):
+    markdown = _nugget(pack, "export-project")["markdown"]
+    assert "Download it to your computer before the workshop ends" in markdown

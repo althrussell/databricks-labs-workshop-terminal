@@ -536,6 +536,8 @@ def _install_cli_helpers(user: User) -> None:
     - ``workshop-app-deploy``: the sole governed app deploy-and-wait command and
       the stdio MCP server registered with Claude and Codex. It uses the rotated
       default profile, persists resumable state, and exposes no generic shell.
+    - ``workshop-export``: package source and verify its copy in the assigned
+      attendee catalog/schema, with on-screen ZIP download instructions.
 
     There is no blocking design-gate helper. Build-time visual defaults and
     practical checks with prepared tooling follow the shared workshop contract.
@@ -547,6 +549,7 @@ def _install_cli_helpers(user: User) -> None:
         "workshop-grant-me",
         "workshop-discovery",
         "workshop-app-deploy",
+        "workshop-export",
     ):
         src = os.path.join(_ASSETS, "bin", name)
         if not os.path.isfile(src):
@@ -597,6 +600,7 @@ def shared_skills_dir() -> str:
 
 def _link_skills(user: User) -> None:
     from .bootstrap import install
+    from .bootstrap.skill_projection import RETIRED_WORKSHOP_SKILLS
 
     source = shared_skills_dir()
     # A directory surviving the last deployment is not proof of current content.
@@ -606,7 +610,7 @@ def _link_skills(user: User) -> None:
     names = sorted(
         name
         for name in os.listdir(source)
-        if os.path.isfile(os.path.join(source, name, "SKILL.md"))
+        if name not in RETIRED_WORKSHOP_SKILLS and os.path.isfile(os.path.join(source, name, "SKILL.md"))
     )
     # Packaged fallback paths change with PEX versions. Remember ownership so
     # a link into the previous package is refreshed on the next deployment.

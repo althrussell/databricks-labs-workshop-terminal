@@ -1644,3 +1644,21 @@ def test_failed_fork_skill_refresh_keeps_prior_complete_tree(monkeypatch, tmp_pa
 
     assert install._directory_checksum(target) == original_checksum
     assert not list(prefix.glob(".skills-fork-stage-*"))
+
+
+def test_fork_refresh_removes_promote_and_installs_export(monkeypatch, tmp_path):
+    prefix = tmp_path / "prefix"
+    target = prefix / "skills"
+    vendored = tmp_path / "vendored"
+    for root, name, text in ((target, "promote", "legacy document pack"),
+                             (target, "upstream", "unchanged platform skill"),
+                             (vendored, "workshop-export", "current source export")):
+        (root / name).mkdir(parents=True)
+        (root / name / "SKILL.md").write_text(text)
+    monkeypatch.setattr(install, "_ASSETS_SKILLS", str(vendored))
+    assert not install._fork_skills_current(str(target))
+    install._refresh_fork_skills(str(prefix), str(target))
+    assert not (target / "promote").exists()
+    assert (target / "workshop-export/SKILL.md").read_text() == "current source export"
+    assert (target / "upstream/SKILL.md").read_text() == "unchanged platform skill"
+    assert install._fork_skills_current(str(target))

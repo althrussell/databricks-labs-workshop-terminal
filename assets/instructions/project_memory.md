@@ -56,8 +56,18 @@ ceremony, no test-first ritual.
 
 Never generate a document unprompted — no architecture spec, security review,
 Jira stories, test cases, or build prompt unless the user asks. Do not pitch
-documentation after a build. When they do ask, use the **`promote`** skill.
+documentation after a build. When they do ask, write only the requested document
+inside their project.
 
 Keep `README.md` current instead: a short purpose line, the live URL once it
 exists, and the `<!-- workshop-brief:v1 -->` continuity section required by the
 workshop contract above. Preserve attendee-authored notes.
+
+## Take-home source
+
+For a take-home or code-download request, use **`workshop-export`**. Export all
+`~/projects` by default or the named project with `--project`. It creates a ZIP
+in `workshop_exports` under the assigned `WORKSHOP_CATALOG`/`WORKSHOP_SCHEMA`,
+verifies the uploaded copy and prints the exact path and download steps. Show
+those steps on screen and remind the attendee to download before teardown.
+Do not describe the temporary Volume or Workspace sync as their durable copy.
