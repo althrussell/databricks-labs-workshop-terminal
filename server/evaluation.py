@@ -36,7 +36,7 @@ from .users import email_slug
 
 router = APIRouter(prefix="/api/admin/evaluation", dependencies=[Depends(require_admin)])
 
-SUPPORTED_PINS = {"claude": "2.1.237", "codex": "0.148.0"}
+SUPPORTED_PINS = {"claude": "2.1.295", "codex": "0.162.0"}
 MAX_FILES = 32
 MAX_DIRECTORY_ENTRIES = 256
 MAX_FILE_BYTES = 4 * 1024 * 1024

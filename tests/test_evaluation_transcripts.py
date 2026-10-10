@@ -42,8 +42,17 @@ def endpoint(seat, query=""):
     return f"/api/admin/evaluation/sessions/{seat.session.id}/messages" + query
 
 
+def test_native_observer_pins_match_installed_harness_artifacts():
+    from server import evaluation
+    manifest = json.loads((Path(__file__).parents[1] / "assets/artifacts/manifest.json").read_text())["artifacts"]
+    assert evaluation.SUPPORTED_PINS == {
+        "claude": manifest["claude_binary"]["version"],
+        "codex": manifest["codex_npm_launcher_package"]["version"],
+    }
+
+
 def claude(seat, text="Who will use this?", *, role="assistant", complete=True, **extra):
-    return {"type": role, "sessionId": seat.native_id, "version": "2.1.237", "cwd": str(seat.home / "projects"),
+    return {"type": role, "sessionId": seat.native_id, "version": "2.1.295", "cwd": str(seat.home / "projects"),
             "timestamp": seat.timestamp, "uuid": str(uuid4()),
             "message": {"role": role, "stop_reason": "end_turn" if complete else None,
                         "content": [{"type": "thinking", "thinking": "private chain of thought"},
@@ -62,7 +71,7 @@ def write_codex(seat, records=None):
     path = seat.home / ".codex" / "sessions" / "2026" / "10" / "08" / ("rollout-2026-10-08T01-00-00-" + seat.native_id + ".jsonl")
     path.parent.mkdir(parents=True, exist_ok=True)
     metadata = {"type": "session_meta", "timestamp": seat.timestamp, "payload": {
-        "id": seat.native_id, "cli_version": "0.148.0", "cwd": str(seat.home / "projects"),
+        "id": seat.native_id, "cli_version": "0.162.0", "cwd": str(seat.home / "projects"),
         "timestamp": seat.timestamp, "source": "cli"}}
     turns = records or [{"type": "response_item", "timestamp": seat.timestamp, "payload": {
         "type": "message", "id": "native-msg-1", "role": "assistant", "phase": "final_answer",
