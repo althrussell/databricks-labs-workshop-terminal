@@ -285,7 +285,7 @@ _DECLINED_APP = re.compile(
     r"(?:\s+(?:an?|any|new|another|web|custom|separate)){0,3}\s+(?:app|website)\b", re.I)
 _APP_SOURCE_METRICS = re.compile(
     r"\b(?:app|website)\s+(?:visits?|sessions?|traffic|events?|usage|logs?|"
-    r"telemetry|performance|crashes|downloads|ratings?|reviews?)\b", re.I)
+    r"telemetry|performance|crashes|downloads|ratings?|reviews?|paths?)\b", re.I)
 
 
 def app_intent(query: str) -> str:

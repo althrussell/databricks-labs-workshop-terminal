@@ -427,6 +427,8 @@ def test_app_format_choice_is_not_inferred_from_generic_or_negated_words(words, 
     "Compare app usage across the sample regions.",
     "Show a dashboard of website traffic.",
     "Help me explore app crashes in the recorded samples.",
+    "Show which website paths appear most often, without analysing purchase drop-off.",
+    "Compare the recorded website path counts.",
 ])
 def test_app_source_metrics_do_not_require_an_app_output(words):
     assert wizard.app_intent(words) == ""
@@ -435,6 +437,23 @@ def test_app_source_metrics_do_not_require_an_app_output(words):
 def test_app_output_can_use_website_visits_as_its_source():
     assert wizard.app_intent("Build an app to compare sample website visits.") == "app"
     assert wizard.app_intent("A dashboard of website visits, not an app.") == "no_app"
+    assert wizard.app_intent("Build an app to compare recorded website paths.") == "app"
+    assert wizard.app_intent("A dashboard of website paths, not an app.") == "no_app"
+
+
+def test_website_path_analysis_can_show_a_dashboard_recommendation(monkeypatch):
+    monkeypatch.setattr(wizard_llm.config, "llm_wizard_enabled", lambda: True)
+    monkeypatch.setattr(wizard_llm, "_ask_model", lambda *_a, **_k: (
+        {"industry": "", "ideas": [idea(
+            id="paths", label="Most visited paths", shape="dashboard", products=["dashboards"],
+            outcome="See the recorded paths by frequency.",
+            prompt="Compare recorded website paths by frequency; do not analyse purchase drop-off.",
+            fit_reason="A frequency chart answers which paths appear most often.",
+            first_version="One chart of path counts, with no purchase funnel.")]}, "test-model"))
+    result = wizard_llm.suggest(
+        "Show which website paths appear most often, without analysing purchase drop-off.")
+    assert result["source"] == "llm" and result["accepted"] == 1
+    assert result["ideas"][0]["shape"] == "dashboard"
 
 
 def test_server_proposal_note_does_not_reject_valid_complete_copy():

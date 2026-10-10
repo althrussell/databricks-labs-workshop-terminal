@@ -1,9 +1,10 @@
 # R03: goal-first onboarding and saved-task integrity
 
-Status: acceptance remains pending. The latest consumed regression returned 11
-visible cards and two empty/rejected results. Independent review found wrong-object
-data selection, version-tracking task drift, an unsupported source-suitability
-claim and a false rejection of inspection-limited wording. The R03 branch includes
+Status: acceptance remains pending. The latest held-out run completed all 60
+unique inputs once, returning 59 visible cards and one false rejection. Independent
+review found that website-path analysis was incorrectly treated as a request to
+build a website. Native scoring and actual Claude/Codex app journeys remain.
+The R03 branch includes
 main through merged Agent Bricks PR91 (`2a19cde`); that feature remains opt-in.
 This work does not change Control Tower.
 
@@ -481,3 +482,16 @@ repair still requires fresh exact-package held-out and actual harness acceptance
 The held-out scope preserves all 60 unique inputs, once each, and all 360 unchanged
 judge cells. The original additional 120 repetitions/720 cells remain unexecuted;
 no repeat-stability claim is made.
+
+The `d811500` held-out run returned HTTP 200 for all 60 inputs in 483.399 seconds.
+Independent native-trace and numeric-usage reconciliation verified every result
+and the closed, drained generation allowance. One valid path-frequency dashboard
+was rejected because `website paths` forced an app output; the bounded intent
+parser now recognises paths as source metrics while preserving explicit app
+requests and refusals. Three reproductions failed before repair; 293 focused
+wizard checks pass afterwards, with 12 environment-dependent checks skipped.
+The original 59/60 result remains retained. One clinician-experience suggestion
+also missed suitable prepared provider data, but preserves conditional discovery
+before sample generation; this remains a source-ranking improvement opportunity.
+The unchanged six reviewers will score all 60 actual outcomes, including the empty
+result. This code repair alone does not establish live acceptance.
