@@ -64,15 +64,17 @@ been live qualified here.
 
 | Path | Observed result |
 | --- | --- |
-| Claude 2.1.296 / Opus 5.5 | Created a phone repair-cafe queue, read Impeccable and ran context once. The first preview failed rendered contrast. An ordinary attendee feedback request produced a working correction: add a request, finish it and reload all passed independently, with no horizontal overflow at 390px. |
+| Claude 2.1.296 / Opus 5.5 | Created a phone repair-cafe queue, read Impeccable and ran context once. The original preview failed contrast; attendee feedback repaired it. A fresh final-package build has readable scoped colours. Its reused-origin saved-data failure was also repaired through attendee feedback: earlier jobs returned, and independent add/finish/reload passed at 390px without horizontal overflow. |
 | Codex 0.162.1 / GPT Sol 6.1 | Created a distinct garden collection and planting plan from a simple phone-app request. Native trace confirms seven Impeccable instruction/reference reads and one context invocation. Used scoped product tokens under the corrected policy. Build and saved-plan tests passed; it shared the preview and accurately disclosed unavailable native browser checks. Independent browser tasks remain pending new-app attendee consent. |
 | Isolated native discovery | Actual Codex `skills/list` with empty HOME/CODEX_HOME in a detached Git worktree discovered enabled repository Impeccable, neither retired UX skill, and no discovery errors. Reading the actual asset and running its launcher returned the reviewed skill digest and engine 0.1.14. |
 
-The repair queue and garden collection choose different navigation, composition,
-typography and content for their tasks, rather than sharing a dashboard shell.
-Neither build required a design interview or concept picker. Both visibly label
-sample data and browser-only storage. Native handoffs distinguish compilation
-and local checks from rendered browser verification.
+The generated repair queue and garden collection choose different navigation,
+composition, typography and content for their tasks, rather than sharing a
+dashboard shell. Neither build required a design interview or concept picker.
+The repair preview visibly labels sample data and browser-only storage; the
+garden source includes those disclosures, with browser verification pending.
+Native handoffs distinguish compilation and local checks from rendered browser
+verification.
 
 The Codex build also exposed an integration defect: AppKit's `eslint .` scanned
 Impeccable's bundled JavaScript, producing 740 skill-asset problems plus three
@@ -98,10 +100,19 @@ actual platform/Impeccable skills and used scoped product tokens. Its rendered
 preview has readable colours. Reusing the existing app origin exposed a separate
 continuity failure: old saved rows use `owner` and `finishedAt`, while the new
 loader requires `visitor` and `status` and silently filters them out. Waiting and
-Finished both showed zero. No reset or new save was performed; ordinary attendee
-feedback requested recovery without clearing the saved repairs. Recovery and
-independent phone actions are still in progress. Carry schema compatibility and
-preserving earlier app data into R08's focused continuity checks.
+Finished both showed zero. No reset or new save was performed before recovery;
+ordinary attendee feedback requested restoration without clearing the saved
+repairs. Claude read the earlier deployment's format and added compatible loading
+and five focused storage regressions. The corrected deployment
+`01f1c492494b1040a621c738fb9a726a` succeeded on the existing app identity/compute;
+its selected deployed source was independently retrieved. Browser reload restored
+six waiting and two finished jobs, including the previously saved Blue desk fan.
+In the 390px phone viewport, adding Green hand mixer, finishing it and reloading
+preserved the new record and all earlier jobs. The form's submit control was
+reachable within the viewport, the text was readable and there was no horizontal
+overflow. Carry schema compatibility and preserving earlier app data into R08's
+focused continuity checks. This repair does not erase the initial saved-data
+failure.
 
 Data discovery remains a material limitation: Claude consulted the supplied
 demo-table index but did not query the working catalog, so its original claim
