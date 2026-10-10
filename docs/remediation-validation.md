@@ -63,16 +63,30 @@ A fresh genuine bakery wizard save cost $0.0990702576864 conservatively. Native
 Claude then serialized two concurrent requests correctly: the small request
 succeeded, and the main request received HTTP 400. The bounded diagnostic reports
 an unsupported request field with public references to `messages` and
-`output_config`; it does not retain arbitrary provider explanation. Official
-Claude documentation says disabling adaptive thinking does not apply to Opus 5.5,
-so that setting is not a qualified workaround. No speculative CLI flag was changed.
-The native guard stopped subsequent admission before upstream, and normal closure
+`output_config`; it does not retain arbitrary provider explanation. The scratch
+native guard stopped subsequent admission before upstream after treating every
+non-200 response as terminal, and normal closure
 reaped Claude with no project source. Codex's scored app journey remains unstarted. The continuation's
 $23.1150707260704 conservative settlement preserves the full HTTP400 hold; combined
 native consumption/holds are $46.2302752125984. The reviewed aggregate allocation
 was $245.0091810627888 within $250. This remains a failed app journey and blocks
-R03 acceptance and merge; current Claude/gateway compatibility needs a verified
-repair before another native app test. No CT code, deployment or permissions changed.
+R03 acceptance and merge. The earlier diagnosis of a CLI/gateway compatibility
+blocker was unsupported. No CT code, deployment or permissions changed.
+
+Offline diagnosis subsequently confirmed an evaluation guard defect. The actual
+Claude 2.1.295 CLI, configured for Opus 5.5 with fake credentials, recovered from a
+synthetic per-message `output_config` rejection, emitted `per_turn_effort_changed`,
+and completed successfully. The unchanged v3 guard blocked that corrective request.
+A fresh v4 scratch guard passed the same CLI fixture and 109 targeted protocol,
+accounting, admission and transport checks. It permits one verified removal of
+system-message effort for the same conversation, retains the full failed-request
+hold, and reserves the next request within the cap/deadline/call limit. Seven older
+activation checks fail identically in unchanged v3 because their base fixture lacks
+the continuation binding; live activation is still unqualified. These checks used
+no real credentials, external model calls or tools. They do not prove a deployed
+attendee app build or reconstruct the unretained live payload delta. R03's product
+gateway configuration is unchanged from current main; closed live ledgers and
+holds remain intact. Raw offline artifacts stay outside Git.
 
 An attendee's direct Claude launch subsequently exposed a scratch evaluation
 gate after wizard dismissal. The same Labs app was restored to the normal WT

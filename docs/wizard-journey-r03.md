@@ -30,13 +30,34 @@ activation/transport checks. Its fresh genuine wizard save and unsent starter
 delivery worked. Serialization removed the previous concurrent-request rejection;
 the main Claude request still received HTTP 400. Its bounded diagnostic classifies
 an unsupported request field and references `messages` and `output_config`.
-The prior error's exact cause remains unproven. Official Claude documentation
-says the adaptive-thinking disable flag does not apply to Opus 5.5; no guessed
-workaround was applied. The guard blocked later dispatches and was closed/drained;
+The prior error's exact cause remains unproven. The scratch guard treated every
+non-200 response as terminal, blocked a different follow-up request before
+upstream, and was closed/drained;
 normal UI closure reaped the child and confirmed no project sources. Codex's scored
 app journey remains unstarted. Both native attempts retain their full failed-request holds, totalling
-$46.2302752125984 conservatively. A verified current-CLI/gateway compatibility
-repair and genuine app journeys remain required before acceptance or merge.
+$46.2302752125984 conservatively. This is an evaluation-infrastructure failure,
+not a verified CLI/gateway incompatibility. Genuine app journeys remain required
+before acceptance or merge.
+
+The subsequent offline investigation reproduced Claude 2.1.295's native recovery
+from a synthetic `messages.1.output_config: Extra inputs are not permitted` HTTP
+400. With Opus 5.5 selected, the CLI emitted `per_turn_effort_changed`, removed
+the per-message effort field, and completed against a synthetic successful SSE
+response. The unchanged v3 guard blocked that corrective request with HTTP 409.
+A fresh v4 scratch guard permits one verified correction of the same conversation,
+retains the full failed-request hold, and requires another whole-model reservation
+within the existing cap, call limit and deadline. It does not translate the native
+protocol or permit arbitrary retries. The real pinned CLI passed this repaired
+offline path, and 109 targeted accounting/transport/recovery checks passed.
+Seven older scratch activation tests also fail unchanged in v3 because their base
+fixture omits the required continuation binding; this is not a fully qualified
+live v4 package. No real credentials, external model traffic, tools or spending
+were involved. Closed live ledgers, holds and expiry remain unchanged; raw fixture
+records stay outside Git. The live error's exact text and follow-up payload delta
+were not retained, so the reproduction establishes the guard defect rather than
+proving that every live request would succeed. R03 does not change
+`server/cli_config.py` relative to current `origin/main` (`88854d2`). No working WT
+gateway or CT configuration repair is justified by this evidence.
 
 Onboarding is optional for every offered harness. The closed scratch native
 evaluation intercepted ordinary Home launches and returned “Native evaluation
