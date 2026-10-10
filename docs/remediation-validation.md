@@ -34,18 +34,27 @@ the working-data, starter and first-preview follow-ups. Disposable cleanup passe
 ## R03
 
 **Acceptance pending; PR92 remains unmerged and the event wizard stays disabled.**
-Latest reviewed live candidate: `9822afc`. Its consumed regression attempted all
-13 inputs once: 11 visible cards, two rejected/empty, zero missing or transport
-errors, 39.283 seconds. Booking/version tasks improved; streaming still became
-mobile allowances and lost the selected fun intent. Valid equipment-age arithmetic
-was rejected. Unsupported genre-row verification was correctly blocked; the empty
-result remains a failure. All 49 declared source fields match independent metadata.
+Latest reviewed live candidate: `54c73ba`. The exact green CI package matches all
+471 committed runtime files and modes. On the same reused Labs app, its consumed
+regression attempted all 13 inputs once: 12 visible cards, one rejected/empty,
+zero missing or transport errors, 107.299 seconds. Native runs and HTTP spans are
+retained. Admission closed and drained with zero inflight/reserved requests;
+conservative reported generation consumption is $1.4129260128368.
 
-Follow-up source checks pass **274 tests**. Original intent is preserved, the known
-streaming/mobile conflict is blocked, and bounded date/rounding arithmetic is
-recognized without executing expressions. Offline review of the 13 retained raw
-cards accepts equipment, rejects streaming/false row proof and preserves the other
-ten. That is not a new live quality result.
+The equipment-age card was task fitting but its plain-language `current_date`
+formula was mistaken for an undeclared source column. The calendar intrinsic now
+remains usable without an `identifier = formula` declaration; other unknown
+identifiers still fail. The actual retained card passes offline source validation
+against its declared table. **290 focused wizard checks pass.** This is not new
+model output or live acceptance. Fresh exact-package held-out and harness journeys
+remain required.
+
+The pre-exposure regression scope uses all 60 sealed distinct inputs once, with
+360 verdicts from the same six registered native MLflow judges and unchanged
+gates. Original 180/1,080 plans remain unchanged; 120 omitted repetitions and 720
+cells remain explicitly unexecuted. This supports workshop regression coverage,
+without a repeat-stability claim. Raw evidence remains outside Git. Control Tower
+has received zero calls or changes; reused compute remains receipt bounded.
 
 Earlier full attempts remain failed: `6d7c946` returned 180/180 generations with
 9 empty and 17 fallback, while only 18/1,080 verdicts were retained. `4442597`

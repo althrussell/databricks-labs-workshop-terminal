@@ -297,6 +297,29 @@ def test_date_intrinsic_stays_inside_its_source_bound_calculation(monkeypatch):
     assert "the demo day's preview" in result.first_version
 
 
+@pytest.mark.parametrize("date_operand,accepted", [
+    ("commissioning date", True),
+    ("hidden_commissioning_date", False),
+])
+def test_plain_language_date_anchor_is_not_a_source_column(monkeypatch, date_operand, accepted):
+    monkeypatch.setattr(demo_data, "verify", lambda _: True)
+    monkeypatch.setattr(demo_data, "supports", lambda *_a, **_k: True)
+    card = product_card(
+        label="Demo equipment register",
+        outcome="Browse sample equipment grouped by type and approximate age.",
+        fit_reason="The declared equipment type and commissioning date support the register.",
+        prompt=f"Calculate age as floor((current_date minus {date_operand} in days) / 365.25).",
+        first_version="Browse a demo equipment register grouped by equipment type and approximate age.",
+        assumptions=["Age means years since commissioning; inspect sample dates first."],
+        demo_tables=["mining.assets"],
+        required_columns=[{"table": "mining.assets", "columns": ["asset_type", "commissioned_on"]}],
+    )
+    result = wizard_llm._coerce_idea(card, "mining")
+    assert (result is not None) is accepted
+    if accepted:
+        assert "current_date minus commissioning date" in result.prompt
+
+
 def streaming_card():
     return product_card(
         id="stream-price", label="Demo streaming plan chooser",

@@ -469,3 +469,15 @@ CT integration remains separate.
 Warm-install, remote-first, project/worker preference delivery and migration remain
 R04/R08 gates. A 60-instance arrival/build rehearsal belongs to R10. Keep the event
 wizard disabled until its live outcome gates pass.
+
+The current `54c73ba` consumed regression qualified all 471 CI runtime files and
+completed 13 requests once with 12 visible cards, one empty result, no missing or
+transport errors and 107.299 seconds of native evaluation. The equipment-age
+card's valid plain-language calendar anchor was falsely treated as a source
+column. The bounded follow-up exempts the standard `current_date` intrinsic while
+retaining unknown-identifier checks. The exact retained card passes offline
+validation against its declared metadata; 290 focused wizard checks pass. This
+repair still requires fresh exact-package held-out and actual harness acceptance.
+The held-out scope preserves all 60 unique inputs, once each, and all 360 unchanged
+judge cells. The original additional 120 repetitions/720 cells remain unexecuted;
+no repeat-stability claim is made.

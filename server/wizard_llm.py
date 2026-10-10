@@ -434,7 +434,10 @@ def _coerce_idea(raw: Any, industry: str, *, deadline: float | None = None,
         declared.update(part for table in tables for part in table.split("."))
         named_fields = set(re.findall(r"\b[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+\b", card_text))
         calculated = _calculated_fields(card_text, source_fields)
-        if named_fields - declared - calculated:
+        # current_date is a calendar intrinsic, including in plain-language
+        # age formulas that do not define an identifier with '='. It is not a
+        # source column; other undeclared identifiers still fail this check.
+        if named_fields - declared - calculated - {"current_date"}:
             return reject("undeclared_column_in_card")
     # A model may select a valid source outside the bounded prompt inventory.
     # Allow its cold metadata read a small part of the remaining shared budget;
