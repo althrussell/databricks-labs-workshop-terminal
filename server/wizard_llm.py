@@ -148,7 +148,11 @@ for _field in ("assumptions", "unresolved"):
     _CARD_SCHEMA["properties"][_field] = {"type": "array", "items": {"type": "string"}}
 _CARD_SCHEMA["required"] += ["fit_reason", "first_version", "data_mode", "assumptions", "unresolved"]
 _CARD_SCHEMA["properties"]["required_columns"] = {
-    "type": "array", "items": {"type": "object", "properties": {
+    "type": "array", "description": (
+        "Every source field needed for the promised first action, including grouping, "
+        "filters and join keys. A lookup/join needed for the central comparison is a "
+        "required dependency, not an unresolved optional improvement. Use exact listed names."
+    ), "items": {"type": "object", "properties": {
         "table": {"type": "string"}, "columns": {"type": "array", "items": {"type": "string"}}},
         "required": ["table", "columns"], "additionalProperties": False}}
 _CARD_SCHEMA["required"].append("required_columns")
@@ -165,6 +169,8 @@ _CARD_SCHEMA["properties"]["fit_reason"]["description"] += (
     "For example: 'The listed category column supports the requested comparison; "
     "inspect its sample values first.' No rows have been read by this wizard. "
     "Never describe row values, records or distributions as verified or confirmed."
+    " Use plain human names for fields in visible copy; keep exact source identifiers "
+    "in required_columns, where the server checks them and adds them to the handoff."
 )
 _CARD_SCHEMA["properties"]["prompt"]["description"] += (
     " First describe the attendee's object and primary action independently of available sources. "

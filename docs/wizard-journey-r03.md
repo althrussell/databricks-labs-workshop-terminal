@@ -41,6 +41,16 @@ goal after source evidence so the requested action governs selection. Editable
 workflow state needs an app. Local controls do not establish live quality; the
 failed regression and full denominator remain retained outside Git.
 
+Candidate `076cb43` stopped at its three-case gate: two cards were visible, one
+diagnosis card was correctly rejected for an invented identifier, and ten cases
+were unattempted. Independent review also found a shown discount comparison
+missing its category dependency. Repeated Mini failures motivate qualification
+of GPT Sol 6.1 as the preferred wizard service, with low reasoning and the same
+12-second deadline. Explicit operator pins still win, and smaller available
+services remain catalogue fallbacks. Required source declarations must include
+the fields and joins needed for the primary comparison; visible copy uses human
+field names. This model change requires fresh live quality and latency evidence.
+
 The wizard now asks for a useful goal or offers a deliberate choice of ideas,
 then opens a ready agent with the saved task. Industry and collaboration style
 are optional. There is no model request on mount or typing. Removing Surprise

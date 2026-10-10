@@ -268,6 +268,20 @@ def test_failed_discovery_uses_the_chain_head_rather_than_giving_up(monkeypatch)
     assert wizard_llm._pick_model("tok") == models.wizard_chain()[0]
 
 
+@pytest.mark.parametrize("sol_wire,expected", [
+    ("mlflow/v1/chat/completions", "system.ai.gpt-6-1-sol"),
+    ("openai/v1/responses", "system.ai.gpt-5-4-mini"),
+])
+def test_default_recommendations_prefer_sol_only_on_the_wizard_wire(monkeypatch, no_override, sol_wire, expected):
+    monkeypatch.setattr(wizard_llm.config, "workshop_wizard_model", lambda: "")
+    monkeypatch.setenv("WORKSHOP_WIZARD_MODEL", "")
+    monkeypatch.setattr(wizard_llm, "_served_models", lambda _t: {
+        "gpt-6-1-sol": frozenset({sol_wire}),
+        "gpt-5-4-mini": frozenset({"mlflow/v1/chat/completions"}),
+    })
+    assert wizard_llm._pick_model("tok") == expected
+
+
 def test_discovery_is_not_re_run_on_every_keystroke(monkeypatch):
     """It sat on the debounce path of a request that was already timing out."""
     wizard_llm.reset_discovery_cache()
