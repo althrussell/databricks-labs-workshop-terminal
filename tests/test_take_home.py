@@ -62,7 +62,7 @@ def test_the_post_commit_hook_does_not_promise_more_than_it_delivers():
     understand what it guarantees is who wrote the instruction copy."""
     from server.user_content import _POST_COMMIT
 
-    assert "does not outlive the workshop" in _POST_COMMIT
+    assert "Export the take-home ZIP before teardown deletes the workshop workspace" in _POST_COMMIT
     assert "survives workshop teardown" not in _POST_COMMIT
 
 
