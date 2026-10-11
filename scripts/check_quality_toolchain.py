@@ -12,7 +12,7 @@ from evals.generated_apps.mlflow_evaluation import _sdk
 
 def main():
     expected = {"mlflow": "3.17.0", "databricks-agents": "1.12.0",
-                "databricks-sdk": "0.150.0", "openai": "3.23.0"}
+                "databricks-sdk": "0.151.0", "openai": "3.24.0"}
     actual = {name: version(name) for name in expected}
     if actual != expected:
         raise RuntimeError("Optional quality environment differs from reviewed versions")

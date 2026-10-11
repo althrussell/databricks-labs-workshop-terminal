@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def cli_install(monkeypatch, tmp_path):
     prefix = tmp_path / "shared"
     prefix.mkdir()
-    lock = ROOT / "assets/artifacts/agentbricks-0.4.0.lock"
+    lock = ROOT / f"assets/artifacts/agentbricks-{install.AGENTBRICKS_VERSION}.lock"
     entries = {
         "uv_binary": {"version": install.UV_VERSION, "sha256": "a" * 64},
         "python_3_12_runtime": {"version": "3.12.15", "sha256": "b" * 64},

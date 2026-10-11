@@ -40,8 +40,8 @@ logger = logging.getLogger(__name__)
 CLAUDE_VERSION = os.environ.get("CLAUDE_CODE_VERSION", "2.1.296").strip()
 CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.162.1").strip()
 DATABRICKS_CLI_VERSION = os.environ.get("DATABRICKS_CLI_VERSION", "1.20.0").strip()
-AGENTBRICKS_VERSION = os.environ.get("AGENTBRICKS_VERSION", "0.4.0").strip()
-UV_VERSION = "0.12.24"
+AGENTBRICKS_VERSION = os.environ.get("AGENTBRICKS_VERSION", "0.5.0").strip()
+UV_VERSION = "0.13.0"
 OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "0.15.0").strip()
 OMNIGENT_PROTOCOL_VERSION = "0.15.0"
 # Node 24 is the active LTS line; Node 22 is maintenance-only.

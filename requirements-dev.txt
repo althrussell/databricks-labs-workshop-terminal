@@ -28,7 +28,7 @@ colorama==0.4.6 ; sys_platform == 'win32'
     # via pytest
 cryptography==50.0.2
     # via google-auth
-databricks-sdk==0.150.0
+databricks-sdk==0.151.0
     # via databricks-workshop-terminal
 fastapi==0.142.2
     # via databricks-workshop-terminal

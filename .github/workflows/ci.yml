@@ -23,7 +23,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - uses: astral-sh/setup-uv@v6
         with:
-          version: "0.12.24"
+          version: "0.13.0"
       - name: Validate uv lock and source-deployment exports
         run: |
           uv lock --check
@@ -46,7 +46,7 @@ jobs:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v6
         with:
-          version: "0.12.24"
+          version: "0.13.0"
       - name: Validate optional evaluator APIs without workspace access
         run: uv run --frozen --only-group quality python scripts/check_quality_toolchain.py
 
@@ -90,7 +90,7 @@ jobs:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v6
         with:
-          version: "0.12.24"
+          version: "0.13.0"
       - name: Qualify actual Linux installer and offline project lifecycle
         run: uv run --frozen --no-group release python scripts/check_agentbricks_toolchain.py --bootstrap
 
@@ -108,7 +108,7 @@ jobs:
           node-version: "24.21.0"
       - uses: astral-sh/setup-uv@v6
         with:
-          version: "0.12.24"
+          version: "0.13.0"
       - name: Verify pinned bundle, supported install and native launcher
         run: uv run --frozen --no-group release python scripts/refresh_impeccable.py --check
 
@@ -123,7 +123,7 @@ jobs:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v6
         with:
-          version: "0.12.24"
+          version: "0.13.0"
       - name: Verify official skill and real compatible installer, MCP and build
         run: |
           uv run --frozen --no-group release python scripts/refresh_apx.py --check
@@ -140,7 +140,7 @@ jobs:
           python-version: "3.11"
       - uses: astral-sh/setup-uv@v6
         with:
-          version: "0.12.24"
+          version: "0.13.0"
       - name: Materialize the uv-locked build environment
         run: uv sync --frozen --no-group dev --group release
       - name: Build the release twice
@@ -175,7 +175,7 @@ jobs:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v6
         with:
-          version: "0.12.24"
+          version: "0.13.0"
       - name: Install locked WT and pinned browser test dependencies
         run: |
           uv sync --frozen --no-group release

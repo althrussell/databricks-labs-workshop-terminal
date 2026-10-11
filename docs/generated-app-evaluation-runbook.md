@@ -48,7 +48,7 @@ qualification checks the requested model identity and real invocation before a
 browser build. A substituted older model does not qualify.
 
 The [version audit, evidence and explicit compatibility holds](remediation-validation.md#toolchain)
-cover SDK `0.150.0`, agent skills `v0.2.28`, CLI `1.20.0`, AppKit `0.87.0`,
+cover SDK `0.151.0`, agent skills `v0.2.28`, CLI `1.20.0`, AppKit `0.87.0`,
 Node LTS `24.21.0`, and the optional MLflow `3.17.0` quality group. Omnigent
 remains `0.15.0` until its newer client/server pair is qualified separately.
 Run the read-only `python scripts/audit_test_toolchain.py` before preparing a
@@ -320,7 +320,7 @@ Install/check it with `uv run --frozen --only-group quality python scripts/check
 No browser/model execution is needed for plan generation.
 The optional controlled startup arm also needs local `pyte==0.8.2` and `wcwidth`.
 These are evaluator dependencies; they are not added to the deployed app runtime.
-The deployed requirements pin SDK `0.150.0`. Record the actual operator environment
+The deployed requirements pin SDK `0.151.0`. Record the actual operator environment
 version for every run; do not assume a global install or an existing `.venv` has
 been refreshed. The journey client constructor is covered by a no-network
 regression using the real installed SDK. That check does not qualify the deployed

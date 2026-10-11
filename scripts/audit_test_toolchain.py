@@ -44,9 +44,17 @@ def audit(job, registry):
         elif ecosystem == "npm":
             data = fetch(registry + "/" + name)
             latest, url = data["dist-tags"]["latest"], "https://registry.npmjs.org/" + name
-        elif ecosystem == "github":
-            data = fetch("https://api.github.com/repos/" + source + "/releases/latest")
-            latest, url = data["tag_name"].removeprefix("v"), data["html_url"]
+        elif ecosystem in ("github", "github_channel"):
+            if ecosystem == "github_channel":
+                repository, prefix = source.split("|", 1)
+                releases = fetch("https://api.github.com/repos/" + repository + "/releases?per_page=100")
+                data = next(row for row in releases if not row["draft"] and not row["prerelease"]
+                            and row["tag_name"].startswith(prefix))
+                latest = data["tag_name"].removeprefix(prefix)
+            else:
+                data = fetch("https://api.github.com/repos/" + source + "/releases/latest")
+                latest = data["tag_name"].removeprefix("v")
+            url = data["html_url"]
         elif ecosystem == "node":
             data = fetch("https://nodejs.org/dist/index.json")
             latest = next(row["version"].removeprefix("v") for row in data if row.get("lts"))
@@ -86,6 +94,11 @@ def main():
         ("github", "databricks-agent-skills", artifacts["databricks_agent_skills"]["version"], "databricks/databricks-agent-skills"),
         ("github", "uv", artifacts["uv_binary"]["version"], "astral-sh/uv"),
         ("node", "node-active-lts", artifacts["node_linux_x64"]["version"], ""),
+        ("github", "official-apx", artifacts["apx_wheel_linux_x64"]["version"], "databricks-solutions/apx"),
+        ("github_channel", "bun", artifacts["bun_linux_x64"]["version"], "oven-sh/bun|bun-v"),
+        ("npm", "impeccable", artifacts["impeccable_npm_launcher"]["version"], ""),
+        ("github_channel", "impeccable-engine", artifacts["impeccable_engine_linux_x64"]["version"], "pbakaus/impeccable|engine-v"),
+        ("github_channel", "impeccable-skills", artifacts["impeccable_skill_bundle"]["version"], "pbakaus/impeccable|skill-v"),
         ("pypi", "omnigent", artifacts["omnigent_lock"]["version"], ""),
         ("pypi", "databricks-agentbricks", artifacts["agentbricks_lock"]["version"], ""),
     })
@@ -94,7 +107,7 @@ def main():
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         rows = list(pool.map(lambda job: audit(job, registry), sorted(jobs)))
     print(json.dumps({"checked_at": datetime.now(timezone.utc).isoformat(), "baseline": baseline["id"],
-        "scope": "direct WT, evaluator and harness dependencies; transitive versions remain parent-constrained",
+        "scope": "direct WT, evaluator, harness, official APX/Bun and separate Impeccable release channels; transitive versions remain parent-constrained",
         "rows": rows, "workspace_requests": 0, "deployment_mutations": 0,
         "compatibility_holds": {"omnigent": "Requires a qualified matching paired server; see toolchain remediation evidence"}}, indent=2))
     return 2 if any(row["status"] == "unverified" for row in rows) else int(any(row["status"] == "update_available" for row in rows))

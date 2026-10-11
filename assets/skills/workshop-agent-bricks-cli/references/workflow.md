@@ -1,4 +1,4 @@
-# CLI 0.4.0 command pointers
+# CLI 0.5.0 command pointers
 
 Global `--profile` and `--output` precede the command. `DEFAULT` is the WT build
 profile, not the attendee's optional `me` OBO profile. Check the installed command
@@ -12,7 +12,7 @@ agentbricks doctor .
 # Discover available managed MCP services before declaring a binding.
 agentbricks --profile "${DATABRICKS_CONFIG_PROFILE:-DEFAULT}" tools list --kind mcp
 agentbricks --profile "${DATABRICKS_CONFIG_PROFILE:-DEFAULT}" tools add mcp system.ai.dbsql
-# Inspect agent.toml for configured bindings: tools list in 0.4.0 is discovery,
+# Inspect agent.toml for configured bindings: tools list is discovery,
 # not a listing of this project's configured tools.
 
 # Bind only when needed; these may create stores in the selected workspace.
