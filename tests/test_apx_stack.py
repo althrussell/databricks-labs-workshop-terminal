@@ -68,7 +68,8 @@ def test_wheel_install_is_offline_and_warm_restart_detects_tampering(tmp_path, m
 
 
 @pytest.mark.parametrize("failure", [False, True])
-def test_helper_scaffolds_without_nesting_or_overwriting_notes(tmp_path, failure):
+@pytest.mark.parametrize("json_output", [False, True])
+def test_helper_scaffolds_without_nesting_or_overwriting_notes(tmp_path, failure, json_output):
     home, binaries = tmp_path / "home", tmp_path / "bin"
     binaries.mkdir()
     template = home / ".config/workshop/project-memory.md"
@@ -93,12 +94,17 @@ sys.exit(""" + ("1" if failure else "0") + ")\n")
                         "GIT_AUTHOR_NAME": "Fixture", "GIT_AUTHOR_EMAIL": "test@example.com",
                         "GIT_COMMITTER_NAME": "Fixture", "GIT_COMMITTER_EMAIL": "test@example.com"}
     helper = str(ROOT / "assets/bin/workshop-init-project")
-    result = subprocess.run(["bash", helper, "repair-desk", "--apx", "--json"], env=env, text=True, capture_output=True)
+    arguments = ["bash", helper, "repair-desk", "--apx"] + (["--json"] if json_output else [])
+    result = subprocess.run(arguments, env=env, text=True, capture_output=True)
     assert result.returncode == int(failure)
-    status = json.loads(result.stdout)
+    project = home / "projects/repair-desk"
+    if not json_output:
+        assert result.stdout.strip() == str(project)
+    status = json.loads(result.stdout) if json_output else json.loads(
+        (project / ".workshop/preparation.json").read_text()
+    )
     assert status["ready"] is not failure
     assert status["scaffold"] == ("failed" if failure else "complete")
-    project = home / "projects/repair-desk"
     assert not (project / "repair-desk").exists()
     assert "Scaffold notes to preserve" in (project / "CLAUDE.md").read_text()
     assert "scaffold progress" in result.stderr

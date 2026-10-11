@@ -28,7 +28,7 @@ usage() {
 usage: workshop-init-project <project-name> [--apx | --appkit | --agentbricks] [--json] [-- <scaffold flags>]
 
   <project-name>   created (or adopted) at ~/projects/<project-name>
-  --apx            scaffold the default React + FastAPI app with official APX
+  --apx            scaffold official APX; return nonzero when preparation is incomplete
   --appkit         scaffold an AppKit app into it first, without nesting
   --agentbricks    scaffold a custom-agent backend with the Agent Bricks CLI
   --json           return preparation status (nonzero when incomplete)
@@ -513,14 +513,14 @@ if ! grep -q '^/.workshop/preparation.json$' "$EXCLUDE" 2>/dev/null; then
   mkdir -p "$(dirname "$EXCLUDE")"
   printf '\n/.workshop/preparation.json\n' >> "$EXCLUDE"
 fi
-python3 - "$DEST" "$SCAFFOLD" "$COMMIT" "$TEMPLATE" "$JSON" <<'PY'
+python3 - "$DEST" "$SCAFFOLD" "$COMMIT" "$TEMPLATE" "$JSON" "$APX" <<'PY'
 import json
 import os
 from pathlib import Path
 import sys
 import tempfile
 
-dest, scaffold, commit, template, json_mode = sys.argv[1:]
+dest, scaffold, commit, template, json_mode, apx_mode = sys.argv[1:]
 memory = 'complete' if Path(template).is_file() else 'missing'
 ready = scaffold != 'failed' and commit != 'failed' and memory == 'complete'
 status = dict(project_path=dest, ready=ready, scaffold=scaffold, memory=memory, commit=commit)
@@ -534,6 +534,8 @@ if json_mode == '1':
     print(json.dumps(status))
     sys.exit(0 if ready else 1)
 print(dest)
+if apx_mode == '1':
+    sys.exit(0 if ready else 1)
 PY
 
 # Default stdout remains exclusively the usable project path.

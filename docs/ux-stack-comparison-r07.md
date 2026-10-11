@@ -193,3 +193,8 @@ Codex's native custom-model metadata warning is still visible for
 `system.ai.gpt-6-1-sol`. The model request and APX tool call succeed. Resolve its
 metadata configuration during the remaining runtime/release qualification;
 this framework change does not alter the gateway or invent model capabilities.
+
+Pre-merge review corrected the APX helper's plain-output failure status. An
+incomplete APX scaffold now returns nonzero with or without `--json`, while
+retaining the project, notes and preparation receipt. Regression coverage checks
+successful and failing scaffolds in both output modes.
