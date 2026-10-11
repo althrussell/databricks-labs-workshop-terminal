@@ -29,9 +29,11 @@ def package():
     content = {"wt_git_sha": "a" * 40, "logical_contents_sha256": logical.hexdigest(), "files": entries}
     target = io.BytesIO()
     with zipfile.ZipFile(target, "w") as archive:
+        # Immutable fixture bytes must not depend on crossing ZIP's two-second
+        # timestamp boundary between calls to package().
         for name, value in files.items():
-            archive.writestr(name, value)
-        archive.writestr("runtime-content-manifest.json", json.dumps(content))
+            archive.writestr(zipfile.ZipInfo(name), value)
+        archive.writestr(zipfile.ZipInfo("runtime-content-manifest.json"), json.dumps(content))
     artifact = target.getvalue()
     manifest = {"artifact_name": "workshop-terminal.pex", "artifact_type": "pex", "format_version": 1,
         "entry_point": "server.otel_bootstrap:main", "platform": "linux_x86_64", "python_abi": "cp311",
