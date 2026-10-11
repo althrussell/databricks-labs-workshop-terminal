@@ -190,6 +190,9 @@ def test_api_owner_separation_switch_binding_and_harness_cwd(client, launchable_
     live = client.post("/api/sessions", json={"agent_id": "codex", "project_name": "garden-plan"}, headers=ALICE)
     assert live.status_code == 200, live.text
     assert live.json()["session"]["project_name"] == "garden-plan"
+    stale_active = client.post("/api/sessions", json={"agent_id": "codex", "project_name": "repair-desk"}, headers=ALICE)
+    assert stale_active.status_code == 409
+    assert isinstance(stale_active.json()["detail"], str) and "active build changed" in stale_active.json()["detail"]
     blocked = client.post("/api/projects/select", json={"name": "repair-desk"}, headers=ALICE)
     assert blocked.status_code == 409
     assert projects.read(user)["active"] == "garden-plan"
@@ -211,3 +214,23 @@ def test_current_build_overrides_old_wizard_task_but_keeps_help_preference(atten
         text = (Path(attendee.home) / name).read_text()
         assert "Plan flowers" in text and "Use concise explanations" in text
         assert "Build a repair desk immediately" not in text
+
+
+def test_native_helper_selection_refreshes_session_context(client, launchable_agents, tmp_path, monkeypatch):
+    from server import config
+    from server.users import user_manager
+
+    monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
+    user = user_manager.get("alice@example.com")
+    projects.select(user, "repair-desk", goal="Track repairs", new=True)
+    live = client.post("/api/sessions", json={"agent_id": "claude", "project_name": "repair-desk"}, headers=ALICE)
+    assert live.status_code == 200
+    # The CLI helper can select a separate build inside the same conversation.
+    helper = Path(__file__).resolve().parents[1] / "assets/bin/workshop-init-project"
+    completed = subprocess.run(["bash", str(helper), "garden-plan", "--json"], env=user.shell_env(),
+                               text=True, capture_output=True)
+    assert completed.returncode == 0, completed.stderr
+    assert client.get("/api/projects", headers=ALICE).json()["active"] == "garden-plan"
+    refreshed = client.get("/api/sessions", headers=ALICE).json()["sessions"][0]
+    assert refreshed["project_name"] == "garden-plan"
+    assert projects.project_path(user, "garden-plan").is_dir()

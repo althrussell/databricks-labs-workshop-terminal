@@ -827,7 +827,11 @@ def list_projects(principal: Principal = Depends(get_current_user)):
     from . import projects
 
     try:
-        return projects.inventory(user_manager.get(principal.name))
+        user = user_manager.get(principal.name)
+        with user.content_lock:
+            value = projects.inventory(user)
+            session_manager.update_project(user, value["active"])
+            return value
     except projects.ProjectError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
 
@@ -941,6 +945,18 @@ def create_session(
 
     # Refuse an occupied slot before install, credential, or provisioning work.
     # The SessionManager repeats this check atomically at insertion for races.
+    # Check the caller's build before returning a same-agent conflict: a stale
+    # tab must not focus that agent and deliver a prompt for a different build.
+    if body.project_name is not None:
+        from . import projects
+
+        try:
+            user = user_manager.get(principal.name)
+            with user.content_lock:
+                if projects.read(user)["active"] != body.project_name:
+                    raise HTTPException(status_code=409, detail="The active build changed in another tab. Refresh My builds before opening an agent.")
+        except projects.ProjectError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
     if active := session_manager.active():
         conflict = SessionConflictError(active)
         telemetry.session_create_failed(

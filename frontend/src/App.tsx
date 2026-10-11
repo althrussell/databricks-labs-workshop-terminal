@@ -948,6 +948,7 @@ export default function App() {
                     <article className="prior-session" key={prior.id}>
                       <div>
                         <strong>{prior.label}</strong>
+                        {prior.project_name && <span>Build: {prior.project_name}</span>}
                         <span>
                           {prior.exit_reason === "server_restarted"
                             ? "Ended on workshop restart"

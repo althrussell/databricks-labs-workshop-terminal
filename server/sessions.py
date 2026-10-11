@@ -383,6 +383,15 @@ class SessionManager:
         except Exception:  # noqa: BLE001 — journaling must never break a session
             logger.warning("session journal upsert failed for %s", session.id[:8])
 
+    def update_project(self, user: User, name: str) -> None:
+        """Remember a build selected by the native helper during a live session."""
+        with self._lock:
+            active = next(iter(self._sessions.values()), None)
+            if active is None or active.owner_email != user.email or active.project_name == name:
+                return
+            active.project_name = name
+        self._persist(active)
+
     def _persist_exit(self, session_id: str, reason: str) -> None:
         if self._store is None:
             return
