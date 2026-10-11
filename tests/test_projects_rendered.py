@@ -73,6 +73,29 @@ async def exercise(client, tmp_path, monkeypatch, width):
             await controls.get_by_text("repair-desk", exact=True).wait_for()
             await page.get_by_role("button", name="Claude Code", exact=False).first.click()
             await page.get_by_role("button", name="Close Claude Code", exact=True).wait_for()
+            # Resize the live header through its crowded laptop width and back.
+            # Every icon retains a name/tooltip and all controls remain reachable.
+            nav = page.get_by_role("navigation", name="Workshop navigation")
+            for nav_width, compact in [(2400, "false"), (1234, "true"), (390, "true"), (2400, "false")]:
+                await page.set_viewport_size({"width": nav_width, "height": 900})
+                await page.wait_for_function("([width, compact]) => window.innerWidth === width && document.querySelector('.header-links').dataset.compact === compact", arg=[nav_width, compact])
+                geometry = await nav.evaluate("""element => {
+                    const nav = element.getBoundingClientRect();
+                    const user = document.querySelector('.header-user').getBoundingClientRect();
+                    return [...element.querySelectorAll('a,button')].map(control => {
+                        const box = control.getBoundingClientRect();
+                        return {name:control.getAttribute('aria-label'), tooltip:control.title,
+                            inNav:box.left >= nav.left - 1 && box.right <= nav.right + 1,
+                            inScreen:box.left >= 0 && box.right <= innerWidth,
+                            clearOfUser:box.right <= user.left || box.left >= user.right || box.bottom <= user.top || box.top >= user.bottom};
+                    });
+                }""")
+                assert all(c["name"] and c["tooltip"] and c["inNav"] and c["inScreen"] and c["clearOfUser"] for c in geometry), geometry
+                assert not await page.evaluate("document.documentElement.scrollWidth > innerWidth")
+            await nav.get_by_role("button", name="Agent preferences", exact=True).click()
+            await page.get_by_role("dialog").wait_for()
+            await page.get_by_role("button", name="Done", exact=True).click()
+            await page.set_viewport_size({"width": width, "height": 900})
             live = session_manager.active()
             assert live.project_name == "repair-desk"
             live.write_input("pwd\n")

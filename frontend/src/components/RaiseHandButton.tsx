@@ -92,6 +92,7 @@ export default function RaiseHandButton({
           type="button"
           className={`raise-hand-btn ${raised ? "raise-hand-active" : ""}`}
           disabled={busy}
+          aria-label={raised ? "Hand raised" : "Raise hand"}
           onClick={() => void toggle()}
           title={
             raised
@@ -99,8 +100,8 @@ export default function RaiseHandButton({
               : "Raise your hand for operator help"
           }
         >
-          <HandHelping size={14} />
-          {raised ? "Hand raised" : "Raise hand"}
+          <HandHelping size={16} aria-hidden="true" />
+          <span className="nav-label">{raised ? "Hand raised" : "Raise hand"}</span>
         </button>
       )}
     </div>

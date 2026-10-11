@@ -120,3 +120,20 @@ a rendered regression drops a completed API response body and verifies the
 correct selection, retained source, one submission and no stale error. This
 adds no server workflow, dependency or CT change. A corrected release and its
 affected live recovery check complete this follow-up.
+
+
+## Responsive workshop navigation
+
+At a crowded laptop width, full navigation labels previously wrapped and
+overlapped the account controls. The header now measures the configured links
+and live-session controls and uses icons when their text would not fit. Every
+control retains an accessible name and native tooltip. Labels return when space
+is available; phone icons wrap without horizontal scrolling or overlapping the
+account name. No backend or CT configuration changes are involved.
+
+The existing rendered project journeys now resize the live header through 2,400,
+1,234 and 390 pixels and back, verify every control remains within the navigation
+and clear of the account name, and open preferences through its icon. Both
+project journeys and the lost-recovery response regression pass. All 115
+frontend checks and the production build pass. The final reused Labs deployment
+will check the published header and saved-build recovery together.
