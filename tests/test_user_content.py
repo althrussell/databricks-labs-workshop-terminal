@@ -2,6 +2,8 @@
 
 import json
 import os
+import shlex
+import signal
 import subprocess
 import time
 import uuid
@@ -619,7 +621,8 @@ def _clear_sync_status():
         os.unlink(path)
 
 
-def _commit_with_hook(home, tmp_path, *, cli_exit, cli_stderr="boom", short_home=False):
+def _commit_with_hook(home, tmp_path, *, cli_exit, cli_stderr="boom", short_home=False,
+                      close_command_group=False):
     """Commit in a real repo under ~/projects and let the real hook fire.
 
     Runs the shipped hook rather than asserting on its text. The bug this covers
@@ -628,8 +631,12 @@ def _commit_with_hook(home, tmp_path, *, cli_exit, cli_stderr="boom", short_home
     """
     shim = tmp_path / "shim"
     shim.mkdir(exist_ok=True)
+    started, release = tmp_path / "sync-started", tmp_path / "sync-release"
+    delayed = (f"echo started > {shlex.quote(str(started))}\n"
+               f"while [ ! -f {shlex.quote(str(release))} ]; do sleep 0.02; done\n"
+               if close_command_group else "")
     (shim / "databricks").write_text(
-        f"#!/bin/sh\necho '{cli_stderr}' >&2\nexit {cli_exit}\n"
+        f"#!/bin/sh\n{delayed}echo '{cli_stderr}' >&2\nexit {cli_exit}\n"
     )
     (shim / "databricks").chmod(0o755)
     _clear_sync_status()
@@ -660,6 +667,22 @@ def _commit_with_hook(home, tmp_path, *, cli_exit, cli_stderr="boom", short_home
         ["git", "add", "-A"],
         ["git", "commit", "-q", "-m", "work"],
     ):
+        if close_command_group and argv[1] == "commit":
+            parent = subprocess.Popen(
+                ["bash", "-c", "git commit -q -m work; sleep 60"],
+                cwd=repo, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            try:
+                deadline = time.monotonic() + 5
+                while not started.exists() and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                assert started.exists(), "The real commit must launch the sync worker"
+            finally:
+                os.killpg(parent.pid, signal.SIGTERM)
+                parent.wait(timeout=5)
+                release.touch()
+            continue
         done = subprocess.run(
             argv, cwd=repo, env=env, capture_output=True, text=True, timeout=60
         )
@@ -717,6 +740,13 @@ def test_codex_short_home_still_syncs_the_actual_attendee_project(
     assert status["state"] == "ok", "Codex's HOME alias must not silently skip the save hook"
     assert status["exit"] == 0
     assert "/Workspace/Users/alice@example.com/projects/demo-" in (Path(home) / ".sync.log").read_text()
+
+
+def test_save_worker_survives_native_command_group_cleanup(client, monkeypatch, tmp_path):
+    home = _provisioned_home(client, monkeypatch)
+    status = _commit_with_hook(home, tmp_path, cli_exit=0, cli_stderr="",
+                               short_home=True, close_command_group=True)
+    assert status["state"] == "ok", "Native command cleanup must not kill the background save"
 
 
 def test_a_failed_sync_is_reported_without_taking_the_workshop_down(

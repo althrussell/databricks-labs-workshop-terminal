@@ -437,7 +437,7 @@ _What this is for:_ (one line — the agent fills this in as soon as it knows)
 
 _Live URL:_ (added once the app is deployed)
 EOF
-elif ! grep -q "_Live URL:_" README.md 2>/dev/null; then
+elif ! grep -qE '_Live URL:_|<!-- workshop-brief:v1 -->' README.md 2>/dev/null; then
   cat >> README.md <<'EOF'
 
 _What this is for:_ (one line — the agent fills this in as soon as it knows)

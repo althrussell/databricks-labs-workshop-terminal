@@ -100,6 +100,8 @@ def test_missing_source_is_never_treated_as_a_new_scaffold(attendee):
 def test_recovery_uses_existing_synced_source_and_preserves_context(attendee, monkeypatch):
     parent = f"/Workspace/Users/{attendee.email}/projects"
     calls = []
+    completed_brief = ("# Bicycle repairs\n\n<!-- workshop-brief:v1 -->\n"
+                       "Useful attendee-written purpose and checks.\n<!-- /workshop-brief -->\n")
 
     def cli(user, arguments, **kwargs):
         calls.append(arguments)
@@ -113,6 +115,7 @@ def test_recovery_uses_existing_synced_source_and_preserves_context(attendee, mo
         staged.mkdir()
         (staged / "app.py").write_text("exact synced source")
         (staged / "PRODUCT.md").write_text("Repair bicycles, preserve existing design")
+        (staged / "README.md").write_text(completed_brief)
         (staged / ".workshop").mkdir()
         (staged / projects.CONTEXT_FILE).write_text(json.dumps(
             {"version": 1, "name": "repair-desk", "goal": "Track bicycle repairs"}))
@@ -128,6 +131,7 @@ def test_recovery_uses_existing_synced_source_and_preserves_context(attendee, mo
     target = projects.project_path(attendee, "repair-desk")
     assert (target / "app.py").read_text() == "exact synced source"
     assert (target / "PRODUCT.md").read_text() == "Repair bicycles, preserve existing design"
+    assert (target / "README.md").read_text() == completed_brief
     assert not (target / "node_modules").exists()
     assert restored["projects"][0]["goal"] == "Track bicycle repairs"
     tracked = subprocess.run(["git", "show", "HEAD:.workshop/project.json"], cwd=target,
