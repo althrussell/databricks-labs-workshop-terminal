@@ -263,8 +263,13 @@ class FakeWorkspace:
         monkeypatch.setattr(ct_sim, "_sql", sql)
         monkeypatch.setattr(ct_sim, "_pick_warehouse", lambda client: "warehouse-id")
         self.catalogs = SimpleNamespace(get=lambda name: lookup(self.catalog))
-        self.schemas = SimpleNamespace(create=lambda name,catalog_name: SchemaInfo(name=name,
-            full_name=catalog_name + "." + name, schema_id="schema-id"))
+        self.schema_state = {}
+        def schema_create(name, catalog_name):
+            self.calls.append("schema:" + name)
+            result = SchemaInfo(name=name, full_name=catalog_name + "." + name, schema_id=name + "-id")
+            self.schema_state[result.full_name] = result
+            return result
+        self.schemas = SimpleNamespace(create=schema_create, get=lambda name: lookup(self.schema_state.get(name)))
         def volume_create(catalog_name, schema_name, name, **kwargs):
             self.calls.append("volume:" + name)
             return VolumeInfo(name=name, full_name=f"{catalog_name}.{schema_name}.{name}", volume_id=name + "-id")
@@ -313,6 +318,11 @@ def test_full_package_provisioning_orders_permissions_mirror_and_source_before_d
     assert receipt["status"] == "deployment_submitted"
     assert receipt["attendee_app_access"]["minimum_permission"] == "CAN_MANAGE"
     assert receipt["toolchain_staging"]["state"] == "partial_with_declared_network_fallback"
+    assigned_schema = plan["names"]["catalog"] + "." + plan["names"]["schema"]
+    catalog_resource = next(row for row in receipt["created_resources"] if row["kind"] == "catalog")
+    assert catalog_resource["attendee_schema"]["name"] == assigned_schema
+    assert client.schema_state[assigned_schema].schema_id == catalog_resource["attendee_schema"]["id"]
+    assert client.grants_state[("SCHEMA", assigned_schema)][plan["attendee"]["email"]] == {"ALL_PRIVILEGES"}
     assert client.calls.index("app:attendee_manage") < client.calls.index("catalog:create")
     assert client.calls.index("volume:toolchain") < client.calls.index("grant:SCHEMA:system.ai")
     assert client.calls[-1] == "app:deploy"

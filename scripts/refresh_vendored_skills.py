@@ -5,7 +5,7 @@ The vendored tree is the offline fallback for the boot-time overlay, so it must
 be the *same projected* content boot would install. This clones the manifest's pinned
 commit, verifies the clone against the manifest's ``content_sha256``, and only
 then replaces the upstream-sourced skill directories -- leaving the fork-only
-skills (APX, Impeccable, Agent Bricks, promote and the refresh workflow)
+skills (APX, Impeccable, Agent Bricks, workshop-export and the refresh workflow)
 untouched.
 
 ``--check`` verifies the committed fallback without rewriting it, which is what

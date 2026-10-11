@@ -477,56 +477,38 @@
       "prompt": "Schedule what we built as a daily job with email notifications."
     },
     {
-      "id": "promote-cta",
-      "title": "Build complete — save your docs",
-      "markdown": "Your agent just finished a build. Ask it to generate handoff documentation — architecture spec, security review, Jira stories, test cases, and a build prompt — uploaded automatically to your Databricks Volume so you can share and revisit everything you built today.",
+      "id": "export-project",
+      "title": "Take your code home",
+      "markdown": "Keep the source for this project as a ZIP. Your agent copies it to your assigned Databricks Volume and shows how to download it. Download it to your computer before the workshop ends; the Volume is temporary.",
       "tags": [
-        "promote",
+        "export",
         "build"
       ],
       "phases": [
-        "build",
-        "wrap"
+        "build"
       ],
       "triggers": [
         "topic:build-complete"
       ],
-      "cta": "Generate my docs →",
-      "prompt": "Please generate handoff documentation for what I just built and upload it to my Databricks Volume.",
+      "cta": "Export this project →",
+      "prompt": "Export the source for this project as a ZIP to my assigned Databricks Volume and show me how to download it to my computer.",
       "weight": 1,
       "pinned": true
     },
     {
-      "id": "wrap-promote-anyway",
-      "title": "Save your work before this environment goes away",
-      "markdown": "This workspace is deleted after the workshop. Ask your agent for handoff docs — architecture, security review, Jira stories, test cases and a rebuild prompt — uploaded to your Databricks Volume so you can read them today.\n\n**Didn't finish?** Ask anyway. The docs cover what you were heading towards and where it stopped, which is the version worth having when you pick it up again.",
-      "tags": [
-        "promote",
-        "wrap"
-      ],
-      "phases": [
-        "wrap"
-      ],
-      "triggers": [],
-      "cta": "Save my work →",
-      "prompt": "We're wrapping up. Generate the handoff docs for this session — architecture, security review, Jira stories, test cases and a rebuild prompt — and upload them to my Databricks Volume. If we didn't finish something, document what we were going for and where it stopped rather than leaving it out.",
-      "weight": 2,
-      "pinned": true
-    },
-    {
       "id": "wrap-take-it-with-you",
-      "title": "Take it with you — nothing here is saved",
-      "markdown": "Everything in this environment is deleted at the end of the event: the terminal, the workspace folder your commits sync to, and the Volume your handoff docs go to. Committed is not the same as saved.\n\n**Two ways to keep it:** push the repo to a git remote you own — your agent will walk you through it — or download the files you care about from your Databricks Workspace folder while the event is still running.",
+      "title": "Take your workshop code home",
+      "markdown": "The terminal, workspace folder your commits sync to, and export Volume are deleted after the workshop. Committed is not the same as saved on your computer.\n\nAsk your agent to export all your projects as one ZIP. It will give you the Volume link and filename. Open **Catalog → your catalog → your schema → Volumes → workshop_exports → code**, open its **File options → Download file** before the event ends.",
       "tags": [
         "wrap",
-        "promote"
+        "export"
       ],
       "phases": [
         "wrap"
       ],
       "triggers": [],
-      "cta": "Help me keep it →",
-      "prompt": "I want to keep this work after the workshop. Walk me through pushing my project to a git remote I own, and tell me exactly what I should download before this environment is deleted.",
+      "cta": "Export my code →",
+      "prompt": "Export all my workshop projects as one ZIP to my assigned Databricks Volume and show me the exact download steps so I can take my code home.",
       "weight": 3,
       "pinned": true
     },
@@ -681,7 +663,7 @@
       },
       {
         "label": "Take my work with me",
-        "prompt": "I want to keep this work after the workshop. Walk me through pushing my project to a git remote I own, and tell me exactly what I should download before this environment is deleted."
+        "prompt": "Export all my workshop projects as one ZIP to my assigned Databricks Volume and show me the exact download steps so I can take my code home."
       }
     ]
   },

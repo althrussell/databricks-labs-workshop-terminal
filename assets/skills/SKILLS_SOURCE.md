@@ -36,7 +36,8 @@ manifest entry. `effective_content_sha256` verifies the delivered projection.
 - `workshop-agent-bricks-cli` — custom-agent CLI workflow for the WT identity,
   project scaffold and resource handoff.
 - `databricks-app-apx` — APX scaffold/API guidance, fork-only.
-- `promote` — handoff document generation, on explicit request only.
+- `workshop-export` — source ZIP export to the attendee's assigned Volume,
+  with download instructions; replaces the removed `promote` document pack.
 - `refresh-databricks-skills` — the refresh workflow itself.
 
 One small context/pacing policy lives in

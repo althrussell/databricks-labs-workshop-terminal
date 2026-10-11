@@ -8,11 +8,12 @@ from pathlib import Path
 import shutil
 
 RETIRED_UX_SKILLS = frozenset({"workshop-design-studio", "databricks-app-design"})
+RETIRED_WORKSHOP_SKILLS = frozenset({"promote"})
 
 
 def project_skills(root: str | Path) -> None:
     root = Path(root)
-    for name in RETIRED_UX_SKILLS:
+    for name in RETIRED_UX_SKILLS | RETIRED_WORKSHOP_SKILLS:
         target = root / name
         if target.is_symlink():
             target.unlink()
