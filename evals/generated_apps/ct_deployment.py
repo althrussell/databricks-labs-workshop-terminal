@@ -387,10 +387,12 @@ def deploy_package(client, plan, manifest_bytes, artifact, receipt_path):
     if any(x.get("service_principal_name") == sp for x in existing.get("access_control_list", [])):
         raise ValueError("Fresh app SP unexpectedly has a work-sync ACL")
     receipt["work_sync"] = {"path": sync_path, "id": str(directory.object_id), "principal": sp,
-        "added": "CAN_EDIT", "directory_preserved_on_cleanup": True, "state": "grant_requested"}
+        "added": "CAN_MANAGE", "directory_preserved_on_cleanup": True, "state": "grant_requested"}
     write_evidence(receipt_path, receipt)
-    client.permissions.update("directories", str(directory.object_id), access_control_list=[AccessControlRequest(service_principal_name=sp, permission_level=PermissionLevel.CAN_EDIT)])
-    if not any(x.get("service_principal_name") == sp and any(p.get("permission_level") in {"CAN_EDIT", "CAN_MANAGE"} for p in x.get("all_permissions", []))
+    # CT's grant_home_subdirectory_write gives CAN_MANAGE on this projects
+    # subdirectory only. CAN_EDIT cannot create the per-project directories.
+    client.permissions.update("directories", str(directory.object_id), access_control_list=[AccessControlRequest(service_principal_name=sp, permission_level=PermissionLevel.CAN_MANAGE)])
+    if not any(x.get("service_principal_name") == sp and any(p.get("permission_level") == "CAN_MANAGE" for p in x.get("all_permissions", []))
                for x in client.permissions.get("directories", str(directory.object_id)).as_dict().get("access_control_list", [])):
         raise RuntimeError("Work-sync ACL readback failed")
     receipt["work_sync"]["state"] = "independently_verified"; write_evidence(receipt_path, receipt)

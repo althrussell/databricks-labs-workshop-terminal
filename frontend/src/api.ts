@@ -210,6 +210,27 @@ export interface SessionInfo {
   created_at: number;
   last_activity: number;
   exited: boolean;
+  project_name?: string;
+}
+
+export interface WorkshopProject {
+  name: string;
+  goal: string;
+  available: boolean;
+  saved: boolean;
+  missing: boolean;
+}
+
+export interface ProjectInventory {
+  active: string;
+  projects: WorkshopProject[];
+}
+
+export interface ProjectSelection {
+  name: string;
+  goal?: string;
+  new?: boolean;
+  recover?: boolean;
 }
 
 export interface PriorSessionInfo extends SessionInfo {
@@ -396,12 +417,19 @@ export const api = {
   agents: () =>
     request<{ agents: AgentInfo[]; credential: CredentialStatus }>("/api/agents"),
   sessions: () => request<SessionPayload>("/api/sessions"),
-  createSession: (agentId: string, replacesAgentId?: string) =>
+  projects: () => request<ProjectInventory>("/api/projects"),
+  savedProjects: () => request<ProjectInventory>("/api/projects/saved", { method: "POST" }),
+  selectProject: (body: ProjectSelection) =>
+    request<ProjectInventory>("/api/projects/select", { method: "POST", body: JSON.stringify(body) }),
+  recoverProject: (name: string) =>
+    request<ProjectInventory>(`/api/projects/${encodeURIComponent(name)}/recover`, { method: "POST" }),
+  createSession: (agentId: string, replacesAgentId?: string, projectName?: string) =>
     request<{ session: SessionInfo }>("/api/sessions", {
       method: "POST",
       body: JSON.stringify({
         agent_id: agentId,
         ...(replacesAgentId ? { replaces_agent_id: replacesAgentId } : {}),
+        ...(projectName !== undefined ? { project_name: projectName } : {}),
       }),
     }),
   closeSession: (id: string) => request(`/api/sessions/${id}`, { method: "DELETE" }),

@@ -437,7 +437,7 @@ _What this is for:_ (one line — the agent fills this in as soon as it knows)
 
 _Live URL:_ (added once the app is deployed)
 EOF
-elif ! grep -q "_Live URL:_" README.md 2>/dev/null; then
+elif ! grep -qE '_Live URL:_|<!-- workshop-brief:v1 -->' README.md 2>/dev/null; then
   cat >> README.md <<'EOF'
 
 _What this is for:_ (one line — the agent fills this in as soon as it knows)
@@ -466,6 +466,43 @@ fi
 git add README.md
 # Commit only workshop setup, retaining unrelated attendee changes in the index.
 MEMORY_FILES=(README.md)
+
+# Keep the active build visible even when the attendee starts directly in a
+# harness. Product context travels with source and survives Workspace recovery.
+python3 - "$NAME" <<'PY'
+import json
+import os
+from pathlib import Path
+import tempfile
+import sys
+
+name = sys.argv[1]
+selection = Path.home() / '.config/workshop/projects.json'
+context = Path('.workshop/project.json')
+if selection.is_symlink() or context.is_symlink() or context.parent.is_symlink():
+    raise SystemExit('workshop-init-project: project context is a symlink; retain it separately and retry')
+state = json.loads(selection.read_text()) if selection.is_file() else {'version': 1, 'active': '', 'goals': {}}
+if state.get('version') != 1 or not isinstance(state.get('goals'), dict):
+    raise SystemExit('workshop-init-project: invalid project selection; repair it and retry')
+previous = json.loads(context.read_text()) if context.is_file() else {}
+goal = previous.get('goal', state['goals'].get(name, ''))
+state['active'] = name
+state['goals'][name] = goal
+state['materialized'] = sorted(set(state.get('materialized', [])) | {name})
+for path, value in ((context, {'version': 1, 'name': name, 'goal': goal}), (selection, state)):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix='.project-', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'w') as handle:
+            json.dump(value, handle)
+            handle.write('\n')
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+PY
+git add -f -- .workshop/project.json
+MEMORY_FILES+=(.workshop/project.json)
 if [ -n "$WORKSHOP_LINT_FILE" ]; then
   MEMORY_FILES+=("$WORKSHOP_LINT_FILE")
 fi

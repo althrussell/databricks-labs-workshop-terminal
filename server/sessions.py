@@ -137,6 +137,7 @@ class Session:
         self.owner_email = owner_email
         self.agent_id = agent_id
         self.label = label
+        self.project_name = ""
         self.master_fd = master_fd
         self.pid = pid
         self.scrollback = ByteScrollback()
@@ -233,6 +234,7 @@ class Session:
                 "owner_email": self.owner_email,
                 "agent_id": self.agent_id,
                 "label": self.label,
+                "project_name": self.project_name,
                 "created_at": self.created_at,
                 "last_activity": self.last_activity,
                 "exited": self.exited,
@@ -243,6 +245,7 @@ class Session:
             "id": self.id,
             "agent_id": self.agent_id,
             "label": self.label,
+            "project_name": self.project_name,
             "created_at": self.created_at,
             "last_activity": self.last_activity,
             "exited": self.exited,
@@ -380,6 +383,15 @@ class SessionManager:
         except Exception:  # noqa: BLE001 — journaling must never break a session
             logger.warning("session journal upsert failed for %s", session.id[:8])
 
+    def update_project(self, user: User, name: str) -> None:
+        """Remember a build selected by the native helper during a live session."""
+        with self._lock:
+            active = next(iter(self._sessions.values()), None)
+            if active is None or active.owner_email != user.email or active.project_name == name:
+                return
+            active.project_name = name
+        self._persist(active)
+
     def _persist_exit(self, session_id: str, reason: str) -> None:
         if self._store is None:
             return
@@ -444,9 +456,14 @@ class SessionManager:
             # A reservation flag would introduce a second state to recover from;
             # this short critical section guarantees a losing request never
             # creates a child process at all.
-            cwd = os.path.join(user.home, "projects")
+            from . import projects
+
+            cwd = projects.launch_directory(user)
+            project_name = projects.read(user)["active"]
             os.makedirs(cwd, exist_ok=True)
             env = user.shell_env()
+            if project_name:
+                env["WORKSHOP_PROJECT_NAME"] = project_name
             if agent_id == "codex":
                 # Keep cwd, configs, credentials and native logs in the original
                 # attendee home. Only Codex's lexical socket prefix is shortened.
@@ -465,6 +482,7 @@ class SessionManager:
                 os.close(slave_fd)
 
             session = Session(user.email, agent_id, label, master_fd, pid)
+            session.project_name = project_name
             self._sessions[session.id] = session
 
         self._persist(session)

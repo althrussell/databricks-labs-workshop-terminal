@@ -49,12 +49,18 @@ and records the separately hashed external observer and bootstrap.
 | New terminal registration | Adds the terminal's application/client UUID to the account caller group. Package mode verifies caller/package-reader membership before WT starts | `orchestration/wt_caller.py`, `register_wt_app_sp`; `orchestration/provisioning.py`, `_entitle_packaged_terminal_sp` |
 | Model selection policy | Sets `WORKSHOP_MODEL_POLICY_REQUIRED`; pushes the revisioned WT-SP pool and denied models through `PUT /api/admin/model-policy`; verifies returned policy revision/sets | `orchestration/static_model_permissions.py`, `sync_terminal_policies_for_run`; `databricks/real.py`, `push_terminal_model_policy` |
 | Gateway | Explicitly supplies the workspace-hosted `https://<workspace>/ai-gateway` in both persisted source config and deployment config | `orchestration/provisioning.py`, `_terminal_gateway_environment` |
-| Durable work | Gives WT's SP write access to the attendee's `projects` home subdirectory; registers the release/toolchain reader; supplies immutable release/pin identities | `orchestration/wt_caller.py`; package deployment paths |
+| Durable work | Gives WT's SP `CAN_MANAGE` on the attendee's `projects` home subdirectory, allowing per-project directory creation; registers the release/toolchain reader; supplies immutable release/pin identities | `orchestration/wt_caller.py`; `databricks/real.py`, `_grant_home_subdirectory_write`; package deployment paths |
 
 CT's policy acknowledgement checks the applied revision and allowed/denied sets.
 The WT September admin implementation returns these from its applied policy.
 That acknowledgement is not itself an inference canary. An actual app-SP request
 is still needed before model-dependent test execution.
+
+The 11 October R08 live check found that the WT-owned simulator used `CAN_EDIT`
+for work sync, unlike current CT's scoped `CAN_MANAGE` grant. The actual CLI
+failed to create a project subdirectory. The simulator now matches CT and
+requires that exact permission in its readback; no CT code or working deployment
+is changed by this correction.
 
 ## Differences in the isolated d94e test
 

@@ -79,10 +79,13 @@ def test_all_projects_include_current_source_and_exclude_runtime_credentials(sou
     project = source / "repair-desk"
     for relative in (".env", ".env.production", ".databrickscfg", ".npmrc", "private.key",
                      "node_modules/pkg/index.js", ".git/config", ".agents/skills/tool/SKILL.md",
-                     ".venv/bin/python", "dist/bundle.js"):
+                     ".venv/bin/python", "dist/bundle.js", ".build/app.whl",
+                     "src/app/__dist__/bundle.js", ".workshop/workspace-sync"):
         path = project / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("private-or-generated")
+    context = project / ".workshop/project.json"
+    context.write_text(json.dumps({"version": 1, "name": "repair-desk", "goal": "New direction"}))
     (project / ".env.example").write_text("DATABRICKS_HOST=\n")
     outside = source.parent / "private"
     outside.write_text("outside-project-secret")
@@ -95,6 +98,7 @@ def test_all_projects_include_current_source_and_exclude_runtime_credentials(sou
         assert "workshop-code/repair-desk/.env.example" in members
         assert "workshop-code/garden/uv.lock" in members
         assert "workshop-code/garden/README.md" in members
+        assert archive.read("workshop-code/repair-desk/.workshop/project.json") == context.read_bytes()
         assert all(archive.read(name) not in (b"private-or-generated", b"outside-project-secret") for name in members)
         assert archive.read("workshop-code/repair-desk/src/main.py") == b"print('repair-desk')\n"
     calls, remote, _ = fake_cli
@@ -111,15 +115,35 @@ def test_all_projects_include_current_source_and_exclude_runtime_credentials(sou
 
 
 def test_one_project_and_reruns_keep_separate_archives(source, fake_cli):
+    context = source / "garden/.workshop/project.json"
+    context.parent.mkdir()
+    context.write_text(json.dumps({"version": 1, "name": "garden", "goal": "Keep our garden"}))
     first = helper.export(str(source / "garden"))
     (source / "garden/src/main.py").write_text("new uncommitted version\n")
     second = helper.export(str(source / "garden"))
     assert first["volume_path"] != second["volume_path"]
     with zipfile.ZipFile(first["local_zip"]) as old, zipfile.ZipFile(second["local_zip"]) as new:
         assert old.read("workshop-code/garden/src/main.py") != new.read("workshop-code/garden/src/main.py")
+        assert new.read("workshop-code/garden/.workshop/project.json") == context.read_bytes()
         assert not any("repair-desk" in name for name in new.namelist())
     assert len(fake_cli[1]) == 2
     assert len([call for call in fake_cli[0] if call[1:3] == ["volumes", "create"]]) == 1
+
+
+@pytest.mark.parametrize("linked_directory", [True, False])
+def test_portable_context_never_follows_a_link(source, fake_cli, linked_directory):
+    outside = source.parent / "private-context"
+    outside.mkdir()
+    (outside / "project.json").write_text("outside-project-secret")
+    context_dir = source / "garden/.workshop"
+    if linked_directory:
+        context_dir.symlink_to(outside, target_is_directory=True)
+    else:
+        context_dir.mkdir()
+        (context_dir / "project.json").symlink_to(outside / "project.json")
+    result = helper.export(str(source / "garden"))
+    with zipfile.ZipFile(result["local_zip"]) as archive:
+        assert not any(".workshop" in name for name in archive.namelist())
 
 
 @pytest.mark.parametrize("missing", ["WORKSHOP_CATALOG", "WORKSHOP_SCHEMA"])

@@ -68,6 +68,17 @@ except Exception:
 joinable = [
     s for s in sessions if not s.get("archived") and s.get("status") != "failed"
 ]
+# A named build must never inherit the newest conversation for another build.
+# Explicit remote resumption pins a matching workspace; unselected legacy
+# launches retain their existing most-recent behavior.
+if os.environ.get("WORKSHOP_PROJECT_NAME"):
+    workspace = os.path.realpath(os.getcwd())
+    joinable = [s for s in joinable if s.get("agent_name") == "polly"
+                and s.get("workspace") == workspace
+                and isinstance(s.get("id"), str)]
+    if joinable:
+        latest = max(joinable, key=lambda s: s.get("updated_at") or s.get("created_at") or "")
+        print(latest["id"])
 sys.exit(0 if joinable else 1)
 '''
 
@@ -283,9 +294,12 @@ class User:
             'export DATABRICKS_CONFIG_FILE="$HOME/.config/workshop/'
             'omnigent-databrickscfg"\n'
             f"export DATABRICKS_CONFIG_PROFILE={config.obo_profile_name()}\n"
-            'if [ "$#" -eq 0 ] && '
+            'if [ "$#" -eq 0 ] && SESSION_ID=$( '
             '"$HOME/.local/bin/workshop-omnigent-live-sessions" '
-            "2>/dev/null; then\n"
+            "2>/dev/null); then\n"
+            '  if [ -n "${WORKSHOP_PROJECT_NAME:-}" ] && [ -n "$SESSION_ID" ]; then\n'
+            '    exec omnigent polly --server "$OMNIGENT_APP_URL" --resume "$SESSION_ID"\n'
+            '  fi\n'
             '  exec omnigent polly --server "$OMNIGENT_APP_URL" -c\n'
             "fi\n"
             "AGENT=polly\n"

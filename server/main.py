@@ -813,6 +813,85 @@ def retry_agent_setup(agent_id: str, principal: Principal = Depends(get_current_
 class CreateSessionBody(BaseModel):
     agent_id: str
     replaces_agent_id: str | None = Field(default=None, max_length=32)
+    project_name: str | None = Field(default=None, max_length=63)
+
+
+class SelectProjectBody(BaseModel):
+    name: str = Field(min_length=1, max_length=63)
+    goal: str | None = Field(default=None, max_length=2000)
+    new: bool = False
+
+
+@app.get("/api/projects")
+def list_projects(principal: Principal = Depends(get_current_user)):
+    from . import projects
+
+    try:
+        user = user_manager.get(principal.name)
+        with user.content_lock:
+            value = projects.inventory(user)
+            session_manager.update_project(user, value["active"])
+            return value
+    except projects.ProjectError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.post("/api/projects/saved")
+def list_saved_projects(principal: Principal = Depends(get_current_user)):
+    from . import projects
+
+    user = user_manager.get(principal.name)
+    try:
+        ensure_user_credentials(user)
+        user_content.provision(user)
+        return projects.saved_inventory(user)
+    except (projects.ProjectError, user_content.PreparationError) as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except (CredentialError, model_policy.ModelPolicyConfigurationError) as error:
+        raise HTTPException(status_code=503, detail="Saved builds are waiting for workshop credentials. Reload WT or ask the facilitator to check setup.") from error
+
+
+@app.post("/api/projects/select")
+def select_project(body: SelectProjectBody, principal: Principal = Depends(get_current_user)):
+    from . import projects
+
+    user = user_manager.get(principal.name)
+    try:
+        with user.content_lock:
+            current = projects.read(user)["active"]
+            if session_manager.active() and (body.new or current != body.name):
+                raise HTTPException(status_code=409, detail="Close the current agent before switching builds. Its written files stay in place.")
+            value = projects.select(user, body.name, goal=body.goal, new=body.new)
+            user_content.provision(user)
+            return value
+    except projects.ProjectError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except user_content.PreparationError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except OSError as error:
+        raise HTTPException(status_code=503, detail="Build context could not be saved. Your source files are retained; retry after checking workshop storage.") from error
+
+
+@app.post("/api/projects/{name}/recover")
+def recover_project(name: str, principal: Principal = Depends(get_current_user)):
+    from . import projects
+
+    user = user_manager.get(principal.name)
+    try:
+        with user.content_lock:
+            if session_manager.active():
+                raise HTTPException(status_code=409, detail="Close the current agent before recovering a build. Its written files stay in place.")
+            ensure_user_credentials(user)
+            user_content.provision(user)
+            value = projects.recover(user, name)
+            user_content.provision(user)
+            return value
+    except projects.ProjectError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except user_content.PreparationError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except (CredentialError, model_policy.ModelPolicyConfigurationError) as error:
+        raise HTTPException(status_code=503, detail="Recovery is waiting for workshop credentials. Reload WT or ask the facilitator to check setup.") from error
 
 
 @app.get("/api/sessions")
@@ -825,6 +904,7 @@ def list_sessions(principal: Principal = Depends(get_current_user)):
             "id": g.get("id"),
             "agent_id": g.get("agent_id"),
             "label": g.get("label"),
+            "project_name": g.get("project_name", ""),
             "created_at": g.get("created_at"),
             "last_activity": g.get("last_activity"),
             "exited": True,
@@ -865,6 +945,18 @@ def create_session(
 
     # Refuse an occupied slot before install, credential, or provisioning work.
     # The SessionManager repeats this check atomically at insertion for races.
+    # Check the caller's build before returning a same-agent conflict: a stale
+    # tab must not focus that agent and deliver a prompt for a different build.
+    if body.project_name is not None:
+        from . import projects
+
+        try:
+            user = user_manager.get(principal.name)
+            with user.content_lock:
+                if projects.read(user)["active"] != body.project_name:
+                    raise HTTPException(status_code=409, detail="The active build changed in another tab. Refresh My builds before opening an agent.")
+        except projects.ProjectError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
     if active := session_manager.active():
         conflict = SessionConflictError(active)
         telemetry.session_create_failed(
@@ -982,13 +1074,14 @@ def create_session(
         ) from e
 
     try:
-        with spend.launch_guard(user, agent):
-            session = session_manager.create(
-                user,
-                agent["id"],
-                agents.launch_command(agent),
-                agent["label"],
-            )
+        with user.content_lock, spend.launch_guard(user, agent):
+            from . import projects
+
+            if body.project_name is not None and projects.read(user)["active"] != body.project_name:
+                raise HTTPException(status_code=409, detail="The active build changed in another tab. Refresh My builds before opening an agent.")
+            if projects.read(user)["active"]:
+                user_content._write_instructions(user)
+            session = session_manager.create(user, agent["id"], agents.launch_command(agent), agent["label"])
     except spend.SpendBlocked as e:
         telemetry.session_create_failed(
             principal.name, agent["id"], "agents_paused", e.message
@@ -1011,6 +1104,8 @@ def create_session(
             principal.name, agent["id"], "session_configuration", str(e)
         )
         raise HTTPException(status_code=503, detail=str(e))
+    except projects.ProjectError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
     user.sessions_launched[agent["id"]] = user.sessions_launched.get(agent["id"], 0) + 1
     telemetry.session_started(principal.name, agent["id"], session.id)
     entitlement_manager.wake("session_start")

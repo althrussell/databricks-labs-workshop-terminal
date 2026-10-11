@@ -447,10 +447,13 @@ def _write_instructions(user: User) -> None:
 
 
 def _write_instructions_locked(user: User) -> None:
+    from . import projects
+
+    project_context = projects.instructions(user)
     parts = [
         _base_instructions(),
         _persona_overlay(user),
-        _wizard_overlay(user),
+        project_context or _wizard_overlay(user),
         _demo_data_overlay(user),
     ]
     text = "\n\n".join(p for p in parts if p.strip())
@@ -798,16 +801,19 @@ _POST_COMMIT = """#!/bin/bash
 # reach it once this app is gone. The container's own copy lives on DATA_ROOT
 # and is not the thing at risk here.
 #
-# It does not outlive the workshop either way: teardown deletes the workspace
-# too, so keeping the work means pushing it to a remote the attendee owns.
+# Export the take-home ZIP before teardown deletes the workshop workspace.
 # Only syncs repos inside ~/projects/.
 SYNC_LOG="$HOME/.sync.log"
 STATUS="{status_path}"
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
 [ -z "$REPO_ROOT" ] && exit 0
+# Codex shortens HOME with a symlink to fit its Unix socket path. Git reports
+# the physical repo path, so compare against the physical projects directory.
+PROJECTS_ROOT="$(cd "$HOME/projects" 2>/dev/null && pwd -P)"
+[ -z "$PROJECTS_ROOT" ] && exit 0
 case "$REPO_ROOT" in
-  "$HOME/projects"/*) ;;
+  "$PROJECTS_ROOT"/*) ;;
   *) exit 0 ;;
 esac
 
@@ -815,16 +821,21 @@ DEST="/Workspace/Users/{email}/projects/$(basename "$REPO_ROOT")"
 echo "[post-commit] $(date +%H:%M:%S) syncing $REPO_ROOT -> $DEST" >> "$SYNC_LOG"
 mkdir -p "$(dirname "$STATUS")" 2>/dev/null
 
-# Still backgrounded -- a commit must never block on the network -- but the
-# outcome is now recorded. This hook is the only route an attendee's work has
-# out of the container, and for a long time it could fail on every single
-# commit while reporting that to nobody.
-#
-# databricks sync respects .gitignore and never uploads .git. Strip app SP
-# creds so the CLI authenticates from ~/.databrickscfg.
-(
-  env -u DATABRICKS_CLIENT_ID -u DATABRICKS_CLIENT_SECRET -u DATABRICKS_HOST -u DATABRICKS_TOKEN \\
-    nohup databricks sync "$REPO_ROOT" "$DEST" --watch=false >> "$SYNC_LOG" 2>&1
+# Detach the complete worker, including outcome recording, into its own session.
+# Native harnesses clean up a shell command's process group when it finishes;
+# nohup/disown alone do not keep the background save alive through that cleanup.
+# Commits still return immediately. The CLI respects .gitignore and skips .git.
+python3 - "$REPO_ROOT" "$DEST" "$STATUS" "$SYNC_LOG" <<'PY'
+import os
+import subprocess
+import sys
+
+worker = r'''
+REPO_ROOT="$1"
+DEST="$2"
+STATUS="$3"
+SYNC_LOG="$4"
+databricks sync "$REPO_ROOT" "$DEST" --watch=false >> "$SYNC_LOG" 2>&1
   code=$?
   detail=""
   if [ "$code" -ne 0 ]; then
@@ -837,8 +848,17 @@ mkdir -p "$(dirname "$STATUS")" 2>/dev/null
     printf 'at=%s\\n' "$(date +%s)"
     printf 'exit=%s\\n' "$code"
     printf 'detail=%s\\n' "$detail"
-  } > "$STATUS.tmp" 2>/dev/null && mv -f "$STATUS.tmp" "$STATUS" 2>/dev/null
-) > /dev/null 2>&1 & disown
+  } > "$STATUS.$$.tmp" 2>/dev/null && mv -f "$STATUS.$$.tmp" "$STATUS" 2>/dev/null
+'''
+env = os.environ.copy()
+for name in ("DATABRICKS_CLIENT_ID", "DATABRICKS_CLIENT_SECRET", "DATABRICKS_HOST", "DATABRICKS_TOKEN"):
+    env.pop(name, None)
+subprocess.Popen(
+    ["bash", "-c", worker, "workshop-sync", *sys.argv[1:]], env=env,
+    start_new_session=True, stdin=subprocess.DEVNULL,
+    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+)
+PY
 """
 
 
