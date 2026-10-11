@@ -83,10 +83,10 @@ standalone Labs deployment reports `SUCCEEDED` and `RUNNING`.
 
 | Build | Native generation | Local preview workflows | Live attendee browser |
 | --- | --- | --- | --- |
-| AppKit + Impeccable | 18m11s | Passed | Pending consent |
-| AppKit + Taste | 9m00s | Passed | Pending consent |
+| AppKit + Impeccable | 18m11s | Passed | Opened after attendee sign-in |
+| AppKit + Taste | 9m00s | Passed | Opened after attendee sign-in |
 | APX + Impeccable | 9m12s | Passed | Registration, status changes and reload passed |
-| APX + Taste | 9m20s | Passed | Pending consent |
+| APX + Taste | 9m20s | Passed | Opened after attendee sign-in |
 
 The same Travel toaster / Pat Fixture intake, both status transitions, refresh,
 search, status filter, urgent ordering and repair details passed in every local
@@ -114,9 +114,9 @@ exclude credentials and dependency directories.
 
 The four new app identities are `r07-ak-impeccable-1011`, `r07-ak-taste-1011`,
 `r07-apx-impeccable-1011` and `r07-apx-taste-1011`. Existing attendee app names
-are preserved. Live attendee checks remain pending the requested four-app
-consent handoff as labuser+1; local qualification must not be described as live
-browser acceptance.
+are preserved. All four opened after the owner completed attendee sign-in.
+The selected APX + Impeccable app has live desktop workflow coverage; the full
+four-app and phone workflow results remain local production-preview checks.
 
 The Streamlit instruction changes pass all 13 existing workshop contract tests;
 `git diff --check` passes. The owner selected APX + Impeccable. Repository

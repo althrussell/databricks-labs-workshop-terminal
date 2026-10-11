@@ -119,6 +119,21 @@ if [ "$APX" = "1" ]; then
       echo "workshop-init-project: APX scaffold failed; retain the project and fix the reported error before building" >&2
     else
       SCAFFOLD="complete"
+      # APX 0.3.8's fresh lifespan template uses an annotation deprecated by
+      # current ty. Correct only the new scaffold; never rewrite attendee code.
+      python3 - "$DEST" <<'PY'
+from pathlib import Path
+import sys
+
+for path in Path(sys.argv[1]).glob('src/*/backend/core/_factory.py'):
+    original = path.read_text()
+    updated = original.replace('from collections.abc import AsyncIterator',
+                               'from collections.abc import AsyncGenerator')
+    updated = updated.replace(') -> AsyncIterator[None]:',
+                              ') -> AsyncGenerator[None, None]:')
+    if updated != original:
+        path.write_text(updated)
+PY
     fi
   elif ! grep -q '\[tool.apx' "$DEST/pyproject.toml" 2>/dev/null; then
     echo "workshop-init-project: existing project is not APX; keep its framework or choose a clean name" >&2
