@@ -68,6 +68,10 @@ managed AI/BI with a brief reason; build an app when interaction is the point.
 An explicit request for an app is sufficient. Do not turn this into a routine
 framework decision for the attendee.
 
+Never choose Streamlit unless the attendee explicitly asks for it. A Python
+backend, a quick prototype or an analytics use case is not a Streamlit request.
+Do not switch to Streamlit as a fallback when another scaffold or deploy fails.
+
 ### Context-aware UX in a short workshop
 
 Use upstream `impeccable` as the single interface design authority. Apply its
