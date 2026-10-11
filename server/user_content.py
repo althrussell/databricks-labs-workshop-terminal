@@ -753,6 +753,11 @@ def _write_claude_json(user: User) -> None:
     # the autonomous, token-bearing agent. Off by default; operators opt in per
     # event via ENABLE_PUBLIC_MCP. When off, the agent has no external MCP egress.
     mcp_servers = {
+        "apx": {
+            "type": "stdio",
+            "command": os.path.join(config.shared_prefix(), "bin", "apx"),
+            "args": ["mcp"],
+        },
         "workshop": {
             "type": "stdio",
             "command": os.path.join(
@@ -779,7 +784,7 @@ def _write_claude_json(user: User) -> None:
     retained = existing.get("mcpServers", {})
     if not isinstance(retained, dict):
         retained = {}
-    for name in ("workshop", "deepwiki", "exa"):
+    for name in ("workshop", "apx", "deepwiki", "exa"):
         retained.pop(name, None)
     existing["mcpServers"] = {**retained, **mcp_servers}
     _atomic_write(path, json.dumps(existing, indent=2), 0o600)

@@ -1,6 +1,6 @@
 ---
 name: databricks-apps-python
-description: "Python backend for Databricks Apps — FastAPI (default), Flask, Dash, Streamlit, Gradio, Reflex. **Default for a new Databricks App is `databricks-apps` (AppKit — Node/TypeScript/React) — reach for it first.** Use this skill only when the user asks for a Python backend, extends an existing Python app, or the team is Python-only. Covers OAuth auth, app resources, SQL warehouse and Lakebase connectivity, foundation-model / Vector Search / model-serving APIs (via `databricks-python-sdk`), and deployment via CLI or DABs."
+description: "Python backend for Databricks Apps — FastAPI (default), Flask, Dash, Streamlit, Gradio, Reflex. **Default for a new Databricks App is `apx` (React + FastAPI) — reach for it first.** Use this skill only when the user asks for a Python backend, extends an existing Python app, or the team is Python-only. Covers OAuth auth, app resources, SQL warehouse and Lakebase connectivity, foundation-model / Vector Search / model-serving APIs (via `databricks-python-sdk`), and deployment via CLI or DABs."
 compatibility: Requires databricks CLI (>= v1.0.0)
 metadata:
   version: "0.1.0"
@@ -9,7 +9,7 @@ parent: databricks-core
 
 # Databricks Applications — Python backends
 
-> **First, confirm this skill is the right one.** The default for new Databricks Apps is **[databricks-apps](../databricks-apps/SKILL.md)** (AppKit — Node.js + TypeScript + React SDK). Load that skill first unless the user explicitly asks for a Python backend, is extending an existing Python app, or the team is Python-only. Everything below is the Python-backend alternative.
+> **First, confirm this skill is the right one.** The default for new Databricks Apps is **[apx](../apx/SKILL.md)** (React + FastAPI). Load that skill first unless the user explicitly asks for a Python backend, is extending an existing Python app, or the team is Python-only. Everything below is the Python-backend alternative.
 
 ## Critical Rules for Python apps (always follow)
 
@@ -205,7 +205,7 @@ class EntityIn(BaseModel):
 
 ## Related Skills
 
-- **[databricks-apps](../databricks-apps/SKILL.md)** — the default for new Databricks Apps (AppKit / Node / TypeScript + React); load it first unless a Python backend is explicitly required
+- **[apx](../apx/SKILL.md)** — the default for new custom Databricks Apps (React + FastAPI); keep an existing project's framework
 - **[databricks-python-sdk](../databricks-python-sdk/SKILL.md)** — `WorkspaceClient`, OpenAI-compatible foundation-model client, Vector Search, model-serving invocation; the same patterns work inside a Databricks App
 - **[databricks-lakebase](../databricks-lakebase/SKILL.md)** — persistent PostgreSQL state (autoscaling managed PG with branching)
 - **[databricks-model-serving](../databricks-model-serving/SKILL.md)** — endpoint lifecycle for ML models an App calls

@@ -1,5 +1,13 @@
 # Workshop Terminal: generated-app quality audit and remediation plan
 
+Decision on 11 October: **APX + Impeccable is the selected default for new custom
+apps.** R07 standardises the official runtime-compatible wheel, shared Bun/uv,
+current upstream APX skills, one UX authority and project preparation. Existing
+apps keep their framework; explicit choices remain supported, and Streamlit
+requires an explicit request. Earlier AppKit-default findings below describe
+the audited baseline. Qualify one reused CT-compatible WT deployment; do not
+add fleet runs or mandatory attendee review loops.
+
 Status on 10 October: **R01–R04 are closed; R05's live browser tasks have passed,
 with garden attendee-identity confirmation pending; R06–R10
 are proposed**. The owner
@@ -29,7 +37,7 @@ focused live Claude/Codex qualification on the reused Labs app; its
 [delivery and live report](context-aware-ux-r05.md) records the Impeccable
 installation, native discovery, failed first AppKit theme and subsequent repair.
 Bring the focused R07 APX comparison forward after R05 closeout;
-the framework default remains AppKit until that comparison. R06–R10
+the same-prompt comparison subsequently led the owner to select APX + Impeccable. R06–R10
 remain proposed. On 10 October,
 the owner reduced R06 to preview handoff and attendee-led iteration; detailed
 browser, UX and fault checks belong to development and release testing.
@@ -153,12 +161,11 @@ problems to explicit instructions to skip requirements validation and browser
 checks. R02 changed that interaction contract. The remaining work must prove
 current delivery and task-appropriate output rather than add more policy prose.
 
-AppKit is the current default. Its strategic connection to the upcoming Genie app
+AppKit was the audited default. Its strategic connection to the upcoming Genie app
 builder is the workshop's stated rationale, not a compatibility guarantee verified
-by this audit. Retain AppKit during remediation, deliver context-aware design
-guidance, and compare it with a refreshed, pinned APX path on a representative
-attendee task. Choose the default from working, usable previews and setup
-reliability; treat Genie familiarity as a secondary goal.
+by this audit. The owner selected APX + Impeccable from the focused same-prompt
+comparison. R07 closes setup risks and qualifies ordinary WT delivery; AppKit
+remains available for explicit requests and existing projects.
 
 The desired experience is: the attendee describes a problem; the agent helps
 shape the product with a few useful questions and recommendations; the attendee

@@ -11,10 +11,13 @@ into both files and committed on the first commit.
 
 ## Building apps
 
-AppKit (Node.js + TypeScript + React) is the default via `databricks-apps`.
-Respect an explicit framework request; `databricks-app-apx` and
-`databricks-apps-python` cover alternatives. Scaffold AppKit through
-`workshop-init-project <name> --appkit` (additional flags after `--`) so policy
+Official APX (React + FastAPI) is the default via `apx`.
+Keep existing projects on their framework and respect explicit framework requests;
+`databricks-apps` covers AppKit and
+`databricks-apps-python` cover alternatives. Never choose Streamlit unless the
+attendee explicitly asks for it, including as a fallback after setup/deploy
+failures. A Python backend does not imply Streamlit. Scaffold new default apps through
+`workshop-init-project <name> --apx` (additional flags after `--`) so policy
 and skills are committed at the project root.
 
 Use **`impeccable` as the single UX authority** for visible interfaces.
@@ -33,12 +36,14 @@ deploy`. A separate frontend follows the same UX policy and app deployment tool.
 
 Use these deployment steps alongside the contract's practical task checks:
 
-1. **Typecheck and build** (`npx tsc --noEmit`, then the build). Confirm AppKit
+1. **Typecheck and build** (`apx dev check` and `apx build` for APX;
+   the framework's normal commands otherwise). Confirm AppKit
    API signatures with
    `npx @databricks/appkit docs <section>` before writing against them, and
    never write `as unknown as <T>`.
 2. **Deploy with the `deploy_databricks_app` Workshop MCP tool**, passing this
-   project's absolute directory (resolve it with `pwd`) and target. Relative
+   project's absolute directory (resolve it with `pwd`) and target from
+   `databricks.yml` (`dev` for a standard APX scaffold). Relative
    MCP project paths are rejected. It uses `databricks apps deploy`, polls
    `databricks apps get`, waits for the exact deployment and app compute, and
    returns the live URL. Do not substitute bare `databricks bundle deploy` or

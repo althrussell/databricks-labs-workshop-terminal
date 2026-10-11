@@ -572,6 +572,9 @@ def evaluate(
         "node": "NODE_VERSION",
         "omnigent": "OMNIGENT_VERSION",
         "databricks_agent_skills": "SKILLS_REF",
+        "apx": "APX_VERSION",
+        "bun": "BUN_VERSION",
+        "uv": "UV_VERSION",
     }
     if _bool(env, "AGENTBRICKS_ENABLED", False):
         env_names.update({"agentbricks": "AGENTBRICKS_VERSION", "uv": "UV_VERSION"})
@@ -588,7 +591,7 @@ def evaluate(
         expected = str(entry.get("expected") or "")
         actual = str(entry.get("actual") or "")
         configured_expected = env.get(env_name, "").strip()
-        if tool in {"databricks_agent_skills", "uv"} and not configured_expected:
+        if tool in {"databricks_agent_skills", "apx", "bun", "uv"} and not configured_expected:
             # Skills and uv have repo-owned pins; an unset environment override
             # is normal. An explicit override must match the installed release.
             configured_expected = expected

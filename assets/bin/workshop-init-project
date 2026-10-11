@@ -25,15 +25,17 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'USAGE'
-usage: workshop-init-project <project-name> [--appkit | --agentbricks] [--json] [-- <scaffold flags>]
+usage: workshop-init-project <project-name> [--apx | --appkit | --agentbricks] [--json] [-- <scaffold flags>]
 
   <project-name>   created (or adopted) at ~/projects/<project-name>
+  --apx            scaffold the default React + FastAPI app with official APX
   --appkit         scaffold an AppKit app into it first, without nesting
   --agentbricks    scaffold a custom-agent backend with the Agent Bricks CLI
   --json           return preparation status (nonzero when incomplete)
   --               remaining arguments go to the selected scaffolder
 
 examples:
+  workshop-init-project my-app --apx
   workshop-init-project my-app --appkit
   workshop-init-project my-app --appkit -- --features analytics
   workshop-init-project my-notes            # no scaffold, just the project
@@ -43,6 +45,7 @@ USAGE
 
 NAME=""
 APPKIT=0
+APX=0
 AGENTBRICKS=0
 JSON=0
 SCAFFOLD="not_requested"
@@ -51,6 +54,7 @@ PASSTHRU=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --appkit) APPKIT=1; shift ;;
+    --apx) APX=1; shift ;;
     --agentbricks) AGENTBRICKS=1; shift ;;
     --json) JSON=1; shift ;;
     --) shift; PASSTHRU=("$@"); break ;;
@@ -73,7 +77,7 @@ if [[ ! "$NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$ ]]; then
   echo "workshop-init-project: use a project name of 1-63 letters, numbers, underscores or hyphens, starting with a letter or number" >&2
   exit 2
 fi
-if [ "$APPKIT" = "1" ] && [ "$AGENTBRICKS" = "1" ]; then
+if [ $((APPKIT + APX + AGENTBRICKS)) -gt 1 ]; then
   echo "workshop-init-project: choose one scaffold per project" >&2
   exit 2
 fi
@@ -94,6 +98,47 @@ if [ -L "$DEST" ] || { [ -e "$DEST" ] && [ ! -d "$DEST" ]; }; then
 fi
 if [ -d "$DEST" ]; then
   SCAFFOLD="adopted"
+fi
+
+if [ "$APX" = "1" ]; then
+  if ! command -v apx >/dev/null || ! command -v uv >/dev/null || ! command -v bun >/dev/null; then
+    echo "workshop-init-project: APX, Bun and uv are not ready; check WT setup status and retry" >&2
+    exit 1
+  fi
+  if [ ! -e "$DEST" ]; then
+    # Explicit profile/addons avoid interactive setup and an imposed sidebar.
+    # WT projects receive both framework skills below. Do not enable APX's
+    # assistant addon: it adds a separate @latest browser MCP and hooks.
+    set +e
+    apx init "$DEST" --name "$NAME" --profile "${DATABRICKS_CONFIG_PROFILE:-DEFAULT}" \
+      --addons ui "${PASSTHRU[@]+"${PASSTHRU[@]}"}" >&2
+    SCAFFOLD_STATUS=$?
+    set -e
+    if [ "$SCAFFOLD_STATUS" -ne 0 ]; then
+      SCAFFOLD="failed"
+      echo "workshop-init-project: APX scaffold failed; retain the project and fix the reported error before building" >&2
+    else
+      SCAFFOLD="complete"
+      # APX 0.3.8's fresh lifespan template uses an annotation deprecated by
+      # current ty. Correct only the new scaffold; never rewrite attendee code.
+      python3 - "$DEST" <<'PY'
+from pathlib import Path
+import sys
+
+for path in Path(sys.argv[1]).glob('src/*/backend/core/_factory.py'):
+    original = path.read_text()
+    updated = original.replace('from collections.abc import AsyncIterator',
+                               'from collections.abc import AsyncGenerator')
+    updated = updated.replace(') -> AsyncIterator[None]:',
+                              ') -> AsyncGenerator[None, None]:')
+    if updated != original:
+        path.write_text(updated)
+PY
+    fi
+  elif ! grep -q '\[tool.apx' "$DEST/pyproject.toml" 2>/dev/null; then
+    echo "workshop-init-project: existing project is not APX; keep its framework or choose a clean name" >&2
+    exit 1
+  fi
 fi
 
 if [ "$AGENTBRICKS" = "1" ]; then
@@ -341,6 +386,31 @@ if Path('.agents/skills').is_dir():
 PY
 )
 
+# APX's root-wide Python scan also sees installed platform skill examples.
+# Exclude only managed skill assets; retain checks for all application code.
+WORKSHOP_TYPECHECK_FILE=$(python3 - <<'PY'
+from pathlib import Path
+import subprocess
+import tomllib
+
+path = Path('pyproject.toml')
+if Path('.agents/skills').is_dir() and path.is_file() and not path.is_symlink():
+    original = path.read_text()
+    tool = tomllib.loads(original).get('tool', {})
+    if 'apx' in tool and 'src' not in tool.get('ty', {}):
+        tracked = subprocess.run(['git', 'ls-files', '--error-unmatch', '--', str(path)],
+                                 capture_output=True).returncode == 0
+        clean = tracked and subprocess.run(['git', 'diff', '--quiet', 'HEAD', '--', str(path)],
+                                           capture_output=True).returncode == 0
+        path.write_text(original.rstrip() + '\n\n[tool.ty.src]\n'
+                        '# Installed workshop skills are tools, not application source.\n'
+                        'exclude = [".agents/skills/**", ".claude/skills/**"]\n')
+        if clean:
+            subprocess.run(['git', 'add', '--', str(path)], check=True)
+            print(str(path))
+PY
+)
+
 # A README, always: purpose and live URL here, followed by the continuity brief
 # below. It is the attendee's take-home reminder once the workspace is torn down.
 # Preserve scaffold and attendee content; append the missing prompts and brief.
@@ -383,6 +453,9 @@ git add README.md
 MEMORY_FILES=(README.md)
 if [ -n "$WORKSHOP_LINT_FILE" ]; then
   MEMORY_FILES+=("$WORKSHOP_LINT_FILE")
+fi
+if [ -n "$WORKSHOP_TYPECHECK_FILE" ]; then
+  MEMORY_FILES+=("$WORKSHOP_TYPECHECK_FILE")
 fi
 if [ -f "$TEMPLATE" ]; then
   MEMORY_FILES+=(AGENTS.md CLAUDE.md)

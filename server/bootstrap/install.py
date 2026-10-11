@@ -31,7 +31,8 @@ from .artifacts import (
     directory_checksum as _directory_checksum,
 )
 from .codex_artifacts import install_native_alias, validate_codex_tarballs
-from .skill_projection import RETIRED_UX_SKILLS, RETIRED_WORKSHOP_SKILLS, project_skills
+from .skill_projection import RETIRED_MANAGED_SKILLS, RETIRED_UX_SKILLS, RETIRED_WORKSHOP_SKILLS, project_skills
+from .apx import VERSION as APX_VERSION, BUN_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,7 @@ SKILLS_REF = os.environ.get("SKILLS_REF", "v0.2.28").strip() or "v0.2.28"
 # The manifest and readiness key for the skills artifact.
 SKILLS_ARTIFACT = "databricks_agent_skills"
 FORK_SKILLS = frozenset({
-    "databricks-app-apx", "workshop-export", "refresh-databricks-skills",
+    "apx", "workshop-export", "refresh-databricks-skills",
     "impeccable", "workshop-agent-bricks-cli",
 })
 # The directory inside the upstream repository that holds one subdirectory per
@@ -344,7 +345,9 @@ def _release_specs() -> dict[str, tuple[bool, str]]:
         "codex": (True, CODEX_VERSION),
         "databricks": (True, DATABRICKS_CLI_VERSION),
         "agentbricks": (config.agentbricks_enabled(), AGENTBRICKS_VERSION),
-        "uv": (config.agentbricks_enabled(), UV_VERSION),
+        "apx": (True, APX_VERSION),
+        "bun": (True, BUN_VERSION),
+        "uv": (True, UV_VERSION),
         # Node is a release input like the CLIs, not just their prerequisite:
         # it is the runtime Codex executes in, and /readyz cannot call
         # NODE_VERSION a fact about the running terminal without an installed
@@ -657,11 +660,13 @@ def _prewarm_status_unlocked() -> dict:
         "source": "persistent",
         "reusable": skills_reusable,
     }
-    python_tools = {}
+    from .apx import prewarm_status as apx_prewarm_status
+
+    python_tools = apx_prewarm_status()
     if config.agentbricks_enabled():
         from .agentbricks import prewarm_status as agentbricks_prewarm_status
 
-        python_tools = agentbricks_prewarm_status()
+        python_tools.update(agentbricks_prewarm_status())
     reusable = (
         all(entry["reusable"] for entry in binaries.values())
         and skills_reusable
@@ -1577,8 +1582,7 @@ def _stage_vendored_skills(prefix: str) -> str:
 
 def _fork_skills_current(target: str) -> bool:
     names = {name for name in FORK_SKILLS if os.path.isdir(os.path.join(_ASSETS_SKILLS, name))}
-    return (not any(os.path.lexists(os.path.join(target, name))
-                    for name in RETIRED_UX_SKILLS | RETIRED_WORKSHOP_SKILLS)
+    return (not any(os.path.lexists(os.path.join(target, name)) for name in RETIRED_MANAGED_SKILLS)
             and _directory_checksum(_ASSETS_SKILLS, names) == _directory_checksum(target, names))
 
 
@@ -1619,7 +1623,7 @@ def _install_skills() -> None:
     1. Copy assets/skills (the workshop's own skills + vendored Databricks
        skills as the offline fallback).
     2. Clone databricks-agent-skills at the reviewed ref and overlay ``skills/*``
-       so attendees build on the canonical, AppKit-first Databricks skills.
+       then apply the workshop's APX routing and sole Impeccable UX authority.
 
     A successful overlay is ``complete``. A transient fetch failure serves the
     vendored copy and reports ``degraded`` -- usable, but never ``complete``,
@@ -1891,6 +1895,16 @@ _install_agentbricks = _guard_installer(
     "agentbricks", _install_agentbricks, expected_version=AGENTBRICKS_VERSION
 )
 
+
+def _install_apx() -> None:
+    from .apx import install_cli
+
+    try:
+        install_cli()
+    except Exception as error:
+        for name, version in (("apx", APX_VERSION), ("bun", BUN_VERSION), ("uv", UV_VERSION)):
+            _set(name, "error", str(error), expected_version=version)
+
 _retry_lock = threading.Lock()
 _retry_active = False
 
@@ -1920,6 +1934,7 @@ def retry_failed(requires) -> bool:
                     ("node", _install_node), ("databricks", _install_databricks_cli),
                     ("claude", _install_claude), ("codex", _install_codex),
                     ("tmux", _install_tmux), ("omnigent", _install_omnigent),
+                    ("apx", _install_apx),
                 ):
                     with _state_lock:
                         still_failed = _state.get(name, {}).get("status") in {"error", "degraded"}
@@ -1949,11 +1964,11 @@ def _run_parallel_installers(tasks, *, max_workers: int) -> None:
 
 def run_in_background() -> None:
     omnigent = config.omnigent_offered()
-    steps = ["node", "claude", "codex", "databricks", "skills"]
+    steps = ["node", "claude", "codex", "databricks", "skills", "apx", "bun", "uv"]
     if omnigent:
         steps += ["tmux", "omnigent"]
     if config.agentbricks_enabled():
-        steps += ["agentbricks", "uv"]
+        steps += ["agentbricks"]
     for step in steps:
         _set(step, "pending")
 
@@ -2024,9 +2039,10 @@ def run_in_background() -> None:
                 except Exception as error:  # noqa: BLE001 - consume every future
                     _set(step, "error", str(error))
 
-        # Both Python CLIs use the same content-addressed uv/Python archives.
+        # Python tools use the same content-addressed uv/Python archives.
         # Start this utility after the parallel installers to avoid extracting
         # their shared archive roots concurrently. Harnesses can already launch.
+        _install_apx()
         if config.agentbricks_enabled():
             _install_agentbricks()
 

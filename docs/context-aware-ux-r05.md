@@ -1,9 +1,12 @@
 # R05: context-aware app UX
 
 R05 replaces competing workshop design instructions with upstream Impeccable.
-AppKit remains the default implementation; explicit framework and visual
+R05 was qualified with AppKit as the default implementation; R07 subsequently
+selects APX + Impeccable. Explicit framework and visual
 requests are honored. The goal, audience, primary task and available data guide
 each app's UX rather than a shared shell or palette.
+Streamlit requires an explicit attendee request, including after a scaffold or
+deployment failure. Asking for a Python backend does not select Streamlit.
 
 ## Delivery
 
@@ -16,6 +19,8 @@ each app's UX rather than a shared shell or palette.
   stays outside Git and project copies; the skill launcher finds the verified
   shared engine on PATH. `scripts/refresh_impeccable.py --check` runs the real
   installer and native discovery smoke in an isolated temporary project.
+  Readiness checks invoke the installed skill's `scripts/impeccable engine-probe`;
+  `impeccable-engine` is its response label, not a required executable name.
 - The Databricks clone retains raw commit/content verification. A deterministic
   projection removes the retired app-design skill and routes its callers to
   Impeccable. The delivered content has a separate manifest digest. Runtime
@@ -31,6 +36,10 @@ each app's UX rather than a shared shell or palette.
 - The forked APX guide treats CRUD/sidebar/table patterns as optional API
   examples and removes fixed build-time estimates and mandatory documentation.
   Refreshing/pinning APX tooling and comparing frameworks remain R07 work.
+  Normal WT bootstrap does not install APX or Bun. The later comparison uses a
+  separate temporary official APX installation and does not establish ordinary
+  attendee setup readiness. APX can manage Bun internally; a missing global Bun
+  executable alone does not establish failure.
 - Claude 2.1.296 and Codex 0.162.1 were refreshed from the latest-release audit
   before qualification. The chosen live models remain Opus 5.5 and GPT Sol 6.1.
 - Project preparation excludes installed skill assets from AppKit's root-wide
@@ -45,7 +54,7 @@ Focused regressions cover raw/projected provenance, retired routes, warm trees,
 home links, project copies, preserved notes and real Git worktree content.
 CI adds the same supported-installer check on Linux.
 
-All eight CI jobs passed on `f4145ce`: Python 3.11/3.12, frontend build/tests,
+All eight CI jobs passed on `2b679d7`: Python 3.11/3.12, frontend build/tests,
 packaged runtime, actual Linux Impeccable installation, rendered wizard,
 evaluator API and Agent Bricks CLI. Raw receipts and screenshots remain outside
 Git.
