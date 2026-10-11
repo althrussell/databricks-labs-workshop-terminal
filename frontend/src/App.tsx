@@ -20,6 +20,8 @@ import {
   ApiError,
   AppConfig,
   PriorSessionInfo,
+  ProjectInventory,
+  ProjectSelection,
   SessionInfo,
   WizardBrief,
   relaunchAndAcknowledge,
@@ -40,6 +42,8 @@ import HelpChatPanel from "./components/HelpChatPanel";
 import ToastHost from "./components/ToastHost";
 import TerminalView from "./components/TerminalView";
 import AgentSwitchDialog from "./components/AgentSwitchDialog";
+import ProjectBar from "./components/ProjectBar";
+import { goalChangePrompt, keepSavedCopies } from "./projects";
 import { bindIdentityRefresh, onAppEvent } from "./events";
 import { ideaPromptAction } from "./ideation";
 import { friendlyError, type RecoveryAction } from "./errors";
@@ -105,7 +109,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [recovering, setRecovering] = useState(false);
   const [connectionLost, setConnectionLost] = useState(false);
-  const [nuggetsCollapsed, setNuggetsCollapsed] = useState(false);
+  const [nuggetsCollapsed, setNuggetsCollapsed] = useState(() => window.matchMedia("(max-width: 700px)").matches);
   const [helpChatOpen, setHelpChatOpen] = useState(false);
   const [helpUnread, setHelpUnread] = useState(0);
   const [helpRaised, setHelpRaised] = useState(false);
@@ -113,6 +117,12 @@ export default function App() {
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [brief, setBrief] = useState<WizardBrief | null>(null);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
+  const [projectInventory, setProjectInventory] = useState<ProjectInventory | null>(null);
+  const projectInventoryRef = useRef<ProjectInventory | null>(null);
+  const projectRequest = useRef(0);
+  const projectMutation = useRef(false);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const [projectLoadError, setProjectLoadError] = useState("");
   const helpChatOpenRef = useRef(false);
   const wizardChecked = useRef(false);
   const [view, setView] = useState<"home" | "agent" | "operator">(
@@ -131,6 +141,25 @@ export default function App() {
     setPriorSessions(prior);
     return active;
   }, []);
+
+  const acceptProjects = useCallback((value: ProjectInventory) => {
+    projectInventoryRef.current = value;
+    setProjectInventory(value);
+    setProjectsLoaded(true);
+    setProjectLoadError("");
+  }, []);
+
+  const refreshProjects = useCallback(async (saved = false) => {
+    if (projectMutation.current) return;
+    const requestId = ++projectRequest.current;
+    try {
+      const value = saved ? await api.savedProjects() : await api.projects();
+      if (requestId === projectRequest.current) acceptProjects(saved ? value : keepSavedCopies(value, projectInventoryRef.current));
+    } catch (caught) {
+      if (requestId === projectRequest.current) setProjectLoadError(caught instanceof Error ? caught.message : String(caught));
+      throw caught;
+    } finally { setProjectsLoaded(true); }
+  }, [acceptProjects]);
 
   const handleGatewayLimit = useCallback(
     (code: "gateway_allowance_exhausted" | "gateway_rate_limited") => {
@@ -206,16 +235,26 @@ export default function App() {
       .finally(() => setSessionsLoaded(true));
 
     refreshAgents();
+    void refreshProjects().catch(() => undefined);
     const interval = setInterval(refreshAgents, 5000);
+    const projectInterval = setInterval(() => { void refreshProjects().catch(() => undefined); }, 15000);
     return () => {
       clearInterval(interval);
+      clearInterval(projectInterval);
       stopIdentityRefresh();
     };
-  }, [refreshAgents, refreshIdentity, refreshSessions]);
+  }, [refreshAgents, refreshIdentity, refreshSessions, refreshProjects]);
 
   useEffect(() => {
     helpChatOpenRef.current = helpChatOpen;
   }, [helpChatOpen]);
+
+  useEffect(() => {
+    const narrow = window.matchMedia("(max-width: 700px)");
+    const collapse = (event: MediaQueryListEvent) => { if (event.matches) setNuggetsCollapsed(true); };
+    narrow.addEventListener("change", collapse);
+    return () => narrow.removeEventListener("change", collapse);
+  }, []);
 
   /* The wizard opens once, on the first arrival, and never again.
    *
@@ -230,7 +269,7 @@ export default function App() {
    * empty array the state starts as, which is indistinguishable from a first
    * arrival and opens the modal over somebody's running terminal. */
   useEffect(() => {
-    if (!config || !sessionsLoaded || wizardChecked.current) return;
+    if (!config || !sessionsLoaded || !projectsLoaded || wizardChecked.current) return;
     // Once per load. Without the guard the wizard would reopen the moment an
     // attendee closed their last terminal, which is precisely when they are
     // least in the mood for it.
@@ -243,12 +282,12 @@ export default function App() {
       .wizard()
       .then((state) => {
         setBrief(state.brief);
-        if (state.enabled && state.should_show && !session && !dismissed) {
+        if (state.enabled && state.should_show && !session && !projectInventoryRef.current?.active && !dismissed) {
           setWizardOpen(true);
         }
       })
-      .catch(() => { if (config.onboarding_wizard.enabled && !session && !dismissed) setWizardOpen(true); });
-  }, [config, sessionsLoaded, session, wizardDismissalKey]);
+      .catch(() => { if (config.onboarding_wizard.enabled && !session && !projectInventoryRef.current?.active && !dismissed) setWizardOpen(true); });
+  }, [config, sessionsLoaded, projectsLoaded, session, wizardDismissalKey]);
 
   useEffect(() => {
     if (config?.help) setHelpRaised(config.help.raised);
@@ -289,7 +328,7 @@ export default function App() {
     setLaunching(agentId);
     setError("");
     try {
-      const { session: created } = await api.createSession(agentId);
+      const { session: created } = await api.createSession(agentId, undefined, projectInventoryRef.current?.active);
       setSession(created);
       setView("agent");
       setHintSessionId(created.id);
@@ -376,6 +415,9 @@ export default function App() {
 
   async function relaunchPrior(prior: PriorSessionInfo) {
     try {
+      if (prior.project_name && prior.project_name !== projectInventoryRef.current?.active) {
+        acceptProjects(await api.selectProject({ name: prior.project_name }));
+      }
       await relaunchAndAcknowledge(
         prior,
         launch,
@@ -389,6 +431,40 @@ export default function App() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
+  }
+
+  async function selectBuild(selection: ProjectSelection, stopSessionId?: string): Promise<string> {
+    projectMutation.current = true;
+    ++projectRequest.current;
+    try {
+      if (stopSessionId) {
+        try { await api.closeSession(stopSessionId); }
+        catch (caught) { if (!(caught instanceof ApiError) || caught.status !== 404) throw caught; }
+        const active = await refreshSessions();
+        if (active) throw new Error("Another agent became active. Confirm that agent before switching builds.");
+      }
+      const value = selection.recover
+        ? await api.recoverProject(selection.name)
+        : await api.selectProject(selection);
+      acceptProjects(value);
+      if (!selection.new && !selection.recover && selection.goal !== undefined) {
+        const active = await refreshSessions();
+        if (active) {
+          try {
+            await typeWhenSessionReady(active.id, goalChangePrompt(selection.name, selection.goal));
+            setView("agent");
+            return "Goal saved and typed into your agent. Press Enter in the terminal to request the change.";
+          } catch (caught) {
+            throw new Error(`Goal saved, but the change could not be typed. Tell your agent the new goal or retry. ${caught instanceof Error ? caught.message : String(caught)}`);
+          }
+        }
+        return "Goal saved. Your next agent reads this build's context; tell it when you're ready to make the change.";
+      }
+      setSession(null); setHintSessionId(null); setView("home");
+      return selection.recover
+        ? "Source recovered and selected. Choose an agent to continue; its previous conversation and Git history were not restored."
+        : `${selection.name} is selected. Choose an agent to ${selection.new ? "begin" : "continue"}.`;
+    } finally { projectMutation.current = false; }
   }
 
   async function requestAgent(agentId: string, starterPrompt = "") {
@@ -527,7 +603,7 @@ export default function App() {
         close: api.closeSession,
         refresh: refreshSessions,
         create: async (agentId, replacesAgentId) =>
-          (await api.createSession(agentId, replacesAgentId)).session,
+          (await api.createSession(agentId, replacesAgentId, projectInventoryRef.current?.active)).session,
       });
       setSession(created);
       setHintSessionId(created.id);
@@ -817,6 +893,8 @@ export default function App() {
       ) : (
         <div className="main">
           <div className="work-area">
+            <ProjectBar inventory={projectInventory} session={session} loading={!projectsLoaded} loadError={projectLoadError}
+              onRefresh={refreshProjects} onSelect={selectBuild} />
             {session && view === "agent" && (
               <div className="toolbar">
                 <LaunchBar agents={agents} launching={launching} onLaunch={requestAgent} />
@@ -895,7 +973,7 @@ export default function App() {
                   workspaceLinks={config?.shell.workspace_links ?? []}
                   hasSessions={!!session && !session.exited}
                   launching={launching}
-                  brief={brief}
+                  brief={projectInventory?.active ? null : brief}
                   canEditBrief={wizardAvailable}
                   onLaunch={requestAgent}
                   onIdea={ideaToSession}

@@ -87,6 +87,8 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
             if direct_launch:
                 body["agents"][1]["ready"] = True
                 body["agents"].append({"id": "omnigent", "label": "Omnigent", "description": "Simulated ready harness", "icon": "terminal", "order": 3, "ready": True, "needs_credentials": False})
+        elif path == "/api/projects":
+            body = {"active": "", "projects": []}
         elif path == "/api/setup/status":
             body = {"steps": {"claude": {"status": "done"}, "codex": {"status": "installing"}}, "installing": True, "ready": {"claude": True}}
         elif path == "/api/nuggets":
@@ -178,7 +180,7 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
     url = "http://127.0.0.1:" + str(site._server.sockets[0].getsockname()[1])
     try:
         async with browser_api.async_playwright() as engine:
-            browser = await engine.chromium.launch(headless=True)
+            browser = await engine.chromium.launch(headless=True, executable_path=os.environ.get("WORKSHOP_BROWSER_EXECUTABLE"))
             context = await browser.new_context(viewport={"width": width, "height": 900}, reduced_motion="reduce")
             page = await context.new_page()
             errors = []

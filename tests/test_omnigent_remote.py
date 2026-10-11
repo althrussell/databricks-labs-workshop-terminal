@@ -849,7 +849,7 @@ def test_generated_tui_helper_routes_remote_and_local(monkeypatch, tmp_path):
     assert helper.stat().st_mode & 0o111
 
 
-def _run_tui_helper(tmp_path, monkeypatch, argv, *, app_url, live_sessions=False):
+def _run_tui_helper(tmp_path, monkeypatch, argv, *, app_url, live_sessions=False, selected_project="", live_session_id=""):
     """Execute the generated helper with a stub ``omnigent`` that echoes argv.
 
     Running it beats string-matching: the agent-selection branch has edge cases
@@ -869,7 +869,7 @@ def _run_tui_helper(tmp_path, monkeypatch, argv, *, app_url, live_sessions=False
     user = User("argv-probe@example.com")
     user.bootstrap_home()
     probe = Path(user.home) / ".local" / "bin" / "workshop-omnigent-live-sessions"
-    probe.write_text(f"#!/bin/sh\nexit {0 if live_sessions else 1}\n")
+    probe.write_text(f"#!/bin/sh\nprintf '%s\\n' '{live_session_id}'\nexit {0 if live_sessions else 1}\n")
     probe.chmod(0o755)
     stub_dir = tmp_path / "stub"
     stub_dir.mkdir(exist_ok=True)
@@ -884,10 +884,17 @@ def _run_tui_helper(tmp_path, monkeypatch, argv, *, app_url, live_sessions=False
             "PATH": f"{stub_dir}:/usr/bin:/bin",
             "HOME": user.home,
             "OMNIGENT_APP_URL": app_url,
+            "WORKSHOP_PROJECT_NAME": selected_project,
         },
         check=True,
     )
     return completed.stdout.split()
+
+
+def test_tui_helper_pins_the_selected_build_conversation(monkeypatch, tmp_path):
+    argv = _run_tui_helper(tmp_path, monkeypatch, [], app_url="https://app.example.com",
+                           live_sessions=True, selected_project="repair-desk", live_session_id="repair-session")
+    assert argv == ["polly", "--server", "https://app.example.com", "--resume", "repair-session"]
 
 
 def test_tui_helper_joins_an_existing_session_so_both_tools_show_one_conversation(
@@ -987,7 +994,7 @@ def test_tui_helper_local_mode_stays_a_bare_passthrough(monkeypatch, tmp_path):
     assert _run_tui_helper(tmp_path, monkeypatch, ["codex"], app_url="") == ["codex"]
 
 
-def _run_live_sessions_probe(tmp_path, monkeypatch, *, sessions, write_token=True):
+def _run_live_sessions_probe(tmp_path, monkeypatch, *, sessions, write_token=True, selected_project=""):
     """Run the generated probe against a real server standing in for the App."""
     from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -997,6 +1004,8 @@ def _run_live_sessions_probe(tmp_path, monkeypatch, *, sessions, write_token=Tru
     monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
     user = User("session-probe@example.com")
     user.bootstrap_home()
+    cwd = Path(user.home) / "projects" / selected_project if selected_project else Path(user.home)
+    cwd.mkdir(parents=True, exist_ok=True)
     seen = {}
 
     class Handler(BaseHTTPRequestHandler):
@@ -1026,12 +1035,29 @@ def _run_live_sessions_probe(tmp_path, monkeypatch, *, sessions, write_token=Tru
             [str(Path(user.home) / ".local" / "bin" / "workshop-omnigent-live-sessions")],
             capture_output=True,
             text=True,
-            env={"PATH": "/usr/bin:/bin", "HOME": user.home, "OMNIGENT_APP_URL": url},
+            env={"PATH": "/usr/bin:/bin", "HOME": user.home, "OMNIGENT_APP_URL": url,
+                 "WORKSHOP_PROJECT_NAME": selected_project}, cwd=cwd,
         )
+        if selected_project:
+            seen["resume_id"] = completed.stdout.strip()
     finally:
         server.shutdown()
         thread.join(timeout=5)
     return completed.returncode, seen
+
+
+def test_remote_resume_does_not_cross_builds(monkeypatch, tmp_path):
+    from server.users import email_slug
+
+    parent = tmp_path / "users" / email_slug("session-probe@example.com") / "projects"
+    sessions = [
+        {"id": "repair-session", "agent_name": "polly", "status": "idle", "workspace": str(parent / "repair-desk"), "updated_at": "2026-10-11T01:00:00Z"},
+        {"id": "newer-garden", "agent_name": "polly", "status": "idle", "workspace": str(parent / "garden-plan"), "updated_at": "2026-10-11T02:00:00Z"},
+    ]
+    code, seen = _run_live_sessions_probe(tmp_path, monkeypatch, sessions=sessions, selected_project="repair-desk")
+    assert code == 0 and seen["resume_id"] == "repair-session"
+    code, seen = _run_live_sessions_probe(tmp_path, monkeypatch, sessions=sessions, selected_project="unstarted")
+    assert code == 1 and seen["resume_id"] == ""
 
 
 def test_live_sessions_probe_reports_a_joinable_session_as_the_attendee(

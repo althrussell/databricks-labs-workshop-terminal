@@ -1,6 +1,9 @@
 # Project memory — Databricks Workshop
 
 <!-- workshop-project-memory -->
+Read `.workshop/project.json`, the README workshop brief and existing PRODUCT/DESIGN
+notes when resuming this project. Treat its current goal as product context;
+keep other builds separate and preserve the attendee's framework and written work.
 
 This file is committed to the repo so the rule below travels with the project
 into every agent and harness. Claude reads `CLAUDE.md`; Codex reads `AGENTS.md`;

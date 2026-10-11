@@ -447,10 +447,13 @@ def _write_instructions(user: User) -> None:
 
 
 def _write_instructions_locked(user: User) -> None:
+    from . import projects
+
+    project_context = projects.instructions(user)
     parts = [
         _base_instructions(),
         _persona_overlay(user),
-        _wizard_overlay(user),
+        project_context or _wizard_overlay(user),
         _demo_data_overlay(user),
     ]
     text = "\n\n".join(p for p in parts if p.strip())
