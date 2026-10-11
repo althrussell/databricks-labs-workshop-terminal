@@ -47,6 +47,8 @@ REQUIRED_ARTIFACTS = frozenset({
     "impeccable_npm_launcher",
     "impeccable_engine_linux_x64",
     "impeccable_skill_bundle",
+    "apx_wheel_linux_x64",
+    "bun_linux_x64",
 })
 # Artifacts published only as archives: verified as a file, then extracted at
 # boot to reach ``executable_relative_path``.
@@ -506,6 +508,13 @@ def load_manifest(path: str = "") -> dict:
         raise ArtifactManifestError("skills commit/content provenance is invalid")
     if not _SHA256.fullmatch(str(artifacts["impeccable_skill_bundle"].get("content_sha256") or "")):
         raise ArtifactManifestError("Impeccable skill content provenance is invalid")
+    for name in ("apx_wheel_linux_x64", "bun_linux_x64"):
+        if not _SHA256.fullmatch(str(artifacts[name].get("executable_sha256") or "")):
+            raise ArtifactManifestError(f"{name}: executable checksum is required")
+    apx = artifacts["apx_wheel_linux_x64"]
+    if (not _COMMIT.fullmatch(str(apx.get("skill_commit") or ""))
+            or not _SHA256.fullmatch(str(apx.get("skill_content_sha256") or ""))):
+        raise ArtifactManifestError("APX skill provenance is required")
     return {
         "ok": True,
         "path": override_path or DEFAULT_MANIFEST_PATH,

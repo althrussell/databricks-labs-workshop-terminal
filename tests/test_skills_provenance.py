@@ -101,7 +101,7 @@ def test_fork_only_skills_survive_a_refresh():
         "workshop-agent-bricks-cli",
         "promote",
         "refresh-databricks-skills",
-        "databricks-app-apx",
+        "apx",
         "impeccable",
     ):
         assert os.path.isdir(os.path.join(SKILLS_DIR, name))

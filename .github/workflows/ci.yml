@@ -112,6 +112,23 @@ jobs:
       - name: Verify pinned bundle, supported install and native launcher
         run: uv run --frozen --no-group release python scripts/refresh_impeccable.py --check
 
+  apx-toolchain:
+    name: apx-ubuntu22-scaffold-build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.24"
+      - name: Verify official skill and real compatible installer, MCP and build
+        run: |
+          uv run --frozen --no-group release python scripts/refresh_apx.py --check
+          uv run --frozen --no-group release python scripts/check_apx_toolchain.py --bootstrap
+
   package:
     name: packaged-runtime
     runs-on: ubuntu-24.04

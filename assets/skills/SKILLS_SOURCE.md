@@ -4,8 +4,9 @@ Databricks platform skills are pinned from
 [databricks-agent-skills](https://github.com/databricks/databricks-agent-skills).
 Bootstrap verifies the raw clone's commit and content digest, then applies the
 same deterministic workshop projection used by the refresh script. The
-projection retires `databricks-app-design` and routes its two callers to
-Impeccable; all other platform/API content remains upstream. The delivered
+projection retires `databricks-app-design`, routes its callers to Impeccable,
+and makes new custom apps use APX while retaining AppKit for explicit requests
+and existing projects. Platform/API content remains upstream. The delivered
 fallback and runtime have their own effective digest in the reviewed manifest.
 Do not hand-edit platform skills; regenerate through the refresh scripts.
 
@@ -35,7 +36,13 @@ manifest entry. `effective_content_sha256` verifies the delivered projection.
   of project commits. Refresh/check with `scripts/refresh_impeccable.py`.
 - `workshop-agent-bricks-cli` — custom-agent CLI workflow for the WT identity,
   project scaffold and resource handoff.
-- `databricks-app-apx` — APX scaffold/API guidance, fork-only.
+- `apx` — official `databricks-solutions/apx` skill, unmodified at release
+  **0.3.8**, commit `50073e561a689ae5292f82e69ae0505417d75d3e`. Its content digest
+  and CLI wheel are pinned together in `apx_wheel_linux_x64`. License:
+  `assets/artifacts/APX-LICENSE.md`. Refresh/check with `scripts/refresh_apx.py`.
+  Bootstrap installs the official manylinux wheel plus shared Bun **1.3.8**
+  and uv **0.12.24**; no standalone newer-glibc binary or package-name lookup.
+  The former fork `databricks-app-apx` is retired from managed delivery.
 - `promote` — handoff document generation, on explicit request only.
 - `refresh-databricks-skills` — the refresh workflow itself.
 

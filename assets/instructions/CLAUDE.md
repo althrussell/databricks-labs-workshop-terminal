@@ -14,7 +14,7 @@ skills maintained here.
 
 | Category | Skills |
 |----------|--------|
-| Apps | databricks-apps (AppKit), impeccable, databricks-app-apx, databricks-lakebase |
+| Apps | apx (default), impeccable, databricks-apps (AppKit/platform), databricks-lakebase |
 | AI & Agents | workshop-agent-bricks-cli (custom agents), databricks-agent-bricks (managed assistants/supervisors), databricks-mlflow-evaluation, databricks-model-serving, databricks-vector-search |
 | Analytics | databricks-aibi-dashboards, databricks-dbsql, databricks-metric-views, databricks-unity-catalog, databricks-data-discovery |
 | Data Engineering | databricks-pipelines, databricks-jobs, databricks-dabs, databricks-synthetic-data-gen, databricks-zerobus-ingest |
@@ -130,17 +130,17 @@ Before starting any new project:
 
 1. **Create the project and scaffold it in one command:**
    ```bash
-   cd "$(workshop-init-project my-app --appkit)"
+   cd "$(workshop-init-project my-app --apx)"
    ```
-   Pass AppKit flags through after `--`:
+   Add APX capabilities only when the task needs them; flags go after `--`:
    ```bash
-   cd "$(workshop-init-project my-app --appkit -- --features analytics)"
+   cd "$(workshop-init-project my-app --apx -- --addons ui,sql)"
    ```
    For a custom agent backend, use `--agentbricks` and the
    `workshop-agent-bricks-cli` skill. Drop the scaffold flag for another framework,
    a script or notes repo, then use the matching scaffold/API guidance.
 
-   This makes `~/projects/my-app`, scaffolds AppKit **into that directory**,
+   This makes `~/projects/my-app`, scaffolds APX **into that directory**,
    runs `git init`, and commits the workshop's project memory as both
    `CLAUDE.md` and `AGENTS.md` so the rules travel with the repo into every
    agent and sub-agent (including Omnigent's workers running in isolated
@@ -181,9 +181,9 @@ Before starting any new project:
 
 ## Building apps
 
-AppKit (Node.js + TypeScript + React) is the default, using `databricks-apps`
-and `workshop-init-project <name> --appkit`. Respect an explicit framework
-request, using the matching platform skill (including `databricks-app-apx` or
+Official APX (React + FastAPI) is the default, using `apx`
+and `workshop-init-project <name> --apx`. Keep an existing project's framework.
+Respect an explicit framework request, using the matching platform skill (including `databricks-apps` for AppKit or
 `databricks-apps-python`). Never choose Streamlit unless the attendee explicitly
 asks for it, including as a fallback after setup or deployment failures. A Python
 backend does not imply Streamlit. Choose the implementation for the task; no
@@ -209,14 +209,16 @@ it with a reason; an explicit app request or interactive workflow uses an app.
 
 Use these deployment steps alongside the contract's practical task checks:
 
-1. **Typecheck and build** (`npx tsc --noEmit`, then the app's build). This
+1. **Typecheck and build** (`apx dev check` and `apx build` for APX;
+   the selected framework's checks/build otherwise). This
    prevents a failed-deploy loop. Before writing code
    against an AppKit API, check the real signature with
    `npx @databricks/appkit docs <section>` — invented shapes fail `tsc`. Never
    write `as unknown as <T>`.
 2. **Deploy with the `deploy_databricks_app` Workshop MCP tool.** Pass the
    absolute project directory (resolve it with `pwd`) and target (`default`
-   unless the project says otherwise). Relative MCP project paths are rejected.
+   for AppKit, `dev` for a standard APX scaffold, or the target in
+   `databricks.yml`). Relative MCP project paths are rejected.
    It runs the supported `databricks apps deploy -t <target>` pipeline, polls
    `databricks apps get` and the exact deployment internally, and returns only
    after the deployment is `SUCCEEDED` and the app is `RUNNING`/`ACTIVE`.

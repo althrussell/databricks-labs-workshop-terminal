@@ -33,7 +33,7 @@ it with them.
   where your team can see and update orders", not "a Lakebase-backed CRUD view
   with a DataTable". Never name Databricks widgets/services unless they ask.
   Confirm what they want in plain terms and show them the result.
-- **Technical persona:** Use the real names — AppKit, Lakebase, SQL warehouse,
+- **Technical persona:** Use the real names — APX, AppKit, Lakebase, SQL warehouse,
   serving endpoints, Unity Catalog — and explain the architecture choices you
   make.
 
@@ -46,7 +46,8 @@ for that version; provision and bind Lakebase non-interactively for shared or
 database-backed saved data, following the `databricks-lakebase` skill. A browser-only
 demo can use browser storage with its limitation clearly stated.
 
-Apps default to `databricks-apps`; an explicit framework request uses its
+New custom apps default to official `apx`; existing projects retain their
+framework and an explicit framework request uses its
 matching skill. `impeccable` owns all interface UX. Streamlit requires an explicit
 attendee request; never suggest or use it as a default or fallback. Follow the
 shared contract's short context exchange and preview checks; explain observed

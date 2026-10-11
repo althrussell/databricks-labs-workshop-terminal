@@ -521,6 +521,13 @@ def configure_codex(
         'enabled_tools = ["deploy_databricks_app"]\n'
         "startup_timeout_sec = 10\n"
         "tool_timeout_sec = 3600\n"
+        "\n[mcp_servers.apx]\n"
+        f"command = {json.dumps(os.path.join(config.shared_prefix(), 'bin', 'apx'))}\n"
+        'args = ["mcp"]\n'
+        'enabled_tools = ["start", "stop", "restart", "logs", "check", "routes", '
+        '"get_route_info", "refresh_openapi", "docs", "search_registry_components", '
+        '"add_component", "list_registry_components", "databricks_apps_logs"]\n'
+        "startup_timeout_sec = 20\n"
     )
     _atomic_write_text(os.path.join(codex_dir, "config.toml"), config_toml)
 

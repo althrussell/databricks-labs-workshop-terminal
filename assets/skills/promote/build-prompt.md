@@ -53,7 +53,7 @@ Unity Catalog object creation, serving endpoint configuration).
 ### Section 3: Tech Stack (prescriptive — leave nothing for the agent to choose)
 
 - **Frontend:** preserve the actual framework and attendee's explicit choice.
-  AppKit is the default for a new app. Use the matching platform skill for APIs
+  APX + Impeccable is the default for a new app. Use the matching platform skill for APIs
   and `impeccable` for task-appropriate interface design.
 - **Backend:** AppKit Express server routes (or state the actual backend from the session)
 - **Database:** <Lakebase (managed Postgres) / Delta tables / Volume — state which and why>
@@ -216,7 +216,7 @@ and which must be set in `app.yaml`.
 
 ### Section 11: Anti-Patterns (what NOT to do)
 
-- Do NOT use Streamlit, Dash, Gradio, Flask, or any Python UI framework — AppKit only
+- Keep the project's actual framework; use Streamlit only when explicitly requested
 - Do NOT hardcode credentials, tokens, or secrets in source files
 - Do NOT create Unity Catalog objects outside `$WORKSHOP_CATALOG` / `$WORKSHOP_SCHEMA`
 - Do NOT skip `workshop-init-project` — the post-commit sync hook must be set up
