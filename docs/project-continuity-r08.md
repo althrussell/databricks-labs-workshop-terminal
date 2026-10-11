@@ -46,8 +46,8 @@ before runtime replacement. The corrected package still needs live sync/recovery
 qualification.
 
 The existing CI browser job runs both wizard and project journeys. Screenshots,
-transcripts and generated application source remain outside Git. Live recovery,
-native harness handoff and warm replacement on the reused CT-compatible Labs WT
+transcripts and generated application source remain outside Git. Live recovery
+and warm replacement on the reused CT-compatible Labs WT
 remain acceptance work; no CT code, grants or working deployment have changed.
 
 The live Claude Opus 5.5 journey built a lending library with onboarding disabled.
@@ -60,6 +60,15 @@ preview's phone controls were usable. A temporary isolated Git worktree retained
 the current goal/brief and readable Impeccable, APX and Agent Bricks skill assets
 and references. This establishes asset delivery, not an observed worker model run.
 
+Codex 0.162.1 with GPT Sol 6.1 created and committed a separate printable
+`club-agenda` build. Independent readback of the two-build ZIP verified the agenda
+and byte-for-byte preservation of all 64 library files. Returning to the library,
+reloading WT and opening Codex restored the correct directory and current 21-day
+goal, APX framework and search behavior from its saved notes. Codex performed that
+continuation without changing files or deploying. Its custom-model metadata
+warning was non-blocking; the model completed both tasks. Its commit also
+reproduced the known home-alias sync skip on the older deployed runtime.
+
 The save failure was a simulator mismatch: it used `CAN_EDIT`, whereas current
 CT grants `CAN_MANAGE` on the attendee's `projects` subdirectory. The CLI's leading
 error confirms directory creation requires Manage. The WT-owned runner and its
@@ -70,3 +79,10 @@ inspection also caught the new portable goal being omitted and APX `.build` and
 from that runtime directory and excludes those generated folders, including
 regressions that reject linked context files/directories. The corrected export
 still needs live readback on the updated runtime.
+
+All nine PR CI jobs pass for candidate `73784f7`. Its PEX SHA-256 is
+`ba9cf1b4bb3ab4143798990cfd10fa82db7939241b521c0f7358956214be0894`, and all
+512 logical runtime files match the committed source. That corrected candidate
+is prepared for the reused WT app; it has not replaced the active `41e24ab`
+runtime yet. Source save/recovery, corrected export readback and warm replacement
+remain live acceptance work before merging #98.
