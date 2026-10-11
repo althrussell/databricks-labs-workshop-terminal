@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -14,7 +15,8 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from server.bootstrap import apx, install
-from server.bootstrap.artifacts import directory_checksum, load_manifest
+from server.bootstrap.artifacts import directory_checksum
+from server.bootstrap.skill_projection import project_skills
 
 
 def mcp_tools(prefix: Path, project: Path, env: dict) -> set[str]:
@@ -83,9 +85,9 @@ def qualify(prefix: Path, temporary: Path) -> dict:
     template.write_text(_project_memory())
     (home / ".databrickscfg").write_text("[DEFAULT]\nhost = https://example.invalid\ntoken = offline-fixture\n")
     skills = home / ".claude/skills"
-    skills.mkdir(parents=True)
-    for name in ("apx", "impeccable"):
-        (skills / name).symlink_to(ROOT / "assets/skills" / name)
+    shutil.copytree(ROOT / "assets/skills", skills,
+                    ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+    project_skills(skills)
     env = {**os.environ, "HOME": str(home), "PATH": str(prefix / "bin") + ":" + os.environ["PATH"],
            "DATABRICKS_CONFIG_PROFILE": "DEFAULT", "GIT_CONFIG_GLOBAL": "/dev/null",
            "GIT_AUTHOR_NAME": "APX fixture", "GIT_AUTHOR_EMAIL": "fixture@example.com",

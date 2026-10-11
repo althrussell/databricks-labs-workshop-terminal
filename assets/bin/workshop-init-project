@@ -386,6 +386,31 @@ if Path('.agents/skills').is_dir():
 PY
 )
 
+# APX's root-wide Python scan also sees installed platform skill examples.
+# Exclude only managed skill assets; retain checks for all application code.
+WORKSHOP_TYPECHECK_FILE=$(python3 - <<'PY'
+from pathlib import Path
+import subprocess
+import tomllib
+
+path = Path('pyproject.toml')
+if Path('.agents/skills').is_dir() and path.is_file() and not path.is_symlink():
+    original = path.read_text()
+    tool = tomllib.loads(original).get('tool', {})
+    if 'apx' in tool and 'src' not in tool.get('ty', {}):
+        tracked = subprocess.run(['git', 'ls-files', '--error-unmatch', '--', str(path)],
+                                 capture_output=True).returncode == 0
+        clean = tracked and subprocess.run(['git', 'diff', '--quiet', 'HEAD', '--', str(path)],
+                                           capture_output=True).returncode == 0
+        path.write_text(original.rstrip() + '\n\n[tool.ty.src]\n'
+                        '# Installed workshop skills are tools, not application source.\n'
+                        'exclude = [".agents/skills/**", ".claude/skills/**"]\n')
+        if clean:
+            subprocess.run(['git', 'add', '--', str(path)], check=True)
+            print(str(path))
+PY
+)
+
 # A README, always: purpose and live URL here, followed by the continuity brief
 # below. It is the attendee's take-home reminder once the workspace is torn down.
 # Preserve scaffold and attendee content; append the missing prompts and brief.
@@ -428,6 +453,9 @@ git add README.md
 MEMORY_FILES=(README.md)
 if [ -n "$WORKSHOP_LINT_FILE" ]; then
   MEMORY_FILES+=("$WORKSHOP_LINT_FILE")
+fi
+if [ -n "$WORKSHOP_TYPECHECK_FILE" ]; then
+  MEMORY_FILES+=("$WORKSHOP_TYPECHECK_FILE")
 fi
 if [ -f "$TEMPLATE" ]; then
   MEMORY_FILES+=(AGENTS.md CLAUDE.md)
