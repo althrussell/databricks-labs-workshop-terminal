@@ -319,6 +319,12 @@ def test_full_package_provisioning_orders_permissions_mirror_and_source_before_d
     receipt = deploy_package(client, plan, raw, artifact, tmp_path / "receipt.json")
     assert receipt["status"] == "deployment_submitted"
     assert receipt["attendee_app_access"]["minimum_permission"] == "CAN_MANAGE"
+    assert receipt["work_sync"]["path"] == f"/Workspace/Users/{plan['attendee']['email']}/projects"
+    assert receipt["work_sync"]["added"] == "CAN_MANAGE"
+    assert client.acls[("directories", receipt["work_sync"]["id"])] == [{
+        "service_principal_name": client.app.service_principal_client_id,
+        "all_permissions": [{"permission_level": "CAN_MANAGE"}],
+    }]
     assert receipt["toolchain_staging"]["state"] == "partial_with_declared_network_fallback"
     assigned_schema = plan["names"]["catalog"] + "." + plan["names"]["schema"]
     catalog_resource = next(row for row in receipt["created_resources"] if row["kind"] == "catalog")
