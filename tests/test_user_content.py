@@ -619,7 +619,7 @@ def _clear_sync_status():
         os.unlink(path)
 
 
-def _commit_with_hook(home, tmp_path, *, cli_exit, cli_stderr="boom"):
+def _commit_with_hook(home, tmp_path, *, cli_exit, cli_stderr="boom", short_home=False):
     """Commit in a real repo under ~/projects and let the real hook fire.
 
     Runs the shipped hook rather than asserting on its text. The bug this covers
@@ -634,15 +634,18 @@ def _commit_with_hook(home, tmp_path, *, cli_exit, cli_stderr="boom"):
     (shim / "databricks").chmod(0o755)
     _clear_sync_status()
 
-    # realpath because the hook guards on "$HOME/projects"/* and git reports the
-    # physical path: on macOS the temp home is /var/... while git resolves
-    # /private/var/..., so an unresolved HOME makes the hook exit before syncing
-    # and the test would pass for the wrong reason.
+    # Git reports a physical repo path. Codex uses a shorter symlink for HOME
+    # to fit its Unix socket path, while its cwd/configs remain in the real home.
     real_home = os.path.realpath(home)
+    shell_home = real_home
+    if short_home:
+        alias = tmp_path / "codex-home"
+        alias.symlink_to(real_home, target_is_directory=True)
+        shell_home = str(alias)
     repo = os.path.join(real_home, "projects", f"demo-{uuid.uuid4().hex[:8]}")
     os.makedirs(repo, exist_ok=True)
     env = {
-        "HOME": real_home,
+        "HOME": shell_home,
         "PATH": f"{shim}:{os.environ['PATH']}",
         "GIT_CONFIG_GLOBAL": os.path.join(home, ".gitconfig"),
         "GIT_AUTHOR_NAME": "Attendee",
@@ -668,7 +671,7 @@ def _commit_with_hook(home, tmp_path, *, cli_exit, cli_stderr="boom"):
     user = user_manager.get("alice@example.com")
     # The sync is backgrounded so the attendee's commit never blocks on the
     # network, which means the record lands after the hook has already returned.
-    deadline = time.time() + 30
+    deadline = time.time() + (5 if short_home else 30)
     while time.time() < deadline:
         status = user_content.workspace_sync_status(user)
         if status["state"] != "never":
@@ -704,6 +707,16 @@ def test_a_successful_workspace_sync_records_no_failure_detail(
     assert status["state"] == "ok"
     assert status["exit"] == 0
     assert status["detail"] == ""
+
+
+def test_codex_short_home_still_syncs_the_actual_attendee_project(
+    client, monkeypatch, tmp_path
+):
+    home = _provisioned_home(client, monkeypatch)
+    status = _commit_with_hook(home, tmp_path, cli_exit=0, cli_stderr="", short_home=True)
+    assert status["state"] == "ok", "Codex's HOME alias must not silently skip the save hook"
+    assert status["exit"] == 0
+    assert "/Workspace/Users/alice@example.com/projects/demo-" in (Path(home) / ".sync.log").read_text()
 
 
 def test_a_failed_sync_is_reported_without_taking_the_workshop_down(

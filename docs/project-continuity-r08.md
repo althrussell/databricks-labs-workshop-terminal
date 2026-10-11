@@ -37,6 +37,14 @@ Recovery tests check exact source/context preservation, current setup, canonical
 Workspace paths, missing credentials, failed downloads and refusal to overwrite.
 These are local regression checks, not live model/app-build qualification.
 
+Live preparation caught a save-hook defect: Codex's shorter symlinked home did
+not match Git's physical project path, so a commit could silently skip Workspace
+sync. The hook now resolves the projects directory before comparing it. A real
+commit regression failed with the old hook and passes with the fix; 97 focused
+content/project/session checks pass. The take-home ZIP was independently verified
+before runtime replacement. The corrected package still needs live sync/recovery
+qualification.
+
 The existing CI browser job runs both wizard and project journeys. Screenshots,
 transcripts and generated application source remain outside Git. Live recovery,
 native harness handoff and warm replacement on the reused CT-compatible Labs WT

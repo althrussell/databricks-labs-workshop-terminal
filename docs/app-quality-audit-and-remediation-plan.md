@@ -11,9 +11,9 @@ add fleet runs or mandatory attendee review loops.
 Status on 11 October: **R01–R04 are closed; R05's Impeccable delivery is merged;
 R07 is resolved and closed by the owner.** PRs #95, #96 and #97 are merged into
 `main`; all nine CI jobs passed on `53fa4e8`. R08's take-home source ZIP export is
-already delivered in #96. No WT PRs remain open at this closeout.
+already delivered in #96. Project continuity is now in draft PR #98.
 
-The next substantive build is **R08 project continuity**: clear active-project,
+The active substantive build is **R08 project continuity**: clear active-project,
 change-goal/new-build and return-to-project flows, harness handoff, reconnect and
 recovery after runtime replacement. R06 remains a small preview/iteration check;
 its shared handoff instructions are already present. R09 has substantial CI
@@ -25,6 +25,9 @@ R08 implementation is in progress on `codex/wt-r08-project-continuity`. Its
 [current scope and validation](project-continuity-r08.md) cover optional build
 controls, separate project goals, harness launch directories and safe source
 recovery. Local rendered checks pass; live Labs acceptance and merge are pending.
+The initial deployed candidate passed package/model qualification. Live preparation
+caught and fixed a Codex home-alias save-hook defect; its corrected package still
+needs Workspace-sync and recovery acceptance. CT code and grants are unchanged.
 
 After the remaining WT work and single-deployment qualification, publish the
 final WT release, then open the separate CT PR for Agent Bricks CLI/skill enablement

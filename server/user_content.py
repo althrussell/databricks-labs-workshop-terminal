@@ -809,8 +809,12 @@ STATUS="{status_path}"
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
 [ -z "$REPO_ROOT" ] && exit 0
+# Codex shortens HOME with a symlink to fit its Unix socket path. Git reports
+# the physical repo path, so compare against the physical projects directory.
+PROJECTS_ROOT="$(cd "$HOME/projects" 2>/dev/null && pwd -P)"
+[ -z "$PROJECTS_ROOT" ] && exit 0
 case "$REPO_ROOT" in
-  "$HOME/projects"/*) ;;
+  "$PROJECTS_ROOT"/*) ;;
   *) exit 0 ;;
 esac
 
