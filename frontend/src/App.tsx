@@ -43,6 +43,7 @@ import ToastHost from "./components/ToastHost";
 import TerminalView from "./components/TerminalView";
 import AgentSwitchDialog from "./components/AgentSwitchDialog";
 import ProjectBar from "./components/ProjectBar";
+import ResponsiveNav from "./components/ResponsiveNav";
 import { goalChangePrompt, keepSavedCopies, recoverWithConfirmation } from "./projects";
 import { bindIdentityRefresh, onAppEvent } from "./events";
 import { ideaPromptAction } from "./ideation";
@@ -712,45 +713,49 @@ export default function App() {
             {branding?.event_name && <span className="event-name">{branding.event_name}</span>}
           </div>
         </div>
-        <nav className="header-links">
+        <ResponsiveNav>
           {/* 1. Navigation (where am I) */}
           <button
             className={`operator-toggle ${view === "home" ? "operator-toggle-active" : ""}`}
             onClick={() => setView("home")}
+            aria-label="Home"
             title={session && !session.exited ? `Back to Home — ${session.label} keeps running` : "Back to Home"}
           >
-            <House size={14} />
-            Home
+            <House size={16} aria-hidden="true" />
+            <span className="nav-label">Home</span>
           </button>
           {session && (
             <button
               className={`operator-toggle ${view === "agent" ? "operator-toggle-active" : ""}`}
               onClick={() => setView("agent")}
+              aria-label={session.label}
               title={`Back to ${session.label}`}
             >
-              <Bot size={14} />
-              {session.label}
+              <Bot size={16} aria-hidden="true" />
+              <span className="nav-label">{session.label}</span>
             </button>
           )}
           {isAdmin && (
             <button
               className={`operator-toggle ${view === "operator" ? "operator-toggle-active" : ""}`}
               onClick={() => setView(view === "operator" ? (session ? "agent" : "home") : "operator")}
+              aria-label="Operator"
+              title="Operator controls"
             >
-              <ShieldCheck size={14} />
-              Operator
+              <ShieldCheck size={16} aria-hidden="true" />
+              <span className="nav-label">Operator</span>
             </button>
           )}
-          <span className="nav-divider" />
+          <span className="nav-divider" aria-hidden="true" />
           {/* 2. Resources (reference links) */}
           {shellLinks
             .filter((link) => !link.highlight)
             .map((link) => {
               const Icon = LINK_ICONS[link.icon] ?? LinkIcon;
               return (
-                <a key={link.url} href={link.url} target="_blank" rel="noreferrer">
-                  <Icon size={14} />
-                  {link.label}
+                <a key={link.url} href={link.url} target="_blank" rel="noreferrer" aria-label={link.label} title={link.label}>
+                  <Icon size={16} aria-hidden="true" />
+                  <span className="nav-label">{link.label}</span>
                 </a>
               );
             })}
@@ -759,10 +764,11 @@ export default function App() {
               href={config.workspace_url}
               target="_blank"
               rel="noopener noreferrer"
+              aria-label="Workspace"
               title="Open the Databricks workspace"
             >
-              <LinkIcon size={14} />
-              Workspace
+              <LinkIcon size={16} aria-hidden="true" />
+              <span className="nav-label">Workspace</span>
             </a>
           )}
           {config?.omnigent_remote?.enabled && config.omnigent_remote.url && (
@@ -770,19 +776,20 @@ export default function App() {
               href={config.omnigent_remote.url}
               target="_blank"
               rel="noopener noreferrer"
+              aria-label="Omnigent"
               title="Open the dedicated Omnigent app"
             >
-              <Rocket size={14} />
-              Omnigent
+              <Rocket size={16} aria-hidden="true" />
+              <span className="nav-label">Omnigent</span>
             </a>
           )}
           {/* 3. Actions, then the promoted CTA at the far right */}
-          <button className="operator-toggle" onClick={() => setPreferencesOpen(true)} title="Change how your agent helps">
-            <Settings2 size={14} /> Agent preferences
+          <button className="operator-toggle" onClick={() => setPreferencesOpen(true)} aria-label="Agent preferences" title="Agent preferences — change how your agent helps">
+            <Settings2 size={16} aria-hidden="true" /><span className="nav-label">Agent preferences</span>
           </button>
-          <button className="operator-toggle" onClick={openCertificate} title="Download your certificate">
-            <Award size={14} />
-            Certificate
+          <button className="operator-toggle" onClick={openCertificate} aria-label="Certificate" title="Download your certificate">
+            <Award size={16} aria-hidden="true" />
+            <span className="nav-label">Certificate</span>
           </button>
           <RaiseHandButton
             initial={config?.help ?? null}
@@ -793,10 +800,11 @@ export default function App() {
             type="button"
             className="help-chat-toggle"
             onClick={() => setHelpChatOpen(true)}
-            title="Ask operators"
+            aria-label="Help"
+            title="Help — ask operators"
           >
-            <MessageSquare size={14} />
-            Help
+            <MessageSquare size={16} aria-hidden="true" />
+            <span className="nav-label">Help</span>
             {helpUnread > 0 ? <span className="help-chat-badge">{helpUnread}</span> : null}
           </button>
           {shellLinks
@@ -804,14 +812,14 @@ export default function App() {
             .map((link) => {
               const Icon = LINK_ICONS[link.icon] ?? LinkIcon;
               return (
-                <a key={link.url} href={link.url} target="_blank" rel="noreferrer" className="link-highlight">
-                  <Icon size={14} />
-                  {link.label}
+                <a key={link.url} href={link.url} target="_blank" rel="noreferrer" className="link-highlight" aria-label={link.label} title={link.label}>
+                  <Icon size={16} aria-hidden="true" />
+                  <span className="nav-label">{link.label}</span>
                 </a>
               );
             })}
-        </nav>
-        <div className="header-user">{config?.user.email}</div>
+        </ResponsiveNav>
+        <div className="header-user" title={config?.user.email}>{config?.user.email}</div>
       </header>
 
       <BannerBar initial={config?.broadcast ?? null} />
