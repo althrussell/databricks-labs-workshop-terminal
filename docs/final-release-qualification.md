@@ -94,3 +94,29 @@ attendee Workspace source. No fleet campaign or attendee review gate is added.
 R01–R10 retain their recorded outcomes and limits. WT qualification is complete;
 immutable publication and the separately scoped CT feature/integration follow-up
 are the remaining ship work.
+
+
+## Published-package warm recovery correction
+
+`v2026.10.11.1` published from `664bf3d0001dd9246900193e458527c92d2772a5`.
+The downloaded PEX and manifest matched GitHub's asset digests. Its 512 runtime
+files and 2,419 dependency files matched the live candidate exactly. Warm
+deployment `01f1c538d44f1f248dc925eb087f0b65` became ready, with assigned resources
+and model policy preserved and no CT calls or grant changes.
+
+Film Club's 52-file ZIP passed independent readback; all 50 source/context files
+matched its Workspace copy. The other two are APX-generated metadata/version
+files that the project explicitly excludes from sync. My builds found all three
+saved projects. Recovery restored and selected Film Club with its exact goal,
+but a lost transport response left a contradictory “Failed to fetch” message.
+No source was lost or overwritten. That final UI confirmation check needs the
+focused correction before calling warm recovery clean.
+
+The correction confirms a lost response with one inventory read, only when a
+previously different build has become selected with available local source.
+It does not retry the recovery mutation or reinterpret explicit setup errors.
+All 115 frontend checks pass. Existing desktop/phone project journeys passed;
+a rendered regression drops a completed API response body and verifies the
+correct selection, retained source, one submission and no stale error. This
+adds no server workflow, dependency or CT change. A corrected release and its
+affected live recovery check complete this follow-up.
