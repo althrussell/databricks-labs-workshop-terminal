@@ -49,3 +49,24 @@ The existing CI browser job runs both wizard and project journeys. Screenshots,
 transcripts and generated application source remain outside Git. Live recovery,
 native harness handoff and warm replacement on the reused CT-compatible Labs WT
 remain acceptance work; no CT code, grants or working deployment have changed.
+
+The live Claude Opus 5.5 journey built a lending library with onboarding disabled.
+After the operator supplied the Lakebase startup error and the agent repaired
+its schema initialization, the attendee browser borrowed and returned a
+book and verified persistence after reload. **Change goal** inserted an unsent
+request; the agent added title/author search and a 21-day period for new loans,
+preserving existing loans. Those changes worked in the browser, and the initial
+preview's phone controls were usable. A temporary isolated Git worktree retained
+the current goal/brief and readable Impeccable, APX and Agent Bricks skill assets
+and references. This establishes asset delivery, not an observed worker model run.
+
+The save failure was a simulator mismatch: it used `CAN_EDIT`, whereas current
+CT grants `CAN_MANAGE` on the attendee's `projects` subdirectory. The CLI's leading
+error confirms directory creation requires Manage. The WT-owned runner and its
+readback regression now match CT; correcting the already-provisioned isolated
+test folder is awaiting explicit approval. CT remains untouched. Independent ZIP
+inspection also caught the new portable goal being omitted and APX `.build` and
+`__dist__` output being included. Export now carries only `.workshop/project.json`
+from that runtime directory and excludes those generated folders, including
+regressions that reject linked context files/directories. The corrected export
+still needs live readback on the updated runtime.

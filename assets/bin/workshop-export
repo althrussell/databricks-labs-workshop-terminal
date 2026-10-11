@@ -24,7 +24,7 @@ SKIP_DIRS = frozenset({
     ".git", ".agents", ".claude", ".codex", ".databricks", ".workshop",
     "node_modules", ".venv", "venv", "__pycache__", ".cache", ".pytest_cache",
     ".ruff_cache", ".mypy_cache", ".next", ".nuxt", ".parcel-cache",
-    "dist", "build", "coverage", ".ssh",
+    "dist", "build", ".build", "__dist__", "coverage", ".ssh",
 })
 SKIP_FILES = frozenset({
     ".databrickscfg", ".netrc", ".npmrc", ".pypirc", "credentials.json",
@@ -55,6 +55,16 @@ def build_archive(source: Path, destination: Path, *, single_project: bool) -> d
                 if name in SKIP_DIRS or path.is_symlink():
                     dirs.remove(name)
                     omitted.append(path.relative_to(source).as_posix() + "/")
+                    # Carry only the portable project goal, never the rest of
+                    # .workshop's runtime state. Do not follow either link.
+                    project_root = parent == source if single_project else parent.parent == source
+                    context = path / "project.json"
+                    if (name == ".workshop" and project_root and not path.is_symlink()
+                            and context.is_file() and not context.is_symlink()):
+                        relative = context.relative_to(source)
+                        member = Path(source.name) / relative if single_project else relative
+                        archive.write(context, arcname=(Path("workshop-code") / member).as_posix())
+                        included.append(member.as_posix())
             dirs.sort()
             for name in sorted(files):
                 path = parent / name
@@ -70,7 +80,8 @@ def build_archive(source: Path, destination: Path, *, single_project: bool) -> d
         archive.writestr("workshop-code/EXPORT_INFO.txt", (
             "Workshop source export\n\n"
             "Contains current files, including uncommitted changes, tests, assets,\n"
-            "dependency manifests/lockfiles and existing project notes.\n"
+            "dependency manifests/lockfiles, existing project notes and the\n"
+            "portable .workshop/project.json goal when present.\n"
             "Git history, installed dependencies, generated builds, harness skills,\n"
             "environment/credential files and symlinks are excluded.\n"
             "Databricks resources and stored application data are not copied.\n"
