@@ -125,7 +125,7 @@ def test_current_ux_links_retire_legacy_managed_discovery(attendee, monkeypatch)
     for relative in (".claude/skills", ".codex/skills"):
         target = Path(attendee.home) / relative
         target.mkdir(parents=True, exist_ok=True)
-        for name in ("workshop-design-studio", "databricks-app-design"):
+        for name in ("workshop-design-studio", "databricks-app-design", "promote"):
             (target / name).symlink_to(source / name)
     legacy = Path(attendee.home) / ".codex/skills"
     custom = legacy / "my-skill"
@@ -136,7 +136,8 @@ def test_current_ux_links_retire_legacy_managed_discovery(attendee, monkeypatch)
     for relative in content.HARNESS_SKILL_DIRS.values():
         target = Path(attendee.home) / relative
         assert (target / "impeccable/SKILL.md").is_file()
-        assert not any((target / name).is_symlink() for name in ("workshop-design-studio", "databricks-app-design"))
+        assert not any((target / name).is_symlink() for name in ("workshop-design-studio", "databricks-app-design", "promote"))
+        assert (target / "workshop-export/SKILL.md").is_file()
     assert sorted(path.name for path in legacy.iterdir()) == ["my-skill"]
     assert (custom / "SKILL.md").read_text() == "attendee-owned"
 
@@ -454,7 +455,7 @@ def test_isolated_worktree_receives_actual_skills_and_can_refresh(attendee, tmp_
     ux = worktree / ".agents/skills/impeccable"
     assert (ux / "SKILL.md").read_bytes() == (Path(attendee.home) / ".claude/skills/impeccable/SKILL.md").read_bytes()
     assert not (ux / "scripts/bin").exists()
-    for name in ("workshop-design-studio", "databricks-app-design"):
+    for name in ("workshop-design-studio", "databricks-app-design", "promote"):
         assert not (worktree / ".agents/skills" / name).exists()
     # A .git file marks a real worktree. Adopting it must not reinitialize Git.
     before = (worktree / ".git").read_text()
@@ -475,7 +476,7 @@ def test_project_refresh_retires_managed_ux_copies_and_keeps_notes(attendee):
     project = Path(attendee.home) / "projects/ux-refresh"
     manifest = project / ".agents/workshop-skills.json"
     prior = json.loads(manifest.read_text())
-    for name in ("workshop-design-studio", "databricks-app-design"):
+    for name in ("workshop-design-studio", "databricks-app-design", "promote"):
         old = project / ".agents/skills" / name
         old.mkdir()
         (old / "SKILL.md").write_text("old managed UX")
@@ -485,7 +486,7 @@ def test_project_refresh_retires_managed_ux_copies_and_keeps_notes(attendee):
     with (project / "AGENTS.md").open("a") as handle:
         handle.write("\nAttendee note: use kilograms.\n")
     subprocess.run(["bash", helper, "ux-refresh"], env=env, capture_output=True, check=True, timeout=30)
-    for name in ("workshop-design-studio", "databricks-app-design"):
+    for name in ("workshop-design-studio", "databricks-app-design", "promote"):
         assert not (project / ".agents/skills" / name).exists()
         assert not (project / ".claude/skills" / name).is_symlink()
     assert "Attendee note: use kilograms." in (project / "AGENTS.md").read_text()

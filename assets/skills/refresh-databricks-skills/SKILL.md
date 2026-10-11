@@ -71,7 +71,7 @@ own, because upstream moves without touching this repo.
 7. **Update the mandate layer** if a skill an instruction file names by hand was
    renamed: `assets/instructions/CLAUDE.md`,
    `assets/instructions/project_memory.md`,
-   `assets/instructions/lab_coach.md`, `assets/skills/promote/build-prompt.md`.
+   `assets/instructions/lab_coach.md`, `assets/skills/workshop-export/SKILL.md`.
 
 8. **Verify**:
 

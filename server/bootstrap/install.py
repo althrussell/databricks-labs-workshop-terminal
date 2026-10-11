@@ -31,7 +31,7 @@ from .artifacts import (
     directory_checksum as _directory_checksum,
 )
 from .codex_artifacts import install_native_alias, validate_codex_tarballs
-from .skill_projection import RETIRED_MANAGED_SKILLS, RETIRED_UX_SKILLS, project_skills
+from .skill_projection import RETIRED_MANAGED_SKILLS, RETIRED_UX_SKILLS, RETIRED_WORKSHOP_SKILLS, project_skills
 from .apx import VERSION as APX_VERSION, BUN_VERSION
 
 logger = logging.getLogger(__name__)
@@ -74,7 +74,7 @@ SKILLS_REF = os.environ.get("SKILLS_REF", "v0.2.28").strip() or "v0.2.28"
 # The manifest and readiness key for the skills artifact.
 SKILLS_ARTIFACT = "databricks_agent_skills"
 FORK_SKILLS = frozenset({
-    "apx", "promote", "refresh-databricks-skills",
+    "apx", "workshop-export", "refresh-databricks-skills",
     "impeccable", "workshop-agent-bricks-cli",
 })
 # The directory inside the upstream repository that holds one subdirectory per

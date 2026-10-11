@@ -8,7 +8,8 @@ from pathlib import Path
 import shutil
 
 RETIRED_UX_SKILLS = frozenset({"workshop-design-studio", "databricks-app-design"})
-RETIRED_MANAGED_SKILLS = RETIRED_UX_SKILLS | {"databricks-app-apx"}
+RETIRED_WORKSHOP_SKILLS = frozenset({"promote"})
+RETIRED_MANAGED_SKILLS = RETIRED_UX_SKILLS | RETIRED_WORKSHOP_SKILLS | {"databricks-app-apx"}
 APX_ROUTE = """<!-- workshop-app-stack:v1 -->
 ## Workshop app framework
 

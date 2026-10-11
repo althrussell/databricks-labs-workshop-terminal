@@ -43,7 +43,8 @@ manifest entry. `effective_content_sha256` verifies the delivered projection.
   Bootstrap installs the official manylinux wheel plus shared Bun **1.3.8**
   and uv **0.12.24**; no standalone newer-glibc binary or package-name lookup.
   The former fork `databricks-app-apx` is retired from managed delivery.
-- `promote` — handoff document generation, on explicit request only.
+- `workshop-export` — source ZIP export to the attendee's assigned Volume,
+  with download instructions; replaces the removed `promote` document pack.
 - `refresh-databricks-skills` — the refresh workflow itself.
 
 One small context/pacing policy lives in

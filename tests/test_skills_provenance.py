@@ -99,7 +99,7 @@ def test_fork_only_skills_survive_a_refresh():
 
     for name in (
         "workshop-agent-bricks-cli",
-        "promote",
+        "workshop-export",
         "refresh-databricks-skills",
         "apx",
         "impeccable",
@@ -169,7 +169,7 @@ def test_provenance_scanner_excludes_captured_evidence_but_keeps_active_instruct
         "docs/evidence/live-run/deployment.json": '{"path": "assets/skills/' + RETIRED_SKILLS[0] + '/SKILL.md"}',
         "docs/evidence/live-run/transcript.md": "Observed historical coda instruction: " + RETIRED_SKILLS[0],
         "docs/operator-guide.md": "Use " + RETIRED_SKILLS[0] + " for coda",
-        "assets/skills/promote/SKILL.md": "Use " + RETIRED_SKILLS[0],
+        "assets/skills/workshop-export/SKILL.md": "Use " + RETIRED_SKILLS[0],
         "docs/evidence-policy/README.md": "Use " + RETIRED_SKILLS[0],
     }
     for relative, text in paths.items():
@@ -180,7 +180,7 @@ def test_provenance_scanner_excludes_captured_evidence_but_keeps_active_instruct
     monkeypatch.setitem(globals(), "REPO", str(tmp_path))
     monkeypatch.setitem(globals(), "SKILLS_DIR", str(skills_dir))
     scanned = dict(_fork_owned_text_files())
-    assert set(scanned) == {"docs/operator-guide.md", "assets/skills/promote/SKILL.md", "docs/evidence-policy/README.md"}
+    assert set(scanned) == {"docs/operator-guide.md", "assets/skills/workshop-export/SKILL.md", "docs/evidence-policy/README.md"}
     assert all(RETIRED_SKILLS[0] in text for text in scanned.values())
     with pytest.raises(AssertionError, match="retired skill names still referenced"):
         test_no_retired_skill_name_is_referenced_in_fork_owned_text()

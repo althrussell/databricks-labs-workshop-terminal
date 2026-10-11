@@ -71,12 +71,17 @@ operator admin panel.
   they launch, so the coach adapts to technical vs business from its very first
   reply instead of spending a turn asking; anything they build gets a real
   design pass they never have to think about; event-pinned [databricks-agent-skills](https://github.com/databricks/databricks-agent-skills)
-  skills are installed only from the reviewed artifact manifest, TDD subagents
-  are pre-installed, and every
+  skills are installed only from the reviewed artifact manifest, and every
   git commit auto-syncs to the attendee's Workspace home so a restart or
   redeploy can't lose their work. That sync is not a take-home — teardown
-  deletes the workspace too — so the wrap guidance tells attendees to push to a
-  remote they own or download what matters while the event is still live.
+  deletes the workspace too.
+- **Take-home code**: ask the agent to export one project or all workshop
+  projects as a ZIP to `workshop_exports` inside the CT-assigned catalog/schema.
+  It verifies the uploaded copy and shows the Volume link, filename and download
+  steps. Download the ZIP to your computer before the event ends; the Volume is
+  temporary. Source, tests, assets and dependency files are included; credentials,
+  installed dependencies and generated builds are excluded. See
+  [docs/take-home-export.md](docs/take-home-export.md).
 
 ## What operators get
 
