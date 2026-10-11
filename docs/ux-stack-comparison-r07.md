@@ -120,8 +120,8 @@ four-app and phone workflow results remain local production-preview checks.
 
 The Streamlit instruction changes pass all 13 existing workshop contract tests;
 `git diff --check` passes. The owner selected APX + Impeccable. Repository
-routing and installer changes are being validated; a production release has
-not yet been published.
+routing and installer changes are implemented; a production release has not
+yet been published.
 
 
 ## Standardised WT delivery
@@ -141,6 +141,11 @@ not yet been published.
   selection and a mandatory sidebar. It commits the framework skill, sole UX
   skill and workshop memory for project-only workers, preserves notes on
   reruns and reports scaffold failures. Existing non-APX projects are preserved.
+  Fresh starters correct APX 0.3.8's lifespan annotation for the current Python
+  checker. Managed skill examples are excluded from application type checks;
+  upstream skill contents and application checks remain intact. After wheel
+  builds remove the generated version file, imports use the installed
+  distribution's version metadata; missing unrelated modules still fail.
 - WT registers the official local APX MCP for both harnesses and uses the
   existing app deployment helper with the project's target (`dev` in the
   standard APX scaffold). The helper excludes APX assistant addons that install
@@ -156,3 +161,35 @@ visible confirmation and reload persistence passed on the actual deployed app.
 The new live capture is desktop; the narrow-layout results above remain the
 prior generated-production-preview tests. The browser viewport override did
 not apply to these existing live tabs, so this check does not add phone evidence.
+
+## Normal-package qualification
+
+The implementation passes all nine CI jobs.
+Each Python version passes 2,960 tests with 62 intentional skips; the rendered
+wizard job passes 39 checks. The Ubuntu 22.04 job installs the real reviewed
+toolchain twice, uses the complete projected workshop skill set, creates a
+project through the actual helper, completes the MCP handshake and passes
+`apx dev check` plus `apx build`, followed by an actual MCP routes call. It calls
+no model or workspace API.
+
+The normal PEX candidate is deployed to the existing isolated Labs WT app and
+active compute with onboarding and evaluation disabled. Source/package identity
+is verified; the same simulated CT model-policy snapshot is reapplied after
+replacement. No Control Tower request, code change or workspace grant mutation
+is made. Both native harnesses identify APX + Impeccable and successfully call
+APX MCP for the prepared project. Actual project policy and skill files are
+committed for isolated workers; retired UX and promote assets are absent.
+
+The live fixture found the root-wide Python scan of installed skill examples;
+the full-skill CI fixture now reproduces that boundary and verifies the fix.
+It also reproduces the post-build missing-version import and verifies the
+distribution-metadata fallback.
+The selected app's deployed workflow qualification remains the check above.
+Ordinary attendee deployment, continuity/export/recovery and final CT integration
+are still covered by the remaining single-deployment release work; this report
+does not claim final event acceptance or a published production release.
+
+Codex's native custom-model metadata warning is still visible for
+`system.ai.gpt-6-1-sol`. The model request and APX tool call succeed. Resolve its
+metadata configuration during the remaining runtime/release qualification;
+this framework change does not alter the gateway or invent model capabilities.
