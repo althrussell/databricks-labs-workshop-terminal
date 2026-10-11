@@ -570,7 +570,7 @@ def current_trust_screen(cwd, *, selected_yes=False):
         "Enter to confirm · Esc to cancel"])
 
 
-@pytest.mark.parametrize("pin", ["2.1.283", "2.1.295"])
+@pytest.mark.parametrize("pin", ["2.1.283", "2.1.296"])
 def test_current_claude_default_no_is_selected_then_independently_verified_before_confirmation(tmp_path, pin):
     async def run():
         driver, page, socket = startup_driver(tmp_path)

@@ -117,6 +117,30 @@ def test_background_skill_publication_reconciles_fallback_and_retired_links(atte
     assert (target / "my-skill").resolve() == custom
 
 
+def test_current_ux_links_retire_legacy_managed_discovery(attendee, monkeypatch):
+    from server import user_content as content
+    from server.bootstrap import install
+
+    source = Path(content.shared_skills_dir())
+    for relative in (".claude/skills", ".codex/skills"):
+        target = Path(attendee.home) / relative
+        target.mkdir(parents=True, exist_ok=True)
+        for name in ("workshop-design-studio", "databricks-app-design"):
+            (target / name).symlink_to(source / name)
+    legacy = Path(attendee.home) / ".codex/skills"
+    custom = legacy / "my-skill"
+    custom.mkdir()
+    (custom / "SKILL.md").write_text("attendee-owned")
+    monkeypatch.setattr(install, "skills_ready", lambda: False)
+    content._link_skills(attendee)
+    for relative in content.HARNESS_SKILL_DIRS.values():
+        target = Path(attendee.home) / relative
+        assert (target / "impeccable/SKILL.md").is_file()
+        assert not any((target / name).is_symlink() for name in ("workshop-design-studio", "databricks-app-design"))
+    assert sorted(path.name for path in legacy.iterdir()) == ["my-skill"]
+    assert (custom / "SKILL.md").read_text() == "attendee-owned"
+
+
 def test_launcher_follows_reinstalled_binary(attendee, tmp_path):
     from server import config
 
@@ -294,6 +318,78 @@ def test_helper_reports_scaffold_and_commit_failure_in_json(attendee, monkeypatc
     assert Path(status["project_path"]).is_dir()
 
 
+@pytest.mark.parametrize("attendee_edit", [False, True])
+def test_appkit_skill_lint_exclusion_preserves_rules_and_attendee_changes(attendee, attendee_edit):
+    from server import user_content as content
+
+    content.provision(attendee)
+    env = {**os.environ, "HOME": attendee.home, "GIT_CONFIG_GLOBAL": "/dev/null",
+           "GIT_AUTHOR_NAME": "Attendee", "GIT_AUTHOR_EMAIL": "alice@example.com",
+           "GIT_COMMITTER_NAME": "Attendee", "GIT_COMMITTER_EMAIL": "alice@example.com"}
+    helper = str(Path(content._ASSETS) / "bin/workshop-init-project")
+
+    def run():
+        result = subprocess.run(["bash", helper, "lint-app"], env=env,
+                                capture_output=True, text=True, timeout=30)
+        assert result.returncode == 0, result.stderr
+
+    def git(*args):
+        return subprocess.run(["git", "-C", str(project), *args], env=env,
+                              capture_output=True, text=True, check=True).stdout
+
+    run()
+    project = Path(attendee.home) / "projects/lint-app"
+    config = project / "eslint.config.js"
+    original = "export default tseslint.config(\n  { rules: { 'no-unused-vars': 'error' } },\n);\n"
+    config.write_text(original)
+    git("add", "eslint.config.js")
+    git("commit", "-m", "Application lint rules")
+    (project / "attendee.txt").write_text("Work in progress")
+    git("add", "attendee.txt")
+    if attendee_edit:
+        config.write_text(original + "// My application-specific note\n")
+
+    run()
+    updated = config.read_text()
+    assert "**/.agents/skills/**" in updated
+    assert "**/.claude/skills/**" in updated
+    assert "{ rules: { 'no-unused-vars': 'error' } }" in updated
+    assert "attendee.txt" not in git("ls-tree", "--name-only", "HEAD")
+    assert "attendee.txt" in git("diff", "--cached", "--name-only")
+    if attendee_edit:
+        assert "My application-specific note" in updated
+        assert git("show", "HEAD:eslint.config.js") == original
+    else:
+        assert git("show", "HEAD:eslint.config.js") == updated
+    revision = git("rev-parse", "HEAD")
+    run()
+    assert config.read_text() == updated
+    assert git("rev-parse", "HEAD") == revision
+
+
+def test_appkit_lint_exclusion_preserves_other_configs_and_symlinks(attendee, tmp_path):
+    from server import user_content as content
+
+    content.provision(attendee)
+    env = {**os.environ, "HOME": attendee.home, "GIT_CONFIG_GLOBAL": "/dev/null",
+           "GIT_AUTHOR_NAME": "Attendee", "GIT_AUTHOR_EMAIL": "alice@example.com",
+           "GIT_COMMITTER_NAME": "Attendee", "GIT_COMMITTER_EMAIL": "alice@example.com"}
+    helper = str(Path(content._ASSETS) / "bin/workshop-init-project")
+    command = ["bash", helper, "custom-lint"]
+    result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    project = Path(attendee.home) / "projects/custom-lint"
+    external = tmp_path / "attendee-eslint.js"
+    external.write_text("export default tseslint.config({ rules: {} });\n")
+    (project / "eslint.config.js").symlink_to(external)
+    custom = project / "eslint.config.mjs"
+    custom.write_text("export default [{ rules: { 'no-unused-vars': 'error' } }];\n")
+    result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    assert external.read_text() == "export default tseslint.config({ rules: {} });\n"
+    assert custom.read_text() == "export default [{ rules: { 'no-unused-vars': 'error' } }];\n"
+
+
 def test_fresh_scaffold_source_is_committed_for_workers(attendee, tmp_path):
     from server import user_content as content
 
@@ -355,11 +451,45 @@ def test_isolated_worktree_receives_actual_skills_and_can_refresh(attendee, tmp_
     skill = worktree / ".agents/skills/databricks-apps/SKILL.md"
     assert skill.is_file() and not skill.is_symlink()
     assert skill.read_bytes() == (Path(attendee.home) / ".claude/skills/databricks-apps/SKILL.md").read_bytes()
+    ux = worktree / ".agents/skills/impeccable"
+    assert (ux / "SKILL.md").read_bytes() == (Path(attendee.home) / ".claude/skills/impeccable/SKILL.md").read_bytes()
+    assert not (ux / "scripts/bin").exists()
+    for name in ("workshop-design-studio", "databricks-app-design"):
+        assert not (worktree / ".agents/skills" / name).exists()
     # A .git file marks a real worktree. Adopting it must not reinitialize Git.
     before = (worktree / ".git").read_text()
     result = subprocess.run(["bash", helper, "worker-copy", "--json"], env=env, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr
     assert (worktree / ".git").read_text() == before
+
+
+def test_project_refresh_retires_managed_ux_copies_and_keeps_notes(attendee):
+    from server import user_content as content
+
+    content.provision(attendee)
+    env = {**os.environ, "HOME": attendee.home, "GIT_CONFIG_GLOBAL": "/dev/null",
+           "GIT_AUTHOR_NAME": "Attendee", "GIT_AUTHOR_EMAIL": "alice@example.com",
+           "GIT_COMMITTER_NAME": "Attendee", "GIT_COMMITTER_EMAIL": "alice@example.com"}
+    helper = str(Path(content._ASSETS) / "bin/workshop-init-project")
+    subprocess.run(["bash", helper, "ux-refresh"], env=env, capture_output=True, check=True, timeout=30)
+    project = Path(attendee.home) / "projects/ux-refresh"
+    manifest = project / ".agents/workshop-skills.json"
+    prior = json.loads(manifest.read_text())
+    for name in ("workshop-design-studio", "databricks-app-design"):
+        old = project / ".agents/skills" / name
+        old.mkdir()
+        (old / "SKILL.md").write_text("old managed UX")
+        (project / ".claude/skills" / name).symlink_to("../../.agents/skills/" + name)
+        prior["skills"][name] = "previous-release"
+    manifest.write_text(json.dumps(prior))
+    with (project / "AGENTS.md").open("a") as handle:
+        handle.write("\nAttendee note: use kilograms.\n")
+    subprocess.run(["bash", helper, "ux-refresh"], env=env, capture_output=True, check=True, timeout=30)
+    for name in ("workshop-design-studio", "databricks-app-design"):
+        assert not (project / ".agents/skills" / name).exists()
+        assert not (project / ".claude/skills" / name).is_symlink()
+    assert "Attendee note: use kilograms." in (project / "AGENTS.md").read_text()
+    assert (project / ".agents/skills/impeccable/SKILL.md").is_file()
 
 
 @pytest.mark.parametrize("name", ["../other", "a/b", ".", "space name", "-bad"])

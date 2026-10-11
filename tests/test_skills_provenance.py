@@ -81,7 +81,7 @@ def test_vendored_fallback_digest_matches_the_reviewed_manifest():
     upstream_names = vendored - FORK_ONLY
     assert upstream_names, "no upstream skills are vendored"
     assert directory_checksum(SKILLS_DIR, upstream_names) == (
-        _skill_entry()["content_sha256"]
+        _skill_entry()["effective_content_sha256"]
     ), (
         "vendored assets/skills differs from the reviewed manifest digest; run "
         "scripts/refresh_vendored_skills.py --write"
@@ -102,7 +102,7 @@ def test_fork_only_skills_survive_a_refresh():
         "promote",
         "refresh-databricks-skills",
         "databricks-app-apx",
-        "workshop-design-studio",
+        "impeccable",
     ):
         assert os.path.isdir(os.path.join(SKILLS_DIR, name))
         assert name in FORK_ONLY
@@ -130,6 +130,8 @@ def _fork_owned_text_files():
         for name in os.listdir(SKILLS_DIR)
         if os.path.isdir(os.path.join(SKILLS_DIR, name)) and name not in FORK_ONLY
     }
+    # Impeccable is separately vendored upstream, not authored workshop text.
+    upstream_skill_dirs.add(os.path.join("assets", "skills", "impeccable"))
     for root, dirs, files in os.walk(REPO):
         dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
         relative_root = os.path.relpath(root, REPO)

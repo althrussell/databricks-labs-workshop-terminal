@@ -14,7 +14,7 @@ skills maintained here.
 
 | Category | Skills |
 |----------|--------|
-| Apps | databricks-apps (AppKit), workshop-design-studio, databricks-app-design, databricks-lakebase |
+| Apps | databricks-apps (AppKit), impeccable, databricks-app-apx, databricks-lakebase |
 | AI & Agents | workshop-agent-bricks-cli (custom agents), databricks-agent-bricks (managed assistants/supervisors), databricks-mlflow-evaluation, databricks-model-serving, databricks-vector-search |
 | Analytics | databricks-aibi-dashboards, databricks-dbsql, databricks-metric-views, databricks-unity-catalog, databricks-data-discovery |
 | Data Engineering | databricks-pipelines, databricks-jobs, databricks-dabs, databricks-synthetic-data-gen, databricks-zerobus-ingest |
@@ -137,7 +137,8 @@ Before starting any new project:
    cd "$(workshop-init-project my-app --appkit -- --features analytics)"
    ```
    For a custom agent backend, use `--agentbricks` and the
-   `workshop-agent-bricks-cli` skill. Drop the scaffold flag for a script or notes repo.
+   `workshop-agent-bricks-cli` skill. Drop the scaffold flag for another framework,
+   a script or notes repo, then use the matching scaffold/API guidance.
 
    This makes `~/projects/my-app`, scaffolds AppKit **into that directory**,
    runs `git init`, and commits the workshop's project memory as both
@@ -169,7 +170,7 @@ Before starting any new project:
    whole workspace is deleted after the workshop, and the Workspace folder goes
    with it. To keep anything, push the repo to a git remote you own or download
    it to your own machine before you finish — see the wrap section below. The
-   committed `CLAUDE.md`/`AGENTS.md` also guarantee the AppKit baseline is
+   committed `CLAUDE.md`/`AGENTS.md` also carry the workshop contract and skills into
    followed no matter which agent or harness picks up the work.
 3. **Then start building** — commit early and often. Keep the generated
    `README.md` current: a short purpose line, the live URL once you have one,
@@ -178,107 +179,31 @@ Before starting any new project:
 
 <!-- workshop-contract-slot -->
 
-## Building apps — always use AppKit
+## Building apps
 
-AppKit is the required baseline for every app. For this workshop, **every app,
-interactive tool, or custom UI you build MUST use AppKit** (Node.js + TypeScript +
-React) via the **`databricks-apps`** skill — scaffolded for you by
-`workshop-init-project --appkit` (see Project setup above; do not call
-`databricks apps init` directly). This applies no matter which agent you are
-(Claude, Codex, or Omnigent).
+AppKit (Node.js + TypeScript + React) is the default, using `databricks-apps`
+and `workshop-init-project <name> --appkit`. Respect an explicit framework
+request, using the matching platform skill (including `databricks-app-apx` or
+`databricks-apps-python`). Never choose Streamlit unless the attendee explicitly
+asks for it, including as a fallback after setup or deployment failures. A Python
+backend does not imply Streamlit. Choose the implementation for the task; no
+routine framework questionnaire or insistence on a different stack.
 
-Custom agent backends use the **`workshop-agent-bricks-cli`** skill and its
-supported Python `DurableAgentServer` runtime when the optional CLI is enabled.
-That backend is an explicit exception to the UI framework rule; any accompanying
-attendee-facing UI still uses AppKit and the design skills below. Deploy the
-backend with `agentbricks deploy`, and its separate AppKit UI with the workshop
-app deployment tool.
+**`impeccable` is the single UX authority for anything with an interface.**
+AppKit/APX skills own scaffolds, components and platform APIs. Product context
+and short workshop pacing follow the shared contract below; do not layer a
+second visual recipe over Impeccable.
 
-Three more skills are not optional:
+Use `databricks-lakebase` for shared or database-backed saved data. Provision it
+non-interactively. A labeled single-browser demo may use browser storage;
+never describe it as shared staff data. No saved state means no database needed.
+Custom agent backends use `workshop-agent-bricks-cli` and its Python
+`DurableAgentServer` runtime when enabled; an accompanying UI follows the same
+UX guidance. Deploy the backend with `agentbricks deploy` and its separate UI
+with the workshop app tool.
 
-- **`workshop-design-studio`** — required for **anything with a visible
-  interface**, every time. It carries the visual baseline and a library of
-  ready-made AppKit patterns, so what the attendee leaves with looks
-  deliberately designed rather than like a framework starter with the colours
-  changed. Start from its patterns instead of inventing layout from scratch —
-  it is both faster and better.
-- **`databricks-app-design`** — required whenever the app displays *any* data:
-  a KPI or overview page, a report, a chart, a table, query results, or a
-  Genie/chat assistant. It decides chart choice, semantic color, and how to
-  show AI-result provenance, mapped to real AppKit components.
-- **`databricks-lakebase`** — required for shared or database-backed saved data.
-  Provision it non-interactively; never tell the attendee to click resources
-  together in the Databricks UI. A clearly labeled browser-only demo can use
-  browser storage; do not represent that as shared staff data. Apps with no
-  saved state skip Lakebase.
-
-**Where they overlap, the split is by surface.** `databricks-apps` owns
-scaffolding, APIs, and deployment. **Inside a data surface** — charts, KPIs,
-tables, query results, Genie answers — `databricks-app-design` owns the
-decisions, and on any chart-vocabulary conflict it wins outright.
-**Everywhere else in the app** — page composition, navigation, brand,
-typography, spacing, imagery, motion, empty-state character —
-`workshop-design-studio` owns it. An app with no data surface (a game, a
-landing page, a toy) uses the design studio only; `databricks-app-design` does
-not apply to it.
-
-### Design happens silently
-
-Attendees bring different experience levels. Choose visual defaults for them;
-adapt explanation to their preferences and requests.
-
-- **Never ask a design question.** No palette, layout, or creative-direction
-  choices. Infer from what they asked for and decide the rest yourself.
-- **Never narrate the process.** Do not mention design systems, baselines,
-  critique, or the skill by name. Describe what their product now *does*, not
-  how it was designed.
-- The exception: if they raise branding or design themselves, or hand you a
-  brand kit, engage with them properly. Then it is their topic, not yours.
-
-The platform is not the brand — do not impose Databricks colours or console
-chrome on an attendee's app unless they ask for it.
-
-### The visual baseline — non-negotiable, applied while you build
-
-Every interface you build clears this bar. It costs nothing at build time
-because you apply it as you write the components, not as a pass afterwards.
-`workshop-design-studio` carries ready-made AppKit patterns for the app shell,
-first-run state, KPI row, chart card, table, empty/loading/error states, and
-forms — start from those.
-
-- **Type does the hierarchy.** A real scale with a genuinely large display size
-  for the primary heading. Never a page where everything is 14-16px.
-- **Space generously and consistently.** Use one spacing rhythm throughout.
-  Cramped default padding is the single clearest tell of an untouched template.
-- **One accent colour, used for meaning** — the primary action, the live value,
-  the thing that changed. Colour as decoration is worse than no colour.
-- **Give the page a focal point.** Something should be obviously the most
-  important thing on screen. If everything competes equally, nothing reads.
-- **Real states, always.** Anything asynchronous gets loading, empty, and error
-  states. An empty state with character is a moment attendees remember.
-- **Considered surfaces.** Deliberate background, border, and elevation
-  choices — not stock cards on stock grey.
-- **Motion on state change**, brief and purposeful, and honour reduced motion.
-- **Accessible by construction:** text contrast at least 4.5:1, visible focus
-  states on every interactive element, alt text on meaningful images, and
-  layouts that survive a narrow window. Apply these as you write the markup —
-  check the rendered result with the available tooling.
-- **One memorable moment per app.** A considered hero, a satisfying transition,
-  a chart that reads instantly. One is enough.
-
-After the first deploy, inspect the primary screen and useful task as described
-in the workshop interaction contract. Fix observed defects and describe the
-change in product terms.
-
-For attendee-facing UI, do **not** reach for a Python framework (Streamlit / Dash / Gradio / Flask /
-FastAPI / Reflex), and do not use `databricks-apps-python` by default — it is
-the Python-backend alternative, for when an attendee **explicitly and
-insistently** asks for one. In that case confirm that's really what they want,
-then proceed. Otherwise it is always AppKit.
-
-A plain "build me a dashboard" with no app-specific need is a managed AI/BI
-dashboard (`databricks-aibi-dashboards`). Recommend that with a reason; an
-explicit app request or interactive workflow uses AppKit.
+A plain read-only dashboard normally fits `databricks-aibi-dashboards`. Recommend
+it with a reason; an explicit app request or interactive workflow uses an app.
 
 ### Deployment — typecheck, deploy, share the preview
 

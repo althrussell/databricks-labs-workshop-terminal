@@ -49,6 +49,20 @@ def test_agentbricks_opt_in_uses_reviewed_lock_without_ct_requests():
     assert plan()["environment"]["AGENTBRICKS_ENABLED"] == "false"
 
 
+def test_simulation_accepts_current_ux_pins_and_older_complete_releases():
+    current = manifest()
+    assert plan_simulation(spec(), current, now=NOW)["control_tower_requests"] == 0
+    historical = copy.deepcopy(current)
+    names = {"impeccable_npm_launcher", "impeccable_engine_linux_x64", "impeccable_skill_bundle"}
+    for name in names:
+        historical["artifacts"].pop(name)
+    historical["artifacts"]["databricks_agent_skills"].pop("effective_content_sha256")
+    assert plan_simulation(spec(), historical, now=NOW)["control_tower_requests"] == 0
+    current["artifacts"].pop("impeccable_skill_bundle")
+    with pytest.raises(ValueError, match="all pinned Impeccable"):
+        plan_simulation(spec(), current, now=NOW)
+
+
 def test_historical_manifest_remains_supported_without_agentbricks():
     reviewed = manifest()
     del reviewed["artifacts"]["agentbricks_lock"]

@@ -1,11 +1,13 @@
 # Databricks Skills Source
 
-The `databricks-*` skills in this directory are vendored verbatim from
-[databricks-agent-skills](https://github.com/databricks/databricks-agent-skills)
-`skills/`. They are the **offline fallback** only: at boot the terminal clones
-the same repository at the reviewed ref and overlays it, so a healthy instance
-runs the fetched copy and reports `source: network` or `prewarmed`. Do not
-hand-edit them — refresh via the `refresh-databricks-skills` skill instead.
+Databricks platform skills are pinned from
+[databricks-agent-skills](https://github.com/databricks/databricks-agent-skills).
+Bootstrap verifies the raw clone's commit and content digest, then applies the
+same deterministic workshop projection used by the refresh script. The
+projection retires `databricks-app-design` and routes its two callers to
+Impeccable; all other platform/API content remains upstream. The delivered
+fallback and runtime have their own effective digest in the reviewed manifest.
+Do not hand-edit platform skills; regenerate through the refresh scripts.
 
 | Field | Value |
 |-------|-------|
@@ -14,30 +16,36 @@ hand-edit them — refresh via the `refresh-databricks-skills` skill instead.
 | Pinned tag | `v0.2.28` |
 | Pinned commit | `ba45d10df7413de14c32937bbd584aeee17d22a2` |
 | Content SHA-256 | `0ddf4467590698fd17b98ef7035ad4bee90e2a082a34467489e48c53da10d98a` |
-| Synced on | 2026-10-09 |
+| Synced on | 2026-10-10 |
 | Synced by | refresh-databricks-skills |
 
-The tag, commit, and content digest above must equal the
-`databricks_agent_skills` entry in `assets/artifacts/manifest.json`. A test
-asserts it, so the fallback can never drift to a different skills version than
-the one boot installs.
+The tag, commit and raw digest above equal the `databricks_agent_skills`
+manifest entry. `effective_content_sha256` verifies the delivered projection.
 
-## Not vendored from upstream (preserved on refresh)
+## Additional delivered skills
 
+- `impeccable` — the single upstream UX skill from
+  [pbakaus/impeccable](https://github.com/pbakaus/impeccable), Apache-2.0;
+  license in `assets/artifacts/IMPECCABLE-LICENSE`. WT uses the supported
+  `impeccable install --providers=claude,codex --scope=project --no-hooks`
+  installer, with its supported `IMPECCABLE_BUNDLE_PATH` override for the reviewed
+  bundle. Launcher **4.1.0**, engine **0.1.14**, compiled skill **4.5.2** are
+  independently pinned in the artifact manifest. The text fallback is installer
+  output; the native engine is downloaded/verified at bootstrap and stays out
+  of project commits. Refresh/check with `scripts/refresh_impeccable.py`.
 - `workshop-agent-bricks-cli` — custom-agent CLI workflow for the WT identity,
-  project scaffold, resource handoff and UI baseline; upstream skills remain verbatim
-- `databricks-app-apx` — Control Tower / apx-specific, fork-only
-- `workshop-design-studio` — the visual baseline and copy-ready AppKit patterns
-  for anything an attendee builds with a UI. Maintained here, not upstream; see
-  its `NOTICE.md` for attribution.
-- `promote` — handoff document generation, on explicit request only
-- `refresh-databricks-skills` — the refresh skill itself
+  project scaffold and resource handoff.
+- `databricks-app-apx` — APX scaffold/API guidance, fork-only.
+- `promote` — handoff document generation, on explicit request only.
+- `refresh-databricks-skills` — the refresh workflow itself.
 
-The shared workshop interaction policy lives separately in
-`assets/instructions/workshop_contract.md`. Home and project instructions inline
-that single source; the fork-only design studio follows it. Refresh replaces
-only upstream skill directories, preserving this policy and the studio via
-`FORK_ONLY`. Platform/API content remains verbatim upstream.
+One small context/pacing policy lives in
+`assets/instructions/workshop_contract.md` and reaches home and project
+instructions. It governs the short workshop interaction while upstream
+Impeccable owns UX craft. AppKit/APX are implementation guides, not a shared
+visual template. `workshop-design-studio` and `databricks-app-design` are retired
+from packaged/runtime trees and managed home/project copies, including warm
+installs; the projection prevents refreshes from resurrecting their routes.
 
 ## Removed on purpose
 
@@ -75,7 +83,7 @@ use a retired name silently gets no skill at all:
 This fork also used to carry a local `databricks-apps-python` variant with a
 `7-appkit-ux.md` chapter and an `examples/appkit-ux/` directory. Both are
 retired: AppKit is Node/TypeScript/React and its guidance now lives in the
-canonical `databricks-apps` and `databricks-app-design` skills, while
+canonical `databricks-apps` skill and upstream `impeccable`, while
 `databricks-apps-python` is vendored verbatim as the Python-backend
 alternative.
 

@@ -32,13 +32,16 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import zipfile
 import urllib.request
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
 from server.bootstrap import install  # noqa: E402
-from server.bootstrap.artifacts import DEFAULT_MANIFEST_PATH  # noqa: E402
+from server.bootstrap import impeccable  # noqa: E402
+from server.bootstrap.skill_projection import project_skills  # noqa: E402
+from server.bootstrap.artifacts import DEFAULT_MANIFEST_PATH, directory_checksum  # noqa: E402
 
 NODE_DIST = f"https://nodejs.org/dist/v{install.NODE_VERSION}"
 CLAUDE_RELEASES = "https://downloads.claude.ai/claude-code-releases"
@@ -272,6 +275,7 @@ def build() -> dict:
         "omnigent_lock": _lock_entry(),
         "agentbricks_lock": _lock_entry("agentbricks", install.AGENTBRICKS_VERSION),
         "databricks_agent_skills": _skills_entry(),
+        **_impeccable_entries(npm),
     }
 
     # Vendored scripts: checksum what is committed rather than the live URL,
@@ -361,12 +365,50 @@ def _skills_entry() -> dict:
             raise SystemExit(
                 f"{install.SKILLS_UPSTREAM_DIR}/ is empty at {install.SKILLS_REF}"
             )
+        raw_checksum = directory_checksum(upstream, names)
+        project_skills(upstream)
+        effective_names = {name for name in names if os.path.isdir(os.path.join(upstream, name))}
         return {
             "version": install.SKILLS_REF,
             "source": install.SKILLS_REPO,
             "commit": commit,
-            "content_sha256": directory_checksum(upstream, names),
+            "content_sha256": raw_checksum,
+            "effective_content_sha256": directory_checksum(upstream, effective_names),
         }
+
+
+def _impeccable_entries(npm: str) -> dict:
+    """Pin all three upstream release channels, including delivered skill bytes."""
+    launcher = _npm_entry(
+        "impeccable", json.loads(_fetch_text(f"{npm}/impeccable")),
+        impeccable.LAUNCHER_VERSION, "impeccable",
+    )
+    engine_url = ("https://github.com/pbakaus/impeccable/releases/download/"
+                  f"engine-v{impeccable.ENGINE_VERSION}/impeccable-linux-x64")
+    engine_checksum = _fetch_text(engine_url + ".sha256").split()[0]
+    _verified(engine_url, engine_checksum, "Impeccable linux-x64 engine")
+    bundle_url = ("https://github.com/pbakaus/impeccable/releases/download/"
+                  f"skill-v{impeccable.SKILL_VERSION}/universal.zip")
+    checksum, archive = _download_sha256(bundle_url)
+    try:
+        with tempfile.TemporaryDirectory(prefix="manifest-impeccable-") as root:
+            with zipfile.ZipFile(archive) as bundle:
+                for member in bundle.infolist():
+                    if member.filename.startswith(".agents/skills/impeccable/"):
+                        bundle.extract(member, root)
+            content = directory_checksum(os.path.join(root, ".agents/skills/impeccable"))
+    finally:
+        os.unlink(archive)
+    return {
+        "impeccable_npm_launcher": launcher,
+        "impeccable_engine_linux_x64": {
+            "version": impeccable.ENGINE_VERSION, "source": engine_url, "sha256": engine_checksum,
+        },
+        "impeccable_skill_bundle": {
+            "version": impeccable.SKILL_VERSION, "source": bundle_url,
+            "sha256": checksum, "content_sha256": content,
+        },
+    }
 
 
 def main() -> int:

@@ -31,7 +31,7 @@ Use standard widgets by default. Use Vega-Lite when the required visualization c
 
 For custom charts, confirm the required marks and transforms are supported by **Vega-Lite**. It does not support every Vega example or chart type. Keep joins and business calculations in dataset SQL; the custom specification controls how the returned data is drawn.
 
-> **When a custom app fits better:** A managed AI/BI dashboard is the right tool for read-only KPIs, charts, and filters over governed tables. If the user instead needs a *custom-code interactive app* — write-back / data entry, bespoke UI or interactions beyond the dashboard grid, embedded or auth-gated workflows, or a conversational Genie/chat assistant as the primary surface — build a Databricks App instead with the `databricks-apps` skill (which brings in `databricks-app-design` for the data-screen UX). Linking an "Ask Genie" space to *this* dashboard stays here (see Linking a Genie Space below).
+> **When a custom app fits better:** A managed AI/BI dashboard is the right tool for read-only KPIs, charts, and filters over governed tables. If the user instead needs a *custom-code interactive app* — write-back / data entry, bespoke UI or interactions beyond the dashboard grid, embedded or auth-gated workflows, or a conversational Genie/chat assistant as the primary surface — build a Databricks App instead with the `databricks-apps` skill with `impeccable` for the interface UX. Linking an "Ask Genie" space to *this* dashboard stays here (see Linking a Genie Space below).
 
 ## Quick Reference
 

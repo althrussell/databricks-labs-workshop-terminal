@@ -20,6 +20,9 @@ REQUIRED = (
     "omnigent_lock",
     "agentbricks_lock",
     "databricks_agent_skills",
+    "impeccable_npm_launcher",
+    "impeccable_engine_linux_x64",
+    "impeccable_skill_bundle",
 )
 
 

@@ -274,9 +274,9 @@ env:
   # Release-candidate CLI pins. Control Tower may override these only as part
   # of a reviewed event release.
   - name: CLAUDE_CODE_VERSION
-    value: "2.1.295"
+    value: "2.1.296"
   - name: CODEX_CLI_VERSION
-    value: "0.162.0"
+    value: "0.162.1"
   - name: DATABRICKS_CLI_VERSION
     value: "1.20.0"
   # Beta custom-agent tooling. Enable on an isolated test/event after qualification.

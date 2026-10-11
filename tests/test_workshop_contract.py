@@ -106,7 +106,7 @@ def test_skills_refresh_preserves_fork_policy_and_design_adapter(tmp_path, monke
 
     vendored = tmp_path / "skills"
     vendored.mkdir()
-    studio = ROOT / "assets/skills/workshop-design-studio"
+    studio = ROOT / "assets/skills/impeccable"
     shutil.copytree(studio, vendored / studio.name)
     before = (vendored / studio.name / "SKILL.md").read_bytes()
     upstream = tmp_path / "upstream"
@@ -114,6 +114,8 @@ def test_skills_refresh_preserves_fork_policy_and_design_adapter(tmp_path, monke
     (upstream / "databricks-apps/SKILL.md").write_text("Reviewed upstream API guidance")
     monkeypatch.setattr(refresh, "VENDORED_DIR", str(vendored))
     monkeypatch.setattr(refresh, "_clone_reviewed_skills", lambda _: str(upstream))
+    from server.bootstrap.artifacts import directory_checksum
+    monkeypatch.setattr(refresh, "load_manifest", lambda _: {"artifacts": {"databricks_agent_skills": {"effective_content_sha256": directory_checksum(upstream)}}})
     composed_before = user_content._base_instructions()
     assert refresh.refresh(write=True) == 0
     assert (vendored / studio.name / "SKILL.md").read_bytes() == before

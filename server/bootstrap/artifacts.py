@@ -44,6 +44,9 @@ REQUIRED_ARTIFACTS = frozenset({
     "omnigent_lock",
     "agentbricks_lock",
     "databricks_agent_skills",
+    "impeccable_npm_launcher",
+    "impeccable_engine_linux_x64",
+    "impeccable_skill_bundle",
 })
 # Artifacts published only as archives: verified as a file, then extracted at
 # boot to reach ``executable_relative_path``.
@@ -498,8 +501,11 @@ def load_manifest(path: str = "") -> dict:
     if (
         not _COMMIT.fullmatch(str(skills.get("commit") or ""))
         or not _SHA256.fullmatch(str(skills.get("content_sha256") or ""))
+        or not _SHA256.fullmatch(str(skills.get("effective_content_sha256") or ""))
     ):
         raise ArtifactManifestError("skills commit/content provenance is invalid")
+    if not _SHA256.fullmatch(str(artifacts["impeccable_skill_bundle"].get("content_sha256") or "")):
+        raise ArtifactManifestError("Impeccable skill content provenance is invalid")
     return {
         "ok": True,
         "path": override_path or DEFAULT_MANIFEST_PATH,

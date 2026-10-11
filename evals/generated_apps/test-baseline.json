@@ -6,8 +6,8 @@
     "codex": "system.ai.gpt-6-1-sol"
   },
   "artifacts": {
-    "claude_binary": "2.1.295",
-    "codex_npm_launcher_package": "0.162.0",
+    "claude_binary": "2.1.296",
+    "codex_npm_launcher_package": "0.162.1",
     "databricks_cli_archive_linux_x64": "1.20.0",
     "databricks_agent_skills": "v0.2.28",
     "node_linux_x64": "24.21.0",

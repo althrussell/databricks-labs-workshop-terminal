@@ -124,9 +124,12 @@ def _reviewed_release(manifest: Mapping) -> tuple[dict, dict]:
         raise ValueError("simulation requires the reviewed artifact manifest")
     artifacts = manifest.get("artifacts")
     required = _ARTIFACTS - {"pi_npm_package"}
-    allowed = _ARTIFACTS | {"agentbricks_lock"}
+    ux_artifacts = {"impeccable_npm_launcher", "impeccable_engine_linux_x64", "impeccable_skill_bundle"}
+    allowed = _ARTIFACTS | {"agentbricks_lock"} | ux_artifacts
     if not isinstance(artifacts, Mapping) or not required <= set(artifacts) <= allowed:
         raise ValueError("simulation requires the complete reviewed artifact manifest")
+    if set(artifacts) & ux_artifacts and not ux_artifacts <= set(artifacts):
+        raise ValueError("simulation requires all pinned Impeccable artifacts")
     for name, entry in artifacts.items():
         if (not isinstance(entry, Mapping) or not isinstance(entry.get("source"), str)
                 or not entry["source"] or not isinstance(entry.get("version"), str)
@@ -140,10 +143,14 @@ def _reviewed_release(manifest: Mapping) -> tuple[dict, dict]:
         if name == "databricks_agent_skills":
             _text(entry.get("commit"), _COMMIT, "reviewed skills commit is missing")
             _text(entry.get("content_sha256"), _DIGEST, "reviewed skills digest is missing")
+            if "effective_content_sha256" in entry:
+                _text(entry["effective_content_sha256"], _DIGEST, "reviewed projected skills digest is missing")
             if not isinstance(entry.get("version"), str) or not entry["version"]:
                 raise ValueError("reviewed skills ref is missing")
         else:
             _text(entry.get("sha256"), _DIGEST, "reviewed artifact digest is missing")
+        if name == "impeccable_skill_bundle":
+            _text(entry.get("content_sha256"), _DIGEST, "reviewed Impeccable skill digest is missing")
         if name in {"uv_binary", "python_3_12_runtime"}:
             executable = entry.get("executable_relative_path")
             if (entry.get("kind") != "archive" or not isinstance(executable, str)

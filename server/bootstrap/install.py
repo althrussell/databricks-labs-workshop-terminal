@@ -31,12 +31,13 @@ from .artifacts import (
     directory_checksum as _directory_checksum,
 )
 from .codex_artifacts import install_native_alias, validate_codex_tarballs
+from .skill_projection import RETIRED_UX_SKILLS, project_skills
 
 logger = logging.getLogger(__name__)
 
 # Pinned versions — bump deliberately per release.
-CLAUDE_VERSION = os.environ.get("CLAUDE_CODE_VERSION", "2.1.295").strip()
-CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.162.0").strip()
+CLAUDE_VERSION = os.environ.get("CLAUDE_CODE_VERSION", "2.1.296").strip()
+CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.162.1").strip()
 DATABRICKS_CLI_VERSION = os.environ.get("DATABRICKS_CLI_VERSION", "1.20.0").strip()
 AGENTBRICKS_VERSION = os.environ.get("AGENTBRICKS_VERSION", "0.4.0").strip()
 UV_VERSION = "0.12.24"
@@ -73,7 +74,7 @@ SKILLS_REF = os.environ.get("SKILLS_REF", "v0.2.28").strip() or "v0.2.28"
 SKILLS_ARTIFACT = "databricks_agent_skills"
 FORK_SKILLS = frozenset({
     "databricks-app-apx", "promote", "refresh-databricks-skills",
-    "workshop-design-studio", "workshop-agent-bricks-cli",
+    "impeccable", "workshop-agent-bricks-cli",
 })
 # The directory inside the upstream repository that holds one subdirectory per
 # skill. Each carries SKILL.md for Claude and agents/openai.yaml for Codex.
@@ -841,10 +842,11 @@ def _persistent_skills_install(
     if not names:
         return None
     upstream_checksum = _directory_checksum(upstream, names)
-    installed_checksum = _directory_checksum(skills_dir, names)
-    if upstream_checksum != expected_checksum or installed_checksum != expected_checksum:
+    installed_checksum = _directory_checksum(skills_dir, names - RETIRED_UX_SKILLS)
+    effective = artifact.get("effective_content_sha256", expected_checksum)
+    if upstream_checksum != expected_checksum or installed_checksum != effective:
         return None
-    return commit, expected_checksum
+    return commit, effective
 
 
 def _claude_install_argv() -> list[str]:
@@ -1575,7 +1577,8 @@ def _stage_vendored_skills(prefix: str) -> str:
 
 def _fork_skills_current(target: str) -> bool:
     names = {name for name in FORK_SKILLS if os.path.isdir(os.path.join(_ASSETS_SKILLS, name))}
-    return _directory_checksum(_ASSETS_SKILLS, names) == _directory_checksum(target, names)
+    return (not any(os.path.lexists(os.path.join(target, name)) for name in RETIRED_UX_SKILLS)
+            and _directory_checksum(_ASSETS_SKILLS, names) == _directory_checksum(target, names))
 
 
 def _refresh_fork_skills(prefix: str, target: str) -> None:
@@ -1585,6 +1588,7 @@ def _refresh_fork_skills(prefix: str, target: str) -> None:
     staged = tempfile.mkdtemp(prefix=".skills-fork-stage-", dir=prefix)
     try:
         shutil.copytree(target, staged, dirs_exist_ok=True)
+        project_skills(staged)
         for name in FORK_SKILLS:
             source = os.path.join(_ASSETS_SKILLS, name)
             if os.path.isdir(source):
@@ -1639,6 +1643,10 @@ def _install_skills() -> None:
         persistent = _persistent_skills_install(clone_dir, skills_dir)
         if persistent is not None:
             _refresh_fork_skills(prefix, skills_dir)
+            # Verify/recreate the runtime on warm deploys too. An existing skill
+            # alone does not prove the native launcher still works.
+            from .impeccable import install_skill
+            install_skill(skills_dir, prefix, _verified_artifact, _install_env())
             resolved_commit, checksum = persistent
             _set(
                 "skills",
@@ -1726,6 +1734,13 @@ def _install_skills() -> None:
             raise SkillsContractError(
                 "skills content differs from reviewed manifest"
             )
+        project_skills(staged)
+        names -= RETIRED_UX_SKILLS
+        checksum = _directory_checksum(staged, names)
+        if checksum != artifact.get("effective_content_sha256", artifact["content_sha256"]):
+            raise SkillsContractError("projected skills differ from reviewed manifest")
+        from .impeccable import install_skill
+        install_skill(staged, prefix, _verified_artifact, _install_env())
         _publish_skills_tree(staged, skills_dir)
         staged = None
         _write_json_atomic(
@@ -1734,7 +1749,8 @@ def _install_skills() -> None:
                 "repo": artifact["source"],
                 "ref": SKILLS_REF,
                 "resolved_commit": resolved_commit,
-                "content_checksum": checksum,
+                "content_checksum": artifact["content_sha256"],
+                "effective_content_checksum": checksum,
                 # Which skills came from upstream, so per-user setup can declare
                 # exactly those to the Databricks CLI's aitools state. The
                 # shared tree also holds our vendored workflow skills, and no
@@ -1972,16 +1988,16 @@ def run_in_background() -> None:
 
             return run
 
-        # Only Codex needs Node. Installing it to completion first left Claude,
+        # Codex and the supported Impeccable npm launcher need Node. Installing
+        # it to completion first left Claude,
         # Omnigent, Databricks, skills and tmux idle through its
         # download and xz extract, for no dependency reason -- so everything is
         # submitted at once and only Codex waits on the node future.
         independent = [
             ("claude", _install_claude),
             ("databricks", _install_databricks_cli),
-            ("skills", _install_skills),
         ]
-        dependent = [("codex", _install_codex)]
+        dependent = [("codex", _install_codex), ("skills", _install_skills)]
         if omnigent:
             independent.extend([
                 ("tmux", _install_tmux),

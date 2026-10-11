@@ -15,15 +15,14 @@ from .conftest import ALICE
 # channel an agent/harness can read (home CLAUDE.md + AGENTS.md, and the
 # committed project-level CLAUDE.md + AGENTS.md). The single-source assertion
 # fails loud if a skills refresh or instruction edit ever drops it.
-APPKIT_MANDATE = "AppKit is the required baseline for every app."
+APPKIT_DEFAULT = "AppKit (Node.js + TypeScript + React) is the default"
 
 # Skill names the mandate must use, and names it must never use. A mandate that
 # points an agent at a skill that no longer exists is worse than no mandate: the
 # agent finds nothing and silently improvises a Python framework instead.
 CANONICAL_APP_SKILLS = (
     "databricks-apps",
-    "databricks-app-design",
-    "workshop-design-studio",
+    "impeccable",
 )
 
 # Where the Databricks CLI tracks which skills it considers installed.
@@ -84,8 +83,8 @@ def test_appkit_mandate_in_home_memory(client, monkeypatch):
     home = _provisioned_home(client, monkeypatch)
     claude_md = open(os.path.join(home, ".claude", "CLAUDE.md")).read()
     agents_md = open(os.path.join(home, ".codex", "AGENTS.md")).read()
-    assert APPKIT_MANDATE in claude_md
-    assert APPKIT_MANDATE in agents_md
+    assert APPKIT_DEFAULT in claude_md
+    assert APPKIT_DEFAULT in agents_md
 
 
 def test_mandate_names_canonical_app_skills_and_no_retired_ones(client, monkeypatch):
@@ -173,12 +172,12 @@ def test_project_helper_installed(client, monkeypatch):
     assert os.access(helper, os.X_OK)
 
     template = os.path.join(home, ".config", "workshop", "project-memory.md")
-    assert APPKIT_MANDATE in open(template).read()
+    assert APPKIT_DEFAULT in open(template).read()
 
 
 def test_custom_agent_skill_is_available_to_both_harnesses(client, monkeypatch):
     home = _provisioned_home(client, monkeypatch)
-    for harness in (".claude", ".codex"):
+    for harness in (".claude", ".agents"):
         skill = Path(home) / harness / "skills/workshop-agent-bricks-cli/SKILL.md"
         assert skill.is_file()
 
@@ -213,8 +212,8 @@ def test_project_helper_commits_appkit_memory(client, monkeypatch, tmp_path):
     )
     assert out.returncode == 0, out.stderr
     project = fake_home / "projects" / "my-app"
-    assert APPKIT_MANDATE in (project / "CLAUDE.md").read_text()
-    assert APPKIT_MANDATE in (project / "AGENTS.md").read_text()
+    assert APPKIT_DEFAULT in (project / "CLAUDE.md").read_text()
+    assert APPKIT_DEFAULT in (project / "AGENTS.md").read_text()
 
     # Both files must be committed (tracked) — untracked files do not propagate
     # into the worktrees Omnigent's sub-agents run in.
@@ -323,7 +322,7 @@ def test_the_helper_adopts_a_directory_a_scaffold_already_wrote(
     assert (scaffolded / "client" / "main.tsx").is_file(), "scaffold must survive"
 
     claude = (scaffolded / "CLAUDE.md").read_text()
-    assert APPKIT_MANDATE in claude, "the workshop rules must be present"
+    assert APPKIT_DEFAULT in claude, "the workshop rules must be present"
     assert "Use AppKit conventions." in claude, (
         "the scaffold's own notes are kept, not destroyed — losing them is what "
         "made the live near-miss worth repairing by hand"
@@ -350,7 +349,7 @@ def test_seeding_an_adopted_project_twice_does_not_duplicate_it(
         assert out.returncode == 0, out.stderr
 
     project = fake_home / "projects" / "twice"
-    assert (project / "CLAUDE.md").read_text().count(APPKIT_MANDATE) == 1
+    assert (project / "CLAUDE.md").read_text().count(APPKIT_DEFAULT) == 1
     assert (project / "README.md").read_text().count("Live URL") == 1
 
 
@@ -379,7 +378,7 @@ def test_a_failed_appkit_scaffold_still_leaves_a_usable_project(
     assert out.returncode == 0, out.stderr
     project = fake_home / "projects" / "unlucky"
     assert (project / "CLAUDE.md").is_file()
-    assert APPKIT_MANDATE in (project / "CLAUDE.md").read_text()
+    assert APPKIT_DEFAULT in (project / "CLAUDE.md").read_text()
     assert out.stdout == str(project) + "\n"
     assert "boom" in out.stderr
 
@@ -492,9 +491,9 @@ def test_skills_installed(client, monkeypatch):
     home = _provisioned_home(client, monkeypatch)
 
     # Every harness reads its own directory: Claude ~/.claude/skills, Codex (and
-    # Omnigent's Codex worker, which shares CODEX_HOME) ~/.codex/skills. This is
+    # Omnigent's Codex worker, which shares CODEX_HOME) ~/.agents/skills. This is
     # the layout `databricks aitools install` produces.
-    for relative in (".claude/skills", ".codex/skills"):
+    for relative in (".claude/skills", ".agents/skills"):
         skill = os.path.join(home, relative, "databricks-docs")
         assert os.path.islink(skill), relative
         assert os.path.isfile(os.path.join(skill, "SKILL.md")), relative
@@ -576,19 +575,19 @@ def _write_skills_stamp(shared: str, names: list[str]) -> None:
 def test_a_harness_owned_skills_directory_still_receives_the_skills(
     client, monkeypatch, tmp_path
 ):
-    """A real ~/.codex/skills (harness- or attendee-created) used to shadow the
+    """A real ~/.agents/skills (harness- or attendee-created) used to shadow the
     whole-directory symlink, leaving Codex with no Databricks skills at all."""
     from server import user_content
 
     home = tmp_path / "attendee"
-    own = home / ".codex" / "skills" / "my-own-skill"
+    own = home / ".agents" / "skills" / "my-own-skill"
     own.mkdir(parents=True)
     (own / "SKILL.md").write_text("mine")
 
     user_content._link_skills(type("U", (), {"home": str(home), "email": "a@b"})())
 
     assert (own / "SKILL.md").read_text() == "mine"  # attendee's copy survives
-    assert os.path.islink(home / ".codex" / "skills" / "databricks-docs")
+    assert os.path.islink(home / ".agents" / "skills" / "databricks-docs")
     assert os.path.islink(home / ".claude" / "skills" / "databricks-docs")
 
 

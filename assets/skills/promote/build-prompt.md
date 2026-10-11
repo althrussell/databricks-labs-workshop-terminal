@@ -52,9 +52,9 @@ Unity Catalog object creation, serving endpoint configuration).
 
 ### Section 3: Tech Stack (prescriptive — leave nothing for the agent to choose)
 
-- **Frontend:** AppKit — Node.js + TypeScript + React. Scaffold per the
-  `databricks-apps` skill; apply the data-UI decisions from `databricks-app-design`.
-  Do NOT use Streamlit, Dash, Gradio, Flask, FastAPI UI, or any Python web framework.
+- **Frontend:** preserve the actual framework and attendee's explicit choice.
+  AppKit is the default for a new app. Use the matching platform skill for APIs
+  and `impeccable` for task-appropriate interface design.
 - **Backend:** AppKit Express server routes (or state the actual backend from the session)
 - **Database:** <Lakebase (managed Postgres) / Delta tables / Volume — state which and why>
 - **Deployment:** Databricks Apps. Provide the exact `app.yaml` content.
