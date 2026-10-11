@@ -135,3 +135,77 @@ async def exercise(client, tmp_path, monkeypatch, width):
 @pytest.mark.parametrize("width", [390, 1440])
 def test_build_goal_new_build_return_and_harness_switch(client, launchable_agents, tmp_path, monkeypatch, width):
     asyncio.run(exercise(client, tmp_path, monkeypatch, width))
+
+
+async def exercise_lost_recovery(client, tmp_path, monkeypatch):
+    web = pytest.importorskip("aiohttp.web")
+    browser_api = pytest.importorskip("playwright.async_api")
+    monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
+    monkeypatch.setattr(config, "onboarding_wizard_enabled", lambda: False)
+    user = user_manager.get(EMAIL)
+    attempts = []
+
+    def saved(_user):
+        value = projects.inventory(user)
+        if not value["projects"]:
+            value["projects"].append(dict(name="film-club", goal="", available=False, saved=True, missing=True))
+        return value
+
+    def recover(_user, name):
+        attempts.append(name)
+        path = projects.project_path(user, name)
+        path.mkdir()
+        (path / "app.py").write_text("recovered film source\n")
+        return projects.select(user, name, goal="Choose our next film")
+
+    monkeypatch.setattr(projects, "saved_inventory", saved)
+    monkeypatch.setattr(projects, "recover", recover)
+
+    async def handler(request):
+        if not request.path.startswith("/api/"):
+            return web.FileResponse(ROOT / "static" / (request.path.removeprefix("/") or "index.html"))
+        payload = await request.json() if request.can_read_body else None
+        response = client.request(request.method, request.path, json=payload,
+                                  headers={"X-Forwarded-Email": EMAIL})
+        if request.path == "/api/projects/film-club/recover":
+            assert response.status_code == 200
+            # Send headers before losing the completed route's body. This
+            # prevents Chromium from retrying the POST on a stale connection.
+            lost = web.StreamResponse(status=200, headers={"Content-Type": "application/json", "Content-Length": str(len(response.content))})
+            await lost.prepare(request)
+            await lost.write(response.content[:16])
+            request.transport.close()
+            return lost
+        return web.Response(body=response.content, status=response.status_code,
+                            content_type="application/json")
+
+    application = web.Application()
+    application.router.add_route("*", "/{tail:.*}", handler)
+    runner = web.AppRunner(application, shutdown_timeout=.1)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    url = "http://127.0.0.1:" + str(site._server.sockets[0].getsockname()[1])
+    try:
+        async with browser_api.async_playwright() as engine:
+            browser = await engine.chromium.launch(headless=True, executable_path=os.environ.get("WORKSHOP_BROWSER_EXECUTABLE"))
+            page = await browser.new_page()
+            await page.goto(url)
+            controls = page.get_by_role("region", name="Workshop builds")
+            await controls.get_by_role("button", name="My builds", exact=True).click()
+            await controls.get_by_role("button", name="Check saved builds", exact=True).click()
+            await controls.get_by_role("button", name="Recover source", exact=True).click()
+            await controls.get_by_text("Source recovered and selected", exact=False).wait_for()
+            await controls.get_by_text("film-club", exact=True).wait_for()
+            assert await controls.get_by_role("alert").count() == 0
+            assert attempts == ["film-club"]
+            assert projects.read(user)["active"] == "film-club"
+            assert "Choose our next film" in projects.instructions(user)
+            assert (projects.project_path(user, "film-club") / "app.py").read_text() == "recovered film source\n"
+            await browser.close()
+    finally:
+        await runner.cleanup()
+
+
+def test_lost_recovery_response_reconciles_confirmed_source(client, launchable_agents, tmp_path, monkeypatch):
+    asyncio.run(exercise_lost_recovery(client, tmp_path, monkeypatch))

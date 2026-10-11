@@ -43,7 +43,7 @@ import ToastHost from "./components/ToastHost";
 import TerminalView from "./components/TerminalView";
 import AgentSwitchDialog from "./components/AgentSwitchDialog";
 import ProjectBar from "./components/ProjectBar";
-import { goalChangePrompt, keepSavedCopies } from "./projects";
+import { goalChangePrompt, keepSavedCopies, recoverWithConfirmation } from "./projects";
 import { bindIdentityRefresh, onAppEvent } from "./events";
 import { ideaPromptAction } from "./ideation";
 import { friendlyError, type RecoveryAction } from "./errors";
@@ -444,7 +444,7 @@ export default function App() {
         if (active) throw new Error("Another agent became active. Confirm that agent before switching builds.");
       }
       const value = selection.recover
-        ? await api.recoverProject(selection.name)
+        ? await recoverWithConfirmation(selection.name, projectInventoryRef.current?.active, api.recoverProject, api.projects)
         : await api.selectProject(selection);
       acceptProjects(value);
       if (!selection.new && !selection.recover && selection.goal !== undefined) {
