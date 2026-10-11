@@ -20,7 +20,9 @@ with the live library goal change; the first app startup required operator
 error-log assistance. R09 has substantial CI
 coverage in place and needs the regressions for the remaining continuity changes.
 R10 is final qualification of one reused CT-compatible deployment, not a fleet
-campaign. Completed work and dated evidence are reused rather than rerun by default.
+campaign. The [final regression and qualification report](final-release-qualification.md)
+maps completed checks and the remaining live work. Completed work and dated
+evidence are reused rather than rerun by default.
 
 R08 implementation is in progress on `codex/wt-r08-project-continuity`. Its
 [current scope and validation](project-continuity-r08.md) cover optional build
