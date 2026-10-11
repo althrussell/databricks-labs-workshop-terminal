@@ -1,13 +1,13 @@
 # Agent Bricks CLI in Workshop Terminal
 
 WT supports the separate `agentbricks` command from
-`databricks-agentbricks==0.4.0` for custom LangGraph and OpenAI Agents SDK
+`databricks-agentbricks==0.5.0` for custom LangGraph and OpenAI Agents SDK
 backends. The managed Knowledge Assistant and Supervisor workflow remains in
 the upstream `databricks-agent-bricks` skill.
 
 This beta integration is **opt-in**. Set `AGENTBRICKS_ENABLED=true` in WT's
 deployment environment; the checked-in `app.yaml` leaves it disabled. The
-reviewed installer pins SDK 0.150.0, uv 0.12.24 and Python 3.12.15, with a
+reviewed installer pins SDK 0.151.0, uv 0.13.0 and Python 3.12.15, with a
 fully hashed Linux x86_64 wheel lock. It installs in its own shared-prefix venv
 and exposes `agentbricks` and `uv` on attendee PATH. Coding harnesses can launch
 independently; enabled CLI installation is checked by deep readiness.
@@ -37,7 +37,7 @@ tool/store binding, migration, development and deployment. The released CLI's
 `agent.toml`. Its development port flag is `--app-port`. Templates currently
 default to Sonnet 4.5: select an event-approved accessible model before running,
 then verify it again as the generated app's service principal. An API-only
-backend needs a separate AppKit frontend if the attendee expects a visible app.
+backend needs a separate APX frontend if the attendee expects a visible app.
 
 Package installation in Databricks Apps uses public PyPI; laptop qualification
 uses disposable environments with Databricks proxies. Proxy addresses and

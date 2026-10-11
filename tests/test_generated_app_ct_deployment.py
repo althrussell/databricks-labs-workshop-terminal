@@ -93,7 +93,7 @@ def test_package_plan_retains_owner_and_exact_ct_gateway_and_immutable_pins():
 
 def quality_spec(pin):
     value = spec(pin)
-    value["test_baseline"] = "quality-20261009"
+    value["test_baseline"] = "quality-20261011"
     value["model_policy"]["pool"][0]["service_name"] = "system.ai.claude-opus-5-5"
     value["model_policy"]["pool"][1]["service_name"] = "system.ai.gpt-6-1-sol"
     return value
@@ -107,7 +107,7 @@ def test_quality_baseline_pins_models_without_changing_historical_plans():
     assert "test_baseline" not in old["ct_compatible_contract"]
     assert current["environment"]["ANTHROPIC_MODEL"] == "system.ai.claude-opus-5-5"
     assert current["environment"]["CODEX_MODEL"] == "system.ai.gpt-6-1-sol"
-    assert current["ct_compatible_contract"]["test_baseline"]["id"] == "quality-20261009"
+    assert current["ct_compatible_contract"]["test_baseline"]["id"] == "quality-20261011"
 
 
 @pytest.mark.parametrize("change", ["unknown", "older_model", "extra_fallback", "old_toolchain"])

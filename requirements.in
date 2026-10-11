@@ -1,7 +1,7 @@
 # Compatibility list for source deployment. Keep exactly aligned with
 # ``project.dependencies`` in pyproject.toml; export requirements.txt from the
 # canonical uv.lock (the CI contract carries the exact command).
-databricks-sdk==0.150.0
+databricks-sdk==0.151.0
 fastapi==0.142.2
 opentelemetry-distro==0.66b0
 opentelemetry-exporter-otlp-proto-grpc==1.45.0

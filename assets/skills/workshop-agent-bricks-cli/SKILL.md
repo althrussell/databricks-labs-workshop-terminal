@@ -9,7 +9,7 @@ metadata:
 
 Use the installed **`agentbricks`** command from `databricks-agentbricks`, not
 invented `databricks agentbricks` commands. This workshop integration is reviewed
-against CLI **0.4.0**. Check `agentbricks --version`, `uv --version`, and the
+against CLI **0.5.0**. Check `agentbricks --version`, `uv --version`, and the
 relevant `--help` before relying on a flag. A missing binary means the optional
 installer is disabled, pending or failed: ask the facilitator to check setup
 status; do not upgrade the shared toolchain mid-workshop.
@@ -66,7 +66,7 @@ Do not present an API-only URL as a finished attendee-facing app.
   because a workspace-wide list returns it.
 - Managed MCP tools default to **request-user** permissions. `--auth app` uses
   the deployed app identity and is a deliberate permission choice. UC function
-  tools require app auth in 0.4.0. Do not switch identity to hide an access error.
+  tools require app auth. Do not switch identity to hide an access error.
   See [references/workflow.md](references/workflow.md) for supported commands.
 
 ## Run, deploy and verify

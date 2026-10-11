@@ -40,8 +40,8 @@ manifest entry. `effective_content_sha256` verifies the delivered projection.
   **0.3.8**, commit `50073e561a689ae5292f82e69ae0505417d75d3e`. Its content digest
   and CLI wheel are pinned together in `apx_wheel_linux_x64`. License:
   `assets/artifacts/APX-LICENSE.md`. Refresh/check with `scripts/refresh_apx.py`.
-  Bootstrap installs the official manylinux wheel plus shared Bun **1.3.8**
-  and uv **0.12.24**; no standalone newer-glibc binary or package-name lookup.
+  Bootstrap installs the official manylinux wheel plus shared Bun **1.4.3**
+  and uv **0.13.0**; no standalone newer-glibc binary or package-name lookup.
   The former fork `databricks-app-apx` is retired from managed delivery.
 - `workshop-export` — source ZIP export to the attendee's assigned Volume,
   with download instructions; replaces the removed `promote` document pack.
