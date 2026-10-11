@@ -19,7 +19,7 @@ from server.bootstrap.artifacts import directory_checksum
 from server.bootstrap.skill_projection import project_skills
 
 
-def mcp_tools(prefix: Path, project: Path, env: dict) -> set[str]:
+def mcp_tools(prefix: Path, project: Path, env: dict, *, inspect_routes: bool = False) -> set[str]:
     """Keep stdio open until the server has answered the actual handshake."""
     with tempfile.TemporaryFile(mode="w+") as errors:
         process = subprocess.Popen([str(prefix / "bin/apx"), "mcp"], cwd=project, env=env,
@@ -60,6 +60,14 @@ def mcp_tools(prefix: Path, project: Path, env: dict) -> set[str]:
                 "clientInfo": {"name": "wt-apx-check", "version": "1"}}})
             request({"jsonrpc": "2.0", "method": "notifications/initialized"})
             result = request({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+            if inspect_routes:
+                route = next(tool for tool in result['tools'] if tool['name'] == 'routes')
+                properties = route['inputSchema']['properties']
+                key = next(name for name in properties if name in ('project_path', 'projectPath'))
+                observed = request({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {
+                    "name": "routes", "arguments": {key: str(project)}}})
+                assert not observed.get('isError'), observed
+                assert '/api/version' in json.dumps(observed), observed
             return {item["name"] for item in result["tools"]}
         except (RuntimeError, TimeoutError, queue.Empty) as error:
             errors.seek(0)
@@ -119,9 +127,11 @@ def qualify(prefix: Path, temporary: Path) -> dict:
         if result.returncode:
             raise RuntimeError("APX check/build failed: " + (result.stdout + result.stderr)[-1500:])
     assert (project / ".build").is_dir()
+    mcp_tools(prefix, project, env, inspect_routes=True)
     return {"versions": {name: install._read_cli_version(str(prefix / "bin" / name))
                          for name in ("apx", "bun", "uv")},
-            "mcp_tools": sorted(tools), "scaffold_and_build": "passed", "workspace_requests": 0}
+            "mcp_tools": sorted(tools), "scaffold_and_build": "passed", "post_build_routes": "passed",
+            "workspace_requests": 0}
 
 
 def main():

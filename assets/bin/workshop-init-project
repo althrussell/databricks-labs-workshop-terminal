@@ -133,6 +133,21 @@ for path in Path(sys.argv[1]).glob('src/*/backend/core/_factory.py'):
                               ') -> AsyncGenerator[None, None]:')
     if updated != original:
         path.write_text(updated)
+
+# Hatch removes its generated _version.py after wheel builds. The editable
+# install still has authoritative distribution metadata for subsequent MCP/dev
+# imports. Fall back only for this exact missing generated module.
+for path in Path(sys.argv[1]).glob('src/*/__init__.py'):
+    original = path.read_text()
+    if original.startswith('from ._version import version\n'):
+        path.write_text(original.replace('from ._version import version\n',
+            'try:\n'
+            '    from ._version import version\n'
+            'except ModuleNotFoundError as error:\n'
+            '    if error.name != __name__ + "._version":\n'
+            '        raise\n'
+            '    from importlib.metadata import version as installed_version\n'
+            '    version = installed_version(__name__)\n', 1))
 PY
     fi
   elif ! grep -q '\[tool.apx' "$DEST/pyproject.toml" 2>/dev/null; then
