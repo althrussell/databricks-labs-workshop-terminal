@@ -23,8 +23,13 @@ contract passes without cloud calls. Actual Agent Bricks 0.5.0 passes offline
 LangGraph/OpenAI scaffold, doctor, repeat setup and source-preserving migration
 with a network-denial guard. These are not model/deployment qualification.
 
-Linux CI must qualify the actual Agent Bricks installer, APX with the refreshed
-Bun/uv pair, Impeccable delivery, public-lock consistency and reproducible PEX.
-The final immutable package still needs the affected live checks on the reused
-isolated WT deployment before publication. Evidence remains outside Git.
+All nine Linux CI jobs passed, including the actual Agent Bricks installer, APX
+with the refreshed Bun/uv pair, Impeccable delivery, public-lock consistency and
+reproducible offline PEX. The candidate package passed readiness and an actual
+native Codex analytical APX build on the reused isolated WT deployment. The
+preview and concise runtime-filter iteration passed browser interactions,
+shortlist persistence and 390px controls; prepared-source and missing-rating
+limits were disclosed. See [final qualification](final-release-qualification.md)
+for runtime identity and the retained limits. Publication remains the ship step.
+Evidence remains outside Git.
 No Control Tower code, configuration or working deployment is changed.

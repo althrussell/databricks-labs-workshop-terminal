@@ -653,8 +653,10 @@ composition, and sharing a component library does not require sharing an app she
 
 R01–R05 and R07 retain their delivered scope and dated evidence for traceability;
 their recorded closeouts remain authoritative. R06's small live iteration check
-now passes. The remaining work is R08–R10, with R08's original export portion
-already merged and its continuity/export corrections in #98.
+now passes. R08's continuity/export corrections are merged in #98; R09's focused
+regressions and R10's single-deployment WT qualification now pass with the
+[recorded limits](final-release-qualification.md). Publication and the separately
+requested CT feature/integration follow-up remain.
 The estimates below are planning ranges in engineer-days, not commitments. Browser
 authentication and upstream Omnigent adapters are the largest uncertainties.
 Review actual previews for usability and task fit; numerical design calibration
@@ -671,7 +673,7 @@ and a dedicated review panel are optional.
 | R07: Focused framework comparison and selected default — closed | Owner selected official APX + Impeccable on 11 October after the four same-prompt builds. Compatible CLI, official skill, MCP and project helper are merged in #97; explicit framework choices and existing projects are preserved | R04/R05 delivery and real previews | Tech lead | Completed | Selected app's live actions/reload, actual Ubuntu 22.04 install/MCP/scaffold/build, and native harness policy/tool delivery passed. All nine final main CI jobs passed; owner closed R07. No shared visual shell or expanded comparison campaign |
 | R08: Project continuity/handoff — accepted | Offered harness/worker delivery; existing brief/managed-section updates; switch/reconnect/worktree cases; visible active project, change-goal/new-build actions and return to earlier projects; recovery of workspace-backed projects after runtime replacement; simple source ZIP export to the CT-assigned attendee catalog/schema, replacing promote | R03/R04; reuse R05/R06 builds | Harness engineer | 2-3 | Build A, change A, build B separately, then return to A with correct context/files; switching, reconnect and onboarding-off work; a worker reads the actual skill assets; exported ZIP contains current project source and has clear Volume download steps; local runtime resets do not silently strand an earlier workspace-backed build |
 | R09: Focused regression coverage — in CI | Add regressions for changed delivery, skill precedence, wizard skip/off and project continuity to existing CI; a compact live-build release report; evidence outside Git. No new telemetry/acceptance service | R04/R05/R08 changes | Platform engineer | Scope after first UX trial | CI catches representative regressions; a few contrasting live previews demonstrate task fit, working controls and narrow-screen usability; observed checks reported accurately |
-| R10: Single-deployment event qualification | Thoroughly test one immutable WT candidate on the reused isolated Labs deployment: attendee auth/permissions, offered harnesses, actual builds, UX, saved state, multiple projects, reconnect, restart, warm redeploy and recoverable failures; fallback/rollback instructions. No fleet/load campaign | Assembled remaining work | Workshop operator + tech lead | Reuse existing checks and deployment | One deployment works through the intended event journey and recovery cases; local operational CI passes; tool/release identity and observed outcomes recorded; ready to publish the final WT release |
+| R10: Single-deployment event qualification — checked | Thoroughly test one immutable WT candidate on the reused isolated Labs deployment: attendee auth/permissions, offered harnesses, actual builds, UX, saved state, multiple projects, reconnect, restart, warm redeploy and recoverable failures; fallback/rollback instructions. No fleet/load campaign | Assembled remaining work | Workshop operator + tech lead | Reuse existing checks and deployment | One deployment works through the intended event journey and recovery cases; local operational CI passes; tool/release identity and observed outcomes recorded; ready to publish the final WT release |
 
 Suggested milestones:
 
@@ -806,9 +808,10 @@ justify it, rather than running every scenario against every combination.
   Bricks enablement without affecting CT's working Labs deployment.
 
 Completed work retains its recorded outcomes and limitations. R06's small live
-iteration check now passes. R08–R10 finish project continuity, the affected
-regression coverage and final single-deployment qualification; R08's original
-source ZIP export is already merged, with corrections in #98.
+iteration check passes. R08–R10's continuity, focused regressions and final
+single-deployment WT qualification now pass with their recorded limitations.
+The current-toolchain analytical preview and experienced-user iteration passed
+without technical rescue prompts; source ZIP corrections are merged in #98.
 Publish the final WT release before beginning the requested CT feature PR.
 The number of skills, policy pages or passing text assertions is not evidence of
 better attendee output; the rendered working results provide that evidence.
