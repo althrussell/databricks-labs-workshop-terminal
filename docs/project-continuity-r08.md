@@ -1,88 +1,86 @@
 # R08: project continuity
 
-R08's source ZIP export is already merged in PR #96. The remaining change adds
-small, optional **My builds**, **New build** and **Change goal** controls to WT.
-They work with onboarding skipped or disabled. Attendees can also start a build
-directly in a harness with `workshop-init-project`.
+R08 live acceptance passed on 11 October on the reused isolated Labs WT app
+`wt-eval-r03-1009-f601-wt`, as `labuser+1@awsbricks.com`. PR #98 adds optional
+**My builds**, **New build** and **Change goal** controls and qualifies source
+save/recovery and the corrected take-home export. Onboarding was disabled.
 
-Each build keeps its own files and goal. Continuing an existing build opens the
-selected harness in that project's directory; a new build keeps its scaffold
-target absent. Changing a goal saves it and, when an agent is open, types a change
-request **unsent**. The UI tells the attendee to press Enter. Switching builds
-requires stopping the current agent, with an inline explanation that written
-files remain and the conversation ends.
+Each build keeps its own files and goal. Continuing a build opens the selected
+harness in that directory. A new build keeps its scaffold target absent. Changing
+a goal saves it and types a request **unsent** when an agent is open; the attendee
+is told to press Enter. Switching builds explains that stopping the current
+agent keeps files but ends its conversation. Direct harness setup remains usable.
 
-Selection is stored in the attendee home. `.workshop/project.json` travels with
-source and is committed by project setup so isolated workers and recovered
-projects retain context. The latest source context takes precedence over an older
-home cache. Project instructions tell agents to preserve existing frameworks,
-read the README brief and PRODUCT/DESIGN notes, and keep these notes current when
-the attendee changes direction. Named Omnigent launches resume only a matching
-project conversation, rather than the latest conversation for another build.
+Selection lives in the attendee home. Committed `.workshop/project.json` travels
+with source so recovered projects and isolated workers retain the current goal.
+Source context takes precedence over an older home cache. Agents preserve the
+existing framework and read/update the README brief and PRODUCT/DESIGN notes.
+Named Omnigent launches resume only a matching project conversation.
 
-**Check saved builds** uses the existing Workspace-sync location under the
-attendee's Workspace home. **Recover source** downloads into a new local folder,
-refreshes workshop-managed policy/skills, and preserves custom assets. It never
-overwrites a local build. Recovery restores the synced source copy, which may
-exclude recent edits; it does not restore the original Git history or native
-conversation. Builds known to have existed are not silently scaffolded again
-when their local source is missing. Export the take-home ZIP before event teardown.
+**Check saved builds** uses the attendee's normal Workspace-sync location.
+**Recover source** downloads into a fresh local directory, refreshes managed
+policy/skills and preserves custom assets. It refuses to overwrite local work.
+Recovery restores the synced source copy, which may exclude unsaved edits; it
+does not restore the original Git history or native conversation. An earlier
+missing build is never silently scaffolded again. Export before event teardown.
 
-Local validation on 11 October includes real project/session APIs with harmless
-shells and rendered WT desktop/phone journeys: select A, edit its goal, create B
-separately, return to A, switch harness and reload. The tests check the shell's
-actual directory, preserved source and goal, unsent prompt delivery, and usable
-content width. Existing wizard rendered checks pass alongside this journey.
-Recovery tests check exact source/context preservation, current setup, canonical
-Workspace paths, missing credentials, failed downloads and refusal to overwrite.
-These are local regression checks, not live model/app-build qualification.
+Local API and rendered desktop/phone checks exercise A→change A→B→A, actual shell
+launch directories, unsent request delivery, harness switches and reconnect.
+Recovery regressions cover exact source/context, canonical paths, failed
+downloads, credential preparation and refusal to overwrite local work. Existing
+wizard rendered checks run alongside project journeys in CI.
 
-Live preparation caught a save-hook defect: Codex's shorter symlinked home did
-not match Git's physical project path, so a commit could silently skip Workspace
-sync. The hook now resolves the projects directory before comparing it. A real
-commit regression failed with the old hook and passes with the fix; 97 focused
-content/project/session checks pass. The take-home ZIP was independently verified
-before runtime replacement. The corrected package still needs live sync/recovery
-qualification.
+The live Claude Opus 5.5 build created an APX lending library after exploring the
+prepared data and disclosing its sample books/members. Initial startup failed on
+Lakebase's shared `public` schema. The agent repaired its own schema after the
+operator supplied the error log; this remains an assisted first-startup limit.
+Browser borrow/return/reload and 390px controls passed. Change goal requested
+title/author search and 21-day new loans, retaining earlier loans; the working
+search, new loan and reload were independently exercised.
 
-The existing CI browser job runs both wizard and project journeys. Screenshots,
-transcripts and generated application source remain outside Git. Live recovery
-and warm replacement on the reused CT-compatible Labs WT
-remain acceptance work; no CT code, grants or working deployment have changed.
+Codex 0.162.1 / GPT Sol 6.1 created a separate printable `club-agenda`. Returning
+to the library and opening Codex restored its current goal, framework and saved
+notes without changing its application. A project-only detached worktree carried
+the actual APX, Impeccable and Agent Bricks assets and current context. That probe
+establishes asset delivery, not a worker model run.
 
-The live Claude Opus 5.5 journey built a lending library with onboarding disabled.
-After the operator supplied the Lakebase startup error and the agent repaired
-its schema initialization, the attendee browser borrowed and returned a
-book and verified persistence after reload. **Change goal** inserted an unsent
-request; the agent added title/author search and a 21-day period for new loans,
-preserving existing loans. Those changes worked in the browser, and the initial
-preview's phone controls were usable. A temporary isolated Git worktree retained
-the current goal/brief and readable Impeccable, APX and Agent Bricks skill assets
-and references. This establishes asset delivery, not an observed worker model run.
+Live qualification exposed and fixed four continuity gaps:
 
-Codex 0.162.1 with GPT Sol 6.1 created and committed a separate printable
-`club-agenda` build. Independent readback of the two-build ZIP verified the agenda
-and byte-for-byte preservation of all 64 library files. Returning to the library,
-reloading WT and opening Codex restored the correct directory and current 21-day
-goal, APX framework and search behavior from its saved notes. Codex performed that
-continuation without changing files or deploying. Its custom-model metadata
-warning was non-blocking; the model completed both tasks. Its commit also
-reproduced the known home-alias sync skip on the older deployed runtime.
+- The WT-owned simulator had `CAN_EDIT` on the attendee projects folder, while
+  current CT provisions scoped `CAN_MANAGE`. The owner explicitly approved the
+  isolated WT correction. Independent ACL readback preserved every unrelated
+  entry. No CT code, configuration or working deployment changed.
+- Codex's symlinked HOME missed Git's physical project path. The hook now compares
+  physical paths. Native command cleanup could also kill its background save
+  before the result was recorded. The complete worker now starts its own session;
+  a real commit/process-group regression failed before the fix and passes after it.
+- Export omitted portable project goals and included APX `.build`/`__dist__`
+  products. It now includes only `.workshop/project.json` from runtime state and
+  excludes generated output. Linked context files/directories are rejected.
+- Recovery appended blank README prompts after an already completed brief.
+  Preparation now retains that README exactly; the recovery regression verifies it.
 
-The save failure was a simulator mismatch: it used `CAN_EDIT`, whereas current
-CT grants `CAN_MANAGE` on the attendee's `projects` subdirectory. The CLI's leading
-error confirms directory creation requires Manage. The WT-owned runner and its
-readback regression now match CT; correcting the already-provisioned isolated
-test folder is awaiting explicit approval. CT remains untouched. Independent ZIP
-inspection also caught the new portable goal being omitted and APX `.build` and
-`__dist__` output being included. Export now carries only `.workshop/project.json`
-from that runtime directory and excludes those generated folders, including
-regressions that reject linked context files/directories. The corrected export
-still needs live readback on the updated runtime.
+The qualified runtime is `59244b180b2f89445a6909286cb3c4723b5f4158`, PEX SHA-256
+`0e3cfa67975199fc51f60cf4e6528a7e584a6410d0e5e6cde10b29740be436e6`, deployment
+`01f1c53099bc178e8bc36078fbdcbfec`. All 512 runtime files independently match the
+checkout; the subsequent change only corrected a test wording assertion. Both
+projects were saved, recovered through My builds after warm replacement, and
+reopened with their current goals. A second WT tab updated its inventory when
+recovery completed, removing the stale recovery action. Local regressions also
+verify the backend refuses stale requests without touching existing files.
 
-All nine PR CI jobs pass for candidate `73784f7`. Its PEX SHA-256 is
-`ba9cf1b4bb3ab4143798990cfd10fa82db7939241b521c0f7358956214be0894`, and all
-512 logical runtime files match the committed source. That corrected candidate
-is prepared for the reused WT app; it has not replaced the active `41e24ab`
-runtime yet. Source save/recovery, corrected export readback and warm replacement
-remain live acceptance work before merging #98.
+On that deployed runtime, native Codex committed only `RECOVERY_HOOK_CHECK.md`.
+The shipped hook recorded a fresh `exit=0`; independent operator download verified
+its exact content in Workspace. No direct sync or hook modification was used for
+this acceptance commit. Both builds were then exported using `workshop-export`.
+Independent downloads matched all 56 source/context/check files across Workspace
+and ZIP, preserved both current goals and all original application code, and
+confirmed generated output was excluded. The helper printed the assigned Volume
+and Catalog → Volumes → File options → Download file steps.
+
+Readiness after attendee reconnect is HTTP 200, `ready:true`; disabled isolated
+test telemetry remains a soft amber check. Resources, model policy, app identity
+and existing compute were preserved. All nine CI jobs pass at `7cbc433`; the 94
+focused local checks and 11 take-home checks pass. Screenshots, raw receipts, ZIPs
+and generated source stay outside Git. Final latest-toolchain release and the
+separate disposable CT integration remain release work, not R08 acceptance gaps.

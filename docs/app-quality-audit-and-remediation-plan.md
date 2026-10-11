@@ -9,38 +9,29 @@ the audited baseline. Qualify one reused CT-compatible WT deployment; do not
 add fleet runs or mandatory attendee review loops.
 
 Status on 11 October: **R01–R04 are closed; R05's Impeccable delivery is merged;
-R07 is resolved and closed by the owner.** PRs #95, #96 and #97 are merged into
-`main`; all nine CI jobs passed on `53fa4e8`. R08's take-home source ZIP export is
-already delivered in #96. Project continuity is now in draft PR #98.
+R07 is resolved and closed by the owner. R08 live acceptance now passes; R09's
+focused regressions are in CI.** PRs #95, #96 and #97 are merged. PR #98 qualifies
+optional multiple-build controls, current goals, harness handoff, Workspace save,
+warm source recovery and corrected take-home export. All nine CI jobs pass.
 
-The active substantive build is **R08 project continuity**: clear active-project,
-change-goal/new-build and return-to-project flows, harness handoff, reconnect and
-recovery after runtime replacement. R06's small preview/iteration check passed
-with the live library goal change; the first app startup required operator
-error-log assistance. R09 has substantial CI
-coverage in place and needs the regressions for the remaining continuity changes.
-R10 is final qualification of one reused CT-compatible deployment, not a fleet
-campaign. The [final regression and qualification report](final-release-qualification.md)
-maps completed checks and the remaining live work. Completed work and dated
-evidence are reused rather than rerun by default.
+The [R08 report](project-continuity-r08.md) records two recovered builds, a real
+Codex commit through the corrected save hook, and independent Workspace/ZIP
+readback of 56 source/context/check files. The owner-approved isolated projects
+`CAN_MANAGE` grant matches current CT; unrelated ACL entries were preserved.
+No CT code, configuration or working deployment changed. R06's small live
+iteration check passed; the library's first startup needed operator log assistance.
 
-R08 implementation is in progress on `codex/wt-r08-project-continuity`. Its
-[current scope and validation](project-continuity-r08.md) cover optional build
-controls, separate project goals, harness launch directories and safe source
-recovery. Local rendered checks pass; live Labs acceptance and merge are pending.
-The initial deployed candidate passed package/model qualification. Live preparation
-caught and fixed a Codex home-alias save-hook defect. Claude/Codex handoff,
-separate builds, returning to the changed goal and browser reconnect now pass.
-The corrected package also preserves exported portable goals and excludes APX
-build output. All nine candidate PR CI jobs pass. Live save/recovery and warm
-replacement await correction of the test folder's `CAN_EDIT` grant to current
-CT's scoped `CAN_MANAGE`, which automatic approval review requires the owner to
-authorize explicitly. CT code, grants and working deployment remain unchanged.
+The remaining WT scope is **R10 final release qualification on this same reused
+CT-compatible deployment**: current-toolchain refresh, affected live checks and
+one useful analytical APX build with a concise experienced-user iteration.
+The [final regression and qualification report](final-release-qualification.md)
+maps existing coverage and the remaining work. This remains one thorough
+deployment; completed checks are reused and no fleet campaign is added.
 
-After the remaining WT work and single-deployment qualification, publish the
-final WT release, then open the separate CT PR for Agent Bricks CLI/skill enablement
-and WT release selection, defaulting to the latest published stable release.
-CT's working Labs deployment remains unchanged throughout WT remediation.
+Publish the verified immutable WT release, then open the separately requested
+CT PR for Agent Bricks CLI/skill enablement and WT release selection, defaulting
+to the latest published stable release. Qualify one disposable CT→WT integration
+while protecting CT's working Labs deployment.
 
 R01 completed with a failed baseline against
 `440232b953a5050c965838b42a594e1592ee3d33`, the then-current `main` and CT-pinned
@@ -678,8 +669,8 @@ and a dedicated review panel are optional.
 | R05: Context-aware app UX | One upstream Impeccable UX skill via its supported installer; pinned launcher/engine/bundle; project context from goal/users/data; retire studio and competing app-design routes, including warm installs and transitive mandates. Use AppKit/APX for scaffolds/components/APIs, with one small workshop pacing/context integration policy | R02 contract; R04 skill delivery; R03 goal context when present | Frontend engineer + product designer | Scope after delivery audit | Actual harness/worker discovery proves one UX authority; contrasting generated apps suit their users/tasks/data, have useful responsive first previews and working controls. Development/release tests verify results without an attendee design interview, mandatory concept picker or scored review loop |
 | R06: Preview and attendee iteration — checked | Live library preview supplied useful actions and demo limits; borrow/return and reload passed. An attendee goal change added working search and a 21-day period, retaining prior loans. No review suite ran; first startup repair needed operator error-log assistance | R02 contract, R05 design guidance; live R08 journey | Agent-experience engineer | Completed small follow-up | An attendee receives the URL after normal checks, can explore and request a change, and gets a useful repair without waiting for a review suite. Development/release tests own deeper functional, UX and fault coverage |
 | R07: Focused framework comparison and selected default — closed | Owner selected official APX + Impeccable on 11 October after the four same-prompt builds. Compatible CLI, official skill, MCP and project helper are merged in #97; explicit framework choices and existing projects are preserved | R04/R05 delivery and real previews | Tech lead | Completed | Selected app's live actions/reload, actual Ubuntu 22.04 install/MCP/scaffold/build, and native harness policy/tool delivery passed. All nine final main CI jobs passed; owner closed R07. No shared visual shell or expanded comparison campaign |
-| R08: Project continuity/handoff | Offered harness/worker delivery; existing brief/managed-section updates; switch/reconnect/worktree cases; visible active project, change-goal/new-build actions and return to earlier projects; recovery of workspace-backed projects after runtime replacement; simple source ZIP export to the CT-assigned attendee catalog/schema, replacing promote | R03/R04; reuse R05/R06 builds | Harness engineer | 2-3 | Build A, change A, build B separately, then return to A with correct context/files; switching, reconnect and onboarding-off work; a worker reads the actual skill assets; exported ZIP contains current project source and has clear Volume download steps; local runtime resets do not silently strand an earlier workspace-backed build |
-| R09: Focused regression coverage | Add regressions for changed delivery, skill precedence, wizard skip/off and project continuity to existing CI; a compact live-build release report; evidence outside Git. No new telemetry/acceptance service | R04/R05/R08 changes | Platform engineer | Scope after first UX trial | CI catches representative regressions; a few contrasting live previews demonstrate task fit, working controls and narrow-screen usability; observed checks reported accurately |
+| R08: Project continuity/handoff — accepted | Offered harness/worker delivery; existing brief/managed-section updates; switch/reconnect/worktree cases; visible active project, change-goal/new-build actions and return to earlier projects; recovery of workspace-backed projects after runtime replacement; simple source ZIP export to the CT-assigned attendee catalog/schema, replacing promote | R03/R04; reuse R05/R06 builds | Harness engineer | 2-3 | Build A, change A, build B separately, then return to A with correct context/files; switching, reconnect and onboarding-off work; a worker reads the actual skill assets; exported ZIP contains current project source and has clear Volume download steps; local runtime resets do not silently strand an earlier workspace-backed build |
+| R09: Focused regression coverage — in CI | Add regressions for changed delivery, skill precedence, wizard skip/off and project continuity to existing CI; a compact live-build release report; evidence outside Git. No new telemetry/acceptance service | R04/R05/R08 changes | Platform engineer | Scope after first UX trial | CI catches representative regressions; a few contrasting live previews demonstrate task fit, working controls and narrow-screen usability; observed checks reported accurately |
 | R10: Single-deployment event qualification | Thoroughly test one immutable WT candidate on the reused isolated Labs deployment: attendee auth/permissions, offered harnesses, actual builds, UX, saved state, multiple projects, reconnect, restart, warm redeploy and recoverable failures; fallback/rollback instructions. No fleet/load campaign | Assembled remaining work | Workshop operator + tech lead | Reuse existing checks and deployment | One deployment works through the intended event journey and recovery cases; local operational CI passes; tool/release identity and observed outcomes recorded; ready to publish the final WT release |
 
 Suggested milestones:
