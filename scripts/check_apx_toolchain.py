@@ -63,9 +63,9 @@ def mcp_tools(prefix: Path, project: Path, env: dict, *, inspect_routes: bool = 
             if inspect_routes:
                 route = next(tool for tool in result['tools'] if tool['name'] == 'routes')
                 properties = route['inputSchema']['properties']
-                key = next(name for name in properties if name in ('project_path', 'projectPath'))
+                assert 'app_path' in properties, properties
                 observed = request({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {
-                    "name": "routes", "arguments": {key: str(project)}}})
+                    "name": "routes", "arguments": {'app_path': str(project)}}})
                 assert not observed.get('isError'), observed
                 assert '/api/version' in json.dumps(observed), observed
             return {item["name"] for item in result["tools"]}
