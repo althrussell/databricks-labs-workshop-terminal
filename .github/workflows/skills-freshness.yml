@@ -33,6 +33,8 @@ jobs:
       # reviewed digest, then diffs it against assets/skills.
       - name: Check vendored fallback
         run: uv run --frozen --no-group release python scripts/refresh_vendored_skills.py --check
+      - name: Check official APX skill
+        run: uv run --frozen --no-group release python scripts/refresh_apx.py --check
       - name: Check offline provenance guards
         run: uv run --frozen --no-group release python -m pytest tests/test_skills_provenance.py -q
 

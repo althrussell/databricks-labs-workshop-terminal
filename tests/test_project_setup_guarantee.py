@@ -71,9 +71,9 @@ def test_no_surface_still_tells_an_agent_to_scaffold_by_hand(path):
 def test_every_surface_points_at_the_helper_instead(path):
     body = _read(path)
     assert "workshop-init-project" in body
-    assert "--appkit" in body, (
+    assert "--apx" in body, (
         f"{path.name} names the helper but not the flag that does the scaffold, "
-        "which leaves the agent to reach for `databricks apps init` itself"
+        "which leaves the agent to scaffold outside the memory-preserving helper"
     )
 
 

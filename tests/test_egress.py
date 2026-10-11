@@ -20,9 +20,9 @@ def test_public_mcp_off_by_default(monkeypatch, tmp_path):
     user.bootstrap_home()
     user_content._write_claude_json(user)
     cfg = _claude_json(user)
-    # No external MCP egress by default.
-    assert set(cfg["mcpServers"]) == {"workshop"}
-    assert cfg["mcpServers"]["workshop"]["type"] == "stdio"
+    # Only local stdio servers are registered by default.
+    assert set(cfg["mcpServers"]) == {"workshop", "apx"}
+    assert all(server["type"] == "stdio" for server in cfg["mcpServers"].values())
     assert cfg["hasCompletedOnboarding"] is True
 
 
@@ -34,7 +34,7 @@ def test_public_mcp_opt_in_enables_servers(monkeypatch, tmp_path):
     user.bootstrap_home()
     user_content._write_claude_json(user)
     cfg = _claude_json(user)
-    assert set(cfg["mcpServers"]) == {"workshop", "deepwiki", "exa"}
+    assert set(cfg["mcpServers"]) == {"workshop", "apx", "deepwiki", "exa"}
 
 
 def test_skills_ref_is_pinnable(monkeypatch):

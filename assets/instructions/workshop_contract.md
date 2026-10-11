@@ -63,7 +63,10 @@ platform API, identity, permissions, and deployment rules still apply.
   If they ask what to try first, name the first useful action in plain language
   while framing the build (for example, “try marking the top order packed”).
 
-AppKit remains the app default. For a plain read-only dashboard, recommend
+Use official APX (React + FastAPI) by default for a new custom Databricks App,
+using the `apx` skill and `workshop-init-project <name> --apx`. Keep an existing
+project's framework and honor explicit framework requests; AppKit remains
+available through `databricks-apps` and `--appkit`. For a plain read-only dashboard, recommend
 managed AI/BI with a brief reason; build an app when interaction is the point.
 An explicit request for an app is sufficient. Do not turn this into a routine
 framework decision for the attendee.
@@ -81,7 +84,7 @@ framework, branding or visual request. The platform does not prescribe the
 app's brand, shell, palette, heading size, sidebar or KPI row.
 
 When importing framework styles, keep custom product colors in scoped,
-distinctively named tokens (for example, `--repair-surface`). AppKit owns generic
+distinctively named tokens (for example, `--repair-surface`). Frameworks own generic
 tokens such as `--card`, `--background` and `--foreground`, including its theme
 overrides. Either use that theme consistently or keep the product's surface/text
 pair independent of it; do not mix dark framework surfaces with light-theme text.

@@ -40,6 +40,7 @@ sys.path.insert(0, REPO_ROOT)
 
 from server.bootstrap import install  # noqa: E402
 from server.bootstrap import impeccable  # noqa: E402
+from server.bootstrap import apx  # noqa: E402
 from server.bootstrap.skill_projection import project_skills  # noqa: E402
 from server.bootstrap.artifacts import DEFAULT_MANIFEST_PATH, directory_checksum  # noqa: E402
 
@@ -276,6 +277,7 @@ def build() -> dict:
         "agentbricks_lock": _lock_entry("agentbricks", install.AGENTBRICKS_VERSION),
         "databricks_agent_skills": _skills_entry(),
         **_impeccable_entries(npm),
+        **_apx_entries(),
     }
 
     # Vendored scripts: checksum what is committed rather than the live URL,
@@ -375,6 +377,43 @@ def _skills_entry() -> dict:
             "content_sha256": raw_checksum,
             "effective_content_sha256": directory_checksum(upstream, effective_names),
         }
+
+
+def _apx_entries() -> dict:
+    wheel_url = ("https://github.com/databricks-solutions/apx/releases/download/"
+                 f"v{apx.VERSION}/apx-{apx.VERSION}-py3-none-manylinux_2_28_x86_64.whl")
+    wheel_sha, wheel = _download_sha256(wheel_url)
+    try:
+        with zipfile.ZipFile(wheel) as archive:
+            native_sha = hashlib.sha256(archive.read(f"apx-{apx.VERSION}.data/scripts/apx")).hexdigest()
+    finally:
+        os.unlink(wheel)
+    bun_url = f"https://github.com/oven-sh/bun/releases/download/bun-v{apx.BUN_VERSION}/"
+    bun_sha = _checksum_from_sums(_fetch_text(bun_url + "SHASUMS256.txt"), "bun-linux-x64.zip")
+    actual_sha, bun = _download_sha256(bun_url + "bun-linux-x64.zip")
+    try:
+        if bun_sha != actual_sha:
+            raise SystemExit("Bun archive differs from its published checksum")
+        with zipfile.ZipFile(bun) as archive:
+            bun_native_sha = hashlib.sha256(archive.read("bun-linux-x64/bun")).hexdigest()
+    finally:
+        os.unlink(bun)
+    return {
+        "apx_wheel_linux_x64": {"version": apx.VERSION, "source": wheel_url,
+                               "sha256": wheel_sha, "executable_sha256": native_sha,
+                               **_apx_skill_entry()},
+        "bun_linux_x64": {"version": apx.BUN_VERSION, "source": bun_url + "bun-linux-x64.zip",
+                          "sha256": bun_sha, "executable_sha256": bun_native_sha},
+    }
+
+
+def _apx_skill_entry() -> dict:
+    from refresh_apx import fetch_skill
+
+    with tempfile.TemporaryDirectory(prefix="manifest-apx-skills-") as temporary:
+        root = __import__("pathlib").Path(temporary) / "apx"
+        fetch_skill(root)
+        return {"skill_commit": apx.SOURCE_COMMIT, "skill_content_sha256": directory_checksum(root)}
 
 
 def _impeccable_entries(npm: str) -> dict:

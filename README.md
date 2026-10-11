@@ -6,6 +6,13 @@ terminals** with their Databricks credentials wired up automatically — plus a
 steerable right-hand pane of curated Databricks insights that operators drive
 live during the workshop.
 
+New custom apps use official [APX](https://github.com/databricks-solutions/apx)
+(React + FastAPI) with upstream Impeccable as the single UX skill. WT installs
+the reviewed CLI, Bun and uv, supplies current framework skills to every harness,
+and preserves the workshop brief in each project. Designs adapt to the attendee's
+users, task and data. Existing frameworks and explicit requests are respected;
+Streamlit requires an explicit request. See [the stack decision](docs/ux-stack-comparison-r07.md).
+
 Built to be deployed (and torn down) as workshop infrastructure by
 [databricks-labs-control-tower](https://github.com/althrussell/databricks-labs-control-tower).
 

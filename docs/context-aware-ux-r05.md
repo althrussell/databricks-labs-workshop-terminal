@@ -1,7 +1,8 @@
 # R05: context-aware app UX
 
 R05 replaces competing workshop design instructions with upstream Impeccable.
-AppKit remains the default implementation; explicit framework and visual
+R05 was qualified with AppKit as the default implementation; R07 subsequently
+selects APX + Impeccable. Explicit framework and visual
 requests are honored. The goal, audience, primary task and available data guide
 each app's UX rather than a shared shell or palette.
 Streamlit requires an explicit attendee request, including after a scaffold or

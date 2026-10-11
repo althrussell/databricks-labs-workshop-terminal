@@ -30,11 +30,11 @@
       "version": "0.162.1"
     },
     "databricks_agent_skills": {
+      "version": "v0.2.28",
+      "source": "https://github.com/databricks/databricks-agent-skills.git",
       "commit": "ba45d10df7413de14c32937bbd584aeee17d22a2",
       "content_sha256": "0ddf4467590698fd17b98ef7035ad4bee90e2a082a34467489e48c53da10d98a",
-      "effective_content_sha256": "3ad1b49a7d4bdf684371f260fbe6e9ac0eea54674013be04fb1e6f00d0956f91",
-      "source": "https://github.com/databricks/databricks-agent-skills.git",
-      "version": "v0.2.28"
+      "effective_content_sha256": "904a3f8165b4c2a8a9c194d50948b790c892728f32e074d7dcde35279eaa3f2c"
     },
     "databricks_cli_archive_linux_x64": {
       "sha256": "dff217c237c4e53b2b2427ee131cfe5bace3178ed156cd98860d56feb13ce02f",
@@ -97,6 +97,20 @@
       "sha256": "b4dfaef47d491a7296981f8374a4595f55dbf84e8937c8ecd2983574d8bb3da6",
       "source": "https://github.com/astral-sh/uv/releases/download/0.12.24/uv-x86_64-unknown-linux-gnu.tar.gz",
       "version": "0.12.24"
+    },
+    "apx_wheel_linux_x64": {
+      "version": "0.3.8",
+      "source": "https://github.com/databricks-solutions/apx/releases/download/v0.3.8/apx-0.3.8-py3-none-manylinux_2_28_x86_64.whl",
+      "sha256": "46fc3ed450c7ea98392db98fdfb4b23e26ba9fea086b1f5bbbd1e1f1e377ba8a",
+      "executable_sha256": "855384a9dd12faaf3f92390e1b91f2837ec76fe0e3908b697fc5239f1ca3c5e4",
+      "skill_commit": "50073e561a689ae5292f82e69ae0505417d75d3e",
+      "skill_content_sha256": "ab805f9561597b8a93d705aa743197b08a65a3e8f1e647349bdd162f706e4871"
+    },
+    "bun_linux_x64": {
+      "version": "1.3.8",
+      "source": "https://github.com/oven-sh/bun/releases/download/bun-v1.3.8/bun-linux-x64.zip",
+      "sha256": "0322b17f0722da76a64298aad498225aedcbf6df1008a1dee45e16ecb226a3f1",
+      "executable_sha256": "0bb81ea882bce5946a1fc0d26d61880276d81fe22714714b5a2b792bdff8ea7a"
     }
   },
   "reviewed": true,

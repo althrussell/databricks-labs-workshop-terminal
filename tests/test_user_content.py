@@ -11,16 +11,17 @@ import pytest
 
 from .conftest import ALICE
 
-# Canonical AppKit mandate sentence — must appear verbatim in every memory
+# Canonical default-stack sentence — must appear verbatim in every memory
 # channel an agent/harness can read (home CLAUDE.md + AGENTS.md, and the
 # committed project-level CLAUDE.md + AGENTS.md). The single-source assertion
 # fails loud if a skills refresh or instruction edit ever drops it.
-APPKIT_DEFAULT = "AppKit (Node.js + TypeScript + React) is the default"
+APX_DEFAULT = "Official APX (React + FastAPI) is the default"
 
 # Skill names the mandate must use, and names it must never use. A mandate that
 # points an agent at a skill that no longer exists is worse than no mandate: the
 # agent finds nothing and silently improvises a Python framework instead.
 CANONICAL_APP_SKILLS = (
+    "apx",
     "databricks-apps",
     "impeccable",
 )
@@ -77,14 +78,14 @@ def test_instructions_written_with_coach(client, monkeypatch):
     assert "workshop-lab-coach" in agents_md
 
 
-def test_appkit_mandate_in_home_memory(client, monkeypatch):
+def test_apx_default_in_home_memory(client, monkeypatch):
     # The mandate must reach Claude (CLAUDE.md) and Codex (AGENTS.md) at the
     # home/global scope.
     home = _provisioned_home(client, monkeypatch)
     claude_md = open(os.path.join(home, ".claude", "CLAUDE.md")).read()
     agents_md = open(os.path.join(home, ".codex", "AGENTS.md")).read()
-    assert APPKIT_DEFAULT in claude_md
-    assert APPKIT_DEFAULT in agents_md
+    assert APX_DEFAULT in claude_md
+    assert APX_DEFAULT in agents_md
 
 
 def test_mandate_names_canonical_app_skills_and_no_retired_ones(client, monkeypatch):
@@ -120,7 +121,7 @@ def test_memory_distinguishes_preview_from_verified_task(client, monkeypatch):
     home = _provisioned_home(client, monkeypatch)
     for parts in _MEMORY_CHANNELS:
         text = open(os.path.join(home, *parts)).read()
-        assert "tsc --noEmit" in text
+        assert "apx dev check" in text
         assert "first preview" in text
         assert "exercise the primary action" in text
         assert "reload if saving is promised" in text
@@ -172,7 +173,7 @@ def test_project_helper_installed(client, monkeypatch):
     assert os.access(helper, os.X_OK)
 
     template = os.path.join(home, ".config", "workshop", "project-memory.md")
-    assert APPKIT_DEFAULT in open(template).read()
+    assert APX_DEFAULT in open(template).read()
 
 
 def test_custom_agent_skill_is_available_to_both_harnesses(client, monkeypatch):
@@ -182,7 +183,7 @@ def test_custom_agent_skill_is_available_to_both_harnesses(client, monkeypatch):
         assert skill.is_file()
 
 
-def test_project_helper_commits_appkit_memory(client, monkeypatch, tmp_path):
+def test_project_helper_commits_default_stack_memory(client, monkeypatch, tmp_path):
     """Running the helper must produce a project whose CLAUDE.md and AGENTS.md
     are committed (so they propagate into Omnigent's git worktrees) and carry
     the mandate."""
@@ -212,8 +213,8 @@ def test_project_helper_commits_appkit_memory(client, monkeypatch, tmp_path):
     )
     assert out.returncode == 0, out.stderr
     project = fake_home / "projects" / "my-app"
-    assert APPKIT_DEFAULT in (project / "CLAUDE.md").read_text()
-    assert APPKIT_DEFAULT in (project / "AGENTS.md").read_text()
+    assert APX_DEFAULT in (project / "CLAUDE.md").read_text()
+    assert APX_DEFAULT in (project / "AGENTS.md").read_text()
 
     # Both files must be committed (tracked) — untracked files do not propagate
     # into the worktrees Omnigent's sub-agents run in.
@@ -322,7 +323,7 @@ def test_the_helper_adopts_a_directory_a_scaffold_already_wrote(
     assert (scaffolded / "client" / "main.tsx").is_file(), "scaffold must survive"
 
     claude = (scaffolded / "CLAUDE.md").read_text()
-    assert APPKIT_DEFAULT in claude, "the workshop rules must be present"
+    assert APX_DEFAULT in claude, "the workshop rules must be present"
     assert "Use AppKit conventions." in claude, (
         "the scaffold's own notes are kept, not destroyed — losing them is what "
         "made the live near-miss worth repairing by hand"
@@ -349,7 +350,7 @@ def test_seeding_an_adopted_project_twice_does_not_duplicate_it(
         assert out.returncode == 0, out.stderr
 
     project = fake_home / "projects" / "twice"
-    assert (project / "CLAUDE.md").read_text().count(APPKIT_DEFAULT) == 1
+    assert (project / "CLAUDE.md").read_text().count(APX_DEFAULT) == 1
     assert (project / "README.md").read_text().count("Live URL") == 1
 
 
@@ -378,7 +379,7 @@ def test_a_failed_appkit_scaffold_still_leaves_a_usable_project(
     assert out.returncode == 0, out.stderr
     project = fake_home / "projects" / "unlucky"
     assert (project / "CLAUDE.md").is_file()
-    assert APPKIT_DEFAULT in (project / "CLAUDE.md").read_text()
+    assert APX_DEFAULT in (project / "CLAUDE.md").read_text()
     assert out.stdout == str(project) + "\n"
     assert "boom" in out.stderr
 
@@ -827,14 +828,14 @@ def test_claude_json_mcp_off_by_default(client, monkeypatch):
     home = _provisioned_home(client, monkeypatch)
     data = json.load(open(os.path.join(home, ".claude.json")))
     assert data["hasCompletedOnboarding"] is True
-    assert set(data["mcpServers"]) == {"workshop"}
+    assert set(data["mcpServers"]) == {"workshop", "apx"}
 
 
 def test_claude_json_mcp_opt_in(client, monkeypatch):
     monkeypatch.setenv("ENABLE_PUBLIC_MCP", "true")
     home = _provisioned_home(client, monkeypatch)
     data = json.load(open(os.path.join(home, ".claude.json")))
-    assert set(data["mcpServers"]) == {"workshop", "deepwiki", "exa"}
+    assert set(data["mcpServers"]) == {"workshop", "apx", "deepwiki", "exa"}
 
 
 def test_launch_never_injects_prompts(monkeypatch):

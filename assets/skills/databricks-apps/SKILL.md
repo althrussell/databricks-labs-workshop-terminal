@@ -1,11 +1,23 @@
 ---
 name: databricks-apps
-description: "Build apps on Databricks Apps platform. Use when asked to create data apps, analytics tools, or custom interactive visualizations. A plain \"create a dashboard\" request means a managed AI/BI (Lakeview) dashboard → use databricks-aibi-dashboards, not this skill. Evaluates data access patterns (analytics vs Lakebase synced tables) before scaffolding. Invoke BEFORE starting implementation."
+description: "Build apps on Databricks Apps platform. Use when asked to create data apps, analytics tools, or custom interactive visualizations. A plain \"create a dashboard\" request means a managed AI/BI (Lakeview) dashboard → use databricks-aibi-dashboards, not this skill. New custom apps default to the apx skill (React + FastAPI). This skill covers platform rules, explicit AppKit requests and existing AppKit projects."
 compatibility: Requires databricks CLI (>= v0.294.0)
 metadata:
   version: "0.1.3"
 parent: databricks-core
 ---
+
+<!-- workshop-app-stack:v1 -->
+## Workshop app framework
+
+For a new custom Databricks App, default to official APX (React + FastAPI):
+read `apx` and scaffold with `workshop-init-project <name> --apx`.
+Use `impeccable` as the single UX authority. The AppKit-specific scaffold,
+plugins, data gates and validation below apply only to an explicit AppKit
+request or an existing AppKit project. Keep the chosen framework when fixing
+setup failures. Never choose Streamlit unless explicitly requested.
+The shared platform permissions and resource rules apply to every framework.
+<!-- /workshop-app-stack -->
 
 # Databricks Apps Development
 
@@ -147,7 +159,7 @@ After completing the decision gate above, use this routing table:
 
 ## Frameworks
 
-### AppKit (Recommended)
+### AppKit (explicit requests or existing projects)
 
 TypeScript/React framework with type-safe SQL queries and built-in components.
 

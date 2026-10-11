@@ -117,10 +117,11 @@ class _SyntheticArtifactContract:
 def restore_installer_state(monkeypatch, tmp_path):
     contract = _SyntheticArtifactContract(tmp_path / "artifacts")
     contract.root.mkdir()
-    from server.bootstrap import impeccable
+    from server.bootstrap import impeccable, apx
     # These cases test Databricks overlay/provenance; the real installer has its
     # own behavioral tests and network smoke in refresh_impeccable.py.
     monkeypatch.setattr(impeccable, "install_skill", lambda *args, **kwargs: None)
+    monkeypatch.setattr(apx, "prewarm_status", lambda: {"apx": {"reusable": True}})
     monkeypatch.setattr(install, "_artifact_contract", lambda: contract)
     monkeypatch.setattr(
         install,

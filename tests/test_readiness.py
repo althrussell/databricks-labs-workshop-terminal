@@ -79,6 +79,7 @@ def _good_inputs(tmp_path):
                 "databricks": "1.8.0",
                 "node": "24.20.0",
                 "omnigent": "0.9.0",
+                "apx": "0.3.8", "bun": "1.3.8", "uv": "0.12.24",
             }.items()
         }
         | {
@@ -849,7 +850,7 @@ def test_enabled_agentbricks_requires_installed_cli_and_uv(tmp_path):
     _, _, installer, _, _, _ = _good_inputs(tmp_path)
     enabled_env = lambda env: env.update({"AGENTBRICKS_ENABLED": "true", "AGENTBRICKS_VERSION": "0.4.0"})
     missing = _evaluate(tmp_path, installer=installer, mutate_env=enabled_env)
-    assert {"agentbricks", "uv"} <= set(missing["checks"]["release_pins"]["mismatched"])
+    assert {"agentbricks"} <= set(missing["checks"]["release_pins"]["mismatched"])
     for name, version in (("agentbricks", "0.4.0"), ("uv", "0.12.24")):
         installer["release_manifest"][name] = {
             "enabled": True, "expected": version, "actual": version, "match": True,

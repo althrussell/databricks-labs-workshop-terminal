@@ -23,6 +23,7 @@ REQUIRED = (
     "impeccable_npm_launcher",
     "impeccable_engine_linux_x64",
     "impeccable_skill_bundle",
+    "apx_wheel_linux_x64", "bun_linux_x64",
 )
 
 
@@ -71,6 +72,7 @@ def test_standalone_boot_reaches_every_step_without_a_manifest_path(monkeypatch)
         ("codex", "_install_codex"),
         ("databricks", "_install_databricks_cli"),
         ("skills", "_install_skills"),
+        ("apx", "_install_apx"),
         ("tmux", "_install_tmux"),
         ("omnigent", "_install_omnigent"),
     ):
