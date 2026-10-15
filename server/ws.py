@@ -19,6 +19,7 @@ import time
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from .auth import get_ws_user
+from .capture_journal import CaptureError
 from .events import event_hub
 from .operational import metrics as operational_metrics
 from .sessions import session_manager
@@ -61,8 +62,13 @@ async def session_socket(websocket: WebSocket, session_id: str):
         await websocket.close(code=4404)
         return
 
-    user = user_manager.get(principal.name)
-    user.last_seen = time.time()
+    try:
+        user = user_manager.get(principal.name)
+        user.last_seen = time.time()
+        user_manager.checkpoint(user)
+    except CaptureError:
+        await websocket.close(code=4413, reason="workshop capture is held")
+        return
 
     replay, queue, exited = session_manager.attach_with_replay(session)
     operational_metrics.websocket_attached()
@@ -122,10 +128,15 @@ async def events_socket(websocket: WebSocket):
     principal = await get_ws_user(websocket)
     if principal is None:
         return  # get_ws_user already closed 4403
-    user = user_manager.get(principal.name)
-    if not user.first_seen:
-        user.first_seen = time.time()
-    user.last_seen = time.time()
+    try:
+        user = user_manager.get(principal.name)
+        if not user.first_seen:
+            user.first_seen = time.time()
+        user.last_seen = time.time()
+        user_manager.checkpoint(user)
+    except CaptureError:
+        await websocket.close(code=4413, reason="workshop capture is held")
+        return
 
     queue = event_hub.subscribe()
     operational_metrics.websocket_attached()

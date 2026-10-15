@@ -36,6 +36,7 @@ durable store.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
@@ -45,6 +46,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from . import config
+from .capture_journal import CaptureCapacityError, CaptureHeldError
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +62,7 @@ MAX_NAME_CHARS = 60
 MAX_OBSERVATIONS = 20
 
 _lock = threading.Lock()
+_capture_emitter = None
 
 
 def _now() -> str:
@@ -92,8 +95,8 @@ def names_path(home: str) -> str:
     return os.path.join(home, _NAMES_RELATIVE)
 
 
-def read(home: str) -> list[NameObservation]:
-    """Every name observed for this attendee, oldest first. Never raises."""
+def _read_local(home: str, *, strict: bool = False) -> list[NameObservation]:
+    """Read the standalone/local mirror; retained capture is authoritative."""
     try:
         with open(names_path(home), encoding="utf-8") as fh:
             raw = json.load(fh)
@@ -101,17 +104,41 @@ def read(home: str) -> list[NameObservation]:
         return []
     except Exception as exc:  # noqa: BLE001 — an unreadable file must not 500
         logger.warning("attendee names unreadable at %s: %s", names_path(home), exc)
+        if strict:
+            raise CaptureHeldError("legacy attendee names cannot be read") from exc
         return []
     if not isinstance(raw, list):
+        if strict:
+            raise CaptureHeldError("legacy attendee names are not a list")
         return []
+    if strict and len(raw) > MAX_OBSERVATIONS:
+        raise CaptureHeldError(
+            "legacy attendee names exceed the supported observation limit"
+        )
+    seen: set[tuple[str, str]] = set()
     out: list[NameObservation] = []
     for item in raw:
         if not isinstance(item, dict):
+            if strict:
+                raise CaptureHeldError("legacy attendee name observation is invalid")
             continue
+        if strict and (
+            set(item) != {"name", "source", "captured_at"}
+            or not all(isinstance(item.get(field), str) for field in item)
+            or not item["name"]
+            or clean_name(item["name"]) != item["name"]
+            or item["source"] not in KNOWN_SOURCES
+            or not item["captured_at"]
+        ):
+            raise CaptureHeldError("legacy attendee name observation is invalid")
         name = clean_name(item.get("name"))
         source = str(item.get("source") or "").strip()[:32]
         if not name or not source:
             continue
+        identity = (name.lower(), source)
+        if strict and identity in seen:
+            raise CaptureHeldError("legacy attendee name observations are duplicated")
+        seen.add(identity)
         out.append(
             NameObservation(
                 name=name,
@@ -120,6 +147,114 @@ def read(home: str) -> list[NameObservation]:
             )
         )
     return out
+
+
+def _retained_names(state: dict, journal) -> dict:
+    try:
+        entries = state.get("attendee_names", {})
+        if not isinstance(entries, dict):
+            raise CaptureHeldError("retained attendee names are invalid")
+        for email, entry in entries.items():
+            if (
+                not isinstance(email, str)
+                or not email
+                or not isinstance(entry, dict)
+                or set(entry) != {"observations", "revision"}
+                or type(entry["revision"]) is not int
+                or entry["revision"] < 1
+                or not isinstance(entry["observations"], list)
+                or entry["revision"] != len(entry["observations"])
+                or len(entry["observations"]) > MAX_OBSERVATIONS
+            ):
+                raise CaptureHeldError("retained attendee name revision is invalid")
+            seen = set()
+            for observation in entry["observations"]:
+                if (
+                    not isinstance(observation, dict)
+                    or set(observation) != {"name", "source", "captured_at"}
+                    or not isinstance(observation["name"], str)
+                    or clean_name(observation["name"]) != observation["name"]
+                    or not observation["name"]
+                    or not isinstance(observation["source"], str)
+                    or observation["source"] not in KNOWN_SOURCES
+                    or not isinstance(observation["captured_at"], str)
+                    or not observation["captured_at"]
+                ):
+                    raise CaptureHeldError(
+                        "retained attendee name observation is invalid"
+                    )
+                key = (observation["name"].lower(), observation["source"])
+                if key in seen:
+                    raise CaptureHeldError(
+                        "retained attendee name observations are duplicated"
+                    )
+                seen.add(key)
+        return entries
+    except CaptureHeldError as error:
+        journal.mark_held(error)
+        raise
+
+
+def configure_capture(emitter) -> None:
+    """Attach validated name/profile recovery before any attendee request."""
+    global _capture_emitter
+    entries = _retained_names(emitter.journal.read(), emitter.journal)
+    owner = emitter.journal.binding["owner"]
+    if config.insight_capture_enabled() and owner not in entries:
+        from . import attendee
+        from .users import email_slug
+
+        home = os.path.join(config.users_root(), email_slug(owner))
+        try:
+            local = _read_local(home, strict=True)
+        except CaptureHeldError as error:
+            emitter.journal.mark_held(error)
+            raise
+        if local:
+            observed_at = _now()
+            binding_source = attendee.binding_source()
+            observations = [value.to_json() for value in local]
+
+            def import_current(state):
+                current = _retained_names(state, emitter.journal)
+                if owner in current:
+                    return None
+                state.setdefault("attendee_names", {})[owner] = {
+                    "observations": observations,
+                    "revision": len(observations),
+                }
+                # Existing local names establish current output, never proof of
+                # delivery of every earlier envelope on an upgraded deployment.
+                issues = state.setdefault("producer_issues", [])
+                if "legacy_attendee_names_delivery_unverified" not in issues:
+                    issues.append("legacy_attendee_names_delivery_unverified")
+                return {
+                    "attendee": owner,
+                    "binding_source": binding_source,
+                    "names": observations,
+                    "observed_at": observed_at,
+                }, f"identity:{emitter.run_id}:{owner}:{len(observations)}"
+
+            emitter.emit_transaction("attendee.identity", owner, import_current)
+    _capture_emitter = emitter
+
+
+def reset_for_tests() -> None:
+    global _capture_emitter
+    _capture_emitter = None
+
+
+def read(home: str) -> list[NameObservation]:
+    """Every accepted name, including recovery after container replacement."""
+    if _capture_emitter is not None and config.insight_capture_enabled():
+        entries = _retained_names(
+            _capture_emitter.journal.read(), _capture_emitter.journal
+        )
+        owner = _capture_emitter.journal.binding["owner"]
+        entry = entries.get(owner)
+        if entry is not None:
+            return [NameObservation(**value) for value in entry["observations"]]
+    return _read_local(home)
 
 
 def observe(home: str, name: str, source: str) -> list[NameObservation]:
@@ -189,41 +324,80 @@ def payload(email: str, observations: list[NameObservation]) -> dict[str, Any]:
 
 
 def capture(email: str, home: str, name: str, source: str, emitter=None) -> bool:
-    """Observe a name and push the attendee's identity picture to Control Tower.
+    """Commit one name observation and its exact event atomically.
 
-    Storage and emission are one call for the same reason they are in
-    ``discovery.record``: a name held locally but never pushed is lost at
-    teardown, and one pushed but not held cannot be shown back.
-
-    Returns whether anything new was recorded. Emission is skipped when nothing
-    changed, so a re-download of a certificate does not burn an event.
+    Consent-off names stay in the existing local certificate mirror. With
+    consent on, local files are updated only after the retained transaction; a
+    failed append leaves the previous accepted name/profile unchanged.
     """
     if source not in KNOWN_SOURCES:
         logger.warning("refusing unknown name source %r", source)
         return False
-
-    before = read(home)
-    after = observe(home, name, source)
-    if len(after) == len(before):
+    cleaned = clean_name(name)
+    if not cleaned:
         return False
-
     if not config.insight_capture_enabled():
-        # A typed human name is PII the existing contract does not promise. The
-        # local record still helps the attendee's own certificate; nothing
-        # leaves an instance whose event did not opt in.
-        return True
-
+        before = _read_local(home)
+        after = observe(home, cleaned, source)
+        return len(after) > len(before)
     if emitter is None:
-        from .event_emitter import event_emitter as emitter
+        from .event_emitter import event_emitter
 
-    emitter.emit(
-        "attendee.identity",
-        email,
-        payload(email, after),
-        # Keyed on the observation count, so each new name is a new logical
-        # event while a retried flush of the same picture is still a duplicate.
-        idempotency_key=f"identity:{emitter.run_id}:{email}:{len(after)}",
-    )
+        emitter = _capture_emitter or event_emitter
+    from . import attendee
+
+    binding_source = attendee.binding_source()
+    observed_at = _now()
+    local_error = None
+    try:
+        local = _read_local(home, strict=_capture_emitter is not None)
+    except CaptureHeldError as error:
+        local, local_error = [], error
+
+    def prepare(state):
+        entries = _retained_names(state, emitter.journal)
+        previous = entries.get(email)
+        if previous is None and local_error is not None:
+            emitter.journal.mark_held(local_error)
+            raise local_error
+        observations = (
+            copy.deepcopy(previous["observations"])
+            if previous
+            else [value.to_json() for value in local]
+        )
+        if any(
+            value["name"].lower() == cleaned.lower() and value["source"] == source
+            for value in observations
+        ):
+            return None
+        if len(observations) >= MAX_OBSERVATIONS:
+            raise CaptureCapacityError(
+                "attendee name observation capacity is exhausted"
+            )
+        observations.append(
+            {"name": cleaned, "source": source, "captured_at": observed_at}
+        )
+        revision = len(observations)
+        state.setdefault("attendee_names", {})[email] = {
+            "observations": observations,
+            "revision": revision,
+        }
+        if previous is None and local and _capture_emitter is not None:
+            issues = state.setdefault("producer_issues", [])
+            if "legacy_attendee_names_delivery_unverified" not in issues:
+                issues.append("legacy_attendee_names_delivery_unverified")
+        return {
+            "attendee": email,
+            "binding_source": binding_source,
+            "names": observations,
+            "observed_at": observed_at,
+        }, f"identity:{emitter.run_id}:{email}:{revision}"
+
+    sequence = emitter.emit_transaction("attendee.identity", email, prepare)
+    if not sequence:
+        return False
+    entries = _retained_names(emitter.journal.read(), emitter.journal)
+    _write(home, [NameObservation(**value) for value in entries[email]["observations"]])
     return True
 
 
@@ -235,6 +409,8 @@ __all__ = [
     "SOURCE_CERTIFICATE",
     "SOURCE_WIZARD",
     "capture",
+    "configure_capture",
+    "reset_for_tests",
     "clean_name",
     "names_path",
     "observe",

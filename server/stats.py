@@ -11,15 +11,22 @@ Three sources, all best-effort with hard timeouts:
 
 from __future__ import annotations
 
+import copy
+import hashlib
+import json
 import logging
+import math
 import os
 import subprocess
 import time
+import uuid
+from contextlib import nullcontext
 
 import requests
 
 from . import config
-from .users import User
+from .capture_journal import CaptureHeldError, CaptureStorageError
+from .users import User, UserManager, user_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +39,12 @@ _CODE_EXTENSIONS = {
 # Tower polls /api/admin/stats) stays cheap.
 _CODE_CACHE_TTL = 300
 _code_cache: dict[str, tuple[float, dict]] = {}
+
+
+class _CodeCounts(dict):
+    def __init__(self, values, *, confirmed=True):
+        super().__init__(values)
+        self.confirmed = confirmed
 
 
 def _git(repo: str, *args: str) -> str | None:
@@ -58,9 +71,12 @@ def _code_stats(user: User, *, fresh: bool = True) -> dict:
 def _code_stats_uncached(user: User) -> dict:
     projects = os.path.join(user.home, "projects")
     repos = commits = files = lines = 0
-    if not os.path.isdir(projects):
-        return {"projects": 0, "commits": 0, "files": 0, "lines": 0}
-    for name in sorted(os.listdir(projects)):
+    confirmed = True
+    try:
+        names = sorted(os.listdir(projects))
+    except OSError:
+        return _CodeCounts({"projects": 0, "commits": 0, "files": 0, "lines": 0}, confirmed=False)
+    for name in names:
         repo = os.path.join(projects, name)
         if not os.path.isdir(os.path.join(repo, ".git")):
             continue
@@ -69,6 +85,8 @@ def _code_stats_uncached(user: User) -> dict:
         if count and count.strip().isdigit():
             commits += int(count.strip())
         tracked = _git(repo, "ls-files")
+        if count is None or tracked is None:
+            confirmed = False
         for rel in (tracked or "").splitlines():
             if os.path.splitext(rel)[1].lower() not in _CODE_EXTENSIONS:
                 continue
@@ -78,22 +96,33 @@ def _code_stats_uncached(user: User) -> dict:
                     lines += sum(1 for _ in f)
                 files += 1
             except OSError:
+                confirmed = False
                 continue
-    return {"projects": repos, "commits": commits, "files": files, "lines": lines}
+    return _CodeCounts({"projects": repos, "commits": commits, "files": files, "lines": lines},
+                       confirmed=confirmed)
 
 
-def _list(url: str, token: str, params: dict, items_key: str) -> list[dict]:
+def _list_checked(url: str, token: str, params: dict, items_key: str) -> tuple[list[dict], bool]:
     try:
         resp = requests.get(
             url, headers={"Authorization": f"Bearer {token}"},
             params=params, timeout=6,
         )
         if resp.status_code != 200:
-            return []
-        items = resp.json().get(items_key, []) or []
-        return [item for item in items if isinstance(item, dict)]
+            return [], False
+        payload = resp.json()
+        if not isinstance(payload, dict):
+            return [], False
+        items = payload.get(items_key, []) or []
+        if not isinstance(items, list):
+            return [], False
+        return [item for item in items if isinstance(item, dict)], True
     except (requests.RequestException, ValueError):
-        return []
+        return [], False
+
+
+def _list(url: str, token: str, params: dict, items_key: str) -> list[dict]:
+    return _list_checked(url, token, params, items_key)[0]
 
 
 def _count(url: str, token: str, params: dict, items_key: str) -> int:
@@ -150,6 +179,14 @@ def _own_url() -> str:
     return os.environ.get("DATABRICKS_APP_URL", "").strip()
 
 
+class _Census(dict):
+    """Counts plus which requests actually succeeded; failures are not zeroes."""
+
+    def __init__(self, values=(), *, confirmed=()):
+        super().__init__(values)
+        self.confirmed = set(confirmed)
+
+
 def _workspace_resources() -> dict:
     """Census of resources in the workshop workspace (best-effort)."""
     from .credentials import CredentialError, credential_manager
@@ -158,16 +195,21 @@ def _workspace_resources() -> dict:
     try:
         token = credential_manager.token()
     except CredentialError:
-        return {}
+        return _Census()
     if not host:
-        return {}
-    apps = _list(f"{host}/api/2.0/apps", token, {}, "apps")
-    return {
-        "jobs": _count(f"{host}/api/2.2/jobs/list", token, {"limit": 100}, "jobs"),
-        "pipelines": _count(f"{host}/api/2.0/pipelines", token, {"max_results": 100}, "statuses"),
-        "apps": sum(1 for app in apps if not _is_ours(app)),
-        "dashboards": _count(f"{host}/api/2.0/lakeview/dashboards", token, {"page_size": 100}, "dashboards"),
-    }
+        return _Census()
+    census = _Census()
+    for kind, path, params, key in (
+        ("jobs", "/api/2.2/jobs/list", {"limit": 100}, "jobs"),
+        ("pipelines", "/api/2.0/pipelines", {"max_results": 100}, "statuses"),
+        ("apps", "/api/2.0/apps", {}, "apps"),
+        ("dashboards", "/api/2.0/lakeview/dashboards", {"page_size": 100}, "dashboards"),
+    ):
+        items, ok = _list_checked(f"{host}{path}", token, params, key)
+        if ok:
+            census[kind] = sum(1 for item in items if kind != "apps" or not _is_ours(item))
+            census.confirmed.add(kind)
+    return census
 
 
 # P1-14: the stats payload carries a schema_version so Control Tower can
@@ -222,19 +264,155 @@ def _signal(user: User, code: dict, resources: dict | None) -> dict:
     }
 
 
-def _discovery_count(email: str) -> int:
-    """Records captured for this attendee, or 0 when discovery is off.
-
-    Surfaced on the harvest so Control Tower can reconcile: the push path is
-    fail-soft and bounded, so a CT outage that outlasts the emitter's buffer would
-    otherwise leave CT unable to tell "this attendee said nothing" from "we lost
-    what they said".
-    """
+def _discovery_count(email: str) -> int | None:
+    """Record count, 0 when disabled, or None when retention cannot be read."""
     if not config.discovery_enabled():
         return 0
     from .discovery import discovery_store
 
-    return discovery_store.count_for(email)
+    try:
+        return discovery_store.count_for(email)
+    except CaptureStorageError:
+        # The retained discovery journal shares the storage that may already
+        # have failed while reading stats. Unknown is not a confirmed zero.
+        return None
+
+
+def _timestamp(value) -> bool:
+    return (type(value) is int and value >= 0
+            or type(value) is float and value >= 0 and math.isfinite(value))
+
+
+def _counts(value) -> bool:
+    return isinstance(value, dict) and all(
+        isinstance(key, str) and type(count) is int and count >= 0
+        for key, count in value.items()
+    )
+
+
+def _retained_stats(state: dict) -> dict:
+    retained = state.setdefault("stats", {"users": {}, "resources": {},
+                                          "resources_observed_at": {}, "signals": {}})
+    if (not isinstance(retained, dict)
+            or set(retained) != {"users", "resources", "resources_observed_at", "signals"}
+            or not _counts(retained.get("resources"))
+            or not isinstance(retained.get("resources_observed_at"), dict)
+            or set(retained["resources"]) != set(retained["resources_observed_at"])
+            or not all(_timestamp(value) for value in retained["resources_observed_at"].values())
+            or not isinstance(retained.get("users"), dict)
+            or not isinstance(retained.get("signals"), dict)):
+        raise CaptureHeldError("retained stats snapshot is invalid")
+    for email, saved in retained["users"].items():
+        if (not isinstance(email, str) or not email or not isinstance(saved, dict)
+                or set(saved) != {"row", "observed_at", "code_observed_at"}
+                or not _timestamp(saved["observed_at"])
+                or not _timestamp(saved["code_observed_at"])
+                or not isinstance(saved["row"], dict)
+                or saved["row"].get("email") != email
+                or not _counts(saved["row"].get("code"))
+                or set(saved["row"]["code"]) != {"projects", "commits", "files", "lines"}):
+            raise CaptureHeldError("retained attendee stats are invalid")
+    for email, saved in retained["signals"].items():
+        if (not isinstance(email, str) or not email or not isinstance(saved, dict)
+                or set(saved) != {"revision", "fingerprint", "key", "checkpoint_token"}
+                or type(saved["revision"]) is not int or saved["revision"] < 1
+                or not isinstance(saved["fingerprint"], str) or len(saved["fingerprint"]) != 64
+                or not isinstance(saved["key"], str) or not saved["key"]
+                or not isinstance(saved["checkpoint_token"], str) or not saved["checkpoint_token"]):
+            raise CaptureHeldError("retained signal revision is invalid")
+        insight = state.get("insight", {})
+        seq = insight.get("keys", {}).get(saved["key"])
+        event = insight.get("events", {}).get(str(seq), {})
+        if (event.get("attendee") != email or event.get("type") != "workshop.signal"
+                or _fingerprint(event.get("payload")) != saved["fingerprint"]):
+            raise CaptureHeldError("retained signal revision has no matching accepted event")
+    return retained
+
+
+def _checked(journal, operation):
+    try:
+        return operation()
+    except CaptureHeldError as error:
+        journal.mark_held(error)
+        raise
+
+
+def configure_capture(journal) -> None:
+    """Validate retained observations during startup, including headless recovery."""
+    _checked(journal, lambda: journal.transaction(lambda state: _retained_stats(state)))
+
+
+def _saved_stats(user: User) -> dict:
+    journal = user._capture_journal
+    if journal is None:
+        return {"users": {}, "resources": {}, "resources_observed_at": {}, "signals": {}}
+    try:
+        return _checked(journal, lambda: _retained_stats(journal.read()))
+    except CaptureStorageError:
+        # The diagnostic harvest must still expose the live counters while the
+        # capture/collection APIs hold delivery. Never present unavailable
+        # retained observations as confirmed zeroes or as freshly recovered.
+        return {"users": {}, "resources": {}, "resources_observed_at": {},
+                "signals": {}, "unavailable": True}
+
+
+def _code_observation(user: User, *, fresh: bool, saved: dict) -> tuple[dict, dict]:
+    previous = saved["users"].get(user.email)
+    projects = os.path.join(user.home, "projects")
+    # The empty HOME created by a browser reconnect after redeploy is not
+    # evidence that the attendee's previously observed output disappeared.
+    try:
+        materialized = any(os.path.isdir(os.path.join(projects, name, ".git"))
+                           for name in os.listdir(projects))
+    except OSError:
+        materialized = False
+    if previous and (not os.path.isdir(projects) or (user._capture_recovered and not materialized)):
+        return copy.deepcopy(previous["row"]["code"]), {
+            "source": "retained", "observed_at": previous["code_observed_at"],
+        }
+    code = _code_stats(user, fresh=fresh)
+    if previous and not getattr(code, "confirmed", True):
+        return copy.deepcopy(previous["row"]["code"]), {
+            "source": "retained", "observed_at": previous["code_observed_at"],
+        }
+    observed_at = (_code_cache.get(user.email, (0, {}))[0]
+                   if os.path.isdir(projects) and getattr(code, "confirmed", True) else 0)
+    return dict(code), {"source": "local" if observed_at else "unavailable", "observed_at": observed_at}
+
+
+def _resource_observation(resources: dict, users: list[User]) -> tuple[dict, dict]:
+    saved = next((_saved_stats(user) for user in users if user._capture_journal is not None), None)
+    previous = saved or {"resources": {}, "resources_observed_at": {}}
+    confirmed = getattr(resources, "confirmed", set(resources))
+    counts = dict(previous["resources"])
+    counts.update({key: value for key, value in resources.items() if key in confirmed})
+    now = time.time()
+    observation = {kind: {"source": "live" if kind in confirmed else "retained",
+                           "observed_at": now if kind in confirmed else previous["resources_observed_at"][kind]}
+                   for kind in counts}
+    return counts, observation
+
+
+def _save_observation(state: dict, row: dict, resources: dict, resource_observation: dict, now: float) -> None:
+    retained = _retained_stats(state)
+    previous = retained["users"].get(row["email"])
+    row = copy.deepcopy(row)
+    code_observed_at = row.get("capture_observation", {}).get("code", {}).get("observed_at", 0)
+    if previous and previous["code_observed_at"] > code_observed_at:
+        row["code"] = copy.deepcopy(previous["row"]["code"])
+        code_observed_at = previous["code_observed_at"]
+        row.setdefault("capture_observation", {})["code"] = {
+            "source": "retained", "observed_at": code_observed_at,
+        }
+    retained["users"][row["email"]] = {
+        "row": row, "observed_at": now, "code_observed_at": code_observed_at,
+    }
+    for kind, count in resources.items():
+        observation = resource_observation.get(kind, {})
+        if (observation.get("source") == "live"
+                and observation["observed_at"] >= retained["resources_observed_at"].get(kind, 0)):
+            retained["resources"][kind] = count
+            retained["resources_observed_at"][kind] = observation["observed_at"]
 
 
 def gather_user(
@@ -253,7 +431,10 @@ def gather_user(
     )
     # Abandonment signal: building time accrued but no recent activity.
     idle_seconds = int(now - user.last_seen) if user.last_seen else None
-    code = _code_stats(user, fresh=fresh)
+    saved = _saved_stats(user)
+    code, code_observation = _code_observation(user, fresh=fresh, saved=saved)
+    discovery_records = _discovery_count(user.email)
+    observations_unavailable = saved.get("unavailable") or discovery_records is None
     return {
         "email": user.email,
         "minutes_building": minutes,
@@ -271,17 +452,25 @@ def gather_user(
         "signal": _signal(user, code, resources),
         # Count only — the records themselves go to CT over the ingest path, not
         # through a polled endpoint an operator's browser can read.
-        "discovery_records": _discovery_count(user.email),
+        "discovery_records": discovery_records,
+        "capture_observation": {"code": code_observation, "recovered": user._capture_recovered,
+                                "journal": "unavailable" if observations_unavailable else "ready"},
     }
 
 
 def gather(user: User) -> dict:
     """Certificate view: this user's stats + the workspace census."""
-    resources = _workspace_resources()
+    resources, observation = _resource_observation(_workspace_resources(), [user])
+    row = gather_user(user, resources=resources)
+    if user._capture_journal is not None:
+        now = time.time()
+        _checked(user._capture_journal, lambda: user._capture_journal.transaction(
+            lambda state: _save_observation(state, row, resources, observation, now)))
     return {
         "schema_version": STATS_SCHEMA_VERSION,
-        **gather_user(user, resources=resources),
+        **row,
         "resources": resources,
+        "resource_observation": observation,
     }
 
 
@@ -291,11 +480,12 @@ def gather_all(users: list[User]) -> dict:
     from .events import event_hub
     from .sessions import session_manager
 
-    resources = _workspace_resources()
+    resources, observation = _resource_observation(_workspace_resources(), users)
     return {
         "schema_version": STATS_SCHEMA_VERSION,
         "users": [gather_user(u, fresh=False, resources=resources) for u in users],
         "resources": resources,
+        "resource_observation": observation,
         "websocket_queues": {
             **session_manager.queue_metrics(),
             "events": event_hub.metrics(),
@@ -307,6 +497,11 @@ def gather_all(users: list[User]) -> dict:
 # time series instead of one row per poll. 600s matches CT's default poll
 # interval: a bucket shorter than the poll would never de-duplicate anything.
 _SIGNAL_BUCKET_SECONDS = 600
+
+
+def _fingerprint(value) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"),
+                                     allow_nan=False).encode()).hexdigest()
 
 
 def signal_events(payload: dict, run_id: str) -> list[tuple[str, dict, str]]:
@@ -343,7 +538,7 @@ def signal_events(payload: dict, run_id: str) -> list[tuple[str, dict, str]]:
         if phase:
             event_payload["phase"] = phase
         events.append(
-            (attendee, event_payload, f"signal:{run_id}:{attendee}:{bucket}")
+            (attendee, event_payload, f"signal:{run_id}:{attendee}:{bucket}:{_fingerprint(event_payload)}")
         )
     return events
 
@@ -359,8 +554,42 @@ def emit_signals(payload: dict, emitter=None) -> int:
         return 0
     if emitter is None:
         from .event_emitter import event_emitter as emitter
+    from .users import user_manager
+    emitter._ensure_ready()
     count = 0
-    for attendee, event_payload, key in signal_events(payload, emitter.run_id):
-        emitter.emit("workshop.signal", attendee, event_payload, idempotency_key=key)
+    rows = {row["email"]: row for row in payload.get("users", []) if row.get("email")}
+    if any(row.get("capture_observation", {}).get("journal") == "unavailable" for row in rows.values()):
+        raise CaptureStorageError("capture observations were unavailable; retry the harvest")
+    for attendee, event_payload, _key in signal_events(payload, emitter.run_id):
+        user = user_manager.peek(attendee)
+        retained_user = user if user is not None and user._capture_journal is emitter.journal else None
+        with retained_user._capture_lock if retained_user is not None else nullcontext():
+            current = user_snapshot(retained_user) if retained_user is not None else None
+            baseline = copy.deepcopy(retained_user._capture_baseline) if retained_user is not None else None
+            token, now = str(uuid.uuid4()), time.time()
+            fingerprint = _fingerprint(event_payload)
+            def prepare(state):
+                retained = _retained_stats(state)
+                previous = retained["signals"].get(attendee)
+                if previous and previous["fingerprint"] == fingerprint:
+                    return event_payload, previous["key"]
+                revision = previous["revision"] + 1 if previous else 1
+                key = f"signal:{emitter.run_id}:{attendee}:r{revision}"
+                if retained_user is not None:
+                    UserManager.checkpoint_state(state, retained_user, current, baseline)
+                _save_observation(state, rows[attendee], payload.get("resources") or {},
+                                  payload.get("resource_observation") or {}, now)
+                retained["signals"][attendee] = {"revision": revision, "fingerprint": fingerprint,
+                                                 "key": key, "checkpoint_token": token}
+                return event_payload, key
+            _checked(emitter.journal, lambda: emitter.emit_transaction("workshop.signal", attendee, prepare))
+            if retained_user is not None:
+                committed = _checked(emitter.journal, lambda: emitter.journal.read())
+                if _retained_stats(committed)["signals"][attendee]["checkpoint_token"] == token:
+                    UserManager.accept_checkpoint(retained_user, current, committed["users"][attendee])
+                else:
+                    # A content-identical retry reuses its original envelope;
+                    # output observed since that poll still gets checkpointed.
+                    user_manager.checkpoint(retained_user)
         count += 1
     return count

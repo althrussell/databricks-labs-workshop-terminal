@@ -1,4 +1,5 @@
 import os
+import sys
 import tempfile
 
 import pytest
@@ -48,9 +49,38 @@ def _isolate_user_registry():
     """
     from server.users import user_manager
 
-    user_manager._users.clear()
+    user_manager.reset_for_tests()
     yield
-    user_manager._users.clear()
+    user_manager.reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_capture_producers(monkeypatch):
+    """Retained producer bindings belong to one simulated deployment/test."""
+    from server import attendee_names, discovery, help as help_module, identity, insight_summary, stats
+    from server import event_emitter as emitter_module
+
+    retained = emitter_module.build_default_emitter()
+    monkeypatch.setattr(emitter_module, "event_emitter", retained)
+    main = sys.modules.get("server.main")
+    if main is not None:
+        monkeypatch.setattr(main, "event_emitter", retained)
+
+    def reset():
+        attendee_names.reset_for_tests()
+        identity.reset_for_tests()
+        help_module.reset_for_tests()
+        insight_summary.stamps.clear()
+        with discovery.discovery_store._lock:
+            discovery.discovery_store._capture_emitter = None
+            discovery.discovery_store._records = {}
+            discovery.discovery_store._legacy_issues = set()
+            discovery.discovery_store.path = ""
+        stats._code_cache.clear()
+
+    reset()
+    yield
+    reset()
 
 
 @pytest.fixture(autouse=True)

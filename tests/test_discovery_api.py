@@ -227,9 +227,7 @@ def test_readback_reports_disabled_without_leaking_records(
 
 
 def test_attendee_can_withdraw_their_own_record(client, capture_on, fresh_store):
-    fresh_store.put(
-        discovery.build_record("alice@example.com", {"record_id": "r1", "goal": "x"})
-    )
+    discovery.record("alice@example.com", {"record_id": "r1", "goal": "x"})
     resp = client.post(
         "/api/discovery/redact", json={"record_id": "r1"}, headers=ALICE
     )

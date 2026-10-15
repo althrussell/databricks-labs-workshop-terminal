@@ -305,7 +305,8 @@ def test_repeat_harvests_in_one_bucket_share_a_key(monkeypatch):
 def test_key_carries_run_attendee_and_bucket(monkeypatch):
     monkeypatch.setattr(stats.time, "time", lambda: 1769764800.0)
     (_, _, key) = stats.signal_events(_harvest(), "run-1")[0]
-    assert key == "signal:run-1:labuser007@example.com:1769764800"
+    assert key.startswith("signal:run-1:labuser007@example.com:1769764800:")
+    assert len(key.rsplit(":", 1)[1]) == 64
 
 
 def test_bucket_is_not_shorter_than_the_poll_interval():

@@ -1,5 +1,7 @@
 import importlib
 
+import pytest
+
 
 EXPECTED_SCOPES = "catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql"
 
@@ -1119,6 +1121,48 @@ def test_dropped_events_are_red_but_never_gate(tmp_path):
         "match": False,
         "delivery": "pull",
     }
+
+
+@pytest.mark.parametrize("retention_ready", [False, True])
+def test_retention_fault_is_red_even_with_zero_drops_and_remains_soft(tmp_path, retention_ready):
+    report = _evaluate(
+        tmp_path,
+        mutate_env=_capture_env(),
+        delivery={
+            "delivery": "pull", "collections": 1, "pending": None, "dropped": 0,
+            "retention_ready": retention_ready,
+            "retention_issues": ["capture_unavailable"],
+            "persistence": {"ok": False, "held": True, "durable": True},
+        },
+    )
+    check = report["checks"]["insight_capture"]
+    assert check["ok"] is False
+    assert check["state"] == "red"
+    assert check["pending"] is None
+    assert check["retention_ready"] is False
+    assert check["retention_issues"] == ["capture_unavailable"]
+    assert check["persistence"]["held"] is True
+    assert "retention needs recovery" in check["detail"]
+    assert report["ready"] is True
+    assert report["release_manifest"]["insight_capture"]["actual"] == "held"
+    assert report["release_manifest"]["insight_capture"]["match"] is False
+
+
+def test_healthy_retention_is_green_with_pending_records(tmp_path):
+    report = _evaluate(
+        tmp_path,
+        mutate_env=_capture_env(),
+        delivery={
+            "delivery": "pull", "collections": 1, "pending": 3, "dropped": 0,
+            "retention_ready": True, "retention_issues": [],
+            "persistence": {"ok": True, "held": False, "durable": True},
+        },
+    )
+    check = report["checks"]["insight_capture"]
+    assert check["state"] == "green"
+    assert check["pending"] == 3
+    assert check["retention_ready"] is True
+    assert report["release_manifest"]["insight_capture"]["match"] is True
 
 
 def test_healthz_remains_liveness_only_when_readiness_is_red(client, monkeypatch):

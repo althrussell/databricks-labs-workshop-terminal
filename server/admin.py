@@ -11,7 +11,7 @@ import logging
 import time
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import agents
 from . import attendee as attendee_binding
@@ -26,9 +26,11 @@ from . import (
     user_content,
 )
 from .auth import require_admin
+from .capture_journal import CaptureError
 from .content import Broadcast, ContentPack, content_service
 from .credentials import credential_manager
 from .entitlements import entitlement_manager
+from .event_emitter import CaptureConflictError
 from .events import event_hub
 from .omnigent_remote import remote_host_manager
 from .sessions import session_manager
@@ -395,7 +397,7 @@ def help_clear(body: HelpClearIn = HelpClearIn()):
 
 
 class HelpAckIn(BaseModel):
-    through_seq: int = 0
+    through_seq: int = Field(default=0, strict=True, ge=0)
 
 
 @router.post("/help/ack")
@@ -410,7 +412,12 @@ def help_ack(body: HelpAckIn):
     """
     from . import help as help_module
 
-    return {"status": "ok", **help_module.ack_outbox(body.through_seq)}
+    try:
+        return {"status": "ok", **help_module.ack_outbox(body.through_seq)}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid help acknowledgement") from exc
+    except CaptureError as exc:
+        raise HTTPException(status_code=503, detail="Capture persistence unavailable") from exc
 
 
 @router.get("/stats")
@@ -441,9 +448,13 @@ def harvest_stats(final: bool = False):
     }
     # C6: push the derived behavioural signal on the same cadence CT polls at, so
     # the signal and the snapshot CT stores alongside it describe the same moment.
-    # No-op unless WORKSHOP_INSIGHT_CAPTURE is on; buffered, so it can't slow the
-    # harvest or fail it.
-    stats.emit_signals(payload)
+    # Retained signal acceptance can be held while the counters are still
+    # useful. Keep this snapshot and expose that capture needs recovery.
+    try:
+        stats.emit_signals(payload)
+    except (CaptureError, CaptureConflictError):
+        logger.warning("harvest signal capture is held", exc_info=True)
+        payload["instance"]["capture_error"] = "capture_unavailable"
     if not final:
         from . import insight_summary
 
@@ -459,6 +470,11 @@ def harvest_stats(final: bool = False):
             started = insight_summary.summarise_in_background(
                 users, phase=content_service.phase
             )
+        except (CaptureError, CaptureConflictError):
+            logger.warning("rolling summary capture is held", exc_info=True)
+            started = None
+            payload["instance"]["summary_error"] = "capture_unavailable"
+            payload["instance"]["capture_error"] = "capture_unavailable"
         except Exception as exc:  # noqa: BLE001
             logger.warning("rolling summary pass failed to start: %s", exc)
             started = None
@@ -483,46 +499,74 @@ def harvest_stats(final: bool = False):
             payload["instance"]["summaries_emitted"] = insight_summary.summarise_all(
                 users, phase=content_service.phase, allow_llm=False, force=True
             )
-            # The periodic flusher runs every 15s and this container has seconds
-            # left, so drain here or lose everything still buffered — including the
-            # summaries emitted on the line above.
+            # Keep the optional legacy push attempt; retained events are released
+            # only by the explicit authenticated pull acknowledgement.
             payload["instance"]["events_flushed"] = emitter_module.flush_now()
+        except (CaptureError, CaptureConflictError):
+            logger.warning("final-harvest capture is held", exc_info=True)
+            payload["instance"]["summary_error"] = "capture_unavailable"
+            payload["instance"]["capture_error"] = "capture_unavailable"
         except Exception as exc:  # noqa: BLE001
             logger.warning("final-harvest summary failed: %s", exc)
             payload["instance"]["summary_error"] = str(exc)[:200]
     # Reported last so it accounts for the signals and summaries emitted above.
-    # On the ``final=true`` pass this is what Control Tower still owes itself a
-    # GET /api/admin/insight-events for: everything left here dies with the app.
+    # Pending records still need Control Tower's committed collection and ACK;
+    # retained source history also survives an app/container replacement.
     from .event_emitter import event_emitter as buffered
 
-    payload["instance"]["events_pending"] = buffered.pending()
-    payload["instance"]["events_dropped"] = buffered.dropped
-    payload["instance"]["event_stream_id"] = buffered.stream_id
+    delivery = buffered.delivery_status()
+    payload["instance"]["capture_delivery"] = delivery
+    payload["instance"]["events_pending"] = delivery.get("pending")
+    payload["instance"]["events_dropped"] = delivery.get("dropped")
+    payload["instance"]["event_stream_id"] = delivery.get("stream_id")
+    if delivery.get("retention_ready") is False or delivery.get("retention_issues"):
+        payload["instance"]["capture_error"] = "capture_unavailable"
     return payload
 
 
 @router.get("/insight-events")
 def collect_insight_events(after: int = 0, stream: str = "", limit: int = 0):
-    """Hand buffered attendee events to Control Tower (contract C3b, pull).
+    """Read retained attendee events without acknowledging their prefix.
 
     This is the delivery path for insight capture. The push alternative — POSTing
     to CT's ingest endpoint with a shared token — cannot work through the
     Databricks Apps proxy, which requires a Databricks identity on every request;
     collection reuses the authenticated call CT already makes to this router.
 
-    ``after`` is the collector's cursor and doubles as an acknowledgement: events
-    at or below it are discarded, so a collector that keeps up keeps the buffer
-    flat. It is only honoured when ``stream`` matches this process's stream id,
-    because sequence numbers restart with the process and a cursor replayed across
-    that boundary would discard a fresh buffer unread.
+    ``after`` is a read cursor in the retained source epoch. CT acknowledges only
+    through the separate POST endpoint after a committed Lakebase readback.
     """
     from .event_emitter import DEFAULT_COLLECT_LIMIT, event_emitter
 
-    return event_emitter.collect(
-        after=max(0, after),
-        stream=stream,
-        limit=limit if limit > 0 else DEFAULT_COLLECT_LIMIT,
-    )
+    try:
+        return event_emitter.collect(
+            after=max(0, after),
+            stream=stream,
+            limit=limit if limit > 0 else DEFAULT_COLLECT_LIMIT,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid capture cursor") from exc
+    except CaptureError as exc:
+        raise HTTPException(status_code=503, detail="Capture persistence unavailable") from exc
+
+
+class InsightAckIn(BaseModel):
+    schema_version: int = Field(strict=True, ge=2, le=2)
+    stream_id: str = Field(strict=True, min_length=1, pattern=r"\S")
+    through_seq: int = Field(strict=True, ge=0)
+
+
+@router.post("/insight-events/ack")
+def acknowledge_insight_events(body: InsightAckIn):
+    """Release only the retained epoch prefix CT confirms it has committed."""
+    from .event_emitter import event_emitter
+
+    try:
+        return event_emitter.acknowledge(**body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid capture acknowledgement") from exc
+    except CaptureError as exc:
+        raise HTTPException(status_code=503, detail="Capture persistence unavailable") from exc
 
 
 @router.get("/omnigent-host-readiness")
@@ -541,6 +585,7 @@ def diagnostics(limit: int = 50):
     which survives an app restart; readiness and identity come from live state.
     """
     from . import identity
+    from .event_emitter import event_emitter
     from .log_collector import log_collector
 
     def _hosts() -> list[dict]:
@@ -567,6 +612,7 @@ def diagnostics(limit: int = 50):
             ("readyz", readiness.evaluate_runtime),
             ("identity", identity.all_snapshots),
             ("hosts", _hosts),
+            ("capture_delivery", event_emitter.delivery_status),
         )
     }
 

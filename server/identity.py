@@ -19,6 +19,7 @@ the container. ``docs/auth-identity-model.md`` carries the query.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
@@ -27,6 +28,7 @@ import threading
 import time
 
 from . import config
+from .capture_journal import CaptureHeldError
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +38,7 @@ _TTL = 900.0
 _lock = threading.Lock()
 _snapshots: dict[str, dict] = {}
 _in_flight: set[str] = set()
+_capture_emitter = None
 
 
 def _identity_of(argv: list[str], env: dict[str, str], cwd: str) -> str:
@@ -109,19 +112,88 @@ def resolve(user) -> dict:
         "planes": planes,
         "resolved_at": time.time(),
     }
-    with _lock:
-        _snapshots[user.email] = snapshot
     return snapshot
 
 
-def snapshot(email: str) -> dict | None:
+def _retained_snapshots(state: dict, journal) -> dict:
+    try:
+        entries = state.get("identity_snapshots", {})
+        if not isinstance(entries, dict):
+            raise CaptureHeldError("retained identity snapshots are invalid")
+        for email, entry in entries.items():
+            if (
+                not isinstance(email, str)
+                or not email
+                or not isinstance(entry, dict)
+                or set(entry) != {"revision", "snapshot"}
+                or type(entry["revision"]) is not int
+                or entry["revision"] < 1
+            ):
+                raise CaptureHeldError("retained identity revision is invalid")
+            value = entry["snapshot"]
+            if (
+                not isinstance(value, dict)
+                or set(value) != {"attendee", "planes", "resolved_at"}
+                or value["attendee"] != email
+                or not isinstance(value["planes"], dict)
+                or type(value["resolved_at"]) not in (int, float)
+            ):
+                raise CaptureHeldError("retained identity snapshot is invalid")
+            for surfaces in value["planes"].values():
+                if not isinstance(surfaces, dict) or any(
+                    not isinstance(name, str) or not isinstance(principal, str)
+                    for name, principal in surfaces.items()
+                ):
+                    raise CaptureHeldError("retained identity planes are invalid")
+        return entries
+    except CaptureHeldError as error:
+        journal.mark_held(error)
+        raise
+
+
+def configure_capture(emitter) -> None:
+    """Recover current CLI attribution before serving headless diagnostics."""
+    global _capture_emitter
+    state = emitter.journal.read()
+    entries = _retained_snapshots(state, emitter.journal)
     with _lock:
-        return dict(_snapshots.get(email) or {}) or None
+        _snapshots.clear()
+        _snapshots.update(
+            {
+                email: copy.deepcopy(entry["snapshot"])
+                for email, entry in entries.items()
+            }
+        )
+        _capture_emitter = emitter
+
+
+def reset_for_tests() -> None:
+    global _capture_emitter
+    with _lock:
+        _capture_emitter = None
+        _snapshots.clear()
+        _in_flight.clear()
+
+
+def snapshot(email: str) -> dict | None:
+    if _capture_emitter is not None:
+        entries = _retained_snapshots(
+            _capture_emitter.journal.read(), _capture_emitter.journal
+        )
+        entry = entries.get(email)
+        return copy.deepcopy(entry["snapshot"]) if entry is not None else None
+    with _lock:
+        return copy.deepcopy(_snapshots.get(email))
 
 
 def all_snapshots() -> list[dict]:
+    if _capture_emitter is not None:
+        entries = _retained_snapshots(
+            _capture_emitter.journal.read(), _capture_emitter.journal
+        )
+        return [copy.deepcopy(entry["snapshot"]) for entry in entries.values()]
     with _lock:
-        return [dict(entry) for entry in _snapshots.values()]
+        return copy.deepcopy(list(_snapshots.values()))
 
 
 def observe(user) -> None:
@@ -132,8 +204,16 @@ def observe(user) -> None:
     """
     email = user.email
     now = time.time()
+    try:
+        existing = snapshot(email)
+    except Exception:
+        logger.warning(
+            "identity retention could not be read for %s; observation will retry",
+            email,
+            exc_info=True,
+        )
+        existing = None
     with _lock:
-        existing = _snapshots.get(email)
         if email in _in_flight:
             return
         if existing and now - existing.get("resolved_at", 0.0) < _TTL:
@@ -143,13 +223,18 @@ def observe(user) -> None:
     def run() -> None:
         try:
             result = resolve(user)
-        except Exception:  # noqa: BLE001 — attribution must never break a launch
-            logger.warning("identity resolution failed for %s", email, exc_info=True)
-            return
+            _emit(result)
+        except Exception:
+            # Capture rejection leaves the previously accepted snapshot intact,
+            # so the next observation retries rather than caching a false success.
+            logger.warning(
+                "identity capture was not accepted for %s; retry required",
+                email,
+                exc_info=True,
+            )
         finally:
             with _lock:
                 _in_flight.discard(email)
-        _emit(result)
 
     threading.Thread(
         target=run, daemon=True, name=f"identity-resolve-{email[:24]}"
@@ -157,18 +242,33 @@ def observe(user) -> None:
 
 
 def _emit(result: dict) -> None:
+    """Accept snapshot and exact event together; rejection is never cached."""
     from .event_emitter import event_emitter
 
+    emitter = _capture_emitter or event_emitter
+    email = str(result.get("attendee") or "system")
+    value = copy.deepcopy(result)
+    if _capture_emitter is None:
+        # Explicit standalone/local mode has no configured recovery journal.
+        emitter.emit("identity.resolved", email, {"planes": value.get("planes", {})})
+    else:
+
+        def prepare(state):
+            entries = _retained_snapshots(state, emitter.journal)
+            revision = (entries.get(email) or {}).get("revision", 0) + 1
+            state.setdefault("identity_snapshots", {})[email] = {
+                "revision": revision,
+                "snapshot": value,
+            }
+            return {
+                "planes": value.get("planes", {})
+            }, f"resolved:{emitter.run_id}:{email}:{revision}"
+
+        emitter.emit_transaction("identity.resolved", email, prepare)
+    with _lock:
+        _snapshots[email] = copy.deepcopy(value)
     logger.info(
         "identity resolved for %s: %s",
-        result.get("attendee"),
-        json.dumps(result.get("planes", {}), sort_keys=True),
+        email,
+        json.dumps(value.get("planes", {}), sort_keys=True),
     )
-    try:
-        event_emitter.emit(
-            "identity.resolved",
-            str(result.get("attendee") or "system"),
-            {"planes": result.get("planes", {})},
-        )
-    except Exception:  # noqa: BLE001 — telemetry is never load-bearing
-        pass

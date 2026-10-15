@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "stream_id": "capture-epoch-01",
+  "events": [
+    {
+      "seq": 1,
+      "event": {
+        "schema_version": 1,
+        "run_id": "",
+        "workspace_id": "",
+        "attendee": "labuser+199@example.com",
+        "type": "discovery.record",
+        "occurred_at": "2026-11-17T06:30:00+00:00",
+        "payload": {
+          "record_id": "record-1",
+          "revision": 1,
+          "title": "Faster customer reporting",
+          "problem": "Teams wait for daily reports.",
+          "redacted_by_attendee": false
+        },
+        "idempotency_key": "discovery::labuser+199@example.com:record-1:1"
+      }
+    },
+    {
+      "seq": 2,
+      "event": {
+        "schema_version": 1,
+        "run_id": "",
+        "workspace_id": "",
+        "attendee": "labuser+199@example.com",
+        "type": "attendee.identity",
+        "occurred_at": "2026-11-17T06:30:00+00:00",
+        "payload": {
+          "attendee": "labuser+199@example.com",
+          "binding_source": "ct",
+          "names": [
+            {
+              "name": "Zoë Tan",
+              "source": "wizard",
+              "observed_at": "2026-11-17T06:30:00+00:00"
+            }
+          ],
+          "observed_at": "2026-11-17T06:30:00+00:00"
+        },
+        "idempotency_key": "identity::labuser+199@example.com:1"
+      }
+    }
+  ],
+  "high_water": 2,
+  "pending": 4,
+  "dropped": 0,
+  "cursor_reset": false,
+  "delivery": "pull"
+}

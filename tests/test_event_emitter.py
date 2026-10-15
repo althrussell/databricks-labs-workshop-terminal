@@ -1,11 +1,18 @@
 """Attendee event emitter — buffer, idempotency, fail-soft drain (C3b)."""
 
+import pytest
+
+from server.capture_journal import CaptureCapacityError, CaptureHeldError
 from server.event_emitter import EventEmitter
 
 
 def _emitter(**over) -> EventEmitter:
-    kwargs = dict(run_id="run-1", workspace_id="100",
-                  ingest_url="https://ct.example.com", ingest_token="tok")
+    kwargs = dict(
+        run_id="run-1",
+        workspace_id="100",
+        ingest_url="https://ct.example.com",
+        ingest_token="tok",
+    )
     kwargs.update(over)
     return EventEmitter(**kwargs)
 
@@ -30,7 +37,7 @@ def test_emit_buffers_well_formed_event():
     e.emit("build.commit", "a@x.com", {"sha": "abc"}, idempotency_key="k1")
     assert e.pending() == 1
     delivered = []
-    e.drain(lambda ev: (delivered.append(ev) or True))
+    e.drain(lambda ev: delivered.append(ev) or True)
     ev = delivered[0]
     assert ev["schema_version"] == 1
     assert ev["run_id"] == "run-1" and ev["workspace_id"] == "100"
@@ -62,7 +69,7 @@ def test_drain_stops_at_first_failure_and_keeps_remainder():
     assert n == 2 and e.pending() == 3
     # Order preserved — the remaining are k2,k3,k4.
     remaining = []
-    e.drain(lambda ev: (remaining.append(ev["idempotency_key"]) or True))
+    e.drain(lambda ev: remaining.append(ev["idempotency_key"]) or True)
     assert remaining == ["k2", "k3", "k4"]
 
 
@@ -77,14 +84,20 @@ def test_exception_in_post_is_fail_soft():
     assert e.pending() == 1  # kept for retry
 
 
-def test_buffer_is_bounded_drop_oldest():
+def test_full_backlog_rejects_new_output_and_keeps_accepted_prefix():
     e = _emitter(max_buffer=3)
-    for i in range(5):
+    for i in range(3):
         e.emit("heartbeat", "a@x.com", {"i": i}, idempotency_key=f"k{i}")
+    with pytest.raises(CaptureCapacityError):
+        e.emit("heartbeat", "a@x.com", {"i": 3}, idempotency_key="k3")
     assert e.pending() == 3
     seen = []
-    e.drain(lambda ev: (seen.append(ev["idempotency_key"]) or True))
-    assert seen == ["k2", "k3", "k4"]  # oldest two dropped
+    assert e.drain(lambda ev: seen.append(ev["idempotency_key"]) or True) == 3
+    assert seen == ["k0", "k1", "k2"]
+    assert e.pending() == 0
+    assert e.delivery_status()["retention_ready"] is False
+    with pytest.raises(CaptureHeldError, match="unresolved delivery"):
+        e.collect()
 
 
 def test_auto_idempotency_keys_are_unique():
@@ -92,5 +105,5 @@ def test_auto_idempotency_keys_are_unique():
     e.emit("heartbeat", "a@x.com")
     e.emit("heartbeat", "a@x.com")
     keys = []
-    e.drain(lambda ev: (keys.append(ev["idempotency_key"]) or True))
+    e.drain(lambda ev: keys.append(ev["idempotency_key"]) or True)
     assert len(set(keys)) == 2

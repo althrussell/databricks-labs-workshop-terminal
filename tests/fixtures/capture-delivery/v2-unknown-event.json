@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "stream_id": "capture-epoch-01",
+  "events": [
+    {
+      "seq": 1,
+      "event": {
+        "schema_version": 1,
+        "run_id": "",
+        "workspace_id": "",
+        "attendee": "labuser+199@example.com",
+        "type": "future.required.output",
+        "occurred_at": "2026-11-17T06:30:00+00:00",
+        "payload": {
+          "current_fact": "Retain this existing-content envelope for a future consumer."
+        },
+        "idempotency_key": "future::labuser+199@example.com:1"
+      }
+    }
+  ],
+  "high_water": 1,
+  "pending": 1,
+  "dropped": 0,
+  "cursor_reset": false,
+  "delivery": "pull",
+  "ack_mode": "explicit"
+}

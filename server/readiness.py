@@ -197,9 +197,8 @@ def _insight_capture(
     ingest endpoint) stays reported because a deployment may still set it, but the
     Apps proxy in front of Control Tower means it does not currently reach.
 
-    What *can* go wrong is loss: the buffer is bounded, so a collector that stops
-    collecting eventually costs events. ``dropped`` is the only honest evidence of
-    that, and it is why this check can still be red.
+    Retained source faults, rejected output and unavailable persistence must
+    remain visible even when the queue's dropped count is zero.
     """
     capture = _bool(env, "WORKSHOP_INSIGHT_CAPTURE", False)
     discovery = capture and _bool(env, "DISCOVERY_ENABLED", True)
@@ -215,14 +214,16 @@ def _insight_capture(
     mode = str(status.get("delivery") or ("push" if push_configured else "pull"))
     collections = int(status.get("collections") or 0)
     dropped = int(status.get("dropped") or 0)
-    pending = int(status.get("pending") or 0)
+    pending = None if "pending" in status and status["pending"] is None else int(status.get("pending") or 0)
+    issues = list(status.get("retention_issues") or [])
+    retention_ready = status.get("retention_ready", True) is True and not issues
     if not capture:
         requested = "off"
     elif discovery:
         requested = "signal+discovery"
     else:
         requested = "signal"
-    lossless = not capture or dropped == 0
+    lossless = not capture or dropped == 0 and retention_ready
     return {
         "enabled": capture,
         "discovery": discovery,
@@ -232,8 +233,11 @@ def _insight_capture(
         "collected": collections > 0,
         "pending": pending,
         "dropped": dropped,
+        "retention_ready": retention_ready,
+        "retention_issues": issues,
+        "persistence": status.get("persistence"),
         "requested": requested,
-        "effective": requested if lossless else "lossy",
+        "effective": requested if lossless else "held" if not retention_ready else "lossy",
     }
 
 
@@ -922,6 +926,8 @@ def evaluate(
             (
                 "insight capture is off"
                 if not insight["enabled"]
+                else "capture retention needs recovery; collection is incomplete"
+                if not insight["retention_ready"]
                 else f"{insight['dropped']} events were dropped before Control "
                 "Tower collected them — the buffer overflowed"
                 if not insight_delivering
@@ -940,6 +946,9 @@ def evaluate(
             collections=insight["collections"],
             pending=insight["pending"],
             dropped=insight["dropped"],
+            retention_ready=insight["retention_ready"],
+            retention_issues=insight["retention_issues"],
+            persistence=insight["persistence"],
         ),
         # Native Apps telemetry is configured on the App resource by Control
         # Tower, not by this process. Missing export remains soft so a preview

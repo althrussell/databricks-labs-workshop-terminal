@@ -1,0 +1,11 @@
+{
+  "schema_version": 2,
+  "stream_id": "capture-epoch-01",
+  "events": [],
+  "high_water": 4,
+  "pending": 0,
+  "dropped": 0,
+  "cursor_reset": false,
+  "delivery": "pull",
+  "ack_mode": "explicit"
+}
