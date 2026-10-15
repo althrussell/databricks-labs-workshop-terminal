@@ -194,6 +194,50 @@ def test_offline_rejection_becomes_durable_on_first_healthy_access(monkeypatch):
     assert replacement.collect()["events"][0]["event"]["idempotency_key"] == "signal-0"
 
 
+def test_exhausted_journal_cannot_become_clean_empty_after_rejected_output():
+    store = MemoryCaptureStorage()
+
+    def limited():
+        return EventEmitter(
+            run_id=BINDING["run_id"], workspace_id=BINDING["workspace_id"],
+            ingest_url="", ingest_token="",
+            journal=CaptureJournal(store, BINDING, {}, max_operations=3),
+        )
+
+    original = limited()
+    append(original, 1)
+    accepted = original.collect()["events"]
+    ack(original, 1)  # Consumes the last operation before another output arrives.
+    with pytest.raises(CaptureCapacityError):
+        original.emit("event", BINDING["owner"], {"required": True}, idempotency_key="refused")
+    assert original._pending_issues  # Even recording the fault cannot commit.
+    replacement = limited()
+    assert replacement.journal.read()["insight"]["events"]["1"] == accepted[0]["event"]
+    assert replacement.pending() == 0
+    assert replacement.delivery_status()["retention_ready"] is False
+    assert "capture_operation_capacity_exhausted" in replacement.delivery_status()["retention_issues"]
+    with pytest.raises(CaptureHeldError, match="unresolved delivery"):
+        replacement.collect(after=1, stream=replacement.stream_id)
+
+
+def test_exhausted_journal_still_allows_salvaging_accepted_pending_records():
+    store = MemoryCaptureStorage()
+    original = EventEmitter(
+        run_id=BINDING["run_id"], workspace_id=BINDING["workspace_id"],
+        ingest_url="", ingest_token="",
+        journal=CaptureJournal(store, BINDING, {}, max_operations=2),
+    )
+    append(original, 1)
+    accepted = original.collect()["events"]
+    replacement = EventEmitter(
+        run_id=BINDING["run_id"], workspace_id=BINDING["workspace_id"],
+        ingest_url="", ingest_token="",
+        journal=CaptureJournal(store, BINDING, {}, max_operations=2),
+    )
+    assert replacement.collect()["events"] == accepted
+    assert replacement.delivery_status()["retention_ready"] is False
+
+
 def test_identical_logical_retry_preserves_original_envelope_even_after_ack():
     original = make()
     assert (

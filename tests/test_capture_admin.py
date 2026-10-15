@@ -225,3 +225,45 @@ def test_discovery_count_failure_marks_otherwise_readable_harvest_incomplete(
     assert row["discovery_records"] is None
     assert row["capture_observation"]["journal"] == "unavailable"
     assert response.json()["instance"]["capture_error"] == "capture_unavailable"
+
+
+def test_consent_off_write_only_checkpoint_outage_keeps_diagnostic_hold(
+    client, as_admin, monkeypatch,
+):
+    from server import event_emitter as emitter_module, insight_summary, stats
+    from server.capture_journal import CaptureJournal, MemoryCaptureStorage
+    from server.users import user_manager
+
+    monkeypatch.setenv("WORKSHOP_INSIGHT_CAPTURE", "false")
+    binding = {"run_id": "counter-outage", "unit_id": "counter-unit",
+               "workspace_id": "123", "owner": "alice@example.com"}
+    storage = MemoryCaptureStorage()
+    journal = CaptureJournal(storage, binding, {})
+    retained = EventEmitter(run_id=binding["run_id"], workspace_id=binding["workspace_id"],
+                            ingest_url="", ingest_token="", journal=journal)
+    monkeypatch.setattr(emitter_module, "event_emitter", retained)
+    user_manager.configure_capture(journal, binding["owner"])
+    stats.configure_capture(journal)
+    owner = user_manager.peek(binding["owner"])
+    owner.errors = 1
+    monkeypatch.setattr(stats, "_workspace_resources", lambda: stats._Census())
+    monkeypatch.setattr(insight_summary, "summarise_in_background", lambda *a, **k: None)
+    create = storage.create
+
+    def write_unavailable(*_args):
+        raise OSError("sensitive storage detail")
+
+    monkeypatch.setattr(storage, "create", write_unavailable)
+    response = client.get("/api/admin/stats", headers=ADMIN)
+    assert response.status_code == 200
+    [row] = response.json()["users"]
+    assert row["errors"] == 1
+    assert row["capture_observation"]["journal"] == "unavailable"
+    assert response.json()["instance"]["capture_error"] == "capture_unavailable"
+    assert journal.read()["users"][owner.email]["errors"] == 0
+    assert "sensitive" not in response.text
+    monkeypatch.setattr(storage, "create", create)
+    recovered = client.get("/api/admin/stats", headers=ADMIN).json()
+    assert recovered["users"][0]["capture_observation"]["journal"] == "ready"
+    assert "capture_error" not in recovered["instance"]
+    assert journal.read()["users"][owner.email]["errors"] == 1

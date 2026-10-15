@@ -188,6 +188,117 @@ def test_stale_containers_add_each_process_counter_delta_once(monkeypatch):
     assert first.topic_hits == {"sql": 5}
 
 
+@pytest.mark.parametrize("extra_activity", [False, True])
+def test_checkpoint_verification_failure_does_not_reapply_committed_counter_delta(monkeypatch, extra_activity):
+    manager, user, emitter = _setup(monkeypatch)
+    user.sessions_launched["claude"] = 1
+    user.topic_hits["sql"] = 2
+    user.errors = 1
+    store = emitter.journal.storage
+    create, read = store.create, store.read
+    fail_next_read = False
+
+    def committed_create(name, content):
+        nonlocal fail_next_read
+        result = create(name, content)
+        fail_next_read = True
+        return result
+
+    def unavailable_verification(name):
+        nonlocal fail_next_read
+        if fail_next_read:
+            fail_next_read = False
+            raise OSError("committed operation verification unavailable")
+        return read(name)
+
+    monkeypatch.setattr(store, "create", committed_create)
+    monkeypatch.setattr(store, "read", unavailable_verification)
+    with pytest.raises(CaptureStorageError):
+        manager.checkpoint(user)
+    assert user._capture_baseline["sessions_launched"] == {}
+    monkeypatch.setattr(store, "create", create)
+    monkeypatch.setattr(store, "read", read)
+    assert emitter.journal.read()["users"][user.email]["sessions_launched"] == {"claude": 1}
+    if extra_activity:
+        user.sessions_launched["claude"] += 1
+        user.topic_hits["sql"] += 3
+        user.errors += 1
+    manager.checkpoint(user)
+    saved = emitter.journal.read()["users"][user.email]
+    assert saved["sessions_launched"] == {"claude": 2 if extra_activity else 1}
+    assert saved["topic_hits"] == {"sql": 5 if extra_activity else 2}
+    assert saved["errors"] == (2 if extra_activity else 1)
+    # A successful checkpoint advances its baseline; a later no-op cannot add
+    # this generation again, including after another process contributed.
+    manager.checkpoint(user)
+    assert emitter.journal.read()["users"][user.email] == saved
+
+
+def test_stale_container_harvest_reconciles_before_deriving_signal(monkeypatch):
+    manager, first, emitter = _setup(monkeypatch)
+    second_manager = users.UserManager()
+    second_manager.configure_capture(CaptureJournal(emitter.journal.storage, BINDING, {}), BINDING["owner"])
+    second = second_manager.peek(BINDING["owner"])
+    first.sessions_launched["claude"] = 1
+    first.topic_hits["sql"] = 2
+    first.errors = 1
+    manager.checkpoint(first)
+    second.sessions_launched["claude"] = 1
+    second.topic_hits["sql"] = 3
+    second.errors = 2
+    second_manager.checkpoint(second)
+    monkeypatch.setattr(stats, "_workspace_resources", lambda: stats._Census())
+    snapshot = stats.gather_all([first])
+    assert snapshot["users"][0]["agent_sessions"] == 2
+    assert snapshot["users"][0]["signal"]["topic_hits"] == {"sql": 5}
+    assert snapshot["users"][0]["errors"] == 3
+    stats.emit_signals(snapshot, emitter)
+    signal = emitter.collect()["events"][0]["event"]["payload"]
+    assert signal["agent_sessions"] == 2
+    assert signal["signal"]["topic_hits"] == {"sql": 5}
+    assert signal["errors"] == 3
+
+
+def test_signal_checkpoint_retry_after_committed_but_unverified_append(monkeypatch, tmp_path):
+    _manager, user, emitter = _setup(monkeypatch)
+    harvest = _output(monkeypatch, user, tmp_path)
+    # New output after the gathered snapshot is checkpointed in the signal's
+    # atomic append, independently of the snapshot's unchanged content key.
+    user.topic_hits["lakebase"] += 4
+    user.errors += 1
+    store = emitter.journal.storage
+    create, read = store.create, store.read
+    verification_pending = False
+    failures = 1
+
+    def committed_create(name, content):
+        nonlocal verification_pending
+        result = create(name, content)
+        verification_pending = True
+        return result
+
+    def unavailable_verification(name):
+        nonlocal verification_pending, failures
+        if verification_pending and failures:
+            verification_pending = False
+            failures -= 1
+            raise OSError("accepted signal could not be verified")
+        return read(name)
+
+    monkeypatch.setattr(store, "create", committed_create)
+    monkeypatch.setattr(store, "read", unavailable_verification)
+    with pytest.raises(CaptureStorageError):
+        stats.emit_signals(harvest, emitter)
+    monkeypatch.setattr(store, "create", create)
+    monkeypatch.setattr(store, "read", read)
+    stats.emit_signals(harvest, emitter)
+    committed = emitter.journal.read()
+    assert committed["insight"]["next_seq"] == 1
+    assert committed["users"][user.email]["sessions_launched"] == {"bash": 2, "claude": 3}
+    assert committed["users"][user.email]["topic_hits"] == {"lakebase": 11}
+    assert committed["users"][user.email]["errors"] == 3
+
+
 def test_transient_retained_read_failure_keeps_diagnostic_harvest_available(monkeypatch, tmp_path):
     _manager, user, emitter = _setup(monkeypatch)
     harvest = _output(monkeypatch, user, tmp_path)

@@ -69,6 +69,7 @@ def test_replacement_replays_original_state_and_binding(tmp_path):
         "revision": 1,
         "error": None,
         "checkpoint_error": None,
+        "operation_capacity_exhausted": False,
     }
     assert not list(tmp_path.glob(".capture-stage-*"))
     assert (tmp_path / "00000000000000000001.json").stat().st_mode & 0o777 == 0o600

@@ -424,6 +424,21 @@ def gather_user(
     signal can report which resource kinds are non-empty. It is not copied into
     the per-user row, which would imply the census is per-attendee.
     """
+    checkpoint_unavailable = False
+    if user._capture_journal is not None:
+        from .users import user_manager
+
+        try:
+            # A replacement/overlapping container can have committed counters
+            # since this process last saw the owner. Reconcile before deriving
+            # the snapshot and its event, rather than publishing stale totals
+            # and refreshing the local owner only afterward.
+            user_manager.checkpoint(user)
+        except CaptureStorageError:
+            # A write-only outage may still allow all subsequent reads. Keep
+            # this failed checkpoint visible rather than mistaking readable
+            # older observations for confirmation of the live counter delta.
+            checkpoint_unavailable = True
     now = time.time()
     minutes = int((now - user.first_seen) / 60) if user.first_seen else 0
     agent_sessions = sum(
@@ -434,7 +449,7 @@ def gather_user(
     saved = _saved_stats(user)
     code, code_observation = _code_observation(user, fresh=fresh, saved=saved)
     discovery_records = _discovery_count(user.email)
-    observations_unavailable = saved.get("unavailable") or discovery_records is None
+    observations_unavailable = checkpoint_unavailable or saved.get("unavailable") or discovery_records is None
     return {
         "email": user.email,
         "minutes_building": minutes,

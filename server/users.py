@@ -16,6 +16,7 @@ import os
 import re
 import tempfile
 import threading
+import uuid
 
 from . import config
 from .capture_journal import CaptureHeldError
@@ -120,6 +121,11 @@ class User:
         self._capture_journal = None
         self._capture_recovered = False
         self._capture_baseline = _empty_user_snapshot()
+        # A process's counter delta must remain recognizable if a create was
+        # committed but its verification read failed. One receipt per writer
+        # avoids replaying that delta when the caller safely retries.
+        self._capture_writer_id = uuid.uuid4().hex
+        self._capture_generation = 0
 
     def bootstrap_home(self) -> None:
         if self._bootstrapped:
@@ -491,6 +497,20 @@ def _capture_users(state, owner: str) -> dict:
     return rows
 
 
+def _capture_checkpoints(state: dict) -> dict:
+    receipts = state.get("user_checkpoints", {})
+    if not isinstance(receipts, dict):
+        raise CaptureHeldError("retained attendee checkpoint receipts are invalid")
+    for writer, receipt in receipts.items():
+        if (not isinstance(writer, str) or re.fullmatch(r"[0-9a-f]{32}", writer) is None
+                or not isinstance(receipt, dict)
+                or set(receipt) != {"generation", "current"}
+                or type(receipt["generation"]) is not int or receipt["generation"] < 0):
+            raise CaptureHeldError("retained attendee checkpoint receipt is invalid")
+        validate_user_snapshot(receipt["current"])
+    return receipts
+
+
 class UserManager:
     """Live attendees plus retained derived metadata for the configured owner."""
 
@@ -520,6 +540,7 @@ class UserManager:
                 raise CaptureHeldError("capture attendee owner does not match its retained binding")
             def initialize(state):
                 rows = _capture_users(state, owner)
+                _capture_checkpoints(state)
                 return copy.deepcopy(rows.setdefault(owner, _empty_user_snapshot()))
             saved = journal.transaction(initialize)
         except CaptureHeldError as error:
@@ -537,8 +558,24 @@ class UserManager:
     @staticmethod
     def checkpoint_state(state, user: User, current: dict, baseline: dict) -> dict:
         rows = _capture_users(state, user.email)
-        merged = merge_user_snapshot(rows.get(user.email, _empty_user_snapshot()), current, baseline)
+        receipts = _capture_checkpoints(state)
+        receipt = receipts.get(user._capture_writer_id)
+        if receipt is not None:
+            if receipt["generation"] > user._capture_generation:
+                raise CaptureHeldError("retained attendee checkpoint generation is ahead of its writer")
+            if receipt["generation"] == user._capture_generation:
+                # A previous attempt in this generation already committed.
+                # Only activity since that attempt can be new, even though the
+                # process has not yet accepted a new aggregate baseline.
+                baseline = receipt["current"]
+        existing = rows.get(user.email, _empty_user_snapshot())
+        merged = merge_user_snapshot(existing, current, baseline)
         rows[user.email] = merged
+        if merged != existing:
+            state.setdefault("user_checkpoints", {})[user._capture_writer_id] = {
+                "generation": user._capture_generation,
+                "current": copy.deepcopy(current),
+            }
         return copy.deepcopy(merged)
 
     @staticmethod
@@ -548,6 +585,7 @@ class UserManager:
         latest = user_snapshot(user)
         _apply_user_snapshot(user, merge_user_snapshot(saved, latest, current))
         user._capture_baseline = copy.deepcopy(saved)
+        user._capture_generation += 1
 
     def checkpoint(self, user: User) -> None:
         if self._require_ready is not None:

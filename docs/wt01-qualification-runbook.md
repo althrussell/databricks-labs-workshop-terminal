@@ -50,6 +50,19 @@ Use the existing operator staging/deployment tooling and isolated qualification
 release/toolchain volumes. Select the exact candidate pin; do not substitute a
 previous stable package or resolve a floating release during provisioning.
 
+The existing PR CI `packaged-runtime` job is also an established source of the
+exact candidate package: it builds twice, compares bytes and smoke-tests in a
+clean Linux container. Download the artifact for the reviewed full commit and
+verify its manifest and PEX hashes. To make those unchanged bytes available to
+CT's existing release resolver, publish a qualification-only prerelease under a
+unique non-`v*` tag with `latest=false`, then use only the qualification
+configuration's manifest URL/digest and the `configured` selection. Preserve the
+CI manifest's honest `unreleased` tag. Ordinary release discovery excludes
+prereleases. This does not change CI or introduce a deployment workflow; the
+operator stages the assets and deploys qualification CT with its existing
+verified CT artifact and the candidate pin. Restore the original qualification
+pin after cleanup.
+
 No hosted pipeline, Databricks Job, new build service or infrastructure is
 required. The existing tagged release workflow remains its own established
 mechanism; this milestone does not move operator deployment into GitHub.

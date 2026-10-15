@@ -440,6 +440,7 @@ class CaptureJournal:
                 "revision": self._revision,
                 "error": self._error,
                 "checkpoint_error": self._checkpoint_error,
+                "operation_capacity_exhausted": self._revision >= self.max_operations,
             }
 
     def mark_held(self, error: str | CaptureHeldError) -> None:

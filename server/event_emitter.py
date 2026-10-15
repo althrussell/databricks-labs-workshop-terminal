@@ -459,7 +459,10 @@ class EventEmitter:
             {"seq": seq, "event": insight["events"][str(seq)]}
             for seq in range(floor + 1, end + 1)
         ]
-        if not entries and state.get("producer_issues"):
+        if not entries and (
+            state.get("producer_issues")
+            or self.journal.health().get("operation_capacity_exhausted")
+        ):
             raise CaptureHeldError("capture history has unresolved delivery issues")
         with self._lock:
             self._collections += 1
@@ -512,6 +515,11 @@ class EventEmitter:
             insight = self._insight(state)
             issues = list(state.get("producer_issues") or [])
             persistence = self.journal.health()
+            if persistence.get("operation_capacity_exhausted"):
+                # The last allowed operation may have been an ACK. A refused
+                # output cannot then append its fault marker, so this persisted
+                # boundary must remain visible in a fresh app process too.
+                issues.append("capture_operation_capacity_exhausted")
             ready = (
                 not issues
                 and not self._configuration_fault

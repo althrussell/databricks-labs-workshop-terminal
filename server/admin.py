@@ -446,6 +446,11 @@ def harvest_stats(final: bool = False):
         "session_count": session_manager.count_all(),
         "final": final,
     }
+    if any(row.get("capture_observation", {}).get("journal") == "unavailable"
+           for row in payload.get("users", [])):
+        # Derived counters still need retained checkpoints when content capture
+        # is disabled, so a later no-op signal emitter cannot clear this hold.
+        payload["instance"]["capture_error"] = "capture_unavailable"
     # C6: push the derived behavioural signal on the same cadence CT polls at, so
     # the signal and the snapshot CT stores alongside it describe the same moment.
     # Retained signal acceptance can be held while the counters are still
