@@ -236,6 +236,8 @@ def test_default_closeout_drains_real_terminal_and_seals_real_final_outputs(monk
     discovery.discovery_store.configure_capture(source)
     stats.configure_capture(journal)
     insight_summary.stamps.configure_capture(journal)
+    monkeypatch.setattr(insight_summary, "_background_workers", set())
+    monkeypatch.setattr(insight_summary, "_background_outcomes", [])
     owner = user_manager.peek(binding["owner"])
     home = tmp_path / "attendee"
     owner.home = str(home)
