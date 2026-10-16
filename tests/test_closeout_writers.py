@@ -268,7 +268,14 @@ def test_default_closeout_drains_real_terminal_and_seals_real_final_outputs(monk
         manager.begin(capture_id="integrated-close", stream_id=source.stream_id, source=binding,
                       drain_timeout_seconds=10)
         closed = manager.advance(wait_seconds=3)
-        assert closed["phase"] == "SEALED", closed
+        # Each call makes bounded progress; the Linux process census can still
+        # see a finishing writer on a busy runner. Exercise the caller's normal
+        # retry protocol rather than requiring the first request to seal.
+        deadline = time.monotonic() + 10
+        while closed["phase"] == "CLOSING" and time.monotonic() < deadline:
+            time.sleep(0.05)
+            closed = manager.advance(wait_seconds=1)
+        assert closed["phase"] == "SEALED", json.dumps(closed, sort_keys=True)
         assert closed["complete"] is True
         assert len(closed["manifest"]["drain"]["outcomes"]) >= 6
         assert all(item["complete"] for item in closed["manifest"]["drain"]["outcomes"])
