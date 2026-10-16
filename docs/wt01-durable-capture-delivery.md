@@ -5,10 +5,11 @@ milestone keeps the existing capture categories and content. It is delivered in
 one WT branch and one PR, with the selected CT–WT qualification described in the
 [runbook](wt01-qualification-runbook.md).
 
-Implementation and acceptance evidence are being assembled. Local contract
-tests alone do not establish Databricks Apps restart/redeployment durability or
-the real CT-to-WT interaction. Record the exact candidate, test results and live
-evidence before marking this milestone qualified.
+Qualified on 16 October 2026 through the existing qualification CT app and one
+real attendee workspace. The [sanitized acceptance evidence](wt01-qualification-evidence-2026-10-16.json)
+records ten passing gates, exact artifacts and hashes of the private receipts.
+The selected checkpoint covers actual CT creation, pending-output restart and
+redeployment, fresh Lakebase readback, owned teardown and retained history.
 
 ## Scope
 
@@ -107,3 +108,38 @@ checkpoint when the changed CT–WT interaction requires it; ordinary PR checks
 do not allocate a fleet. This milestone's first producer/consumer interaction
 does require that selected checkpoint. A passing deployment state, `pending=0`
 or a recent sync timestamp alone does not prove capture correctness.
+
+## Completed qualification
+
+The live package pins WT runtime commit
+`c9aacd60dad8b2b372a7e62efa9915f420b37c03`. CT ran the reviewed prerequisite
+from [CT PR183](https://github.com/althrussell/databricks-labs-control-tower/pull/183),
+source `79b6cc06a7a0191adc8a7fb4d5b317df2d1b20ba`. The final WT evidence commit
+changes documentation only; the existing CI checks also run on that PR head.
+
+| Check | Observed result |
+| --- | --- |
+| Regression and release | 3,182 tests passed, 65 optional tests skipped; exact-runtime CI passed, including reproducible PEX/offline smoke, frontend and rendered-wizard checks. One existing Starlette/httpx deprecation warning remains. |
+| Real owner capture | The assigned attendee's normal OAuth session exercised supported owner APIs. Captured name/identity survived; both discovery records retained revisions 1, 2 and 3, including withdrawals with cleared current projections. |
+| Pending-output restart | CT collection was stopped; WT was stopped and restarted through the supported Apps API. All 49 accepted entries, including 16 pending entries, retained their exact bytes, source epoch, revision keys and ACK 33 while stopped and after restart. |
+| CT restart and readback | Restarted CT recovered its durable cursor. A fresh read-only Lakebase connection verified the 80-entry audited source prefix within 81 committed records, with committed/ACK position 81 and no drops or stream issues. |
+| CT-driven redeployment | CT replaced the WT deployment using the same pinned package. The original 84-entry prefix and pending discovery sequence 83 survived unchanged at ACK 81. Owner readback recovered revision 1, then accepted revision 2 and withdrawal revision 3. Settled readiness returned HTTP 200. |
+| Pre-teardown checkpoint | All 123 independently audited source entries matched retained CT raw hashes; fresh Lakebase readback showed committed/ACK position 124. Repeated collection preserved unique logical outcomes. |
+| Teardown and retention | CT's ordinary teardown removed the test workspace; account inventory returned to five workspaces and the assigned login became available. Fresh Lakebase readback retained all 124 pre-teardown records and contained 126 records/events after the final harvest. Both discovery histories and identity remained correct. |
+| Restoration and isolation | Qualification CT returned to its original stable WT pin and configuration. A further fresh database read retained all 126 records/events. Labs app/database matched their baseline, and both original checkouts' unrelated lock changes were preserved. The temporary attendee OAuth profile was removed. |
+
+Private receipt hashes in the evidence bind the source audits, database reads,
+deployment identities and final inventory. Raw attendee bodies, credentials,
+tokens and browser storage are excluded from the committed evidence. The exact
+candidate PEX came from the existing PR package job and was hash-verified and
+staged through the existing operator-controlled CT deployment path. No new build
+or deployment workflow was introduced.
+
+Paging, lost ACK responses, commit/storage failures, concurrency, corrupt or
+missing state and capacity exhaustion have local contract/fault-test evidence.
+They were not forcibly injected into the live account. Actual attendee API
+evidence does not claim a rendered live browser or model-execution journey.
+Recovery assertions cover captured names, discovery revisions and tombstones;
+uncompleted wizard/profile drafts remain outside this existing capture policy.
+The verified live prefix is not a sealed whole-event receipt: finalization and
+teardown enforcement remain WT-02/CT-02.

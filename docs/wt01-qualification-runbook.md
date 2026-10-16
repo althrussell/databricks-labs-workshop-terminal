@@ -26,6 +26,14 @@ qualification state and relevant account resources for comparison afterward.
 Do not store access tokens, client secrets, browser storage or raw credential
 responses in evidence.
 
+Before allocating a seat, verify that the actual qualification CT principal can
+inspect the configured reader group's effective permissions on both the release
+and toolchain volumes. A successful package byte read does not establish this:
+the ordinary deployment path also checks group access. An unknown permission
+result is a preparation blocker. If the existing volume lacks metadata access
+for CT, obtain approval for the specific missing privilege before changing it;
+do not replace this check with an operator's more privileged result.
+
 Use the exact WT candidate commit and public dependency inputs. Preserve the
 owner's unrelated laptop `uv.lock` changes; build from a clean selected checkout.
 Laptop installs use command-local Databricks-managed PyPI/npm proxies. Public
@@ -33,9 +41,14 @@ PyPI/npm references remain in the committed and deployed configuration.
 
 ## Build and pin the candidate
 
-The existing PEX builder requires Linux x86_64 and CPython 3.11. On an existing
-operator-controlled Linux build host, materialize the frozen dependency graph,
-then run the existing builder with the full reviewed commit:
+The release PEX targets Linux x86_64 and CPython 3.11. The existing PR CI
+`packaged-runtime` job builds twice, compares bytes and smoke-tests in a clean
+Linux container. Its exact-commit artifact is suitable for this checkpoint;
+no separate Linux machine is required. Download that artifact and independently
+verify its manifest and PEX hashes before staging it through CT.
+
+An existing compatible operator build environment can also run the unchanged
+builder with the full reviewed commit:
 
 ```bash
 uv sync --frozen --no-group dev --group release
@@ -50,10 +63,7 @@ Use the existing operator staging/deployment tooling and isolated qualification
 release/toolchain volumes. Select the exact candidate pin; do not substitute a
 previous stable package or resolve a floating release during provisioning.
 
-The existing PR CI `packaged-runtime` job is also an established source of the
-exact candidate package: it builds twice, compares bytes and smoke-tests in a
-clean Linux container. Download the artifact for the reviewed full commit and
-verify its manifest and PEX hashes. To make those unchanged bytes available to
+To make the verified, unchanged candidate bytes available to
 CT's existing release resolver, publish a qualification-only prerelease under a
 unique non-`v*` tag with `latest=false`, then use only the qualification
 configuration's manifest URL/digest and the `configured` selection. Preserve the
@@ -89,9 +99,11 @@ establish this integration result.
 3. Run `POST /api/labs/{run_id}/provision`. Read run/unit operations until the
    actual WT health/admission gate succeeds. Verify the installed source and
    package digests and the attendee binding through independent readback.
-4. Log in as the real assigned attendee through the ordinary WT UI. Verify the
-   existing owner/project recovery behavior and create representative current
-   capture outputs, including discovery revision/withdrawal and identity. Use
+4. Log in as the real assigned attendee through the ordinary workshop login.
+   Verify the existing owner/project recovery behavior and create representative current
+   capture outputs, including discovery revision/withdrawal and identity. A
+   normal attendee OAuth session may exercise the supported owner APIs; record
+   that as API evidence separately from any observed rendered UI journey. Use
    the same capture policy as the workshop; do not add transcript/file capture.
 
 Keep qualification model-policy/shared-budget mutation and telemetry-retention
