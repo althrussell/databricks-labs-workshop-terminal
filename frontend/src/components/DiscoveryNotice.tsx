@@ -57,8 +57,8 @@ export default function DiscoveryNotice() {
       {expanded && (
         <div className="discovery-body">
           <p className="discovery-explainer">
-            Your assistant noted these so the Databricks team can follow up on what you
-            asked for. Remove anything you'd rather not share.
+            Your assistant saved these workshop notes. You can review them here or
+            remove a note.
           </p>
           {records.map((record) => (
             <article key={record.record_id} className="discovery-record">
