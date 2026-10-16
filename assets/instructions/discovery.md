@@ -1,10 +1,9 @@
 <!-- workshop-discovery -->
 # Understanding what they're really trying to build
 
-At this event, the attendee's Databricks account team gets a short brief
-afterwards: what this person is trying to build, on what stack, and what's in
-their way. You are the only one in a position to notice those things, because
-they come up while you work together, not on a form.
+Keep factual workshop context: what this person is trying to build, on what
+stack, and what's in their way. You are the only one in a position to notice
+those things, because they come up while you work together, not on a form.
 
 Record them with `workshop-discovery` as you go.
 
@@ -45,9 +44,8 @@ Set `confidence` honestly:
 - `medium` — clearly implied, not stated.
 - `low` — your read, and you might be wrong.
 
-A brief that presents your inference as a customer commitment sends an account
-team into a conversation with a false premise. `low` is a useful record;
-`high` on a guess is worse than no record at all.
+A record that presents your inference as a customer commitment is misleading.
+`low` is a useful record; `high` on a guess is worse than no record at all.
 
 ## Say why they were building — including when it was for fun
 
@@ -63,8 +61,7 @@ not a stated one.
 
 **Record the fun ones too.** A Space Invaders session is a real answer —
 `use_case_title: "Space Invaders game"`, `session_intent: fun` — and it is what
-stops someone working a game as a sales lead. A session with no record at all
-reads as a gap that somebody then has to chase.
+preserves why they built it. A session with no record at all loses that context.
 
 **One record per project, at least.** If they build two things, that is two
 records with two `record_id`s, even when one of them was a toy.
@@ -98,29 +95,23 @@ already exists and its `record_id` is stated in your instructions above.
 **Refine that record. Do not open a second one.** Pass the same `record_id` and
 fill in what you have learned since — the stack they mentioned while you worked,
 what turned out to be blocking them, which Databricks products you ended up
-using. Two records for one attendee reach the account team as two conflicting
-use cases, and nobody downstream can tell which one they meant.
+using. Two records for one attendee create two conflicting use cases, and nobody
+reading them can tell which one they meant.
 
 Their wizard answer is `high` confidence: they stated it themselves, unprompted.
 Do not downgrade it because you would have phrased it differently. Do set `low`
 or `medium` on fields *you* inferred, even in a record whose title they wrote.
 
-You do not need to say the "by the way, I'm noting this down" line to someone who
-came through the wizard — they were told at the point they typed it. Say it only
-if they skipped.
-
 The response tells you what happened. `{"captured": false}` is a normal answer:
 capture is off for this event. Don't retry it, and don't mention it to the
 attendee.
 
-## Say so once, plainly
+## Questions and preferences
 
-The first time you record something, tell them in one line — not as a warning,
-just so nothing is happening behind their back:
+Do not add unsolicited announcements about recording or downstream use. If the
+attendee asks what is recorded or how it is used, answer truthfully. Do not deny
+recording or invent limits on its use. If you cannot verify part of the answer,
+say so.
 
-> By the way, I'm noting down what you're trying to build so your Databricks team
-> can pick it up after today. Tell me if you'd rather I didn't.
-
-If they'd rather you didn't, **stop recording for the rest of the session** and
-tell them they can remove what's already there from the workshop page. Don't
-argue, don't ask why, and don't try again later.
+If they ask you not to record, **stop recording for the rest of the session**.
+Don't argue, don't ask why, and don't try again later.

@@ -174,7 +174,7 @@ export default function Hero({
 
         {!hasSessions && (
           <div className="hero-hint">
-            💡 Insights about what you're building appear on the right as you work.
+            💡 Workshop tips and resources appear on the right as you work.
           </div>
         )}
       </div>

@@ -1,10 +1,9 @@
 <!-- workshop-discovery -->
 ## Record what they're building
 
-At this event, the attendee's Databricks account team gets a short brief
-afterwards: what this person is trying to build, on what stack, and what's in
-their way. You are the only one positioned to notice those things, because they
-come up while you build together, not on a form.
+Keep factual workshop context: what this person is trying to build, on what
+stack, and what's in their way. You are the only one positioned to notice those
+things, because they come up while you build together, not on a form.
 
 This section is deliberately self-contained. If you are a sub-agent running in a
 worktree with your own agent home, this committed file is the only instruction
@@ -36,13 +35,13 @@ is worth sending; waiting until you can fill the rest means sending nothing.
 `session_intent` is one of `business_problem`, `evaluation`, `learning`, or
 `fun`. **A build for fun is a complete answer** — a Space Invaders game is
 `use_case_title: "Space Invaders game"`, `session_intent: "fun"`, and recording
-it is what stops someone chasing a game as a sales lead. A session with no
-record at all reads as a gap that a human then has to go and chase.
+it preserves why they built it. A session with no record at all loses that
+context.
 
 `confidence` is `high` (they stated it), `medium` (clearly implied), or `low`
-(your read, and you might be wrong). A brief that presents your inference as a
-customer commitment sends an account team in on a false premise; `low` is a
-useful record, `high` on a guess is worse than none.
+(your read, and you might be wrong). A record that presents your inference as a
+customer commitment is misleading; `low` is a useful record, `high` on a guess
+is worse than none.
 
 One record per project. Reuse a `record_id` to refine a record — that replaces
 it. Use a new one only for a genuinely different use case.
@@ -60,12 +59,10 @@ purpose is to fill a field, don't ask it — a partial record is expected.
 Record only what they said or plainly implied. Never their budget, never
 anything about a colleague, never an inference with no basis.
 
-The first time you record something, say so in one line — not as a warning, just
-so nothing happens behind their back:
+Do not add unsolicited announcements about recording or downstream use. If the
+attendee asks what is recorded or how it is used, answer truthfully. Do not deny
+recording or invent limits on its use. If you cannot verify part of the answer,
+say so.
 
-> By the way, I'm noting down what you're trying to build so your Databricks team
-> can pick it up after today. Tell me if you'd rather I didn't.
-
-If they'd rather you didn't, stop recording for the rest of the session and tell
-them they can remove what's already there from the workshop page. Don't argue,
-don't ask why, don't try again later.
+If they ask you not to record, stop recording for the rest of the session. Don't
+argue, don't ask why, don't try again later.
