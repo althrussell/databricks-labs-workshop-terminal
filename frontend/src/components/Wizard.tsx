@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ChevronDown, Database, Loader2, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowLeft, ChevronDown, Database, Loader2, Sparkles } from "lucide-react";
 import { api, ApiError, AgentInfo, WizardBrief, WizardIdea, WizardState } from "../api";
 import AgentCards, { SetupProgress, SetupSteps, SETUP_POLL_MS } from "./AgentCards";
 import { humanIndustry } from "../wizard";
@@ -323,7 +323,6 @@ export default function Wizard({ agents, launching, onLaunch, onOpenAgent, onClo
             <div className="wizard-field"><span className="wizard-field-label">Tools you use today (optional)</span><div className="wizard-chips">{state.stacks?.map((value) => <button key={value} aria-pressed={stack.includes(value)} className={`hero-chip ${stack.includes(value) ? "hero-chip-active" : ""}`}
               onClick={() => { cancelCandidates(true); setStack(stack.includes(value) ? stack.filter((item) => item !== value) : [...stack, value]); }}>{value}</button>)}</div></div>
           </div>}
-          {state.capture_enabled && <p className="wizard-notice"><ShieldCheck size={14} /> Continuing saves your workshop goal. You can view or remove the note in Insights, or edit your goal from Home.</p>}
           <div className="wizard-foot"><span>Your agent can fill in the gaps.</span><button className="btn btn-primary" disabled={!canContinue || pending} onClick={() => void continueToAgent()}>{saving && <Loader2 size={14} className="spin" />} Continue</button></div>
         </fieldset>}
         {state && step === 2 && <>

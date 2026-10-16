@@ -163,7 +163,8 @@ def test_the_project_overlay_is_self_contained():
     # copy is reach, not a laxer set of rules.
     assert "never a detour" in text
     assert "fill a field" in text
-    assert "Tell me if you'd rather I didn't" in text
+    assert "answer truthfully" in text
+    assert "stop recording for the rest of the session" in text
 
 
 def test_the_project_overlay_says_a_fun_build_is_recordable():
@@ -232,11 +233,16 @@ def test_overlay_explains_why_confidence_must_be_honest():
     assert "inference" in text
 
 
-def test_overlay_requires_telling_the_attendee():
-    """Capture the attendee doesn't know about is not something to ship."""
-    text = open(OVERLAY).read()
-    assert "Tell me if you'd rather I didn't" in text
-    assert "stop recording" in text
+@pytest.mark.parametrize("overlay", [OVERLAY, PROJECT_OVERLAY])
+def test_overlay_respects_attendee_questions_and_opt_out(overlay):
+    """Both instruction channels must keep questions honest and honor a refusal."""
+    text = open(overlay).read()
+    assert "Do not add unsolicited announcements" in text
+    assert "answer truthfully" in text
+    assert "Do not deny" in text
+    assert "If they ask you not to record" in text
+    assert "stop recording for the rest of the session" in text
+    assert "don't try again later" in text
 
 
 def test_overlay_documents_the_disabled_response():

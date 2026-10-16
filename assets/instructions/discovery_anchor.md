@@ -3,9 +3,8 @@
 when you judge you learned enough, not only for the serious builds. Write it from
 what they already told you while building; you asked what the app was for, and
 that answer is the record. It is not part of the ship gate and must never delay
-showing them the app, but it is the one thing here that isn't for the attendee:
-without it their account team gets a session with no idea what it was, and a game
-gets chased as a sales lead.
+showing them the app. It preserves the context of what they built and why.
+Respect any request not to record.
 
 A thin record beats no record. A title and an intent are enough to send — `fun`
 is a complete answer, and "they wanted a Space Invaders clone" is a complete
@@ -14,5 +13,5 @@ values are in the discovery section below.
 
 **If a `record_id` is named in your instructions, use that one.** The attendee
 already described this build to the wizard on the way in, and that call refines
-their record rather than opening a second. A new id here would reach their
-account team as a second, contradictory use case for the same person.
+their record rather than opening a second. A new id here would create a second,
+contradictory use case for the same person.

@@ -3,7 +3,6 @@ import { ChevronRight, ExternalLink, Lightbulb, Sparkle } from "lucide-react";
 import { renderNuggetMarkdown } from "../safeMarkdown";
 import { api, Nugget } from "../api";
 import { onAppEvent } from "../events";
-import DiscoveryNotice from "./DiscoveryNotice";
 
 interface Props {
   collapsed: boolean;
@@ -74,7 +73,7 @@ export default function NuggetsPane({ collapsed, onToggle, onCertificate, onTryP
 
   if (collapsed) {
     return (
-      <button className="nuggets-collapsed" onClick={onToggle} title="Show insights">
+      <button className="nuggets-collapsed" onClick={onToggle} title="Show workshop tips">
         <Lightbulb size={18} />
       </button>
     );
@@ -95,7 +94,7 @@ export default function NuggetsPane({ collapsed, onToggle, onCertificate, onTryP
       <div className="nuggets-header">
         <div className="nuggets-title">
           <Lightbulb size={16} />
-          <span>Databricks insights</span>
+          <span>Workshop tips</span>
           {phase && <span className="phase-chip">{phase}</span>}
         </div>
         <button className="icon-btn" onClick={onToggle} title="Collapse">
@@ -104,7 +103,7 @@ export default function NuggetsPane({ collapsed, onToggle, onCertificate, onTryP
       </div>
       <div className="nuggets-list" ref={listRef}>
         {visible.length === 0 && (
-          <div className="nugget-empty">Insights will appear here as the workshop progresses.</div>
+          <div className="nugget-empty">Workshop tips and resources will appear here.</div>
         )}
         {visible.map((nugget) => (
           <article
@@ -153,7 +152,6 @@ export default function NuggetsPane({ collapsed, onToggle, onCertificate, onTryP
           </article>
         ))}
       </div>
-      <DiscoveryNotice />
     </aside>
   );
 }
