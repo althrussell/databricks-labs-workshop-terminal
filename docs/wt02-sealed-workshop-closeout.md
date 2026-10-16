@@ -161,7 +161,11 @@ passed **277 tests**, with one Linux-only test skipped on the macOS host. Separa
 owned-module regressions passed, and all changed Python files pass Ruff and diff
 checks. Independent reviews found and fixed failure-erasing retries, truncated
 census assurance, missing shutdown lifecycle/tail output, unborn Git history and
-detached-sync outcomes. Final full-suite and exact-head Linux/package/frontend/
+detached-sync outcomes. The Linux host integration test verifies an explicit
+incomplete hold when shared-runner processes cannot be inspected, including
+successful terminal shutdown and retained lifecycle events. The isolated packaged
+HTTP smoke requires successful sealing through the real default pipeline.
+Final full-suite and exact-head Linux/package/frontend/
 browser results are recorded in the milestone PR's checks and qualification
 comment before handoff. The existing CI and public package inputs are unchanged.
 

@@ -216,7 +216,7 @@ def test_live_session_lifecycle_and_shutdown_output_are_in_the_sealed_capture(mo
 
 @pytest.mark.skipif(not sys.platform.startswith("linux") or not os.path.isdir("/proc"),
                     reason="default writer proof requires Linux process census")
-def test_default_closeout_drains_real_terminal_and_seals_real_final_outputs(monkeypatch, tmp_path):
+def test_default_closeout_drains_real_terminal_and_requires_complete_host_census(monkeypatch, tmp_path):
     from server import discovery, event_emitter as emitter_module, insight_summary, projects, sessions, stats, telemetry
     from server import omnigent_remote
     from server.capture_journal import CaptureJournal, MemoryCaptureStorage
@@ -275,6 +275,35 @@ def test_default_closeout_drains_real_terminal_and_seals_real_final_outputs(monk
         while closed["phase"] == "CLOSING" and time.monotonic() < deadline:
             time.sleep(0.05)
             closed = manager.advance(wait_seconds=1)
+        assert session._process.poll() is not None
+        assert session._reader_done.is_set()
+        assert not session._reader_thread.is_alive()
+        assert journal.read()["closeout"]["writers"] == {}
+        if closed["issues"] == ["attendee_process_census_unreadable"]:
+            # Shared Linux runners can contain same-UID processes whose HOME
+            # and cwd cannot be inspected. Verify the required hold explicitly;
+            # the isolated packaged HTTP smoke requires an unconditional seal
+            # through this same default drain/finalization pipeline.
+            assert closed["phase"] == "INCOMPLETE", json.dumps(closed, sort_keys=True)
+            assert closed["complete"] is False
+            assert closed["active_writers"] == {}
+            assert closed["manifest"] is None
+            assert closed["manifest_sha256"] is None
+            assert closed["final_outputs"] == {}
+            outcomes = {row["kind"]: row for row in journal.read()["closeout"]["drain"]["outcomes"]}
+            assert set(outcomes) == {"workspace_sync_admission", "terminal_processes",
+                                     "paired_host_processes", "identity_workers",
+                                     "workspace_sync_workers", "attendee_process_census"}
+            census = outcomes.pop("attendee_process_census")
+            assert all(row["complete"] for row in outcomes.values()), outcomes
+            assert census["complete"] is False
+            assert census["unreadable"] > 0
+            assert census["matched"] == 0
+            types = [row["event"]["type"] for row in source.collect()["events"]]
+            assert types.count("session.started") == types.count("session.exited") == 1
+            assert "insight.summary" not in types
+            assert "workshop.signal" not in types
+            return
         assert closed["phase"] == "SEALED", json.dumps(closed, sort_keys=True)
         assert closed["complete"] is True
         assert len(closed["manifest"]["drain"]["outcomes"]) >= 6
