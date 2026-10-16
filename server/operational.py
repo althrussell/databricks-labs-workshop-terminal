@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import copy
+import logging
 import os
 import threading
 import time
+import uuid
 from collections.abc import Callable
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 _STATUS_CODES = (409, 429, 503)
 _MAX_COUNTER = 2**63 - 1
@@ -108,9 +113,11 @@ def build_snapshot(
     current_time = time.time() if now is None else now
     installer = installer_status_fn()
     steps = installer.get("steps", {})
-    step_values = [
-        step for step in steps.values() if isinstance(step, dict)
-    ] if isinstance(steps, dict) else []
+    step_values = (
+        [step for step in steps.values() if isinstance(step, dict)]
+        if isinstance(steps, dict)
+        else []
+    )
     durations = [
         int(step["duration_ms"])
         for step in step_values
@@ -214,17 +221,46 @@ class OperationalHealthReporter:
         self._emitter = emitter
         self._snapshot = snapshot_fn
         self.interval = min(3600.0, max(10.0, float(interval)))
+        self._pending: dict | None = None
+        self._pending_key: str | None = None
+        self._last_error: str | None = None
+        self._failed_attempts = 0
+        self._last_successful_at: float | None = None
+        self._lock = threading.Lock()
+
+    def status(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "pending": self._pending is not None,
+                "last_error": self._last_error,
+                "failed_attempts": self._failed_attempts,
+                "last_successful_at": self._last_successful_at,
+            }
 
     def emit_once(self) -> bool:
-        try:
-            self._emitter.emit(
-                "operational.health",
-                "system",
-                self._snapshot(),
-            )
-        except Exception:  # noqa: BLE001 - telemetry never blocks app paths
-            return False
-        return True
+        with self._lock:
+            try:
+                if self._pending is None:
+                    self._pending = copy.deepcopy(self._snapshot())
+                    self._pending_key = uuid.uuid4().hex
+                self._emitter.emit(
+                    "operational.health",
+                    "system",
+                    self._pending,
+                    idempotency_key=self._pending_key,
+                )
+            except Exception as error:  # sampler failures remain visible and retryable
+                self._last_error = type(error).__name__
+                self._failed_attempts += 1
+                logger.warning(
+                    "operational health capture was not accepted; retry required (%s)",
+                    type(error).__name__,
+                )
+                return False
+            self._pending, self._pending_key = None, None
+            self._last_error = None
+            self._last_successful_at = time.time()
+            return True
 
     def run(self, stop: threading.Event) -> None:
         while not stop.wait(self.interval):

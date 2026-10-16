@@ -1,0 +1,392 @@
+{
+  "acceptance_gates": {
+    "actual_attendee_owner_api_journeys": {
+      "status": "PASS"
+    },
+    "actual_redeploy_and_ct_commit": {
+      "status": "PASS"
+    },
+    "audited_pre_cleanup_prefix_committed": {
+      "status": "PASS"
+    },
+    "original_checkouts_preserved": {
+      "status": "PASS"
+    },
+    "owned_cleanup_and_retained_history": {
+      "status": "PASS"
+    },
+    "protected_labs_unchanged": {
+      "status": "PASS"
+    },
+    "release_provenance": {
+      "status": "PASS"
+    },
+    "runtime_tests": {
+      "status": "PASS"
+    },
+    "stable_qualification_restored": {
+      "status": "PASS"
+    },
+    "supported_restart_and_ct_commit": {
+      "status": "PASS"
+    }
+  },
+  "all_required_gates_passed": true,
+  "assembled_at": "2026-10-16T00:56:14.051997+00:00",
+  "capture_policy": {
+    "guarantee": "Retain accepted output and source/revision identity until explicit CT ACK after commit; preserve original accepted raw entries in CT Lakebase.",
+    "not_claimed": [
+      "A full chat/tool transcript or attendee source-file archive beyond existing policy.",
+      "Sealed whole-event completeness or final help reconciliation.",
+      "Automatic teardown authorization or scheduling/capacity/dependency readiness.",
+      "Performance or fleet acceptance for 100 or 200 attendees."
+    ],
+    "scope": "Existing current-output capture categories and content; no additional collection granularity.",
+    "storage": "Existing attendee Workspace-file checkpoint and existing CT qualification Lakebase schema."
+  },
+  "evidence_boundaries": {
+    "admin_authorization": "Owner calls correctly return403 for privileged admin endpoints. Real CT collection and fresh Lakebase commit/ACK establish the privileged consumer path.",
+    "attendee_journey": "Actual assigned attendee OAuth and supported owner APIs exercised identity plus discovery save/edit/withdraw. This is API evidence, not a rendered browser UI journey.",
+    "failure_injection": "Lost ACK response, failed persistence/commit, duplicate/paged replay, corrupt/missing state, unsupported output and bounded-storage failures are established by local contract tests; no live lost-ACK injection is claimed.",
+    "model_execution": "No live model execution test was performed; this producer delivery change does not depend on model execution.",
+    "obo": "Observed OBO state and settled readiness are reported from each actual owner snapshot. No separate rendered-browser or live-model verification is inferred from that endpoint result.",
+    "owner_recovery": "Persisted attendee-name observations, captured discovery revisions and withdrawal tombstones are verified. Uncompleted wizard/profile drafts are legacy local session state and are not claimed restored.",
+    "readiness": "Only settled source snapshots qualify. Capture health is checked separately; any allowed 503 must contain solely pending attendee OBO validation. Early bootstrap failures do not qualify.",
+    "runtime_vs_final_head": "Live PEX and exact-runtime tests use the pinned WT runtime commit. Final PR evidence/documentation changes may produce a different docs-only head.",
+    "sanitization": "This record contains aggregate results, identifiers and hashes only. Raw attendee content, OAuth tokens, credentials and browser storage remain excluded."
+  },
+  "evidence_date": "2026-10-16",
+  "milestone": "WT-01",
+  "private_evidence_sha256": {
+    "assets": "84ad00724aacecac43548555088079b1e046d85d07edcca4af776537cfc52c80",
+    "attendee_after_redeploy": "eaec2162adcc5a754d2056be96ffc3b91c576d0f8b4fabc8d1424c8ee6145674",
+    "attendee_before_redeploy": "30da0a92dfb398b68943fb6b5b8154a0cdb0e70e792811b8752c164eefea3f8b",
+    "attendee_helper": "05ecfe0f953e8ad5f4919a118a11b45ada2bf586de9f15ab17ecc56a75f08e11",
+    "ct_deployment": "080bbabdd5e81cbd97756abe0749097cd24fbbc10439c8498d736a07e6017c65",
+    "ct_restart": "764b090bdeb632df710407e33a67814444a735df0325908891aa649675fa5434",
+    "db_after_cleanup": "66c27b355f47fa85e05137eaa67dedd7b2f9b53ddb6b50f5dab68c72bb534aa3",
+    "db_after_restart": "dc176b79e630c2736d45e25a2801cda45d2f5cb1cd691c0eca7fd56a35552d57",
+    "db_after_restore": "8dfca91a2d4a1223243c818feba8e599d5a6d3d3e8998a7d6c6822e3c28b6efd",
+    "db_before_cleanup": "187b81668c51199a2ef30b7634c99e06fc49fceeaef14fd4157a1ae693063f72",
+    "final_checkpoint_collect": "f5428d4f3f9b98b50b935777fd10155716efbac8065b249b8a42ba299c6309bc",
+    "final_inventory": "fcb1c56f85b2080bec9acae45b7347b7d637336cca27ead6a8603c61a0eb8f35",
+    "full_tests": "772b3933e8e64dfbc945a08ad1f1641034d6bf2b344df0cee56add2fafd65eed",
+    "journal_before_cleanup": "3a59c1813a8768b357855a177eb0c85d4406dafb1771ad74397521a64ba68ed5",
+    "original_checkouts": "7157376890ea0a88487b9e88f32c098b23e95d0d26cf5935fa0c72db894c40a8",
+    "original_ct_lock": "6897012ac188d1eb117ebf6e3a1e55ababf979eedd53945a4b7fa04e7e0afba6",
+    "original_qualification_config": "058c3fc3a7feedd56986614708610dcbf5e1711407fde73a5e445a55bfa8b1a2",
+    "original_wt_lock": "b234de35e9aff186a83d94f272f818326daeacdc223b1c35771f583f59be0bfd",
+    "owner_after_restart": "2e7f39c292e105fab43c5c2353ba2b04b7a57502cf60e052076fb08910b931d2",
+    "owner_helper": "f52cd4caa1831be6b301f20883f13c0df3c1055a703dcc818c1a618b92126e14",
+    "protected_labs": "3906eacf84adcf420a7c980505515e3635cc9861de487e494d07c3ea7a71cbcf",
+    "redeploy_pending_source": "505763ecd97da982f9db1ee3d95cb1ba41f55abdae32cf0a28c7c8d4ec891562",
+    "redeploy_proof": "c68bbdc952ff4b2e31400febec9a6b5655d7bc6e3bb2f6693d89df280672cbd2",
+    "redeploy_request": "908b994399228918c922bc3a70c110f55bef4e4609c1794daa05e22189b49cd9",
+    "redeploy_watch": "2ded0d6eb0b1acc2bbda9242888579121b5f6255c6ef4ef93c16f1a7503b2045",
+    "restart": "b88f4a64622ef1caf741195a3492415369b8a1bb5c4bb6fb088f12c1118ed6ea",
+    "reviewed_ct_bundle": "da04817ba2bd268a17d4f66e361beda6f83e00fbed4ea057146666a349ce66db",
+    "runtime_ci": "067db1792f09bd5a2dc1a1f6ac80bc909a4529d7589795b232e4e8735a1a1154",
+    "source_after_redeploy": "d704908170bf0001a433e8f98d87af033f5d264dcd3774d831e7bdb448b43827",
+    "source_after_restart": "b9e05a6be1c1e62e5b732a1b91fc436b2a079595ea7b771bbdfac86a09f47647",
+    "source_baseline": "59e4ad8a3cde29c0fa95172b6c82fd71273999cdb9ce1204698fddf14068d4d5",
+    "source_before_redeploy": "ca029ceb5209b8a4785623b8a11c74a2264c3adcfbc5f832130d26281a4a8daf",
+    "stable_expected_environment": "c7a8bd3afddd451ad7dd3774a20729d266a98e80b05015b885dd817256ee4608",
+    "stable_restore": "7fbda08907ce8a3f1618f9a1ca1ea6908bc1a81a88af096818c52393137702a1",
+    "stable_runtime": "b528c3353bc57e87a4be01a76a58b3aa26c9553800032b10f79280c9a4b7afe2",
+    "teardown": "36c432799df6cdd13ec76d7690776103d7cd9d67a0a81a6da57ba980c9bb0920",
+    "teardown_dry_run": "bec0181f548b6d14a435cd96220faa7edebae1883f139e942a815a8d778e272c"
+  },
+  "qualification": {
+    "attendee_workspace_id": "7474659119820231",
+    "ct_prerequisite": "https://github.com/althrussell/databricks-labs-control-tower/pull/183",
+    "run_id": "146ea1e7-1e92-4fe4-90c7-83a2387917b1",
+    "seats": 1,
+    "unit_id": "58351bd3-211e-4fde-839f-722443043bb8",
+    "wt_pr": "https://github.com/althrussell/databricks-labs-workshop-terminal/pull/103"
+  },
+  "qualification_status": "QUALIFIED",
+  "results": {
+    "actual_attendee_owner_api_journeys": {
+      "after_redeploy_successful_requests": 5,
+      "authentication": "Actual assigned attendee normal OAuth; no impersonation header.",
+      "before_redeploy_successful_requests": 3,
+      "discovery_revision1_recovered_exactly": true,
+      "edit_revision2_and_withdrawal_verified": true,
+      "owner_after_restart_successful_requests": 2,
+      "rendered_ui_journey_claimed": false,
+      "wizard_profile_draft_restoration_claimed": false
+    },
+    "actual_redeploy_and_ct_commit": {
+      "after_deployment_id": "01f1c8fa23391d99a5dffe7c4258eb1d",
+      "before_deployment_id": "01f1c8f924b21c60a263a93b85242a0c",
+      "ct_fresh_readback": {
+        "committed_seq": 124,
+        "ct_acked_seq": 124,
+        "owner_admin_reports": {
+          "page": "403_owner_has_no_operator_access",
+          "stats": "403_owner_has_no_operator_access"
+        },
+        "readiness_scope": "fully_ready",
+        "representative_projections": {
+          "discovery_records": [
+            {
+              "latest_revision": 3,
+              "record_id": "wt01-live-recovery-58351bd3",
+              "revisions": [
+                1,
+                2,
+                3
+              ],
+              "withdrawn": true
+            },
+            {
+              "latest_revision": 3,
+              "record_id": "wt01-live-redeploy-58351bd3",
+              "revisions": [
+                1,
+                2,
+                3
+              ],
+              "withdrawn": true
+            }
+          ],
+          "identity_attendees": 1,
+          "required_representative_record": "wt01-live-recovery-58351bd3"
+        },
+        "run_id": "146ea1e7-1e92-4fe4-90c7-83a2387917b1",
+        "stable_restart_prefix": true,
+        "stream_id": "eff1db1c24bb4bc4892fd56576222675",
+        "verified_wt_entries": 120,
+        "wt_acked_through": 81
+      },
+      "observed_at": {
+        "ct_ready_confirmed": "2026-10-16T00:47:30.131467+00:00",
+        "ct_redeploy_requested": "2026-10-16T00:39:52.415865+00:00",
+        "fresh_database": "2026-10-16T00:49:40.208810+00:00",
+        "pending_prefix_after_replacement": "2026-10-16T00:41:06.522749+00:00",
+        "settled_owner_source": "2026-10-16T00:46:06.943459+00:00"
+      },
+      "pending_retention": {
+        "acked_after": 81,
+        "acked_before": 81,
+        "pending_prefix_preserved": true,
+        "retained_after_entries": 104,
+        "retained_prefix_entries": 84,
+        "stream_id": "eff1db1c24bb4bc4892fd56576222675"
+      },
+      "ready_after_settling": "fully_ready",
+      "redeploy_attendee_projections": {
+        "discovery_records": [
+          {
+            "latest_revision": 3,
+            "record_id": "wt01-live-recovery-58351bd3",
+            "revisions": [
+              1,
+              2,
+              3
+            ],
+            "withdrawn": true
+          },
+          {
+            "latest_revision": 3,
+            "record_id": "wt01-live-redeploy-58351bd3",
+            "revisions": [
+              1,
+              2,
+              3
+            ],
+            "withdrawn": true
+          }
+        ],
+        "identity_attendees": 1,
+        "required_representative_record": "wt01-live-redeploy-58351bd3"
+      },
+      "settled_owner_readiness": {
+        "http_status": 200,
+        "obo": {
+          "attendee_dependent": true,
+          "external_validation_pending": false,
+          "ok": true,
+          "present": true,
+          "state": "green",
+          "validation_state": "verified"
+        },
+        "reported_ready": true
+      }
+    },
+    "audited_pre_cleanup_prefix_committed": {
+      "all_audited_raw_entries_match": true,
+      "audited_source_entries": 123,
+      "ct_acked_seq": 124,
+      "ct_committed_seq": 124,
+      "scope": "An exact audited live prefix; this is not a sealed whole-event capture receipt.",
+      "source_acked_at_snapshot": 122,
+      "source_epoch": "eff1db1c24bb4bc4892fd56576222675"
+    },
+    "original_checkouts_preserved": {
+      "CT": {
+        "existing_dirty_paths_preserved": [
+          " M uv.lock",
+          "?? .databricks-impeccable.md"
+        ],
+        "original_uv_lock_preserved": true,
+        "uv_lock_sha256": "6897012ac188d1eb117ebf6e3a1e55ababf979eedd53945a4b7fa04e7e0afba6"
+      },
+      "WT": {
+        "existing_dirty_paths_preserved": [
+          " M uv.lock"
+        ],
+        "original_uv_lock_preserved": true,
+        "uv_lock_sha256": "b234de35e9aff186a83d94f272f818326daeacdc223b1c35771f583f59be0bfd"
+      }
+    },
+    "owned_cleanup_and_retained_history": {
+      "assigned_pooled_login_released": true,
+      "observed_at": {
+        "final_account_inventory": "2026-10-16T00:54:43.071203+00:00",
+        "fresh_preserved_database": "2026-10-16T00:52:08.921480+00:00",
+        "teardown_requested": "2026-10-16T00:50:46.076260+00:00"
+      },
+      "post_cleanup_discovery_records": 2,
+      "post_cleanup_identity_captures": 1,
+      "post_cleanup_logical_events": 126,
+      "post_cleanup_raw_records": 126,
+      "representative_projections": {
+        "discovery_records": [
+          {
+            "latest_revision": 3,
+            "record_id": "wt01-live-recovery-58351bd3",
+            "revisions": [
+              1,
+              2,
+              3
+            ],
+            "withdrawn": true
+          },
+          {
+            "latest_revision": 3,
+            "record_id": "wt01-live-redeploy-58351bd3",
+            "revisions": [
+              1,
+              2,
+              3
+            ],
+            "withdrawn": true
+          }
+        ],
+        "identity_attendees": 1,
+        "required_representative_record": "wt01-live-recovery-58351bd3"
+      },
+      "retained_logical_events": 124,
+      "retained_raw_records": 124,
+      "retained_streams": 1,
+      "run_id": "146ea1e7-1e92-4fe4-90c7-83a2387917b1",
+      "test_units_destroyed": 1,
+      "workspace_absent_from_account_inventory": true
+    },
+    "protected_labs_unchanged": {
+      "checked_at": "2026-10-16T00:54:41.377487+00:00",
+      "protected_app_and_database_unchanged": true
+    },
+    "release_provenance": {
+      "ct_pr183_merge_commit": "bb5d227dd30ca1db01f7c4935c74f1ec78b59ff4",
+      "ct_runtime_commit": "79b6cc06a7a0191adc8a7fb4d5b317df2d1b20ba",
+      "migration_heads": [
+        "20261015_0053"
+      ],
+      "wt_manifest_sha256": "81a3ccf334884ed641eb2c7ffedbfd3256bb3651c6ef5c305c2648515692cf68",
+      "wt_pex_sha256": "2eb735945000da8ba2369d6326a380011cea3d2951e870b11b828ac7645654a2",
+      "wt_runtime_commit": "c9aacd60dad8b2b372a7e62efa9915f420b37c03"
+    },
+    "runtime_tests": {
+      "passed": 3182,
+      "runtime_ci": "all observed checks passed",
+      "scope": "Exact tested runtime commit; final evidence and documentation may add a docs-only PR head.",
+      "skipped": 65,
+      "warning": "Existing Starlette/httpx TestClient deprecation in WT suite.",
+      "warnings": 1
+    },
+    "stable_qualification_restored": {
+      "app": "control-tower-qualification",
+      "ct_source_commit": "79b6cc06a7a0191adc8a7fb4d5b317df2d1b20ba",
+      "database": "control-tower-qualification-db",
+      "database_history_preserved": true,
+      "database_uid": "2a9e7986-6bf2-4a56-963e-f745e29ed773",
+      "deployment_id": "01f1c8fbeb461b608ab4e86d2734a5be",
+      "effective_env_sha256": "dc64474913999de8627e9a49ce41054cb610f4cb957d7a18ab7d1c151b38fc73",
+      "migration_heads": [
+        "20261015_0053"
+      ],
+      "observed_at": {
+        "fresh_preserved_database": "2026-10-16T00:54:42.474399+00:00",
+        "restore_submitted": "2026-10-16T00:52:53+00:00",
+        "restore_verified": "2026-10-16T00:53:57.730461+00:00",
+        "runtime_diagnostics": "2026-10-16T00:54:41.731783+00:00"
+      },
+      "original_model_permission_sync_restored": true,
+      "stable_wt_manifest_sha256": "c2ba45c72c65f7b1e9c9f969c85a420a1f8d71049ae52c782ff42f3c981d6047",
+      "stable_wt_manifest_url": "https://github.com/althrussell/databricks-labs-workshop-terminal/releases/download/v2026.10.11.3/release-manifest.json"
+    },
+    "supported_restart_and_ct_commit": {
+      "ct_fresh_readback": {
+        "committed_seq": 81,
+        "ct_acked_seq": 81,
+        "owner_admin_reports": {
+          "page": "403_owner_has_no_operator_access",
+          "stats": "403_owner_has_no_operator_access"
+        },
+        "readiness_scope": "fully_ready",
+        "representative_projections": {
+          "discovery_records": [
+            {
+              "latest_revision": 3,
+              "record_id": "wt01-live-recovery-58351bd3",
+              "revisions": [
+                1,
+                2,
+                3
+              ],
+              "withdrawn": true
+            }
+          ],
+          "identity_attendees": 1,
+          "required_representative_record": "wt01-live-recovery-58351bd3"
+        },
+        "run_id": "146ea1e7-1e92-4fe4-90c7-83a2387917b1",
+        "stable_restart_prefix": true,
+        "stream_id": "eff1db1c24bb4bc4892fd56576222675",
+        "verified_wt_entries": 80,
+        "wt_acked_through": 33
+      },
+      "ct_process_restart_observed": true,
+      "observed_at": {
+        "fresh_database": "2026-10-16T00:38:27.015046+00:00",
+        "initial_source": "2026-10-16T00:29:11.020869+00:00",
+        "settled_source": "2026-10-16T00:37:12.081099+00:00",
+        "wt_restart_receipt": "2026-10-16T00:30:57.284031+00:00"
+      },
+      "ready_after_settling": "fully_ready",
+      "settled_owner_readiness": {
+        "http_status": 200,
+        "obo": {
+          "attendee_dependent": true,
+          "external_validation_pending": false,
+          "ok": true,
+          "present": true,
+          "state": "green",
+          "validation_state": "verified"
+        },
+        "reported_ready": true
+      },
+      "wt_restart": {
+        "acked_after": 33,
+        "acked_before": 33,
+        "pending_prefix_preserved": true,
+        "retained_after_entries": 49,
+        "retained_prefix_entries": 49,
+        "stream_id": "eff1db1c24bb4bc4892fd56576222675"
+      }
+    }
+  },
+  "schema_version": 1
+}

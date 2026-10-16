@@ -368,22 +368,22 @@ def test_nothing_is_dropped_until_control_tower_says_it_has_it(client, as_admin)
     assert client.get("/api/admin/presence").json()["help_outbox"] == []
 
 
-def test_a_backlog_cannot_grow_without_bound(client, as_admin):
-    """A terminal nobody is collecting from must not answer presence with a novel.
-
-    Presence is polled every few seconds for every seat in the room, so an
-    outbox that grew forever would turn one unreachable Control Tower into a
-    fleet-wide payload problem.
-    """
+def test_presence_pages_a_backlog_without_evicting_unacknowledged_messages(client, as_admin):
+    """Payloads stay bounded while an outage retains every accepted message."""
     hdrs = {"X-Forwarded-Email": "alice@example.com"}
-    for i in range(help_module._OUTBOX_MAX + 15):
-        client.post("/api/help/messages", json={"body": f"m{i}"}, headers=hdrs)
+    for i in range(65):
+        assert client.post("/api/help/messages", json={"body": f"m{i}"}, headers=hdrs).status_code == 200
 
-    assert len(help_module.outbox_snapshot()) == help_module._OUTBOX_MAX
+    assert len(help_module.outbox_snapshot()) == 65
     page = client.get("/api/admin/presence").json()["help_outbox"]
     assert len(page) == help_module._OUTBOX_PAGE
-    # The oldest survivors go first, so collection drains in order.
-    assert page[0]["body"] == "m15"
+    assert page[0]["body"] == "m0"
+    delivered = []
+    while page:
+        delivered.extend(entry["body"] for entry in page)
+        assert client.post("/api/admin/help/ack", json={"through_seq": page[-1]["seq"]}).status_code == 200
+        page = client.get("/api/admin/presence").json()["help_outbox"]
+    assert delivered == [f"m{i}" for i in range(65)]
 
 
 def test_the_refusal_is_explained_once_not_once_per_message(

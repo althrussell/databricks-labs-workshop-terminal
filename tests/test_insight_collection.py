@@ -14,9 +14,8 @@ makes. That inverts two things these tests pin:
   apps it deploys, so an instance must buffer and serve events without them. Every
   gate that treated "push configured" as "delivery possible" was silently
   discarding everything on exactly the instances that matter.
-- **The cursor is an acknowledgement.** The buffer is bounded, so it has to be
-  possible to release delivered events — but only ones the collector has committed,
-  and only within the process that numbered them.
+- **The cursor never acknowledges.** Retained pending events are released only
+  by the explicit version-2 ACK after the collector commits the exact prefix.
 """
 
 from __future__ import annotations
@@ -27,6 +26,7 @@ from pathlib import Path
 import pytest
 
 from server.event_emitter import EventEmitter
+from server.capture_journal import CaptureCapacityError
 
 from .schema_assert import assert_schema
 
@@ -113,15 +113,16 @@ def test_the_envelope_handed_over_is_exactly_the_ingest_contract():
     assert_schema({**entry["event"], "run_id": example["run_id"]}, schema)
 
 
-# --- the cursor releases what has been committed ------------------------------
+# --- only an explicit ACK releases what has been committed --------------------
 
 
 def test_acknowledged_events_are_released():
-    """Otherwise a day-long event drifts up to the ceiling and drop-oldest starts
-    discarding the wrap summaries, which are the events worth the most."""
+    """Committed prefixes leave the pending queue through an explicit ACK."""
     emitter = _pull_only()
     _fill(emitter, 4)
     first = emitter.collect()
+    emitter.acknowledge(schema_version=2, stream_id=first["stream_id"],
+                        through_seq=first["high_water"])
 
     second = emitter.collect(after=first["high_water"], stream=first["stream_id"])
 
@@ -138,6 +139,7 @@ def test_unacknowledged_events_are_kept():
     assert first["pending"] == 4  # nothing released yet
     second = emitter.collect(after=first["high_water"], stream=first["stream_id"])
     assert _keys(second) == ["k2", "k3"]
+    assert emitter.pending() == 4
 
 
 def test_a_partial_collection_leaves_the_remainder_for_next_time():
@@ -189,22 +191,27 @@ def test_the_high_water_mark_holds_when_there_is_nothing_new():
     assert second["high_water"] == first["high_water"]
 
 
-# --- loss is counted, not hidden ---------------------------------------------
+# --- backpressure retains accepted output and remains visible -----------------
 
 
-def test_overflow_is_reported_so_the_loss_is_attributable():
-    """Drop-oldest is the right policy — memory is finite and the app is shared
-    with an attendee's work — but a silent one turns a missing brief into a mystery
-    for whoever reads it months later."""
+def test_overflow_refuses_new_output_without_evicting_accepted_events():
+    """A full backlog preserves every accepted entry and exposes rejected output."""
     emitter = EventEmitter(
         run_id="", workspace_id="", ingest_url="", ingest_token="", max_buffer=3
     )
-    _fill(emitter, 5)
+    _fill(emitter, 3)
+    with pytest.raises(CaptureCapacityError):
+        emitter.emit("heartbeat", "alice@example.com", {"i": 3}, idempotency_key="k3")
 
     response = emitter.collect()
 
-    assert response["dropped"] == 2
-    assert _keys(response) == ["k2", "k3", "k4"]
+    assert response["dropped"] == 0
+    assert _keys(response) == ["k0", "k1", "k2"]
+    assert emitter.delivery_status()["retention_ready"] is False
+    assert emitter.delivery_status()["retention_issues"]
+    emitter.acknowledge(schema_version=2, stream_id=response["stream_id"], through_seq=3)
+    assert emitter.emit("heartbeat", "alice@example.com", {"i": 3}, idempotency_key="k3") == 4
+    assert _keys(emitter.collect(after=3, stream=response["stream_id"])) == ["k3"]
 
 
 def test_collection_is_observable_so_readiness_can_report_it():
@@ -257,16 +264,14 @@ def test_the_endpoint_passes_the_cursor_through(client, as_admin, monkeypatch):
     ).json()
 
     assert _keys(body) == ["k2"]
-    assert emitter.pending() == 1
+    assert emitter.pending() == 3
 
 
 @pytest.mark.parametrize("final", [False, True])
 def test_the_harvest_reports_what_is_still_owed(
     client, as_admin, monkeypatch, final: bool
 ):
-    """CT's teardown reads this to know whether a collection is still outstanding.
-    On the ``final=true`` pass it is the last chance: everything left in the buffer
-    dies with the container moments later."""
+    """CT can see the pending prefix that still requires committed collection."""
     from server import event_emitter as emitter_module
 
     emitter = _pull_only()

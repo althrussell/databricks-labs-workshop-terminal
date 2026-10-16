@@ -1,0 +1,22 @@
+{
+  "algorithm": "sha256",
+  "canonicalization": "UTF-8 JSON; sort_keys=True; separators=(comma,colon); ensure_ascii=False; allow_nan=False",
+  "records": [
+    {
+      "seq": 1,
+      "raw_entry_sha256": "ce79286c2ee98678bc1def8968b06ef66738741f25499c45bcd6315a06aedffa"
+    },
+    {
+      "seq": 2,
+      "raw_entry_sha256": "1a073b0014f221a2c8974a2707d27af9c8137d66747760245f6d8beef7e3806d"
+    },
+    {
+      "seq": 3,
+      "raw_entry_sha256": "3ba0b6b339a18c98f87065cc54b22d75745f62408384f7ae16b5a0a63f8392f0"
+    },
+    {
+      "seq": 4,
+      "raw_entry_sha256": "7f43e80b0c7ffbcd113705458b63e4462eb388d14cab2d78b668aaff4a84af23"
+    }
+  ]
+}

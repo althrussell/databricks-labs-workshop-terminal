@@ -148,7 +148,7 @@ def test_reporter_emits_periodic_operational_health_with_injected_snapshot():
         enabled = True
 
         @staticmethod
-        def emit(event_type, attendee, payload):
+        def emit(event_type, attendee, payload, **_kwargs):
             emitted.append((event_type, attendee, payload))
 
     reporter = operational.OperationalHealthReporter(
@@ -158,9 +158,7 @@ def test_reporter_emits_periodic_operational_health_with_injected_snapshot():
     )
 
     assert reporter.emit_once() is True
-    assert emitted == [
-        ("operational.health", "system", {"bounded": True})
-    ]
+    assert emitted == [("operational.health", "system", {"bounded": True})]
 
 
 def test_reporter_is_noop_when_control_tower_ingest_is_disabled():
@@ -306,13 +304,14 @@ def test_health_sampling_runs_without_a_push_sink():
 def test_lifespan_joins_control_tower_threads_when_app_exits_with_error(
     monkeypatch, tmp_path
 ):
-    from server import main
+    from server import capture, main
 
     stopped = []
     monkeypatch.setattr(main.config, "local_dev", lambda: False)
     monkeypatch.setattr(main.config, "users_root", lambda: str(tmp_path / "users"))
     monkeypatch.setattr(main.config, "session_state_path", lambda: "")
     monkeypatch.setattr(main, "initialize_app_identity", lambda: None)
+    monkeypatch.setattr(capture, "configure", lambda _emitter: None)
     monkeypatch.setattr(main.install, "run_in_background", lambda: None)
     monkeypatch.setattr(main.credential_manager, "start", lambda: None)
     monkeypatch.setattr(main.entitlement_manager, "start", lambda: None)
@@ -320,7 +319,10 @@ def test_lifespan_joins_control_tower_threads_when_app_exits_with_error(
     monkeypatch.setattr(
         main,
         "event_emitter",
-        type("Emitter", (), {"can_push": True, "run_id": "run", "stream_id": "s"})(),
+        type("Emitter", (), {
+            "can_push": True, "run_id": "run", "stream_id": "s",
+            "delivery_status": lambda self: {"stream_id": self.stream_id},
+        })(),
     )
     monkeypatch.setattr(
         main,

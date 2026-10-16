@@ -8,14 +8,18 @@ so nothing privileged is readable from inside an attendee terminal.
 
 from __future__ import annotations
 
+import copy
 import hashlib
+import math
 import logging
 import os
 import re
 import tempfile
 import threading
+import uuid
 
 from . import config
+from .capture_journal import CaptureHeldError
 
 # Deny-by-default allowlist for attendee PTY environments (gap P0-1). Only
 # non-secret, shell-functional host vars are copied through; PATH/TERM/HOME/USER
@@ -113,6 +117,15 @@ class User:
         self.errors: int = 0  # P1-14: failed session launches / agent errors
         self.last_seen: float = 0.0
         self.first_seen: float = 0.0
+        self._capture_lock = threading.RLock()
+        self._capture_journal = None
+        self._capture_recovered = False
+        self._capture_baseline = _empty_user_snapshot()
+        # A process's counter delta must remain recognizable if a create was
+        # committed but its verification read failed. One receipt per writer
+        # avoids replaying that delta when the caller safely retries.
+        self._capture_writer_id = uuid.uuid4().hex
+        self._capture_generation = 0
 
     def bootstrap_home(self) -> None:
         if self._bootstrapped:
@@ -419,14 +432,179 @@ class User:
         return env
 
 
+def _empty_user_snapshot() -> dict:
+    return {"topics": {}, "topic_hits": {}, "sessions_launched": {}, "errors": 0,
+            "first_seen": 0.0, "last_seen": 0.0}
+
+
+def _finite_nonnegative(value) -> bool:
+    return (type(value) is int and value >= 0
+            or type(value) is float and math.isfinite(value) and value >= 0)
+
+
+def validate_user_snapshot(raw) -> dict:
+    if (not isinstance(raw, dict) or set(raw) != set(_empty_user_snapshot())
+            or type(raw.get("errors")) is not int or raw["errors"] < 0
+            or not _finite_nonnegative(raw.get("first_seen"))
+            or not _finite_nonnegative(raw.get("last_seen"))):
+        raise CaptureHeldError("retained attendee counters are invalid")
+    for name in ("topics", "topic_hits", "sessions_launched"):
+        if not isinstance(raw.get(name), dict):
+            raise CaptureHeldError("retained attendee counter map is invalid")
+        for key, value in raw[name].items():
+            if (not isinstance(key, str) or not key
+                    or (not _finite_nonnegative(value) if name == "topics"
+                        else type(value) is not int or value < 0)):
+                raise CaptureHeldError("retained attendee counter value is invalid")
+    return raw
+
+
+def user_snapshot(user: User) -> dict:
+    return validate_user_snapshot({"topics": dict(user.topics), "topic_hits": dict(user.topic_hits),
+                                  "sessions_launched": dict(user.sessions_launched),
+                                  "errors": user.errors, "first_seen": user.first_seen,
+                                  "last_seen": user.last_seen})
+
+
+def merge_user_snapshot(existing: dict, current: dict, baseline: dict) -> dict:
+    """Add each process's new counters once, retaining concurrent committed work."""
+    for raw in (existing, current, baseline):
+        validate_user_snapshot(raw)
+    merged = copy.deepcopy(existing)
+    for name in ("topic_hits", "sessions_launched"):
+        for key, value in current[name].items():
+            merged[name][key] = existing[name].get(key, 0) + max(0, value - baseline[name].get(key, 0))
+    merged["errors"] += max(0, current["errors"] - baseline["errors"])
+    for topic, timestamp in current["topics"].items():
+        merged["topics"][topic] = max(merged["topics"].get(topic, 0), timestamp)
+    starts = [value for value in (existing["first_seen"], current["first_seen"]) if value]
+    merged["first_seen"] = min(starts) if starts else 0.0
+    merged["last_seen"] = max(existing["last_seen"], current["last_seen"])
+    return merged
+
+
+def _apply_user_snapshot(user: User, raw: dict) -> None:
+    for name, value in validate_user_snapshot(raw).items():
+        setattr(user, name, copy.deepcopy(value))
+
+
+def _capture_users(state, owner: str) -> dict:
+    rows = state.setdefault("users", {})
+    if not isinstance(rows, dict) or any(email != owner for email in rows):
+        raise CaptureHeldError("retained attendee inventory does not match its owner")
+    for raw in rows.values():
+        validate_user_snapshot(raw)
+    return rows
+
+
+def _capture_checkpoints(state: dict) -> dict:
+    receipts = state.get("user_checkpoints", {})
+    if not isinstance(receipts, dict):
+        raise CaptureHeldError("retained attendee checkpoint receipts are invalid")
+    for writer, receipt in receipts.items():
+        if (not isinstance(writer, str) or re.fullmatch(r"[0-9a-f]{32}", writer) is None
+                or not isinstance(receipt, dict)
+                or set(receipt) != {"generation", "current"}
+                or type(receipt["generation"]) is not int or receipt["generation"] < 0):
+            raise CaptureHeldError("retained attendee checkpoint receipt is invalid")
+        validate_user_snapshot(receipt["current"])
+    return receipts
+
+
 class UserManager:
-    """Registry of attendees seen by this instance. Process-local by design."""
+    """Live attendees plus retained derived metadata for the configured owner."""
 
     def __init__(self):
         self._users: dict[str, User] = {}
         self._lock = threading.Lock()
+        self._capture_journal = None
+        self._capture_owner = ""
+        self._require_ready = None
+
+    def require_capture_ready(self, callback) -> None:
+        """Block new attendee work while production recovery is unavailable."""
+        self._require_ready = callback
+
+    def reset_for_tests(self) -> None:
+        with self._lock:
+            self._users.clear()
+            self._capture_journal = None
+            self._capture_owner = ""
+            self._require_ready = None
+
+    def configure_capture(self, journal, owner: str) -> None:
+        """Recover the known owner headlessly, without creating a HOME or OBO token."""
+        owner = owner.strip().lower()
+        try:
+            if not config.valid_attendee_email(owner) or journal.binding["owner"] != owner:
+                raise CaptureHeldError("capture attendee owner does not match its retained binding")
+            def initialize(state):
+                rows = _capture_users(state, owner)
+                _capture_checkpoints(state)
+                return copy.deepcopy(rows.setdefault(owner, _empty_user_snapshot()))
+            saved = journal.transaction(initialize)
+        except CaptureHeldError as error:
+            journal.mark_held(error)
+            raise
+        with self._lock:
+            user = self._users.get(owner) or User(owner)
+            _apply_user_snapshot(user, saved)
+            user._capture_journal = journal
+            user._capture_baseline = copy.deepcopy(saved)
+            user._capture_recovered = bool(saved["first_seen"] or journal.read().get("stats"))
+            self._users[owner] = user
+            self._capture_journal, self._capture_owner = journal, owner
+
+    @staticmethod
+    def checkpoint_state(state, user: User, current: dict, baseline: dict) -> dict:
+        rows = _capture_users(state, user.email)
+        receipts = _capture_checkpoints(state)
+        receipt = receipts.get(user._capture_writer_id)
+        if receipt is not None:
+            if receipt["generation"] > user._capture_generation:
+                raise CaptureHeldError("retained attendee checkpoint generation is ahead of its writer")
+            if receipt["generation"] == user._capture_generation:
+                # A previous attempt in this generation already committed.
+                # Only activity since that attempt can be new, even though the
+                # process has not yet accepted a new aggregate baseline.
+                baseline = receipt["current"]
+        existing = rows.get(user.email, _empty_user_snapshot())
+        merged = merge_user_snapshot(existing, current, baseline)
+        rows[user.email] = merged
+        if merged != existing:
+            state.setdefault("user_checkpoints", {})[user._capture_writer_id] = {
+                "generation": user._capture_generation,
+                "current": copy.deepcopy(current),
+            }
+        return copy.deepcopy(merged)
+
+    @staticmethod
+    def accept_checkpoint(user: User, current: dict, saved: dict) -> None:
+        # Output observation can continue while the remote journal commits.
+        # Preserve those new in-memory increments for the next checkpoint.
+        latest = user_snapshot(user)
+        _apply_user_snapshot(user, merge_user_snapshot(saved, latest, current))
+        user._capture_baseline = copy.deepcopy(saved)
+        user._capture_generation += 1
+
+    def checkpoint(self, user: User) -> None:
+        if self._require_ready is not None:
+            self._require_ready()
+        journal = user._capture_journal
+        if journal is None or user.email != self._capture_owner:
+            return
+        with user._capture_lock:
+            current, baseline = user_snapshot(user), copy.deepcopy(user._capture_baseline)
+            try:
+                saved = journal.transaction(lambda state: self.checkpoint_state(state, user, current, baseline))
+            except CaptureHeldError as error:
+                journal.mark_held(error)
+                raise
+            self.accept_checkpoint(user, current, saved)
 
     def get(self, email: str) -> User:
+        if self._require_ready is not None:
+            self._require_ready()
         with self._lock:
             user = self._users.get(email)
             is_new = user is None
@@ -435,20 +613,12 @@ class UserManager:
                 self._users[email] = user
             distinct = len(self._users)
         if is_new and distinct > 1:
-            # P1-11a: a second distinct attendee on one instance breaks the
-            # one-workspace-per-attendee credential-isolation model.
             from . import topology
-
             warning = topology.second_attendee_warning(distinct)
             if warning:
                 _topology_log.warning("topology: %s", warning)
         user.bootstrap_home()
-        # Auth captures the forwarded OBO token before some routes create the
-        # user's home (notably the first request after an app restart). Flush
-        # that deferred token immediately now that its destination exists.
-        # This runs outside the registry lock to avoid lock inversion/recursion.
         from . import obo
-
         obo.obo_manager.user_ready(user)
         return user
 

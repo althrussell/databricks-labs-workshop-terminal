@@ -1,0 +1,86 @@
+{
+  "schema_version": 2,
+  "stream_id": "capture-epoch-01",
+  "events": [
+    {
+      "seq": 3,
+      "event": {
+        "schema_version": 1,
+        "run_id": "",
+        "workspace_id": "",
+        "attendee": "labuser+199@example.com",
+        "type": "insight.summary",
+        "occurred_at": "2026-11-17T06:30:00+00:00",
+        "payload": {
+          "summary_id": "summary-1",
+          "revision": 1,
+          "generator": "extraction",
+          "phase": "build",
+          "headline": "Built customer reporting prototype",
+          "built": "A reporting app",
+          "artifacts": [
+            {
+              "kind": "app",
+              "title": "Customer reporting",
+              "size_bytes": 512
+            }
+          ]
+        },
+        "idempotency_key": "summary::labuser+199@example.com:extraction:1"
+      }
+    },
+    {
+      "seq": 4,
+      "event": {
+        "schema_version": 1,
+        "run_id": "",
+        "workspace_id": "",
+        "attendee": "labuser+199@example.com",
+        "type": "workshop.signal",
+        "occurred_at": "2026-11-17T06:30:00+00:00",
+        "payload": {
+          "stats_schema_version": 3,
+          "minutes_building": 45,
+          "agent_sessions": 1,
+          "terminal_sessions": 1,
+          "topics": [
+            "lakebase"
+          ],
+          "code": {
+            "projects": 1,
+            "commits": 1,
+            "files": 2,
+            "lines": 30
+          },
+          "resources": {
+            "apps": 1
+          },
+          "errors": 0,
+          "idle_seconds": 0,
+          "discovery_records": 1,
+          "signal": {
+            "engagement": "builder",
+            "primary_topic": "lakebase",
+            "topic_hits": {
+              "lakebase": 1
+            },
+            "products": [
+              "lakebase"
+            ],
+            "resource_kinds": [
+              "apps"
+            ],
+            "shipped": true
+          }
+        },
+        "idempotency_key": "signal::labuser+199@example.com:1794897000"
+      }
+    }
+  ],
+  "high_water": 4,
+  "pending": 2,
+  "dropped": 0,
+  "cursor_reset": false,
+  "delivery": "pull",
+  "ack_mode": "explicit"
+}

@@ -16,15 +16,14 @@ Design consequences of that:
 - **Partial records are normal.** Only ``record_id`` is required. Demanding
   completeness would push the agent into interrogating people, which produces
   worse data and a worse workshop.
-- **Fail-soft, like the rest of the attendee path.** A journal write that fails
-  degrades restart durability; it never fails the attendee's request.
+- **Commit before acceptance.** With retained capture attached, a record state
+  and its exact delivery envelope commit together or neither is accepted.
 - **Bounded.** Per-attendee and global caps keep a looping agent from turning
   discovery into an unbounded memory sink.
 
-Durability is a journal on the app volume rather than a database: the app owns no
-external state (teardown is ``apps.delete``), so the journal exists only to
-survive a process restart mid-workshop. Control Tower's Lakebase is the durable
-store, reached through the event emitter.
+The shared capture journal retains current records and withdrawal tombstones
+with their delivery envelopes. The local JSON journal remains a migration input
+and a fallback for explicitly local, unqualified development.
 """
 
 from __future__ import annotations
@@ -42,6 +41,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from . import config
+from .capture_journal import CaptureHeldError
 
 logger = logging.getLogger("workshop.discovery")
 
@@ -307,6 +307,131 @@ class DiscoveryStore:
         self._lock = threading.Lock()
         # attendee -> record_id -> record. Insertion order is capture order.
         self._records: dict[str, dict[str, DiscoveryRecord]] = {}
+        self._capture_emitter = None
+        self._legacy_issues: set[str] = set()
+
+    @staticmethod
+    def _decode(entries: Any) -> dict[str, dict[str, DiscoveryRecord]]:
+        if not isinstance(entries, list):
+            raise CaptureHeldError("retained discovery records are invalid")
+        records: dict[str, dict[str, DiscoveryRecord]] = {}
+        for entry in entries:
+            strings = ("record_id", "attendee", "captured_at", "agent", "confidence",
+                       "session_intent", *_TEXT_FIELDS)
+            if (not isinstance(entry, dict)
+                    or any(not isinstance(entry.get(name), str) for name in strings)
+                    or not all(entry[name] for name in ("record_id", "attendee", "captured_at"))
+                    or type(entry.get("revision")) is not int or entry["revision"] < 1
+                    or type(entry.get("redactions")) is not int or entry["redactions"] < 0
+                    or type(entry.get("redacted_by_attendee")) is not bool
+                    or any(not isinstance(entry.get(name), list)
+                           or any(not isinstance(value, str) for value in entry[name])
+                           for name in _LIST_FIELDS)):
+                raise CaptureHeldError("retained discovery record or revision is invalid")
+            try:
+                record = DiscoveryRecord.from_json(entry)
+            except (TypeError, ValueError) as error:
+                raise CaptureHeldError("retained discovery record is invalid") from error
+            if record is None or record.record_id in records.get(record.attendee, {}):
+                raise CaptureHeldError("retained discovery identity is invalid")
+            records.setdefault(record.attendee, {})[record.record_id] = record
+        return records
+
+    @classmethod
+    def _retained_records(cls, state) -> dict[str, dict[str, DiscoveryRecord]]:
+        section = state.get("discovery")
+        if not isinstance(section, dict) or set(section) != {"records"}:
+            raise CaptureHeldError("retained discovery state is invalid")
+        return cls._decode(section["records"])
+
+    @staticmethod
+    def _checked(journal, operation):
+        try:
+            return operation()
+        except CaptureHeldError as error:
+            journal.mark_held(error)
+            raise
+
+    def configure_capture(self, emitter) -> int:
+        """Attach retained delivery; legacy rows remain visibly unqualified."""
+        with self._lock:
+            legacy = [r.to_json() for records in self._records.values() for r in records.values()]
+        def initialize(state):
+            if "discovery" not in state:
+                state["discovery"] = {"records": legacy}
+                issues = state.setdefault("producer_issues", [])
+                for issue in sorted(self._legacy_issues | ({"legacy_discovery_delivery_unverified"} if legacy else set())):
+                    if issue not in issues:
+                        issues.append(issue)
+            records = self._retained_records(state)
+            return records
+        records = self._checked(emitter.journal, lambda: emitter.journal.transaction(initialize))
+        with self._lock:
+            self._capture_emitter = emitter
+            self._records = records
+        return sum(len(rows) for rows in records.values())
+
+    def _refresh_capture(self) -> None:
+        if self._capture_emitter is None:
+            return
+        journal = self._capture_emitter.journal
+        records = self._checked(journal, lambda: self._retained_records(journal.read()))
+        with self._lock:
+            self._records = records
+
+    def capture(self, built: DiscoveryRecord, *, provided_fields: set[str], emitter) -> DiscoveryRecord | None:
+        """Publish the merged record and delivery entry in one retained transaction."""
+        def prepare(state):
+            state.setdefault("discovery", {"records": []})
+            rows = self._retained_records(state)
+            existing = rows.get(built.attendee, {}).get(built.record_id)
+            if existing is not None and existing.redacted_by_attendee:
+                return None
+            if existing is None and len(rows.get(built.attendee, {})) >= MAX_RECORDS_PER_ATTENDEE:
+                return None
+            stored = copy.deepcopy(built)
+            if existing is not None:
+                for name in ("agent", "confidence", "session_intent", *_TEXT_FIELDS, *_LIST_FIELDS):
+                    if name not in provided_fields:
+                        setattr(stored, name, copy.deepcopy(getattr(existing, name)))
+                stored.revision = existing.revision + 1
+            rows.setdefault(stored.attendee, {})[stored.record_id] = stored
+            state["discovery"]["records"] = [r.to_json() for records in rows.values() for r in records.values()]
+            return stored.payload(), _key(stored, emitter.run_id)
+        accepted = self._checked(emitter.journal, lambda: emitter.emit_transaction(
+            "discovery.record", built.attendee, prepare))
+        if not accepted:
+            return None
+        committed = emitter.journal.read()
+        rows = self._checked(emitter.journal, lambda: self._retained_records(committed))
+        with self._lock:
+            self._capture_emitter = emitter
+            self._records = rows
+        payload = committed["insight"]["events"][str(accepted)]["payload"]
+        return DiscoveryRecord.from_json({**payload, "attendee": built.attendee})
+
+    def capture_withdrawal(self, attendee: str, record_id: str, *, emitter) -> bool:
+        def prepare(state):
+            state.setdefault("discovery", {"records": []})
+            rows = self._retained_records(state)
+            stored = rows.get(attendee, {}).get(record_id)
+            if stored is None or stored.redacted_by_attendee:
+                return None
+            for name in _TEXT_FIELDS:
+                setattr(stored, name, "")
+            for name in _LIST_FIELDS:
+                setattr(stored, name, [])
+            stored.confidence = ""
+            stored.session_intent = ""
+            stored.redacted_by_attendee = True
+            stored.revision += 1
+            state["discovery"]["records"] = [r.to_json() for records in rows.values() for r in records.values()]
+            return stored.payload(), _key(stored, emitter.run_id)
+        accepted = self._checked(emitter.journal, lambda: emitter.emit_transaction(
+            "discovery.record", attendee, prepare))
+        if accepted:
+            self._refresh_capture()
+        return bool(accepted)
 
     def configure_journal(self, path: str) -> int:
         """Attach a journal and restore anything a prior process left behind.
@@ -385,6 +510,7 @@ class DiscoveryStore:
     # -- reads --
 
     def for_attendee(self, attendee: str) -> list[DiscoveryRecord]:
+        self._refresh_capture()
         with self._lock:
             return [
                 r for r in (self._records.get(attendee) or {}).values()
@@ -393,6 +519,7 @@ class DiscoveryStore:
 
     def counts(self) -> dict[str, int]:
         """Per-attendee record counts, for the stats harvest."""
+        self._refresh_capture()
         with self._lock:
             return {
                 attendee: len([r for r in records.values() if not r.redacted_by_attendee])
@@ -403,6 +530,7 @@ class DiscoveryStore:
         return len(self.for_attendee(attendee))
 
     def all_records(self) -> list[DiscoveryRecord]:
+        self._refresh_capture()
         with self._lock:
             return [
                 r
@@ -413,6 +541,7 @@ class DiscoveryStore:
 
     def clear(self) -> None:
         with self._lock:
+            self._capture_emitter = None
             self._records = {}
         self._persist()
 
@@ -429,15 +558,24 @@ class DiscoveryStore:
             return 0
         except Exception as exc:  # noqa: BLE001 — a corrupt journal is non-fatal
             logger.warning("discovery journal unreadable (%s): %s", self.path, exc)
+            self._legacy_issues.add("legacy_discovery_journal_unreadable")
             return 0
         entries = raw.get("records") if isinstance(raw, dict) else raw
+        if not isinstance(entries, list):
+            self._legacy_issues.add("legacy_discovery_journal_invalid")
+            return 0
         restored = 0
         with self._lock:
             for entry in entries or []:
                 if not isinstance(entry, dict):
+                    self._legacy_issues.add("legacy_discovery_journal_invalid")
                     continue
-                record = DiscoveryRecord.from_json(entry)
+                try:
+                    record = DiscoveryRecord.from_json(entry)
+                except (ValueError, TypeError):
+                    record = None
                 if record is None:
+                    self._legacy_issues.add("legacy_discovery_journal_invalid")
                     continue
                 self._records.setdefault(record.attendee, {})[
                     record.record_id
@@ -483,6 +621,10 @@ def journal_path() -> str:
     return os.path.join(os.path.dirname(session_path) or ".", "discovery.json")
 
 
+def _key(stored: DiscoveryRecord, run_id: str) -> str:
+    return f"discovery:{run_id}:{stored.attendee}:{stored.record_id}:{stored.revision}"
+
+
 def _emit(stored: DiscoveryRecord, emitter=None) -> None:
     """Queue one record state for Control Tower.
 
@@ -496,10 +638,7 @@ def _emit(stored: DiscoveryRecord, emitter=None) -> None:
         "discovery.record",
         stored.attendee,
         stored.payload(),
-        idempotency_key=(
-            f"discovery:{emitter.run_id}:{stored.attendee}"
-            f":{stored.record_id}:{stored.revision}"
-        ),
+        idempotency_key=_key(stored, emitter.run_id),
     )
 
 
@@ -513,7 +652,11 @@ def record(attendee: str, raw: dict[str, Any], emitter=None) -> DiscoveryRecord 
     """
     if not config.discovery_enabled():
         return None
+    if emitter is None:
+        from .event_emitter import event_emitter as emitter
     built = build_record(attendee, raw)
+    if getattr(emitter, "journal", None) is not None:
+        return discovery_store.capture(built, provided_fields=set(raw), emitter=emitter)
     stored = discovery_store.put(built, provided_fields=set(raw))
     if stored is None:
         return None
@@ -529,6 +672,10 @@ def withdraw(attendee: str, record_id: str, emitter=None) -> bool:
     reached Control Tower. Deletion in Lakebase is CT's to perform — the terminal
     can only tell it the attendee revoked consent for that record.
     """
+    if emitter is None:
+        from .event_emitter import event_emitter as emitter
+    if getattr(emitter, "journal", None) is not None:
+        return discovery_store.capture_withdrawal(attendee, record_id, emitter=emitter)
     tombstone = discovery_store.redact_record(attendee, record_id)
     if tombstone is None:
         return False

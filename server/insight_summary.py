@@ -37,6 +37,7 @@ becomes reachable.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import logging
@@ -47,6 +48,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from . import artifacts, config, models
+from .capture_journal import CaptureHeldError
 from .discovery import SESSION_INTENTS
 from .users import User
 
@@ -120,16 +122,58 @@ class _Stamp:
 class _Stamps:
     """Which attendees have been summarised, how, when, and against what material.
 
-    In memory on purpose. A restart loses the stamps, which costs one extra
-    generation per attendee — Control Tower resolves that on ``summary_id``,
-    preferring the newer revision — whereas persisting to the volume would be one
-    more thing to reconcile at teardown for no benefit.
+    Successful revisions, fingerprints and generators share the retained capture
+    transaction with their exact envelopes. The interval and in-flight guards are
+    process-local; monotonic clock readings cannot be reused after restart.
     """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._stamps: dict[str, _Stamp] = {}
         self._in_flight: set[str] = set()
+        self._journal = None
+
+    @staticmethod
+    def _validate(raw):
+        if not isinstance(raw, dict):
+            raise CaptureHeldError("retained summary state is invalid")
+        for email, stamp in raw.items():
+            if (not isinstance(email, str) or not isinstance(stamp, dict)
+                    or type(stamp.get("revision")) is not int or stamp["revision"] < 0
+                    or stamp.get("generator") not in {"", "llm", "extraction"}
+                    or not isinstance(stamp.get("fingerprint"), str)):
+                raise CaptureHeldError("retained summary revision is invalid")
+        return raw
+
+    @staticmethod
+    def _checked(journal, operation):
+        try:
+            return operation()
+        except CaptureHeldError as error:
+            journal.mark_held(error)
+            raise
+
+    def configure_capture(self, journal) -> None:
+        def initialize(state):
+            self._validate(state.setdefault("summaries", {}))
+        self._checked(journal, lambda: journal.transaction(initialize))
+        with self._lock:
+            if self._journal is not journal:
+                self._stamps = {}
+            self._journal = journal
+        self._sync_capture()
+
+    def _sync_capture(self) -> None:
+        if self._journal is None:
+            return
+        retained = self._checked(self._journal, lambda: self._validate(
+            self._journal.read().get("summaries")))
+        with self._lock:
+            for email, raw in retained.items():
+                stamp = self._stamps.setdefault(email, _Stamp())
+                stamp.revision = raw["revision"]
+                stamp.generator = raw["generator"]
+                stamp.fingerprint = raw["fingerprint"]
 
     def claim(self, email: str) -> bool:
         """Take this attendee for the duration of one pass, or decline.
@@ -163,6 +207,7 @@ class _Stamps:
         interval there would reject every fallback — the attempt was stamped
         moments earlier by the pass doing the asking.
         """
+        self._sync_capture()
         with self._lock:
             stamp = self._stamps.get(email)
         if stamp is None:
@@ -177,6 +222,7 @@ class _Stamps:
         """
         if not self.may_emit(email, generator=generator):
             return False
+        self._sync_capture()
         with self._lock:
             stamp = self._stamps.get(email)
         if stamp is None or force:
@@ -190,6 +236,7 @@ class _Stamps:
         An extraction-to-``llm`` upgrade counts as changed even on identical
         material: the point of the upgrade is the better prose, not new facts.
         """
+        self._sync_capture()
         with self._lock:
             stamp = self._stamps.get(email)
         if stamp is None or not stamp.fingerprint:
@@ -209,6 +256,7 @@ class _Stamps:
             stamp.attempted_at = time.monotonic()
 
     def next_revision(self, email: str) -> int:
+        self._sync_capture()
         with self._lock:
             stamp = self._stamps.get(email)
             return (stamp.revision if stamp else 0) + 1
@@ -222,17 +270,20 @@ class _Stamps:
             stamp.attempted_at = time.monotonic()
 
     def generator_for(self, email: str) -> str | None:
+        self._sync_capture()
         with self._lock:
             stamp = self._stamps.get(email)
             return stamp.generator or None if stamp else None
 
     def revision_for(self, email: str) -> int:
+        self._sync_capture()
         with self._lock:
             stamp = self._stamps.get(email)
             return stamp.revision if stamp else 0
 
     def clear(self) -> None:
         with self._lock:
+            self._journal = None
             self._stamps.clear()
             self._in_flight.clear()
 
@@ -622,7 +673,7 @@ def summarise_user(
     force: bool = False,
     emitter=None,
 ) -> dict | None:
-    """Harvest, summarise and emit one attendee's session. Never raises.
+    """Harvest and emit one attendee's session; storage errors remain visible.
 
     Returns the emitted payload, or ``None`` when there was nothing to say,
     nothing has changed since the last summary, the interval has not elapsed, or
@@ -638,6 +689,8 @@ def summarise_user(
     if emitter is None:
         from .event_emitter import event_emitter as emitter
 
+    if getattr(emitter, "journal", None) is not None and stamps._journal is not emitter.journal:
+        stamps.configure_capture(emitter.journal)
     intended = "llm" if allow_llm else "extraction"
     if not stamps.should_run(user.email, generator=intended, force=force):
         return None
@@ -666,7 +719,7 @@ def _summarise_claimed(
     intended: str,
     emitter,
 ) -> dict | None:
-    """The body of one pass, with this attendee already claimed. Never raises."""
+    """One claimed pass; model failures fall back, retained-write failures propagate."""
     try:
         harvest = artifacts.harvest_user(user, single_attendee=single_attendee)
     except Exception as exc:  # noqa: BLE001 — harvest is already fail-soft
@@ -700,26 +753,44 @@ def _summarise_claimed(
             return None
         raw = _extraction(harvest, signal)
 
-    revision = stamps.next_revision(user.email)
-    payload = _payload(
-        raw, harvest,
-        run_id=emitter.run_id, email=user.email, phase=phase,
-        generator=generator, model=model, revision=revision,
-    )
-    emitter.emit(
-        "insight.summary",
-        user.email,
-        payload,
-        # The revision is what makes a regenerated summary a new logical event.
-        # Without it Control Tower would de-dupe every refresh after the first
-        # against the key it already held. Generator stays in the key so an
-        # extraction summary can still be superseded by a model one, and a
-        # retried flush of either remains a duplicate.
-        idempotency_key=(
-            f"summary:{emitter.run_id}:{user.email}:{generator}:{revision}"
-        ),
-    )
-    stamps.mark(user.email, generator, fingerprint)
+    if getattr(emitter, "journal", None) is not None:
+        template = _payload(
+            raw, harvest, run_id=emitter.run_id, email=user.email, phase=phase,
+            generator=generator, model=model, revision=1,
+        )
+        def prepare(state):
+            summaries = stamps._validate(state.setdefault("summaries", {}))
+            previous = summaries.get(user.email, {})
+            # A concurrent process may have emitted while this model call ran.
+            if previous.get("generator") == "llm" and generator != "llm":
+                return None
+            if (previous.get("fingerprint") == fingerprint
+                    and not (previous.get("generator") == "extraction" and generator == "llm")):
+                return None
+            revision = previous.get("revision", 0) + 1
+            payload = copy.deepcopy(template)
+            payload["revision"] = revision
+            summaries[user.email] = {"revision": revision, "generator": generator,
+                                     "fingerprint": fingerprint}
+            return payload, f"summary:{emitter.run_id}:{user.email}:{generator}:{revision}"
+        accepted = stamps._checked(emitter.journal, lambda: emitter.emit_transaction(
+            "insight.summary", user.email, prepare))
+        if not accepted:
+            return None
+        stamps._sync_capture()
+        payload = emitter.journal.read()["insight"]["events"][str(accepted)]["payload"]
+        revision = payload["revision"]
+    else:
+        revision = stamps.next_revision(user.email)
+        payload = _payload(
+            raw, harvest, run_id=emitter.run_id, email=user.email, phase=phase,
+            generator=generator, model=model, revision=revision,
+        )
+        emitter.emit(
+            "insight.summary", user.email, payload,
+            idempotency_key=f"summary:{emitter.run_id}:{user.email}:{generator}:{revision}",
+        )
+        stamps.mark(user.email, generator, fingerprint)
     logger.info(
         "edge summary emitted for %s (generator=%s, revision=%d, prompts=%d, "
         "artifacts=%d)",

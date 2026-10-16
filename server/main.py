@@ -42,6 +42,7 @@ from . import (
 from .admin import router as admin_router
 from .auth import Principal, get_current_user, is_admin
 from .bootstrap import install
+from .capture_journal import CaptureError
 from .content import content_service
 from .credentials import (
     CredentialError,
@@ -136,6 +137,13 @@ async def lifespan(app: FastAPI):
     # A multi-session override makes the UI lie and reintroduces the process
     # races this release removes. Fail the deployment before serving traffic.
     topology.validate_single_session()
+    if not config.local_dev():
+        # Capture must be durable before session restoration/startup producers.
+        # This also scrubs the privileged environment before any PTY/installer.
+        initialize_app_identity()
+        from . import capture
+
+        capture.configure(event_emitter)
     # P1-11: if a state path is configured, attach the metadata journal so
     # sessions survive a restart as surfaced ghosts (the live PTYs cannot).
     state_path = config.session_state_path()
@@ -147,7 +155,7 @@ async def lifespan(app: FastAPI):
     # restart — a mid-workshop crash would otherwise lose everything the agent had
     # learned, and attendees don't repeat themselves. No journal, no capture, no
     # file: the path is only attached when capture is on.
-    if config.insight_capture_enabled():
+    if config.local_dev() and config.insight_capture_enabled():
         from . import discovery
 
         restored = discovery.discovery_store.configure_journal(discovery.journal_path())
@@ -177,7 +185,6 @@ async def lifespan(app: FastAPI):
             # Capture the platform-injected M2M secret into one explicit SDK
             # client, scrub it from process env, and harden the same-UID process
             # boundary before installers or attendee PTYs can start.
-            initialize_app_identity()
             install.run_in_background()
             credential_manager.start()
             # SP-driven entitlement reconciler: keeps the labuser able to use the
@@ -194,7 +201,7 @@ async def lifespan(app: FastAPI):
             logger.info(
                 "event emitter started (delivery=%s stream=%s)",
                 "push" if event_emitter.can_push else "pull",
-                event_emitter.stream_id,
+                event_emitter.delivery_status().get("stream_id") or "HELD",
             )
         else:
             logger.info("LOCAL_DEV=1 — skipping CLI installers and credential rotation")
@@ -217,6 +224,11 @@ app = FastAPI(title="Databricks Workshop Terminal", lifespan=lifespan)
 app.include_router(admin_router)
 app.include_router(evaluation_router)
 app.include_router(ws_router)
+
+
+@app.exception_handler(CaptureError)
+async def capture_unavailable(_request: Request, _error: CaptureError):
+    return JSONResponse(status_code=503, content={"detail": "Workshop capture is held; retry when persistence is available."})
 
 
 @app.middleware("http")
@@ -975,6 +987,7 @@ def create_session(
     user.last_seen = time.time()
     if not user.first_seen:
         user.first_seen = time.time()
+    user_manager.checkpoint(user)
 
     # Emergency pause gate first, before credential or provisioning work.
     try:
@@ -1043,6 +1056,7 @@ def create_session(
         ensure_user_credentials(user)
     except model_policy.ModelPolicyConfigurationError as e:
         user.errors += 1
+        user_manager.checkpoint(user)
         telemetry.session_create_failed(
             principal.name,
             agent["id"],
@@ -1058,6 +1072,7 @@ def create_session(
         ) from e
     except CredentialError as e:
         user.errors += 1  # P1-14: failed agent launch (no credential)
+        user_manager.checkpoint(user)
         telemetry.session_create_failed(
             principal.name, agent["id"], "credential_unavailable", str(e)
         )
@@ -1107,6 +1122,7 @@ def create_session(
     except projects.ProjectError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     user.sessions_launched[agent["id"]] = user.sessions_launched.get(agent["id"], 0) + 1
+    user_manager.checkpoint(user)
     telemetry.session_started(principal.name, agent["id"], session.id)
     entitlement_manager.wake("session_start")
     if body.replaces_agent_id and body.replaces_agent_id != agent["id"]:

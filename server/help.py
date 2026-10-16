@@ -1,170 +1,233 @@
-"""Attendee raise-hand state + threaded help messages + CT push."""
+"""Attendee raise-hand state and help delivery retained until CT acknowledges it."""
 
 from __future__ import annotations
 
+import copy
 import logging
 import threading
 import time
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
 import requests
 
 from . import config
+from .capture_journal import CaptureHeldError
 from .credentials import app_identity_bearer
 from .events import event_hub
 
 _log = logging.getLogger(__name__)
-_lock = threading.Lock()
-_open = False
-_note = ""
-_raised_at = 0.0
-# In-memory mirror of the active conversation (CT is source of truth).
-_messages: list[dict[str, Any]] = []
-_help_request_id: str | None = None
+_lock = threading.RLock()
 _MAX_MESSAGES = 200
-
-# Attendee-authored help traffic waiting for Control Tower to collect it.
-#
-# The direct push below cannot authenticate: this app's OAuth token is minted
-# against its own attendee workspace, and Control Tower sits behind the Apps
-# proxy of a different workspace, which rejects that token with a 401 before
-# Control Tower's code runs. Collection is the direction that does work — CT
-# polls every terminal a few seconds apart — so what the attendee writes waits
-# here on ``GET /api/admin/presence`` until CT has it and acks.
-#
-# ``help_raised``/``help_note`` already ride on presence and CT already
-# reconciles them, so the outbox carries only what those fields cannot express:
-# each message with the id it was given locally, and each read receipt.
-_outbox: list[dict[str, Any]] = []
-_outbox_seq = 0
-# A backlog only grows while CT is not collecting, which is also when nobody is
-# reading it. Keep the recent end of it and bound the presence payload.
-_OUTBOX_MAX = 50
 _OUTBOX_PAGE = 20
-
-# Whether this process has already explained a refused push. Repeating it per
-# raise, per message and per read receipt buried the one line that says what
-# happened under hundreds that say it again.
+_capture_journal = None
+_require_ready = None
 _push_rejection = {"logged": False}
 
 
-def snapshot() -> dict[str, Any]:
-    """Current help state for config/presence surfaces."""
+def _empty_state() -> dict[str, Any]:
+    return {"raised": False, "note": "", "raised_at": 0.0, "messages": [],
+            "help_request_id": None, "outbox": [], "seq": 0, "acked_through": 0}
+
+
+_state = _empty_state()
+
+
+def _validate_state(state: Any) -> dict[str, Any]:
+    if (not isinstance(state, dict) or type(state.get("raised")) is not bool
+            or not isinstance(state.get("note"), str)
+            or not isinstance(state.get("raised_at"), (int, float))
+            or not isinstance(state.get("messages"), list)
+            or not all(isinstance(m, dict) for m in state["messages"])
+            or not isinstance(state.get("outbox"), list)
+            or type(state.get("seq")) is not int or type(state.get("acked_through")) is not int
+            or not 0 <= state["acked_through"] <= state["seq"]):
+        raise CaptureHeldError("retained help state is invalid; capture requires recovery")
+    previous = state["acked_through"]
+    for entry in state["outbox"]:
+        if (not isinstance(entry, dict) or type(entry.get("seq")) is not int
+                or entry["seq"] != previous + 1 or entry["seq"] > state["seq"]):
+            raise CaptureHeldError("retained help sequence is incomplete; capture requires recovery")
+        previous = entry["seq"]
+    if previous != state["seq"]:
+        raise CaptureHeldError("retained help tail is missing; capture requires recovery")
+    return state
+
+
+def require_capture_ready(callback: Callable[[], None] | None) -> None:
+    """Install the emitter guard before production capture initialization."""
+    global _require_ready
     with _lock:
-        return {
-            "raised": _open,
-            "note": _note or None,
-            "raised_at": _raised_at if _open else None,
-            "message_count": len(_messages),
-            "help_request_id": _help_request_id,
-        }
+        _require_ready = callback
+
+
+def _ensure_ready() -> None:
+    # Initialization acquires emitter -> help -> journal locks. Never call its
+    # guard while holding the help lock, including from a reentrant helper.
+    callback = _require_ready
+    if callback is not None:
+        callback()
+
+
+def _checked(journal, operation):
+    try:
+        return operation()
+    except CaptureHeldError as error:
+        journal.mark_held(error)
+        raise
+
+
+def configure_capture(journal) -> None:
+    """Attach the shared retained journal before serving requests or collectors."""
+    global _capture_journal, _state
+    with _lock:
+        def initialize(state):
+            current = state.setdefault("help", copy.deepcopy(_state))
+            return copy.deepcopy(_validate_state(current))
+        restored = _checked(journal, lambda: journal.transaction(initialize))
+        _state = restored
+        _capture_journal = journal
+
+
+def _read_locked() -> dict[str, Any]:
+    global _state
+    if _capture_journal is not None:
+        _state = _checked(_capture_journal, lambda: copy.deepcopy(
+            _validate_state(_capture_journal.read().get("help"))))
+    return _state
+
+
+def _mutate_locked(operation: Callable[[dict[str, Any]], Any]):
+    """Publish memory only after the retained transaction succeeds."""
+    global _state
+    if _capture_journal is None:
+        candidate = copy.deepcopy(_state)
+        result = operation(candidate)
+        _state = _validate_state(candidate)
+        return result
+
+    def apply(state):
+        current = _validate_state(state.get("help"))
+        result = operation(current)
+        _validate_state(current)
+        return copy.deepcopy(result)
+    result = _checked(_capture_journal, lambda: _capture_journal.transaction(apply))
+    _read_locked()
+    return result
+
+
+def snapshot() -> dict[str, Any]:
+    _ensure_ready()
+    with _lock:
+        state = _read_locked()
+        return {"raised": state["raised"], "note": state["note"] or None,
+                "raised_at": state["raised_at"] if state["raised"] else None,
+                "message_count": len(state["messages"]),
+                "help_request_id": state["help_request_id"]}
 
 
 def presence_fields() -> dict[str, Any]:
-    """Fields merged into ``GET /api/admin/presence`` for CT reconcile."""
+    _ensure_ready()
     with _lock:
-        return {
-            "help_raised": _open,
-            "help_note": _note or None,
-            "help_raised_at": _raised_at if _open else None,
-            "help_open": _open,
-            # Present even when empty: it is how Control Tower tells a terminal
-            # that hands it messages from one that cannot, and so whether to
-            # keep deriving the opening message from ``help_note``.
-            "help_outbox": _outbox[:_OUTBOX_PAGE],
-        }
+        state = _read_locked()
+        return {"help_raised": state["raised"], "help_note": state["note"] or None,
+                "help_raised_at": state["raised_at"] if state["raised"] else None,
+                "help_open": state["raised"],
+                "help_outbox": copy.deepcopy(state["outbox"][:_OUTBOX_PAGE]),
+                "help_pending": len(state["outbox"]),
+                "help_acked_through": state["acked_through"]}
 
 
-def _enqueue_locked(kind: str, **fields: Any) -> None:
-    """Queue one attendee-side event for collection. Caller holds ``_lock``."""
-    global _outbox_seq
-    _outbox_seq += 1
-    _outbox.append({"seq": _outbox_seq, "kind": kind, **fields})
-    if len(_outbox) > _OUTBOX_MAX:
-        del _outbox[: len(_outbox) - _OUTBOX_MAX]
+def _enqueue(state: dict[str, Any], kind: str, **fields: Any) -> None:
+    state["seq"] += 1
+    state["outbox"].append({"seq": state["seq"], "kind": kind, **fields})
 
 
 def ack_outbox(through_seq: int) -> dict[str, Any]:
-    """Drop what Control Tower has applied, up to and including ``through_seq``."""
+    """Persist a monotonic, bounded ACK; pending messages are never evicted."""
+    if type(through_seq) is not int or through_seq < 0:
+        raise ValueError("help acknowledgement must be a nonnegative integer")
+    _ensure_ready()
     with _lock:
-        global _outbox
-        _outbox = [e for e in _outbox if int(e["seq"]) > through_seq]
-        return {"acked_through": through_seq, "pending": len(_outbox)}
+        def apply(state):
+            if through_seq > state["seq"]:
+                raise ValueError("help acknowledgement exceeds emitted sequence")
+            state["acked_through"] = max(state["acked_through"], through_seq)
+            state["outbox"] = [e for e in state["outbox"] if e["seq"] > state["acked_through"]]
+            return {"acked_through": state["acked_through"], "pending": len(state["outbox"])}
+        return _mutate_locked(apply)
 
 
 def outbox_snapshot() -> list[dict[str, Any]]:
-    """Everything still waiting on Control Tower (tests and diagnostics)."""
+    _ensure_ready()
     with _lock:
-        return list(_outbox)
+        return copy.deepcopy(_read_locked()["outbox"])
 
 
 def thread_snapshot() -> dict[str, Any]:
+    _ensure_ready()
     with _lock:
-        return {
-            "raised": _open,
-            "note": _note or None,
-            "help_request_id": _help_request_id,
-            "messages": list(_messages),
-        }
+        state = _read_locked()
+        return {"raised": state["raised"], "note": state["note"] or None,
+                "help_request_id": state["help_request_id"],
+                "messages": copy.deepcopy(state["messages"])}
+
+
+def _append_local(state: dict[str, Any], message: dict[str, Any]) -> None:
+    state["messages"].append(message)
+    state["messages"] = state["messages"][-_MAX_MESSAGES:]
 
 
 def raise_hand(note: str | None = None) -> dict[str, Any]:
+    _ensure_ready()
     note_clean = (note or "").strip()[:280] or None
-    note_id = ""
+    note_id = str(uuid4()) if note_clean else ""
+    now = time.time()
+    created_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     with _lock:
-        global _open, _note, _raised_at
-        _open = True
-        _note = note_clean or ""
-        _raised_at = time.time()
-        if note_clean:
-            note_id = str(uuid4())
-            local = {
-                "message_id": note_id,
-                "help_request_id": _help_request_id,
-                "sender_role": "attendee",
-                "sender": "",
-                "body": note_clean,
-                "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            }
-            _append_local(local)
-            _enqueue_locked("message", **local)
+        def apply(state):
+            state.update(raised=True, note=note_clean or "", raised_at=now)
+            if note_clean:
+                local = {"message_id": note_id, "help_request_id": state["help_request_id"],
+                         "sender_role": "attendee", "sender": "", "body": note_clean,
+                         "created_at": created_at}
+                _append_local(state, local)
+                _enqueue(state, "message", **local)
+        _mutate_locked(apply)
     pushed = _push_control_tower("raise", note_clean, message_id=note_id)
     event_hub.publish({"t": "help_state", "raised": True, "note": note_clean})
     return {"raised": True, "pushed": pushed, "note": note_clean}
 
 
+def _lower_state(state):
+    had_open = state["raised"]
+    state.update(raised=False, note="", raised_at=0.0)
+    return had_open
+
+
 def lower_hand() -> dict[str, Any]:
+    _ensure_ready()
     with _lock:
-        global _open, _note, _raised_at
-        had_open = _open
-        _open = False
-        _note = ""
-        _raised_at = 0.0
+        had_open = _mutate_locked(_lower_state)
     pushed = _push_control_tower("lower", None) if had_open else False
     event_hub.publish({"t": "help_state", "raised": False})
     return {"raised": False, "pushed": pushed}
 
 
 def clear_hand() -> None:
-    """Clear local raised state (operator resolve); keep chat history."""
+    """Operator resolve clears the raised state and preserves conversation history."""
+    _ensure_ready()
     with _lock:
-        global _open, _note, _raised_at
-        _open = False
-        _note = ""
-        _raised_at = 0.0
+        _mutate_locked(_lower_state)
     event_hub.publish({"t": "help_state", "raised": False})
 
 
 def reset_for_tests() -> None:
-    """Wipe raised state and message buffer (test fixture only)."""
-    clear_hand()
+    global _state, _capture_journal, _require_ready
     with _lock:
-        global _messages, _help_request_id, _outbox, _outbox_seq
-        _messages = []
-        _help_request_id = None
-        _outbox = []
-        _outbox_seq = 0
+        _capture_journal = None
+        _require_ready = None
+        _state = _empty_state()
         _push_rejection["logged"] = False
 
 
@@ -172,115 +235,80 @@ def post_attendee_message(body: str, *, sender: str = "") -> dict[str, Any]:
     text = (body or "").strip()[:2000]
     if not text:
         raise ValueError("message body is required")
+    _ensure_ready()
+    message_id = str(uuid4())
+    now = time.time()
+    created_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     with _lock:
-        global _open, _note, _raised_at
-        if not _open:
-            _open = True
-            _raised_at = time.time()
-            _note = text[:280]
-        local = {
-            "message_id": str(uuid4()),
-            "help_request_id": _help_request_id,
-            "sender_role": "attendee",
-            "sender": sender,
-            "body": text,
-            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        }
-        _append_local(local)
-        _enqueue_locked("message", **local)
+        def apply(state):
+            if not state["raised"]:
+                state.update(raised=True, raised_at=now, note=text[:280])
+            local = {"message_id": message_id, "help_request_id": state["help_request_id"],
+                     "sender_role": "attendee", "sender": sender, "body": text,
+                     "created_at": created_at}
+            _append_local(state, local)
+            _enqueue(state, "message", **local)
+            return local
+        local = _mutate_locked(apply)
     pushed = _push_control_tower_message(text, message_id=local["message_id"])
     if not pushed and not _push_rejection["logged"]:
-        # Fall back to raise so CT still opens a queue row when the message API
-        # is unavailable on an older Control Tower. Pointless once the proxy has
-        # refused us — it is the same caller against the same door, and it was
-        # doubling the failure in the log for every message.
         _push_control_tower("raise", text[:280], message_id=local["message_id"])
-    # The attendee typed this, so they have already seen it — no toast, no ack.
-    event_hub.publish(
-        {"t": "help_message", **local, "surface": "none", "request_ack": False}
-    )
+    event_hub.publish({"t": "help_message", **local, "surface": "none", "request_ack": False})
     event_hub.publish({"t": "help_state", "raised": True})
     return {"message": local, "pushed": pushed, "raised": True}
 
 
 def ingest_operator_message(payload: dict[str, Any]) -> dict[str, Any]:
-    """CT fan-out: durable operator (or synced) message into local buffer.
-
-    Publishes exactly one event. This used to publish two — a real
-    ``help_message`` plus a synthetic ``broadcast`` that hijacked the banner so
-    an attendee with the help panel closed would notice a reply. That produced
-    the worst of both surfaces: the banner has one slot, so a second reply
-    silently overwrote the first, and a single ``ttl_s`` dismissed a direct
-    answer on the same clock as a pacing announcement. Replies are toasts now,
-    which stack and wait, and the banner is left to persistent state.
-    """
     body = (payload.get("body") or "").strip()
     if not body:
         raise ValueError("body required")
-    local = {
-        "message_id": str(payload.get("message_id") or uuid4()),
-        "help_request_id": payload.get("help_request_id"),
-        "sender_role": payload.get("sender_role") or "operator",
-        "sender": payload.get("sender") or "",
-        "body": body[:2000],
-        "created_at": payload.get("created_at")
-        or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    }
+    _ensure_ready()
+    local = {"message_id": str(payload.get("message_id") or uuid4()),
+             "help_request_id": payload.get("help_request_id"),
+             "sender_role": payload.get("sender_role") or "operator",
+             "sender": payload.get("sender") or "", "body": body[:2000],
+             "created_at": payload.get("created_at")
+             or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     with _lock:
-        global _help_request_id
-        if local["help_request_id"]:
-            _help_request_id = str(local["help_request_id"])
-        # Deduplicate by message_id
-        if any(m.get("message_id") == local["message_id"] for m in _messages):
-            return local
-        _append_local(local)
-    event_hub.publish(
-        {
-            "t": "help_message",
-            **local,
-            # A direct answer to a raised hand must not disappear on a timer.
-            "surface": payload.get("surface") or "toast",
-            "durability": payload.get("durability") or "sticky",
-            "request_ack": bool(payload.get("request_ack", True)),
-        }
-    )
+        def apply(state):
+            if local["help_request_id"]:
+                state["help_request_id"] = str(local["help_request_id"])
+            if any(m.get("message_id") == local["message_id"] for m in state["messages"]):
+                return False
+            _append_local(state, local)
+            return True
+        added = _mutate_locked(apply)
+    if added:
+        event_hub.publish({"t": "help_message", **local,
+                           "surface": payload.get("surface") or "toast",
+                           "durability": payload.get("durability") or "sticky",
+                           "request_ack": bool(payload.get("request_ack", True))})
     return local
 
 
 def acknowledge_message(message_id: str) -> bool:
-    """Tell Control Tower the attendee actually saw this message.
-
-    Delivered is not read. Without this the operator cannot distinguish an
-    answer that landed and was acted on from one sitting unseen behind a
-    full-screen terminal, which is exactly the case where the right next action
-    is to walk over rather than type again.
-    """
     mid = (message_id or "").strip()
     if not mid:
         return False
+    _ensure_ready()
     with _lock:
-        _enqueue_locked("seen", message_id=mid)
+        _mutate_locked(lambda state: _enqueue(state, "seen", message_id=mid))
     base = config.control_tower_url()
     run_id = config.workshop_run_id()
     unit_id = config.workshop_unit_id()
     if not base or not run_id or not unit_id:
         return False
-    url = f"{base.rstrip('/')}/api/help/messages/{mid}/seen"
-    return _ct_post(url, {"run_id": run_id, "unit_id": unit_id})
+    return _ct_post(f"{base.rstrip('/')}/api/help/messages/{mid}/seen",
+                    {"run_id": run_id, "unit_id": unit_id})
 
 
 def replace_thread_from_ct(messages: list[dict[str, Any]], *, help_request_id: str | None) -> None:
+    _ensure_ready()
     with _lock:
-        global _messages, _help_request_id
-        _help_request_id = help_request_id
-        _messages = list(messages)[-_MAX_MESSAGES:]
-
-
-def _append_local(msg: dict[str, Any]) -> None:
-    global _messages
-    _messages.append(msg)
-    if len(_messages) > _MAX_MESSAGES:
-        _messages = _messages[-_MAX_MESSAGES:]
+        def apply(state):
+            state["help_request_id"] = help_request_id
+            state["messages"] = copy.deepcopy(messages[-_MAX_MESSAGES:])
+        _mutate_locked(apply)
 
 
 def _push_control_tower(
@@ -369,10 +397,11 @@ def _ct_post(url: str, payload: dict[str, str]) -> bool:
         hid = data.get("help_request_id") or (data.get("message") or {}).get(
             "help_request_id"
         )
-        if hid:
-            with _lock:
-                global _help_request_id
-                _help_request_id = str(hid)
     except Exception:  # noqa: BLE001
-        pass
+        hid = None
+    if hid:
+        _ensure_ready()
+        request_id = str(hid)
+        with _lock:
+            _mutate_locked(lambda state: state.update(help_request_id=request_id))
     return True

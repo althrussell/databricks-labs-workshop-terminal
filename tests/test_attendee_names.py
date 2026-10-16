@@ -23,16 +23,28 @@ def captured(monkeypatch):
     """What would have been buffered for Control Tower."""
     from server import event_emitter as emitter_module
 
+    from server.event_emitter import EventEmitter
+
     records: list[tuple[str, str, dict]] = []
+    emitter = EventEmitter(
+        run_id="run", workspace_id="123", ingest_url="", ingest_token=""
+    )
+    original = emitter.emit_transaction
 
-    def capture(event_type, attendee, payload=None, **_kwargs):
-        records.append((event_type, attendee, payload or {}))
+    def capture(event_type, attendee, prepare):
+        result = original(event_type, attendee, prepare)
+        if result:
+            entry = emitter.journal.read()["insight"]["events"][str(result)]
+            records.append((event_type, attendee, entry["payload"]))
+        return result
 
-    monkeypatch.setattr(emitter_module.event_emitter, "emit", capture)
+    monkeypatch.setattr(emitter, "emit_transaction", capture)
+    monkeypatch.setattr(emitter_module, "event_emitter", emitter)
     return records
 
 
 # -- storage ----------------------------------------------------------------
+
 
 def test_a_second_name_is_appended_not_written_over(home):
     """Two names on one workspace is either corroboration or two people. A
@@ -103,13 +115,12 @@ def test_an_unreadable_file_is_not_a_500(home, monkeypatch):
 
 # -- emission ---------------------------------------------------------------
 
+
 def test_nothing_leaves_the_instance_without_capture(home, captured, monkeypatch):
     """A typed human name is new PII — the contract only ever promised pooled
     lab identities. An operator who has not arranged consent gets nothing by
     doing nothing."""
-    monkeypatch.setattr(
-        attendee_names.config, "insight_capture_enabled", lambda: False
-    )
+    monkeypatch.setattr(attendee_names.config, "insight_capture_enabled", lambda: False)
 
     recorded = attendee_names.capture(
         "labuser017@example.com", home, "Priya Raman", attendee_names.SOURCE_WIZARD
@@ -122,9 +133,7 @@ def test_nothing_leaves_the_instance_without_capture(home, captured, monkeypatch
 def test_capture_on_emits_the_whole_picture_each_time(home, captured, monkeypatch):
     """Carrying the full list means a consumer takes the latest event and needs
     no merge logic."""
-    monkeypatch.setattr(
-        attendee_names.config, "insight_capture_enabled", lambda: True
-    )
+    monkeypatch.setattr(attendee_names.config, "insight_capture_enabled", lambda: True)
 
     attendee_names.capture(
         "labuser017@example.com", home, "Priya Raman", attendee_names.SOURCE_WIZARD
@@ -145,9 +154,7 @@ def test_capture_on_emits_the_whole_picture_each_time(home, captured, monkeypatc
 
 
 def test_a_repeat_burns_no_event(home, captured, monkeypatch):
-    monkeypatch.setattr(
-        attendee_names.config, "insight_capture_enabled", lambda: True
-    )
+    monkeypatch.setattr(attendee_names.config, "insight_capture_enabled", lambda: True)
 
     attendee_names.capture(
         "labuser017@example.com", home, "Priya", attendee_names.SOURCE_CERTIFICATE
@@ -164,14 +171,10 @@ def test_an_unknown_source_is_refused(home, captured, monkeypatch):
     """Source is the field that makes one observation weigh more than another.
     A producer that invents one has broken that, and silently accepting it
     would flatten the distinction downstream."""
-    monkeypatch.setattr(
-        attendee_names.config, "insight_capture_enabled", lambda: True
-    )
+    monkeypatch.setattr(attendee_names.config, "insight_capture_enabled", lambda: True)
 
     assert (
-        attendee_names.capture(
-            "labuser017@example.com", home, "Priya", "some-new-form"
-        )
+        attendee_names.capture("labuser017@example.com", home, "Priya", "some-new-form")
         is False
     )
     assert attendee_names.read(home) == []
@@ -209,9 +212,7 @@ def unbriefed():
 def test_the_certificate_records_the_name_on_it(client, monkeypatch, captured):
     from tests.conftest import BOB
 
-    monkeypatch.setattr(
-        attendee_names.config, "insight_capture_enabled", lambda: True
-    )
+    monkeypatch.setattr(attendee_names.config, "insight_capture_enabled", lambda: True)
     resp = client.get("/api/certificate?name=Priya%20Raman", headers=BOB)
 
     assert resp.status_code == 200
@@ -226,9 +227,7 @@ def test_the_wizard_records_an_optional_typed_name(
 ):
     from tests.conftest import BOB
 
-    monkeypatch.setattr(
-        attendee_names.config, "insight_capture_enabled", lambda: True
-    )
+    monkeypatch.setattr(attendee_names.config, "insight_capture_enabled", lambda: True)
     resp = client.post(
         "/api/wizard",
         headers=BOB,
@@ -246,9 +245,7 @@ def test_a_wizard_save_with_no_name_records_no_identity(
 ):
     from tests.conftest import BOB
 
-    monkeypatch.setattr(
-        attendee_names.config, "insight_capture_enabled", lambda: True
-    )
+    monkeypatch.setattr(attendee_names.config, "insight_capture_enabled", lambda: True)
     client.post("/api/wizard", headers=BOB, json={"what_building": "a dashboard"})
 
     assert [p for t, _a, p in captured if t == "attendee.identity"] == []
