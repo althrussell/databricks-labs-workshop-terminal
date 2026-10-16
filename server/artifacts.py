@@ -34,6 +34,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import stat
 import subprocess
 from dataclasses import dataclass, field
 
@@ -142,6 +143,9 @@ class Harvest:
     # Every attendee turn, including the continuations withheld from ``prompts``.
     prompt_count: int = 0
     redactions: int = 0
+    # Assurance metadata only. Paths and exception messages stay local; a final
+    # closeout must distinguish an empty session from material it could not read.
+    issues: list[str] = field(default_factory=list)
 
     def is_empty(self) -> bool:
         """Nothing worth summarising.
@@ -293,7 +297,22 @@ def _errors_from(entry: dict) -> list[str]:
     return out
 
 
-def _transcript_files(home: str) -> list[str]:
+def _issue(harvest: Harvest, code: str) -> None:
+    if code not in harvest.issues:
+        harvest.issues.append(code)
+
+
+def _directory(path: str, harvest: Harvest, code: str) -> bool:
+    try:
+        return stat.S_ISDIR(os.stat(path).st_mode)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        _issue(harvest, code)
+        return False
+
+
+def _transcript_files(home: str, harvest: Harvest | None = None) -> list[str]:
     """Agent session logs, newest first.
 
     Both harnesses write JSONL under their own dot-directory in HOME. Sorting by
@@ -301,11 +320,14 @@ def _transcript_files(home: str) -> list[str]:
     session from a previous restart.
     """
     found: list[tuple[float, str]] = []
+    harvest = harvest if harvest is not None else Harvest()
     for root_name in (".claude", ".codex", ".omnigent"):
         root = os.path.join(home, root_name)
-        if not os.path.isdir(root):
+        if not _directory(root, harvest, "transcript_read_failed"):
             continue
-        for directory, dirs, files in os.walk(root):
+        for directory, dirs, files in os.walk(
+            root, onerror=lambda _error: _issue(harvest, "transcript_read_failed"),
+        ):
             dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
             for name in files:
                 if not name.endswith((".jsonl", ".ndjson")):
@@ -314,6 +336,7 @@ def _transcript_files(home: str) -> list[str]:
                 try:
                     found.append((os.path.getmtime(path), path))
                 except OSError:
+                    _issue(harvest, "transcript_read_failed")
                     continue
     found.sort(reverse=True)
     return [path for _, path in found[:MAX_TRANSCRIPT_FILES]]
@@ -323,12 +346,13 @@ def _scan_transcripts(home: str, harvest: Harvest) -> None:
     budget = MAX_TRANSCRIPT_BYTES
     seen_errors: set[str] = set()
     seen_targets: set[str] = set()
-    for path in _transcript_files(home):
+    for path in _transcript_files(home, harvest):
         if budget <= 0:
             break
         try:
             size = os.path.getsize(path)
         except OSError:
+            _issue(harvest, "transcript_read_failed")
             continue
         budget -= size
         try:
@@ -340,11 +364,13 @@ def _scan_transcripts(home: str, harvest: Harvest) -> None:
                     try:
                         entry = json.loads(line)
                     except ValueError:
+                        _issue(harvest, "transcript_parse_failed")
                         continue
                     if isinstance(entry, dict):
                         _absorb(entry, harvest, seen_errors, seen_targets)
         except OSError as exc:
             logger.debug("transcript unreadable (%s): %s", path, exc)
+            _issue(harvest, "transcript_read_failed")
 
 
 def _absorb(
@@ -440,10 +466,12 @@ def _document_roots(home: str, *, include_shared_tmp: bool) -> list[str]:
 
 def _scan_documents(home: str, harvest: Harvest, *, include_shared_tmp: bool) -> None:
     for root in _document_roots(home, include_shared_tmp=include_shared_tmp):
-        if not os.path.isdir(root):
+        if not _directory(root, harvest, "document_read_failed"):
             continue
         base_depth = root.rstrip(os.sep).count(os.sep)
-        for directory, dirs, files in os.walk(root):
+        for directory, dirs, files in os.walk(
+            root, onerror=lambda _error: _issue(harvest, "document_read_failed"),
+        ):
             dirs[:] = [
                 d for d in dirs
                 if d not in _SKIP_DIRS and not d.startswith(".")
@@ -465,6 +493,7 @@ def _absorb_document(path: str, harvest: Harvest) -> None:
             body = handle.read(MAX_DOCUMENT_CHARS)
     except OSError as exc:
         logger.debug("document unreadable (%s): %s", path, exc)
+        _issue(harvest, "document_read_failed")
         return
     title = os.path.basename(path)
     harvest.artifacts.append(
@@ -478,18 +507,19 @@ def _absorb_document(path: str, harvest: Harvest) -> None:
 def _commit_subjects(home: str, harvest: Harvest) -> None:
     """Commit subjects from the attendee's repos — their own words about the work."""
     projects = os.path.join(home, "projects")
-    if not os.path.isdir(projects):
+    if not _directory(projects, harvest, "commit_read_failed"):
         return
     try:
         names = sorted(os.listdir(projects))
     except OSError:
+        _issue(harvest, "commit_read_failed")
         return
     commits = 0
     for name in names:
         if commits >= MAX_COMMITS:
             return
         repo = os.path.join(projects, name)
-        if not os.path.isdir(os.path.join(repo, ".git")):
+        if not _directory(os.path.join(repo, ".git"), harvest, "commit_read_failed"):
             continue
         try:
             result = subprocess.run(
@@ -497,8 +527,14 @@ def _commit_subjects(home: str, harvest: Harvest) -> None:
                 capture_output=True, text=True, timeout=10,
             )
         except (subprocess.TimeoutExpired, OSError):
+            _issue(harvest, "commit_read_failed")
             continue
         if result.returncode != 0:
+            from .stats import _unborn_head
+
+            if result.returncode == 128 and _unborn_head(repo):
+                continue
+            _issue(harvest, "commit_read_failed")
             continue
         for subject in result.stdout.splitlines():
             if commits >= MAX_COMMITS:
@@ -526,6 +562,7 @@ def harvest_user(user: User, *, single_attendee: bool = True) -> Harvest:
         _commit_subjects(user.home, result)
     except Exception as exc:  # noqa: BLE001 — insight is never worth a 500
         logger.warning("artifact harvest failed for %s: %s", user.email, exc)
+        _issue(result, "artifact_harvest_failed")
     return result
 
 

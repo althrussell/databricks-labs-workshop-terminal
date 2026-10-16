@@ -14,6 +14,7 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -157,6 +158,12 @@ class _StdioCapture:
             except OSError:
                 pass
 
+    def drain(self, *, deadline: float) -> bool:
+        """Confirm every byte already written reached the bounded local log."""
+        self.release()
+        self._thread.join(timeout=max(0.0, deadline - time.monotonic()))
+        return not self._thread.is_alive()
+
 
 def _start_stdio_capture(user: User) -> _StdioCapture | None:
     from . import diagnostics
@@ -237,6 +244,12 @@ class _Host:
     # Last state reported to Control Tower, so health events describe movement
     # rather than the supervisor's polling rate.
     announced_status: str | None = None
+    capture_ticket: object | None = None
+    supervisor_done: threading.Event = field(default_factory=threading.Event)
+    capture_failed: bool = False
+    producer_processes: list = field(default_factory=list)
+    producer_captures: list = field(default_factory=list)
+    capture_lock: threading.Lock = field(default_factory=threading.Lock)
 
 
 class RemoteHostManager:
@@ -292,6 +305,8 @@ class RemoteHostManager:
         self._stopping = False
         self._stop_finished = False
         self._shutdown_deadline: float | None = None
+        self._captures: list[_StdioCapture] = []
+        self._observed_processes: dict[int, subprocess.Popen] = {}
 
     def start(self) -> None:
         # Validate once at startup so a production cleartext/malformed URL
@@ -315,6 +330,14 @@ class RemoteHostManager:
 
     def notify(self, email: str) -> None:
         """Wake or create the attendee worker after a fresh mirror update."""
+        from .closeout_guard import CaptureClosedError, admitted_writer, check_open
+        from .event_emitter import event_emitter
+
+        event_emitter._ensure_ready()
+        try:
+            check_open(event_emitter.journal)
+        except CaptureClosedError:
+            return
         email = (email or "").strip().lower()
         if not email:
             return
@@ -343,13 +366,28 @@ class RemoteHostManager:
                 return
             host.wake.set()
             if host.thread is None or not host.thread.is_alive():
+                if host.capture_ticket is not None and not host.capture_ticket.finished:
+                    return  # An earlier producer is still unverified.
+                try:
+                    ticket = admitted_writer(event_emitter.journal, "paired_host_lifetime", detached=True)
+                except CaptureClosedError:
+                    return
+                host.capture_ticket = ticket
+                host.supervisor_done.clear()
+                host.capture_failed = False
+                host.producer_processes = []
+                host.producer_captures = []
                 host.thread = threading.Thread(
-                    target=self._run,
-                    args=(email, host),
+                    target=self._run_until_done,
+                    args=(email, host, ticket),
                     daemon=True,
                     name=f"omnigent-host-{host.user.slug}",
                 )
-                host.thread.start()
+                try:
+                    host.thread.start()
+                except BaseException:
+                    host.capture_ticket.finish(failed=True)
+                    raise
 
     def status(self, email: str) -> dict:
         try:
@@ -438,8 +476,10 @@ class RemoteHostManager:
     def attempt_after_exit(self, attempt: int, runtime: float) -> int:
         return 0 if runtime >= self._stable_runtime else attempt + 1
 
-    def stop(self) -> None:
-        deadline = time.monotonic() + min(14.0, max(0.0, self._shutdown_timeout))
+    def stop(self, *, deadline: float | None = None) -> dict:
+        if deadline is None:
+            deadline = time.monotonic() + min(14.0, max(0.0, self._shutdown_timeout))
+        issues: list[str] = []
         with self._spawn_condition:
             self._shutdown_deadline = deadline
             self._stopping = True
@@ -451,12 +491,20 @@ class RemoteHostManager:
                 self._spawn_condition.wait(
                     timeout=max(0.0, deadline - time.monotonic())
                 )
-            processes = [host.process for host in hosts if host.process is not None]
+            processes = list(self._observed_processes.values())
+            for host in hosts:
+                if host.process is not None and host.process not in processes:
+                    processes.append(host.process)
+            if self._spawns_in_progress:
+                issues.append("paired_host_spawn_pending")
         # Signal every published process first, then use the one absolute
         # shutdown deadline for TERM, KILL, reap, and worker joins.
         live = [process for process in processes if process.poll() is None]
         for process in live:
-            self._signal_group(process, signal.SIGTERM)
+            try:
+                self._signal_group(process, signal.SIGTERM)
+            except OSError:
+                issues.append("paired_host_signal_failed")
         remaining = max(0.0, deadline - time.monotonic())
         term_deadline = time.monotonic() + (remaining / 2)
         while live and time.monotonic() < term_deadline:
@@ -464,23 +512,81 @@ class RemoteHostManager:
             if live:
                 time.sleep(min(0.02, max(0.0, term_deadline - time.monotonic())))
         for process in live:
-            self._signal_group(process, signal.SIGKILL)
+            try:
+                self._signal_group(process, signal.SIGKILL)
+            except OSError:
+                issues.append("paired_host_signal_failed")
         for process in processes:
             try:
                 process.wait(timeout=max(0.0, deadline - time.monotonic()))
             except (OSError, subprocess.SubprocessError):
                 logger.warning("Omnigent host process could not be reaped")
+                issues.append("paired_host_process_not_reaped")
+            if process.poll() is None:
+                issues.append("paired_host_process_pending")
         with self._lock:
             for host in hosts:
                 if host.process in processes:
+                    host.last_exit_code = host.process.poll()
                     host.process = None
         for host in hosts:
             thread = host.thread
             if thread and thread is not threading.current_thread():
                 thread.join(timeout=max(0.0, deadline - time.monotonic()))
+            if thread and thread.is_alive():
+                issues.append("paired_host_supervisor_pending")
             host.status = "stopped"
         with self._lock:
             self._stop_finished = True
+            captures = list(self._captures)
+        # A reaped host leader can still have children holding the stdio pipe.
+        # Drain its process group before waiting for EOF from those children.
+        issues.extend(self._drain_process_groups(processes, deadline=deadline))
+        for capture in captures:
+            if not capture.drain(deadline=deadline):
+                issues.append("paired_host_stdio_pending")
+        for host in hosts:
+            ticket = host.capture_ticket
+            if ticket is not None and not ticket.finished:
+                self._announce(host)
+                self._finish_host_capture(host)
+        issues = sorted(set(issues))
+        return {"complete": not issues, "issues": issues,
+                "processes_observed": len(processes), "captures_observed": len(captures)}
+
+    def drain_for_closeout(self, *, deadline: float) -> dict:
+        """Stop existing host writers and verify descendants as well as leaders."""
+        return self.stop(deadline=deadline)
+
+    def _drain_process_groups(self, processes, *, deadline: float) -> list[str]:
+        from .closeout_writers import process_group_alive
+
+        issues: list[str] = []
+        for process in processes:
+            # Only real subprocess handles own OS process groups. Injectable
+            # test processes still must satisfy poll/wait in stop().
+            if not isinstance(process, subprocess.Popen):
+                continue
+            try:
+                if not process_group_alive(process.pid):
+                    continue
+            except OSError:
+                issues.append("paired_host_group_unverified")
+                continue
+            try:
+                self._signal_group(process, signal.SIGKILL)
+                while time.monotonic() < deadline:
+                    try:
+                        if not process_group_alive(process.pid):
+                            break
+                    except ProcessLookupError:
+                        break
+                    time.sleep(min(0.01, max(0.0, deadline - time.monotonic())))
+                if process_group_alive(process.pid):
+                    issues.append("paired_host_process_group_pending")
+            except OSError:
+                issues.append("paired_host_group_unverified")
+        return sorted(set(issues))
 
     def _resolve_binary(self) -> str | None:
         from .bootstrap import install
@@ -521,18 +627,59 @@ class RemoteHostManager:
             attempts, exit_code = host.attempts, host.last_exit_code
         from . import telemetry
 
-        telemetry.omnigent_host_health(
-            host.user.email,
-            status,
-            {"attempts": attempts, "last_exit_code": exit_code},
-        )
+        ticket = host.capture_ticket
+        with ticket.scope() if ticket is not None and not ticket.finished else nullcontext():
+            captured = telemetry.omnigent_host_health(
+                host.user.email,
+                status,
+                {"attempts": attempts, "last_exit_code": exit_code},
+            )
+        if captured is False:
+            host.capture_failed = True
+
+    def _run_until_done(self, email: str, host: _Host, ticket) -> None:
+        try:
+            with ticket.scope():
+                self._run(email, host)
+                if host.status == "stopped":
+                    self._announce(host)
+        except BaseException:
+            host.capture_failed = True
+            raise
+        finally:
+            host.supervisor_done.set()
+            self._finish_host_capture(host)
+
+    def _finish_host_capture(self, host: _Host) -> None:
+        from .closeout_writers import process_group_alive
+
+        with host.capture_lock:
+            ticket = host.capture_ticket
+            if ticket is None or ticket.finished or not host.supervisor_done.is_set():
+                return
+            for process in host.producer_processes:
+                if process.poll() is None:
+                    return
+                if isinstance(process, subprocess.Popen) and process_group_alive(process.pid):
+                    return
+            if any(capture._thread.is_alive() for capture in host.producer_captures):
+                return
+            ticket.finish(failed=host.capture_failed)
 
     def _run(self, email: str, host: _Host) -> None:
+        from .closeout_guard import CaptureClosedError, admitted_writer, check_open
+        from .event_emitter import event_emitter
+
         while True:
             with self._lock:
                 if self._stopping:
                     host.status = "stopped"
                     return
+            try:
+                check_open(event_emitter.journal)
+            except CaptureClosedError:
+                host.status = "stopped"
+                return
             try:
                 server_url = config.omnigent_app_url()
             except ValueError:
@@ -581,23 +728,33 @@ class RemoteHostManager:
                 self._spawns_in_progress += 1
             process = None
             capture = self._stdio_capture(host.user)
+            if capture is not None:
+                with self._lock:
+                    self._captures = [item for item in self._captures if item._thread.is_alive()]
+                    self._captures.append(capture)
+                    host.producer_captures = [item for item in host.producer_captures if item._thread.is_alive()]
+                    host.producer_captures.append(capture)
             stdio = capture.write_fd if capture is not None else subprocess.DEVNULL
             if capture is not None:
                 capture.log.write(
                     f"=== host start {self._now().isoformat()} attempt={host.attempts}"
                 )
             try:
-                process = self._popen(
-                    argv,
-                    shell=False,
-                    cwd=cwd,
-                    env=env,
-                    stdin=subprocess.DEVNULL,
-                    stdout=stdio,
-                    stderr=stdio,
-                    start_new_session=True,
-                    close_fds=True,
-                )
+                with admitted_writer(event_emitter.journal, "paired_host_spawn", detached=True):
+                    process = self._popen(
+                        argv,
+                        shell=False,
+                        cwd=cwd,
+                        env=env,
+                        stdin=subprocess.DEVNULL,
+                        stdout=stdio,
+                        stderr=stdio,
+                        start_new_session=True,
+                        close_fds=True,
+                    )
+            except CaptureClosedError:
+                with self._lock:
+                    self._stopping = True
             except (OSError, subprocess.SubprocessError) as error:
                 logger.warning(
                     "Omnigent host failed to start for %s: %s",
@@ -614,6 +771,9 @@ class RemoteHostManager:
                     capture.release()
             with self._spawn_condition:
                 self._spawns_in_progress -= 1
+                if process is not None:
+                    self._observed_processes[id(process)] = process
+                    host.producer_processes.append(process)
                 self._spawn_condition.notify_all()
                 if self._stopping:
                     if process is not None:
@@ -669,6 +829,7 @@ class RemoteHostManager:
                     host.last_exit_code = process.poll()
                     host.process = None
                     exit_code = host.last_exit_code
+                self._forget_finished_process(process)
                 runtime = time.monotonic() - started_at
                 if exit_code:
                     tail = capture.log.tail(2048) if capture is not None else ""
@@ -709,6 +870,23 @@ class RemoteHostManager:
             delay = self.backoff_delay(attempt)
             host.wake.clear()
             host.wake.wait(timeout=delay)
+
+    def _forget_finished_process(self, process) -> None:
+        """Do not retain a dead leader PID until it can be reused by the OS."""
+        if process.poll() is None:
+            return
+        if isinstance(process, subprocess.Popen):
+            from .closeout_writers import process_group_alive
+
+            try:
+                if process_group_alive(process.pid):
+                    return  # Descendants still need the closeout group drain.
+            except OSError:
+                return
+        with self._lock:
+            self._observed_processes.pop(id(process), None)
+            for host in self._hosts.values():
+                host.producer_processes = [item for item in host.producer_processes if item is not process]
 
     @staticmethod
     def _signal_group(process: subprocess.Popen, sig: int) -> None:

@@ -11,7 +11,7 @@ import logging
 import time
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from . import agents
 from . import attendee as attendee_binding
@@ -86,6 +86,8 @@ def admin_state():
     policy = model_policy.store.snapshot()
     return {
         "phase": content_service.phase,
+        "capture_capabilities": {"delivery_schema_version": 2, "closeout_schema_version": 1,
+                                 "sealed_closeout": True, "ct_verification_required": True},
         "phases": pack.phases,
         "nugget_count": len(pack.nuggets),
         "broadcast": (
@@ -436,6 +438,45 @@ def harvest_stats(final: bool = False):
     flips to wrap — the normal case — still gets briefs that describe the session,
     rather than a run that reaches teardown having captured nothing but counters.
     """
+    from . import closeout
+
+    try:
+        operation = closeout.manager().status()
+    except CaptureError:
+        # Preserve the existing useful stats response and explicit capture
+        # fault when the retained store itself cannot currently be read.
+        return _harvest_open_stats(final)
+    if operation["phase"] != "OPEN":
+        payload = operation["final_outputs"].get("stats")
+        if payload is None:
+            raise HTTPException(status_code=503, detail="Closeout final statistics are not ready")
+        # Read-only compatibility path: never launch new rolling summaries or
+        # revise the sealed snapshot on a legacy CT harvest after close begins.
+        from .event_emitter import event_emitter
+
+        payload.setdefault("instance", {})["capture_delivery"] = event_emitter.delivery_status()
+        payload["instance"]["closeout"] = {"phase": operation["phase"],
+                                            "capture_id": operation["capture_id"],
+                                            "manifest_sha256": operation["manifest_sha256"]}
+        return payload
+
+    from .closeout_guard import admitted_writer
+    from .closeout_guard import CaptureClosedError
+    from .event_emitter import event_emitter
+
+    # GET is also a producer here. Reserve for the entire synchronous harvest;
+    # the background summary reserves its own detached ticket before dispatch.
+    try:
+        ticket = admitted_writer(event_emitter.journal, "admin_stats")
+    except CaptureClosedError:
+        raise
+    except CaptureError:
+        return _harvest_open_stats(final)
+    with ticket:
+        return _harvest_open_stats(final)
+
+
+def _harvest_open_stats(final: bool):
     from . import stats
 
     users = user_manager.all()
@@ -572,6 +613,63 @@ def acknowledge_insight_events(body: InsightAckIn):
         raise HTTPException(status_code=422, detail="Invalid capture acknowledgement") from exc
     except CaptureError as exc:
         raise HTTPException(status_code=503, detail="Capture persistence unavailable") from exc
+
+
+class CloseoutSourceIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    run_id: str = Field(strict=True, min_length=1)
+    unit_id: str = Field(strict=True, min_length=1)
+    workspace_id: str = Field(strict=True, min_length=1)
+    owner: str = Field(strict=True, min_length=1)
+
+
+class CloseoutBeginIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: int = Field(strict=True, ge=1, le=1)
+    capture_id: str = Field(strict=True, min_length=1, max_length=128,
+                            pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
+    stream_id: str = Field(strict=True, min_length=1, max_length=128)
+    source: CloseoutSourceIn
+    drain_timeout_seconds: int = Field(default=120, strict=True, ge=1, le=600)
+
+
+@router.post("/capture-closeout/begin")
+def begin_capture_closeout(body: CloseoutBeginIn):
+    """Persist the input barrier; repeats resume this exact close generation."""
+    from .closeout import CloseoutConflict, manager
+
+    try:
+        operation = manager()
+        operation.begin(capture_id=body.capture_id, stream_id=body.stream_id,
+                        source=body.source.model_dump(), drain_timeout_seconds=body.drain_timeout_seconds)
+        return operation.advance(capture_id=body.capture_id)
+    except CloseoutConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/capture-closeout/status")
+def capture_closeout_status(capture_id: str = "", advance: bool = True):
+    """Read/resume persisted closeout through the existing authenticated app."""
+    from .closeout import CloseoutConflict, manager
+
+    try:
+        operation = manager()
+        return operation.advance(capture_id=capture_id) if advance else operation.status(capture_id=capture_id)
+    except CloseoutConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/capture-closeout/entries")
+def capture_closeout_entries(capture_id: str, kind: str, after: int = 0, limit: int = 1000):
+    """Replay sealed bytes even after transport ACK; GET never acknowledges."""
+    from .closeout import CloseoutConflict, manager
+
+    try:
+        return manager().entries(capture_id=capture_id, kind=kind, after=after, limit=limit)
+    except CloseoutConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid sealed capture cursor") from exc
 
 
 @router.get("/omnigent-host-readiness")

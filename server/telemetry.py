@@ -42,7 +42,7 @@ SESSION_CREATE_CODES = frozenset(
 
 # Why a session ended, separating clean process exit from crash or signal.
 SESSION_EXIT_CODES = frozenset(
-    {"exited", "process_error", "process_signal", "closed", "idle_reaped", "shutdown"}
+    {"exited", "process_error", "process_signal", "closed", "idle_reaped", "shutdown", "workshop_closing"}
 )
 
 # What an attendee can see on their screen. The Omnigent members of this set are
@@ -93,12 +93,14 @@ def normalize(code: str | None, vocabulary: frozenset[str]) -> tuple[str, str]:
     return (raw if raw in vocabulary else UNKNOWN), raw
 
 
-def emit(event_type: str, attendee: str, payload: dict | None = None) -> None:
+def emit(event_type: str, attendee: str, payload: dict | None = None) -> bool:
     """Buffer for CT and emit a non-PII structured OTel record. Never raises."""
+    captured = False
     try:
         from .event_emitter import event_emitter
 
         event_emitter.emit(event_type, attendee or "system", payload or {})
+        captured = True
     except Exception:
         logger.debug("telemetry emit failed for %s", event_type, exc_info=True)
     try:
@@ -110,6 +112,7 @@ def emit(event_type: str, attendee: str, payload: dict | None = None) -> None:
         observability.record(event_type, payload or {})
     except Exception:
         logger.debug("OTel emit failed for %s", event_type, exc_info=True)
+    return captured
 
 
 def session_started(attendee: str, agent_id: str, session_id: str) -> None:
@@ -163,7 +166,7 @@ def session_exited(
     duration_s: float = 0.0,
     exit_code: int | None = None,
     process_signal: int | None = None,
-) -> None:
+) -> bool:
     bucketed, raw = normalize(code, SESSION_EXIT_CODES)
     payload = {
         "agent": agent_id,
@@ -177,7 +180,7 @@ def session_exited(
         payload["exit_code"] = exit_code
     if process_signal is not None:
         payload["signal"] = process_signal
-    emit(
+    return emit(
         "session.exited",
         attendee,
         payload,
@@ -323,8 +326,8 @@ def install_step_failed(step: str, status: str, error: str = "") -> None:
     )
 
 
-def omnigent_host_health(attendee: str, status: str, detail: dict | None = None) -> None:
-    emit("omnigent.host_health", attendee, {"status": status, **(detail or {})})
+def omnigent_host_health(attendee: str, status: str, detail: dict | None = None) -> bool:
+    return emit("omnigent.host_health", attendee, {"status": status, **(detail or {})})
 
 
 def obo_health(attendee: str, state: str, detail: dict | None = None) -> None:

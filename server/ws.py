@@ -20,6 +20,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from .auth import get_ws_user
 from .capture_journal import CaptureError
+from .closeout_guard import CaptureClosedError, admitted_writer
 from .events import event_hub
 from .operational import metrics as operational_metrics
 from .sessions import session_manager
@@ -28,6 +29,13 @@ from .users import user_manager
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _writer(kind: str):
+    from .event_emitter import event_emitter
+
+    event_emitter._ensure_ready()
+    return admitted_writer(event_emitter.journal, kind)
 
 
 async def pump_terminal_output(websocket: WebSocket, queue, session_id: str) -> None:
@@ -63,9 +71,13 @@ async def session_socket(websocket: WebSocket, session_id: str):
         return
 
     try:
-        user = user_manager.get(principal.name)
-        user.last_seen = time.time()
-        user_manager.checkpoint(user)
+        with _writer("terminal_socket_attach"):
+            user = user_manager.get(principal.name)
+            user.last_seen = time.time()
+            user_manager.checkpoint(user)
+    except CaptureClosedError:
+        await websocket.close(code=4410, reason="workshop is closing")
+        return
     except CaptureError:
         await websocket.close(code=4413, reason="workshop capture is held")
         return
@@ -92,15 +104,16 @@ async def session_socket(websocket: WebSocket, session_id: str):
                 except json.JSONDecodeError:
                     continue
                 t = msg.get("t")
-                if t == "input":
-                    session.write_input(msg.get("data", ""))
-                    user.last_seen = time.time()
-                elif t == "resize":
-                    session.resize(int(msg.get("cols", 80)), int(msg.get("rows", 24)))
-                elif t == "ping":
-                    session.touch()
-                    user.last_seen = time.time()
-                    await websocket.send_text(json.dumps({"t": "pong"}))
+                with _writer("terminal_socket_message"):
+                    if t == "input":
+                        session.write_input(msg.get("data", ""))
+                        user.last_seen = time.time()
+                    elif t == "resize":
+                        session.resize(int(msg.get("cols", 80)), int(msg.get("rows", 24)))
+                    elif t == "ping":
+                        session.touch()
+                        user.last_seen = time.time()
+                        await websocket.send_text(json.dumps({"t": "pong"}))
 
         output_task = asyncio.create_task(pump_output())
         input_task = asyncio.create_task(pump_input())
@@ -115,6 +128,8 @@ async def session_socket(websocket: WebSocket, session_id: str):
                 raise exc
     except WebSocketDisconnect:
         pass  # PTY keeps running — the client may reattach
+    except CaptureClosedError:
+        await websocket.close(code=4410, reason="workshop is closing")
     except OSError as e:
         logger.warning("session socket %s I/O error: %s", session_id[:8], e)
     finally:
@@ -129,11 +144,15 @@ async def events_socket(websocket: WebSocket):
     if principal is None:
         return  # get_ws_user already closed 4403
     try:
-        user = user_manager.get(principal.name)
-        if not user.first_seen:
-            user.first_seen = time.time()
-        user.last_seen = time.time()
-        user_manager.checkpoint(user)
+        with _writer("events_socket_attach"):
+            user = user_manager.get(principal.name)
+            if not user.first_seen:
+                user.first_seen = time.time()
+            user.last_seen = time.time()
+            user_manager.checkpoint(user)
+    except CaptureClosedError:
+        await websocket.close(code=4410, reason="workshop is closing")
+        return
     except CaptureError:
         await websocket.close(code=4413, reason="workshop capture is held")
         return
@@ -149,16 +168,23 @@ async def events_socket(websocket: WebSocket):
     async def pump_pings():
         while True:
             raw = await websocket.receive_text()
-            user.last_seen = time.time()
-            if raw == '{"t":"ping"}':
-                await websocket.send_text(json.dumps({"t": "pong"}))
+            with _writer("events_socket_message"):
+                user.last_seen = time.time()
+                if raw == '{"t":"ping"}':
+                    await websocket.send_text(json.dumps({"t": "pong"}))
 
     events_task = asyncio.create_task(pump_events())
     pings_task = asyncio.create_task(pump_pings())
     try:
-        await asyncio.wait({events_task, pings_task}, return_when=asyncio.FIRST_COMPLETED)
+        done, _pending = await asyncio.wait({events_task, pings_task}, return_when=asyncio.FIRST_COMPLETED)
+        for task in done:
+            error = task.exception()
+            if error and not isinstance(error, (WebSocketDisconnect, asyncio.CancelledError)):
+                raise error
     except WebSocketDisconnect:
         pass
+    except CaptureClosedError:
+        await websocket.close(code=4410, reason="workshop is closing")
     finally:
         for task in (events_task, pings_task):
             task.cancel()

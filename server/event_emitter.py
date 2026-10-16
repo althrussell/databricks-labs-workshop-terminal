@@ -406,6 +406,10 @@ class EventEmitter:
         try:
             return self.journal.transaction(append)
         except (CaptureError, CaptureConflictError) as exc:
+            from .closeout_guard import CaptureClosedError
+
+            if isinstance(exc, CaptureClosedError):
+                raise  # Intentional close refusal must not poison a valid seal.
             if isinstance(exc, CaptureHeldError):
                 self.journal.mark_held(exc)
             else:

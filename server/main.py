@@ -43,6 +43,8 @@ from .admin import router as admin_router
 from .auth import Principal, get_current_user, is_admin
 from .bootstrap import install
 from .capture_journal import CaptureError
+from .closeout_guard import CaptureClosedError
+from .closeout_http import CloseoutAdmissionMiddleware
 from .content import content_service
 from .credentials import (
     CredentialError,
@@ -221,6 +223,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Databricks Workshop Terminal", lifespan=lifespan)
+
+app.add_middleware(CloseoutAdmissionMiddleware)
 app.include_router(admin_router)
 app.include_router(evaluation_router)
 app.include_router(ws_router)
@@ -229,6 +233,11 @@ app.include_router(ws_router)
 @app.exception_handler(CaptureError)
 async def capture_unavailable(_request: Request, _error: CaptureError):
     return JSONResponse(status_code=503, content={"detail": "Workshop capture is held; retry when persistence is available."})
+
+
+@app.exception_handler(CaptureClosedError)
+async def capture_closed(_request: Request, _error: CaptureClosedError):
+    return JSONResponse(status_code=409, content={"detail": "Workshop is closing; new capture input is disabled."})
 
 
 @app.middleware("http")

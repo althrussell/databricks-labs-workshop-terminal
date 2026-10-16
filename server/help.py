@@ -27,7 +27,8 @@ _push_rejection = {"logged": False}
 
 def _empty_state() -> dict[str, Any]:
     return {"raised": False, "note": "", "raised_at": 0.0, "messages": [],
-            "help_request_id": None, "outbox": [], "seq": 0, "acked_through": 0}
+            "help_request_id": None, "outbox": [], "seq": 0, "acked_through": 0,
+            "history": {}, "history_floor": 0}
 
 
 _state = _empty_state()
@@ -51,6 +52,15 @@ def _validate_state(state: Any) -> dict[str, Any]:
         previous = entry["seq"]
     if previous != state["seq"]:
         raise CaptureHeldError("retained help tail is missing; capture requires recovery")
+    history, floor = state.get("history"), state.get("history_floor")
+    if history is not None or floor is not None:
+        if (not isinstance(history, dict) or type(floor) is not int
+                or not 0 <= floor <= state["acked_through"]
+                or set(history) != {str(n) for n in range(floor + 1, state["seq"] + 1)}
+                or any(not isinstance(entry, dict) or type(entry.get("seq")) is not int
+                       or entry["seq"] != int(seq) for seq, entry in history.items())
+                or any(history.get(str(entry["seq"])) != entry for entry in state["outbox"])):
+            raise CaptureHeldError("retained help inventory is inconsistent")
     return state
 
 
@@ -83,6 +93,12 @@ def configure_capture(journal) -> None:
     with _lock:
         def initialize(state):
             current = state.setdefault("help", copy.deepcopy(_state))
+            # Previous producers retained the operation chain, but their latest
+            # state omitted ACKed help entries. Do not manufacture that history.
+            if "history" not in current:
+                current["history"] = {str(entry["seq"]): copy.deepcopy(entry)
+                                      for entry in current["outbox"]}
+                current["history_floor"] = current["acked_through"]
             return copy.deepcopy(_validate_state(current))
         restored = _checked(journal, lambda: journal.transaction(initialize))
         _state = restored
@@ -140,7 +156,13 @@ def presence_fields() -> dict[str, Any]:
 
 def _enqueue(state: dict[str, Any], kind: str, **fields: Any) -> None:
     state["seq"] += 1
-    state["outbox"].append({"seq": state["seq"], "kind": kind, **fields})
+    entry = {"seq": state["seq"], "kind": kind, **fields}
+    state["outbox"].append(entry)
+    if "history" not in state:
+        state["history"] = {str(item["seq"]): copy.deepcopy(item) for item in state["outbox"]}
+        state["history_floor"] = state["acked_through"]
+    else:
+        state["history"][str(entry["seq"])] = copy.deepcopy(entry)
 
 
 def ack_outbox(through_seq: int) -> dict[str, Any]:

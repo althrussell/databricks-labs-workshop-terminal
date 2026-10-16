@@ -48,6 +48,7 @@
             "required": ["stats_schema_version", "signal"],
             "properties": {
               "stats_schema_version": {"type": "integer", "enum": [2, 3]},
+              "final_capture_id": {"type": "string", "minLength": 1, "description": "Optional WT-02 closeout identifier; absent on ordinary rolling signals."},
               "phase": {"type": "string"},
               "minutes_building": {"type": "integer"},
               "agent_sessions": {"type": "integer"},
@@ -163,7 +164,7 @@
               "revision": {
                 "type": "integer",
                 "minimum": 1,
-                "description": "Monotonic per attendee, bumped on each regeneration. Also the last segment of idempotency_key, so a rewritten summary is a distinct event while a retried flush stays a duplicate. The producer's counter is in memory, so a restarted instance numbers from 1 again — a consumer must let a newer generated_at override the revision floor."
+                "description": "Monotonic per attendee and retained with its accepted envelope across restart. Rolling summary keys include the revision; final closeout keys instead identify one immutable capture generation. Replayed keys preserve their original revision and payload."
               },
               "generator": {
                 "type": "string",
@@ -171,6 +172,20 @@
                 "description": "Must be surfaced wherever a summary is shown — an extraction summary is keyword-thin and must not read like a finding."
               },
               "model": {"type": ["string", "null"]},
+              "final_capture_id": {"type": "string", "minLength": 1, "description": "Optional WT-02 closeout identifier; final extraction facts supplement the prior model narrative."},
+              "prior_narrative": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["sequence", "revision", "generator", "model", "raw_entry_sha256"],
+                "properties": {
+                  "sequence": {"type": "integer", "minimum": 1},
+                  "revision": {"type": "integer", "minimum": 1},
+                  "generator": {"type": "string", "const": "llm"},
+                  "model": {"type": ["string", "null"]},
+                  "raw_entry_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+                },
+                "description": "Optional pointer to the unchanged prior LLM envelope: hash of canonical {seq,event}, preserving narrative provenance alongside fresh final facts."
+              },
               "phase": {
                 "type": "string",
                 "description": "Content phase at generation — any of intro/setup/build/wrap, or whatever the instance was left in for the teardown fallback. The summary rolls continuously, so an early phase means the run was young, not that a trigger was missed."
