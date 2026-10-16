@@ -287,6 +287,8 @@ def test_default_closeout_drains_real_terminal_and_requires_complete_host_census
             assert closed["phase"] == "INCOMPLETE", json.dumps(closed, sort_keys=True)
             assert closed["complete"] is False
             assert closed["active_writers"] == {}
+            assert closed["writer_outcomes"] == []
+            assert journal.read().get("producer_issues", []) == []
             assert closed["manifest"] is None
             assert closed["manifest_sha256"] is None
             assert closed["final_outputs"] == {}
