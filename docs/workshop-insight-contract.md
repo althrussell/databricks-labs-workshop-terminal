@@ -167,6 +167,7 @@ bucket (see [Idempotency](#idempotency)).
 | Field | Type | Notes |
 |---|---|---|
 | `stats_schema_version` | integer | `3`. Mirrors `server/stats.py:STATS_SCHEMA_VERSION`. |
+| `final_capture_id` | string, optional | WT-02 closeout identifier. Present on the fresh final signal; ordinary harvests omit it. |
 | `phase` | string | Content phase at capture (`intro`/`build`/`wrap`/…). |
 | `minutes_building` | integer | Wall time since first seen. |
 | `agent_sessions` | integer | Agent PTYs launched (excludes bash). |
@@ -372,10 +373,12 @@ cold, and a model call there fails silently into nothing.
 | Field | Type | Notes |
 |---|---|---|
 | `summary_id` | string | Stable per attendee per run, so a regenerated summary supersedes rather than adds. |
-| `revision` | integer | Starts at 1, bumped on each regeneration for that attendee. Last segment of `idempotency_key`. |
+| `revision` | integer | Starts at 1, bumped on each regeneration for that attendee and retained across restart. Rolling keys include this revision; final closeout keys identify the capture instead. |
 | `generated_at` | RFC 3339 | |
 | `generator` | enum | `llm` \| `extraction`. |
 | `model` | string \| null | Serving endpoint used, when `generator` is `llm`. |
+| `final_capture_id` | string, optional | WT-02 closeout identifier. Identifies immutable final extraction facts without changing earlier envelopes. |
+| `prior_narrative` | object, optional | Prior LLM `sequence`, `revision`, `generator`, `model`, and `raw_entry_sha256`. The hash covers canonical `{seq,event}` bytes. |
 | `phase` | string | Content phase at generation — any of `intro`/`setup`/`build`/`wrap`, or whatever the instance was left in for the teardown fallback. An early phase means the run was young, not that anything was skipped. |
 | `headline` | string | One line. Required — a blank headline renders as a data bug rather than a quiet session, so the producer substitutes an explicit "no summary could be derived". |
 | `what_they_built` | string | Prose. |
@@ -397,16 +400,24 @@ finding.
 
 *Revision.* The highest revision for a `summary_id` wins. A lower one is a late
 flush from the producer's retry buffer, and applying it would regress a brief to an
-earlier state of the session. The producer's revision counter is in memory, so a
-restarted instance numbers from 1 again — a consumer must therefore let a newer
-`generated_at` override the revision floor, or a restart would silence that
-attendee for the rest of the workshop.
+earlier state of the session. WT-01 retains the counter and accepted envelope
+together, so a replacement process resumes its revision. Older producers used
+an in-memory counter; a consumer reading that legacy history must allow a newer
+`generated_at` to distinguish a restarted producer from a late retry.
 
 *Generator.* An `extraction` summary may be superseded by an `llm` one for the same
 attendee; the reverse must never happen, at any revision. A rolling summary settles
 for extraction whenever the serving endpoint is unreachable, and the thin version
 must not be what an account team is left with once it recovers. On a shared
 `summary_id`, **CT must prefer `llm`** rather than take the last write.
+
+WT-02 closeout also captures fresh model-free extraction facts with
+`final_capture_id`. These facts supplement the narrative; they do not rewrite
+the earlier LLM event or claim to be a new model interpretation. When a prior
+LLM event exists, `prior_narrative` identifies its exact retained bytes. A
+consumer must retain both records and apply the existing LLM preference when
+presenting a narrative. An attendee with no harvestable material is explicit
+`{"status":"no_material"}` in final outputs and produces no invented summary.
 
 ### Health events (pre-existing, now actually accepted)
 
@@ -427,6 +438,17 @@ whether repeated harvests accumulate or supersede:
 | `discovery.record` | `discovery:{run_id}:{attendee}:{record_id}:{revision}` | One row per revision; the projection keeps the highest. |
 | `insight.summary` | `summary:{run_id}:{attendee}:{generator}:{revision}` | One row per revision per generator; the projection keeps the highest revision, and `llm` supersedes `extraction` on the shared `summary_id` regardless of revision. Without `{revision}` every regeneration after the first would be discarded as a duplicate. |
 | `attendee.identity` | `identity:{run_id}:{attendee}:{count}` | One row per observation count, so each new name is a new logical event while a retried flush of the same picture is a duplicate. The projection keeps the longest list rather than the last arrival, because the retry buffer can flush out of order and a shorter list is always an older picture. |
+| Final `workshop.signal` | `signal:closeout:{capture_id}:{attendee}` | One immutable final observation per close generation; retries preserve its original bytes. |
+| Final `insight.summary` | `summary:closeout:{capture_id}:{attendee}` | One immutable final extraction per close generation; its retained revision still increases from the attendee's earlier summaries. |
+
+The sealed-closeout producer corpus is
+[capture-closeout/v1-sealed.json](../tests/fixtures/capture-closeout/v1-sealed.json).
+It includes complete manifest and page bytes, prior-ACKed help, discovery
+revisions and withdrawal, explicit zero categories, and negative consumer
+mutations for digest, sequence, schema, source and completeness failures.
+WT-02 verifies the producer against this corpus. CT-02 must test its actual
+Lakebase consumer against the same bytes; a WT seal alone never authorizes
+workspace deletion.
 
 On the collect path `{run_id}` is empty, so these shapes collapse to
 `signal::labuser001@…:{bucket}` and friends. Because

@@ -41,14 +41,17 @@ import copy
 import hashlib
 import json
 import logging
+import math
 import re
 import threading
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from . import artifacts, config, models
 from .capture_journal import CaptureHeldError
+from .closeout_guard import CaptureClosedError, admitted_writer, check_open
 from .discovery import SESSION_INTENTS
 from .users import User
 
@@ -289,6 +292,9 @@ class _Stamps:
 
 
 stamps = _Stamps()
+_worker_condition = threading.Condition()
+_background_workers: set[threading.Thread] = set()
+_background_outcomes: list[dict] = []
 
 
 def _now() -> str:
@@ -689,8 +695,11 @@ def summarise_user(
     if emitter is None:
         from .event_emitter import event_emitter as emitter
 
-    if getattr(emitter, "journal", None) is not None and stamps._journal is not emitter.journal:
-        stamps.configure_capture(emitter.journal)
+    journal = getattr(emitter, "journal", None)
+    if journal is not None:
+        emitter._ensure_ready()
+        if stamps._journal is not journal:
+            stamps.configure_capture(journal)
     intended = "llm" if allow_llm else "extraction"
     if not stamps.should_run(user.email, generator=intended, force=force):
         return None
@@ -701,12 +710,15 @@ def summarise_user(
         logger.debug("edge summary already in flight for %s; skipping", user.email)
         return None
     try:
-        return _summarise_claimed(
-            user, phase=phase, signal=signal, allow_llm=allow_llm,
-            single_attendee=single_attendee, intended=intended, emitter=emitter,
-        )
+        with admitted_writer(journal, "insight_summary") if journal is not None else nullcontext():
+            return _summarise_claimed(
+                user, phase=phase, signal=signal, allow_llm=allow_llm,
+                single_attendee=single_attendee, intended=intended, emitter=emitter,
+            )
     finally:
         stamps.release(user.email)
+        with _worker_condition:
+            _worker_condition.notify_all()
 
 
 def _summarise_claimed(
@@ -852,6 +864,13 @@ def summarise_in_background(
     """
     if not config.insight_capture_enabled():
         return None
+    from .event_emitter import event_emitter
+
+    event_emitter._ensure_ready()
+    try:
+        check_open(event_emitter.journal)
+    except CaptureClosedError:
+        return None
     snapshot = list(users)
     if not snapshot:
         return None
@@ -862,15 +881,68 @@ def summarise_in_background(
     ):
         return None
 
+    # Reserve before starting the thread: closing can race the scheduler, but
+    # cannot pass a thread that has not yet entered its body as already drained.
+    try:
+        ticket = admitted_writer(event_emitter.journal, "insight_summary", detached=True)
+    except CaptureClosedError:
+        return None
+
     def run() -> None:
+        outcome = {"writer": "insight_summary", "outcome": "completed"}
         try:
-            summarise_all(snapshot, phase=phase, allow_llm=True, force=force)
+            with ticket:
+                summarise_all(snapshot, phase=phase, allow_llm=True, force=force,
+                              emitter=event_emitter)
         except Exception as exc:  # noqa: BLE001
             logger.warning("summarisation failed: %s", exc)
+            outcome = {"writer": "insight_summary", "outcome": "failed",
+                       "error": type(exc).__name__}
+        finally:
+            with _worker_condition:
+                _background_workers.discard(threading.current_thread())
+                _background_outcomes.append(outcome)
+                del _background_outcomes[:-128]
+                _worker_condition.notify_all()
 
     thread = threading.Thread(target=run, name="insight-summary", daemon=True)
-    thread.start()
+    with _worker_condition:
+        _background_workers.add(thread)
+    try:
+        thread.start()
+    except Exception:
+        with _worker_condition:
+            _background_workers.discard(thread)
+        # Complete the reserved ticket with the actual failure, preserving its
+        # failed outcome rather than leaking an apparently running reservation.
+        with ticket:
+            raise
     return thread
+
+
+def drain_for_closeout(timeout: float) -> dict:
+    """Wait for this process's summaries; durable interrupted tickets stay held.
+
+    The coordinator also checks the journal's writer inventory. An empty local
+    thread set after process replacement is not evidence that its previous
+    durable reservations completed.
+    """
+    if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+            or not math.isfinite(timeout) or timeout < 0):
+        raise ValueError("summary drain timeout must be nonnegative")
+    deadline = time.monotonic() + timeout
+    with _worker_condition:
+        while True:
+            with stamps._lock:
+                claimed = bool(stamps._in_flight)
+            if not _background_workers and not claimed:
+                return {"complete": True, "issues": [],
+                        "outcomes": copy.deepcopy(_background_outcomes)}
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return {"complete": False, "issues": ["summary_drain_timeout"],
+                        "outcomes": copy.deepcopy(_background_outcomes)}
+            _worker_condition.wait(timeout=remaining)
 
 
 __all__ = [
@@ -879,4 +951,5 @@ __all__ = [
     "summarise_all",
     "summarise_in_background",
     "summarise_user",
+    "drain_for_closeout",
 ]

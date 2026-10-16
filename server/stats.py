@@ -58,6 +58,31 @@ def _git(repo: str, *args: str) -> str | None:
         return None
 
 
+def _unborn_head(repo: str) -> bool:
+    """Prove that HEAD names a branch whose ref has never been created.
+
+    A generic failing log/rev-list can also mean corrupt or unreadable objects.
+    Only an intact symbolic HEAD and a specifically absent branch ref justify a
+    confirmed zero commits; detached/broken refs and failed probes remain held.
+    """
+    try:
+        symbolic = subprocess.run(
+            ["git", "-C", repo, "symbolic-ref", "--quiet", "HEAD"],
+            capture_output=True, text=True, timeout=10,
+        )
+        branch = symbolic.stdout.strip()
+        if (symbolic.returncode != 0 or not branch.startswith("refs/heads/")
+                or "\n" in branch):
+            return False
+        reference = subprocess.run(
+            ["git", "-C", repo, "show-ref", "--verify", "--quiet", branch],
+            capture_output=True, text=True, timeout=10,
+        )
+        return reference.returncode == 1
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+
+
 def _code_stats(user: User, *, fresh: bool = True) -> dict:
     if not fresh:
         cached = _code_cache.get(user.email)
@@ -82,6 +107,8 @@ def _code_stats_uncached(user: User) -> dict:
             continue
         repos += 1
         count = _git(repo, "rev-list", "--count", "HEAD")
+        if count is None and _unborn_head(repo):
+            count = "0"
         if count and count.strip().isdigit():
             commits += int(count.strip())
         tracked = _git(repo, "ls-files")
@@ -112,6 +139,11 @@ def _list_checked(url: str, token: str, params: dict, items_key: str) -> tuple[l
             return [], False
         payload = resp.json()
         if not isinstance(payload, dict):
+            return [], False
+        # This bounded census does not enumerate further pages. A successful
+        # first page is not a confirmed total; retain the last known count
+        # instead of certifying a truncated observation as fresh at closeout.
+        if payload.get("next_page_token") or payload.get("has_more"):
             return [], False
         items = payload.get(items_key, []) or []
         if not isinstance(items, list):
@@ -489,7 +521,7 @@ def gather(user: User) -> dict:
     }
 
 
-def gather_all(users: list[User]) -> dict:
+def gather_all(users: list[User], *, fresh: bool = False) -> dict:
     """Harvest view for Control Tower: every user (cached code stats) plus
     one instance-level workspace census."""
     from .events import event_hub
@@ -498,7 +530,7 @@ def gather_all(users: list[User]) -> dict:
     resources, observation = _resource_observation(_workspace_resources(), users)
     return {
         "schema_version": STATS_SCHEMA_VERSION,
-        "users": [gather_user(u, fresh=False, resources=resources) for u in users],
+        "users": [gather_user(u, fresh=fresh, resources=resources) for u in users],
         "resources": resources,
         "resource_observation": observation,
         "websocket_queues": {

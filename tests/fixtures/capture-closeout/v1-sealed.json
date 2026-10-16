@@ -1,0 +1,570 @@
+{
+  "fixture_schema_version": 1,
+  "description": "WT-02 producer golden bytes; CT-02 must independently persist and verify before authorizing teardown.",
+  "expected_source": {
+    "run_id": "00000000-0000-4000-8000-000000000017",
+    "unit_id": "00000000-0000-4000-8000-000000000018",
+    "workspace_id": "7474659000000001",
+    "owner": "labuser+199@example.com",
+    "stream_id": "golden-closeout-epoch-v1"
+  },
+  "pre_close_ack": {
+    "insight": 2,
+    "help": 1
+  },
+  "status": {
+    "schema_version": 1,
+    "capability": "sealed-closeout-v1",
+    "phase": "SEALED",
+    "capture_id": "golden-closeout-v1",
+    "generation": "00000000000040008000000000000019",
+    "complete": true,
+    "issues": [],
+    "active_writers": {},
+    "writer_outcomes": [],
+    "manifest": {
+      "schema_version": 1,
+      "capability": "sealed-closeout-v1",
+      "capture_id": "golden-closeout-v1",
+      "generation": "00000000000040008000000000000019",
+      "source": {
+        "run_id": "00000000-0000-4000-8000-000000000017",
+        "unit_id": "00000000-0000-4000-8000-000000000018",
+        "workspace_id": "7474659000000001",
+        "owner": "labuser+199@example.com",
+        "stream_id": "golden-closeout-epoch-v1"
+      },
+      "requested_at": 1794897000.0,
+      "completed_at": 1794897001.0,
+      "complete": true,
+      "issues": [],
+      "required_categories": [
+        "workshop.signal",
+        "insight.summary",
+        "discovery.record",
+        "attendee.identity",
+        "identity.resolved",
+        "help"
+      ],
+      "categories": [
+        {
+          "type": "attendee.identity",
+          "required": true,
+          "count": 1,
+          "sha256": "98fe93d93a72f463c291b6d478de9e66a8da0917afd968af6bdad4534fa22778"
+        },
+        {
+          "type": "discovery.record",
+          "required": true,
+          "count": 3,
+          "sha256": "610681981048b71786a2eb8856c74d32af96493c8fc96f9bb5badf8413109d56"
+        },
+        {
+          "type": "help",
+          "required": true,
+          "count": 3,
+          "sha256": "02d4ff919d7078baee7f56f5e275865398a2d523aff8f10e49496108f02c5f82"
+        },
+        {
+          "type": "identity.resolved",
+          "required": true,
+          "count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "type": "insight.summary",
+          "required": true,
+          "count": 0,
+          "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+          "type": "workshop.signal",
+          "required": true,
+          "count": 1,
+          "sha256": "9b3e7ec3d7a0c2704c2810015e2412eb6955305cef3d59f6bd5ba07adedfed72"
+        }
+      ],
+      "streams": {
+        "insight": {
+          "stream_id": "golden-closeout-epoch-v1",
+          "first_seq": 1,
+          "last_seq": 5,
+          "count": 5,
+          "sha256": "1f2b464db515a648d49cc9beafb36d22aa9d13d604076d54269b414769674370",
+          "entries": [
+            {
+              "seq": 1,
+              "sha256": "4ca911796949a07cd1029ea0e92a031c68bf29b35306f56c32e555144d1b6ed6"
+            },
+            {
+              "seq": 2,
+              "sha256": "ebeed2171984f0169412d5f55f40ae0b37ea6cf50e5534acf00f72afd1d42535"
+            },
+            {
+              "seq": 3,
+              "sha256": "b157779c9f6c66ee184c35c4142e47373139dc0fbd03e6b5ec9eeaf9425fe4b6"
+            },
+            {
+              "seq": 4,
+              "sha256": "0f3aea3486632e1c3764bd593059655166b363ab7ec751abd2be80f7e673b29a"
+            },
+            {
+              "seq": 5,
+              "sha256": "cee1afa984d0b06a4c937d5ff14b3dc3b4e6824b12548c28ee5d2b5405f0c6ca"
+            }
+          ]
+        },
+        "help": {
+          "stream_id": "golden-closeout-epoch-v1",
+          "first_seq": 1,
+          "last_seq": 3,
+          "count": 3,
+          "sha256": "02d4ff919d7078baee7f56f5e275865398a2d523aff8f10e49496108f02c5f82",
+          "entries": [
+            {
+              "seq": 1,
+              "sha256": "42921e94d2ea0f2a9c44089ea3d1a2a1e6a01bf5c11acd035858d07663736685"
+            },
+            {
+              "seq": 2,
+              "sha256": "b6357fada9a6d41f0a146e6fb96fecb125a1c01349b77a5ae559819570a3aa4c"
+            },
+            {
+              "seq": 3,
+              "sha256": "5e4fe16a7cf36c51fdc0b48d91f45ee4109f5cfd86fb139f96392cba32e3b9d8"
+            }
+          ]
+        }
+      },
+      "final_outputs_sha256": "dc0a3dfa8e4a34a43826506b65031b0533b774fdb5aab0cf220c0ef486625b4f",
+      "writer_outcomes": [],
+      "drain": {
+        "complete": true,
+        "issues": [],
+        "outcomes": []
+      }
+    },
+    "manifest_sha256": "15fb399c5e588ab171c701f53520dcd9d5f7bdbae542afb2ea07d213c4bbeb53",
+    "final_outputs": {
+      "stats": {
+        "stats_schema_version": 3,
+        "users": [],
+        "resources": {
+          "jobs": 0,
+          "pipelines": 0,
+          "apps": 0,
+          "dashboards": 0
+        },
+        "instance": {
+          "phase": "wrap",
+          "final": true,
+          "final_capture_id": "golden-closeout-v1"
+        }
+      },
+      "summary_facts": {
+        "labuser+199@example.com": {
+          "status": "no_material"
+        }
+      },
+      "event_sequences": {
+        "signal:closeout:golden-closeout-v1:labuser+199@example.com": 5
+      }
+    },
+    "ct_verification_required": true
+  },
+  "pages": {
+    "insight": [
+      {
+        "schema_version": 1,
+        "capture_id": "golden-closeout-v1",
+        "generation": "00000000000040008000000000000019",
+        "manifest_sha256": "15fb399c5e588ab171c701f53520dcd9d5f7bdbae542afb2ea07d213c4bbeb53",
+        "kind": "insight",
+        "entries": [
+          {
+            "seq": 1,
+            "event": {
+              "attendee": "labuser+199@example.com",
+              "idempotency_key": "identity:00000000-0000-4000-8000-000000000017:labuser+199@example.com:1",
+              "occurred_at": "2026-11-17T06:30:00+00:00",
+              "payload": {
+                "attendee": "labuser+199@example.com",
+                "binding_source": "control-tower",
+                "names": [
+                  {
+                    "captured_at": "2026-11-17T06:30:00+00:00",
+                    "name": "Zoë Example",
+                    "source": "wizard"
+                  }
+                ],
+                "observed_at": "2026-11-17T06:30:00+00:00"
+              },
+              "run_id": "00000000-0000-4000-8000-000000000017",
+              "schema_version": 1,
+              "type": "attendee.identity",
+              "workspace_id": "7474659000000001"
+            }
+          },
+          {
+            "seq": 2,
+            "event": {
+              "attendee": "labuser+199@example.com",
+              "idempotency_key": "discovery:00000000-0000-4000-8000-000000000017:labuser+199@example.com:golden-discovery:1",
+              "occurred_at": "2026-11-17T06:30:00+00:00",
+              "payload": {
+                "agent": "wizard",
+                "captured_at": "2026-11-17T06:30:00+00:00",
+                "goal": "Simplify customer reporting",
+                "record_id": "golden-discovery",
+                "revision": 1
+              },
+              "run_id": "00000000-0000-4000-8000-000000000017",
+              "schema_version": 1,
+              "type": "discovery.record",
+              "workspace_id": "7474659000000001"
+            }
+          }
+        ],
+        "high_water": 2,
+        "remaining": 3
+      },
+      {
+        "schema_version": 1,
+        "capture_id": "golden-closeout-v1",
+        "generation": "00000000000040008000000000000019",
+        "manifest_sha256": "15fb399c5e588ab171c701f53520dcd9d5f7bdbae542afb2ea07d213c4bbeb53",
+        "kind": "insight",
+        "entries": [
+          {
+            "seq": 3,
+            "event": {
+              "attendee": "labuser+199@example.com",
+              "idempotency_key": "discovery:00000000-0000-4000-8000-000000000017:labuser+199@example.com:golden-discovery:2",
+              "occurred_at": "2026-11-17T06:30:00+00:00",
+              "payload": {
+                "agent": "claude",
+                "captured_at": "2026-11-17T06:30:00+00:00",
+                "goal": "Simplify weekly reporting",
+                "record_id": "golden-discovery",
+                "revision": 2
+              },
+              "run_id": "00000000-0000-4000-8000-000000000017",
+              "schema_version": 1,
+              "type": "discovery.record",
+              "workspace_id": "7474659000000001"
+            }
+          },
+          {
+            "seq": 4,
+            "event": {
+              "attendee": "labuser+199@example.com",
+              "idempotency_key": "discovery:00000000-0000-4000-8000-000000000017:labuser+199@example.com:golden-discovery:3",
+              "occurred_at": "2026-11-17T06:30:00+00:00",
+              "payload": {
+                "agent": "claude",
+                "captured_at": "2026-11-17T06:30:00+00:00",
+                "record_id": "golden-discovery",
+                "redacted_by_attendee": true,
+                "revision": 3
+              },
+              "run_id": "00000000-0000-4000-8000-000000000017",
+              "schema_version": 1,
+              "type": "discovery.record",
+              "workspace_id": "7474659000000001"
+            }
+          }
+        ],
+        "high_water": 4,
+        "remaining": 1
+      },
+      {
+        "schema_version": 1,
+        "capture_id": "golden-closeout-v1",
+        "generation": "00000000000040008000000000000019",
+        "manifest_sha256": "15fb399c5e588ab171c701f53520dcd9d5f7bdbae542afb2ea07d213c4bbeb53",
+        "kind": "insight",
+        "entries": [
+          {
+            "seq": 5,
+            "event": {
+              "attendee": "labuser+199@example.com",
+              "idempotency_key": "signal:closeout:golden-closeout-v1:labuser+199@example.com",
+              "occurred_at": "2026-11-17T06:30:00+00:00",
+              "payload": {
+                "agent_sessions": 0,
+                "code": {
+                  "commits": 0,
+                  "files": 0,
+                  "lines": 0,
+                  "projects": 0
+                },
+                "discovery_records": 0,
+                "errors": 0,
+                "final_capture_id": "golden-closeout-v1",
+                "idle_seconds": null,
+                "minutes_building": 0,
+                "phase": "wrap",
+                "resources": {
+                  "apps": 0,
+                  "dashboards": 0,
+                  "jobs": 0,
+                  "pipelines": 0
+                },
+                "signal": {
+                  "engagement": "observer",
+                  "primary_topic": null,
+                  "products": [],
+                  "resource_kinds": [],
+                  "shipped": false,
+                  "topic_hits": {}
+                },
+                "stats_schema_version": 3,
+                "terminal_sessions": 0,
+                "topics": []
+              },
+              "run_id": "00000000-0000-4000-8000-000000000017",
+              "schema_version": 1,
+              "type": "workshop.signal",
+              "workspace_id": "7474659000000001"
+            }
+          }
+        ],
+        "high_water": 5,
+        "remaining": 0
+      }
+    ],
+    "help": [
+      {
+        "schema_version": 1,
+        "capture_id": "golden-closeout-v1",
+        "generation": "00000000000040008000000000000019",
+        "manifest_sha256": "15fb399c5e588ab171c701f53520dcd9d5f7bdbae542afb2ea07d213c4bbeb53",
+        "kind": "help",
+        "entries": [
+          {
+            "body": "Where is the reporting guide?",
+            "created_at": "2026-11-17T06:30:00Z",
+            "help_request_id": null,
+            "kind": "message",
+            "message_id": "00000000-0000-0000-0000-000000000001",
+            "sender": "labuser+199@example.com",
+            "sender_role": "attendee",
+            "seq": 1
+          },
+          {
+            "body": "Found it, thank you.",
+            "created_at": "2026-11-17T06:30:00Z",
+            "help_request_id": null,
+            "kind": "message",
+            "message_id": "00000000-0000-0000-0000-000000000002",
+            "sender": "labuser+199@example.com",
+            "sender_role": "attendee",
+            "seq": 2
+          }
+        ],
+        "high_water": 2,
+        "remaining": 1
+      },
+      {
+        "schema_version": 1,
+        "capture_id": "golden-closeout-v1",
+        "generation": "00000000000040008000000000000019",
+        "manifest_sha256": "15fb399c5e588ab171c701f53520dcd9d5f7bdbae542afb2ea07d213c4bbeb53",
+        "kind": "help",
+        "entries": [
+          {
+            "kind": "seen",
+            "message_id": "operator-golden-message",
+            "seq": 3
+          }
+        ],
+        "high_water": 3,
+        "remaining": 0
+      }
+    ]
+  },
+  "empty_pages": {
+    "insight": {
+      "schema_version": 1,
+      "capture_id": "golden-closeout-v1",
+      "generation": "00000000000040008000000000000019",
+      "manifest_sha256": "15fb399c5e588ab171c701f53520dcd9d5f7bdbae542afb2ea07d213c4bbeb53",
+      "kind": "insight",
+      "entries": [],
+      "high_water": 5,
+      "remaining": 0
+    },
+    "help": {
+      "schema_version": 1,
+      "capture_id": "golden-closeout-v1",
+      "generation": "00000000000040008000000000000019",
+      "manifest_sha256": "15fb399c5e588ab171c701f53520dcd9d5f7bdbae542afb2ea07d213c4bbeb53",
+      "kind": "help",
+      "entries": [],
+      "high_water": 3,
+      "remaining": 0
+    }
+  },
+  "negative_cases": [
+    {
+      "id": "manifest-digest-mismatch",
+      "reject": "manifest digest",
+      "mutations": [
+        {
+          "path": [
+            "status",
+            "manifest_sha256"
+          ],
+          "value": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "missing-first-insight-record",
+      "reject": "sequence gap",
+      "mutations": [
+        {
+          "path": [
+            "pages",
+            "insight",
+            0,
+            "entries",
+            0
+          ],
+          "delete": true
+        }
+      ]
+    },
+    {
+      "id": "unsupported-manifest-schema",
+      "reject": "manifest schema",
+      "rehash_manifest": true,
+      "mutations": [
+        {
+          "path": [
+            "status",
+            "manifest",
+            "schema_version"
+          ],
+          "value": 2
+        }
+      ]
+    },
+    {
+      "id": "source-workspace-mismatch",
+      "reject": "source mismatch",
+      "rehash_manifest": true,
+      "mutations": [
+        {
+          "path": [
+            "status",
+            "manifest",
+            "source",
+            "workspace_id"
+          ],
+          "value": "other-workspace"
+        }
+      ]
+    },
+    {
+      "id": "source-epoch-mismatch",
+      "reject": "source mismatch",
+      "rehash_manifest": true,
+      "mutations": [
+        {
+          "path": [
+            "status",
+            "manifest",
+            "source",
+            "stream_id"
+          ],
+          "value": "other-epoch"
+        }
+      ]
+    },
+    {
+      "id": "incomplete-manifest",
+      "reject": "incomplete manifest",
+      "rehash_manifest": true,
+      "mutations": [
+        {
+          "path": [
+            "status",
+            "manifest",
+            "complete"
+          ],
+          "value": false
+        },
+        {
+          "path": [
+            "status",
+            "manifest",
+            "issues"
+          ],
+          "value": [
+            "final_outputs_incomplete"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "incomplete-status",
+      "reject": "incomplete status",
+      "mutations": [
+        {
+          "path": [
+            "status",
+            "phase"
+          ],
+          "value": "INCOMPLETE"
+        }
+      ]
+    },
+    {
+      "id": "unsupported-page-schema",
+      "reject": "page schema",
+      "mutations": [
+        {
+          "path": [
+            "pages",
+            "help",
+            0,
+            "schema_version"
+          ],
+          "value": 2
+        }
+      ]
+    },
+    {
+      "id": "wrong-page-generation",
+      "reject": "generation mismatch",
+      "mutations": [
+        {
+          "path": [
+            "pages",
+            "help",
+            0,
+            "generation"
+          ],
+          "value": "other-generation"
+        }
+      ]
+    },
+    {
+      "id": "changed-final-facts",
+      "reject": "final output digest",
+      "mutations": [
+        {
+          "path": [
+            "status",
+            "final_outputs",
+            "summary_facts",
+            "labuser+199@example.com",
+            "status"
+          ],
+          "value": "changed"
+        }
+      ]
+    }
+  ]
+}

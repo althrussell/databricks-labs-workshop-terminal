@@ -26,11 +26,14 @@ from __future__ import annotations
 import json
 import hmac
 import logging
+import math
 import os
 import re
 from datetime import datetime, timezone
 import secrets
 import subprocess
+import time
+from pathlib import Path
 
 from . import config
 from .users import User, _atomic_write, email_slug
@@ -826,9 +829,14 @@ mkdir -p "$(dirname "$STATUS")" 2>/dev/null
 # nohup/disown alone do not keep the background save alive through that cleanup.
 # Commits still return immediately. The CLI respects .gitignore and skips .git.
 python3 - "$REPO_ROOT" "$DEST" "$STATUS" "$SYNC_LOG" <<'PY'
+import fcntl
+import json
 import os
 import subprocess
 import sys
+import time
+import uuid
+from pathlib import Path
 
 worker = r'''
 REPO_ROOT="$1"
@@ -848,18 +856,197 @@ databricks sync "$REPO_ROOT" "$DEST" --watch=false >> "$SYNC_LOG" 2>&1
     printf 'at=%s\\n' "$(date +%s)"
     printf 'exit=%s\\n' "$code"
     printf 'detail=%s\\n' "$detail"
-  } > "$STATUS.$$.tmp" 2>/dev/null && mv -f "$STATUS.$$.tmp" "$STATUS" 2>/dev/null
+  } > "$STATUS.$$.tmp" 2>/dev/null && mv -f "$STATUS.$$.tmp" "$STATUS" 2>/dev/null || exit 1
+  python3 - "$5" "$code" <<'PY_OUTCOME'
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+receipt = Path(sys.argv[1])
+outcome = json.loads(receipt.read_text())
+outcome.update(completed_at=time.time(), exit=int(sys.argv[2]))
+completed = receipt.parent.parent / "workspace-sync-outcomes"
+completed.mkdir(exist_ok=True)
+temporary = completed / ("." + receipt.name + ".tmp")
+with temporary.open("x") as handle:
+    json.dump(outcome, handle, allow_nan=False)
+    handle.flush()
+    os.fsync(handle.fileno())
+os.replace(temporary, completed / receipt.name)
+directory = os.open(completed, os.O_RDONLY)
+try:
+    os.fsync(directory)
+finally:
+    os.close(directory)
+receipt.unlink()
+PY_OUTCOME
 '''
 env = os.environ.copy()
 for name in ("DATABRICKS_CLIENT_ID", "DATABRICKS_CLIENT_SECRET", "DATABRICKS_HOST", "DATABRICKS_TOKEN"):
     env.pop(name, None)
-subprocess.Popen(
-    ["bash", "-c", worker, "workshop-sync", *sys.argv[1:]], env=env,
-    start_new_session=True, stdin=subprocess.DEVNULL,
-    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-)
+# WORKSHOP_SYNC_WRITER_PROTOCOL=1. Register before detach under the same local
+# lock closeout uses to stop new hook workers. The child retains an individual
+# terminal outcome before clearing admission; another repo's success cannot
+# erase this worker's failure. An interrupted outcome recording stays held.
+state = Path(sys.argv[3]).parent
+with (state / "workspace-sync.lock").open("a") as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    if (state / "workspace-sync.closed").exists():
+        sys.exit(0)
+    writers = state / "workspace-sync-writers"
+    writers.mkdir(exist_ok=True)
+    receipt = writers / (uuid.uuid4().hex + ".json")
+    with receipt.open("x") as handle:
+        json.dump({"schema_version": 1, "registered_at": time.time()}, handle)
+        handle.flush()
+        os.fsync(handle.fileno())
+    try:
+        subprocess.Popen(
+            ["bash", "-c", worker, "workshop-sync", *sys.argv[1:], str(receipt)], env=env,
+            start_new_session=True, stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        # Its accepted sync never started. Keep the receipt, rather than make
+        # the required work look successfully drained after a spawn failure.
+        raise
 PY
 """
+
+
+def closeout_sync_barrier(users: list[User], *, deadline: float) -> dict:
+    """Close detached-hook admission without treating old hooks as tracked."""
+    import fcntl
+
+    issues: list[str] = []
+    observed = 0
+    for user in users:
+        home = Path(user.home)
+        if not home.is_dir():
+            continue  # Headless recovered owners have no local writer to stop.
+        state = home / ".workshop"
+        try:
+            state.mkdir(exist_ok=True)
+            with (state / "workspace-sync.lock").open("a") as lock:
+                while True:
+                    try:
+                        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except BlockingIOError:
+                        if time.monotonic() >= deadline:
+                            raise TimeoutError("sync hook registration is active")
+                        time.sleep(min(0.01, max(0.0, deadline - time.monotonic())))
+                (state / "workspace-sync.closed").touch(exist_ok=True)
+            hook = home / ".githooks" / "post-commit"
+            if hook.exists():
+                if "WORKSHOP_SYNC_WRITER_PROTOCOL=1" not in hook.read_text():
+                    issues.append("legacy_workspace_sync_untracked")
+            elif (home / ".sync.log").exists():
+                issues.append("workspace_sync_hook_unverified")
+            observed += 1
+        except (OSError, TimeoutError, UnicodeError) as error:
+            issues.append(f"workspace_sync_barrier_unverified:{type(error).__name__}")
+    issues = sorted(set(issues))
+    return {"complete": not issues, "issues": issues, "homes_observed": observed}
+
+
+def drain_sync_for_closeout(users: list[User], *, deadline: float) -> dict:
+    """Verify every accepted detached sync's terminal outcome, not just exit.
+
+    Completion records contain only timestamps and exit codes. They preserve
+    the existing sync granularity while preventing a later successful repo from
+    hiding another required repo's failed save.
+    """
+    states = [Path(user.home) / ".workshop" for user in users]
+    issues: list[str] = []
+    pending = 0
+    while True:
+        pending = 0
+        observed_issues: set[str] = set()
+        try:
+            for state in states:
+                root, completed = state / "workspace-sync-writers", state / "workspace-sync-outcomes"
+                receipts = list(root.iterdir()) if root.exists() else []
+                outcomes = {}
+                for path in completed.iterdir() if completed.exists() else []:
+                    outcome = _read_sync_completion(path)
+                    if outcome is None:
+                        observed_issues.add("workspace_sync_outcome_unverified")
+                        continue
+                    outcomes[path.name] = outcome
+                    if outcome["exit"] != 0:
+                        observed_issues.add("workspace_sync_failed")
+                for receipt in receipts:
+                    outcome = outcomes.get(receipt.name)
+                    if outcome is None:
+                        pending += 1
+                        continue
+                    try:
+                        registration = json.loads(receipt.read_text())
+                    except (OSError, UnicodeError, ValueError):
+                        registration = None
+                    if (not isinstance(registration, dict)
+                            or type(registration.get("schema_version")) is not int
+                            or registration["schema_version"] != 1
+                            or type(registration.get("registered_at")) not in {int, float}
+                            or registration.get("registered_at") != outcome["registered_at"]):
+                        pending += 1
+                        observed_issues.add("workspace_sync_outcome_unverified")
+                # Protocol-1 hooks from before terminal receipts wrote the same
+                # existing status file. A created writers directory proves a
+                # registration was attempted; missing status cannot mean idle.
+                status_path = state / "workspace-sync"
+                if not outcomes and not receipts and (root.exists() or status_path.exists()):
+                    code = _read_legacy_sync_completion(status_path)
+                    if code is None:
+                        observed_issues.add("workspace_sync_outcome_unverified")
+                    elif code != 0:
+                        observed_issues.add("workspace_sync_failed")
+        except OSError as error:
+            issues.append(f"workspace_sync_receipts_unreadable:{type(error).__name__}")
+            break
+        issues = sorted(observed_issues)
+        if not pending or time.monotonic() >= deadline:
+            break
+        time.sleep(min(0.01, max(0.0, deadline - time.monotonic())))
+    if pending:
+        issues.append("workspace_sync_workers_pending")
+    return {"complete": not issues, "issues": issues, "pending": pending}
+
+
+def _read_sync_completion(path: Path) -> dict | None:
+    """Strictly interpret assurance metadata; no paths or CLI detail escape."""
+    try:
+        value = json.loads(path.read_text())
+    except (OSError, UnicodeError, ValueError):
+        return None
+    if (not isinstance(value, dict) or set(value) != {
+            "schema_version", "registered_at", "completed_at", "exit"}
+            or type(value["schema_version"]) is not int or value["schema_version"] != 1
+            or type(value["exit"]) is not int or not 0 <= value["exit"] <= 255
+            or any(type(value[name]) not in {int, float} or not math.isfinite(value[name])
+                   or value[name] < 0 for name in ("registered_at", "completed_at"))):
+        return None
+    return value
+
+
+def _read_legacy_sync_completion(path: Path) -> int | None:
+    """The diagnostic reader is forgiving; final assurance rejects ambiguity."""
+    try:
+        fields = {}
+        for line in path.read_text().splitlines():
+            key, separator, value = line.partition("=")
+            if not separator or key not in {"at", "exit", "detail"} or key in fields:
+                return None
+            fields[key] = value
+        code, at = int(fields["exit"]), float(fields["at"])
+        if not 0 <= code <= 255 or not math.isfinite(at) or at < 0:
+            return None
+        return code
+    except (OSError, UnicodeError, KeyError, ValueError):
+        return None
 
 
 def _write_npm_setup(user: User) -> None:

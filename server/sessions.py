@@ -23,6 +23,7 @@ import time
 import uuid
 from collections import deque
 from collections.abc import Callable
+from contextlib import nullcontext
 
 from . import config
 from .users import User
@@ -151,6 +152,16 @@ class Session:
         self.exit_code: int | None = None
         self.exit_signal: int | None = None
         self.exit_reason: str | None = None
+        self._process: subprocess.Popen | None = None
+        self._reader_thread: threading.Thread | None = None
+        self._reader_done = threading.Event()
+        self._master_closed = False
+        # The reader and the shutdown caller share one pre-barrier producer.
+        # It stays admitted until both terminal output and exit telemetry end.
+        self._capture_ticket = None
+        self._capture_lock = threading.Lock()
+        self._capture_failed = False
+        self._exit_reported = False
         # Live websocket subscribers: asyncio queues drained by ws handlers.
         self.subscribers: set[asyncio.Queue] = set()
 
@@ -159,8 +170,18 @@ class Session:
             self.last_activity = time.time()
 
     def write_input(self, data: str) -> None:
+        from .closeout_guard import admitted_writer
+        from .event_emitter import event_emitter
+
+        event_emitter._ensure_ready()
+        with admitted_writer(event_emitter.journal, "terminal_input"):
+            self._write_input(data)
+
+    def _write_input(self, data: str) -> None:
         encoded = data.encode()
         with self.input_lock:
+            if self.exited:
+                raise OSError("Session is not accepting input")
             offset = 0
             while offset < len(encoded):
                 try:
@@ -255,6 +276,9 @@ class Session:
 class SessionManager:
     def __init__(self, store=None):
         self._sessions: dict[str, Session] = {}
+        # Retain writers after registry removal until process and reader closure
+        # can be verified. Removing an attendee-visible session is not a drain.
+        self._writers: dict[str, Session] = {}
         self._lock = threading.Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._reaper_started = False
@@ -438,6 +462,19 @@ class SessionManager:
     # -- lifecycle --
 
     def create(self, user: User, agent_id: str, command: list[str], label: str) -> Session:
+        from .closeout_guard import admitted_writer
+        from .event_emitter import event_emitter
+
+        event_emitter._ensure_ready()
+        with admitted_writer(event_emitter.journal, "terminal_spawn"):
+            ticket = admitted_writer(event_emitter.journal, "terminal_lifetime", detached=True)
+            try:
+                return self._create(user, agent_id, command, label, capture_ticket=ticket)
+            except BaseException:
+                ticket.finish(failed=True)
+                raise
+
+    def _create(self, user: User, agent_id: str, command: list[str], label: str, *, capture_ticket=None) -> Session:
         """Atomically claim the app's sole PTY slot and spawn its process."""
         per_user = config.max_sessions_per_user()
         global_cap = config.max_sessions_global()
@@ -470,30 +507,34 @@ class SessionManager:
                 env["HOME"] = codex_shell_home(user.home)
             master_fd, slave_fd = pty.openpty()
             try:
-                pid = subprocess.Popen(
+                process = subprocess.Popen(
                     command,
                     stdin=slave_fd, stdout=slave_fd, stderr=slave_fd,
                     preexec_fn=os.setsid, env=env, cwd=cwd,
-                ).pid
+                )
             except Exception:
                 os.close(master_fd)
                 raise
             finally:
                 os.close(slave_fd)
 
-            session = Session(user.email, agent_id, label, master_fd, pid)
+            session = Session(user.email, agent_id, label, master_fd, process.pid)
+            session._capture_ticket = capture_ticket
+            session._process = process
             session.project_name = project_name
             self._sessions[session.id] = session
+            self._writers[session.id] = session
 
         self._persist(session)
-        threading.Thread(
-            target=self._read_pty, args=(session,), daemon=True,
+        session._reader_thread = threading.Thread(
+            target=self._read_pty_until_done, args=(session,), daemon=True,
             name=f"pty-reader-{session.id[:8]}",
-        ).start()
+        )
+        session._reader_thread.start()
         logger.info("session %s created (%s) for %s", session.id[:8], agent_id, user.email)
         return session
 
-    def terminate(self, session: Session, reason: str = "closed") -> None:
+    def terminate(self, session: Session, reason: str = "closed", *, deadline: float | None = None) -> None:
         """SIGHUP -> wait -> SIGKILL -> close fd -> drop from registry.
 
         ``reason`` distinguishes the three ways a terminal ends — the attendee
@@ -518,14 +559,24 @@ class SessionManager:
             # A captured wait status means the reader already reaped the agent;
             # signalling that PID again risks hitting a rapidly reused PID.
             if session.exit_code is None and session.exit_signal is None:
-                os.kill(session.pid, signal.SIGHUP)
-                time.sleep(GRACEFUL_SHUTDOWN_WAIT)
+                os.killpg(session.pid, signal.SIGHUP)
+                wait = GRACEFUL_SHUTDOWN_WAIT
+                if deadline is not None:
+                    wait = min(wait, max(0.0, (deadline - time.monotonic()) / 2))
+                time.sleep(wait)
                 try:
-                    os.kill(session.pid, 0)
-                    os.kill(session.pid, signal.SIGKILL)
+                    os.killpg(session.pid, 0)
+                    os.killpg(session.pid, signal.SIGKILL)
                 except OSError:
                     pass
-            os.close(session.master_fd)
+            # Removing the public session must not stop its already-admitted
+            # reader before the process's final output is observed.
+            reader = session._reader_thread
+            if reader is not None and reader is not threading.current_thread():
+                remaining = GRACEFUL_SHUTDOWN_WAIT if deadline is None else max(0.0, deadline - time.monotonic())
+                reader.join(timeout=remaining)
+            if reader is None or reader is threading.current_thread() or not reader.is_alive():
+                self._close_master(session)
         except OSError:
             pass
         # A deliberately-closed session is no longer a restart ghost: drop it
@@ -538,15 +589,116 @@ class SessionManager:
         logger.info("session %s terminated (%s)", session.id[:8], reason)
         from . import telemetry
 
-        telemetry.session_exited(
-            session.owner_email,
-            session.agent_id,
-            reason,
-            session_id=session.id,
-            duration_s=time.time() - session.created_at,
-            exit_code=session.exit_code,
-            process_signal=session.exit_signal,
-        )
+        with session._capture_ticket.scope() if session._capture_ticket else nullcontext():
+            captured = telemetry.session_exited(
+                session.owner_email,
+                session.agent_id,
+                reason,
+                session_id=session.id,
+                duration_s=time.time() - session.created_at,
+                exit_code=session.exit_code,
+                process_signal=session.exit_signal,
+            )
+        if captured is False:
+            session._capture_failed = True
+        session._exit_reported = True
+        self._finish_capture(session)
+
+    @staticmethod
+    def _finish_capture(session: Session) -> None:
+        with session._capture_lock:
+            if session._capture_ticket and session._reader_done.is_set() and session._exit_reported:
+                session._capture_ticket.finish(failed=session._capture_failed)
+
+    @staticmethod
+    def _close_master(session: Session) -> None:
+        # The reader owns a still-draining PTY after a bounded shutdown wait.
+        # Close exactly once, including a later reader completion.
+        with session.lock:
+            if session._master_closed:
+                return
+            session._master_closed = True
+        try:
+            os.close(session.master_fd)
+        except OSError:
+            pass
+
+    @staticmethod
+    def _group_alive(session: Session) -> bool:
+        from .closeout_writers import process_group_alive
+
+        return process_group_alive(session.pid)
+
+    def drain_for_closeout(self, *, deadline: float) -> dict:
+        """Stop and verify groups and readers using one caller-owned deadline."""
+        with self._lock:
+            writers = dict(self._writers)
+            writers.update(self._sessions)
+        issues: list[str] = []
+        outcomes: list[dict] = []
+        for session in writers.values():
+            local_issues: list[str] = []
+            try:
+                # A reaped leader can leave live PTY descendants. Stand those
+                # down before terminate waits for the reader's true EOF.
+                if ((session.exit_code is not None or session.exit_signal is not None)
+                        and self._group_alive(session)):
+                    os.killpg(session.pid, signal.SIGTERM)
+                self.terminate(session, reason="workshop_closing", deadline=deadline)
+                # A naturally exited leader can leave children alive, including
+                # a child that ignored the terminal's hangup signal.
+                if self._group_alive(session):
+                    os.killpg(session.pid, signal.SIGTERM)
+                    grace = min(0.25, max(0.0, (deadline - time.monotonic()) / 2))
+                    if grace:
+                        time.sleep(grace)
+                    if self._group_alive(session):
+                        os.killpg(session.pid, signal.SIGKILL)
+                process = session._process
+                if process is not None:
+                    try:
+                        process.wait(timeout=max(0.0, deadline - time.monotonic()))
+                    except subprocess.TimeoutExpired:
+                        local_issues.append("terminal_process_not_reaped")
+                reader = session._reader_thread
+                if reader is not None and reader is not threading.current_thread():
+                    reader.join(timeout=max(0.0, deadline - time.monotonic()))
+                if reader is not None and reader.is_alive():
+                    local_issues.append("terminal_reader_pending")
+                self._finish_capture(session)
+                while self._group_alive(session) and time.monotonic() < deadline:
+                    time.sleep(min(0.01, max(0.0, deadline - time.monotonic())))
+                if self._group_alive(session):
+                    local_issues.append("terminal_process_group_pending")
+            except (OSError, subprocess.SubprocessError) as error:
+                local_issues.append(f"terminal_shutdown_unverified:{type(error).__name__}")
+            if not local_issues:
+                with self._lock:
+                    self._writers.pop(session.id, None)
+            issues.extend(issue for issue in local_issues if issue not in issues)
+            outcomes.append({"kind": "terminal", "complete": not local_issues, "issues": local_issues})
+        return {"complete": not issues, "issues": issues, "writers": outcomes}
+
+    def _read_pty_until_done(self, session: Session) -> None:
+        try:
+            with session._capture_ticket.scope() if session._capture_ticket else nullcontext():
+                self._read_pty(session)
+        except BaseException:
+            session._capture_failed = True
+            raise
+        finally:
+            self._close_master(session)
+            session._reader_done.set()
+            self._finish_capture(session)
+            # Completed writers cannot later acquire a recycled process-group
+            # ID. Preserve uncertain groups for explicit closeout verification.
+            try:
+                alive = self._group_alive(session)
+            except OSError:
+                alive = True
+            if not alive:
+                with self._lock:
+                    self._writers.pop(session.id, None)
 
     # -- internals --
 
@@ -569,12 +721,9 @@ class SessionManager:
                 try:
                     self.output_observer(session, decoded)
                 except Exception:  # noqa: BLE001 — never break the reader
-                    pass
+                    session._capture_failed = True
 
         while True:
-            with self._lock:
-                if session.id not in self._sessions:
-                    return
             try:
                 readable, _, errored = select.select([fd], [], [fd], 0.05)
                 if readable or errored:
@@ -587,9 +736,10 @@ class SessionManager:
                         waited_pid, wait_status = os.waitpid(session.pid, os.WNOHANG)
                         if waited_pid != 0:
                             capture_wait_status(wait_status)
-                            break
                     except ChildProcessError:
-                        break
+                        # A reaped leader can leave descendants holding the
+                        # slave PTY. Only fd EOF/error ends their output stream.
+                        pass
             except OSError:
                 break
 

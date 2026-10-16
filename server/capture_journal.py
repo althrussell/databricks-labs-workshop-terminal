@@ -725,6 +725,11 @@ class CaptureJournal:
                 state = copy.deepcopy(self._state)
                 # Caller/domain exceptions do not become storage-health faults.
                 result = mutator(state)
+                # Import lazily: the admission guard uses this journal's error
+                # types and canonical representation, never another store.
+                from .closeout_guard import authorize_mutation
+
+                authorize_mutation(self, self._state, state)
                 try:
                     if not isinstance(state, dict):
                         raise CaptureCapacityError("capture state must be an object")

@@ -147,6 +147,61 @@ def _lifecycle(url: str, agent_id: str) -> str:
     return session["id"]
 
 
+def _closeout(url: str, application) -> None:
+    """Exercise the packaged producer protocol through real local HTTP.
+
+    Cloud observations are fixed; admission, Linux writer draining, journal,
+    finalizer, manifests, replay and HTTP authorization use the packaged code.
+    """
+    from server import auth, config, discovery, help as help_module, insight_summary, stats
+    from server import event_emitter as emitter_module
+    from server.capture_journal import CaptureJournal, LocalCaptureStorage
+    from server.event_emitter import EventEmitter
+
+    os.environ["WORKSHOP_INSIGHT_CAPTURE"] = "true"
+    binding = {"run_id": "11111111-1111-4111-8111-111111111111", "unit_id": "smoke-seat",
+               "workspace_id": "123", "owner": "smoke@example.com"}
+    emitter = EventEmitter(run_id=binding["run_id"], workspace_id=binding["workspace_id"],
+                           ingest_url="", ingest_token="", journal=CaptureJournal(
+                               LocalCaptureStorage("/tmp/wt-closeout-journal"), binding, {}))
+    emitter_module.event_emitter = application.event_emitter = emitter
+    application.user_manager.configure_capture(emitter.journal, binding["owner"])
+    discovery.discovery_store.configure_capture(emitter)
+    help_module.configure_capture(emitter.journal)
+    stats.configure_capture(emitter.journal)
+    insight_summary.stamps.configure_capture(emitter.journal)
+    counts = {"jobs": 0, "pipelines": 0, "apps": 0, "dashboards": 0}
+    stats._workspace_resources = lambda: stats._Census(counts, confirmed=counts)
+    insight_summary._ask_model = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("packaged finalization called a model"))
+    auth.get_groups = lambda _principal: {config.admin_group()}
+    if _request("POST", f"{url}/api/help/messages", {"body": "Packaged final help"})[0] != 200:
+        raise AssertionError("packaged help capture failed")
+    request = {"schema_version": 1, "capture_id": "packaged-smoke", "source": binding,
+               "stream_id": emitter.stream_id, "drain_timeout_seconds": 5}
+    code, status = _request("POST", f"{url}/api/admin/capture-closeout/begin", request)
+    deadline = time.monotonic() + 5
+    while code == 200 and status["phase"] == "CLOSING" and time.monotonic() < deadline:
+        code, status = _request("GET", f"{url}/api/admin/capture-closeout/status")
+    if code != 200 or status.get("phase") != "SEALED" or status.get("complete") is not True:
+        raise AssertionError(f"packaged closeout failed: {code} {status}")
+    manifest = status["manifest"]
+    def canonical(value):
+        return json.dumps(value, sort_keys=True, separators=(",", ":"),
+                          ensure_ascii=False, allow_nan=False).encode()
+    if _sha256(canonical(manifest)) != status["manifest_sha256"]:
+        raise AssertionError("packaged manifest hash mismatch")
+    for kind in ("insight", "help"):
+        endpoint = f"{url}/api/admin/capture-closeout/entries?capture_id=packaged-smoke&kind={kind}"
+        code, page = _request("GET", endpoint)
+        if code != 200 or page["remaining"] or _sha256(canonical(page["entries"])) != manifest["streams"][kind]["sha256"]:
+            raise AssertionError(f"packaged {kind} inventory mismatch")
+    if _request("POST", f"{url}/api/help/messages", {"body": "late"})[0] != 409:
+        raise AssertionError("packaged input crossed the closeout barrier")
+    if _request("POST", f"{url}/api/admin/capture-closeout/begin", request) != (200, status):
+        raise AssertionError("packaged closeout repeat changed its sealed inventory")
+
+
 def main() -> int:
     artifact = Path(os.environ["WT_RELEASE_ARTIFACT"])
     release = Path(os.environ["WT_RELEASE_MANIFEST"])
@@ -215,12 +270,13 @@ def main() -> int:
             session_id = _lifecycle(url, agent_id)
             if _request("DELETE", f"{url}/api/sessions/{session_id}")[0] != 200:
                 raise AssertionError(f"{agent_id} session did not close")
+        _closeout(url, application)
     finally:
         server.should_exit = True
         thread.join(timeout=5)
     if thread.is_alive():
         raise AssertionError("mock lifecycle server did not stop")
-    print("packaged integrity and Claude/Codex/Omnigent lifecycles passed")
+    print("packaged integrity, Claude/Codex/Omnigent lifecycles and sealed closeout passed")
     return 0
 
 

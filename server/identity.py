@@ -38,6 +38,8 @@ _TTL = 900.0
 _lock = threading.Lock()
 _snapshots: dict[str, dict] = {}
 _in_flight: set[str] = set()
+_workers: set[threading.Thread] = set()
+_worker_failures: set[str] = set()
 _capture_emitter = None
 
 
@@ -173,6 +175,8 @@ def reset_for_tests() -> None:
         _capture_emitter = None
         _snapshots.clear()
         _in_flight.clear()
+        _workers.clear()
+        _worker_failures.clear()
 
 
 def snapshot(email: str) -> dict | None:
@@ -202,6 +206,11 @@ def observe(user) -> None:
     Never blocks a session launch: an attendee waiting on two CLI round trips to
     find out who they are is a worse outcome than a slightly stale answer.
     """
+    from .closeout_guard import admitted_writer
+    from .event_emitter import event_emitter
+
+    emitter = _capture_emitter or event_emitter
+    emitter._ensure_ready()
     email = user.email
     now = time.time()
     try:
@@ -220,10 +229,20 @@ def observe(user) -> None:
             return
         _in_flight.add(email)
 
+    # Reserve before publishing the thread so a close racing with startup sees
+    # this accepted observation, even before the new thread begins executing.
+    try:
+        ticket = admitted_writer(emitter.journal, "identity", detached=True)
+    except Exception:
+        with _lock:
+            _in_flight.discard(email)
+        raise
+
     def run() -> None:
         try:
-            result = resolve(user)
-            _emit(result)
+            with ticket:
+                result = resolve(user)
+                _emit(result)
         except Exception:
             # Capture rejection leaves the previously accepted snapshot intact,
             # so the next observation retries rather than caching a false success.
@@ -232,13 +251,43 @@ def observe(user) -> None:
                 email,
                 exc_info=True,
             )
+            with _lock:
+                _worker_failures.add("identity_worker_failed")
         finally:
             with _lock:
                 _in_flight.discard(email)
+                _workers.discard(threading.current_thread())
 
-    threading.Thread(
+    thread = threading.Thread(
         target=run, daemon=True, name=f"identity-resolve-{email[:24]}"
-    ).start()
+    )
+    try:
+        with _lock:
+            _workers.add(thread)
+            thread.start()
+    except Exception:
+        with _lock:
+            _workers.discard(thread)
+            _in_flight.discard(email)
+            _worker_failures.add("identity_worker_start_failed")
+        # The reservation remains visible if its worker could not start.
+        raise
+
+
+def drain_for_closeout(*, deadline: float) -> dict:
+    """Wait for accepted observations; do not pretend a daemon has completed."""
+    with _lock:
+        workers = list(_workers)
+    for thread in workers:
+        if thread is not threading.current_thread():
+            thread.join(timeout=max(0.0, deadline - time.monotonic()))
+    with _lock:
+        pending = len(_in_flight)
+        issues = sorted(_worker_failures)
+        if pending:
+            issues.append("identity_workers_pending")
+    return {"complete": not issues, "issues": issues,
+            "workers_observed": len(workers), "pending": pending}
 
 
 def _emit(result: dict) -> None:
