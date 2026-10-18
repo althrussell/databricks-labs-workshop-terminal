@@ -44,7 +44,10 @@ from .auth import Principal, get_current_user, is_admin
 from .bootstrap import install
 from .capture_journal import CaptureError
 from .closeout_guard import CaptureClosedError
-from .closeout_http import CloseoutAdmissionMiddleware
+from .closeout_http import (
+    CloseoutAdmissionMiddleware,
+    retained_model_policy_pending_refusal,
+)
 from .content import content_service
 from .credentials import (
     CredentialError,
@@ -956,9 +959,11 @@ def create_session(
         raise HTTPException(status_code=404, detail=f"Unknown agent '{body.agent_id}'")
 
     if config.model_policy_required() and not model_policy.store.snapshot().revision:
-        telemetry.session_create_failed(
+        retained = telemetry.session_create_failed(
             principal.name, agent["id"], "model_policy_pending"
         )
+        if retained:
+            retained_model_policy_pending_refusal()
         raise HTTPException(
             status_code=503,
             detail="Workshop model permissions are still syncing — try again shortly",

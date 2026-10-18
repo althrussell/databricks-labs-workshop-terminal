@@ -156,7 +156,7 @@ class WorkspaceCaptureStorage:
             part in {".", ".."} for part in path.split("/")
         ):
             raise ValueError("capture root must be an absolute Workspace Files path")
-        self.client = client
+        self.client = _bounded_capture_client(client)
         self.path = path.rstrip("/")
         # mkdirs is idempotent; it fails when a path component is a file.
         self.client.workspace.mkdirs(self.path)
@@ -212,6 +212,57 @@ class WorkspaceCaptureStorage:
         except ResourceAlreadyExists:
             return False
         return True
+
+
+def _bounded_capture_client(client):
+    """Reuse the app's existing identity with request/retry timeout settings.
+
+    Do not mutate its shared SDK configuration or discover another credential.
+    These are best-effort SDK/socket limits, not a total I/O deadline (for
+    example Retry-After can exceed the retry limit). Lease expiry still fences
+    any caller returning after ownership has expired.
+    The pinned SDK accepts these timeout fields through Config, not through
+    WorkspaceClient's constructor or workspace.download's arguments.
+    """
+    from databricks.sdk import WorkspaceClient
+    from databricks.sdk.config import Config
+    from databricks.sdk.credentials_provider import credentials_strategy
+
+    if not isinstance(client, WorkspaceClient):
+        return client  # Explicit storage/client seams used by standalone tests.
+
+    @credentials_strategy("capture-app-identity", [])
+    def existing_identity(_config):
+        return client.config.authenticate
+
+    return WorkspaceClient(config=Config(
+        host=client.config.host, workspace_id=client.config.workspace_id,
+        auth_type="capture-app-identity", credentials_strategy=existing_identity,
+        http_timeout_seconds=10, retry_timeout_seconds=15,
+    ))
+
+
+class _AuditStorage:
+    """Read-only view which yields to the owner's lease between I/O calls."""
+
+    def __init__(self, storage, progress):
+        self.storage, self.progress = storage, progress
+        self.durable, self.mode = storage.durable, storage.mode
+
+    def list_names(self):
+        self.progress()
+        value = self.storage.list_names()
+        self.progress()
+        return value
+
+    def read(self, name):
+        self.progress()
+        value = self.storage.read(name)
+        self.progress()
+        return value
+
+    def create(self, name, content):
+        raise CaptureHeldError("a full audit requires existing retained history")
 
 
 def canonical_json(value: Any) -> bytes:
@@ -574,7 +625,7 @@ class CaptureJournal:
             raise CaptureHeldError("capture storage contradicted create-only write")
         return False
 
-    def _refresh(self, *, audit: bool = False) -> None:
+    def _refresh(self, *, audit: bool = False, observer=None) -> None:
         if self._held:
             raise CaptureHeldError(self._error or "capture history is held")
         try:
@@ -678,6 +729,12 @@ class CaptureJournal:
             self._check_state(state, retained=True)
             if _digest(state) != operation.get("state_sha256"):
                 raise CaptureHeldError("capture state digest does not match operation")
+            if audit and observer is not None:
+                # Proof consumers see only a contiguous prefix after all
+                # canonical/hash/binding/state checks have succeeded. Audit
+                # callers must not consume proofs if later replay fails.
+                observer(revision=revision, operation_hash=operation["hash"],
+                         before=copy.deepcopy(self._state), after=copy.deepcopy(state))
             self._revision, self._head_hash, self._state = (
                 revision,
                 operation["hash"],
@@ -704,15 +761,37 @@ class CaptureJournal:
                 raise
             return copy.deepcopy(self._state)
 
-    def audit(self) -> dict[str, Any]:
+    def audit(self, *, observer=None) -> dict[str, Any]:
         """Replay every retained operation, including history before checkpoints."""
         with self._lock:
             try:
-                self._refresh(audit=True)
+                self._refresh(audit=True, observer=observer)
             except CaptureError as error:
                 self._fault(error)
                 raise
             return copy.deepcopy(self._state)
+
+    def audit_snapshot(self, *, progress: Callable[[], None], observer=None) -> CaptureJournal:
+        """Fully replay a private snapshot without locking/rewinding live state.
+
+        This still reads every original operation, including old checkpoint
+        prefixes. A caller can renew its fenced lease between reads while normal
+        status and ACK transactions continue on this journal. The returned
+        read-only journal may refresh/validate a subsequently appended suffix.
+        It must never replace the live journal's newer cache.
+        """
+        snapshot = CaptureJournal(
+            _AuditStorage(self.storage, progress), self.binding, self.initial_state,
+            max_record_bytes=self.max_record_bytes, max_state_bytes=self.max_state_bytes,
+            max_operations=self.max_operations, max_retries=self.max_retries,
+            checkpoint_interval=self.checkpoint_interval,
+        )
+        try:
+            snapshot.audit(observer=observer)
+        except CaptureHeldError as error:
+            self.mark_held(error)
+            raise
+        return snapshot
 
     def transaction(self, mutator: Callable[[dict[str, Any]], T]) -> T:
         with self._lock:
