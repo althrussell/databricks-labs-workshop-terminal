@@ -721,6 +721,31 @@ def test_cli_exception_retains_deployments_exact_resource_receipt(tmp_path, monk
     assert result["control_tower_requests"] == 0
 
 
+def test_cli_plans_from_the_same_frozen_artifact_manifest_that_it_uploads(tmp_path, monkeypatch):
+    input_path, output_path = tmp_path / "input.json", tmp_path / "receipt.json"
+    input_path.write_text(json.dumps(cli_spec()))
+    files = sources()
+    frozen_manifest = json.loads(files["assets/artifacts/manifest.json"])
+    monkeypatch.setattr(runner, "runtime_sources", lambda _root: files)
+    monkeypatch.setattr(runner, "validate_release_inputs", lambda *args, **kwargs: None)
+    monkeypatch.setattr(runner, "workspace_client", lambda _profile: object())
+    read_text = Path.read_text
+
+    def no_late_manifest_read(path, *args, **kwargs):
+        if path == ROOT / "assets/artifacts/manifest.json":
+            raise AssertionError("The live artifact manifest may have changed after the upload snapshot")
+        return read_text(path, *args, **kwargs)
+
+    def capture_deployment(plan, uploaded_files, *args, **kwargs):
+        assert plan["environment"]["CLAUDE_CODE_VERSION"] == frozen_manifest["artifacts"]["claude_binary"]["version"]
+        assert uploaded_files["assets/artifacts/manifest.json"] == files["assets/artifacts/manifest.json"]
+        return {"status": "deployment_submitted"}
+
+    monkeypatch.setattr(Path, "read_text", no_late_manifest_read)
+    monkeypatch.setattr(runner, "deploy", capture_deployment)
+    assert runner.main(["--spec", str(input_path), "--output", str(output_path), "--execute"]) == 0
+
+
 def test_uploaded_manifest_and_raw_source_identity_are_both_preserved(tmp_path, monkeypatch):
     value = plan()
     files = sources()

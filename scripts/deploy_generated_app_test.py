@@ -581,7 +581,7 @@ def main(argv=None):
     spec = json.loads(Path(args.spec).read_text())
     raw_manifest = source_manifest(files)
     spec["release"]["source_digest"] = raw_manifest["digest"]
-    plan = plan_simulation(spec, json.loads((ROOT / "assets/artifacts/manifest.json").read_text()), now=resume_start)
+    plan = plan_simulation(spec, json.loads(files["assets/artifacts/manifest.json"]), now=resume_start)
     prior_app = validate_resume_receipt(plan, previous) if previous is not None else None
     initial = {"plan": plan, "source_manifest": raw_manifest, "executed": False}
     if prior_app is not None:
