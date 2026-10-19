@@ -391,15 +391,28 @@ CANARY_ENDPOINT = "/api/admin/evaluation/model-canary"
 
 
 @pytest.fixture()
-def canary_runtime(monkeypatch, evaluation_seat):
+def canary_runtime(monkeypatch, evaluation_seat, retained_model_policy):
     from server import cli_config, config, credentials, evaluation, models, wizard_llm
+    from server.model_policy import ModelPolicyRequest
+    from .test_governed_model_policy import _entry
+
     app_id = "11111111-1111-4111-8111-111111111111"
     monkeypatch.setenv("DATABRICKS_CLIENT_ID", app_id)
     monkeypatch.setenv("WORKSHOP_APP_SP_ID", "12345")
     monkeypatch.setenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
     monkeypatch.setenv("CODEX_MODEL", "gpt-6-sol")
     monkeypatch.setenv("WORKSHOP_WIZARD_MODEL", "gpt-5-4-mini")
+    monkeypatch.setenv("DATABRICKS_WORKSPACE_ID", "123")
     monkeypatch.setattr(config, "local_dev", lambda: False)
+    policy = retained_model_policy()
+    policy.apply(ModelPolicyRequest.model_validate({
+        "revision": 1,
+        "pool": [_entry("system.ai.claude-sonnet-4-6", "claude"),
+                 _entry("system.ai.gpt-6-sol", "codex"),
+                 _entry("system.ai.gpt-5-4-mini", "chat"),
+                 _entry("system.ai.gpt-5-6-luna", "chat")],
+        "denied_models": [], "restart_processes": False,
+    }))
     client = SimpleNamespace(config=SimpleNamespace(auth_type="oauth-m2m", client_id=app_id,
                                                    host=config.databricks_host()))
     monkeypatch.setattr(credentials, "workspace_client", lambda: client)
@@ -522,6 +535,16 @@ def test_model_canary_does_not_fall_back_to_emergency_pat(client, as_admin, cana
     monkeypatch.setattr(credentials, "app_identity_bearer", lambda: None)
     result = client.post(CANARY_ENDPOINT, headers=ALICE, json={"role": "driver"}).json()
     assert result["error_classification"] == "app_oauth_identity_unavailable" and canary_runtime.calls == []
+
+
+def test_model_canary_never_invokes_without_retained_policy_dependency(client, as_admin, canary_runtime):
+    from server import model_policy
+
+    model_policy.store.reset_for_tests()
+    result = client.post(CANARY_ENDPOINT, headers=ALICE, json={"role": "driver"}).json()
+    assert result["error_classification"] == "instrumentation_error"
+    assert not result["invocation_verified"]
+    assert [call["method"] for call in canary_runtime.calls] == ["GET"]
 
 
 @pytest.mark.parametrize("status,classification", [(401, "unauthenticated"), (403, "permission_denied"), (404, "model_or_wire_unavailable"),

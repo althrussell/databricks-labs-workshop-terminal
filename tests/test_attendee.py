@@ -29,11 +29,12 @@ def _unbound_instance(monkeypatch):
 
 
 @pytest.fixture()
-def enforcing(monkeypatch):
+def enforcing(monkeypatch, auth_model_policy):
     """Leave local-dev mode so the binding is actually enforced.
 
     Request this *after* ``client``: the app refuses to start outside local dev
-    without a full OAuth environment.
+    without a full OAuth environment. Provision the independent model-policy
+    dependency before switching; this fixture only exercises attendee binding.
     """
     monkeypatch.setenv("LOCAL_DEV", "0")
 

@@ -143,6 +143,23 @@ acceptance are **pending**. The deployed package recorded above remains from
 `768c8772748d9b29b837d0df55f5ac2416caf036`; it does not contain this correction.
 Earlier artifacts and test evidence retain their recorded provenance.
 
+The first exact-source `af14e44` CI run exposed **26 fixture integration
+failures**: auth/attendee and model-canary tests switched from local startup to
+production mode without provisioning the newly required policy journal. The
+scoped correction provisions the production durable Workspace Files adapter
+through its existing in-memory SDK seam. Auth tests retain an independent model
+binding without injecting an attendee owner hint; canaries now use their exact
+synthetic source and an approved bounded retained pool. A regression verifies
+that removing the journal still refuses the provider POST. Production
+fail-closed behavior is unchanged.
+
+The updated fixtures passed **173 focused tests** and independent clean review
+with **123 separate passes**. The complete current-source native Python 3.11 run
+passed **3,726 tests, with 69 skips and one existing Starlette/httpx warning**, in
+314.74 seconds (`/private/tmp/wt03-policy-full-python311-suite.log`). Skips are
+not executed acceptance evidence. Fresh current-head CI/package and live
+restart/closeout/teardown acceptance remain **pending**.
+
 ## Private evidence references
 
 These are evidence references, not instructions to publish attendee records or
