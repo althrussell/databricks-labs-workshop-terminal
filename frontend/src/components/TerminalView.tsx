@@ -6,10 +6,12 @@ import "@xterm/xterm/css/xterm.css";
 import { terminalGatewayLimit } from "../gatewayLimit";
 import { terminalExitNotice } from "../terminalExit";
 import type { AttendeeErrorCode } from "../telemetry";
+import { notifyWorkshopClosing, workshopNotice } from "../workshopLifecycle";
 
 interface Props {
   sessionId: string;
   active: boolean;
+  readOnly?: boolean;
   onExit: (sessionId: string) => void;
   onGatewayLimit?: (
     code: Extract<AttendeeErrorCode, "gateway_allowance_exhausted" | "gateway_rate_limited">
@@ -20,12 +22,14 @@ interface Props {
 // (the component stays mounted; `active` only toggles visibility). The
 // server holds the PTY and scrollback, so a dropped socket reconnects and
 // replays seamlessly.
-export default function TerminalView({ sessionId, active, onExit, onGatewayLimit }: Props) {
+export default function TerminalView({ sessionId, active, readOnly = false, onExit, onGatewayLimit }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const closedRef = useRef(false);
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -42,6 +46,7 @@ export default function TerminalView({ sessionId, active, onExit, onGatewayLimit
         selectionBackground: "#2e3440",
       },
       scrollback: 5000,
+      disableStdin: readOnlyRef.current,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -87,6 +92,7 @@ export default function TerminalView({ sessionId, active, onExit, onGatewayLimit
         } else if (data.t === "exit") {
           if (closedRef.current) return;
           closedRef.current = true;
+          if (data.reason === "workshop_closing") notifyWorkshopClosing();
           term.write(`\r\n\x1b[33m[${terminalExitNotice(data)}]\x1b[0m\r\n`);
           socket.close();
           onExit(sessionId);
@@ -95,6 +101,13 @@ export default function TerminalView({ sessionId, active, onExit, onGatewayLimit
       socket.onclose = (ev) => {
         socketRef.current = null;
         if (disposed || closedRef.current) return;
+        if (ev.code === 4410) {
+          closedRef.current = true;
+          term.options.disableStdin = true;
+          term.write(`\r\n\x1b[33m[${workshopNotice("closing")}]\x1b[0m\r\n`);
+          notifyWorkshopClosing();
+          return;
+        }
         if (ev.code === 4404) {
           // Session is gone server-side (reaped or restart) — don't retry. The
           // server now accepts before closing, so this code actually arrives.
@@ -127,14 +140,14 @@ export default function TerminalView({ sessionId, active, onExit, onGatewayLimit
 
     function sendResize() {
       const socket = socketRef.current;
-      if (!closedRef.current && socket?.readyState === WebSocket.OPEN) {
+      if (!readOnlyRef.current && !closedRef.current && socket?.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ t: "resize", cols: term.cols, rows: term.rows }));
       }
     }
 
     const inputDisposable = term.onData((data) => {
       const socket = socketRef.current;
-      if (!closedRef.current && socket?.readyState === WebSocket.OPEN) {
+      if (!readOnlyRef.current && !closedRef.current && socket?.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ t: "input", data }));
       }
     });
@@ -147,7 +160,7 @@ export default function TerminalView({ sessionId, active, onExit, onGatewayLimit
 
     const heartbeat = setInterval(() => {
       const socket = socketRef.current;
-      if (!closedRef.current && socket?.readyState === WebSocket.OPEN) {
+      if (!readOnlyRef.current && !closedRef.current && socket?.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ t: "ping" }));
       }
     }, 20000);
@@ -163,6 +176,10 @@ export default function TerminalView({ sessionId, active, onExit, onGatewayLimit
       term.dispose();
     };
   }, [sessionId, onExit, onGatewayLimit]);
+
+  useEffect(() => {
+    if (termRef.current) termRef.current.options.disableStdin = readOnly;
+  }, [readOnly]);
 
   useEffect(() => {
     if (active) {

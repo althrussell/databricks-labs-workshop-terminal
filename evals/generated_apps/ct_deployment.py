@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
+from dependency_sources import validate_source_files
 
 from .adapters.simulated_control_tower import plan_simulation, bind_created_app
 from .report import write_evidence
@@ -27,6 +28,18 @@ ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_VERSION = 2
 PACKAGE_FILES = frozenset({"app.yaml", "requirements.txt", "wt_bootstrap.py",
     "wt_evaluation_bootstrap.py", "wt_evaluation.py", "release-manifest.json"})
+PACKAGE_LOCAL_SOURCES = frozenset({"evals/generated_apps/runtime/wt_bootstrap.py",
+    "evals/generated_apps/runtime/wt_evaluation_bootstrap.py", "server/evaluation.py"})
+
+
+def frozen_package_sources(local_sources):
+    """Copy preflighted local bytes before a remote provisioning phase starts."""
+    if (not isinstance(local_sources, dict) or set(local_sources) != PACKAGE_LOCAL_SOURCES
+            or any(not isinstance(value, bytes) for value in local_sources.values())):
+        raise ValueError("Package helper uploads require the exact local source snapshot")
+    files = dict(local_sources)
+    validate_source_files(files)
+    return files
 
 
 def sha256(value):
@@ -270,7 +283,8 @@ def grant_demo_read_access(client, receipt, path, principal):
     write_evidence(path, receipt)
 
 
-def deploy_package(client, plan, manifest_bytes, artifact, receipt_path):
+def deploy_package(client, plan, manifest_bytes, artifact, receipt_path, *, local_sources):
+    local_sources = frozen_package_sources(local_sources)
     from databricks.sdk.errors import NotFound
     from databricks.sdk.service.apps import App, AppDeployment
     from databricks.sdk.service.iam import ComplexValue
@@ -396,7 +410,7 @@ def deploy_package(client, plan, manifest_bytes, artifact, receipt_path):
                for x in client.permissions.get("directories", str(directory.object_id)).as_dict().get("access_control_list", [])):
         raise RuntimeError("Work-sync ACL readback failed")
     receipt["work_sync"]["state"] = "independently_verified"; write_evidence(receipt_path, receipt)
-    files = package_sources(bound, manifest_bytes)
+    files = package_sources(bound, manifest_bytes, local_sources=local_sources)
     snapshot = source_manifest(files)
     receipt.update(bound_plan=bound, uploaded_source=snapshot, source_identity={
         "planned_unpatched_digest": manifest["sha256"], "uploaded_runtime_digest": snapshot["digest"],
@@ -416,24 +430,27 @@ def deploy_package(client, plan, manifest_bytes, artifact, receipt_path):
     return submit_deployment(client, receipt, receipt_path)
 
 
-def package_sources(bound, manifest_bytes):
-    files = {name: (ROOT / "evals/generated_apps/runtime" / name).read_bytes()
+def package_sources(bound, manifest_bytes, *, local_sources):
+    local_sources = frozen_package_sources(local_sources)
+    files = {name: local_sources["evals/generated_apps/runtime/" + name]
              for name in ("wt_bootstrap.py", "wt_evaluation_bootstrap.py")}
-    files["wt_evaluation.py"] = (ROOT / "server/evaluation.py").read_bytes()
+    files["wt_evaluation.py"] = local_sources["server/evaluation.py"]
     files["release-manifest.json"] = manifest_bytes
     files["requirements.txt"] = b"# The CT-pinned PEX contains all runtime dependencies.\n"
     files["app.yaml"] = yaml.safe_dump({"command": ["python", "wt_bootstrap.py"], "env": [
         {"name": name, "value": value} for name, value in sorted({**bound["environment"],
             "CONTROL_TOWER_URL": "", "CONTROL_TOWER_INGEST_URL": "", "CONTROL_TOWER_INGEST_TOKEN": "",
             "WORKSHOP_PAT": "", "OMNIGENT_APP_URL": ""}.items())]}, sort_keys=False).encode()
+    validate_source_files(files)
     return files
 
 
-def update_observer(client, receipt, receipt_path):
+def update_observer(client, receipt, receipt_path, *, local_sources):
     """Refresh the external observer/launcher only, preserving package bytes."""
     from databricks.sdk.service.workspace import ImportFormat
     from scripts.deploy_generated_app_test import source_manifest
     from scripts.run_generated_app_journey import verify_snapshot
+    local_sources = frozen_package_sources(local_sources)
     ensure_live(receipt["plan"])
     identity(client, receipt)
     source = receipt["plan"]["names"]["source_path"]
@@ -442,8 +459,8 @@ def update_observer(client, receipt, receipt_path):
     for entry in receipt["uploaded_source"]["files"]:
         with client.workspace.download(source + "/" + entry["path"]) as handle:
             files[entry["path"]] = handle.read(entry["size"] + 1)
-    updates = {"wt_evaluation.py": (ROOT / "server/evaluation.py").read_bytes(),
-               "wt_evaluation_bootstrap.py": (ROOT / "evals/generated_apps/runtime/wt_evaluation_bootstrap.py").read_bytes()}
+    updates = {"wt_evaluation.py": local_sources["server/evaluation.py"],
+               "wt_evaluation_bootstrap.py": local_sources["evals/generated_apps/runtime/wt_evaluation_bootstrap.py"]}
     receipt["observer_update"] = {"files": [{"path": name, "before_sha256": sha256(files[name]), "after_sha256": sha256(data)}
         for name, data in updates.items()], "state": "update_requested", "package_bytes_unchanged": True}
     write_evidence(receipt_path, receipt)
@@ -533,11 +550,12 @@ def stage_toolchain(client, receipt, receipt_path, artifact):
     write_evidence(receipt_path, receipt)
 
 
-def update_mirror(client, receipt, receipt_path, source_volume, *, strict=False):
+def update_mirror(client, receipt, receipt_path, source_volume, *, strict=False, local_sources):
     """Add the CT-configured mirror to an existing isolated qualification run."""
     from databricks.sdk.service.workspace import ImportFormat
     from scripts.deploy_generated_app_test import source_manifest
     from scripts.run_generated_app_journey import verify_snapshot
+    local_sources = frozen_package_sources(local_sources)
     ensure_live(receipt["plan"])
     app = identity(client, receipt)
     existing_mirror = receipt["plan"]["ct_compatible_contract"].get("toolchain_mirror")
@@ -562,7 +580,7 @@ def update_mirror(client, receipt, receipt_path, source_volume, *, strict=False)
     stage_toolchain(client, receipt, receipt_path, artifact)
     with client.workspace.download(source + "/release-manifest.json") as handle:
         manifest_bytes = handle.read(1024 * 1024 + 1)
-    files = package_sources(receipt["bound_plan"], manifest_bytes)
+    files = package_sources(receipt["bound_plan"], manifest_bytes, local_sources=local_sources)
     for name, data in files.items():
         client.workspace.upload(source + "/" + name, io.BytesIO(data), format=ImportFormat.AUTO, overwrite=True)
     receipt["uploaded_source"] = source_manifest(files)

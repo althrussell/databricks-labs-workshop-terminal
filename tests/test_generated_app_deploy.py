@@ -705,6 +705,7 @@ def test_cli_exception_retains_deployments_exact_resource_receipt(tmp_path, monk
     input_path.write_text(json.dumps(cli_spec()))
     output_path = tmp_path / "receipt.json"
     monkeypatch.setattr(runner, "runtime_sources", lambda root: sources())
+    monkeypatch.setattr(runner, "validate_release_inputs", lambda *args, **kwargs: None)
     monkeypatch.setattr(runner, "workspace_client", lambda _profile: object())
     def fail_after_creation(plan, files, receipt_path, **kwargs):
         runner.write_evidence(receipt_path, {
@@ -1124,6 +1125,7 @@ def test_cli_resume_preserves_original_expiry_and_original_ownership_file(tmp_pa
     client = FakeClient(value)
     client.created = True
     monkeypatch.setattr(runner, "runtime_sources", lambda root: sources())
+    monkeypatch.setattr(runner, "validate_release_inputs", lambda *args, **kwargs: None)
     monkeypatch.setattr(runner, "workspace_client", lambda _profile: client)
     mock_catalog(monkeypatch, client)
     assert runner.main(["--spec", str(input_path), "--resume-receipt", str(previous_path),

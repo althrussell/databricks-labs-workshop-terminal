@@ -12,10 +12,14 @@ import pytest
 
 from evals.generated_apps.ct_deployment import (
     verify_package, plan_package, package_sources, validate_policy, grant, sha256, PACKAGE_FILES, deploy_package,
-    grant_demo_read_access,
+    grant_demo_read_access, PACKAGE_LOCAL_SOURCES,
 )
 
 ROOT = Path(__file__).parents[1]
+
+
+def local_sources():
+    return {name: (ROOT / name).read_bytes() for name in PACKAGE_LOCAL_SOURCES}
 
 
 def package():
@@ -84,7 +88,7 @@ def test_package_plan_retains_owner_and_exact_ct_gateway_and_immutable_pins():
     assert plan["environment"]["DATABRICKS_GATEWAY_HOST"] == "https://labs.example.com/ai-gateway"
     assert plan["environment"]["WORKSHOP_MODEL_POLICY_REQUIRED"] == "true"
     assert contract["package_manifest"]["sha256"] == sha256(artifact)
-    files = package_sources(plan, raw)
+    files = package_sources(plan, raw, local_sources=local_sources())
     assert set(files) == PACKAGE_FILES
     assert not any(name.startswith(("assets/", "content/", "server/")) for name in files)
     assert "control_tower_wt_callers" not in json.dumps(plan)
@@ -146,7 +150,7 @@ def test_existing_demo_catalog_is_optional_and_reaches_packaged_environment():
     plan = plan_package(value, raw, artifact)
     assert plan["environment"]["WORKSHOP_DEMO_CATALOG"] == "workshop_demo"
     assert plan["ct_compatible_contract"]["demo_catalog"] == "workshop_demo"
-    assert b"WORKSHOP_DEMO_CATALOG" in package_sources(plan, raw)["app.yaml"]
+    assert b"WORKSHOP_DEMO_CATALOG" in package_sources(plan, raw, local_sources=local_sources())["app.yaml"]
     assert plan_package(spec(pin), raw, artifact)["environment"]["WORKSHOP_DEMO_CATALOG"] == ""
 
 
@@ -316,7 +320,7 @@ def test_full_package_provisioning_orders_permissions_mirror_and_source_before_d
     value = spec(pin); value["toolchain_mirror"] = {"source_volume": "/Volumes/main/wt_central/toolchain", "strict": False}
     plan = plan_package(value, raw, artifact)
     client = FakeWorkspace(plan, monkeypatch)
-    receipt = deploy_package(client, plan, raw, artifact, tmp_path / "receipt.json")
+    receipt = deploy_package(client, plan, raw, artifact, tmp_path / "receipt.json", local_sources=local_sources())
     assert receipt["status"] == "deployment_submitted"
     assert receipt["attendee_app_access"]["minimum_permission"] == "CAN_MANAGE"
     assert receipt["work_sync"]["path"] == f"/Workspace/Users/{plan['attendee']['email']}/projects"
@@ -344,8 +348,34 @@ def test_failed_model_grant_records_recoverable_ownership_and_never_deploys(tmp_
     client = FakeWorkspace(plan, monkeypatch, lost_model_grant=True)
     path = tmp_path / "receipt.json"
     with pytest.raises(RuntimeError, match="readback"):
-        deploy_package(client, plan, raw, artifact, path)
+        deploy_package(client, plan, raw, artifact, path, local_sources=local_sources())
     receipt = json.loads(path.read_text())
     assert {r["kind"] for r in receipt["created_resources"]} == {"app", "group", "catalog"}
     assert receipt["permission_deltas"][-1]["state"] == "grant_requested"
     assert "app:deploy" not in client.calls and "source:upload" not in client.calls
+
+
+def test_package_upload_uses_preflight_snapshot_after_local_changes_during_provisioning(tmp_path, monkeypatch):
+    from evals.generated_apps import ct_deployment
+    raw, artifact, pin = package()
+    plan = plan_package(spec(pin), raw, artifact)
+    frozen = local_sources()
+    expected = dict(frozen)
+    monkeypatch.setattr(ct_deployment, "ROOT", tmp_path)
+    client = FakeWorkspace(plan, monkeypatch)
+    create = client.apps.create
+
+    def change_local_sources_during_remote_creation(value, **kwargs):
+        for name in frozen:
+            path = tmp_path / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"# changed after preflight\n")
+            frozen[name] = b"# changed caller snapshot\n"
+        return create(value, **kwargs)
+
+    client.apps.create = change_local_sources_during_remote_creation
+    deploy_package(client, plan, raw, artifact, tmp_path / "receipt.json", local_sources=frozen)
+    prefix = plan["names"]["source_path"] + "/"
+    assert client.workspace_state[prefix + "wt_evaluation.py"] == expected["server/evaluation.py"]
+    assert client.workspace_state[prefix + "wt_bootstrap.py"] == expected["evals/generated_apps/runtime/wt_bootstrap.py"]
+    assert client.workspace_state[prefix + "wt_evaluation_bootstrap.py"] == expected["evals/generated_apps/runtime/wt_evaluation_bootstrap.py"]

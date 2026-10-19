@@ -1,6 +1,15 @@
 command: ["python", "app.py"]
 
 env:
+  # Public deployment registries; laptop transport overrides never ship here.
+  - name: UV_DEFAULT_INDEX
+    value: https://pypi.org/simple
+  - name: PIP_INDEX_URL
+    value: https://pypi.org/simple
+  - name: NPM_CONFIG_REGISTRY
+    value: https://registry.npmjs.org/
+  - name: npm_config_registry
+    value: https://registry.npmjs.org/
   - name: AP_LAKEBASE_ENDPOINT
     valueFrom: postgres
   - name: AP_ARTIFACT_VOLUME_PATH

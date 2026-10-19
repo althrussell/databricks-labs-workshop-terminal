@@ -10,6 +10,7 @@ export default function HelpChatPanel({
   onClearUnread,
   raised,
   onRaisedChange,
+  readOnly = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -17,6 +18,7 @@ export default function HelpChatPanel({
   onClearUnread: () => void;
   raised: boolean;
   onRaisedChange: (raised: boolean) => void;
+  readOnly?: boolean;
 }) {
   const [messages, setMessages] = useState<HelpMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -70,7 +72,7 @@ export default function HelpChatPanel({
 
   const send = async () => {
     const text = draft.trim();
-    if (!text || busy) return;
+    if (!text || busy || readOnly) return;
     setBusy(true);
     try {
       const result = await api.postHelpMessage(text);
@@ -125,9 +127,10 @@ export default function HelpChatPanel({
       <div className="help-chat-composer">
         <input
           type="text"
+          disabled={readOnly}
           value={draft}
           maxLength={2000}
-          placeholder="Message the operators…"
+          placeholder={readOnly ? "New input is disabled" : "Message the operators…"}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") void send();
@@ -136,7 +139,7 @@ export default function HelpChatPanel({
         <button
           type="button"
           className="primary-btn"
-          disabled={busy || !draft.trim()}
+          disabled={readOnly || busy || !draft.trim()}
           onClick={() => void send()}
           aria-label="Send"
         >

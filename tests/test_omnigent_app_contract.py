@@ -118,10 +118,10 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
         env["OMNIGENT_BUILD_SHA"]["value"] == "c8b9b85f822f2c9203ff995c10f3cc49d064bbe5"
     )
     # The App's env surface is an allowlist so that widening it is a deliberate,
-    # reviewed act. Beyond the required bindings the only additions permitted are
-    # smart-routing knobs (feature switch + optional URL/router/prefix overrides)
-    # — never a credential.
+    # reviewed act. Public registry selection and smart-routing knobs are
+    # permitted; package transport credentials are never deployed.
     allowed = {
+        "UV_DEFAULT_INDEX", "PIP_INDEX_URL", "NPM_CONFIG_REGISTRY", "npm_config_registry",
         "WORKSHOP_SMART_ROUTING",
         "WORKSHOP_ROUTING_JUDGE_MODEL",
         "WORKSHOP_ROUTING_BASE_URL",
@@ -153,7 +153,8 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
     # The judge is the one model the App itself calls, so it is pinned rather
     # than left to a built-in default that could drift under us.
     assert env["WORKSHOP_ROUTING_JUDGE_MODEL"]["value"] == "system.ai.gpt-5-6-luna"
-    for name in allowed - {"WORKSHOP_SMART_ROUTING", "WORKSHOP_ROUTING_JUDGE_MODEL"}:
+    for name in allowed - {"WORKSHOP_SMART_ROUTING", "WORKSHOP_ROUTING_JUDGE_MODEL",
+                           "UV_DEFAULT_INDEX", "PIP_INDEX_URL", "NPM_CONFIG_REGISTRY", "npm_config_registry"}:
         assert env[name].get("value", "") == "", f"{name} must ship empty"
     assert not {
         "DATABRICKS_TOKEN",

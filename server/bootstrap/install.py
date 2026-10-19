@@ -1380,7 +1380,9 @@ def _install_omnigent() -> None:
             source="prewarmed",
         )
         return
-    env = _install_env()
+    from .package_sources import PUBLIC_PYPI, public_python_environment
+
+    env = public_python_environment(_install_env())
     # The runtime is the extracted reviewed build; uv must never fetch its own.
     env["UV_PYTHON_DOWNLOADS"] = "never"
     venv = os.path.join(prefix, "omnigent-venv")
@@ -1413,6 +1415,8 @@ def _install_omnigent() -> None:
                 paths["uv_binary"],
                 "pip",
                 "install",
+                "--default-index",
+                PUBLIC_PYPI,
                 "--python",
                 os.path.join(venv, "bin", "python"),
                 "--require-hashes",

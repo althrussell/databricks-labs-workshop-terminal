@@ -6,6 +6,9 @@ export interface TerminalExit {
 }
 
 export function terminalExitNotice(exit: TerminalExit): string {
+  if (exit.reason === "workshop_closing") {
+    return "This workshop is closing. New input is disabled.";
+  }
   if (Number.isInteger(exit.exit_signal) && (exit.exit_signal ?? 0) > 0) {
     return `Session stopped by signal ${exit.exit_signal}. Scroll up for details. Select Relaunch to retry.`;
   }

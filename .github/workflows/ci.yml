@@ -9,6 +9,14 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  UV_DEFAULT_INDEX: "https://pypi.org/simple"
+  UV_INDEX_URL: "https://pypi.org/simple"
+  UV_EXTRA_INDEX_URL: ""
+  PIP_INDEX_URL: "https://pypi.org/simple"
+  PIP_EXTRA_INDEX_URL: ""
+  NPM_CONFIG_REGISTRY: "https://registry.npmjs.org/"
+
 jobs:
   backend:
     name: pytest
@@ -26,6 +34,7 @@ jobs:
           version: "0.13.0"
       - name: Validate uv lock and source-deployment exports
         run: |
+          uv run --frozen --no-group release python dependency_sources.py
           uv lock --check
           uv export --frozen --no-dev --no-group release --no-hashes --no-emit-project --output-file requirements.txt
           uv export --frozen --no-group release --no-hashes --no-emit-project --output-file requirements-dev.txt
@@ -184,4 +193,4 @@ jobs:
       - name: Exercise the committed WT wizard and project flows with local API fixtures
         env:
           WORKSHOP_E2E_BROWSER_TESTS: "1"
-        run: .venv/bin/python -m pytest tests/test_wizard_rendered.py tests/test_projects_rendered.py -q
+        run: .venv/bin/python -m pytest tests/test_wizard_rendered.py tests/test_projects_rendered.py tests/test_workshop_lifecycle_rendered.py -q

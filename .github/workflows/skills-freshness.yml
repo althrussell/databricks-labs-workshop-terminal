@@ -14,6 +14,14 @@ permissions:
   contents: read
   issues: write
 
+env:
+  UV_DEFAULT_INDEX: "https://pypi.org/simple"
+  UV_INDEX_URL: "https://pypi.org/simple"
+  UV_EXTRA_INDEX_URL: ""
+  PIP_INDEX_URL: "https://pypi.org/simple"
+  PIP_EXTRA_INDEX_URL: ""
+  NPM_CONFIG_REGISTRY: "https://registry.npmjs.org/"
+
 jobs:
   fallback-drift:
     name: vendored fallback matches the reviewed ref

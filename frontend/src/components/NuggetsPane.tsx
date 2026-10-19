@@ -5,6 +5,7 @@ import { api, Nugget } from "../api";
 import { onAppEvent } from "../events";
 
 interface Props {
+  inputDisabled?: boolean;
   collapsed: boolean;
   onToggle: () => void;
   onCertificate: () => void;
@@ -17,7 +18,7 @@ const ROTATE_MS = 25000;
 // The pane never scrolls: it shows only as many cards as fit, with the most
 // relevant (contextually matched, then pinned) first, and rotates the
 // remaining slots through the ranked list.
-export default function NuggetsPane({ collapsed, onToggle, onCertificate, onTryPrompt }: Props) {
+export default function NuggetsPane({ collapsed, inputDisabled = false, onToggle, onCertificate, onTryPrompt }: Props) {
   const [nuggets, setNuggets] = useState<Nugget[]>([]);
   const [phase, setPhase] = useState("");
   const [offset, setOffset] = useState(0);
@@ -132,6 +133,7 @@ export default function NuggetsPane({ collapsed, onToggle, onCertificate, onTryP
               {nugget.prompt && (
                 <button
                   className="nugget-link nugget-link-action"
+                  disabled={inputDisabled}
                   title={nugget.prompt}
                   onClick={() => onTryPrompt(nugget.prompt!)}
                 >
@@ -140,7 +142,7 @@ export default function NuggetsPane({ collapsed, onToggle, onCertificate, onTryP
               )}
               {nugget.link &&
                 (nugget.link.url === "#certificate" ? (
-                  <button className="nugget-link nugget-link-action" onClick={onCertificate}>
+                  <button className="nugget-link nugget-link-action" disabled={inputDisabled} onClick={onCertificate}>
                     {nugget.link.label} <ExternalLink size={12} />
                   </button>
                 ) : (

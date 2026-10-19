@@ -43,6 +43,7 @@ export type AppEvent =
   | { t: "content_updated" }
   | { t: "obo_refresh" }
   | { t: "reconnected" }
+  | { t: "workshop_closing" }
   | { t: "connection_lost"; reason: "reconnect_exhausted" | "authentication_failed" }
   | { t: "pong" };
 
@@ -154,6 +155,11 @@ export function createAppEventConnection(options: EventConnectionOptions) {
     next.onclose = (ev) => {
       if (current === next) current = null;
       if (stopped) return;
+      if (ev.code === 4410) {
+        stopped = true;
+        options.publish({ t: "workshop_closing" });
+        return;
+      }
       if (ev.code === 4403) {
         if (storage.getItem(AUTH_RELOAD_GUARD)) {
           options.publish({ t: "connection_lost", reason: "authentication_failed" });

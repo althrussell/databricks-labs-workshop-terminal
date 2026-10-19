@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { terminalExitNotice } from "./terminalExit.ts";
 
+test("normal workshop closeout never offers relaunch, even when drain sent a signal", () => {
+  assert.equal(terminalExitNotice({ reason: "workshop_closing", exit_signal: 15 }),
+    "This workshop is closing. New input is disabled.");
+});
+
 test("failed startup preserves a useful exit-code message", () => {
   assert.equal(
     terminalExitNotice({ reason: "process_error", exit_code: 17 }),

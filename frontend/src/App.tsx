@@ -56,6 +56,14 @@ import {
   resolveSessionConflict,
 } from "./sessionSwitch";
 import { wizardDeliveryId } from "./wizardRequests";
+import {
+  advanceWorkshopState,
+  isWorkshopClosingDetail,
+  notifyWorkshopClosing,
+  onWorkshopClosing,
+  workshopNotice,
+  type WorkshopState,
+} from "./workshopLifecycle";
 
 // An attendee who needs an idea gets one short choice before implementation.
 // This is typed UNSENT, like the other idea chips.
@@ -76,6 +84,7 @@ async function typeWhenSessionReady(sessionId: string, text: string, deliveryId:
     await api.typeIntoSession(sessionId, text, deliveryId);
   } catch (caught) {
     if (signal?.aborted) return;
+    if (caught instanceof ApiError && isWorkshopClosingDetail(caught.detail)) throw caught;
     if (caught instanceof ApiError && caught.message.includes("delivery was interrupted")) throw caught;
     await new Promise((r) => setTimeout(r, 800));
     if (signal?.aborted) return;
@@ -93,6 +102,8 @@ const LINK_ICONS: Record<string, typeof LinkIcon> = {
 
 export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [workshopState, setWorkshopState] = useState<WorkshopState | null>(null);
+  const inputDisabled = workshopState !== "open";
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [priorSessions, setPriorSessions] = useState<PriorSessionInfo[]>([]);
@@ -183,7 +194,7 @@ export default function App() {
   // attendee with a saved brief and a slow or failed /api/config could reopen a
   // modal their run had switched off. Unknown therefore means unavailable, which
   // costs the control a moment of lateness and nothing else.
-  const wizardAvailable = config?.onboarding_wizard.enabled === true;
+  const wizardAvailable = config?.onboarding_wizard.enabled === true && !inputDisabled;
   const wizardDismissalKey = config
     ? `wt-wizard-dismissed:v1:${config.workspace_url}:${config.user.email}`
     : "";
@@ -208,6 +219,7 @@ export default function App() {
   const refreshIdentity = useCallback(async () => {
     const cfg = await api.config();
     setConfig(cfg);
+    setWorkshopState((current) => advanceWorkshopState(current, cfg.workshop.state));
     if (cfg.branding.brand_primary_color) {
       document.documentElement.style.setProperty(
         "--brand-primary",
@@ -216,6 +228,39 @@ export default function App() {
     }
     document.title = cfg.branding.event_name || `${cfg.branding.brand_name} Workshop`;
   }, []);
+
+  useEffect(() => onWorkshopClosing(() => {
+    setWorkshopState((current) => advanceWorkshopState(current, "closing"));
+    setConnectionLost(false);
+    setError("");
+  }), []);
+
+  useEffect(() => {
+    if (workshopState === "closed") return;
+    let stopped = false;
+    let running = false;
+    const refresh = async () => {
+      if (running) return;
+      running = true;
+      try {
+        const status = await api.workshopStatus();
+        if (!stopped) setWorkshopState((current) => advanceWorkshopState(current, status.state));
+      } catch { /* Keep the last observed barrier on a transient failed read. */ }
+      finally { running = false; }
+    };
+    void refresh();
+    const interval = setInterval(() => { void refresh(); }, 10000);
+    return () => { stopped = true; clearInterval(interval); };
+  }, [workshopState === "closed"]);
+
+  useEffect(() => {
+    if (!inputDisabled) return;
+    setWizardOpen(false);
+    setPreferencesOpen(false);
+    setCertOpen(false);
+    setPendingSwitch(null);
+    setHintSessionId(null);
+  }, [inputDisabled]);
 
   useEffect(() => {
     const refresh = () =>
@@ -270,7 +315,7 @@ export default function App() {
    * empty array the state starts as, which is indistinguishable from a first
    * arrival and opens the modal over somebody's running terminal. */
   useEffect(() => {
-    if (!config || !sessionsLoaded || !projectsLoaded || wizardChecked.current) return;
+    if (!config || inputDisabled || !sessionsLoaded || !projectsLoaded || wizardChecked.current) return;
     // Once per load. Without the guard the wizard would reopen the moment an
     // attendee closed their last terminal, which is precisely when they are
     // least in the mood for it.
@@ -288,7 +333,7 @@ export default function App() {
         }
       })
       .catch(() => { if (config.onboarding_wizard.enabled && !session && !projectInventoryRef.current?.active && !dismissed) setWizardOpen(true); });
-  }, [config, sessionsLoaded, projectsLoaded, session, wizardDismissalKey]);
+  }, [config, inputDisabled, sessionsLoaded, projectsLoaded, session, wizardDismissalKey]);
 
   useEffect(() => {
     if (config?.help) setHelpRaised(config.help.raised);
@@ -297,6 +342,7 @@ export default function App() {
   useEffect(
     () =>
       onAppEvent((event) => {
+        if (event.t === "workshop_closing") notifyWorkshopClosing();
         if (event.t === "connection_lost") {
           setConnectionLost(true);
           reportAttendeeError("websocket_lost", event.reason);
@@ -325,7 +371,7 @@ export default function App() {
     conflictRetried = false,
     signal?: AbortSignal
   ): Promise<SessionInfo | null> {
-    if (signal?.aborted) return null;
+    if (signal?.aborted || inputDisabled) return null;
     setLaunching(agentId);
     setError("");
     try {
@@ -336,6 +382,7 @@ export default function App() {
       return created;
     } catch (e) {
       if (signal?.aborted) return null;
+      if (e instanceof ApiError && isWorkshopClosingDetail(e.detail)) return null;
       const conflict = sessionConflictFrom(e);
       if (conflict) {
         try {
@@ -400,6 +447,7 @@ export default function App() {
       location.reload();
       return;
     }
+    if (inputDisabled) return;
     setRecovering(true);
     try {
       const { recovered } = await api.recover();
@@ -655,6 +703,7 @@ export default function App() {
   }
 
   function openCertificate() {
+    if (inputDisabled) return;
     if (!certName && config) {
       // Lab identities are generic — prefill a readable guess, let them fix it.
       const local = config.user.email.split("@")[0].replace(/[._+-]+/g, " ").trim();
@@ -664,11 +713,16 @@ export default function App() {
   }
 
   async function downloadCertificate() {
+    if (inputDisabled) return;
     const name = certName.trim();
     if (!name) return;
     setCertBusy(true);
     try {
       const resp = await fetch(`/api/certificate?name=${encodeURIComponent(name)}`);
+      if (resp.status === 409 && isWorkshopClosingDetail((await resp.clone().json()).detail)) {
+        notifyWorkshopClosing();
+        return;
+      }
       if (!resp.ok) throw new Error("Certificate generation failed — try again");
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
@@ -784,14 +838,15 @@ export default function App() {
             </a>
           )}
           {/* 3. Actions, then the promoted CTA at the far right */}
-          <button className="operator-toggle" onClick={() => setPreferencesOpen(true)} aria-label="Agent preferences" title="Agent preferences — change how your agent helps">
+          <button className="operator-toggle" disabled={inputDisabled} onClick={() => setPreferencesOpen(true)} aria-label="Agent preferences" title="Agent preferences — change how your agent helps">
             <Settings2 size={16} aria-hidden="true" /><span className="nav-label">Agent preferences</span>
           </button>
-          <button className="operator-toggle" onClick={openCertificate} aria-label="Certificate" title="Download your certificate">
+          <button className="operator-toggle" disabled={inputDisabled} onClick={openCertificate} aria-label="Certificate" title="Download your certificate">
             <Award size={16} aria-hidden="true" />
             <span className="nav-label">Certificate</span>
           </button>
           <RaiseHandButton
+            disabled={inputDisabled}
             initial={config?.help ?? null}
             raised={helpRaised}
             onRaisedChange={setHelpRaised}
@@ -823,19 +878,25 @@ export default function App() {
       </header>
 
       <BannerBar initial={config?.broadcast ?? null} />
-      {preferencesOpen && <PreferencesDialog onClose={() => setPreferencesOpen(false)} />}
+      {workshopState && workshopState !== "open" && (
+        <div className="banner banner-info" role="status" aria-live="polite">
+          <span>{workshopNotice(workshopState)}</span>
+        </div>
+      )}
+      {preferencesOpen && !inputDisabled && <PreferencesDialog onClose={() => setPreferencesOpen(false)} />}
       {/* The tab rule. Above the other banners because a stale sign-in is the
           cause of most of what they warn about. */}
-      <SignInNotice
+      {!inputDisabled && <SignInNotice
         omnigentEnabled={!!config?.omnigent_remote.enabled}
         obo={config?.obo}
         onReload={() => location.reload()}
-      />
+      />}
       <ToastHost
         onOpenHelp={() => setHelpChatOpen(true)}
         helpOpen={helpChatOpen}
       />
       <HelpChatPanel
+        readOnly={inputDisabled}
         open={helpChatOpen}
         onClose={() => setHelpChatOpen(false)}
         unread={helpUnread}
@@ -843,7 +904,7 @@ export default function App() {
         raised={helpRaised}
         onRaisedChange={setHelpRaised}
       />
-      {connectionLost && (
+      {connectionLost && !inputDisabled && (
         <div className="banner banner-warning">
           <span>
             Connection to workshop updates was lost. Reload the page to reconnect.
@@ -876,7 +937,7 @@ export default function App() {
           </span>
         </div>
       )}
-      {error && (
+      {error && (workshopState === null || !inputDisabled) && (
         <div className="banner banner-warning">
           {/* A harness code is not a message and runner logs are not reachable
               from here. Show what happened and the one button that fixes it. */}
@@ -900,7 +961,7 @@ export default function App() {
         <OperatorPanel />
       ) : (
         <div className="main">
-          <div className="work-area">
+          <fieldset className="work-area workshop-inputs" disabled={inputDisabled} aria-label="Workshop activities">
             <ProjectBar inventory={projectInventory} session={session} loading={!projectsLoaded} loadError={projectLoadError}
               onRefresh={refreshProjects} onSelect={selectBuild} />
             {session && view === "agent" && (
@@ -994,15 +1055,17 @@ export default function App() {
                   key={session.id}
                   sessionId={session.id}
                   active={view === "agent"}
+                  readOnly={inputDisabled}
                   onExit={finishSession}
                   onGatewayLimit={handleGatewayLimit}
                 />
               )}
             </div>
-          </div>
+          </fieldset>
 
           {showNuggets && (
             <NuggetsPane
+              inputDisabled={inputDisabled}
               collapsed={nuggetsCollapsed}
               onToggle={() => setNuggetsCollapsed((c) => !c)}
               onCertificate={openCertificate}
@@ -1012,7 +1075,7 @@ export default function App() {
         </div>
       )}
 
-      {wizardOpen && (
+      {wizardOpen && !inputDisabled && (
         <Wizard
           agents={agents}
           launching={launching}
@@ -1024,7 +1087,7 @@ export default function App() {
         />
       )}
 
-      {pendingSwitch && session && (
+      {pendingSwitch && session && !inputDisabled && (
         <AgentSwitchDialog
           currentLabel={session.label}
           requestedLabel={agentLabel(pendingSwitch.agentId)}
@@ -1038,7 +1101,7 @@ export default function App() {
         />
       )}
 
-      {certOpen && (
+      {certOpen && !inputDisabled && (
         <div className="modal-backdrop" onClick={() => setCertOpen(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h2>

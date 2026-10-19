@@ -8,6 +8,14 @@ on:
 permissions:
   contents: write
 
+env:
+  UV_DEFAULT_INDEX: "https://pypi.org/simple"
+  UV_INDEX_URL: "https://pypi.org/simple"
+  UV_EXTRA_INDEX_URL: ""
+  PIP_INDEX_URL: "https://pypi.org/simple"
+  PIP_EXTRA_INDEX_URL: ""
+  NPM_CONFIG_REGISTRY: "https://registry.npmjs.org/"
+
 jobs:
   release:
     name: build-test-publish
@@ -32,6 +40,7 @@ jobs:
         run: test "$(git rev-list -n 1 "${GITHUB_REF_NAME}")" = "${GITHUB_SHA}"
       - name: Validate uv lock and source-deployment exports
         run: |
+          uv run --frozen --no-group release python dependency_sources.py
           uv lock --check
           uv export --frozen --no-dev --no-group release --no-hashes --no-emit-project --output-file requirements.txt
           uv export --frozen --no-group release --no-hashes --no-emit-project --output-file requirements-dev.txt

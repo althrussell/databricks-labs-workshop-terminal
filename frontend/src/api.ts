@@ -1,3 +1,5 @@
+import { isWorkshopClosingDetail, notifyWorkshopClosing, type WorkshopStatus } from "./workshopLifecycle";
+
 export interface ShellLink {
   label: string;
   url: string;
@@ -128,6 +130,7 @@ export interface CredentialStatus {
 }
 
 export interface AppConfig {
+  workshop: WorkshopStatus;
   user: { email: string; is_admin: boolean };
   branding: {
     brand_name: string;
@@ -399,6 +402,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       /* non-JSON error body */
     }
+    if (resp.status === 409 && isWorkshopClosingDetail(detail)) notifyWorkshopClosing();
     throw new ApiError(resp.status, detail);
   }
   return resp.json();
@@ -408,6 +412,7 @@ export const api = {
   retryAgentSetup: (agentId: string) =>
     request<{ retrying: boolean }>(`/api/agents/${encodeURIComponent(agentId)}/retry-setup`, { method: "POST" }),
   config: () => request<AppConfig>("/api/config"),
+  workshopStatus: () => request<WorkshopStatus>("/api/workshop-status"),
   setupStatus: () =>
     request<{
       steps: Record<string, { status: string; error: string | null }>;

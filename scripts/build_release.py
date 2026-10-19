@@ -24,6 +24,9 @@ from typing import Iterable
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from dependency_sources import validate_release_inputs
+
 RUNTIME_ROOTS = ("server", "static", "content", "assets")
 REQUIRED_RUNTIME_FILES = frozenset(
     {
@@ -286,6 +289,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+    validate_release_inputs(ROOT)
     validate_build_host()
     if not args.allow_dirty and not checkout_is_clean(ROOT):
         raise ReleaseBuildError("Refusing to package a dirty checkout")

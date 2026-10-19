@@ -72,6 +72,8 @@ def test_cli_installs_isolated_hashed_wheels_from_public_pypi(cli_install, monke
     assert install.status()["steps"]["agentbricks"]["status"] == "complete"
     command, kwargs = next(row for row in commands if row[0][1:3] == ["pip", "sync"])
     assert "--require-hashes" in command
+    assert command[command.index("--default-index") + 1] == "https://pypi.org/simple"
+    assert kwargs["env"]["UV_NO_CONFIG"] == "true"
     assert command[command.index("--only-binary") + 1] == ":all:"
     assert str(prefix / "agentbricks-venv/bin/python") in command
     assert kwargs["env"]["UV_PYTHON_DOWNLOADS"] == "never"

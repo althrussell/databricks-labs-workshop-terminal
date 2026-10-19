@@ -34,17 +34,20 @@ Requires: databricks-sdk.
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import io
 import json
 import os
 import re
 import sys
 import time
+from pathlib import Path
 from urllib.parse import urlparse
 
 import requests
 import yaml
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.source_upload import read_upload_sources
 
 EXCLUDE = ["node_modules*", ".venv*", "__pycache__*", ".git*", "frontend/node_modules*", "*.pyc", "uploads*"]
 REPO_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
@@ -420,6 +423,8 @@ def main(argv=None, *, environ=None) -> int:
         ))
         return 0
 
+    files = read_upload_sources(Path(REPO_ROOT), exclude=EXCLUDE)
+
     from databricks.sdk import WorkspaceClient
     from databricks.sdk.service.apps import App, AppDeployment
     from databricks.sdk.service.workspace import ImportFormat
@@ -452,25 +457,14 @@ def main(argv=None, *, environ=None) -> int:
     _log("import", f"uploading source to {target}")
     n_files = 0
     uploaded_app_yaml = None
-    for root, dirs, files in os.walk(REPO_ROOT):
-        rel_root = os.path.relpath(root, REPO_ROOT)
-        dirs[:] = [
-            d for d in dirs
-            if not any(fnmatch.fnmatch(os.path.normpath(os.path.join(rel_root, d)), p) for p in EXCLUDE)
-        ]
-        for name in files:
-            rel = os.path.normpath(os.path.join(rel_root, name))
-            if any(fnmatch.fnmatch(rel, p) for p in EXCLUDE):
-                continue
-            with open(os.path.join(root, name), "rb") as f:
-                content = f.read()
-            if rel == "app.yaml":
-                content = _patch_app_yaml(content, settings)
-                uploaded_app_yaml = content
-            ws_path = f"{target}/{rel}".replace("\\", "/")
-            w.workspace.mkdirs(os.path.dirname(ws_path))
-            w.workspace.upload(ws_path, io.BytesIO(content), format=ImportFormat.AUTO, overwrite=True)
-            n_files += 1
+    for rel, content in files.items():
+        if rel == "app.yaml":
+            content = _patch_app_yaml(content, settings)
+            uploaded_app_yaml = content
+        ws_path = f"{target}/{rel}"
+        w.workspace.mkdirs(os.path.dirname(ws_path))
+        w.workspace.upload(ws_path, io.BytesIO(content), format=ImportFormat.AUTO, overwrite=True)
+        n_files += 1
     _log("import", f"uploaded {n_files} files")
 
     # --- 3. create app, declaring OBO scopes on the app resource ---

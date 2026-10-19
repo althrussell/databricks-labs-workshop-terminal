@@ -6,7 +6,6 @@ gateway models, a live coding harness, or a generated Databricks app.
 
 import asyncio
 import hashlib
-import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -74,13 +73,15 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
         payload = await request.json() if request.method == "POST" else {}
         requests.append((path, request.method, payload))
         if path == "/api/config":
-            body = {"user": {"email": user.email, "is_admin": False},
+            body = {"workshop": {"state": "open", "accepting_input": True}, "user": {"email": user.email, "is_admin": False},
                 "branding": {"brand_name": "Databricks", "brand_logo_url": "", "event_name": "Workshop UI qualification", "brand_primary_color": "", "cobranded": False},
                 "workspace_url": "https://workspace.invalid", "shell": {"links": [], "workspace_links": [], "features": {}},
                 "phase": "welcome", "broadcast": None, "limits": {"max_sessions_per_user": 1},
                 "credential": {"configured": True, "healthy": True, "degraded": False},
                 "obo": {"enabled": False, "present": True, "fresh": True}, "help": {"raised": False},
                 "omnigent_remote": {"enabled": False, "url": ""}, "onboarding_wizard": {"enabled": switches["enabled"]}}
+        elif path == "/api/workshop-status":
+            body = {"state": "open", "accepting_input": True}
         elif path == "/api/agents":
             body = {"agents": [{"id": "claude", "label": "Claude Code", "description": "Simulated ready harness", "icon": "terminal", "order": 1, "ready": True, "needs_credentials": False},
                 {"id": "codex", "label": "Codex", "description": "Simulated installing harness", "icon": "terminal", "order": 2, "ready": False, "needs_credentials": False}]}

@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import yaml
+from dependency_sources import validate_release_inputs, validate_source_files
 
 from evals.generated_apps.adapters.simulated_control_tower import (
     bind_created_app, deployment_path_allowed, plan_simulation,
@@ -58,6 +59,7 @@ def validate_source_bundle(files):
     if not {"app.yaml", "requirements.txt", "server/main.py", "static/index.html", "content/default_pack.json",
             "assets/artifacts/manifest.json"} <= files.keys():
         raise ValueError("Runtime source bundle is incomplete")
+    validate_source_files(files)
 
 
 def source_manifest(files: dict[str, bytes]) -> dict:
@@ -441,6 +443,7 @@ def deploy(plan: dict, files: dict[str, bytes], receipt_path: str, *, client, re
     from databricks.sdk.service.apps import App, AppDeployment
     from databricks.sdk.service.iam import ComplexValue
 
+    files = dict(files)
     validate_source_bundle(files)
     resumed_app = validate_resume_receipt(plan, resume_receipt) if resume_receipt is not None else None
     receipt = {"schema_version": 1, "scope": "simulated_control_tower", "control_tower_requests": 0,
@@ -558,6 +561,8 @@ def main(argv=None):
         parser.error("Output must differ from the simulation input")
     if Path(args.output).exists() or Path(args.output).is_symlink():
         parser.error("A fresh deployment requires a new receipt path; preserve earlier cleanup ownership")
+    if args.execute:
+        validate_release_inputs(ROOT, require_clean=True)
     previous = json.loads(Path(args.resume_receipt).read_text()) if args.resume_receipt else None
     resume_start = None
     if previous is not None:
@@ -569,6 +574,10 @@ def main(argv=None):
         except (KeyError, TypeError, ValueError) as error:
             parser.error("Resume requires valid, unexpired original deployment bounds")
     files = runtime_sources(ROOT)
+    if args.execute:
+        # Detect tracked/untracked edits during collection; provisioning uses
+        # these checked bytes even if the local tree changes afterwards.
+        validate_release_inputs(ROOT, require_clean=True)
     spec = json.loads(Path(args.spec).read_text())
     raw_manifest = source_manifest(files)
     spec["release"]["source_digest"] = raw_manifest["digest"]
