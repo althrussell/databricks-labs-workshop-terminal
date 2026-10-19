@@ -18,7 +18,23 @@ env:
   NPM_CONFIG_REGISTRY: "https://registry.npmjs.org/"
 
 jobs:
+  public-sources:
+    name: public-dependency-sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.0"
+      - name: Validate sources before project dependency resolution
+        run: python scripts/check_dependency_sources.py
+
   backend:
+    needs: public-sources
     name: pytest
     runs-on: ubuntu-latest
     strategy:
@@ -34,7 +50,6 @@ jobs:
           version: "0.13.0"
       - name: Validate uv lock and source-deployment exports
         run: |
-          uv run --frozen --no-group release python dependency_sources.py
           uv lock --check
           uv export --frozen --no-dev --no-group release --no-hashes --no-emit-project --output-file requirements.txt
           uv export --frozen --no-group release --no-hashes --no-emit-project --output-file requirements-dev.txt
@@ -45,6 +60,7 @@ jobs:
         run: uv run --frozen --no-group release python -m pytest tests/ -q
 
   quality-toolchain:
+    needs: public-sources
     name: latest-evaluator-api-contract
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -60,6 +76,7 @@ jobs:
         run: uv run --frozen --only-group quality python scripts/check_quality_toolchain.py
 
   frontend:
+    needs: public-sources
     name: test-and-build
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -89,6 +106,7 @@ jobs:
           test -z "$(git status --porcelain -- static)"
 
   agentbricks-toolchain:
+    needs: public-sources
     name: agentbricks-cli-contract
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -104,6 +122,7 @@ jobs:
         run: uv run --frozen --no-group release python scripts/check_agentbricks_toolchain.py --bootstrap
 
   impeccable-delivery:
+    needs: public-sources
     name: impeccable-supported-installer
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -122,6 +141,7 @@ jobs:
         run: uv run --frozen --no-group release python scripts/refresh_impeccable.py --check
 
   apx-toolchain:
+    needs: public-sources
     name: apx-ubuntu22-scaffold-build
     runs-on: ubuntu-22.04
     timeout-minutes: 15
@@ -139,6 +159,7 @@ jobs:
           uv run --frozen --no-group release python scripts/check_apx_toolchain.py --bootstrap
 
   package:
+    needs: public-sources
     name: packaged-runtime
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -174,6 +195,7 @@ jobs:
           retention-days: 7
 
   wizard-browser:
+    needs: public-sources
     name: rendered-wizard
     runs-on: ubuntu-latest
     timeout-minutes: 10

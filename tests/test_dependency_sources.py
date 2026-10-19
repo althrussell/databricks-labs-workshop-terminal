@@ -166,11 +166,12 @@ def test_working_tree_source_validation_does_not_rewrite_locks_or_configs():
 
 def test_ci_release_and_both_app_manifests_select_public_registries():
     import yaml
-    for path in (".github/workflows/ci.yml", ".github/workflows/release.yml"):
+    for path in (".github/workflows/ci.yml", ".github/workflows/release.yml",
+                 ".github/workflows/skills-freshness.yml"):
         config = yaml.safe_load((ROOT / path).read_text())
         assert config["env"]["UV_DEFAULT_INDEX"] == "https://pypi.org/simple"
         assert config["env"]["NPM_CONFIG_REGISTRY"] == "https://registry.npmjs.org/"
-        assert "python dependency_sources.py" in (ROOT / path).read_text()
+        assert "python scripts/check_dependency_sources.py" in (ROOT / path).read_text()
     for path in ("app.yaml", "deploy/omnigent-app/app.yaml"):
         env = {entry["name"]: entry.get("value") for entry in yaml.safe_load((ROOT / path).read_text())["env"]}
         assert env["UV_DEFAULT_INDEX"] == env["PIP_INDEX_URL"] == "https://pypi.org/simple"
