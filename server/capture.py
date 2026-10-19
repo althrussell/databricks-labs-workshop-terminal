@@ -40,7 +40,7 @@ def configure(emitter, *, client=None) -> None:
     startup stays visible and retries on the existing collection/request path;
     it never falls back to accepting production capture in memory.
     """
-    from . import attendee_names, attendee_state, discovery, help as help_module, identity, insight_summary, stats
+    from . import attendee_names, attendee_state, discovery, help as help_module, identity, insight_summary, model_policy, stats
     from .credentials import workspace_client
     from .users import user_manager
 
@@ -58,6 +58,7 @@ def configure(emitter, *, client=None) -> None:
         if journal is None:
             journal = CaptureJournal(WorkspaceCaptureStorage(sdk, workspace_path(binding)), binding, {})
         emitter.configure_journal(journal)
+        model_policy.store.configure_capture(journal)
         help_module.configure_capture(journal)  # Help is independent of content consent.
         user_manager.configure_capture(journal, binding["owner"])
         attendee_state.configure_capture(journal)

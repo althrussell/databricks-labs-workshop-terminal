@@ -125,6 +125,24 @@ investigated. Passing local tests, a closed WT screen or preserved individual
 records cannot be promoted into a claim of a complete archive or authorized
 resource deletion.
 
+## Durable model-policy correction — live acceptance pending
+
+The supported +200 App stop/start retained attendee goal, preferences and Help
+history, but the replacement container lost its local model-policy file and
+correctly held Claude while CT still had a successful delivery receipt. The
+current correction retains the complete canonical policy in the existing
+source-bound journal, compares revisions atomically, rejects unbound local-cache
+imports and treats container cache writes as optional. Closing and sealed sources
+restore the retained policy read-only and refuse further policy applies.
+
+The correction passed **383 targeted tests** across model policy, retained state,
+startup and closeout. Independent source/test review was **clean**, with **50
+separate focused passes** and additional offline fault/race probes. Fresh
+exact-source CI, package verification and positive restart/closeout/teardown
+acceptance are **pending**. The deployed package recorded above remains from
+`768c8772748d9b29b837d0df55f5ac2416caf036`; it does not contain this correction.
+Earlier artifacts and test evidence retain their recorded provenance.
+
 ## Private evidence references
 
 These are evidence references, not instructions to publish attendee records or
