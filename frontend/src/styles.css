@@ -1257,6 +1257,8 @@ body {
 .terminal-container {
   position: absolute;
   inset: 10px;
+  /* Xterm retains its old pixel width until its resize observer runs. */
+  overflow: hidden;
 }
 
 .terminal-container .xterm-viewport {
