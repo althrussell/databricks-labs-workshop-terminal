@@ -1,178 +1,110 @@
 # WT-03 — closing UX and release qualification
 
-**Checkpoint: 19 October 2026. Live acceptance remains incomplete.**
+**Implementation and live acceptance are complete at tested source `a7480711ab15fcab176432b49ef1a13a4c56072a`. All live gates below pass. Final delivery-commit CI, review and merge status are recorded on [PR107](https://github.com/althrussell/databricks-labs-workshop-terminal/pull/107).**
 
-WT-03 is [PR107](https://github.com/althrussell/databricks-labs-workshop-terminal/pull/107),
-branch `codex/closeout-contract-qualification`, and now targets `main`.
-Its prerequisite [PR106](https://github.com/althrussell/databricks-labs-workshop-terminal/pull/106)
-merged on 19 October 2026 as
-`f3c664d0013e3616f095b2a0af0343cbbd2b4735`, after clean independent review,
-114 exact-source focused passes and green CI. The operator explicitly authorized
-merging PR107 after all testing, final review and CI gates pass. That authorization
-does not mark the pending gates below complete. Delivery order remains
-**WT-03 → CT-08** in the
-[joint implementation plan](https://github.com/althrussell/databricks-labs-control-tower/blob/main/docs/event-readiness/2026-11-17-18/implementation-plan.md).
+WT-03 is [PR107](https://github.com/althrussell/databricks-labs-workshop-terminal/pull/107), branch `codex/closeout-contract-qualification`, targeting `main`. Its prerequisite [PR106](https://github.com/althrussell/databricks-labs-workshop-terminal/pull/106) merged as `f3c664d0013e3616f095b2a0af0343cbbd2b4735`. Delivery order remains **WT-03 → CT-08** in the [joint implementation plan](https://github.com/althrussell/databricks-labs-control-tower/blob/main/docs/event-readiness/2026-11-17-18/implementation-plan.md).
 
-## Delivered boundary
+## Release behavior and boundaries
 
-| Surface | Behavior |
+| Area | Result |
 | --- | --- |
-| Attendee lifecycle | Authenticated, read-only `/api/workshop-status` and config status expose only `open`, `closing`, `closed` and input availability. Reading never advances closeout. The existing durable barrier remains authoritative. |
-| Closing and closed screen | Disable new attendee activity, launches, terminal input, preferences, project changes, certificates and Help submission. Resources and Help history remain readable. Closing sockets stop reconnecting. Failed or stale reads cannot reopen input. |
-| Attendee copy | Plain workshop closing/ended wording. No collection, account-team, insight-extraction or follow-up notices are added. Operator capture diagnostics remain in the admin interface. |
-| Saved product state | Full revisioned goals and preferences use the existing source-bound journal; HOME is a disposable cache. Remote commit owns acceptance and concurrent revision checks. Optional discovery/instruction/cache failures cannot reject an accepted save, and delayed discovery cannot overwrite a newer accepted goal. New sources never import unbound local state. |
-| Workshop documentation | The default **AI Docs** destination is `https://naveenb83.github.io/ai-dev-day/`. Intentional deployment/live content-pack overrides remain authoritative. |
-| Public dependency inputs | Check recognized root/paired Python lock/export/project sources, npm resolution/project sources, toolchain artifact publisher/pins and deployed registry settings. Nested requirement/constraint inputs are checked recursively. Unknown sources fail without exposing secret-bearing URLs. |
-| Uploads | Dev, CT simulation, generated-app and CT-compatible deployment/observer/mirror paths validate a clean public source snapshot before client initialization. The bytes validated are the bytes uploaded. Read-only qualification, dry runs and cleanup remain usable. |
-| Runtime/build | Existing CI, release and runtime installers use public PyPI/npm. Laptop managed-proxy transport stays local. Existing frozen/offline PEX assembly, hash/integrity checks, paired-app topology and operator-controlled deployment remain. |
+| Closing and closed workshop | Authenticated, read-only lifecycle status follows the existing durable barrier. New launches, terminal input, preference/project changes, certificates and Help submissions stop; resources and Help history remain readable. Stale/failed reads cannot reopen input, and closing sockets stop reconnecting. |
+| Attendee wording | Plain workshop-closing/ended messages. No collection, account-team, insight-extraction or follow-up notices are added. Operator capture diagnostics remain administrative. |
+| Goals and preferences | Full revisioned product documents are retained in the existing source-bound journal. The primary remote commit owns acceptance and concurrent revision checks; local HOME is a disposable cache. Optional discovery, instruction and cache failures cannot reject an accepted save or replace a newer goal. |
+| Governed model policy | The full canonical CT policy is retained in that same journal. A replacement container restores its policy without depending on an unbound local file or a new CT delivery. Source/owner checks, atomic revisions and fail-closed primary storage apply; closed sources restore read-only and refuse further applies. |
+| Workshop documentation | Default **AI Docs** points to `https://naveenb83.github.io/ai-dev-day/`. Intentional deployment/content-pack overrides remain authoritative. |
+| Dependency and upload inputs | CI, release and skills dependency resolution waits for a public-only source preflight. Python/npm sources, recursive requirement/constraint inputs, root/paired manifests and toolchain inputs are checked. Deployments validate and upload the same clean source snapshot before client initialization. Laptop managed-proxy transport stays local; GitHub and deployment inputs use public repositories. |
 
-No new capture granularity, orchestration infrastructure, Databricks Job, worker, principal,
-database, notification channel, fleet-limit expansion or build/deploy system is
-introduced. Standard per-seat paired resources continue through normal CT
-provisioning. CT owns final Lakebase verification and deletion authorization.
-WT closing/closed status is **not** a CT preservation receipt. Existing source
-epochs are never reopened. An incomplete final collection remains held under the
-existing protocol.
+This release retains the existing paired-app topology, frozen/offline PEX assembly and operator-controlled deployment. It introduces no capture granularity change, Databricks Job, new worker/principal/database, notification channel, fleet-limit expansion or new build/deploy system. CT continues to own final Lakebase verification and deletion authorization. A closed WT screen is not a preservation receipt; incomplete epochs remain held.
 
-## Recorded implementation and qualification
+## Release identity and validation
 
-The corrected runtime source is
-`768c8772748d9b29b837d0df55f5ac2416caf036`. A real App restart exposed that the
-former goal/preference files depended on disposable HOME storage. The correction
-retains full revisioned product documents in the existing source-bound Workspace
-capture journal, with owner checks, atomic revision checks, fail-closed primary
-storage and guarded optional discovery projection. The corrected package is
-deployed in a fresh +200 checkpoint; its acceptance remains pending below.
+The final qualification package must contain the durable model-policy correction. The earlier `768c877` package below does not contain it and supplies only its explicitly recorded historical evidence.
 
-| Check | Recorded evidence and scope |
+| Identity or check | Recorded evidence |
 | --- | --- |
-| Complete corrected-source Python 3.11 run | `/private/tmp/wt03-final-python311-suite.log`: **3,694 passed, 69 skipped, 9 sandbox-blocked failures**. `/private/tmp/wt03-final-sandbox-recheck.log`: unrestricted recheck **81 passed, 2 skipped**, covering all nine blocked cases. Combined unique result: **3,703 passed, 69 skipped**. This is combined regression evidence, not one all-passing process; optional skips are not executed acceptance evidence. |
-| Frontend and rendered UI | **120 frontend tests passed**; TypeScript/Vite build and rendered/browser checks passed at the recorded corrected source. Tracked HTML references the current JavaScript/CSS assets. Closing/closed input barriers, readable Help/resources, default AI Docs, retained-source reload, transient refresh failure, startup Reload and mobile/desktop layout have local/rendered evidence. |
-| Final independent retained-state review | **Clean**, with **61 focused passes**. Reviewed primary retained documents, revision/owner/source boundaries, optional projection ordering and instruction/cache acceptance semantics. |
-| Final independent UI/API review | **Clean** at exact `768c877` versus `origin/main`, with **31 focused passes** from `tests/test_workshop_lifecycle.py` and `tests/test_release_package_qualification.py`. Reviewed full App lifecycle/handlers, Terminal, Help, Raise Hand, tips, status/middleware, default/custom docs and generated asset references. Fresh independent frontend rebuilding was not repeated because this review worktree has no `node_modules`; prior build/rendered evidence supplies that gate. |
-| Corrected-source CI | All nine jobs passed at `768c877` in [push run 39208900654](https://github.com/althrussell/databricks-labs-workshop-terminal/actions/runs/39208900654) and [PR run 39208906119](https://github.com/althrussell/databricks-labs-workshop-terminal/actions/runs/39208906119). Any subsequent change needs its own current-head checks. |
-| CI sourceguard ordering | **Implemented; current-head CI pending.** CI, release and skills checks gate all 11 dependency-resolving jobs on a public-only bootstrap independent of project/config/lock inputs. Python/npm fetches cannot race ahead of source validation. Poisoned-input ordering/redaction and public-input tests pass within 132 targeted guard tests. The prior nine-job CI runs apply to the earlier source; this correction adds the public-source preflight check. |
-| Exact Linux release package | Existing Linux x86_64 / CPython 3.11 PEX build and offline smoke passed. Independent comparison matched all **522 runtime files** against exact Git blobs, plus source/embedded/release manifests. Package starts without network dependency installation; recorded cold startup was **4.639 seconds** against the 30-second budget. |
-| Active deployment/runtime proof | Read-only proof matched all **522 runtime files**, CT bootstrap, owner, run/unit, release and artifact pins. Scope is **active Apps deployment source plus pinned UC package bytes**, with no process-memory inspection claim. |
-| Positive CT provisioning | Normal qualification CT created the fresh +200-owned run with **zero blocking preflight failures** and deployed the exact corrected package. This proves provisioning/source pins, not completed attendee/restart/seal/teardown acceptance. |
-| Global archive baseline | Fresh read-only baseline retained **9,699 rows across all 17 protected tables**, including held +199 evidence. One historical stream lacks a deployment-registry row; its full existing inventory stays protected and the gap is reported. Final post-deletion comparison remains pending. |
-| Independent private verification tooling | **22 positive-verifier controls**, **67 global archive-comparator mutation controls** and **19 restart/product-helper controls** passed offline; independent review was clean. These controls and baseline preparation do not substitute for actual positive live receipts. |
-
-## Exact corrected artifact and deployment identities
-
-| Identity | Value |
-| --- | --- |
-| WT source | `768c8772748d9b29b837d0df55f5ac2416caf036` |
+| Tested implementation and qualification package source | `a7480711ab15fcab176432b49ef1a13a4c56072a` |
 | CT/bootstrap source | `c63ee8c0ea003607845955a2667f0179f90115cf` |
-| PEX SHA-256 | `a84fb6ba582215991f9afebb85dddd390a9e42aae969ee9bb3594e27125a54f5` |
-| PEX size | **39,359,439 bytes** |
-| Release-manifest SHA-256 | `e0f2997c81078a5a62792f6a5718ec852d068469b27b36f7d06e3fc91d314fc4` |
-| Logical runtime SHA-256 | `5643c655ca2fe6e1f6bae37c283baccb53bc40e24fba47ff84b3207669f1bd50` |
-| Independently verified runtime files | **522** |
-| Positive run | `7b368d11-66ee-40e2-bf93-eb547d4595b7` |
-| Positive unit | `f9acf97c-7452-4499-aa49-e6cfaf3619f0` |
-| Positive workspace | `7474660014346237` |
-| Attendee owner | `labuser+200@awsbricks.com` |
-| Active deployment at recorded readback | `01f1cb87ab6514058ba536fb238192fb` — `SUCCEEDED`, compute `ACTIVE` |
-| Global baseline file SHA-256 | `9c8d28345a42b57594174cf701e06770ce7afa09625f4966fde399bf595cf054` |
-| Global baseline canonical receipt SHA-256 | `7e9c9d056b4a1927de35ac99079b973439b3502c75096f0386721e9ea0317923` |
+| PEX SHA-256 / size | `f7b17b8058a2ac3c67192e74d8580d716362c3fec0fb9b7b9739fdb802cff6a2` / `39360305` bytes |
+| Release-manifest / logical-runtime SHA-256 | `2a6896266523cc2b983e562a83f77a35092907dbc464a70371fc365dc8a196e4` / `b2039e6de3b95cf4191837c827d53d2ad440c41b14e80c8f45285ad9b019fe97` |
+| Runtime files independently matched to exact Git blobs | `522` |
+| Selected run / unit / workspace | `20039a12-e879-4f9f-8c6c-2778ea3ce702` / `fd5bd3b9-f923-4b96-b70c-d6be03c854a7` / `7474652329582409` |
+| Final Python 3.11 regression process | **PASS** — complete native current-source process: **3,726 passed, 69 skipped, one existing Starlette/httpx warning**, 314.74 seconds. The original private process log is retained. Skips are not executed acceptance evidence. |
+| Frontend/build evidence | **PASS within recorded scope** — exact `a748071` CI `test-and-build` and `rendered-wizard` jobs passed in both runs. UI/static/lifecycle handler files are unchanged since independently reviewed `768c877`; its 120 frontend passes, TypeScript/Vite build and rendered desktop/mobile lifecycle evidence retain that source scope. Exact current-head package was built twice reproducibly and passed clean Linux offline smoke; recorded cold startup **4.079 seconds** against **30 seconds**, without network dependency installation. This build evidence is not fresh live attendee acceptance. |
+| Independent final review | **CLEAN** at exact `a748071` versus independently confirmed remote main `f3c664d0013e3616f095b2a0af0343cbbd2b4735`: production/API/lifecycle/persistence integration and dependency/build/upload surfaces; no actionable new findings. Current focused integration recheck **105 passed**; independent dependency/build/upload recheck **207 passed**. Prior independent unchanged-UI/API review, durable-policy review (**50 separate focused passes**) and fixture review (**123 separate passes**) retain their explicit scopes. No cloud/browser acceptance or process-memory claim is supplied by source review. |
+| Implementation-source CI | **PASS** — all **10 jobs** in both [push run 39223678085](https://github.com/althrussell/databricks-labs-workshop-terminal/actions/runs/39223678085) and [PR run 39223682374](https://github.com/althrussell/databricks-labs-workshop-terminal/actions/runs/39223682374), each reporting head `a7480711ab15fcab176432b49ef1a13a4c56072a`. Includes Python 3.11/3.12, public-source preflight, frontend/rendered checks and packaged runtime. The final docs-only delivery revision and checks are recorded on PR107; the tested implementation/package source remains exact `a748071`. |
 
-The exact package/runtime proof is recorded privately in
-`/private/tmp/wt03-runtime-positive-proof.json`. A normal App start can legitimately
-create a new platform deployment/snapshot ID; subsequent receipts must record
-that identity while retaining the application/source/artifact/owner bindings.
-These identities apply to the corrected `768c877` runtime. Earlier +199 runtime
-and earlier `66b4850` helper/build evidence retain their separate provenance and
-must not be relabeled as a successful positive checkpoint of this runtime.
+The durable-policy implementation at `af14e44e6e5c1c3a2e8a3731f73985c926213928` has 383 targeted passes and a clean independent review with 50 separate focused passes. The subsequent production-dependency fixture corrections have a clean independent review and 123 separate auth/attendee/evaluation passes. Those focused results support the final-head suite, CI and package checks recorded above; none replaces the fresh live gates below.
 
-## +199 interrupted-terminal result — HELD
+## Release and OPEN-state live evidence
 
-The separate run `6ec88d57-75fd-44b0-b8e8-6773d588051a` was restarted while an
-original terminal-lifetime writer was active. Its original journal epoch retained
-**105 accepted insight entries, ACK 105, one discovery record and one Help history
-entry**. The replacement process could not prove durable completion of that
-original writer. Closeout remains **HELD/INCOMPLETE**, with
-`writer_drain_deadline_exceeded` and `writers_not_drained`.
+The [qualification prerelease](https://github.com/althrussell/databricks-labs-workshop-terminal/releases/tag/wt03-qualification-a7480711ab15) points to the tested implementation above. Anonymous public-asset readback matched both pins and sizes; stable latest remained `v2026.10.11.3`. Exact runtime source, CT bootstrap, all 522 Git runtime blobs and pinned UC package bytes matched. Fresh final app metadata also verified **ACTIVE/RUNNING**, unchanged source/configuration and the same active deployment across that readback. This later metadata proof is separate from the retained-data snapshot captured before the attendee UI reopened.
 
-This is negative fail-closed evidence only. It proves neither a complete final
-archive nor ordinary teardown after an active-process interruption. No final
-verified preservation receipt was established. A disappeared process is not a
-completion receipt. Keep the original reservation, source epoch and accepted raw
-records; do not force teardown, delete a reservation, fabricate a receipt, reopen
-an epoch or weaken the protocol to obtain a pass. The global archive baseline
-includes this held evidence. Positive +200 acceptance cannot erase or replace it.
+The actual +200 attendee's full goal and preferences were retained at revision **1** each, together with the original Help history. The supported OPEN restart kept the same canonical model policy at revision **12**, SHA-256 `b4ffbdfa9267b8091ced4d89bf6e1516532a5440d304aae5552401386bbf4996`, and preserved the original product documents, Help and stream prefix. The pre-start canonical audit proved successful atomic completion of the original paired-host writer and one admitted event-socket-message writer, with no failed outcomes or remaining writers. The earlier strict restart attempt remained held when it encountered that extra writer; its failed receipt was preserved. A separate exact audit supplement and guarded normal start supplied the subsequent acceptance evidence. No policy re-save or recorded policy-apply event was needed.
 
-## Positive +200 checkpoint — acceptance pending
+At the recorded **09:31–09:34 browser checkpoint on 19 October 2026**, the operator confirmed the original goal and Help history remained visible after restart and the agent preference still read **Keep it concise**. Actual Claude launched under the retained policy without a CT re-save and replied **WT03 retained policy working**. It initialized `wt03-state-proof` using the default `workshop-init-project` path; the project contained `.git`, and the recorded local proof-file SHA-256 was `3a18c18d058365f46a5adea8fa3dda03a6ce715328d25a8ff719b1045fd00225`. These are actual authenticated attendee/browser observations, rather than app-health inference.
 
-| Gate | Required evidence | Current status |
+The retained-data readback receipt is SHA-256 `58da38a43050152e659101688e86efe1e1e4ed19cf5e4d8973afa5f262a1f48e`; the separate final runtime-metadata receipt is `3372ba27f1aa3e03bac21839bf6a5f52568f7b7d77b65ae2146480467df7e7b3`. Private raw evidence remains outside the public repository. The earlier zero-writer proof applies to its recorded pre-UI snapshot; it is not a claim that no writers existed during later attendee activity.
+
+## Closing and sealed collection checkpoint
+
+Normal CT closeout verified **one source and one epoch, 90 insight entries and one Help entry**, with no missing source or retained issue; final facts and the durable receipt are persisted. The operator observed **CLOSING** with attendee input disabled and Help history still readable, followed at the recorded **09:35 browser checkpoint** by: **This workshop has ended. New input is disabled. You can still view the resources on this page.**
+
+The first independent Lakebase baseline attempt verified the manifest/closeout evidence but correctly held on `stable_baseline_raw_collection_catching_up`: ordinary raw collection had **72 of the sealed 90 entries**. Its failed receipt remains preserved. Normal collection then reached all 90 raw records with exact sequences and digests; the new independent stable baseline verified every source/epoch, manifest, final fact and receipt. Baseline SHA-256: `80277dec14ae6821da02123dd1abf3c83c77df41bae8ecf4b4b2c79c45b1bb15`. The failed 72/90 receipt remains preserved. SEALED restart, ordinary cleanup, global preservation and environment restoration subsequently passed as recorded below.
+
+## SEALED restart and pre-cleanup checkpoint
+
+The same app completed ordinary stop/start in **184.614 seconds**, with all restart invariants verified. The validated retained state matched its canonical pre-restart digest: the sealed operation, manifest/final outputs, original stream, product documents, Help and canonical model policy at revision 12 were preserved. The complete suffix audit recorded no model-policy apply. Actual attendee closed-state acceptance passed after restart.
+
+Fresh independent Lakebase verification against the complete stable baseline retained all source bindings, operations, 90 raw records, 91 closeout entries and final facts, with **zero missing/changed or added immutable rows**. It reported one additional legitimate attendee-stat snapshot without changing any prior row. The normal teardown dry-run had no blocks; the operator submitted the typed-confirmation request with `force=false`. Ordinary cleanup subsequently completed: the run and unit are destroyed, cleanup release was verified at `2026-10-19T09:48:45.846694Z`, both WT and Omnigent Apps return 404, and the account workspace returns 404. The +200 login is available and unassigned; +199 remains held and untouched. The qualification pool reports one free user out of two.
+
+Restart receipt SHA-256: `df28310df716be87d5d539d537ee52afec05e744fc801147383f9a32f15c0d28`; native SEALED acceptance: `330b82c07ec539d0ec350e38f219e27da172f8eadf4b1b1758e7300b4ce9f5e5`; fresh post-restart Lakebase comparison: `8d273da963504ef3dd3b94a92104f8d272c2d9f72c2d5a4a9ebb77e5b664fbb1`.
+
+## Strict selected post-deletion preservation
+
+A fresh independent Lakebase read after ordinary teardown revalidated the same stable baseline: **one source/epoch, 90 insight entries, one Help entry, all 90 ordinary raw records, the sealed manifest, final facts and receipt**. Every immutable inventory comparison had zero missing, changed or added rows. Two legitimate attendee-stat snapshots were added after the original stable baseline, with all prior rows retained. Native resource-absence receipt SHA-256: `91b55b01fa6796ea6ba4853a759c91ba4f840d5dfca98b119a9dcfa955e34381`; strict post-deletion proof: `ce71ff75ea1031279a6e225d6285e2004bf01db1af9d937abde1eb95153f6535`.
+
+This selected-run proof is separate from the global archive comparison and environment-restoration readback.
+
+## Global preservation and protected Labs readback
+
+The final global comparison independently preserves **all 10,358 original immutable rows across 17 protected tables**, with zero missing or changed immutable rows. New selected-run evidence and permitted lifecycle metadata are reported separately; this is not a claim that no new global rows were added. The retained negative case remains held with one operation, one stream and all 105 original raw records. Its original unverified state was not converted into a success receipt.
+
+The canonical JSON digest of the global receipt is `f9f5747d4678552f256ec3c12f4feb835ede6e93dcf04956cc92177b40765cc9`; its physical pretty-JSON file SHA-256 is `a2848425d65bb2c29a5d89d59c2eb281f5392a80a3505b5f66aab4d4eff7164f`. Independent offline receipt/fingerprint/negative-hold revalidation passed. Protected Labs readback confirms the same app identity, deployment, resources, source paths and complete app metadata, ACTIVE/RUNNING with no pending deployment; its receipt SHA-256 is `88dd0cf98bc528f7b98f04fbdc17567eb7e2ccdcca0198b3a3eb7010ff246da0`.
+
+Qualification restoration also passed independently. The existing deployment operation `46f4decd-0d71-4b84-807d-a3741b7028d3` resumed to SUCCEEDED, and all restored runtime diagnostic keys match the pre-test baseline: the same CT source `c63ee8c`, source/configuration/environment/artifact and original identities. Effective live readback returned HTTP 200 with no validation or unreviewed-environment errors. The original configured release selection was restored; normal staging succeeded and verified original manifest `86b28083118b43fe40523fe3df3e434675d660af8ebe869e9e098bd76f70bee2` and original pinned PEX. The final restoration proof has all 11 checks true, SHA-256 `915a7ff7f9c9288ec380d9e13d5a025905367bcc0c15fe1e91307023937917ac`.
+
+## Fresh durable-policy package — live acceptance gates
+
+| Gate | Required evidence | Result |
 | --- | --- | --- |
-| Exact corrected runtime | Active Apps source/bootstrap and pinned UC bytes agree with exact Git/source/release/package/owner/run/unit pins. | **PASS** — 522 files independently verified. |
-| Global baseline | All 17 protected tables and every original row remain in scope, including historical/held runs. | **PASS** — 9,699 rows captured; post-test comparison pending. |
-| Actual attendee authentication and saves | Sign in as +200; save the full goal and preference and record accepted revisions/source owner. No PTY/agent launched before the supported restart. | **PENDING** |
-| Normal restart before PTY | Ordinary Apps stop/start; fresh API/page returns exact accepted full goal and preference/revisions on the same bound original stream; no active admitted writer at stop. | **PENDING** |
-| Real attendee activity | Actual attendee UI produces the selected discovery/Help/terminal or agent activity; sessions end normally with completion evidence. | **PENDING** |
-| Live closing/closed UX | Normal CT final collection disables write/launch controls; Help history/resources stay readable and wording stays plain. | **PENDING** |
-| Fresh SEALED Lakebase proof | Independently verify every observed source epoch, raw sequence/hash inventory, seal/final facts and persisted verified receipts before deletion authorization. | **PENDING** |
-| Normal restart after SEALED | Ordinary Apps stop/start preserves the exact valid sealed operation, manifest/final outputs/product documents and original stream; fresh UI stays closed. Re-run independent verification. | **PENDING** |
-| Ordinary teardown and pool return | Normal CT cleanup only after verified preservation; selected app/workspace deletion and +200 availability confirmed. | **PENDING** |
-| Post-deletion/global proof | Fresh Lakebase proof equals pre-delete sealed evidence; global comparator preserves every original raw row, binding, immutable payload and verified receipt. +199 remains held without a fabricated receipt. | **PENDING** |
-| Environment protection/restoration | Recheck Labs deployment, earlier archives and qualification release/configuration state after testing/cleanup. | **PENDING** — earlier protected-app checks passed. |
-| Final delivery | Finish final independent review/current-head CI and the live gates above; update WT ledger and CT implementation plan, then merge under the operator's explicit authorization. | **PENDING** |
+| Exact deployed package | Active Apps source/bootstrap, pinned UC bytes, manifests and owner/run/unit/source bindings agree with the exact package source. | **PASS** — exact implementation/package/bootstrap and final ACTIVE/RUNNING metadata readbacks agree with the selected source bindings; see the evidence above. |
+| Accepted attendee state | Actual authenticated attendee saves the full goal/preferences and Help activity; accepted revisions and source owner are recorded before the supported restart. | **PASS** — full goal/preferences revision 1 and original Help retained; actual attendee/browser readback confirms the accepted state. |
+| Supported restart before PTY | Ordinary stop/start retains the original stream, exact product/Help content and canonical policy revision/hash; admitted background writers finish durably before start. Complete suffix audit finds no policy replacement or recorded `model_policy.applied` event. Actual Claude works after restart without operator policy redelivery. | **PASS with preserved held-attempt history** — canonical writer completion, guarded normal start, exact retained documents/Help/stream/policy and actual Claude/project activity verified without CT policy re-save; see the scoped evidence above. |
+| Closing/closed UX | Normal CT final collection blocks new attendee input, keeps history/resources readable and uses the plain attendee wording. Actual selected attendee activity is retained. | **PASS** — native CLOSING/ended wording, disabled input and readable Help observed; CT then verified the selected source/epoch with 90 insight entries and one Help entry. |
+| Verified complete archive | Every observed source epoch, raw sequence/hash inventory, sealed manifest, final facts and durable CT receipt independently verify in Lakebase. Wait for normal raw collection to reach the complete seal before freezing the immutable baseline. | **PASS** — one source/epoch, 90 insight entries, one Help entry, final facts and receipt independently verified; ordinary raw inventory is complete at exactly 90 records. Earlier 72/90 attempt remains held and preserved. |
+| Supported restart after SEALED | Ordinary stop/start preserves the exact sealed operation, manifest/final outputs, product documents, policy and original stream. Fresh UI remains closed; independent verification passes again. | **PASS** — normal stop/start 184.614 seconds; validated canonical retained state, seal and policy exact; no recorded policy apply. Native closed-state check and fresh Lakebase comparison pass; immutable inventory unchanged and one additional legitimate stats snapshot. |
+| Ordinary cleanup and pool return | Normal CT teardown follows verified preservation; native workspace/app absence and selected test-user availability are confirmed. No forced deletion or reservation removal. | **PASS** — normal `force=false` teardown; run/unit destroyed and cleanup release verified; both Apps and native workspace 404; +200 available/unassigned, +199 held untouched. |
+| Post-deletion preservation | Strict selected-run comparison preserves all stable sealed evidence after normal source removal. | **PASS** — 90 raw records, 90 insight entries, one Help entry and all immutable evidence exact; zero missing/changed/added immutable rows. Two additional legitimate stats snapshots reported separately. |
+| Global preservation | Global comparison preserves every original protected row, including the held +199 epoch. | **PASS** — all 10,358 original immutable rows retained across 17 tables; zero missing/changed immutable rows. The +199 operation remains held with all 105 raw records and no fabricated success receipt. |
+| Environment restoration | Labs deployment and earlier archives remain protected; qualification release/configuration state is restored or explicitly recorded. | **PASS** — protected Labs app/deployment/resources/source readback unchanged; qualification restored through the same existing operation with baseline-matching runtime keys, valid effective HTTP 200 and original configured manifest/PEX staging verified. |
 
-The milestone is **not yet fully E2E accepted**. A primary save, source binding,
-journal audit, closeout or preservation failure stays a recorded hold and must be
-investigated. Passing local tests, a closed WT screen or preserved individual
-records cannot be promoted into a claim of a complete archive or authorized
-resource deletion.
+Journal policy continuity proves the retained bytes remained unchanged and no policy-apply event was recorded after the audited anchor. It is not a packet-level or process-memory inspection claim. Apps may create a new deployment/snapshot ID on normal start; source/configuration pins remain exact. Only the two computed effective budget/usage IDs may change from null to a returned nonempty identifier; configured policy IDs and existing effective IDs remain exact.
 
-## Durable model-policy correction — live acceptance pending
+## Earlier `768c877` fixture — safely closed and removed
 
-The supported +200 App stop/start retained attendee goal, preferences and Help
-history, but the replacement container lost its local model-policy file and
-correctly held Claude while CT still had a successful delivery receipt. The
-current correction retains the complete canonical policy in the existing
-source-bound journal, compares revisions atomically, rejects unbound local-cache
-imports and treats container cache writes as optional. Closing and sealed sources
-restore the retained policy read-only and refuse further policy applies.
+The earlier +200 run `7b368d11-66ee-40e2-bf93-eb547d4595b7`, workspace `7474660014346237`, used source `768c8772748d9b29b837d0df55f5ac2416caf036` and PEX `a84fb6ba582215991f9afebb85dddd390a9e42aae969ee9bb3594e27125a54f5`. It retained full attendee product/Help state across supported restart, but required normal unchanged CT policy redelivery afterward because its model-policy file was disposable. It is not acceptance evidence for the later durable-policy correction.
 
-The correction passed **383 targeted tests** across model policy, retained state,
-startup and closeout. Independent source/test review was **clean**, with **50
-separate focused passes** and additional offline fault/race probes. Fresh
-exact-source CI, package verification and positive restart/closeout/teardown
-acceptance are **pending**. The deployed package recorded above remains from
-`768c8772748d9b29b837d0df55f5ac2416caf036`; it does not contain this correction.
-Earlier artifacts and test evidence retain their recorded provenance.
+Normal CT closeout independently verified **one source and epoch, 213 insight entries, one Help entry, final facts and persisted receipts**. Ordinary teardown completed with native workspace absence and +200 returned to the pool. The strict post-deletion comparison retained the stable sealed inventory with **zero added, removed or changed rows**. The global comparison preserved **all 9,699 original rows across 17 protected tables**, including the held +199 evidence; legitimate lifecycle metadata was reported separately.
 
-The first exact-source `af14e44` CI run exposed **26 fixture integration
-failures**: auth/attendee and model-canary tests switched from local startup to
-production mode without provisioning the newly required policy journal. The
-scoped correction provisions the production durable Workspace Files adapter
-through its existing in-memory SDK seam. Auth tests retain an independent model
-binding without injecting an attendee owner hint; canaries now use their exact
-synthetic source and an approved bounded retained pool. A regression verifies
-that removing the journal still refuses the provider POST. Production
-fail-closed behavior is unchanged.
+Two earlier held checks remain recorded: the initial normal-restart receipt failed only on the two computed effective policy-ID readbacks and a read-only supplement verified the documented metadata transition; the first post-queue comparison observed six valid raw records and one stat snapshot still catching up, with zero removed/changed rows. A new complete stable baseline and final strict post-deletion comparison then passed. Neither original held receipt was overwritten or treated as a pass.
 
-The updated fixtures passed **173 focused tests** and independent clean review
-with **123 separate passes**. The complete current-source native Python 3.11 run
-passed **3,726 tests, with 69 skips and one existing Starlette/httpx warning**, in
-314.74 seconds (`/private/tmp/wt03-policy-full-python311-suite.log`). Skips are
-not executed acceptance evidence. Fresh current-head CI/package and live
-restart/closeout/teardown acceptance remain **pending**.
+Original historical receipts remain preserved separately from the new-source qualification evidence.
 
-## Private evidence references
+## +199 interrupted-terminal limitation — HELD
 
-These are evidence references, not instructions to publish attendee records or
-raw receipts. Record counts, hashes and outcomes in the final public ledger.
+Separate run `6ec88d57-75fd-44b0-b8e8-6773d588051a` was restarted with an original terminal-lifetime writer active. Its epoch retained **105 accepted/ACKed insight entries, one discovery record and one Help history entry**, but the replacement process could not prove that writer completed. It remains **HELD/INCOMPLETE**, with `writers_not_drained` and `writer_drain_deadline_exceeded`.
 
-- `/private/tmp/wt03-final-python311-suite.log` — corrected-source full-suite process, including the nine sandbox-blocked failures.
-- `/private/tmp/wt03-final-sandbox-recheck.log` — unrestricted subset covering all nine blocked cases.
-- `/private/tmp/wt03-frontend-final-tests.log` — 120 frontend test results.
-- `/private/tmp/wt03-package-768c877/source-proof.json` — exact Git/runtime/manifest comparison.
-- `/private/tmp/wt03-package-768c877/release-benchmark.json` — existing offline package startup proof.
-- `/private/tmp/wt03-runtime-offline-proof.json` — independent package proof, zero cloud calls.
-- `/private/tmp/wt03-runtime-positive-proof.json` — active Apps deployment source/bootstrap and pinned UC package proof.
-- `/private/tmp/wt03-global-before-positive.json` — full private 17-table global baseline.
-- `/private/tmp/wt03-interrupted-session-negative.json` — held +199 interruption evidence.
-- `/private/tmp/wt03-product-journal-inspect.py` and `/private/tmp/wt03-normal-restart.py` — reviewed exact-source inspection and supported stop/start helpers; prepared controls are not a live pass.
-- Positive pre/post-restart, pre/post-deletion and global comparison receipts — **PENDING**.
+This is fail-closed negative evidence, not successful active-session crash recovery, complete final-archive proof or teardown authorization. Its original reservation, epoch and raw records remain intact. No reservation is removed, no receipt fabricated and no epoch reopened to obtain a pass. Successful testing of another source does not erase this limitation.
+
+**Implementation and live acceptance: complete. Final delivery-commit CI, review and merge status are recorded on [PR107](https://github.com/althrussell/databricks-labs-workshop-terminal/pull/107).** Retain private raw receipts outside the public repository; publish only reviewed counts, hashes, scope and outcomes.
