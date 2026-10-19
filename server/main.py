@@ -699,7 +699,13 @@ def save_profile(body: _ProfileBody, principal: Principal = Depends(get_current_
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    user_content._write_instructions(user)
+    try:
+        user_content._write_instructions(user)
+    except Exception as exc:
+        # Durable acceptance already succeeded. Generated instruction files are
+        # refreshed by the existing launch/bootstrap path; a cache failure must
+        # not tell the attendee that the retained preference was rejected.
+        logger.warning("saved profile instruction refresh unavailable (%s)", type(exc).__name__)
     return profile.to_json()
 
 
@@ -760,7 +766,12 @@ def save_wizard(body: _WizardBody, principal: Principal = Depends(get_current_us
     # The brief is inlined into the agent's instructions, so they have to be
     # rewritten now. Sessions are almost always launched from the wizard's last
     # step, after this call, so the first agent to start already has it.
-    user_content.set_wizard_brief(user, brief)
+    try:
+        user_content.set_wizard_brief(user, brief)
+    except Exception as exc:
+        # Keep the accepted revision observable even when disposable generated
+        # instructions cannot refresh; primary journal errors still propagate.
+        logger.warning("saved goal instruction refresh unavailable (%s)", type(exc).__name__)
     return {
         "brief": brief.to_json(),
         "starter_prompt": wizard.starter_prompt(brief),

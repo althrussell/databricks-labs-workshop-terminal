@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from . import config
+from . import attendee_state, config
 from .capture_journal import CaptureHeldError
 
 logger = logging.getLogger("workshop.discovery")
@@ -379,9 +379,13 @@ class DiscoveryStore:
         with self._lock:
             self._records = records
 
-    def capture(self, built: DiscoveryRecord, *, provided_fields: set[str], emitter) -> DiscoveryRecord | None:
+    def capture(self, built: DiscoveryRecord, *, provided_fields: set[str], emitter,
+                expected_brief: dict | None = None) -> DiscoveryRecord | None:
         """Publish the merged record and delivery entry in one retained transaction."""
         def prepare(state):
+            if expected_brief is not None and not attendee_state.document_matches(
+                    state, emitter.journal, "brief", expected_brief):
+                return None
             state.setdefault("discovery", {"records": []})
             rows = self._retained_records(state)
             existing = rows.get(built.attendee, {}).get(built.record_id)
@@ -642,7 +646,8 @@ def _emit(stored: DiscoveryRecord, emitter=None) -> None:
     )
 
 
-def record(attendee: str, raw: dict[str, Any], emitter=None) -> DiscoveryRecord | None:
+def record(attendee: str, raw: dict[str, Any], emitter=None, *,
+           expected_brief: dict | None = None) -> DiscoveryRecord | None:
     """Capture one submission and queue it for Control Tower.
 
     Returns None when discovery is disabled or the record was dropped. Storage
@@ -656,7 +661,8 @@ def record(attendee: str, raw: dict[str, Any], emitter=None) -> DiscoveryRecord 
         from .event_emitter import event_emitter as emitter
     built = build_record(attendee, raw)
     if getattr(emitter, "journal", None) is not None:
-        return discovery_store.capture(built, provided_fields=set(raw), emitter=emitter)
+        return discovery_store.capture(built, provided_fields=set(raw), emitter=emitter,
+                                       expected_brief=expected_brief)
     stored = discovery_store.put(built, provided_fields=set(raw))
     if stored is None:
         return None

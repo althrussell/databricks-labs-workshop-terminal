@@ -14,6 +14,7 @@ in the [joint implementation plan](https://github.com/althrussell/databricks-lab
 | Attendee lifecycle | Authenticated, read-only `/api/workshop-status` and config status expose only `open`, `closing`, `closed` and input availability. Reading never advances closeout. The existing durable barrier remains authoritative. |
 | Closing and closed screen | Disable new attendee activity, launches, terminal input, preferences, project changes, certificates and Help submission. Resources and Help history remain readable. Closing sockets stop reconnecting. Later failed/stale reads cannot reopen input. |
 | Attendee copy | Plain workshop closing/ended wording. No collection, account-team, insight-extraction or follow-up notices are added. Operator capture diagnostics remain in the admin interface. |
+| Saved product state | Full revisioned goals and preferences use the existing source-bound journal; HOME is a disposable cache. Remote commit owns acceptance and concurrent revision checks. Optional discovery/instruction/cache failures cannot reject an accepted save, and delayed discovery cannot overwrite a newer accepted goal. New sources never import unbound local state. |
 | Workshop documentation | The default **AI Docs** destination is `https://naveenb83.github.io/ai-dev-day/`. Intentional deployment/live content-pack overrides remain authoritative. |
 | Public dependency inputs | Check every recognized root/paired Python lock/export/project source, npm resolution/project source, toolchain artifact publisher/pin and deployed registry setting. Nested requirement/constraint inputs are checked recursively. Unknown sources fail with no secret-bearing URL output. |
 | Uploads | Dev, CT simulation, generated-app and CT-compatible deployment/observer/mirror paths validate a clean public source snapshot before client initialization. The bytes validated are the bytes uploaded. Read-only qualification, dry runs and cleanup remain usable. |
@@ -37,5 +38,16 @@ reopened. A failed final collection remains held under the existing protocol.
 
 ## Acceptance record
 
-Implementation and qualification are in progress. Do not treat this ledger as
-live acceptance until the exact candidate and results below are recorded.
+Implementation and qualification are in progress. Focused persistence and
+closeout tests pass (164 tests); the corrected runtime is being qualified.
+Real App stop/start exposed the former local-only goal/preferences and drove
+the retained-state correction above.
+
+The interrupted active-terminal fixture preserves accepted records under its
+original stream, but remains held (`writers_not_drained`,
+`writer_drain_deadline_exceeded`). A disappeared process is not a completion
+receipt. No forced teardown or fabricated receipt is permitted. This is negative
+failure-path evidence, not a verified complete archive. The positive checkpoint
+will restart before opening a terminal, perform normal final collection, and
+restart the sealed app before ordinary teardown. Do not treat this ledger as
+completed live acceptance until exact candidate and results are recorded.
