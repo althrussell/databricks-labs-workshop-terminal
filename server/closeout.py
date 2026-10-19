@@ -17,14 +17,16 @@ from collections import defaultdict
 from . import config
 from .capture_journal import CaptureHeldError, canonical_json
 from .closeout_guard import (
-    closeout_state, control_transaction, finalizer_scope,
+    CaptureClosedError, _only_ack_change, closeout_state, control_transaction, finalizer_scope,
     initial_state,
 )
+from .closeout_refusal_proof import HistoricalRefusalProofObserver
 
 SCHEMA_VERSION = 1
 CAPABILITY = "sealed-closeout-v1"
 _lock_creation = threading.Lock()
 _FINALIZER_LEASE_SECONDS = 120
+_FINALIZER_RENEW_SECONDS = 20
 SUPPORTED_EVENTS = frozenset({
     "session.started", "session.switched", "session.exited", "build.commit",
     "resource.created", "milestone.completed", "agent.error", "cost.sample", "heartbeat",
@@ -52,6 +54,33 @@ def inventory(entries: list[dict]) -> dict:
             "last_seq": entries[-1]["seq"] if entries else 0,
             "count": len(entries), "sha256": digest(entries),
             "entries": [{"seq": entry["seq"], "sha256": digest(entry)} for entry in entries]}
+
+
+def _reconciled_drain(drained: dict, operation: dict) -> dict:
+    """Carry the retained proof ledger through fresh/retried drain receipts."""
+    receipts = operation.get("refusal_reconciliations", [])
+    if not isinstance(receipts, list) or any(not isinstance(row, dict) for row in receipts):
+        raise CaptureHeldError("retained refusal reconciliation ledger is invalid")
+    value = copy.deepcopy(drained)
+    outcomes = value.get("outcomes", [])
+    if not isinstance(outcomes, list) or any(not isinstance(row, dict) for row in outcomes):
+        raise CaptureHeldError("retained drain outcomes are invalid")
+    previous = [row for row in outcomes if row.get("kind") == "pre_session_refusal_reconciliation"]
+    if previous:
+        row = previous[0]
+        old_receipts = row.get("receipts")
+        if (len(previous) != 1 or set(row) != {"kind", "complete", "issues", "receipts"}
+                or row["complete"] is not True or row["issues"] != []
+                or not isinstance(old_receipts, list) or not old_receipts
+                or canonical_json(old_receipts) != canonical_json(receipts[:len(old_receipts)])):
+            raise CaptureHeldError("retained drain reconciliation does not match its ledger")
+    outcomes = [row for row in outcomes if row.get("kind") != "pre_session_refusal_reconciliation"]
+    if receipts:
+        outcomes.append({"kind": "pre_session_refusal_reconciliation", "complete": True,
+                         "issues": [], "receipts": copy.deepcopy(receipts)})
+    if receipts or previous:
+        value["outcomes"] = outcomes
+    return value
 
 
 def manifest_for(state: dict, binding: dict, *, completed_at: float) -> dict:
@@ -122,7 +151,7 @@ def manifest_for(state: dict, binding: dict, *, completed_at: float) -> dict:
                     "help": {"stream_id": insight["stream_id"], **inventory(help_entries)}},
         "final_outputs_sha256": digest(final),
         "writer_outcomes": copy.deepcopy(operation["writer_outcomes"]),
-        "drain": copy.deepcopy(operation.get("drain", {})),
+        "drain": _reconciled_drain(operation.get("drain", {}), operation),
     }
 
 
@@ -279,7 +308,7 @@ class CloseoutManager:
             def record_drain(state):
                 operation = closeout_state(state)
                 if operation["phase"] == "CLOSING":
-                    operation["drain"] = copy.deepcopy(drained)
+                    operation["drain"] = _reconciled_drain(drained, operation)
                     operation["issues"] = sorted(set(issues))
                     if (operation["writers"] or not drained["complete"]) and self.clock() >= operation["drain_deadline"]:
                         operation["phase"] = "INCOMPLETE"
@@ -293,15 +322,16 @@ class CloseoutManager:
                 def record_racing_writer(state):
                     operation = closeout_state(state)
                     if operation["phase"] == "CLOSING":
-                        operation["drain"] = copy.deepcopy(drained)
+                        operation["drain"] = _reconciled_drain(drained, operation)
                         operation["issues"] = sorted(set(drained.get("issues", []) or ["writer_drain_unverified"]))
                         if self.clock() >= operation["drain_deadline"]:
                             operation["phase"] = "INCOMPLETE"
                 control_transaction(self.journal, record_racing_writer)
                 return self.status(capture_id=capture_id)
-            now, proposed_claim = self.clock(), uuid.uuid4().hex
+            proposed_claim = uuid.uuid4().hex
 
             def claim(state):
+                now = self.clock()
                 operation = closeout_state(state)
                 if operation["phase"] != "CLOSING" or operation["writers"]:
                     return False
@@ -310,31 +340,105 @@ class CloseoutManager:
                     return False
                 operation["finalizer"] = {"claim_id": proposed_claim, "expires_at": now + _FINALIZER_LEASE_SECONDS}
                 operation["issues"] = []
-                operation["drain"] = copy.deepcopy(drained)
+                operation["drain"] = _reconciled_drain(drained, operation)
                 return True
             if not control_transaction(self.journal, claim):
                 return self.status(capture_id=capture_id)
             claim_id = proposed_claim
+            renewed_at = self.clock()
+
+            def renew():
+                nonlocal renewed_at
+                if self.clock() - renewed_at < _FINALIZER_RENEW_SECONDS:
+                    return
+
+                def extend(state):
+                    now = self.clock()
+                    operation = closeout_state(state)
+                    previous = operation.get("finalizer", {})
+                    if (operation["phase"] != "CLOSING" or operation["writers"]
+                            or operation.get("capture_id") != current["capture_id"]
+                            or operation.get("generation") != current["generation"]
+                            or previous.get("claim_id") != claim_id
+                            or previous.get("expires_at", 0) <= now):
+                        raise CaptureClosedError("closeout finalizer ownership changed")
+                    previous["expires_at"] = now + _FINALIZER_LEASE_SECONDS
+                control_transaction(self.journal, extend)
+                renewed_at = self.clock()
+
             with finalizer_scope(self.journal, current["capture_id"], claim_id, clock=self.clock):
                 result = self.finalizer(self.emitter, current["capture_id"])
-            # Refresh retained history, including all competing ACKs. The seal
-            # callback inventories this same serializable candidate state.
+            # Preserve pending rejected-output accounting and the emitter's
+            # semantic validation before inspecting a private replay.
             self.emitter._state()
-            self.journal.audit()
-            completed_at = self.clock()
+            # Full replay must not hold the live journal lock for its entire
+            # network history or run inside one unrenewed 120-second lease.
+            # The private replay still checks every prefix byte; renewals and
+            # normal ACK/status requests use the unchanged live journal cache.
+            refusal_proofs = HistoricalRefusalProofObserver(self.journal.binding)
+            audited = self.journal.audit_snapshot(progress=renew, observer=refusal_proofs.observe)
+            audited_state = audited.read()  # Validate any new ACK/renewal suffix.
+            try:
+                self.emitter._validate_state(audited_state)
+            except CaptureHeldError as error:
+                self.journal.mark_held(error)
+                raise
+            audited_operation = closeout_state(audited_state)
+            if (audited_operation is None or audited_operation["phase"] != "CLOSING"
+                    or audited_operation["writers"]
+                    or audited_operation.get("capture_id") != current["capture_id"]
+                    or audited_operation.get("generation") != current["generation"]
+                    or audited_operation.get("finalizer", {}).get("claim_id") != claim_id):
+                raise CaptureClosedError("audited closeout finalizer ownership changed")
+            refusal_proofs.validate_existing_receipts(
+                audited_operation.get("refusal_reconciliations", []))
+            reconciliations = refusal_proofs.proofs_for(audited_operation["writer_outcomes"])
+            renew()
 
             def seal(state):
+                completed_at = self.clock()
                 operation = closeout_state(state)
                 if (operation["phase"] != "CLOSING" or operation["writers"]
+                        or operation.get("capture_id") != current["capture_id"]
+                        or operation.get("generation") != current["generation"]
                         or operation.get("finalizer", {}).get("claim_id") != claim_id
                         or operation["finalizer"]["expires_at"] <= completed_at):
                     raise CloseoutConflict("closeout finalizer ownership changed")
+                # Only a renewal of this exact lease and legal monotonically
+                # advancing transport ACKs can follow the fully audited state.
+                # Never inventory an unverified live-cache producer mutation.
+                expected = copy.deepcopy(audited_state)
+                expected["closeout"]["finalizer"]["expires_at"] = operation["finalizer"]["expires_at"]
+                if not _only_ack_change(expected, state):
+                    raise CaptureHeldError("capture changed after its full audit")
+                if reconciliations:
+                    unresolved = operation["writer_outcomes"]
+                    ledger = operation.setdefault("refusal_reconciliations", [])
+                    known_writers = {row["writer_outcome"]["writer_id"] for row in ledger}
+                    for receipt in reconciliations:
+                        original = receipt["writer_outcome"]
+                        matches = [index for index, row in enumerate(unresolved)
+                                   if canonical_json(row) == canonical_json(original)]
+                        event = state["insight"]["events"].get(str(receipt["event"]["seq"]))
+                        if (len(matches) != 1 or original["writer_id"] in known_writers
+                                or digest(event) != receipt["event"]["sha256"]):
+                            raise CaptureHeldError("historical refusal proof no longer matches retained output")
+                        # The original failed outcome remains byte-for-byte in
+                        # this durable ledger and in its immutable historical
+                        # operation. Only exact audited no-input refusals leave
+                        # the unresolved-failure collection.
+                        ledger.append(copy.deepcopy(receipt))
+                        known_writers.add(original["writer_id"])
+                        unresolved.pop(matches[0])
+                    operation["drain"] = _reconciled_drain(operation.get("drain", {}), operation)
                 operation["final_outputs"] = copy.deepcopy(result.get("outputs", {}))
                 operation["outputs_complete"] = result.get("complete") is True
                 operation["issues"] = sorted(set(result.get("issues", [])))
                 manifest = manifest_for(state, self.journal.binding, completed_at=completed_at)
                 if self.journal.health().get("operation_capacity_exhausted"):
                     raise CaptureHeldError("capture operation capacity is exhausted")
+                if operation["finalizer"]["expires_at"] <= self.clock():
+                    raise CloseoutConflict("closeout finalizer ownership changed")
                 if not manifest["complete"] and completed_at < operation["drain_deadline"]:
                     operation["issues"] = manifest["issues"]
                     operation.pop("finalizer", None)

@@ -142,9 +142,9 @@ def session_switched(
     )
 
 
-def session_create_failed(attendee: str, agent_id: str, code: str, detail: str = "") -> None:
+def session_create_failed(attendee: str, agent_id: str, code: str, detail: str = "") -> bool:
     bucketed, raw = normalize(code, SESSION_CREATE_CODES)
-    emit(
+    return emit(
         "session.create_failed",
         attendee,
         {
