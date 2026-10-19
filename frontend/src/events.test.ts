@@ -121,6 +121,25 @@ class FakeSocket {
   close() {}
 }
 
+test("workshop close refuses new sockets without a reconnect or login loop", async () => {
+  const events = await import("./events.ts");
+  const socket = new FakeSocket();
+  const scheduled: Array<() => void> = [];
+  const published: AppEvent[] = [];
+  const connection = events.createAppEventConnection({
+    socketFactory: () => socket,
+    schedule: (fn) => { scheduled.push(fn); return 0; },
+    publish: (event) => published.push(event),
+  });
+  connection.start();
+  socket.onclose?.({ code: 4410 });
+  assert.deepEqual(published, [{ t: "workshop_closing" }]);
+  assert.deepEqual(scheduled, []);
+  connection.start();
+  assert.deepEqual(published, [{ t: "workshop_closing" }]);
+  connection.stop();
+});
+
 test("event reconnect stops after the finite attempt ceiling and signals loss", async () => {
   const events = await import("./events.ts");
   const sockets: FakeSocket[] = [];

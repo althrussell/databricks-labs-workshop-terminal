@@ -637,6 +637,9 @@ def test_omnigent_installs_from_the_hash_pinned_lock_alone(
         str(prefix / "omnigent-venv"),
     ]
     assert "--require-hashes" in pip_call
+    assert pip_call[pip_call.index("--default-index") + 1] == "https://pypi.org/simple"
+    assert calls[1][1]["UV_NO_CONFIG"] == "true"
+    assert calls[1][1]["PIP_INDEX_URL"] == "https://pypi.org/simple"
     assert "--offline" not in pip_call
     assert "--no-index" not in pip_call
     assert "--find-links" not in pip_call

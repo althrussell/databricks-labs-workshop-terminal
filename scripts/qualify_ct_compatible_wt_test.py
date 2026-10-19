@@ -9,9 +9,10 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from evals.generated_apps.ct_lifecycle import qualify, cleanup
-from evals.generated_apps.ct_deployment import submit_deployment, update_observer, update_mirror
+from evals.generated_apps.ct_deployment import PACKAGE_LOCAL_SOURCES, submit_deployment, update_observer, update_mirror
 from evals.generated_apps.report import write_evidence
 from scripts.deploy_generated_app_test import workspace_client
+from scripts.source_upload import read_selected_upload_sources
 
 
 def main(argv=None):
@@ -25,6 +26,10 @@ def main(argv=None):
     output = Path(args.output)
     if output.exists() or output.is_symlink() or output.resolve() == Path(args.receipt).resolve():
         p.error("A fresh distinct result path is required; preserve the deployment receipt")
+    if args.operation in {"update-observer", "add-mirror"}:
+        # These operations upload new local runtime sources. Cleanup and
+        # read-only qualification must remain usable from a dirty checkout.
+        local_sources = read_selected_upload_sources(ROOT, PACKAGE_LOCAL_SOURCES)
     receipt = json.loads(Path(args.receipt).read_text())
     try:
         client = workspace_client(receipt["plan"]["profile"], http_timeout_seconds=180)
@@ -32,13 +37,13 @@ def main(argv=None):
             if receipt.get("status") not in {"deployment_submitted", "failed"} or not args.mirror_source:
                 raise ValueError("Mirror addition requires a recorded deployment and exact source volume")
             result = update_mirror(client, receipt, output,
-                args.mirror_source, strict=args.mirror_strict)
+                args.mirror_source, strict=args.mirror_strict, local_sources=local_sources)
             print(json.dumps({"output": str(output), "status": result["status"]}))
             return 0
         if args.operation == "update-observer":
             if receipt.get("status") != "deployment_submitted":
                 raise ValueError("Observer update requires the exact recorded deployment")
-            result = update_observer(client, receipt, output)
+            result = update_observer(client, receipt, output, local_sources=local_sources)
             print(json.dumps({"output": str(output), "status": result["status"]}))
             return 0
         if args.operation == "resume-deployment":

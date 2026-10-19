@@ -104,6 +104,51 @@ def _isolate_model_policy():
     cli_config._gateway_resolved = None
 
 
+@pytest.fixture()
+def retained_model_policy(monkeypatch):
+    """Provision the policy dependency for tests that switch to production mode.
+
+    This uses the production durable Workspace Files adapter and its in-memory
+    SDK seam, rather than bypassing the missing-journal guard. Tests still own
+    their source binding and any applied policy; unconfigured tests keep the
+    production refusal intact.
+    """
+    from types import SimpleNamespace
+
+    from server import capture, model_policy
+    from server.capture_journal import CaptureJournal, WorkspaceCaptureStorage
+    from .test_capture_startup import WorkspaceFiles
+
+    def provision():
+        binding = capture.source_binding()
+        sdk = SimpleNamespace(workspace=WorkspaceFiles())
+        journal = CaptureJournal(
+            WorkspaceCaptureStorage(sdk, capture.workspace_path(binding)), binding, {}
+        )
+        policy = model_policy.PolicyStore()
+        policy.configure_capture(journal)
+        monkeypatch.setattr(model_policy, "store", policy)
+        return policy
+
+    return provision
+
+
+@pytest.fixture()
+def auth_model_policy(monkeypatch, retained_model_policy):
+    """Isolate provisioned model state from tests of attendee/auth binding.
+
+    Those tests deliberately remove the owner hint and change it after local
+    startup. Their model dependency represents a separately configured retained
+    source, so it must not inject an attendee hint or conceal auth behavior.
+    """
+    from server import capture
+
+    binding = {"run_id": "auth-policy-run", "unit_id": "auth-policy-unit",
+               "workspace_id": "123", "owner": "policy-owner@example.com"}
+    monkeypatch.setattr(capture, "source_binding", lambda: binding)
+    return retained_model_policy()
+
+
 @pytest.fixture(autouse=True)
 def _isolate_agent_control():
     from server import spend

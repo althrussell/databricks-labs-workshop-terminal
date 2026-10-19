@@ -160,7 +160,7 @@ def brief_path(user: User) -> str:
     return os.path.join(user.home, _BRIEF_RELATIVE)
 
 
-def read_brief(user: User, *, strict: bool = False) -> WizardBrief:
+def read_brief_local(user: User, *, strict: bool = False) -> WizardBrief:
     """Read a goal; strict callers preserve corrupt files and receive an error."""
     try:
         with open(brief_path(user), encoding="utf-8") as fh:
@@ -174,10 +174,16 @@ def read_brief(user: User, *, strict: bool = False) -> WizardBrief:
         return WizardBrief()
 
 
+def read_brief(user: User, *, strict: bool = False) -> WizardBrief:
+    return WizardBrief.from_json(attendee_state.read_document(user, "brief",
+        default=WizardBrief().to_json(),
+        local_read=lambda: read_brief_local(user, strict=strict).to_json(), path=brief_path(user)))
+
+
 def write_brief(user: User, brief: WizardBrief) -> None:
-    path = brief_path(user)
-    with attendee_state.locked(path):
-        attendee_state.write_json(path, brief.to_json())
+    attendee_state.update_document(user, "brief", default=WizardBrief().to_json(),
+        local_read=lambda: read_brief_local(user, strict=True).to_json(), path=brief_path(user),
+        update=lambda _current: brief.to_json())
 
 
 # -- sanitising --
@@ -529,8 +535,13 @@ def to_discovery(brief: WizardBrief) -> dict[str, Any]:
 
 def save(user: User, payload: dict[str, Any]) -> WizardBrief:
     """Serialize the entire revisioned update; optional capture never owns the goal."""
-    with attendee_state.locked(brief_path(user)):
-        existing = read_brief(user, strict=True)
+    previous = WizardBrief()
+    new_record_id = uuid.uuid4().hex
+    completed_at = discovery._now()
+
+    def update(raw):
+        nonlocal previous
+        existing = previous = WizardBrief.from_json(raw)
         expected = payload.get("expected_revision")
         operation = payload.get("operation") or ("skip" if payload.get("skipped") else "complete")
         if expected is not None and expected != existing.revision:
@@ -543,14 +554,14 @@ def save(user: User, payload: dict[str, Any]) -> WizardBrief:
             if payload.get("selection_token") and payload["selection_token"] != existing.selection_token:
                 matches = False
             if matches:
-                return existing
+                return existing.to_json()
             raise BriefConflict(existing)
         if operation not in {"draft", "complete", "skip", "clear", "change"}:
             raise ValueError("Unknown goal operation")
         brief = WizardBrief.from_json(existing.to_json())
-        brief.record_id = existing.record_id or uuid.uuid4().hex
+        brief.record_id = existing.record_id or new_record_id
         if operation == "change":
-            brief = WizardBrief(record_id=uuid.uuid4().hex, revision=existing.revision)
+            brief = WizardBrief(record_id=new_record_id, revision=existing.revision)
         if operation == "clear":
             brief = WizardBrief(record_id=brief.record_id, revision=existing.revision,
                                 seen=True, skipped=True, stage="skipped",
@@ -599,26 +610,40 @@ def save(user: User, payload: dict[str, Any]) -> WizardBrief:
             if brief.stage == "complete" and not brief.has_content:
                 raise ValueError("Add a goal or choose an idea before continuing.")
             if brief.stage == "complete" and brief.has_content:
-                brief.completed_at = existing.completed_at or discovery._now()
+                brief.completed_at = existing.completed_at or completed_at
         if brief.to_json() != existing.to_json():
             brief.revision = existing.revision + 1
-        attendee_state.write_json(brief_path(user), brief.to_json())
-        # Drafts are product state, not a finding about the attendee. Capture is
-        # an independent, optional projection of the explicitly completed goal.
+        return brief.to_json()
+
+    brief = WizardBrief.from_json(attendee_state.update_document(user, "brief",
+        default=WizardBrief().to_json(), local_read=lambda: read_brief_local(user, strict=True).to_json(),
+        path=brief_path(user), update=update))
+    # Drafts remain product state. Retaining them does not turn them into
+    # discovery findings or add another CT capture category.
+    operation = payload.get("operation") or ("skip" if payload.get("skipped") else "complete")
+    try:
         records = discovery.discovery_store.for_attendee(user.email) if config.discovery_enabled() else []
         captured = next((row for row in records if row.record_id == brief.record_id), None)
         should_capture = (operation == "clear" and captured is not None) or (
             brief.stage == "complete" and brief.has_content and operation != "skip"
-            and (captured is None or to_discovery(existing) != to_discovery(brief)))
+            and (captured is None or to_discovery(previous) != to_discovery(brief)))
         if should_capture:
-            try:
-                stored = discovery.record(user.email, to_discovery(brief))
-                if stored is not None:
-                    brief.discovery_record_id = stored.record_id
-                    attendee_state.write_json(brief_path(user), brief.to_json())
-            except Exception:
-                logger.exception("optional wizard discovery capture failed")
-        return brief
+            accepted = brief.to_json()
+            # The optional projection checks this snapshot inside its own
+            # retained emitter transaction; an older delayed save cannot become
+            # the newest discovery revision after another container's update.
+            kwargs = {"expected_brief": accepted} if getattr(user, "_capture_journal", None) else {}
+            stored = discovery.record(user.email, to_discovery(brief), **kwargs)
+            if stored is not None:
+                with_receipt = {**accepted, "discovery_record_id": stored.record_id}
+                saved = attendee_state.update_document(user, "brief", default=WizardBrief().to_json(),
+                    local_read=lambda: read_brief_local(user, strict=True).to_json(), path=brief_path(user),
+                    update=lambda current: with_receipt if current == accepted else current)
+                if saved == with_receipt:
+                    brief = WizardBrief.from_json(saved)
+    except Exception:
+        logger.exception("optional wizard discovery capture failed")
+    return brief
 
 
 def launch_context(brief: WizardBrief) -> dict[str, Any]:

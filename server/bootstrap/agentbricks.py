@@ -7,6 +7,7 @@ import shlex
 import subprocess
 
 from . import install as bootstrap
+from .package_sources import PUBLIC_PYPI, public_python_environment
 
 
 LOCK_ARTIFACT = "agentbricks_lock"
@@ -110,22 +111,16 @@ def install_cli() -> None:
                 actual_checksum=bootstrap._file_checksum(target),
             )
             return
-        env = bootstrap._install_env()
+        env = public_python_environment(bootstrap._install_env())
         for name in list(env):
             if name.startswith("DATABRICKS_"):
                 env.pop(name)
-        # Apps install from public PyPI. Operator laptop validation injects its
-        # own proxy in a disposable environment; no proxy URL ships in a lock.
-        for name in ("UV_INDEX_URL", "UV_DEFAULT_INDEX", "UV_INDEX_PYPI_URL", "PIP_INDEX_URL"):
-            env[name] = "https://pypi.org/simple"
-        for name in ("UV_EXTRA_INDEX_URL", "UV_INDEX", "PIP_EXTRA_INDEX_URL", "UV_FIND_LINKS", "PIP_FIND_LINKS"):
-            env.pop(name, None)
         env["UV_PYTHON_DOWNLOADS"] = "never"
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         venv = os.path.join(prefix, "agentbricks-venv")
         commands = (
             [uv_path, "venv", "--clear", "--python", python_path, venv],
-            [uv_path, "pip", "sync", "--python", os.path.join(venv, "bin", "python"),
+            [uv_path, "pip", "sync", "--default-index", PUBLIC_PYPI, "--python", os.path.join(venv, "bin", "python"),
              "--require-hashes", "--only-binary", ":all:", lock_path],
         )
         for command in commands:

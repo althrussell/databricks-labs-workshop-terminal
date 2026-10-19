@@ -10,6 +10,7 @@ from starlette.responses import JSONResponse
 
 from .capture_journal import CaptureError
 from .closeout_guard import CaptureClosedError, admitted_writer
+from .workshop_lifecycle import CLOSING_DETAIL, UNAVAILABLE_DETAIL
 
 
 @dataclass
@@ -64,10 +65,10 @@ class CloseoutAdmissionMiddleware:
         try:
             ticket = await anyio.to_thread.run_sync(reserve)
         except CaptureClosedError:
-            await JSONResponse({"detail": "Workshop is closing; new input is disabled."}, status_code=409)(scope, receive, send)
+            await JSONResponse({"detail": CLOSING_DETAIL}, status_code=409)(scope, receive, send)
             return
         except CaptureError:
-            await JSONResponse({"detail": "Workshop capture is held; retry when persistence is available."}, status_code=503)(scope, receive, send)
+            await JSONResponse({"detail": UNAVAILABLE_DETAIL}, status_code=503)(scope, receive, send)
             return
         failed = False
         outcome = _RequestOutcome()

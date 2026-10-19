@@ -9,8 +9,32 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  UV_DEFAULT_INDEX: "https://pypi.org/simple"
+  UV_INDEX_URL: "https://pypi.org/simple"
+  UV_EXTRA_INDEX_URL: ""
+  PIP_INDEX_URL: "https://pypi.org/simple"
+  PIP_EXTRA_INDEX_URL: ""
+  NPM_CONFIG_REGISTRY: "https://registry.npmjs.org/"
+
 jobs:
+  public-sources:
+    name: public-dependency-sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.0"
+      - name: Validate sources before project dependency resolution
+        run: python scripts/check_dependency_sources.py
+
   backend:
+    needs: public-sources
     name: pytest
     runs-on: ubuntu-latest
     strategy:
@@ -36,6 +60,7 @@ jobs:
         run: uv run --frozen --no-group release python -m pytest tests/ -q
 
   quality-toolchain:
+    needs: public-sources
     name: latest-evaluator-api-contract
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -51,6 +76,7 @@ jobs:
         run: uv run --frozen --only-group quality python scripts/check_quality_toolchain.py
 
   frontend:
+    needs: public-sources
     name: test-and-build
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -80,6 +106,7 @@ jobs:
           test -z "$(git status --porcelain -- static)"
 
   agentbricks-toolchain:
+    needs: public-sources
     name: agentbricks-cli-contract
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -95,6 +122,7 @@ jobs:
         run: uv run --frozen --no-group release python scripts/check_agentbricks_toolchain.py --bootstrap
 
   impeccable-delivery:
+    needs: public-sources
     name: impeccable-supported-installer
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -113,6 +141,7 @@ jobs:
         run: uv run --frozen --no-group release python scripts/refresh_impeccable.py --check
 
   apx-toolchain:
+    needs: public-sources
     name: apx-ubuntu22-scaffold-build
     runs-on: ubuntu-22.04
     timeout-minutes: 15
@@ -130,6 +159,7 @@ jobs:
           uv run --frozen --no-group release python scripts/check_apx_toolchain.py --bootstrap
 
   package:
+    needs: public-sources
     name: packaged-runtime
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -165,6 +195,7 @@ jobs:
           retention-days: 7
 
   wizard-browser:
+    needs: public-sources
     name: rendered-wizard
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -184,4 +215,4 @@ jobs:
       - name: Exercise the committed WT wizard and project flows with local API fixtures
         env:
           WORKSHOP_E2E_BROWSER_TESTS: "1"
-        run: .venv/bin/python -m pytest tests/test_wizard_rendered.py tests/test_projects_rendered.py -q
+        run: .venv/bin/python -m pytest tests/test_wizard_rendered.py tests/test_projects_rendered.py tests/test_workshop_lifecycle_rendered.py -q

@@ -8,9 +8,10 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from evals.generated_apps.ct_deployment import plan_package, deploy_package
+from evals.generated_apps.ct_deployment import PACKAGE_LOCAL_SOURCES, plan_package, deploy_package
 from evals.generated_apps.report import write_evidence
 from scripts.deploy_generated_app_test import workspace_client
+from scripts.source_upload import read_selected_upload_sources
 
 
 def main(argv=None):
@@ -24,13 +25,18 @@ def main(argv=None):
     output = Path(args.output)
     if output.exists() or output.is_symlink() or output.resolve() in {Path(x).resolve() for x in (args.spec, args.release_manifest, args.artifact)}:
         p.error("A fresh distinct output receipt is required")
+    if args.execute:
+        # The pinned PEX is verified separately; this checkout supplies the
+        # bootstrap/observer sources that are uploaded alongside it.
+        local_sources = read_selected_upload_sources(ROOT, PACKAGE_LOCAL_SOURCES)
     raw = Path(args.release_manifest).read_bytes()
     artifact = Path(args.artifact).read_bytes()
     plan = plan_package(json.loads(Path(args.spec).read_text()), raw, artifact)
     write_evidence(output, {"plan": plan, "executed": False, "control_tower_requests": 0})
     try:
         if args.execute:
-            result = deploy_package(workspace_client(plan["profile"], http_timeout_seconds=180), plan, raw, artifact, output)
+            result = deploy_package(workspace_client(plan["profile"], http_timeout_seconds=180), plan, raw, artifact, output,
+                                    local_sources=local_sources)
             print(json.dumps({"output": str(output), "status": result["status"], "app_name": plan["names"]["app_name"], "control_tower_requests": 0}))
         else:
             print(json.dumps({"output": str(output), "executed": False, "control_tower_requests": 0}))

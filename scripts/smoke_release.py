@@ -56,6 +56,13 @@ def verify_artifact(artifact: Path, release_path: Path, source_root: Path) -> No
 
     with zipfile.ZipFile(artifact) as archive:
         content = json.loads(archive.read("runtime-content-manifest.json"))
+        if content.get("wt_git_sha") != release["wt_git_sha"]:
+            raise AssertionError("external and embedded source identities differ")
+        if content.get("file_count") != release["logical_contents_file_count"]:
+            raise AssertionError("external and embedded content counts differ")
+        runtime_files = {entry["path"] for entry in content["files"]}
+        if not {"server/workshop_lifecycle.py", "server/bootstrap/package_sources.py"} <= runtime_files:
+            raise AssertionError("packaged attendee lifecycle or public installer helper is absent")
         digest = hashlib.sha256()
         for entry in content["files"]:
             relative = entry["path"]
@@ -147,6 +154,21 @@ def _lifecycle(url: str, agent_id: str) -> str:
     return session["id"]
 
 
+def _attendee_presentation(url: str, *, expected_state: str) -> None:
+    expected = {"state": expected_state, "accepting_input": expected_state == "open"}
+    if _request("GET", f"{url}/api/workshop-status") != (200, expected):
+        raise AssertionError("packaged attendee lifecycle does not match the input barrier")
+    code, configured = _request("GET", f"{url}/api/config")
+    if code != 200 or configured.get("workshop") != expected:
+        raise AssertionError("packaged configuration does not match attendee lifecycle")
+    docs = [link["url"] for link in configured["shell"]["links"] if link["label"] == "AI Docs"]
+    if docs != ["https://naveenb83.github.io/ai-dev-day/"]:
+        raise AssertionError("packaged AI Docs default link is stale")
+    attendee_text = json.dumps({"workshop": configured["workshop"], "shell": configured["shell"]}).lower()
+    if any(phrase in attendee_text for phrase in ("account team", "follow-up", "follow up", "collecting info")):
+        raise AssertionError("packaged attendee resources contain a collection or follow-up notice")
+
+
 def _closeout(url: str, application) -> None:
     """Exercise the packaged producer protocol through real local HTTP.
 
@@ -175,6 +197,7 @@ def _closeout(url: str, application) -> None:
     insight_summary._ask_model = lambda *_args, **_kwargs: (_ for _ in ()).throw(
         AssertionError("packaged finalization called a model"))
     auth.get_groups = lambda _principal: {config.admin_group()}
+    _attendee_presentation(url, expected_state="open")
     if _request("POST", f"{url}/api/help/messages", {"body": "Packaged final help"})[0] != 200:
         raise AssertionError("packaged help capture failed")
     request = {"schema_version": 1, "capture_id": "packaged-smoke", "source": binding,
@@ -196,8 +219,12 @@ def _closeout(url: str, application) -> None:
         code, page = _request("GET", endpoint)
         if code != 200 or page["remaining"] or _sha256(canonical(page["entries"])) != manifest["streams"][kind]["sha256"]:
             raise AssertionError(f"packaged {kind} inventory mismatch")
-    if _request("POST", f"{url}/api/help/messages", {"body": "late"})[0] != 409:
-        raise AssertionError("packaged input crossed the closeout barrier")
+    _attendee_presentation(url, expected_state="closed")
+    if _request("POST", f"{url}/api/help/messages", {"body": "late"}) != (
+        409, {"detail": {"code": "workshop_closing",
+                         "message": "This workshop is closing. New input is disabled."}},
+    ):
+        raise AssertionError("packaged input crossed the closeout barrier or exposed operator diagnostics")
     if _request("POST", f"{url}/api/admin/capture-closeout/begin", request) != (200, status):
         raise AssertionError("packaged closeout repeat changed its sealed inventory")
 
@@ -219,6 +246,12 @@ def main() -> int:
             "MAX_SESSIONS_GLOBAL": "1",
         }
     )
+    from server.bootstrap.package_sources import public_python_environment
+    source_environment = public_python_environment({"UV_DEFAULT_INDEX": "https://laptop.invalid/simple",
+                                                   "PIP_EXTRA_INDEX_URL": "https://laptop.invalid/simple"})
+    if (source_environment["UV_DEFAULT_INDEX"] != "https://pypi.org/simple"
+            or "PIP_EXTRA_INDEX_URL" in source_environment):
+        raise AssertionError("packaged installer inherited a laptop-only Python source")
     from server import main as application
     import uvicorn
 

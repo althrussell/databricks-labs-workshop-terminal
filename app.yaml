@@ -8,6 +8,15 @@ command:
   - server.otel_bootstrap
 
 env:
+  # Public deployment registries; laptop transport overrides never ship here.
+  - name: UV_DEFAULT_INDEX
+    value: https://pypi.org/simple
+  - name: PIP_INDEX_URL
+    value: https://pypi.org/simple
+  - name: NPM_CONFIG_REGISTRY
+    value: https://registry.npmjs.org/
+  - name: npm_config_registry
+    value: https://registry.npmjs.org/
   # PTY fds and session state are process-local: this app MUST run single-worker.
   - name: HOME
     value: /app/python/source_code/data/apphome

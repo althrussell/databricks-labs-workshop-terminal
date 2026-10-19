@@ -49,6 +49,7 @@ from .closeout_http import (
     retained_model_policy_pending_refusal,
 )
 from .content import content_service
+from .workshop_lifecycle import CLOSING_DETAIL, UNAVAILABLE_DETAIL, attendee_status
 from .credentials import (
     CredentialError,
     credential_manager,
@@ -235,12 +236,14 @@ app.include_router(ws_router)
 
 @app.exception_handler(CaptureError)
 async def capture_unavailable(_request: Request, _error: CaptureError):
-    return JSONResponse(status_code=503, content={"detail": "Workshop capture is held; retry when persistence is available."})
+    detail = ("Workshop capture is held; retry when persistence is available."
+              if _request.url.path.startswith("/api/admin/") else UNAVAILABLE_DETAIL)
+    return JSONResponse(status_code=503, content={"detail": detail})
 
 
 @app.exception_handler(CaptureClosedError)
 async def capture_closed(_request: Request, _error: CaptureClosedError):
-    return JSONResponse(status_code=409, content={"detail": "Workshop is closing; new capture input is disabled."})
+    return JSONResponse(status_code=409, content={"detail": CLOSING_DETAIL})
 
 
 @app.middleware("http")
@@ -271,7 +274,9 @@ def _effective_wizard_model() -> str:
 @app.get("/api/config")
 def get_config(principal: Principal = Depends(get_current_user)):
     pack = content_service.pack
+    event_emitter._ensure_ready()
     return {
+        "workshop": attendee_status(event_emitter.journal),
         "user": {"email": principal.name, "is_admin": is_admin(principal)},
         "branding": config.branding(),
         "workspace_url": config.databricks_host(),
@@ -316,6 +321,13 @@ def get_config(principal: Principal = Depends(get_current_user)):
         "model_comparison": model_comparison(),
         "help": help_module.snapshot(),
     }
+
+
+@app.get("/api/workshop-status")
+def get_workshop_status(_: Principal = Depends(get_current_user)):
+    """Read the input barrier without admitting work or advancing closeout."""
+    event_emitter._ensure_ready()
+    return attendee_status(event_emitter.journal)
 
 
 def model_comparison() -> list[dict]:
@@ -687,7 +699,13 @@ def save_profile(body: _ProfileBody, principal: Principal = Depends(get_current_
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    user_content._write_instructions(user)
+    try:
+        user_content._write_instructions(user)
+    except Exception as exc:
+        # Durable acceptance already succeeded. Generated instruction files are
+        # refreshed by the existing launch/bootstrap path; a cache failure must
+        # not tell the attendee that the retained preference was rejected.
+        logger.warning("saved profile instruction refresh unavailable (%s)", type(exc).__name__)
     return profile.to_json()
 
 
@@ -748,7 +766,12 @@ def save_wizard(body: _WizardBody, principal: Principal = Depends(get_current_us
     # The brief is inlined into the agent's instructions, so they have to be
     # rewritten now. Sessions are almost always launched from the wizard's last
     # step, after this call, so the first agent to start already has it.
-    user_content.set_wizard_brief(user, brief)
+    try:
+        user_content.set_wizard_brief(user, brief)
+    except Exception as exc:
+        # Keep the accepted revision observable even when disposable generated
+        # instructions cannot refresh; primary journal errors still propagate.
+        logger.warning("saved goal instruction refresh unavailable (%s)", type(exc).__name__)
     return {
         "brief": brief.to_json(),
         "starter_prompt": wizard.starter_prompt(brief),

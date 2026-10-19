@@ -17,17 +17,27 @@ from __future__ import annotations
 
 import argparse
 import io
-import os
 import sys
+from pathlib import Path
 
-SRC = os.path.join(os.path.dirname(__file__), "..", "deploy", "omnigent-app")
-SKIP = {".venv", "__pycache__", ".pytest_cache"}
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from scripts.source_upload import read_upload_sources
 
 
-def main() -> int:
+def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", default="omnigent-app-buildprobe")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
+
+    # Validate the complete release before importing the paired application's
+    # sources; the same root carries its lock and artifact dependencies.
+    prefix = "deploy/omnigent-app/"
+    sources = {name.removeprefix(prefix): content
+               for name, content in read_upload_sources(ROOT, exclude=(
+                   ".git*", ".venv*", "node_modules*", "frontend/node_modules*",
+                   "__pycache__*", "*.pyc", ".pytest_cache*",
+               )).items() if name.startswith(prefix)}
 
     from databricks.sdk import WorkspaceClient
     from databricks.sdk.service.apps import App, AppDeployment
@@ -38,27 +48,21 @@ def main() -> int:
     target = f"/Workspace/Users/{me}/apps/{args.name}"
 
     print(f"Uploading Omnigent App source to {target}")
-    for root, dirs, files in os.walk(os.path.normpath(SRC)):
-        dirs[:] = [d for d in dirs if d not in SKIP]
-        for name in files:
-            path = os.path.join(root, name)
-            rel = os.path.relpath(path, os.path.normpath(SRC))
-            with open(path, "rb") as f:
-                content = f.read()
-            if rel == "app.yaml":
-                # The probe has no bound resources, so the valueFrom entries
-                # would fail deploy validation before a single wheel installs.
-                content = content.replace(
-                    b"  - name: AP_LAKEBASE_ENDPOINT\n    valueFrom: postgres\n"
-                    b"  - name: AP_ARTIFACT_VOLUME_PATH\n    valueFrom: artifact_volume\n",
-                    b"  - name: AP_LAKEBASE_ENDPOINT\n    value: \"probe-unbound\"\n"
-                    b"  - name: AP_ARTIFACT_VOLUME_PATH\n    value: \"/Volumes/probe/unbound/path\"\n",
-                )
-                if b"valueFrom" in content:
-                    print("  WARNING: valueFrom entries still present; deploy may fail early")
-            ws_path = f"{target}/{rel}".replace("\\", "/")
-            w.workspace.mkdirs(os.path.dirname(ws_path))
-            w.workspace.upload(ws_path, io.BytesIO(content), format=ImportFormat.AUTO, overwrite=True)
+    for rel, content in sources.items():
+        if rel == "app.yaml":
+            # The probe has no bound resources, so the valueFrom entries
+            # would fail deploy validation before a single wheel installs.
+            content = content.replace(
+                b"  - name: AP_LAKEBASE_ENDPOINT\n    valueFrom: postgres\n"
+                b"  - name: AP_ARTIFACT_VOLUME_PATH\n    valueFrom: artifact_volume\n",
+                b"  - name: AP_LAKEBASE_ENDPOINT\n    value: \"probe-unbound\"\n"
+                b"  - name: AP_ARTIFACT_VOLUME_PATH\n    value: \"/Volumes/probe/unbound/path\"\n",
+            )
+            if b"valueFrom" in content:
+                print("  WARNING: valueFrom entries still present; deploy may fail early")
+        ws_path = f"{target}/{rel}"
+        w.workspace.mkdirs(os.path.dirname(ws_path))
+        w.workspace.upload(ws_path, io.BytesIO(content), format=ImportFormat.AUTO, overwrite=True)
 
     print(f"Creating app {args.name}")
     try:

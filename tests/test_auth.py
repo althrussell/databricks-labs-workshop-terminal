@@ -74,7 +74,7 @@ def test_admin_accepts_sp_bearer_token(client, monkeypatch):
 
 
 def test_admin_bearer_cache_keys_full_token_digest_not_shared_prefix(
-    client, monkeypatch
+    client, monkeypatch, auth_model_policy
 ):
     from server import auth
 

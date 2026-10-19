@@ -8,8 +8,32 @@ on:
 permissions:
   contents: write
 
+env:
+  UV_DEFAULT_INDEX: "https://pypi.org/simple"
+  UV_INDEX_URL: "https://pypi.org/simple"
+  UV_EXTRA_INDEX_URL: ""
+  PIP_INDEX_URL: "https://pypi.org/simple"
+  PIP_EXTRA_INDEX_URL: ""
+  NPM_CONFIG_REGISTRY: "https://registry.npmjs.org/"
+
 jobs:
+  public-sources:
+    name: public-dependency-sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.0"
+      - name: Validate sources before project dependency resolution
+        run: python scripts/check_dependency_sources.py
+
   release:
+    needs: public-sources
     name: build-test-publish
     runs-on: ubuntu-24.04
     timeout-minutes: 30

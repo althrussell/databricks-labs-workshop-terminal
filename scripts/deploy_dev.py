@@ -14,21 +14,26 @@ Requires the uv-locked project environment (``uv sync --frozen``).
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import io
 import os
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.source_upload import read_upload_sources
 
 EXCLUDE = ["node_modules*", ".venv*", "__pycache__*", ".git*", "frontend/node_modules*", "*.pyc"]
 REPO_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
 
 
-def main() -> int:
+def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", default="workshop-terminal-dev")
     parser.add_argument("--no-pat", action="store_true",
                         help="skip minting/injecting the WORKSHOP_PAT dev credential")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+
+    files = read_upload_sources(Path(REPO_ROOT), exclude=EXCLUDE)
 
     from databricks.sdk import WorkspaceClient
     from databricks.sdk.service.apps import App, AppDeployment
@@ -46,29 +51,17 @@ def main() -> int:
         ).token_value
 
     print(f"Importing source to {target}")
-    for root, dirs, files in os.walk(REPO_ROOT):
-        rel_root = os.path.relpath(root, REPO_ROOT)
-        dirs[:] = [
-            d for d in dirs
-            if not any(fnmatch.fnmatch(os.path.normpath(os.path.join(rel_root, d)), p) for p in EXCLUDE)
-        ]
-        for name in files:
-            rel = os.path.normpath(os.path.join(rel_root, name))
-            if any(fnmatch.fnmatch(rel, p) for p in EXCLUDE):
-                continue
-            path = os.path.join(root, name)
-            with open(path, "rb") as f:
-                content = f.read()
-            if rel == "app.yaml" and workshop_pat:
-                # Same mechanism Control Tower uses: vend the credential by
-                # editing the deployed app.yaml in place (never the git copy).
-                content = content.replace(
-                    b"- name: WORKSHOP_PAT\n    value: \"\"",
-                    f"- name: WORKSHOP_PAT\n    value: \"{workshop_pat}\"".encode(),
-                )
-            ws_path = f"{target}/{rel}".replace("\\", "/")
-            w.workspace.mkdirs(os.path.dirname(ws_path))
-            w.workspace.upload(ws_path, io.BytesIO(content), format=ImportFormat.AUTO, overwrite=True)
+    for rel, content in files.items():
+        if rel == "app.yaml" and workshop_pat:
+            # Same mechanism Control Tower uses: vend the credential by
+            # editing the deployed app.yaml in place (never the git copy).
+            content = content.replace(
+                b"- name: WORKSHOP_PAT\n    value: \"\"",
+                f"- name: WORKSHOP_PAT\n    value: \"{workshop_pat}\"".encode(),
+            )
+        ws_path = f"{target}/{rel}"
+        w.workspace.mkdirs(os.path.dirname(ws_path))
+        w.workspace.upload(ws_path, io.BytesIO(content), format=ImportFormat.AUTO, overwrite=True)
 
     print(f"Creating app {args.name}")
     try:

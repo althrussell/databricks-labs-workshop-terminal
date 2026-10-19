@@ -9,10 +9,12 @@ export default function RaiseHandButton({
   initial,
   raised,
   onRaisedChange,
+  disabled = false,
 }: {
   initial: HelpState | null;
   raised: boolean;
   onRaisedChange: (raised: boolean) => void;
+  disabled?: boolean;
 }) {
   const [noteOpen, setNoteOpen] = useState(false);
   const [note, setNote] = useState(initial?.note ?? "");
@@ -37,7 +39,7 @@ export default function RaiseHandButton({
   }, [onRaisedChange]);
 
   const toggle = async () => {
-    if (busy) return;
+    if (busy || disabled) return;
     setBusy(true);
     try {
       if (raised) {
@@ -69,6 +71,7 @@ export default function RaiseHandButton({
       {noteOpen && !raised ? (
         <div className="raise-hand-note">
           <input
+            disabled={disabled}
             type="text"
             value={note}
             maxLength={NOTE_MAX}
@@ -83,7 +86,7 @@ export default function RaiseHandButton({
           <button className="phase-btn" type="button" onClick={() => setNoteOpen(false)}>
             Cancel
           </button>
-          <button className="primary-btn" type="button" disabled={busy} onClick={() => void toggle()}>
+          <button className="primary-btn" type="button" disabled={busy || disabled} onClick={() => void toggle()}>
             Raise
           </button>
         </div>
@@ -91,7 +94,7 @@ export default function RaiseHandButton({
         <button
           type="button"
           className={`raise-hand-btn ${raised ? "raise-hand-active" : ""}`}
-          disabled={busy}
+          disabled={busy || disabled}
           aria-label={raised ? "Hand raised" : "Raise hand"}
           onClick={() => void toggle()}
           title={

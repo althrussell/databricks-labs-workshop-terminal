@@ -1,17 +1,16 @@
 """Live, versioned policy for direct access to approved ``system.ai`` models.
 
-Control Tower owns the desired model pool.  Workshop Terminal keeps the last
-successfully applied revision in ``DATA_ROOT`` so a process restart cannot make
-the policy disappear while CT is reconciling it again.  Reads are lock-free
-from the caller's perspective and updates replace one immutable snapshot under
-one lock; callers therefore see either the old policy or the new one, never a
-partially-updated pool.
+Control Tower owns the desired model pool. Production stores the last accepted
+revision in the existing source-bound capture journal. Container files are only
+a disposable cache; a replacement process reads the same retained policy and a
+new event never imports an unbound local policy.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import tempfile
@@ -23,6 +22,9 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from . import config, models
+from .capture_journal import CaptureHeldError, canonical_json
+
+logger = logging.getLogger(__name__)
 
 POLICY_SCHEMA_VERSION = 1
 
@@ -183,6 +185,61 @@ class PolicyStore:
         self._lock = threading.RLock()
         self._loaded_path = ""
         self._snapshot = PolicySnapshot()
+        self._journal = None
+
+    def configure_capture(self, journal) -> None:
+        """Attach the existing source before startup consumers can use models."""
+        with self._lock:
+            self._check_binding(journal)
+            snapshot = self._retained(journal.read(), journal)
+            self._journal = journal
+            self._snapshot = snapshot
+
+    @staticmethod
+    def _check_binding(journal) -> None:
+        from .capture import source_binding
+
+        if (canonical_json(journal.binding) != canonical_json(source_binding())
+                or (not config.local_dev() and not journal.storage.durable)):
+            raise CaptureHeldError("model policy persistence does not match its source")
+
+    def _bound_journal(self):
+        journal = self._journal
+        if journal is None:
+            if not config.local_dev():
+                raise CaptureHeldError("model policy persistence is not initialized")
+            return None
+        self._check_binding(journal)
+        return journal
+
+    @staticmethod
+    def _retained(state: dict, journal) -> PolicySnapshot:
+        from .closeout_guard import closeout_state
+
+        closeout_state(state)
+        if "model_policy" not in state:
+            return PolicySnapshot()
+        try:
+            raw = state["model_policy"]
+            if (not isinstance(raw, dict)
+                    or set(raw) != {"schema_version", "revision", "pool", "denied_models"}
+                    or type(raw["schema_version"]) is not int
+                    or raw["schema_version"] != POLICY_SCHEMA_VERSION):
+                raise ValueError("invalid policy snapshot")
+            request = ModelPolicyRequest.model_validate({
+                "revision": raw["revision"], "pool": raw["pool"],
+                "denied_models": raw["denied_models"], "restart_processes": False,
+            })
+            payload = _canonical_payload(request)
+            if canonical_json(payload) != canonical_json(raw):
+                raise ValueError("noncanonical policy snapshot")
+            return PolicySnapshot(revision=request.revision, pool=tuple(request.pool),
+                                  denied_models=tuple(request.denied_models),
+                                  fingerprint=_fingerprint(payload))
+        except (ValueError, TypeError, KeyError, AttributeError) as error:
+            held = CaptureHeldError("retained model policy is invalid")
+            journal.mark_held(held)
+            raise held from error
 
     def _path(self) -> str:
         return os.path.join(config.data_root(), "model-policy-v1.json")
@@ -218,6 +275,10 @@ class PolicyStore:
 
     def snapshot(self) -> PolicySnapshot:
         with self._lock:
+            journal = self._bound_journal()
+            if journal is not None:
+                self._snapshot = self._retained(journal.read(), journal)
+                return self._snapshot
             self._load_locked()
             return self._snapshot
 
@@ -225,6 +286,35 @@ class PolicyStore:
         payload = _canonical_payload(request)
         fingerprint = _fingerprint(payload)
         with self._lock:
+            journal = self._bound_journal()
+            if journal is not None:
+                def apply_retained(state):
+                    from .closeout_guard import CaptureClosedError, closeout_state
+
+                    barrier = closeout_state(state)
+                    if barrier is not None and barrier["phase"] != "OPEN":
+                        raise CaptureClosedError("Workshop is closing; new capture input is disabled")
+                    current = self._retained(state, journal)
+                    if request.revision < current.revision:
+                        raise StalePolicy(current.revision)
+                    if request.revision == current.revision:
+                        if fingerprint != current.fingerprint:
+                            raise RevisionConflict(current.revision)
+                        return current, False
+                    state["model_policy"] = payload
+                    return PolicySnapshot(
+                        revision=request.revision, pool=tuple(request.pool),
+                        denied_models=tuple(request.denied_models), fingerprint=fingerprint,
+                    ), True
+
+                snapshot, changed = journal.transaction(apply_retained)
+                self._snapshot = snapshot
+                try:
+                    self._write_locked(payload)
+                except Exception as error:
+                    # A cache failure cannot undo an accepted primary commit.
+                    logger.warning("model policy cache unavailable (%s)", type(error).__name__)
+                return snapshot, changed
             self._load_locked()
             current = self._snapshot
             if request.revision < current.revision:
@@ -269,6 +359,7 @@ class PolicyStore:
         with self._lock:
             self._loaded_path = ""
             self._snapshot = PolicySnapshot()
+            self._journal = None
 
 
 store = PolicyStore()
