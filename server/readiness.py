@@ -14,6 +14,7 @@ import tempfile
 import time
 
 from . import models
+from .runtime_timing import stage as timing_stage
 from .obo import FRESH_MARGIN as OBO_FRESH_MARGIN
 
 
@@ -1037,6 +1038,7 @@ def _bound_workspace_sync() -> dict | None:
     return user_content.workspace_sync_status_for_email(email)
 
 
+@timing_stage("readiness.total")
 def evaluate_runtime() -> dict:
     from . import attendee, event_deadline
     from .bootstrap import install

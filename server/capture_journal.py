@@ -25,6 +25,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol, TypeVar
 
+from .runtime_timing import stage as timing_stage
+
 SCHEMA_VERSION = 1
 _OPERATION = re.compile(r"^(\d{20})\.json$")
 _CHECKPOINT = re.compile(r"^checkpoint-(\d{20})\.json$")
@@ -151,6 +153,7 @@ class WorkspaceCaptureStorage:
     durable = True
     mode = "workspace"
 
+    @timing_stage("capture.workspace_init")
     def __init__(self, client: Any, path: str) -> None:
         if not path.startswith("/Workspace/") or any(
             part in {".", ".."} for part in path.split("/")
@@ -161,6 +164,7 @@ class WorkspaceCaptureStorage:
         # mkdirs is idempotent; it fails when a path component is a file.
         self.client.workspace.mkdirs(self.path)
 
+    @timing_stage("capture.workspace_list")
     def list_names(self) -> list[str]:
         names = []
         for entry in self.client.workspace.list(self.path):
@@ -179,6 +183,7 @@ class WorkspaceCaptureStorage:
             names.append(canonical[len(parent) :])
         return sorted(names)
 
+    @timing_stage("capture.workspace_read")
     def read(self, name: str) -> bytes | None:
         from databricks.sdk.errors import NotFound
         from databricks.sdk.service.workspace import ExportFormat
@@ -197,6 +202,7 @@ class WorkspaceCaptureStorage:
             if callable(close):
                 close()
 
+    @timing_stage("capture.workspace_create")
     def create(self, name: str, content: bytes) -> bool:
         from databricks.sdk.errors import ResourceAlreadyExists
         from databricks.sdk.service.workspace import ImportFormat
@@ -625,6 +631,7 @@ class CaptureJournal:
             raise CaptureHeldError("capture storage contradicted create-only write")
         return False
 
+    @timing_stage("capture.journal_refresh")
     def _refresh(self, *, audit: bool = False, observer=None) -> None:
         if self._held:
             raise CaptureHeldError(self._error or "capture history is held")
@@ -752,6 +759,7 @@ class CaptureJournal:
             cls = CaptureHeldError if retained else CaptureCapacityError
             raise cls("capture state exceeds the retained capacity limit")
 
+    @timing_stage("capture.journal_read")
     def read(self) -> dict[str, Any]:
         with self._lock:
             try:
@@ -761,6 +769,7 @@ class CaptureJournal:
                 raise
             return copy.deepcopy(self._state)
 
+    @timing_stage("capture.journal_audit")
     def audit(self, *, observer=None) -> dict[str, Any]:
         """Replay every retained operation, including history before checkpoints."""
         with self._lock:
@@ -793,6 +802,7 @@ class CaptureJournal:
             raise
         return snapshot
 
+    @timing_stage("capture.journal_write")
     def transaction(self, mutator: Callable[[dict[str, Any]], T]) -> T:
         with self._lock:
             for _ in range(self.max_retries):

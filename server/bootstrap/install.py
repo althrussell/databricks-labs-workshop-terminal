@@ -31,6 +31,8 @@ from .artifacts import (
     directory_checksum as _directory_checksum,
 )
 from .codex_artifacts import install_native_alias, validate_codex_tarballs
+from .proof import FileDigestProof
+from ..runtime_timing import stage as timing_stage
 from .skill_projection import RETIRED_MANAGED_SKILLS, RETIRED_UX_SKILLS, RETIRED_WORKSHOP_SKILLS, project_skills
 from .apx import VERSION as APX_VERSION, BUN_VERSION
 
@@ -186,6 +188,7 @@ def _mirrored_artifact(name: str) -> str | None:
     return fetched.path
 
 
+@timing_stage("artifact.extract")
 def _extracted_artifact_executable(name: str) -> tuple[str, dict]:
     """Verify an archive artifact, extract it once, return its executable.
 
@@ -239,9 +242,9 @@ def _write_artifact_binary_stamp(
     return checksum
 
 
-def _artifact_binary_reusable(name: str, entry: dict, binary_path: str) -> bool:
+def _artifact_binary_reusable(name: str, entry: dict, binary_path: str, *, checksum=None) -> bool:
     stamp = _read_json(_artifact_binary_stamp_path(name))
-    actual = _file_checksum(binary_path)
+    actual = (checksum or _file_checksum)(binary_path)
     return bool(
         actual
         and stamp.get("artifact_sha256") == entry["sha256"]
@@ -540,8 +543,10 @@ def prewarm_status() -> dict:
         return _prewarm_status_unlocked()
 
 
+@timing_stage("proof.total")
 def _prewarm_status_unlocked() -> dict:
     """Verify persistent restart inputs directly from disk, not process state."""
+    proof = FileDigestProof(_file_checksum)
     prefix = config.shared_prefix()
     try:
         contract = _artifact_contract()
@@ -570,73 +575,75 @@ def _prewarm_status_unlocked() -> dict:
         "omnigent": "uv_binary",
     }
     for name, expected in expected_versions.items():
-        path = os.path.join(bin_dir, name)
-        actual = _read_cli_version(path) if os.path.isfile(path) else None
-        binary_checksum = _file_checksum(path)
-        stamp_ok = True
-        artifact_entry = contract.entry(artifact_names[name]) if contract else None
-        artifact_ok = bool(
-            artifact_entry
-            and _artifact_binary_reusable(name, artifact_entry, path)
-        )
-        if name == "codex" and contract:
-            artifact_ok = _codex_install_reusable(
-                prefix,
-                contract.entry("codex_npm_launcher_package"),
-                contract.entry("codex_native_package_linux_x64"),
+        with timing_stage("proof.binary", component=name):
+            path = os.path.join(bin_dir, name)
+            actual = _read_cli_version(path) if os.path.isfile(path) else None
+            binary_checksum = proof.checksum(path)
+            stamp_ok = True
+            artifact_entry = contract.entry(artifact_names[name]) if contract else None
+            artifact_ok = bool(
+                artifact_entry
+                and _artifact_binary_reusable(name, artifact_entry, path, checksum=proof.checksum)
             )
-        if name == "omnigent" and contract:
-            artifact_ok = _omnigent_install_reusable(
-                prefix,
-                {
-                    artifact_name: contract.entry(artifact_name)
-                    for artifact_name in (
-                        "uv_binary",
-                        "python_3_12_runtime",
-                        "omnigent_lock",
-                    )
-                },
-            )
-        if name == "claude" and contract:
-            artifact_ok = (
-                artifact_ok
-                and binary_checksum == contract.entry("claude_binary")["sha256"]
-            )
-        binaries[name] = {
-            "expected": expected,
-            "actual": actual,
-            "actual_checksum": binary_checksum or None,
-            "source": "persistent",
-            "reusable": bool(
-                expected
-                and actual == expected
-                and binary_checksum
-                and stamp_ok
-                and artifact_ok
-            ),
-        }
+            if name == "codex" and contract:
+                artifact_ok = _codex_install_reusable(
+                    prefix,
+                    contract.entry("codex_npm_launcher_package"),
+                    contract.entry("codex_native_package_linux_x64"), checksum=proof.checksum,
+                )
+            if name == "omnigent" and contract:
+                artifact_ok = _omnigent_install_reusable(
+                    prefix,
+                    {
+                        artifact_name: contract.entry(artifact_name)
+                        for artifact_name in (
+                            "uv_binary",
+                            "python_3_12_runtime",
+                            "omnigent_lock",
+                        )
+                    }, checksum=proof.checksum,
+                )
+            if name == "claude" and contract:
+                artifact_ok = (
+                    artifact_ok
+                    and binary_checksum == contract.entry("claude_binary")["sha256"]
+                )
+            binaries[name] = {
+                "expected": expected,
+                "actual": actual,
+                "actual_checksum": binary_checksum or None,
+                "source": "persistent",
+                "reusable": bool(
+                    expected
+                    and actual == expected
+                    and binary_checksum
+                    and stamp_ok
+                    and artifact_ok
+                ),
+            }
 
     if config.omnigent_offered():
-        tmux_path = os.path.join(bin_dir, "tmux")
-        tmux_stamp = _read_json(os.path.join(prefix, "tmux.install.json"))
-        tmux_checksum = _file_checksum(tmux_path)
-        stamped_binary_checksum = str(tmux_stamp.get("binary_sha256") or "")
-        binaries["tmux"] = {
-            "expected": stamped_binary_checksum or None,
-            "actual": tmux_checksum or None,
-            "expected_checksum": (
-                contract.entry("tmux_linux_x64")["sha256"] if contract else None
-            ),
-            "actual_checksum": tmux_checksum or None,
-            "source": "persistent",
-            "reusable": bool(
-                tmux_checksum
-                and contract is not None
-                and tmux_stamp.get("archive_sha256")
-                == contract.entry("tmux_linux_x64")["sha256"]
-                and stamped_binary_checksum == tmux_checksum
-            ),
-        }
+        with timing_stage("proof.binary", component="tmux"):
+            tmux_path = os.path.join(bin_dir, "tmux")
+            tmux_stamp = _read_json(os.path.join(prefix, "tmux.install.json"))
+            tmux_checksum = proof.checksum(tmux_path)
+            stamped_binary_checksum = str(tmux_stamp.get("binary_sha256") or "")
+            binaries["tmux"] = {
+                "expected": stamped_binary_checksum or None,
+                "actual": tmux_checksum or None,
+                "expected_checksum": (
+                    contract.entry("tmux_linux_x64")["sha256"] if contract else None
+                ),
+                "actual_checksum": tmux_checksum or None,
+                "source": "persistent",
+                "reusable": bool(
+                    tmux_checksum
+                    and contract is not None
+                    and tmux_stamp.get("archive_sha256")
+                    == contract.entry("tmux_linux_x64")["sha256"]
+                    and stamped_binary_checksum == tmux_checksum
+                ),
+            }
 
     stamp = _read_json(_skills_stamp_path())
     try:
@@ -668,7 +675,8 @@ def _prewarm_status_unlocked() -> dict:
 
         python_tools.update(agentbricks_prewarm_status())
     reusable = (
-        all(entry["reusable"] for entry in binaries.values())
+        proof.unchanged()
+        and all(entry["reusable"] for entry in binaries.values())
         and skills_reusable
         and all(entry["reusable"] for entry in python_tools.values())
     )
@@ -720,6 +728,7 @@ def _parse_version(output: str) -> str | None:
     return match.group(1) if match else None
 
 
+@timing_stage("proof.version_command")
 def _read_cli_version(path: str) -> str | None:
     try:
         result = subprocess.run(
@@ -736,6 +745,7 @@ def _read_cli_version(path: str) -> str | None:
     return _parse_version(f"{result.stdout}\n{result.stderr}")
 
 
+@timing_stage("integrity.file_hash")
 def _file_checksum(path: os.PathLike[str] | str) -> str:
     digest = hashlib.sha256()
     try:
@@ -811,6 +821,7 @@ def _install_file_lock(*, exclusive: bool):
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
+@timing_stage("proof.skills", component="skills")
 def _persistent_skills_install(
     clone_dir: str,
     skills_dir: str,
@@ -1044,7 +1055,7 @@ def _find_codex_native_binary(prefix: str) -> str | None:
 
 
 def _codex_install_reusable(
-    prefix: str, launcher_artifact: dict, native_artifact: dict
+    prefix: str, launcher_artifact: dict, native_artifact: dict, *, checksum=None
 ) -> bool:
     launcher = os.path.join(prefix, "bin", "codex")
     stamp = _read_json(os.path.join(prefix, "codex.install.json"))
@@ -1066,8 +1077,9 @@ def _codex_install_reusable(
         for path in (native, launcher_tree, native_tree)
     ):
         return False
-    launcher_checksum = _file_checksum(launcher)
-    native_checksum = _file_checksum(native)
+    hash_file = checksum or _file_checksum
+    launcher_checksum = hash_file(launcher)
+    native_checksum = hash_file(native)
     launcher_tree_checksum = _directory_checksum(launcher_tree)
     native_tree_checksum = _directory_checksum(native_tree)
     return bool(
@@ -1310,7 +1322,7 @@ def _omnigent_stamp_path() -> str:
     return os.path.join(config.shared_prefix(), "omnigent.install.json")
 
 
-def _omnigent_install_reusable(prefix: str, entries: dict[str, dict]) -> bool:
+def _omnigent_install_reusable(prefix: str, entries: dict[str, dict], *, checksum=None) -> bool:
     """Reuse an install only when the whole supply chain still matches.
 
     The committed lock is the integrity anchor now that there is no staged
@@ -1319,9 +1331,10 @@ def _omnigent_install_reusable(prefix: str, entries: dict[str, dict]) -> bool:
     """
     stamp = _read_json(os.path.join(prefix, "omnigent.install.json"))
     omnigent_bin = os.path.join(prefix, "bin", "omnigent")
+    hash_file = checksum or _file_checksum
     checks = {
-        "lock_sha256": _file_checksum(entries["omnigent_lock"]["source"]),
-        "binary_sha256": _file_checksum(omnigent_bin),
+        "lock_sha256": hash_file(entries["omnigent_lock"]["source"]),
+        "binary_sha256": hash_file(omnigent_bin),
         "venv_sha256": _directory_checksum(
             os.path.join(prefix, "omnigent-venv")
         ),
@@ -1391,40 +1404,42 @@ def _install_omnigent() -> None:
         lock_text = open(paths["omnigent_lock"], encoding="utf-8").read()
         if f"omnigent=={OMNIGENT_VERSION}" not in lock_text:
             raise RuntimeError("Omnigent lock does not pin the configured version")
-        result = subprocess.run(
-            [
-                paths["uv_binary"],
-                "venv",
-                "--clear",
-                "--python",
-                python_executable,
-                venv,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=300,
-            env=env,
-        )
+        with timing_stage("install.venv"):
+            result = subprocess.run(
+                [
+                    paths["uv_binary"],
+                    "venv",
+                    "--clear",
+                    "--python",
+                    python_executable,
+                    venv,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                env=env,
+            )
         if result.returncode != 0:
             raise RuntimeError(
                 "offline Omnigent venv creation failed: "
                 + (result.stderr or result.stdout)[-500:]
             )
-        result = subprocess.run(
-            [
-                paths["uv_binary"],
-                "pip",
-                "install",
-                "--default-index",
-                PUBLIC_PYPI,
-                "--python",
-                os.path.join(venv, "bin", "python"),
-                "--require-hashes",
-                "-r",
-                paths["omnigent_lock"],
-            ],
-            capture_output=True, text=True, timeout=900, env=env,
-        )
+        with timing_stage("install.dependencies"):
+            result = subprocess.run(
+                [
+                    paths["uv_binary"],
+                    "pip",
+                    "install",
+                    "--default-index",
+                    PUBLIC_PYPI,
+                    "--python",
+                    os.path.join(venv, "bin", "python"),
+                    "--require-hashes",
+                    "-r",
+                    paths["omnigent_lock"],
+                ],
+                capture_output=True, text=True, timeout=900, env=env,
+            )
         installed_bin = os.path.join(venv, "bin", "omnigent")
         if result.returncode != 0 or not os.path.exists(installed_bin):
             raise RuntimeError((result.stderr or result.stdout)[-500:])
@@ -1676,32 +1691,36 @@ def _install_skills() -> None:
         # pin we clone then checkout. Invalid or tampered persistent content is
         # discarded and rebuilt from the reviewed ref.
         shutil.rmtree(clone_dir, ignore_errors=True)
-        result = subprocess.run(
-            ["git", "clone", "--depth", "1", "--branch", SKILLS_REF,
-             artifact["source"], clone_dir],
-            capture_output=True, text=True, timeout=300, env=_install_env(),
-        )
+        with timing_stage("install.skills_git"):
+            result = subprocess.run(
+                ["git", "clone", "--depth", "1", "--branch", SKILLS_REF,
+                 artifact["source"], clone_dir],
+                capture_output=True, text=True, timeout=300, env=_install_env(),
+            )
         if result.returncode != 0:
             # --branch rejects raw commit SHAs; fall back to clone + checkout.
             shutil.rmtree(clone_dir, ignore_errors=True)
-            subprocess.run(
-                ["git", "clone", artifact["source"], clone_dir],
-                capture_output=True, text=True, timeout=300, env=_install_env(),
-            )
-            result = subprocess.run(
-                ["git", "-C", clone_dir, "checkout", SKILLS_REF],
-                capture_output=True, text=True, timeout=120, env=_install_env(),
-            )
+            with timing_stage("install.skills_git"):
+                subprocess.run(
+                    ["git", "clone", artifact["source"], clone_dir],
+                    capture_output=True, text=True, timeout=300, env=_install_env(),
+                )
+            with timing_stage("install.skills_git"):
+                result = subprocess.run(
+                    ["git", "-C", clone_dir, "checkout", SKILLS_REF],
+                    capture_output=True, text=True, timeout=120, env=_install_env(),
+                )
         if result.returncode != 0:
             raise RuntimeError((result.stderr or result.stdout)[-300:])
 
-        resolved = subprocess.run(
-            ["git", "-C", clone_dir, "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            env=_install_env(),
-        )
+        with timing_stage("install.skills_git"):
+            resolved = subprocess.run(
+                ["git", "-C", clone_dir, "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env=_install_env(),
+            )
         resolved_commit = (resolved.stdout or "").strip()
         if resolved.returncode != 0 or not re.fullmatch(
             r"[0-9a-fA-F]{40}", resolved_commit
@@ -1841,7 +1860,8 @@ def _guard_installer(
             source=source,
         )
         try:
-            operation()
+            with timing_stage("install.total", component=step):
+                operation()
         except Exception as error:  # noqa: BLE001 - step must leave pending/running
             _set(
                 step,

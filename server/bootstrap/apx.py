@@ -15,6 +15,8 @@ import subprocess
 import tempfile
 import zipfile
 
+from ..runtime_timing import stage as timing_stage
+
 
 VERSION = "0.3.8"
 SOURCE_COMMIT = "50073e561a689ae5292f82e69ae0505417d75d3e"
@@ -33,6 +35,7 @@ def _proof(prefix: Path, entries: dict) -> dict:
     }
 
 
+@timing_stage("proof.python_tool", component="apx")
 def prewarm_status() -> dict:
     from . import install as bootstrap
     prefix = Path(bootstrap.config.shared_prefix())
@@ -50,6 +53,7 @@ def prewarm_status() -> dict:
     }
 
 
+@timing_stage("install.total", component="apx")
 def install_cli() -> None:
     from . import install as bootstrap
     prefix = Path(bootstrap.config.shared_prefix())
@@ -91,7 +95,8 @@ def install_cli() -> None:
                 [uv, "pip", "install", "--python", str(venv / "bin/python"),
                  "--no-index", "--no-deps", str(named_wheel)],
             ):
-                result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=180)
+                with timing_stage("install.venv" if command[1] == "venv" else "install.dependencies"):
+                    result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=180)
                 if result.returncode:
                     raise RuntimeError("APX wheel install failed: " + result.stderr[-500:])
         native = venv / "bin/apx"

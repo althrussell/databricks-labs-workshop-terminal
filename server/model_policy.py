@@ -16,6 +16,8 @@ import re
 import tempfile
 import threading
 from collections.abc import Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Literal
 
@@ -180,6 +182,17 @@ def _fingerprint(payload: Mapping[str, object]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+@dataclass(frozen=True)
+class _PolicyReadOperation:
+    store: object
+    journal: object
+    source: bytes
+    snapshot: PolicySnapshot
+
+
+_policy_operation: ContextVar[_PolicyReadOperation | None] = ContextVar("wt_policy_read_operation", default=None)
+
+
 class PolicyStore:
     def __init__(self) -> None:
         self._lock = threading.RLock()
@@ -273,14 +286,61 @@ class PolicyStore:
         except (OSError, ValueError, TypeError):
             self._snapshot = PolicySnapshot()
 
+    def _fresh_snapshot_locked(self, journal) -> PolicySnapshot:
+        if journal is not None:
+            self._snapshot = self._retained(journal.read(), journal)
+        else:
+            self._load_locked()
+        return self._snapshot
+
+    @staticmethod
+    def _operation_source(journal) -> bytes:
+        return canonical_json(journal.binding) if journal is not None else b""
+
     def snapshot(self) -> PolicySnapshot:
         with self._lock:
             journal = self._bound_journal()
-            if journal is not None:
-                self._snapshot = self._retained(journal.read(), journal)
-                return self._snapshot
-            self._load_locked()
-            return self._snapshot
+            operation = _policy_operation.get()
+            if operation is not None and operation.store is self:
+                if (journal is not operation.journal
+                        or self._operation_source(journal) != operation.source
+                        or self._snapshot != operation.snapshot):
+                    raise ModelPolicyConfigurationError("model policy changed during configuration; retry")
+                if journal is not None and journal.health().get("ok") is not True:
+                    # Preserve sticky/storage faults rather than serving an
+                    # operation snapshot after another producer found damage.
+                    return self._fresh_snapshot_locked(journal)
+                return operation.snapshot
+            return self._fresh_snapshot_locked(journal)
+
+    @contextmanager
+    def read_operation(self):
+        """Reuse one source-bound snapshot only during a config operation.
+
+        Independent operations always refresh the retained journal. A final
+        fresh read proves that its policy/source still matches before the
+        caller can publish success; concurrent revision or source changes fail
+        closed. This does not cache journal transactions or closeout auditing.
+        """
+        previous = _policy_operation.get()
+        if previous is not None and previous.store is self:
+            yield self.snapshot()
+            return
+        with self._lock:
+            journal = self._bound_journal()
+            snapshot = self._fresh_snapshot_locked(journal)
+            operation = _PolicyReadOperation(self, journal, self._operation_source(journal), snapshot)
+        token = _policy_operation.set(operation)
+        try:
+            yield snapshot
+            with self._lock:
+                current_journal = self._bound_journal()
+                if (current_journal is not operation.journal
+                        or self._operation_source(current_journal) != operation.source
+                        or self._fresh_snapshot_locked(current_journal) != snapshot):
+                    raise ModelPolicyConfigurationError("model policy changed during configuration; retry")
+        finally:
+            _policy_operation.reset(token)
 
     def apply(self, request: ModelPolicyRequest) -> tuple[PolicySnapshot, bool]:
         payload = _canonical_payload(request)

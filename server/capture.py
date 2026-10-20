@@ -12,6 +12,7 @@ import hashlib
 import logging
 
 from . import config
+from .runtime_timing import stage as timing_stage
 from .capture_journal import CaptureHeldError, CaptureJournal, WorkspaceCaptureStorage, canonical_json
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,7 @@ def configure(emitter, *, client=None) -> None:
     journal = None
     legacy_loaded = False
 
+    @timing_stage("capture.initialize")
     def initialize():
         nonlocal journal, legacy_loaded
         binding = source_binding()

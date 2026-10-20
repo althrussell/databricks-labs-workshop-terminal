@@ -22,6 +22,8 @@ from typing import NamedTuple
 from urllib.parse import urlsplit
 from urllib.request import urlopen
 
+from ..runtime_timing import stage as timing_stage
+
 
 NODE_LINUX_X64_SHA256 = (
     "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6"
@@ -90,6 +92,7 @@ class ArtifactManifestError(RuntimeError):
     pass
 
 
+@timing_stage("integrity.artifact_hash")
 def _checksum(path: str) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
@@ -98,6 +101,7 @@ def _checksum(path: str) -> str:
     return digest.hexdigest()
 
 
+@timing_stage("integrity.directory_hash")
 def directory_checksum(
     path: os.PathLike[str] | str,
     names: set[str] | None = None,
@@ -232,6 +236,7 @@ class ArtifactManifest:
     ) -> str:
         return self.fetch(name, staging_dir=staging_dir, mirror=mirror).path
 
+    @timing_stage("artifact.fetch")
     def fetch(
         self,
         name: str,
@@ -344,6 +349,7 @@ class ArtifactManifest:
                 os.unlink(temp)
 
 
+@timing_stage("artifact.download")
 def _download_https(source: str, destination: str) -> bool:
     with open(destination, "wb") as output, urlopen(source, timeout=60) as response:
         for chunk in iter(lambda: response.read(1024 * 1024), b""):
