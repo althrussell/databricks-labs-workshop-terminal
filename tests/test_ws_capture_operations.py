@@ -417,3 +417,90 @@ def test_closeout_barrier_still_rejects_actual_input(socket_capture, monkeypatch
     asyncio.run(f.ws.session_socket(socket, "owned-session"))
     assert socket.closed == [{"code": 4410, "reason": "workshop is closing"}]
     assert f.journal.read()["closeout"]["writer_outcomes"] == []
+
+
+@pytest.mark.parametrize("outcome", ["success", "held", "cancelled"])
+def test_immediate_event_is_queued_during_attach_without_early_output(socket_capture, monkeypatch, outcome):
+    from server.capture_journal import CaptureHeldError
+    from server.events import EventHub
+
+    f = socket_capture
+    entered, release = threading.Event(), threading.Event()
+    hub = EventHub()
+    monkeypatch.setattr(f.ws, "event_hub", hub)
+
+    def checkpoint(_user):
+        entered.set()
+        assert release.wait(3)
+        if outcome == "held":
+            raise CaptureHeldError("checkpoint persistence is held")
+
+    monkeypatch.setattr(f.ws.user_manager, "checkpoint", checkpoint)
+
+    class BroadcastSocket(Socket):
+        def __init__(self):
+            super().__init__()
+            self.sent = []
+            self.delivered = asyncio.Event()
+
+        async def receive_text(self):
+            await asyncio.Event().wait()
+
+        async def send_text(self, data):
+            self.sent.append(json.loads(data))
+            self.delivered.set()
+
+    async def scenario():
+        hub.attach_loop(asyncio.get_running_loop())
+        socket = BroadcastSocket()
+        task = asyncio.create_task(f.ws.events_socket(socket))
+        try:
+            for _ in range(200):
+                if entered.is_set():
+                    break
+                await asyncio.sleep(0.005)
+            assert entered.is_set() and hub.metrics()["subscribers"] == 1
+            message = {"t": "broadcast", "message": "Immediate notice"}
+            hub.publish(message)
+            await asyncio.sleep(0)
+            assert hub.metrics()["current_depth"] == 1
+            assert socket.sent == []  # admission/checkpoint still owns output
+            if outcome == "cancelled":
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+                assert hub.metrics()["subscribers"] == 0
+            release.set()
+            if outcome == "success":
+                await asyncio.wait_for(socket.delivered.wait(), 2)
+                assert socket.sent == [message]
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+            elif outcome == "held":
+                await asyncio.wait_for(task, 2)
+                assert socket.closed == [{"code": 4413, "reason": "workshop capture is held"}]
+                assert socket.sent == []
+            else:
+                assert socket.sent == []
+        finally:
+            release.set()
+            if not task.done():
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+        for _ in range(200):
+            if not f.ws._capture_workers:
+                break
+            await asyncio.sleep(0.005)
+        assert not f.ws._capture_workers
+        assert hub.metrics()["subscribers"] == 0
+
+    asyncio.run(scenario())
+    state = f.journal.read()["closeout"]
+    assert state["writers"] == f.before
+    if outcome == "held":
+        failed, = state["writer_outcomes"]
+        assert failed["kind"] == "events_socket_attach" and failed["status"] == "failed"
+    else:
+        assert state["writer_outcomes"] == []

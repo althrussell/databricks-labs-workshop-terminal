@@ -276,16 +276,24 @@ async def events_socket(websocket: WebSocket):
             user_manager.checkpoint(user)
         return user
 
+    # Subscribe before journal I/O yields: a broadcast sent immediately after
+    # the accepted handshake must wait in this bounded queue, not disappear.
+    # Output still starts only after capture admission/checkpoint succeeds.
+    queue = event_hub.subscribe()
     try:
         user = await _capture_operation(attach)
     except CaptureClosedError:
+        event_hub.unsubscribe(queue)
         await websocket.close(code=4410, reason="workshop is closing")
         return
     except CaptureError:
+        event_hub.unsubscribe(queue)
         await websocket.close(code=4413, reason="workshop capture is held")
         return
+    except BaseException:
+        event_hub.unsubscribe(queue)
+        raise
 
-    queue = event_hub.subscribe()
     operational_metrics.websocket_attached()
 
     async def pump_events():

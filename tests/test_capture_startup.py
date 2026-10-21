@@ -183,7 +183,7 @@ def test_held_startup_blocks_attendee_bootstrap_and_counter_checkpoint(monkeypat
 
 
 @pytest.mark.parametrize("surface", ["events", "sessions"])
-def test_held_startup_closes_websockets_before_subscribing(monkeypatch, surface):
+def test_held_startup_closes_websockets_without_delivering_output(monkeypatch, surface):
     from server import ws
 
     workspace = WorkspaceFiles()
@@ -209,12 +209,16 @@ def test_held_startup_closes_websockets_before_subscribing(monkeypatch, surface)
     monkeypatch.setattr(ws, "user_manager", users.user_manager)
     monkeypatch.setattr(ws.session_manager, "get", lambda *_args: object())
     monkeypatch.setattr(ws.session_manager, "attach_with_replay", forbidden)
-    monkeypatch.setattr(ws.event_hub, "subscribe", forbidden)
+    subscriptions = []
+    queued = object()
+    monkeypatch.setattr(ws.event_hub, "subscribe", lambda: subscriptions.append(queued) or queued)
+    monkeypatch.setattr(ws.event_hub, "unsubscribe", lambda queue: subscriptions.remove(queue))
     if surface == "events":
         asyncio.run(ws.events_socket(Socket()))
     else:
         asyncio.run(ws.session_socket(Socket(), "existing-session"))
     assert calls == ["accepted", (4413, "workshop capture is held")]
+    assert subscriptions == []
 
 
 @pytest.mark.parametrize("name,value", [
