@@ -225,9 +225,12 @@ def test_remote_ui_first_retries_preparation_before_host_spawn(attendee, monkeyp
         hosts.stop()
 
 
-def test_selected_dependency_readiness_and_retry(monkeypatch):
+def test_selected_dependency_readiness_and_retry(monkeypatch, tmp_path):
     from server.bootstrap import install
 
+    # The retry takes the real cross-process bootstrap lock. Keep this mocked
+    # repair independent of installer work running under another test's prefix.
+    monkeypatch.setattr(install.config, "shared_prefix", lambda: str(tmp_path / "shared"))
     state = {name: {"status": "complete"} for name in ("node", "databricks", "claude")}
     state["agentbricks"] = {"status": "error"}
     assert install._ready_from(state)["claude"] is True

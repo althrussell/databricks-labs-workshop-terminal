@@ -767,7 +767,7 @@ def test_lifespan_starts_and_stops_remote_manager(monkeypatch):
     monkeypatch.setattr(
         main.remote_host_manager, "start", lambda: calls.append("start")
     )
-    monkeypatch.setattr(main.remote_host_manager, "stop", lambda: calls.append("stop"))
+    monkeypatch.setattr(main.remote_host_manager, "stop", lambda **_kwargs: calls.append("stop"))
     with TestClient(main.app):
         assert calls == ["start"]
     assert calls == ["start", "stop"]
