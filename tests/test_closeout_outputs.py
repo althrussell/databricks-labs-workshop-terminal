@@ -16,6 +16,7 @@ from server import artifacts, closeout_outputs, discovery, insight_summary, stat
 from server import event_emitter as emitter_module
 from server.artifacts import Harvest
 from server.capture_journal import CaptureJournal, CaptureStorageError, MemoryCaptureStorage, canonical_json
+from server.closeout import CloseoutManager
 from server.closeout_guard import control_transaction
 from server.event_emitter import EventEmitter
 from server.users import user_manager
@@ -75,6 +76,53 @@ def test_final_outputs_bypass_code_cache_and_never_call_model(source, monkeypatc
     assert facts["payload"]["final_capture_id"] == "capture-one"
     assert {event["type"] for event in events(emitter)} == {"insight.summary", "workshop.signal"}
     stats.configure_capture(emitter.journal)  # Retained signal index remains valid.
+
+
+def test_recovered_zero_code_retry_seals_same_generation_without_erasing_incomplete_history(source, monkeypatch):
+    emitter, owner = source
+    owner.first_seen = time.time() - 120
+    baseline = stats.gather_all([owner], fresh=True)
+    stats.emit_signals(baseline, emitter)
+    original_events = copy.deepcopy(emitter.journal.read()["insight"]["events"])
+    owner._capture_recovered = True
+    scan = stats._code_stats_uncached
+    monkeypatch.setattr(stats, "_code_stats_uncached", lambda _owner: stats._CodeCounts(
+        {"projects": 0, "commits": 0, "files": 0, "lines": 0}, confirmed=False))
+    now = [100.0]
+    manager = CloseoutManager(emitter, clock=lambda: now[0],
+        drainer=lambda _timeout: {"complete": True, "issues": [], "outcomes": []})
+    begun = manager.begin(capture_id="capture-one", stream_id=emitter.stream_id,
+                          source=BINDING, drain_timeout_seconds=1)
+    now[0] = 102.0
+    incomplete = manager.advance(capture_id="capture-one")
+    assert incomplete["phase"] == "INCOMPLETE"
+    assert incomplete["issues"] == ["final_code_observation_unavailable", "final_outputs_incomplete"]
+    assert incomplete["writer_outcomes"] == []
+    assert incomplete["final_outputs"]["stats"]["users"][0]["capture_observation"]["code"]["source"] == "retained"
+    retained_bytes = {name: emitter.journal.storage.read(name)
+                      for name in emitter.journal.storage.list_names()}
+
+    monkeypatch.setattr(stats, "_code_stats_uncached", scan)
+    sealed = manager.advance(capture_id="capture-one")
+    assert sealed["phase"] == "SEALED" and sealed["complete"] is True
+    assert sealed["capture_id"] == incomplete["capture_id"] == begun["capture_id"]
+    assert sealed["generation"] == incomplete["generation"] == begun["generation"]
+    row = sealed["final_outputs"]["stats"]["users"][0]
+    assert row["code"] == baseline["users"][0]["code"]
+    assert row["capture_observation"]["code"]["source"] == "local"
+    assert sealed["writer_outcomes"] == []
+    assert all(emitter.journal.storage.read(name) == raw for name, raw in retained_bytes.items())
+    assert all(emitter.journal.read()["insight"]["events"][seq] == event
+               for seq, event in original_events.items())
+    historical_manifests = []
+
+    def observe(*, revision, operation_hash, before, after):
+        manifest = after.get("closeout", {}).get("manifest")
+        if manifest is not None:
+            historical_manifests.append(manifest)
+
+    emitter.journal.audit(observer=observe)
+    assert incomplete["manifest"] in historical_manifests
 
 
 def test_missing_expected_owner_cannot_finalize_operator_only_snapshot(source, monkeypatch):
