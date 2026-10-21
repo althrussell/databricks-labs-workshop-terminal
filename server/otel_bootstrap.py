@@ -87,6 +87,11 @@ def uvicorn_command(env: Mapping[str, str]) -> list[str]:
         port,
         "--workers",
         "1",
+        # Apps sends SIGKILL 15s after SIGTERM. Reserve time for lifespan to
+        # finish accepted PTY/background capture instead of waiting indefinitely
+        # for a websocket/request before lifespan shutdown even starts.
+        "--timeout-graceful-shutdown",
+        "2",
     ]
     if instrumentation_enabled(env):
         # PEX-generated console scripts run Python with ``-E``. OpenTelemetry

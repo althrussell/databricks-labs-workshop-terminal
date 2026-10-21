@@ -134,11 +134,112 @@ def _stop_control_tower_threads(
         thread.join(timeout=join_timeout)
 
 
+def _checkpoint_shutdown_users() -> dict:
+    from .closeout_guard import admitted_writer, closeout_state
+
+    journal = event_emitter.journal
+    state = closeout_state(journal.read())
+    if state is not None and state["phase"] != "OPEN":
+        # Normal closeout already owns the final checkpoints/finalizer. An app
+        # restart must neither reopen that barrier nor invent a second closeout.
+        return {"complete": True, "issues": []}
+    users = [user for user in user_manager.all() if user._capture_journal is journal]
+    if users:
+        # Save counters with durable failure evidence if persistence fails after
+        # the PTY lifetimes have already completed. No existing ticket is erased.
+        with admitted_writer(journal, "shutdown_checkpoint"):
+            for user in users:
+                user_manager.checkpoint(user)
+    state = closeout_state(journal.read())
+    issues = []
+    if state is not None:
+        if state["writers"]:
+            issues.append("accepted_writers_pending")
+        if state["writer_outcomes"]:
+            issues.append("accepted_writer_failed")
+    return {"complete": not issues, "issues": issues}
+
+
+def _shutdown_runtime(emitter_stop, emitter_threads, *, timeout: float = 10.0) -> dict:
+    """Drain ordinary app shutdown without sealing the ongoing workshop.
+
+    Apps allows 15s after SIGTERM. Uvicorn has a separate 2s request drain; this
+    one 10s budget includes every lifecycle stage. A stuck SDK call must not keep
+    the server alive past it. Its daemon keeps the original durable reservation
+    unresolved, so a replacement cannot silently declare that work preserved.
+    """
+    from . import insight_summary, ws
+
+    deadline = time.monotonic() + timeout
+    ws.freeze_capture_operations()
+    if emitter_stop is not None:
+        emitter_stop.set()
+    result = {"complete": False, "issues": [], "outcomes": []}
+    finished = threading.Event()
+
+    def stop():
+        stages = [
+            # Accepted socket input must finish before stopping its PTY and
+            # completing the terminal's existing lifetime ticket.
+            ("websocket_capture", lambda: ws.drain_capture_operations(deadline=deadline)),
+            # Stop periodic producers before checking the final writer inventory.
+            # Existing credential clients remain usable after rotation stops.
+            ("credential_rotation", credential_manager.stop),
+            ("entitlement_reconciliation", entitlement_manager.stop),
+            ("log_collector", log_collector.stop),
+            ("obo_watcher", obo.obo_watcher.stop),
+        ]
+        if emitter_stop is not None:
+            stages.append(("control_tower_reporters", lambda: _stop_control_tower_threads(
+                emitter_stop, emitter_threads)))
+        stages.extend([
+            ("terminal_processes", lambda: session_manager.drain_for_closeout(
+                deadline=deadline, reason="shutdown")),
+            ("paired_host_processes", lambda: remote_host_manager.stop(deadline=deadline)),
+            ("identity_workers", lambda: identity.drain_for_closeout(deadline=deadline)),
+            ("summary_workers", lambda: insight_summary.drain_for_closeout(
+                max(0.0, deadline - time.monotonic()))),
+            # All terminal parents are stopped; wait for accepted detached saves
+            # without creating the permanent workshop-closeout admission file.
+            ("workspace_sync_workers", lambda: user_content.drain_sync_for_closeout(
+                user_manager.all(), deadline=deadline)),
+            ("attendee_checkpoints", _checkpoint_shutdown_users),
+        ])
+        try:
+            for name, operation in stages:
+                if time.monotonic() >= deadline:
+                    result["issues"].append("shutdown_deadline_exceeded")
+                    break
+                try:
+                    outcome = operation()
+                    if outcome is None:
+                        outcome = {"complete": True, "issues": []}
+                    result["outcomes"].append({"kind": name, **outcome})
+                    if not outcome.get("complete"):
+                        result["issues"].extend(outcome.get("issues") or [name + "_unverified"])
+                except Exception as error:  # noqa: BLE001 - keep other drains possible
+                    result["issues"].append(f"{name}_failed:{type(error).__name__}")
+            result["complete"] = not result["issues"]
+        finally:
+            finished.set()
+
+    # A Workspace SDK operation has its own retry/network timeout. A daemon plus
+    # a bounded join enforces this lifecycle deadline without pretending that a
+    # blocked write was cancelled or removing its durable writer receipt.
+    worker = threading.Thread(target=stop, name="workshop-shutdown", daemon=True)
+    worker.start()
+    if not finished.wait(timeout=max(0.0, deadline - time.monotonic())):
+        return {"complete": False, "issues": ["shutdown_deadline_exceeded"], "outcomes": []}
+    return result
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
     previous_asyncio_handler = observability.install_asyncio_exception_handler(loop)
-    from . import topology
+    from . import topology, ws
+
+    ws.start_capture_operations()
 
     # A multi-session override makes the UI lie and reintroduces the process
     # races this release removes. Fail the deployment before serving traffic.
@@ -217,13 +318,10 @@ async def lifespan(app: FastAPI):
         logger.info("workshop terminal up (phase=%s)", content_service.phase)
         yield
     finally:
+        shutdown = _shutdown_runtime(emitter_stop, emitter_threads)
+        if not shutdown["complete"]:
+            logger.warning("workshop shutdown remains unverified (%s)", ",".join(shutdown["issues"]))
         loop.set_exception_handler(previous_asyncio_handler)
-        if emitter_stop is not None:
-            _stop_control_tower_threads(emitter_stop, emitter_threads)
-        log_collector.stop()
-        obo.obo_watcher.stop()
-        remote_host_manager.stop()
-        entitlement_manager.stop()
 
 
 app = FastAPI(title="Databricks Workshop Terminal", lifespan=lifespan)
@@ -531,7 +629,7 @@ def record_app_deploy_event(body: _AppDeployEventBody, request: Request):
     deliberately no app name, URL, command output, project path, or credential.
     """
     principal = _callback_identity(body, request)
-    telemetry.app_deploy(
+    captured = telemetry.app_deploy(
         principal.name,
         outcome=body.outcome,
         reason=body.reason,
@@ -540,6 +638,8 @@ def record_app_deploy_event(body: _AppDeployEventBody, request: Request):
         resumed=body.resumed,
         source=body.source,
     )
+    if not captured:
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL)
     return {"recorded": True}
 
 
@@ -1237,7 +1337,7 @@ def report_attendee_error(
     diagnostics an operator reads describe the same moment. Fire-and-forget by
     design — the UI must never depend on the reply.
     """
-    telemetry.attendee_error_seen(
+    captured = telemetry.attendee_error_seen(
         principal.name,
         body.code,
         {
@@ -1246,6 +1346,8 @@ def report_attendee_error(
             "session_id": body.session_id[:64],
         },
     )
+    if not captured:
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL)
     # An error on the attendee's screen is also the earliest arriving signal we
     # get. `retry` tells the browser whether trying again is worth it, so the
     # attendee is not asked to reload for something already fixed.

@@ -59,6 +59,8 @@ def test_disabled_preview_starts_plain_uvicorn_without_inventing_a_collector():
         "9001",
         "--workers",
         "1",
+        "--timeout-graceful-shutdown",
+        "2",
     ]
 
 

@@ -781,7 +781,7 @@ def test_app_deploy_callback_emits_only_bounded_operational_fields(
     user_content._write_callback_capability(user)
     capability = Path(user_content.callback_capability_path(user)).read_text().strip()
     seen = []
-    monkeypatch.setattr(telemetry, "app_deploy", lambda attendee, **data: seen.append((attendee, data)))
+    monkeypatch.setattr(telemetry, "app_deploy", lambda attendee, **data: seen.append((attendee, data)) or True)
 
     response = client.post(
         "/api/tools/app-deploy/event",

@@ -679,7 +679,7 @@ def omnigent_host_readiness():
 
 
 @router.get("/diagnostics")
-def diagnostics(limit: int = 50):
+def diagnostics(limit: int = 50, timings_only: bool = False):
     """Everything needed to answer "why did that attendee see an error?".
 
     The rule this serves: an operator must be able to see any error an attendee
@@ -690,6 +690,11 @@ def diagnostics(limit: int = 50):
     from . import identity
     from .event_emitter import event_emitter
     from .log_collector import log_collector
+    from .runtime_timing import snapshot as runtime_timing_snapshot
+
+    if timings_only:
+        # Benchmark readbacks must not execute another deep readiness proof.
+        return {"runtime_timings": runtime_timing_snapshot()}
 
     def _hosts() -> list[dict]:
         # readiness() rejects an email that is not the bound attendee, and the
@@ -716,6 +721,7 @@ def diagnostics(limit: int = 50):
             ("identity", identity.all_snapshots),
             ("hosts", _hosts),
             ("capture_delivery", event_emitter.delivery_status),
+            ("runtime_timings", runtime_timing_snapshot),
         )
     }
 

@@ -393,12 +393,20 @@ def _code_observation(user: User, *, fresh: bool, saved: dict) -> tuple[dict, di
     projects = os.path.join(user.home, "projects")
     # The empty HOME created by a browser reconnect after redeploy is not
     # evidence that the attendee's previously observed output disappeared.
+    # Previously confirmed zeroes may still be checked against a readable,
+    # genuinely empty projects directory; no repository needs restoring then.
+    # A nonempty directory can hide an unreadable/unrestored repository, so it
+    # must not acquire a fresh zero just because isdir(.git) returned False.
     try:
+        names = os.listdir(projects)
         materialized = any(os.path.isdir(os.path.join(projects, name, ".git"))
-                           for name in os.listdir(projects))
+                           for name in names)
     except OSError:
+        names = None
         materialized = False
-    if previous and (not os.path.isdir(projects) or (user._capture_recovered and not materialized)):
+    if previous and (not os.path.isdir(projects) or (
+            user._capture_recovered and not materialized
+            and (names != [] or any(previous["row"]["code"].values())))):
         return copy.deepcopy(previous["row"]["code"]), {
             "source": "retained", "observed_at": previous["code_observed_at"],
         }

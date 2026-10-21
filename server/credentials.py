@@ -30,6 +30,7 @@ import time
 import requests
 
 from . import config
+from .runtime_timing import stage as timing_stage
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +170,7 @@ def _reset_app_identity_for_tests() -> None:
         }
 
 
+@timing_stage("identity.auth")
 def app_identity_bearer() -> str | None:
     """Bearer for the app's OWN service-principal OAuth identity (P1-2).
 
@@ -203,6 +205,7 @@ def _bootstrap_auth() -> str | None:
     return app_identity_bearer() or (vended_pat() or None)
 
 
+@timing_stage("identity.request")
 def _identity_request(
     url: str, endpoint: str, token: str
 ) -> tuple[dict, dict | None]:
@@ -443,6 +446,7 @@ class CredentialManager:
                 clear=True,
             )
 
+    @timing_stage("identity.validation")
     def _validate(self, token: str, *, require_app_identity: bool = True) -> bool:
         host = config.databricks_host()
         expected = str(_app_client_id or os.environ.get("DATABRICKS_CLIENT_ID") or "")

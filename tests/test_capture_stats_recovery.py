@@ -111,6 +111,93 @@ def test_empty_recreated_home_and_failed_census_preserve_confirmed_output(monkey
         "source": "retained", "observed_at": harvest["users"][0]["capture_observation"]["code"]["observed_at"]}
 
 
+def test_recovered_confirmed_zero_code_is_reobserved_in_readable_empty_home(monkeypatch, tmp_path):
+    manager, user, emitter = _setup(monkeypatch)
+    user.home = str(tmp_path / "original")
+    (tmp_path / "original" / "projects").mkdir(parents=True)
+    user.first_seen = user.last_seen = 100.0
+    monkeypatch.setattr(stats, "_workspace_resources", lambda: {})
+    harvest = stats.gather_all([user], fresh=True)
+    stats.emit_signals(harvest, emitter)
+    manager.checkpoint(user)
+    original = copy.deepcopy(emitter.journal.read()["stats"]["users"][user.email])
+
+    _manager, recovered, _emitter = _setup(monkeypatch, emitter.journal.storage)
+    recovered.home = str(tmp_path / "replacement")
+    (tmp_path / "replacement" / "projects").mkdir(parents=True)
+    assert recovered._capture_recovered is True
+    calls = []
+    scan = stats._code_stats_uncached
+
+    def observe(owner):
+        calls.append(owner.email)
+        return scan(owner)
+
+    monkeypatch.setattr(stats, "_code_stats_uncached", observe)
+    row = stats.gather_all([recovered], fresh=True)["users"][0]
+    assert calls == [recovered.email]
+    assert row["code"] == original["row"]["code"] == {
+        "projects": 0, "commits": 0, "files": 0, "lines": 0,
+    }
+    assert row["capture_observation"]["code"]["source"] == "local"
+    assert row["capture_observation"]["code"]["observed_at"] >= original["code_observed_at"]
+
+
+def test_recovered_zero_code_stays_retained_when_empty_home_cannot_be_scanned(monkeypatch, tmp_path):
+    _manager, user, emitter = _setup(monkeypatch)
+    user.home = str(tmp_path / "home")
+    (tmp_path / "home" / "projects").mkdir(parents=True)
+    user.first_seen = user.last_seen = 100.0
+    monkeypatch.setattr(stats, "_workspace_resources", lambda: {})
+    harvest = stats.gather_all([user], fresh=True)
+    stats.emit_signals(harvest, emitter)
+    original = harvest["users"][0]
+    user._capture_recovered = True
+    monkeypatch.setattr(stats, "_code_stats_uncached", lambda _user: stats._CodeCounts(
+        {"projects": 0, "commits": 0, "files": 0, "lines": 0}, confirmed=False))
+    row = stats.gather_all([user], fresh=True)["users"][0]
+    assert row["code"] == original["code"]
+    assert row["capture_observation"]["code"] == {
+        "source": "retained", "observed_at": original["capture_observation"]["code"]["observed_at"],
+    }
+
+
+@pytest.mark.parametrize("uncertainty", ["root_unreadable", "nested_unreadable", "nonempty_unrestored"])
+def test_recovered_zero_code_requires_proven_empty_projects(monkeypatch, tmp_path, uncertainty):
+    _manager, user, emitter = _setup(monkeypatch)
+    user.home = str(tmp_path / "home")
+    projects = tmp_path / "home" / "projects"
+    projects.mkdir(parents=True)
+    user.first_seen = user.last_seen = 100.0
+    monkeypatch.setattr(stats, "_workspace_resources", lambda: {})
+    harvest = stats.gather_all([user], fresh=True)
+    stats.emit_signals(harvest, emitter)
+    original = harvest["users"][0]
+    user._capture_recovered = True
+    listdir, isdir = stats.os.listdir, stats.os.path.isdir
+    if uncertainty == "root_unreadable":
+        def list_projects(path):
+            if str(path) == str(projects):
+                raise PermissionError("private projects path")
+            return listdir(path)
+        monkeypatch.setattr(stats.os, "listdir", list_projects)
+    else:
+        child = projects / "unresolved-project"
+        child.mkdir()
+        if uncertainty == "nested_unreadable":
+            # isdir swallows stat errors, so an unreadable child can look as
+            # though it lacks .git. Do not turn that uncertainty into zero.
+            monkeypatch.setattr(stats.os.path, "isdir", lambda path: (
+                False if str(path) == str(child / ".git") else isdir(path)))
+    monkeypatch.setattr(stats, "_code_stats_uncached", lambda _user: pytest.fail(
+        "uncertain recovered source must not be reclassified as a fresh zero"))
+    row = stats.gather_all([user], fresh=True)["users"][0]
+    assert row["code"] == original["code"]
+    assert row["capture_observation"]["code"] == {
+        "source": "retained", "observed_at": original["capture_observation"]["code"]["observed_at"],
+    }
+
+
 def test_successful_empty_census_replaces_prior_counts_but_failure_does_not(monkeypatch, tmp_path):
     _manager, user, emitter = _setup(monkeypatch)
     harvest = _output(monkeypatch, user, tmp_path)

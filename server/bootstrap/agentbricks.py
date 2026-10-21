@@ -6,6 +6,8 @@ import os
 import shlex
 import subprocess
 
+from ..runtime_timing import stage as timing_stage
+
 from . import install as bootstrap
 from .package_sources import PUBLIC_PYPI, public_python_environment
 
@@ -35,6 +37,7 @@ def _reusable(prefix: str, entries: dict) -> bool:
     )
 
 
+@timing_stage("proof.python_tool", component="agentbricks")
 def prewarm_status() -> dict:
     prefix = bootstrap.config.shared_prefix()
     try:
@@ -124,7 +127,8 @@ def install_cli() -> None:
              "--require-hashes", "--only-binary", ":all:", lock_path],
         )
         for command in commands:
-            result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=900)
+            with timing_stage("install.venv" if command[1] == "venv" else "install.dependencies"):
+                result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=900)
             if result.returncode:
                 raise RuntimeError("Agent Bricks isolated install failed: " + (result.stderr or result.stdout)[-500:])
         # Avoid mutable bytecode in a shared venv whose whole tree is verified.

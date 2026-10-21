@@ -144,6 +144,31 @@ narrative; the old projection alone cannot prove final facts were applied.
 Unsupported help kinds, output versions, digest conflicts and 99-of-100 coverage
 must remain visible holds. App restart and expiry paths must honor the same gate.
 
+## Ordinary app restart
+
+A normal SIGTERM drains the current local terminal process groups and PTY
+readers, paired hosts, accepted identity/summary workers and tracked Workspace
+saves. Final terminal output is observed and attendee counters are checkpointed
+under the original terminal lifetime before its durable ticket completes. A
+failed checkpoint leaves failed-writer evidence; a timed-out write leaves its
+original reservation intact.
+
+This path keeps the workshop's durable phase OPEN and does not create the
+`workspace-sync.closed` workshop-closeout marker. The replacement can accept
+normal attendee work. Explicit workshop closeout remains responsible for sealing
+and the final verified CT receipt.
+
+[Databricks Apps allows 15 seconds after SIGTERM](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/best-practices).
+The launcher caps Uvicorn's request drain at two seconds and lifespan shares one
+ten-second deadline across shutdown stages. A blocked SDK call cannot extend that
+deadline; the process reports an unverified shutdown and retains unresolved
+durable writer evidence. SIGKILL, storage failure or unfinished writers cannot be
+turned into successful preservation by deleting their receipts.
+
+Regression coverage includes a real Uvicorn SIGTERM with an active child PTY,
+shutdown-tail metadata and final counters, replacement admission, a failed final
+checkpoint, an interrupted summary and blocked persistence past the deadline.
+
 ## Acceptance ledger
 
 | Gate | Validation |

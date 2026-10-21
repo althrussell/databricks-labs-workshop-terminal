@@ -324,6 +324,63 @@ def test_agent_crash_reports_its_process_exit_code(monkeypatch, tmp_path):
     assert delivered == [{"t": "exit", "reason": "process_error", "exit_code": 17, "exit_signal": None}]
 
 
+def test_pty_eof_before_waitable_exit_retains_the_real_exit_status(monkeypatch):
+    """Deterministically model EOF preceding waitpid(WNOHANG) readiness."""
+    from server import sessions, telemetry
+
+    observed, signals, waits = [], [], []
+    manager = sessions.SessionManager()
+    session = sessions.Session("alice@example.com", "codex", "Codex", -1, 999999)
+    manager._sessions[session.id] = session
+    manager._writers[session.id] = session
+
+    def wait(*, timeout):
+        waits.append(timeout)
+        return 17
+
+    session._process = SimpleNamespace(wait=wait)
+    monkeypatch.setattr(sessions.select, "select", lambda *_args: ([-1], [], []))
+    monkeypatch.setattr(sessions.os, "read", lambda *_args: b"")
+    monkeypatch.setattr(sessions.os, "waitpid", lambda *_args: (0, 0))
+    monkeypatch.setattr(sessions.os, "killpg", lambda *args: signals.append(args))
+    monkeypatch.setattr(sessions.time, "sleep", lambda *_args: None)
+    monkeypatch.setattr(telemetry, "session_exited",
+                        lambda *args, **kwargs: observed.append((args, kwargs)))
+
+    manager._read_pty(session)
+    assert observed[0][0][2] == "process_error"
+    assert observed[0][1]["exit_code"] == 17
+    assert signals == []
+    assert waits and 0 < waits[0] <= 0.25
+
+
+def test_pty_eof_from_a_still_running_leader_keeps_a_bounded_reap(monkeypatch):
+    from server import sessions, telemetry
+
+    waits, signals = [], []
+    manager = sessions.SessionManager()
+    session = sessions.Session("alice@example.com", "codex", "Codex", -1, 999999)
+    manager._sessions[session.id] = session
+    manager._writers[session.id] = session
+
+    def pending(*, timeout):
+        waits.append(timeout)
+        raise sessions.subprocess.TimeoutExpired("test-child", timeout)
+
+    session._process = SimpleNamespace(wait=pending)
+    monkeypatch.setattr(sessions.select, "select", lambda *_args: ([-1], [], []))
+    monkeypatch.setattr(sessions.os, "read", lambda *_args: b"")
+    monkeypatch.setattr(sessions.os, "waitpid", lambda *_args: (0, 0))
+    monkeypatch.setattr(sessions.os, "killpg", lambda *args: signals.append(args))
+    monkeypatch.setattr(sessions.time, "sleep", lambda *_args: None)
+    monkeypatch.setattr(telemetry, "session_exited", lambda *_args, **_kwargs: True)
+
+    manager._read_pty(session)
+    assert waits and 0 < waits[0] <= 0.25
+    assert signals[0] == (session.pid, sessions.signal.SIGHUP)
+    assert session.exited
+
+
 def test_signalled_agent_reports_the_process_signal(monkeypatch, tmp_path):
     from server import telemetry
     from server.sessions import SessionManager

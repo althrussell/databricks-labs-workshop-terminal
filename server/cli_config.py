@@ -8,6 +8,7 @@ OAuth bearer.
 from __future__ import annotations
 
 import configparser
+from functools import wraps
 import json
 import logging
 import os
@@ -20,6 +21,7 @@ import requests
 import yaml
 
 from . import config, model_policy, models
+from .capture_journal import CaptureError
 from .users import User
 
 logger = logging.getLogger(__name__)
@@ -300,6 +302,21 @@ def current_model_catalogue(token: str) -> dict[str, frozenset[str]]:
 # -- per-user config writers --
 
 
+def _policy_read_operation(operation):
+    @wraps(operation)
+    def configure(user: User, *args, **kwargs):
+        try:
+            with model_policy.store.read_operation():
+                return operation(user, *args, **kwargs)
+        except (model_policy.ModelPolicyConfigurationError, CaptureError):
+            # A next launch must redo the whole config operation after a raced
+            # policy/source change, rather than accepting existing stale files.
+            user.cli_ready.clear()
+            raise
+    return configure
+
+
+@_policy_read_operation
 def configure_claude(
     user: User,
     token: str,
@@ -452,6 +469,7 @@ def unified_chat_url() -> str:
     return f"{gateway}/mlflow/v1/chat/completions" if gateway else ""
 
 
+@_policy_read_operation
 def configure_codex(
     user: User,
     token: str,
@@ -547,6 +565,7 @@ def _write_gateway_token_locked(user: User, token: str) -> None:
     _atomic_write_text(path, f"{token}\n")
 
 
+@_policy_read_operation
 def configure_omnigent(
     user: User,
     token: str,
@@ -823,6 +842,7 @@ def update_me_profile_locked(user: User, obo_token: str) -> None:
     _write_omnigent_profile_locked(user, obo_token)
 
 
+@_policy_read_operation
 def configure_all(user: User, token: str) -> None:
     # Reserve ordering before network discovery. If a rotation arrives while
     # model discovery runs, its newer revision commits the core files and this
@@ -845,6 +865,7 @@ def configure_all(user: User, token: str) -> None:
         _commit_core_credentials_locked(user, token, revision)
 
 
+@_policy_read_operation
 def refresh_model_configs(user: User) -> None:
     """Rewrite configs for the next session without touching the live process.
 

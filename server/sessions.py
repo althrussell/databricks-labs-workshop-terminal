@@ -32,6 +32,7 @@ from .codex_home import shell_home as codex_shell_home
 logger = logging.getLogger(__name__)
 
 GRACEFUL_SHUTDOWN_WAIT = 1.0
+PROCESS_EXIT_WAIT = 0.25
 REAPER_INTERVAL = 60
 SCROLLBACK_MAX_BYTES = 2 * 1024 * 1024
 TERMINAL_SUBSCRIBER_QUEUE_SIZE = 128
@@ -607,8 +608,23 @@ class SessionManager:
     @staticmethod
     def _finish_capture(session: Session) -> None:
         with session._capture_lock:
-            if session._capture_ticket and session._reader_done.is_set() and session._exit_reported:
-                session._capture_ticket.finish(failed=session._capture_failed)
+            ticket = session._capture_ticket
+            if ticket and not ticket.finished and session._reader_done.is_set() and session._exit_reported:
+                # The output observer can update attendee counters/topics through
+                # the very last PTY chunk. Retain that tail before completing the
+                # lifetime, including while the durable closeout barrier is shut.
+                # A failed save must remain a failed accepted writer on restart.
+                from .users import user_manager
+
+                try:
+                    with ticket.scope():
+                        user = user_manager.peek(session.owner_email)
+                        if user is not None:
+                            user_manager.checkpoint(user)
+                except Exception as error:  # noqa: BLE001 - preserve failure evidence
+                    session._capture_failed = True
+                    logger.warning("terminal checkpoint failed (%s)", type(error).__name__)
+                ticket.finish(failed=session._capture_failed)
 
     @staticmethod
     def _close_master(session: Session) -> None:
@@ -629,7 +645,7 @@ class SessionManager:
 
         return process_group_alive(session.pid)
 
-    def drain_for_closeout(self, *, deadline: float) -> dict:
+    def drain_for_closeout(self, *, deadline: float, reason: str = "workshop_closing") -> dict:
         """Stop and verify groups and readers using one caller-owned deadline."""
         with self._lock:
             writers = dict(self._writers)
@@ -644,7 +660,7 @@ class SessionManager:
                 if ((session.exit_code is not None or session.exit_signal is not None)
                         and self._group_alive(session)):
                     os.killpg(session.pid, signal.SIGTERM)
-                self.terminate(session, reason="workshop_closing", deadline=deadline)
+                self.terminate(session, reason=reason, deadline=deadline)
                 # A naturally exited leader can leave children alive, including
                 # a child that ignored the terminal's hangup signal.
                 if self._group_alive(session):
@@ -744,6 +760,21 @@ class SessionManager:
                 break
 
         handle_output(decoder.flush())
+        if session.exit_code is None and session.exit_signal is None:
+            # PTY EOF can arrive just before the leader becomes waitable. One
+            # WNOHANG poll can then misreport a nonzero exit as a clean exit (or
+            # signal that still-exiting leader). Use Popen's bounded reap, which
+            # also agrees with a concurrent drain caller that already waited.
+            process = session._process
+            if process is not None:
+                try:
+                    exit_value = process.wait(timeout=PROCESS_EXIT_WAIT)
+                    if exit_value < 0:
+                        session.exit_signal = -exit_value
+                    else:
+                        session.exit_code = exit_value
+                except (OSError, subprocess.SubprocessError):
+                    pass  # A program can close stdio and keep running.
         if session.exit_code is None and session.exit_signal is None:
             try:
                 waited_pid, wait_status = os.waitpid(session.pid, os.WNOHANG)

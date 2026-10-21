@@ -69,6 +69,10 @@ def test_diagnostics_reports_readiness_and_collector_state(
     assert "ready" in payload["readyz"]
     assert payload["collector"]["sweeps"] >= 0
     assert isinstance(payload["identity"], list)
+    timings = payload["runtime_timings"]
+    assert timings["clock"] == "monotonic"
+    assert timings["retention"] == "current_process"
+    assert any(row["stage"] == "readiness.total" for row in timings["stages"])
 
 
 def test_the_log_tail_endpoint_returns_redacted_process_logs(
@@ -175,3 +179,16 @@ def test_diagnostics_is_refused_to_a_non_admin(client, as_non_admin):
     ):
         assert client.get(path).status_code == 403
     assert client.post("/api/admin/diagnostics/sweep").status_code == 403
+
+
+def test_timing_snapshot_does_not_execute_readiness_proof(client, as_admin, monkeypatch):
+    from server import readiness
+
+    def forbidden():
+        raise AssertionError("timing readback must not trigger a deep proof")
+
+    monkeypatch.setattr(readiness, "evaluate_runtime", forbidden)
+    response = client.get("/api/admin/diagnostics?timings_only=true")
+    assert response.status_code == 200
+    assert set(response.json()) == {"runtime_timings"}
+    assert response.json()["runtime_timings"]["clock"] == "monotonic"

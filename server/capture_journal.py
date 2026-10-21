@@ -20,10 +20,14 @@ import os
 import re
 import tempfile
 import threading
+import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol, TypeVar
+
+from .runtime_timing import stage as timing_stage
+from .capture_io import storage_failure
 
 SCHEMA_VERSION = 1
 _OPERATION = re.compile(r"^(\d{20})\.json$")
@@ -42,6 +46,10 @@ class CaptureHeldError(CaptureError):
 
 class CaptureStorageError(CaptureError):
     """The retained store is unavailable; accepted state must remain held."""
+
+    def __init__(self, message: str = "capture storage unavailable", *, diagnostics: dict[str, Any] | None = None):
+        super().__init__(message)
+        self.diagnostics = {} if diagnostics is None else dict(diagnostics)
 
 
 class CaptureCapacityError(CaptureError):
@@ -151,6 +159,7 @@ class WorkspaceCaptureStorage:
     durable = True
     mode = "workspace"
 
+    @timing_stage("capture.workspace_init")
     def __init__(self, client: Any, path: str) -> None:
         if not path.startswith("/Workspace/") or any(
             part in {".", ".."} for part in path.split("/")
@@ -161,6 +170,7 @@ class WorkspaceCaptureStorage:
         # mkdirs is idempotent; it fails when a path component is a file.
         self.client.workspace.mkdirs(self.path)
 
+    @timing_stage("capture.workspace_list")
     def list_names(self) -> list[str]:
         names = []
         for entry in self.client.workspace.list(self.path):
@@ -179,6 +189,7 @@ class WorkspaceCaptureStorage:
             names.append(canonical[len(parent) :])
         return sorted(names)
 
+    @timing_stage("capture.workspace_read")
     def read(self, name: str) -> bytes | None:
         from databricks.sdk.errors import NotFound
         from databricks.sdk.service.workspace import ExportFormat
@@ -197,6 +208,7 @@ class WorkspaceCaptureStorage:
             if callable(close):
                 close()
 
+    @timing_stage("capture.workspace_create")
     def create(self, name: str, content: bytes) -> bool:
         from databricks.sdk.errors import ResourceAlreadyExists
         from databricks.sdk.service.workspace import ImportFormat
@@ -480,10 +492,11 @@ class CaptureJournal:
         self._error: str | None = None
         self._held = False
         self._checkpoint_error: str | None = None
+        self._last_storage_failure: dict[str, Any] | None = None
 
     def health(self) -> dict[str, Any]:
         with self._lock:
-            return {
+            value: dict[str, Any] = {
                 "ok": self._error is None,
                 "held": self._held,
                 "durable": self.storage.durable,
@@ -493,6 +506,10 @@ class CaptureJournal:
                 "checkpoint_error": self._checkpoint_error,
                 "operation_capacity_exhausted": self._revision >= self.max_operations,
             }
+            if self._last_storage_failure is not None:
+                # Historical observation, retained even after a healthy retry.
+                value["last_storage_failure"] = dict(self._last_storage_failure)
+            return value
 
     def mark_held(self, error: str | CaptureHeldError) -> None:
         """Hold semantically invalid producer state found by a domain validator.
@@ -513,13 +530,42 @@ class CaptureJournal:
         if isinstance(error, CaptureHeldError):
             self._held = True
 
+    def _storage_failure(self, operation: str, error: Exception, attempts: int) -> CaptureStorageError:
+        diagnostics = storage_failure(error, operation=operation, attempts=attempts)
+        self._last_storage_failure = diagnostics
+        action = "listing" if operation == "list" else operation
+        return CaptureStorageError(
+            f"capture storage {action} failed", diagnostics=dict(diagnostics)
+        )
+
+    @staticmethod
+    def _retry_storage(diagnostics: dict, attempts: int, started: float) -> bool:
+        # The SDK already retries. Only recover short transient failures here;
+        # do not multiply an SDK call which has already consumed its budget.
+        # These are attempt/pause bounds, not a total synchronous I/O deadline.
+        delay = 0.05 * attempts
+        if (not diagnostics["retryable"] or attempts >= 3
+                or time.monotonic() - started + delay > 5.0):
+            return False
+        time.sleep(delay)
+        return True
+
+    def _storage_call(self, operation: str, call: Callable[[], T]) -> T:
+        started = time.monotonic()
+        attempts = 0
+        while True:
+            attempts += 1
+            try:
+                return call()
+            except CaptureError:
+                raise
+            except Exception as error:
+                failure = self._storage_failure(operation, error, attempts)
+                if not self._retry_storage(failure.diagnostics, attempts, started):
+                    raise failure from error
+
     def _storage_read(self, name: str) -> bytes | None:
-        try:
-            return self.storage.read(name)
-        except CaptureError:
-            raise
-        except Exception as error:
-            raise CaptureStorageError("capture storage read failed") from error
+        return self._storage_call("read", lambda: self.storage.read(name))
 
     def _document(self, raw: bytes | None, *, name: str) -> dict[str, Any]:
         if raw is None:
@@ -603,37 +649,63 @@ class CaptureJournal:
 
     def _create_resolved(self, name: str, raw: bytes) -> bool:
         """An uncertain create is successful only after exact byte readback."""
-        try:
-            created = self.storage.create(name, raw)
-        except Exception as error:
-            existing = self._storage_read(name)
-            if existing == raw:
-                return True
-            if existing is not None:
-                return False
-            raise CaptureStorageError(
-                "capture storage create failed without a committed object"
-            ) from error
+        started = time.monotonic()
+        attempts = 0
+        while True:
+            attempts += 1
+            try:
+                created = self.storage.create(name, raw)
+                break
+            except CaptureHeldError:
+                raise
+            except Exception as error:
+                failure = self._storage_failure("create", error, attempts)
+                existing = self._confirm_created(name, record_missing=False)
+                if existing == raw:
+                    return True
+                if existing is not None:
+                    return False
+                if not self._retry_storage(failure.diagnostics, attempts, started):
+                    raise failure from error
+                # The exact revision/operation ID/bytes are retried, never the
+                # producer's state-derived mutation after an ambiguous commit.
         # Even a normal success is verified. This also catches a broken adapter
         # that silently overwrites or returns before the object is readable.
-        existing = self._storage_read(name)
+        existing = self._confirm_created(name)
         if existing == raw:
             return True
         if existing is None:
-            raise CaptureStorageError("capture storage create did not become readable")
+            raise CaptureStorageError(
+                "capture storage create did not become readable",
+                diagnostics=dict(self._last_storage_failure),
+            )
         if created:
             raise CaptureHeldError("capture storage contradicted create-only write")
         return False
 
+    def _confirm_created(self, name: str, *, record_missing: bool = True) -> bytes | None:
+        """Poll only the same immutable object after uncertain visibility."""
+        # Confirmation has its own small window after a slow upload. It never
+        # authorizes resubmitting a create whose own retry window has expired.
+        started = time.monotonic()
+        attempts = 0
+        while True:
+            attempts += 1
+            existing = self._storage_read(name)
+            if existing is not None:
+                return existing
+            diagnostics = {"operation": "create_readback", "http_status": None,
+                           "timeout": "none", "attempts": attempts, "retryable": True}
+            if record_missing:
+                self._last_storage_failure = diagnostics
+            if not self._retry_storage(diagnostics, attempts, started):
+                return None
+
+    @timing_stage("capture.journal_refresh")
     def _refresh(self, *, audit: bool = False, observer=None) -> None:
         if self._held:
             raise CaptureHeldError(self._error or "capture history is held")
-        try:
-            names = self.storage.list_names()
-        except CaptureError:
-            raise
-        except Exception as error:
-            raise CaptureStorageError("capture storage listing failed") from error
+        names = self._storage_call("list", self.storage.list_names)
         revisions: list[int] = []
         checkpoints: list[int] = []
         for name in names:
@@ -752,6 +824,7 @@ class CaptureJournal:
             cls = CaptureHeldError if retained else CaptureCapacityError
             raise cls("capture state exceeds the retained capacity limit")
 
+    @timing_stage("capture.journal_read")
     def read(self) -> dict[str, Any]:
         with self._lock:
             try:
@@ -761,6 +834,7 @@ class CaptureJournal:
                 raise
             return copy.deepcopy(self._state)
 
+    @timing_stage("capture.journal_audit")
     def audit(self, *, observer=None) -> dict[str, Any]:
         """Replay every retained operation, including history before checkpoints."""
         with self._lock:
@@ -793,6 +867,7 @@ class CaptureJournal:
             raise
         return snapshot
 
+    @timing_stage("capture.journal_write")
     def transaction(self, mutator: Callable[[dict[str, Any]], T]) -> T:
         with self._lock:
             for _ in range(self.max_retries):

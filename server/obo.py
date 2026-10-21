@@ -34,6 +34,7 @@ import threading
 import time
 from pathlib import Path
 
+from .runtime_timing import stage as timing_stage
 from . import config
 
 logger = logging.getLogger(__name__)
@@ -164,6 +165,7 @@ class OboManager:
         except Exception as e:  # noqa: BLE001 — capture must never break a request
             logger.warning("OBO capture for %s failed: %s", email, e)
 
+    @timing_stage("identity.obo_capture")
     def _capture(self, email: str, token: str) -> None:
         now = time.time()
         token_iat, token_exp = decode_jwt_times(token)

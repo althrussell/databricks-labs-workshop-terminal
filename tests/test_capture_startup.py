@@ -140,7 +140,7 @@ def test_fresh_container_recovers_exact_epoch_records_ack_and_help_without_home(
     assert all(path.startswith("/Workspace/Users/") for path in sdk.workspace.paths)
 
 
-def test_grant_convergence_retries_without_accepting_memory_output(monkeypatch):
+def test_grant_convergence_does_not_erase_output_refused_before_attachment(monkeypatch):
     workspace = WorkspaceFiles()
     workspace.blocked = True
     retained = emitter()
@@ -155,9 +155,13 @@ def test_grant_convergence_retries_without_accepting_memory_output(monkeypatch):
     assert workspace.objects == {}
 
     workspace.blocked = False
-    assert retained.collect()["events"] == []
-    assert retained.delivery_status()["retention_ready"] is True
+    with pytest.raises(CaptureHeldError, match="unresolved delivery"):
+        retained.collect()
+    assert retained.delivery_status()["retention_ready"] is False
+    assert ":operation=initialize:" in retained.journal.read()["producer_issues"][0]
     assert retained.emit("heartbeat", BINDING["owner"], {}, idempotency_key="retried") == 1
+    assert retained.collect()["events"][0]["event"]["idempotency_key"] == "retried"
+    assert retained.delivery_status()["retention_ready"] is False
 
 
 def test_held_startup_blocks_attendee_bootstrap_and_counter_checkpoint(monkeypatch):
@@ -179,7 +183,7 @@ def test_held_startup_blocks_attendee_bootstrap_and_counter_checkpoint(monkeypat
 
 
 @pytest.mark.parametrize("surface", ["events", "sessions"])
-def test_held_startup_closes_websockets_before_subscribing(monkeypatch, surface):
+def test_held_startup_closes_websockets_without_delivering_output(monkeypatch, surface):
     from server import ws
 
     workspace = WorkspaceFiles()
@@ -205,12 +209,16 @@ def test_held_startup_closes_websockets_before_subscribing(monkeypatch, surface)
     monkeypatch.setattr(ws, "user_manager", users.user_manager)
     monkeypatch.setattr(ws.session_manager, "get", lambda *_args: object())
     monkeypatch.setattr(ws.session_manager, "attach_with_replay", forbidden)
-    monkeypatch.setattr(ws.event_hub, "subscribe", forbidden)
+    subscriptions = []
+    queued = object()
+    monkeypatch.setattr(ws.event_hub, "subscribe", lambda: subscriptions.append(queued) or queued)
+    monkeypatch.setattr(ws.event_hub, "unsubscribe", lambda queue: subscriptions.remove(queue))
     if surface == "events":
         asyncio.run(ws.events_socket(Socket()))
     else:
         asyncio.run(ws.session_socket(Socket(), "existing-session"))
     assert calls == ["accepted", (4413, "workshop capture is held")]
+    assert subscriptions == []
 
 
 @pytest.mark.parametrize("name,value", [
