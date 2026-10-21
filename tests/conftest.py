@@ -57,7 +57,7 @@ def _isolate_user_registry():
 @pytest.fixture(autouse=True)
 def _isolate_capture_producers(monkeypatch):
     """Retained producer bindings belong to one simulated deployment/test."""
-    from server import attendee_names, discovery, help as help_module, identity, insight_summary, stats
+    from server import attendee_names, discovery, help as help_module, identity, insight_summary, stats, ws
     from server import event_emitter as emitter_module
 
     retained = emitter_module.build_default_emitter()
@@ -67,6 +67,9 @@ def _isolate_capture_producers(monkeypatch):
         monkeypatch.setattr(main, "event_emitter", retained)
 
     def reset():
+        # Direct-handler tests represent a new process without entering lifespan.
+        # A previous ordinary shutdown deliberately froze that process registry.
+        ws.start_capture_operations()
         attendee_names.reset_for_tests()
         identity.reset_for_tests()
         help_module.reset_for_tests()

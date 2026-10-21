@@ -168,9 +168,10 @@ def _shutdown_runtime(emitter_stop, emitter_threads, *, timeout: float = 10.0) -
     the server alive past it. Its daemon keeps the original durable reservation
     unresolved, so a replacement cannot silently declare that work preserved.
     """
-    from . import insight_summary
+    from . import insight_summary, ws
 
     deadline = time.monotonic() + timeout
+    ws.freeze_capture_operations()
     if emitter_stop is not None:
         emitter_stop.set()
     result = {"complete": False, "issues": [], "outcomes": []}
@@ -178,6 +179,9 @@ def _shutdown_runtime(emitter_stop, emitter_threads, *, timeout: float = 10.0) -
 
     def stop():
         stages = [
+            # Accepted socket input must finish before stopping its PTY and
+            # completing the terminal's existing lifetime ticket.
+            ("websocket_capture", lambda: ws.drain_capture_operations(deadline=deadline)),
             # Stop periodic producers before checking the final writer inventory.
             # Existing credential clients remain usable after rotation stops.
             ("credential_rotation", credential_manager.stop),
@@ -233,7 +237,9 @@ def _shutdown_runtime(emitter_stop, emitter_threads, *, timeout: float = 10.0) -
 async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
     previous_asyncio_handler = observability.install_asyncio_exception_handler(loop)
-    from . import topology
+    from . import topology, ws
+
+    ws.start_capture_operations()
 
     # A multi-session override makes the UI lie and reintroduces the process
     # races this release removes. Fail the deployment before serving traffic.
