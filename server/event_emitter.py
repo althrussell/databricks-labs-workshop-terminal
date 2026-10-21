@@ -23,8 +23,10 @@ from .capture_journal import (
     CaptureError,
     CaptureHeldError,
     CaptureJournal,
+    CaptureStorageError,
     MemoryCaptureStorage,
 )
+from .capture_io import storage_failure
 
 SCHEMA_VERSION = 1
 COLLECT_SCHEMA_VERSION = 2
@@ -78,6 +80,7 @@ class EventEmitter:
         self._initializing = False
         self._configuration_fault = ""
         self._pending_issues: set[str] = set()
+        self._initialization_issues: set[str] = set()
         self.journal = journal or CaptureJournal(
             MemoryCaptureStorage(),
             {
@@ -192,6 +195,34 @@ class EventEmitter:
                     self._initializing = False
             if self._configuration_fault:
                 raise CaptureHeldError("capture persistence is held")
+            if self._initialization_issues:
+                # Refused startup output must not prevent attaching the real
+                # journal, or disappear when a later initialization succeeds.
+                self._pending_issues.update(self._initialization_issues)
+                self._initialization_issues.clear()
+                self._persist_issues()
+
+    def _ensure_ready_for_emit(self) -> None:
+        started = time.monotonic()
+        attempts = 0
+        while True:
+            attempts += 1
+            try:
+                self._ensure_ready()
+                return
+            except CaptureError as error:
+                diagnostics = storage_failure(error, operation="initialize", attempts=attempts)
+                if CaptureJournal._retry_storage(diagnostics, attempts, started):
+                    continue
+                observed = CaptureStorageError(
+                    "capture initialization failed", diagnostics=diagnostics
+                )
+                with self._lock:
+                    if len(self._initialization_issues) < 64:
+                        self._initialization_issues.add(self._rejection_code(observed))
+                    else:
+                        self._initialization_issues.add("capture_rejected:additional_failures")
+                raise
 
     def _validate_state(self, state: dict) -> dict:
         insight = self._insight(state)
@@ -276,15 +307,24 @@ class EventEmitter:
             self.journal.transaction(record)
             self._pending_issues.difference_update(issues)
 
-    def _rejected(self, exc: Exception, key: str = "") -> None:
+    @staticmethod
+    def _rejection_code(exc: Exception, key: str = "") -> str:
         # No payload/PII is put in diagnostics. A later healthy read must not
         # erase evidence of output that a producer tried but failed to retain.
         digest = hashlib.sha256(key.encode()).hexdigest()[:16] if key else "unknown"
+        diagnostic = ""
+        if isinstance(exc, CaptureStorageError) and exc.diagnostics:
+            value = exc.diagnostics
+            diagnostic = (
+                f":operation={value['operation']}:status={value['http_status'] or 'unknown'}"
+                f":timeout={value['timeout']}:attempts={value['attempts']}"
+            )
+        return f"capture_rejected:{type(exc).__name__}:{digest}{diagnostic}"
+
+    def _rejected(self, exc: Exception, key: str = "") -> None:
         with self._lock:
             if len(self._pending_issues) < 64:
-                self._pending_issues.add(
-                    f"capture_rejected:{type(exc).__name__}:{digest}"
-                )
+                self._pending_issues.add(self._rejection_code(exc, key))
             else:
                 self._pending_issues.add("capture_rejected:additional_failures")
         try:
@@ -330,10 +370,10 @@ class EventEmitter:
             or not attendee
         ):
             raise ValueError("capture type and attendee must be nonempty strings")
-        self._ensure_ready()
+        occurred_at = datetime.now(timezone.utc).isoformat()
+        self._ensure_ready_for_emit()
         self._persist_issues()
         attempted_key = ""
-        occurred_at = datetime.now(timezone.utc).isoformat()
 
         def append(state):
             nonlocal attempted_key

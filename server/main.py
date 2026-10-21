@@ -531,7 +531,7 @@ def record_app_deploy_event(body: _AppDeployEventBody, request: Request):
     deliberately no app name, URL, command output, project path, or credential.
     """
     principal = _callback_identity(body, request)
-    telemetry.app_deploy(
+    captured = telemetry.app_deploy(
         principal.name,
         outcome=body.outcome,
         reason=body.reason,
@@ -540,6 +540,8 @@ def record_app_deploy_event(body: _AppDeployEventBody, request: Request):
         resumed=body.resumed,
         source=body.source,
     )
+    if not captured:
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL)
     return {"recorded": True}
 
 
@@ -1237,7 +1239,7 @@ def report_attendee_error(
     diagnostics an operator reads describe the same moment. Fire-and-forget by
     design — the UI must never depend on the reply.
     """
-    telemetry.attendee_error_seen(
+    captured = telemetry.attendee_error_seen(
         principal.name,
         body.code,
         {
@@ -1246,6 +1248,8 @@ def report_attendee_error(
             "session_id": body.session_id[:64],
         },
     )
+    if not captured:
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL)
     # An error on the attendee's screen is also the earliest arriving signal we
     # get. `retry` tells the browser whether trying again is worth it, so the
     # attendee is not asked to reload for something already fixed.

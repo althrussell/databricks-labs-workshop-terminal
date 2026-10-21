@@ -19,6 +19,7 @@ class _RequestOutcome:
     # worker thread. Setting a fresh ContextVar there would not flow back to
     # the middleware's async context.
     retained_model_policy_refusal: bool = False
+    capture_failed: bool = False
 
 
 _request_outcome: ContextVar[_RequestOutcome | None] = ContextVar(
@@ -35,6 +36,18 @@ def retained_model_policy_pending_refusal() -> None:
     outcome = _request_outcome.get()
     if outcome is not None:
         outcome.retained_model_policy_refusal = True
+
+
+def capture_not_retained() -> None:
+    """Keep a swallowed producer failure attached to its admitted request.
+
+    Best-effort operational reporting must not break a successful control or
+    session action. Its writer still cannot disappear as successful if both
+    the event and its rejection marker were unavailable until request finish.
+    """
+    outcome = _request_outcome.get()
+    if outcome is not None:
+        outcome.capture_failed = True
 
 
 def produces_capture(scope) -> bool:
@@ -95,7 +108,9 @@ class CloseoutAdmissionMiddleware:
             raise
         finally:
             try:
-                await anyio.to_thread.run_sync(lambda: ticket.finish(failed=failed))
+                await anyio.to_thread.run_sync(
+                    lambda: ticket.finish(failed=failed or outcome.capture_failed)
+                )
             finally:
                 try:
                     ticket.__exit__(None, None, None)

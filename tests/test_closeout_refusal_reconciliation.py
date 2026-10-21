@@ -170,15 +170,19 @@ def test_audit_failure_or_expired_lease_never_reconciles_an_outcome(problem, mon
     storage = source.journal.storage
     read = storage.read
     triggered = [False]
+    storage_failures = [0]
 
     def failed_prefix(name):
-        if name == f"{0:020d}.json" and not triggered[0]:
+        if name == f"{0:020d}.json" and (
+            not triggered[0] or problem == "storage" and storage_failures[0] < 3
+        ):
             triggered[0] = True
             if problem == "lease":
                 now[0] += 121
             elif problem == "corrupt":
                 return b"{}"
             else:
+                storage_failures[0] += 1
                 raise TimeoutError("synthetic unavailable prefix")
         return read(name)
 

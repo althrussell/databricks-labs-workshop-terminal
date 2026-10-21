@@ -1075,3 +1075,29 @@ an agent the run opted out of.
   the terminal's `message_id`, then `POST {app_url}/api/admin/help/ack`
   `{"through_seq": n}`. The terminal's own push to CT is blocked by the same
   proxy, for the same reason (§11b).
+
+## Capture I/O recovery and accepted HTTP requests
+
+Capture journal I/O retries a short transient failure with bounded attempts,
+without rerunning the producer's state-derived mutation. An uncertain create is
+resolved by exact byte readback; brief readback invisibility is retried as a read,
+using the same revision and operation identity. This is an attempt/pause budget,
+not a total deadline for synchronous SDK calls. Permanent or exhausted failures
+remain preservation holds. Existing historical rejection markers are not cleared.
+
+Authenticated capture persistence health may include `last_storage_failure` with
+fixed operation, observed HTTP status when available, timeout class, attempt count
+and retryability. Exception text, URLs, attendee payloads and credentials are not
+included. A healthy later read does not prove the original output was retained.
+
+The existing HTTP writer barrier also retains a failed outcome when operational
+emission fails inside an admitted request, including a synchronous worker thread.
+This prevents request completion from erasing the only durable evidence before a
+restart. Explicit attendee-error and app-deploy telemetry endpoints return 503 if
+the record was not retained. Other successful controls keep their existing
+behavior, while their failed writer outcome blocks verified closeout. A total
+storage outage can prevent new request admission; refused background diagnostics
+are not an additional durable outbox and must not be described as accepted data.
+Control Tower requires durable, lossless capture proof before admitting preserved
+workshops. An empty durable backlog awaiting attendee login/collection is valid;
+missing, volatile or faulted persistence is not.

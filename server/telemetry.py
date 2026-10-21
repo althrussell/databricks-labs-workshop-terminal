@@ -102,6 +102,9 @@ def emit(event_type: str, attendee: str, payload: dict | None = None) -> bool:
         event_emitter.emit(event_type, attendee or "system", payload or {})
         captured = True
     except Exception:
+        from .closeout_http import capture_not_retained
+
+        capture_not_retained()
         logger.debug("telemetry emit failed for %s", event_type, exc_info=True)
     try:
         from . import observability
@@ -281,10 +284,10 @@ def app_deploy(
     attempts: int,
     resumed: bool,
     source: str,
-) -> None:
+) -> bool:
     """One bounded result from the local deploy tool; no CLI output or URL."""
     bucketed, _raw = normalize(reason, APP_DEPLOY_CODES)
-    emit(
+    return emit(
         "app.deploy",
         attendee,
         {
@@ -335,14 +338,14 @@ def obo_health(attendee: str, state: str, detail: dict | None = None) -> None:
     emit("obo.health", attendee, {"state": state, **(detail or {})})
 
 
-def attendee_error_seen(attendee: str, code: str, detail: dict | None = None) -> None:
+def attendee_error_seen(attendee: str, code: str, detail: dict | None = None) -> bool:
     """What the attendee's screen said, reported by the attendee's browser.
 
     The one event nothing else can produce: it is the proof that our sanitized
     code and the operator's diagnostics describe the same moment.
     """
     bucketed, raw = normalize(code, ATTENDEE_ERROR_CODES)
-    emit(
+    return emit(
         "attendee.error_seen",
         attendee,
         {"code": bucketed, "raw_code": raw, **(detail or {})},

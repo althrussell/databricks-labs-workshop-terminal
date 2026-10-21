@@ -140,7 +140,7 @@ def test_fresh_container_recovers_exact_epoch_records_ack_and_help_without_home(
     assert all(path.startswith("/Workspace/Users/") for path in sdk.workspace.paths)
 
 
-def test_grant_convergence_retries_without_accepting_memory_output(monkeypatch):
+def test_grant_convergence_does_not_erase_output_refused_before_attachment(monkeypatch):
     workspace = WorkspaceFiles()
     workspace.blocked = True
     retained = emitter()
@@ -155,9 +155,13 @@ def test_grant_convergence_retries_without_accepting_memory_output(monkeypatch):
     assert workspace.objects == {}
 
     workspace.blocked = False
-    assert retained.collect()["events"] == []
-    assert retained.delivery_status()["retention_ready"] is True
+    with pytest.raises(CaptureHeldError, match="unresolved delivery"):
+        retained.collect()
+    assert retained.delivery_status()["retention_ready"] is False
+    assert ":operation=initialize:" in retained.journal.read()["producer_issues"][0]
     assert retained.emit("heartbeat", BINDING["owner"], {}, idempotency_key="retried") == 1
+    assert retained.collect()["events"][0]["event"]["idempotency_key"] == "retried"
+    assert retained.delivery_status()["retention_ready"] is False
 
 
 def test_held_startup_blocks_attendee_bootstrap_and_counter_checkpoint(monkeypatch):
