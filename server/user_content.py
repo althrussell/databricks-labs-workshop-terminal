@@ -35,7 +35,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import config
+from . import config, projects
 from .users import User, _atomic_write, email_slug
 
 logger = logging.getLogger(__name__)
@@ -787,6 +787,15 @@ def _write_claude_json(user: User) -> None:
     except (OSError, json.JSONDecodeError):
         existing = {}
     existing["hasCompletedOnboarding"] = True
+    # Claude asks whether to trust a new folder and defaults to exit. WT created
+    # the attendee's builds folder; Claude inherits trust into each build in it.
+    trusted = existing.get("projects")
+    if not isinstance(trusted, dict):
+        trusted = {}
+    builds = os.path.realpath(projects.root(user))
+    entry = trusted.get(builds)
+    trusted[builds] = {**(entry if isinstance(entry, dict) else {}), "hasTrustDialogAccepted": True}
+    existing["projects"] = trusted
     retained = existing.get("mcpServers", {})
     if not isinstance(retained, dict):
         retained = {}
