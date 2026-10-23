@@ -54,9 +54,10 @@ _EXCEPTION_LINE = re.compile(r"^(?P<type>[A-Za-z_][A-Za-z0-9_.]*(?:Error|Excepti
 _FRAME = re.compile(r'^\s*File "(?P<file>[^"]+)", line (?P<line>\d+), in (?P<func>\S+)')
 # Codes shaped like the ones attendees see: spec_resolver_failed,
 # native_terminal_start_failed, token_expired.
+# A name followed by "=" is a setting ("idle_timeout=3600.0s"), never an occurrence.
 _CODE = re.compile(
     r"\b([a-z][a-z0-9]*(?:_[a-z0-9]+)*_"
-    r"(?:failed|failure|error|denied|expired|timeout|unavailable|unauthorized|refused))\b"
+    r"(?:failed|failure|error|denied|expired|timeout|unavailable|unauthorized|refused))\b(?!\s*=)"
 )
 _SESSION = re.compile(r"(?i)\bsession[_ -]?(?:id)?[=: ]+['\"]?([A-Za-z0-9][A-Za-z0-9_-]{5,})")
 _VOLATILE = re.compile(r"0x[0-9a-f]+|\b[0-9a-f]{8,}\b|\b\d+\b")

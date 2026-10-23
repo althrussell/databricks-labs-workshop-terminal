@@ -183,6 +183,22 @@ def test_a_bare_stderr_traceback_is_captured_even_without_a_log_header(
     assert entry["source"] == "host"
 
 
+def test_a_setting_named_like_a_code_is_not_an_error(attendee, tmp_path):
+    # Every EQL-Pre-Flight seat reported this INFO startup line to CT as
+    # omnigent.error_detected; a real code in the same shape still counts.
+    emitter = _Emitter()
+    collector = _collector(attendee, tmp_path, emitter)
+    _log(attendee, "runner").write_text(
+        "INFO  11-04 09:00:00.001 terminals.pane_reaper  start  | "
+        "native pane reaper started (idle_timeout=3600.0s, interval=60.0s)\n"
+        "WARNING 11-04 09:05:00.001 runner.app  turn  | retrying after error=token_expired\n"
+    )
+    collector.sweep()
+
+    assert [entry["code"] for entry in collector.journal.recent()] == ["token_expired"]
+    assert [payload["code"] for _type, _attendee, payload in emitter.events] == ["token_expired"]
+
+
 def test_an_unknown_future_code_is_captured_without_a_code_change(attendee, tmp_path):
     collector = _collector(attendee, tmp_path)
     _log(attendee, "runner").write_text(
