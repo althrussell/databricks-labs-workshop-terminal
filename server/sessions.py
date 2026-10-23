@@ -178,6 +178,13 @@ class Session:
         with admitted_writer(event_emitter.journal, "terminal_input"):
             self._write_input(data)
 
+    def write_keystrokes(self, data: str) -> None:
+        """Interactive typing. Keystrokes are not insight, so they never take a
+        retained capture writer: one per keystroke cost two Workspace round
+        trips and made terminals unusable. The socket's closeout fence still
+        refuses input once closeout begins; output capture is unaffected."""
+        self._write_input(data)
+
     def _write_input(self, data: str) -> None:
         encoded = data.encode()
         with self.input_lock:

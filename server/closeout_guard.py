@@ -70,13 +70,18 @@ def finalizer_scope(journal, capture_id: str, claim_id: str = "", *, clock=None)
         _authority.reset(token)
 
 
-def control_transaction(journal, mutator):
+def control_transaction(journal, mutator, *, durable: bool = False):
+    """Closeout bookkeeping. Phase transitions are durable barriers; writer
+    reservations stay in memory so attendee requests never wait on storage."""
     with control_scope(journal):
+        if durable:
+            return journal.transaction(mutator, durable=True)
         return journal.transaction(mutator)
 
 
 def check_open(journal) -> None:
-    value = closeout_state(journal.read())
+    raw = journal.peek("closeout")
+    value = closeout_state({} if raw is None else {"closeout": raw})
     if value is not None and value["phase"] != "OPEN":
         raise CaptureClosedError("Workshop is closing; new capture input is disabled")
 

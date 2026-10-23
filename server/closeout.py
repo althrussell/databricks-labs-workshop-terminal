@@ -206,7 +206,7 @@ class CloseoutManager:
                          drain_timeout_seconds=drain_timeout_seconds,
                          drain_deadline=now + drain_timeout_seconds, issues=[])
 
-        control_transaction(self.journal, request)
+        control_transaction(self.journal, request, durable=True)
         return self.status(capture_id=capture_id)
 
     def status(self, *, capture_id: str = "") -> dict:
@@ -296,7 +296,7 @@ class CloseoutManager:
                         value["phase"] = "CLOSING"
                         value.pop("manifest", None)
                         value.pop("manifest_sha256", None)
-                control_transaction(self.journal, resume)
+                control_transaction(self.journal, resume, durable=True)
             drained = self.drainer(max(0.0, min(wait_seconds, 5.0)))
             value = closeout_state(self.journal.read())
             issues = list(drained.get("issues", []))
@@ -312,7 +312,7 @@ class CloseoutManager:
                     operation["issues"] = sorted(set(issues))
                     if (operation["writers"] or not drained["complete"]) and self.clock() >= operation["drain_deadline"]:
                         operation["phase"] = "INCOMPLETE"
-            control_transaction(self.journal, record_drain)
+            control_transaction(self.journal, record_drain, durable=True)
             if value["writers"] or not drained["complete"]:
                 return self.status(capture_id=capture_id)
             # Stop a process which an already-admitted spawn finished creating
@@ -326,7 +326,7 @@ class CloseoutManager:
                         operation["issues"] = sorted(set(drained.get("issues", []) or ["writer_drain_unverified"]))
                         if self.clock() >= operation["drain_deadline"]:
                             operation["phase"] = "INCOMPLETE"
-                control_transaction(self.journal, record_racing_writer)
+                control_transaction(self.journal, record_racing_writer, durable=True)
                 return self.status(capture_id=capture_id)
             proposed_claim = uuid.uuid4().hex
 
@@ -342,7 +342,7 @@ class CloseoutManager:
                 operation["issues"] = []
                 operation["drain"] = _reconciled_drain(drained, operation)
                 return True
-            if not control_transaction(self.journal, claim):
+            if not control_transaction(self.journal, claim, durable=True):
                 return self.status(capture_id=capture_id)
             claim_id = proposed_claim
             renewed_at = self.clock()
@@ -363,7 +363,7 @@ class CloseoutManager:
                             or previous.get("expires_at", 0) <= now):
                         raise CaptureClosedError("closeout finalizer ownership changed")
                     previous["expires_at"] = now + _FINALIZER_LEASE_SECONDS
-                control_transaction(self.journal, extend)
+                control_transaction(self.journal, extend, durable=True)
                 renewed_at = self.clock()
 
             with finalizer_scope(self.journal, current["capture_id"], claim_id, clock=self.clock):
@@ -447,7 +447,7 @@ class CloseoutManager:
                 operation["issues"] = manifest["issues"]
                 operation["phase"] = "SEALED" if manifest["complete"] else "INCOMPLETE"
                 operation.pop("finalizer", None)
-            control_transaction(self.journal, seal)
+            control_transaction(self.journal, seal, durable=True)
             return self.status(capture_id=capture_id)
         finally:
             try:
@@ -457,7 +457,7 @@ class CloseoutManager:
                         if (value["phase"] == "CLOSING"
                                 and value.get("finalizer", {}).get("claim_id") == claim_id):
                             value.pop("finalizer", None)
-                    control_transaction(self.journal, release)
+                    control_transaction(self.journal, release, durable=True)
             finally:
                 self._lock.release()
 

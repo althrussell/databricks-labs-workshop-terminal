@@ -130,20 +130,27 @@ class ProductFailingFiles(WorkspaceFiles):
         return super().upload(path, content, **kwargs)
 
 
-def test_http_primary_write_failure_is_503_and_preserves_accepted_snapshot(product_http, monkeypatch):
+def test_storage_failure_never_reaches_the_attendee_and_retains_after_recovery(product_http, monkeypatch):
     files = ProductFailingFiles()
-    _, user = attach(monkeypatch, SimpleNamespace(workspace=files))
+    retained, user = attach(monkeypatch, SimpleNamespace(workspace=files))
     accepted = attendee_profile.save(user, "guided", expected_revision=0)
-    previous_cache = Path(attendee_profile.path(user)).read_bytes()
+    retained.journal.flush()
     files.fail_product = True
     response = product_http.post("/api/profile", headers=OWNER,
         json={"help_preference": "technical", "expected_revision": accepted.revision})
-    assert response.status_code == 503, response.text
-    assert Path(attendee_profile.path(user)).read_bytes() == previous_cache
+    # A storage blip is never the attendee's problem: accepted in memory.
+    assert response.status_code == 200, response.text
+    with pytest.raises(CaptureStorageError):
+        retained.journal.flush()
+    assert retained.journal.health()["pending_operations"] >= 1
     files.fail_product = False
-    assert attendee_profile.read(user) == accepted
+    retained.journal.flush()
+    assert retained.journal.health()["pending_operations"] == 0
     files.fail_reads = True
-    assert product_http.get("/api/profile", headers=OWNER).status_code == 503
+    assert product_http.get("/api/profile", headers=OWNER).json()["help_preference"] == "technical"
+    files.fail_reads = False
+    _, restored = attach(monkeypatch, SimpleNamespace(workspace=files))
+    assert attendee_profile.read(restored).help_preference == "technical"
 
 
 @pytest.mark.parametrize("endpoint,payload,readback", [

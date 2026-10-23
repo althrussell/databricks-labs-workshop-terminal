@@ -473,7 +473,11 @@ def harvest_stats(final: bool = False):
     except CaptureError:
         return _harvest_open_stats(final)
     with ticket:
-        return _harvest_open_stats(final)
+        payload = _harvest_open_stats(final)
+    if final:
+        # The pre-delete harvest is the last read; retain everything first.
+        event_emitter.journal.flush()
+    return payload
 
 
 def _harvest_open_stats(final: bool):
@@ -585,6 +589,9 @@ def collect_insight_events(after: int = 0, stream: str = "", limit: int = 0):
     from .event_emitter import DEFAULT_COLLECT_LIMIT, event_emitter
 
     try:
+        # CT may commit what it reads; retain it first so a crash can never
+        # reissue a delivered sequence with different content.
+        event_emitter.journal.flush()
         return event_emitter.collect(
             after=max(0, after),
             stream=stream,
@@ -608,7 +615,9 @@ def acknowledge_insight_events(body: InsightAckIn):
     from .event_emitter import event_emitter
 
     try:
-        return event_emitter.acknowledge(**body.model_dump())
+        result = event_emitter.acknowledge(**body.model_dump())
+        event_emitter.journal.flush()
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Invalid capture acknowledgement") from exc
     except CaptureError as exc:
@@ -633,6 +642,14 @@ class CloseoutBeginIn(BaseModel):
     drain_timeout_seconds: int = Field(default=120, strict=True, ge=1, le=600)
 
 
+def _retained(response):
+    """Closeout state CT acts on is retained before it is reported."""
+    from .event_emitter import event_emitter
+
+    event_emitter.journal.flush()
+    return response
+
+
 @router.post("/capture-closeout/begin")
 def begin_capture_closeout(body: CloseoutBeginIn):
     """Persist the input barrier; repeats resume this exact close generation."""
@@ -642,7 +659,7 @@ def begin_capture_closeout(body: CloseoutBeginIn):
         operation = manager()
         operation.begin(capture_id=body.capture_id, stream_id=body.stream_id,
                         source=body.source.model_dump(), drain_timeout_seconds=body.drain_timeout_seconds)
-        return operation.advance(capture_id=body.capture_id)
+        return _retained(operation.advance(capture_id=body.capture_id))
     except CloseoutConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -654,7 +671,7 @@ def capture_closeout_status(capture_id: str = "", advance: bool = True):
 
     try:
         operation = manager()
-        return operation.advance(capture_id=capture_id) if advance else operation.status(capture_id=capture_id)
+        return _retained(operation.advance(capture_id=capture_id) if advance else operation.status(capture_id=capture_id))
     except CloseoutConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -665,7 +682,7 @@ def capture_closeout_entries(capture_id: str, kind: str, after: int = 0, limit: 
     from .closeout import CloseoutConflict, manager
 
     try:
-        return manager().entries(capture_id=capture_id, kind=kind, after=after, limit=limit)
+        return _retained(manager().entries(capture_id=capture_id, kind=kind, after=after, limit=limit))
     except CloseoutConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:

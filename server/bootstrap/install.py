@@ -39,10 +39,10 @@ from .apx import VERSION as APX_VERSION, BUN_VERSION
 logger = logging.getLogger(__name__)
 
 # Pinned versions — bump deliberately per release.
-CLAUDE_VERSION = os.environ.get("CLAUDE_CODE_VERSION", "2.1.296").strip()
-CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.162.1").strip()
-DATABRICKS_CLI_VERSION = os.environ.get("DATABRICKS_CLI_VERSION", "1.20.0").strip()
-AGENTBRICKS_VERSION = os.environ.get("AGENTBRICKS_VERSION", "0.5.0").strip()
+CLAUDE_VERSION = os.environ.get("CLAUDE_CODE_VERSION", "2.1.308").strip()
+CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.164.0").strip()
+DATABRICKS_CLI_VERSION = os.environ.get("DATABRICKS_CLI_VERSION", "1.22.1").strip()
+AGENTBRICKS_VERSION = os.environ.get("AGENTBRICKS_VERSION", "0.6.0").strip()
 UV_VERSION = "0.13.0"
 OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "0.15.0").strip()
 OMNIGENT_PROTOCOL_VERSION = "0.15.0"

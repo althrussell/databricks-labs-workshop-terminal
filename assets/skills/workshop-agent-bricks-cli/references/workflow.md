@@ -1,4 +1,4 @@
-# CLI 0.5.0 command pointers
+# CLI 0.6.0 command pointers
 
 Global `--profile` and `--output` precede the command. `DEFAULT` is the WT build
 profile, not the attendee's optional `me` OBO profile. Check the installed command

@@ -9,7 +9,7 @@ metadata:
 
 Use the installed **`agentbricks`** command from `databricks-agentbricks`, not
 invented `databricks agentbricks` commands. This workshop integration is reviewed
-against CLI **0.5.0**. Check `agentbricks --version`, `uv --version`, and the
+against CLI **0.6.0**. Check `agentbricks --version`, `uv --version`, and the
 relevant `--help` before relying on a flag. A missing binary means the optional
 installer is disabled, pending or failed: ask the facilitator to check setup
 status; do not upgrade the shared toolchain mid-workshop.

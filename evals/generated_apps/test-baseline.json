@@ -1,14 +1,14 @@
 {
-  "id": "quality-20261011",
-  "audited_on": "2026-10-11",
+  "id": "quality-20261023",
+  "audited_on": "2026-10-23",
   "models": {
     "driver": "system.ai.claude-opus-5-5",
     "codex": "system.ai.gpt-6-1-sol"
   },
   "artifacts": {
-    "claude_binary": "2.1.296",
-    "codex_npm_launcher_package": "0.162.1",
-    "databricks_cli_archive_linux_x64": "1.20.0",
+    "claude_binary": "2.1.308",
+    "codex_npm_launcher_package": "0.164.0",
+    "databricks_cli_archive_linux_x64": "1.22.1",
     "databricks_agent_skills": "v0.2.28",
     "node_linux_x64": "24.21.0",
     "uv_binary": "0.13.0",
@@ -16,7 +16,7 @@
     "omnigent_lock": "0.15.0",
     "apx_wheel_linux_x64": "0.3.8",
     "bun_linux_x64": "1.4.3",
-    "agentbricks_lock": "0.5.0",
+    "agentbricks_lock": "0.6.0",
     "impeccable_npm_launcher": "4.1.0",
     "impeccable_engine_linux_x64": "0.1.14",
     "impeccable_skill_bundle": "4.5.2"

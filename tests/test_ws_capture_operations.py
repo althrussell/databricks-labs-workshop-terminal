@@ -12,7 +12,7 @@ from starlette.websockets import WebSocketDisconnect
 
 
 @pytest.fixture
-def socket_capture(monkeypatch):
+def socket_capture(monkeypatch, request):
     from server import event_emitter, ws
     from server.capture_journal import CaptureJournal, MemoryCaptureStorage
     from server.closeout_guard import admitted_writer
@@ -22,7 +22,9 @@ def socket_capture(monkeypatch):
     ws.start_capture_operations()
     binding = {"run_id": "socket-run", "unit_id": "socket-unit", "workspace_id": "123",
                "owner": "alice@example.com"}
-    journal = CaptureJournal(MemoryCaptureStorage(), binding, {})
+    # Production capture is write-behind; marked tests use that exact mode.
+    journal = CaptureJournal(MemoryCaptureStorage(), binding, {},
+                             write_behind=request.node.get_closest_marker("write_behind") is not None)
     source = EventEmitter(run_id=binding["run_id"], workspace_id=binding["workspace_id"],
                           ingest_url="", ingest_token="", journal=journal)
     monkeypatch.setattr(event_emitter, "event_emitter", source)
@@ -119,7 +121,7 @@ def test_cancelled_pong_is_not_a_failed_producer(socket_capture, surface):
 
 
 @pytest.mark.parametrize("partial", [False, True])
-def test_actual_pty_failure_stays_held(socket_capture, monkeypatch, partial):
+def test_pty_failure_is_logged_and_never_a_capture_writer(socket_capture, monkeypatch, partial):
     f = socket_capture
     original = os.write
     attempts = []
@@ -135,10 +137,70 @@ def test_actual_pty_failure_stays_held(socket_capture, monkeypatch, partial):
     monkeypatch.setattr("server.sessions.os.write", write)
     asyncio.run(f.ws.session_socket(Socket([json.dumps({"t": "input", "data": "hello"})]), "owned-session"))
     state = f.journal.read()["closeout"]
+    # Typing is not insight: a failed keystroke leaves no retained writer.
     assert state["writers"] == f.before
-    outcome, = state["writer_outcomes"]
-    assert outcome["kind"] == "terminal_socket_message" and outcome["status"] == "failed"
+    assert state["writer_outcomes"] == []
     assert attempts == ([b"hello", b"llo"] if partial else [b"hello"])
+
+
+@pytest.mark.write_behind
+def test_typing_never_waits_on_capture_storage(socket_capture, monkeypatch):
+    f = socket_capture
+    writes = []
+    calls = {"count": 0, "typing": False}
+    storage = f.journal.storage
+    for name in ("create", "read", "list_names"):
+        original = getattr(storage, name)
+
+        def slow(*args, _original=original, **kwargs):
+            if calls["typing"]:
+                calls["count"] += 1
+            time.sleep(0.3)  # a Workspace round trip
+            return _original(*args, **kwargs)
+
+        monkeypatch.setattr(storage, name, slow)
+    monkeypatch.setattr(f.session, "_write_input", lambda data: writes.append(data))
+
+    class TypingSocket(Socket):
+        async def receive_text(self):
+            if self.messages and len(self.messages) == 100:
+                calls["typing"] = True  # attach (one admission per socket) is done
+            return await super().receive_text()
+
+    keystrokes = [json.dumps({"t": "input", "data": chr(97 + n % 26)}) for n in range(100)]
+    socket = TypingSocket(keystrokes)
+
+    async def scenario():
+        started = time.monotonic()
+        await asyncio.wait_for(f.ws.session_socket(socket, "owned-session"), 10)
+        return time.monotonic() - started
+
+    elapsed = asyncio.run(scenario())
+    assert writes == [chr(97 + n % 26) for n in range(100)]
+    assert calls["count"] == 0, "a keystroke touched capture storage"
+    # 100 keystrokes would take 60s at two round trips each; typing is local.
+    assert elapsed < 2.0
+
+
+def test_stopping_workshop_refuses_new_typing(socket_capture, monkeypatch):
+    f = socket_capture
+    monkeypatch.setattr(f.session, "_write_input", lambda _: pytest.fail("input crossed shutdown"))
+
+    async def scenario():
+        socket = Socket([json.dumps({"t": "input", "data": "late"})])
+        attached = f.ws.session_socket(socket, "owned-session")
+        original = socket.receive_text
+
+        async def freeze_then_receive():
+            f.ws.freeze_capture_operations()
+            return await original()
+
+        socket.receive_text = freeze_then_receive
+        await attached
+        return socket
+
+    socket = asyncio.run(scenario())
+    assert socket.closed == [{"code": 4410, "reason": "workshop is closing"}]
 
 
 def test_input_order_is_preserved_and_blocked_storage_does_not_block_loop(socket_capture, monkeypatch):
@@ -181,48 +243,6 @@ def test_input_order_is_preserved_and_blocked_storage_does_not_block_loop(socket
     assert f.journal.read()["closeout"]["writer_outcomes"] == []
 
 
-def test_cancelled_admitted_input_is_owned_until_success(socket_capture, monkeypatch):
-    f = socket_capture
-    entered, release, finished = threading.Event(), threading.Event(), threading.Event()
-    writes = []
-
-    def write(data):
-        entered.set()
-        assert release.wait(3)
-        writes.append(data)
-        finished.set()
-
-    monkeypatch.setattr(f.session, "_write_input", write)
-
-    async def scenario():
-        task = asyncio.create_task(f.ws.session_socket(Socket([json.dumps({"t": "input", "data": "once"})]), "owned-session"))
-        try:
-            for _ in range(200):
-                if entered.is_set():
-                    break
-                await asyncio.sleep(0.005)
-            assert entered.is_set()
-            task.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await task
-            state = f.journal.read()["closeout"]
-            assert len(state["writers"]) == len(f.before) + 1
-            assert state["writer_outcomes"] == []
-            assert len(f.ws._capture_workers) == 1
-        finally:
-            release.set()
-        for _ in range(200):
-            if finished.is_set() and not f.ws._capture_workers:
-                break
-            await asyncio.sleep(0.005)
-        assert not f.ws._capture_workers
-
-    asyncio.run(scenario())
-    assert writes == ["once"]
-    assert f.journal.read()["closeout"]["writers"] == f.before
-    assert f.journal.read()["closeout"]["writer_outcomes"] == []
-
-
 def test_cancelled_before_worker_start_never_admits(socket_capture, monkeypatch):
     f = socket_capture
     queued, calls = [], []
@@ -249,162 +269,6 @@ def test_cancelled_before_worker_start_never_admits(socket_capture, monkeypatch)
     asyncio.run(scenario())
     assert calls == [] and not f.ws._capture_workers
     assert f.journal.read()["closeout"]["writers"] == f.before
-
-
-def test_shutdown_is_bounded_and_freezes_new_admission(socket_capture, monkeypatch):
-    from server import main
-
-    f = socket_capture
-    entered, release = threading.Event(), threading.Event()
-    written = []
-
-    def write(data):
-        assert threading.current_thread().daemon
-        entered.set()
-        assert release.wait(3)
-        written.append(data)
-
-    monkeypatch.setattr(f.session, "_write_input", write)
-
-    async def scenario():
-        task = asyncio.create_task(f.ws.session_socket(Socket([json.dumps({"t": "input", "data": "accepted"})]), "owned-session"))
-        try:
-            for _ in range(200):
-                if entered.is_set():
-                    break
-                await asyncio.sleep(0.005)
-            assert entered.is_set()
-            # No default asyncio executor exists to keep process exit waiting.
-            assert asyncio.get_running_loop()._default_executor is None
-            start = time.monotonic()
-            outcome = main._shutdown_runtime(None, [], timeout=0.05)
-            assert time.monotonic() - start < 0.5
-            assert not outcome["complete"]
-            assert {"websocket_capture_pending", "shutdown_deadline_exceeded"} & set(outcome["issues"])
-            with pytest.raises(f.ws.CaptureClosedError):
-                await f.ws._capture_operation(lambda: pytest.fail("late admission"))
-            state = f.journal.read()["closeout"]
-            assert len(state["writers"]) == len(f.before) + 1
-            assert state["writer_outcomes"] == []
-            task.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await task
-        finally:
-            release.set()
-        for _ in range(200):
-            if not f.ws._capture_workers:
-                break
-            await asyncio.sleep(0.005)
-
-    asyncio.run(scenario())
-    assert written == ["accepted"]
-    assert f.journal.read()["closeout"]["writer_outcomes"] == []
-
-
-
-def test_cancelled_admitted_input_retains_its_late_failure(socket_capture, monkeypatch):
-    f = socket_capture
-    entered, release = threading.Event(), threading.Event()
-    unhandled = []
-
-    def write(_data):
-        entered.set()
-        assert release.wait(3)
-        raise OSError("accepted PTY write failed after browser cancellation")
-
-    monkeypatch.setattr(f.session, "_write_input", write)
-
-    async def scenario():
-        asyncio.get_running_loop().set_exception_handler(lambda _loop, context: unhandled.append(context))
-        task = asyncio.create_task(f.ws.session_socket(Socket([json.dumps({"t": "input", "data": "held"})]), "owned-session"))
-        try:
-            for _ in range(200):
-                if entered.is_set():
-                    break
-                await asyncio.sleep(0.005)
-            assert entered.is_set()
-            task.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await task
-            assert len(f.journal.read()["closeout"]["writers"]) == len(f.before) + 1
-        finally:
-            release.set()
-        for _ in range(200):
-            if not f.ws._capture_workers:
-                break
-            await asyncio.sleep(0.005)
-        await asyncio.sleep(0)
-        assert not f.ws._capture_workers
-
-    asyncio.run(scenario())
-    state = f.journal.read()["closeout"]
-    assert state["writers"] == f.before
-    outcome, = state["writer_outcomes"]
-    assert outcome["kind"] == "terminal_socket_message" and outcome["status"] == "failed"
-    assert unhandled == []
-
-
-def test_shutdown_finishes_accepted_input_before_terminal_drain(socket_capture, monkeypatch):
-    from server import insight_summary, main
-
-    f = socket_capture
-    entered, release = threading.Event(), threading.Event()
-    order = []
-
-    def write(_data):
-        entered.set()
-        assert release.wait(3)
-        order.append("input_completed")
-
-    def terminal_drain(**_kwargs):
-        assert order == ["input_completed"]
-        assert not f.ws._capture_workers
-        order.append("terminal_drain")
-        return {"complete": True, "issues": []}
-
-    monkeypatch.setattr(f.session, "_write_input", write)
-    monkeypatch.setattr(main, "session_manager", SimpleNamespace(drain_for_closeout=terminal_drain))
-    for service in (main.credential_manager, main.entitlement_manager,
-                    main.log_collector, main.obo.obo_watcher):
-        monkeypatch.setattr(service, "stop", lambda: None)
-    monkeypatch.setattr(main.remote_host_manager, "stop", lambda **_kwargs: {"complete": True, "issues": []})
-    monkeypatch.setattr(main.identity, "drain_for_closeout", lambda **_kwargs: {"complete": True, "issues": []})
-    monkeypatch.setattr(insight_summary, "drain_for_closeout", lambda *_args: {"complete": True, "issues": []})
-    monkeypatch.setattr(main.user_content, "drain_sync_for_closeout", lambda *_args, **_kwargs: {"complete": True, "issues": []})
-    monkeypatch.setattr(main, "_checkpoint_shutdown_users", lambda: {"complete": True, "issues": []})
-
-    def release_after_freeze():
-        for _ in range(200):
-            if not f.ws._capture_accepting:
-                release.set()
-                return
-            time.sleep(0.005)
-        release.set()
-
-    async def scenario():
-        task = asyncio.create_task(f.ws.session_socket(Socket([json.dumps({"t": "input", "data": "accepted"})]), "owned-session"))
-        releaser = None
-        try:
-            for _ in range(200):
-                if entered.is_set():
-                    break
-                await asyncio.sleep(0.005)
-            assert entered.is_set()
-            releaser = threading.Thread(target=release_after_freeze, daemon=True)
-            releaser.start()
-            outcome = main._shutdown_runtime(None, [], timeout=2)
-            assert outcome["complete"], outcome
-            assert outcome["outcomes"][0] == {"kind": "websocket_capture", "complete": True, "issues": []}
-            await asyncio.wait_for(task, 1)
-        finally:
-            release.set()
-            if releaser:
-                releaser.join(1)
-
-    asyncio.run(scenario())
-    assert order == ["input_completed", "terminal_drain"]
-    state = f.journal.read()["closeout"]
-    assert state["writers"] == f.before and state["writer_outcomes"] == []
 
 
 def test_closeout_barrier_still_rejects_actual_input(socket_capture, monkeypatch):

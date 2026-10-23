@@ -25,7 +25,7 @@ class CountedFiles(WorkspaceFiles):
         return super().list(path)
 
 
-def test_policy_config_operation_reuses_one_source_snapshot_and_rechecks_at_completion(monkeypatch, tmp_path):
+def test_policy_config_operations_never_read_workspace_storage_after_load(monkeypatch, tmp_path):
     files = CountedFiles()
     attach(files)
     model_policy.store.apply(request(7))
@@ -35,26 +35,25 @@ def test_policy_config_operation_reuses_one_source_snapshot_and_rechecks_at_comp
     user.bootstrap_home()
     files.list_calls = 0
     cli_config.configure_all(user, "test-token")
-    assert files.list_calls == 2
-    files.list_calls = 0
     cli_config.refresh_model_configs(user)
-    assert files.list_calls == 2
-    # Independent reads/operations must see the remote journal every time.
     model_policy.store.snapshot()
     model_policy.store.snapshot()
-    assert files.list_calls == 4
+    # Session setup is on the attendee path: it reads this process's retained
+    # state and never lists Workspace storage (each listing was a round trip).
+    assert files.list_calls == 0
+    assert "claude" in user.cli_ready
 
 
 def test_concurrent_retained_policy_change_invalidates_operation_and_is_not_cached():
     files = CountedFiles()
     attach(files)
     model_policy.store.apply(request(7))
-    other, _ = another_store(files)
     with pytest.raises(model_policy.ModelPolicyConfigurationError, match="changed during"):
         with model_policy.store.read_operation() as snapshot:
             assert snapshot.revision == 7
             assert model_policy.store.snapshot().revision == 7
-            other.apply(request(8))
+            # CT pushes a new policy while a session is being configured.
+            model_policy.store.apply(request(8))
     assert model_policy.store.snapshot().revision == 8
 
 
@@ -85,7 +84,6 @@ def test_racing_revision_clears_cli_ready_and_next_operation_rebuilds(monkeypatc
     files = CountedFiles()
     attach(files)
     model_policy.store.apply(request(7))
-    other, _ = another_store(files)
     monkeypatch.setenv("DATABRICKS_GATEWAY_HOST", "https://test.cloud.databricks.com/ai-gateway")
     monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
     user = User("labuser+199@awsbricks.com")
@@ -94,7 +92,7 @@ def test_racing_revision_clears_cli_ready_and_next_operation_rebuilds(monkeypatc
     original = cli_config.configure_codex
     def race(*args, **kwargs):
         original(*args, **kwargs)
-        other.apply(request(8))
+        model_policy.store.apply(request(8))
     monkeypatch.setattr(cli_config, "configure_codex", race)
     with pytest.raises(model_policy.ModelPolicyConfigurationError, match="changed during"):
         cli_config.refresh_model_configs(user)
@@ -104,7 +102,7 @@ def test_racing_revision_clears_cli_ready_and_next_operation_rebuilds(monkeypatc
     assert "claude" in user.cli_ready and model_policy.store.snapshot().revision == 8
 
 
-def test_final_storage_read_failure_clears_ready_and_next_operation_rebuilds(monkeypatch, tmp_path):
+def test_storage_outage_never_blocks_session_configuration(monkeypatch, tmp_path):
     files = CountedFiles()
     attach(files)
     model_policy.store.apply(request(7))
@@ -112,19 +110,11 @@ def test_final_storage_read_failure_clears_ready_and_next_operation_rebuilds(mon
     monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
     user = User("labuser+199@awsbricks.com")
     user.bootstrap_home()
-    original = files.list
-    files.list_calls = 0
 
-    def fail_final_read(path):
-        if files.list_calls == 1:
-            raise OSError("temporary retained-store outage")
-        return original(path)
+    def outage(path):
+        raise OSError("temporary retained-store outage")
 
-    monkeypatch.setattr(files, "list", fail_final_read)
-    with pytest.raises(CaptureStorageError, match="listing failed"):
-        cli_config.configure_all(user, "test-token")
-    assert user.cli_ready == set()
-    monkeypatch.setattr(files, "list", original)
+    monkeypatch.setattr(files, "list", outage)
     cli_config.configure_all(user, "test-token")
     assert "claude" in user.cli_ready
 
