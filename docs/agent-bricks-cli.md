@@ -1,7 +1,7 @@
 # Agent Bricks CLI in Workshop Terminal
 
 WT supports the separate `agentbricks` command from
-`databricks-agentbricks==0.5.0` for custom LangGraph and OpenAI Agents SDK
+`databricks-agentbricks==0.6.0` for custom LangGraph and OpenAI Agents SDK
 backends. The managed Knowledge Assistant and Supervisor workflow remains in
 the upstream `databricks-agent-bricks` skill.
 
