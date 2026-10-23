@@ -2,10 +2,10 @@
   "//": "GENERATED FILE. Run `python3 scripts/build_artifact_manifest.py --write` to regenerate. See docs/artifact-manifest.md.",
   "artifacts": {
     "agentbricks_lock": {
-      "lock_sha256": "edb1dd1b2939646637eddca87d8a54b4347952036bcfd191d52389c08c2542c2",
-      "sha256": "edb1dd1b2939646637eddca87d8a54b4347952036bcfd191d52389c08c2542c2",
-      "source": "agentbricks-0.5.0.lock",
-      "version": "0.5.0"
+      "lock_sha256": "7db3a7bfb990922cbb30afd15531c46729ed431ecc5036eeb876787c8f7fc1cc",
+      "sha256": "7db3a7bfb990922cbb30afd15531c46729ed431ecc5036eeb876787c8f7fc1cc",
+      "source": "agentbricks-0.6.0.lock",
+      "version": "0.6.0"
     },
     "apx_wheel_linux_x64": {
       "executable_sha256": "855384a9dd12faaf3f92390e1b91f2837ec76fe0e3908b697fc5239f1ca3c5e4",
@@ -22,26 +22,26 @@
       "version": "1.4.3"
     },
     "claude_binary": {
-      "sha256": "24972e3bc859fab2b46ed4c1e51f7d6130f06d3bd550811a114640de3370d0de",
-      "source": "https://downloads.claude.ai/claude-code-releases/2.1.296/linux-x64/claude",
-      "version": "2.1.296"
+      "sha256": "356733f185fa988e6bf3aa9a555269fdd167982a2e2a80d3c8a78037bb92ad58",
+      "source": "https://downloads.claude.ai/claude-code-releases/2.1.308/linux-x64/claude",
+      "version": "2.1.308"
     },
     "claude_installer": {
       "sha256": "cde4f1702d3b1695f92b73d26888364e17bca476e17f0fd676484c951d36c125",
       "source": "claude-code-bootstrap.sh",
       "upstream": "https://claude.ai/install.sh",
-      "version": "2.1.296"
+      "version": "2.1.308"
     },
     "codex_native_package_linux_x64": {
-      "executable_sha256": "628e35487d888a28f0427fc37501da529dd3d81fcbad7a2c3421c1e8670d92e1",
-      "sha256": "7417711678b464eee70664126e39e88bb3c84c2928da0e71f14b56e04ff5c09f",
-      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.162.1-linux-x64.tgz",
-      "version": "0.162.1-linux-x64"
+      "executable_sha256": "b93f6811d3f653f0fb83be4050d857fb9abbb111dfa2ce160563327daff7f306",
+      "sha256": "62659fefd9a8efa21a496402fde3c11c025bbeee735a582968f8ffd14cb5f79c",
+      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.164.0-linux-x64.tgz",
+      "version": "0.164.0-linux-x64"
     },
     "codex_npm_launcher_package": {
-      "sha256": "0b4b2e33a65883e4f69c903484d8dd7770b3cb8b324f520068b6fd85d42b65ea",
-      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.162.1.tgz",
-      "version": "0.162.1"
+      "sha256": "afb117ec0d382744583dd13154ba0ca6b0f1980f8ed6a23bffb3aaadb6226e30",
+      "source": "https://registry.npmjs.org/@openai/codex/-/codex-0.164.0.tgz",
+      "version": "0.164.0"
     },
     "databricks_agent_skills": {
       "commit": "ba45d10df7413de14c32937bbd584aeee17d22a2",
@@ -51,15 +51,15 @@
       "version": "v0.2.28"
     },
     "databricks_cli_archive_linux_x64": {
-      "sha256": "dff217c237c4e53b2b2427ee131cfe5bace3178ed156cd98860d56feb13ce02f",
-      "source": "https://github.com/databricks/cli/releases/download/v1.20.0/databricks_cli_1.20.0_linux_amd64.zip",
-      "version": "1.20.0"
+      "sha256": "2f24260441f211e75df4266fba506983cd2373c622cb34437d752befba8261af",
+      "source": "https://github.com/databricks/cli/releases/download/v1.22.1/databricks_cli_1.22.1_linux_amd64.zip",
+      "version": "1.22.1"
     },
     "databricks_cli_installer": {
-      "sha256": "33be5976d44b7c98822030b5e62813bcb046e5feba387e663b5f0f9030dd7926",
+      "sha256": "0db033fd24c26c82fa8c8a7f2bb6e02b7c3da9588b07bafda75975bb0a553ffb",
       "source": "databricks-cli-install.sh",
-      "upstream": "https://raw.githubusercontent.com/databricks/setup-cli/v1.20.0/install.sh",
-      "version": "1.20.0"
+      "upstream": "https://raw.githubusercontent.com/databricks/setup-cli/v1.22.1/install.sh",
+      "version": "1.22.1"
     },
     "impeccable_engine_linux_x64": {
       "sha256": "3d31ec1a664ac35c815ea1d7c10abad1155ce364d0f461157eb837a34368efb6",

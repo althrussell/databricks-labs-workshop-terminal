@@ -283,17 +283,17 @@ env:
   # Release-candidate CLI pins. Control Tower may override these only as part
   # of a reviewed event release.
   - name: CLAUDE_CODE_VERSION
-    value: "2.1.296"
+    value: "2.1.308"
   - name: CODEX_CLI_VERSION
-    value: "0.162.1"
+    value: "0.164.0"
   - name: DATABRICKS_CLI_VERSION
-    value: "1.20.0"
+    value: "1.22.1"
   # Beta custom-agent tooling. Enable on an isolated test/event after qualification.
   # Installs independently; Claude/Codex launch does not wait for this utility.
   - name: AGENTBRICKS_ENABLED
     value: "false"
   - name: AGENTBRICKS_VERSION
-    value: "0.5.0"
+    value: "0.6.0"
   # Node 24 is the active LTS line used by Codex.
   - name: NODE_VERSION
     value: "24.21.0"

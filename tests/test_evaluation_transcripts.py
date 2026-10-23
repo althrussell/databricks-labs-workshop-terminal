@@ -52,7 +52,8 @@ def test_native_observer_pins_match_installed_harness_artifacts():
 
 
 def claude(seat, text="Who will use this?", *, role="assistant", complete=True, **extra):
-    return {"type": role, "sessionId": seat.native_id, "version": "2.1.296", "cwd": str(seat.home / "projects"),
+    from server import evaluation
+    return {"type": role, "sessionId": seat.native_id, "version": evaluation.SUPPORTED_PINS["claude"], "cwd": str(seat.home / "projects"),
             "timestamp": seat.timestamp, "uuid": str(uuid4()),
             "message": {"role": role, "stop_reason": "end_turn" if complete else None,
                         "content": [{"type": "thinking", "thinking": "private chain of thought"},
@@ -67,11 +68,12 @@ def write_claude(seat, records=None, *, native_id=None):
 
 
 def write_codex(seat, records=None):
+    from server import evaluation
     seat.session.agent_id = "codex"
     path = seat.home / ".codex" / "sessions" / "2026" / "10" / "08" / ("rollout-2026-10-08T01-00-00-" + seat.native_id + ".jsonl")
     path.parent.mkdir(parents=True, exist_ok=True)
     metadata = {"type": "session_meta", "timestamp": seat.timestamp, "payload": {
-        "id": seat.native_id, "cli_version": "0.162.1", "cwd": str(seat.home / "projects"),
+        "id": seat.native_id, "cli_version": evaluation.SUPPORTED_PINS["codex"], "cwd": str(seat.home / "projects"),
         "timestamp": seat.timestamp, "source": "cli"}}
     turns = records or [{"type": "response_item", "timestamp": seat.timestamp, "payload": {
         "type": "message", "id": "native-msg-1", "role": "assistant", "phase": "final_answer",
