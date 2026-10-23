@@ -26,6 +26,21 @@ def test_public_mcp_off_by_default(monkeypatch, tmp_path):
     assert cfg["hasCompletedOnboarding"] is True
 
 
+def test_attendee_project_folders_are_pretrusted_and_other_folders_kept(monkeypatch, tmp_path):
+    monkeypatch.setenv("DATA_ROOT", str(tmp_path))
+    user = User("carol@example.com")
+    user.bootstrap_home()
+    path = os.path.join(user.home, ".claude.json")
+    with open(path, "w") as f:
+        json.dump({"projects": {"/elsewhere": {"hasTrustDialogAccepted": False, "allowedTools": ["x"]}}}, f)
+    user_content._write_claude_json(user)
+    folders = _claude_json(user)["projects"]
+    own = os.path.realpath(os.path.join(user.home, "projects"))
+    assert folders[own]["hasTrustDialogAccepted"] is True
+    # Folders WT did not create keep whatever the attendee decided.
+    assert folders["/elsewhere"] == {"hasTrustDialogAccepted": False, "allowedTools": ["x"]}
+
+
 def test_public_mcp_opt_in_enables_servers(monkeypatch, tmp_path):
     monkeypatch.setenv("ENABLE_PUBLIC_MCP", "true")
     monkeypatch.setenv("DATA_ROOT", str(tmp_path))
