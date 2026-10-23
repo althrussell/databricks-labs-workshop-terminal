@@ -160,6 +160,13 @@ def _checkpoint_shutdown_users() -> dict:
     return {"complete": not issues, "issues": issues}
 
 
+def _retain_capture() -> dict:
+    """Flush accepted write-behind capture before the process exits."""
+    event_emitter.journal.close()
+    pending = event_emitter.journal.health().get("pending_operations", 0)
+    return {"complete": not pending, "issues": ["capture_retention_pending"] if pending else []}
+
+
 def _shutdown_runtime(emitter_stop, emitter_threads, *, timeout: float = 10.0) -> dict:
     """Drain ordinary app shutdown without sealing the ongoing workshop.
 
@@ -204,6 +211,8 @@ def _shutdown_runtime(emitter_stop, emitter_threads, *, timeout: float = 10.0) -
             ("workspace_sync_workers", lambda: user_content.drain_sync_for_closeout(
                 user_manager.all(), deadline=deadline)),
             ("attendee_checkpoints", _checkpoint_shutdown_users),
+            # Write-behind capture is retained last, after every producer above.
+            ("capture_retention", _retain_capture),
         ])
         try:
             for name, operation in stages:

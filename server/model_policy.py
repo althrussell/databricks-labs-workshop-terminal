@@ -367,7 +367,8 @@ class PolicyStore:
                         denied_models=tuple(request.denied_models), fingerprint=fingerprint,
                     ), True
 
-                snapshot, changed = journal.transaction(apply_retained)
+                # CT pushes policy and must know it was retained: durable.
+                snapshot, changed = journal.transaction(apply_retained, durable=True)
                 self._snapshot = snapshot
                 try:
                     self._write_locked(payload)

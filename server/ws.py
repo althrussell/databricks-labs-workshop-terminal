@@ -130,6 +130,18 @@ async def _capture_operation(operation):
         raise
 
 
+def _check_input_open() -> None:
+    """In-memory closeout fence for attendee input (no storage, no copy of state)."""
+    from .closeout_guard import check_open
+    from .event_emitter import event_emitter
+
+    with _capture_workers_lock:
+        accepting = _capture_accepting
+    if not accepting:
+        raise CaptureClosedError("Workshop is stopping; new capture input is disabled")
+    check_open(event_emitter.journal)
+
+
 def _writer(kind: str):
     from .event_emitter import event_emitter
 
@@ -213,18 +225,17 @@ async def session_socket(websocket: WebSocket, session_id: str):
                 if t not in {"input", "resize", "ping"}:
                     continue
 
-                def process():
-                    with _writer("terminal_socket_message"):
-                        if t == "input":
-                            session.write_input(msg.get("data", ""))
-                            user.last_seen = time.time()
-                        elif t == "resize":
-                            session.resize(int(msg.get("cols", 80)), int(msg.get("rows", 24)))
-                        else:
-                            session.touch()
-                            user.last_seen = time.time()
-
-                await _capture_operation(process)
+                # Typing is never a capture producer: no retained writer, no
+                # worker thread, no storage. Only the in-memory closeout fence.
+                _check_input_open()
+                if t == "input":
+                    session.write_keystrokes(msg.get("data", ""))
+                    user.last_seen = time.time()
+                elif t == "resize":
+                    session.resize(int(msg.get("cols", 80)), int(msg.get("rows", 24)))
+                else:
+                    session.touch()
+                    user.last_seen = time.time()
                 if t == "ping":
                     # Pong is transport delivery, not a captured producer. A
                     # closed/slow browser cannot invalidate completed local work.
@@ -305,11 +316,9 @@ async def events_socket(websocket: WebSocket):
         while True:
             raw = await websocket.receive_text()
 
-            def touch():
-                with _writer("events_socket_message"):
-                    user.last_seen = time.time()
-
-            await _capture_operation(touch)
+            # Presence only: no retained writer for a browser ping.
+            _check_input_open()
+            user.last_seen = time.time()
             if raw == '{"t":"ping"}':
                 await websocket.send_text(json.dumps({"t": "pong"}))
 

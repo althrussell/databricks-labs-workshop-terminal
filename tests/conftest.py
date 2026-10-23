@@ -3,7 +3,12 @@ import sys
 import tempfile
 
 import pytest
+from contextlib import suppress
 from fastapi.testclient import TestClient
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "write_behind: run capture on the production write-behind journal")
+
 
 ALICE = {"X-Forwarded-Email": "alice@example.com"}
 BOB = {"X-Forwarded-Email": "bob@example.com"}
@@ -55,6 +60,32 @@ def _isolate_user_registry():
 
 
 @pytest.fixture(autouse=True)
+def _forced_write_behind_predecessors_exit(monkeypatch):
+    """Under WT_CAPTURE_WRITE_BEHIND=1 every journal is write-behind. A journal
+    built over storage another live journal uses models a successor process,
+    which in production starts only after its predecessor retained and exited."""
+    if os.environ.get("WT_CAPTURE_WRITE_BEHIND", "").strip() != "1":
+        yield
+        return
+    from server import capture_journal
+
+    original = capture_journal.CaptureJournal.__init__
+    live: dict[int, list] = {}
+
+    def init(self, storage, *args, **kwargs):
+        target = getattr(storage, "storage", storage)  # audit snapshots wrap the live storage
+        for predecessor in live.get(id(target), []):
+            if predecessor.write_behind and predecessor._pending:
+                with suppress(Exception):
+                    predecessor.flush()
+        original(self, storage, *args, **kwargs)
+        live.setdefault(id(target), []).append(self)
+
+    monkeypatch.setattr(capture_journal.CaptureJournal, "__init__", init)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _isolate_capture_producers(monkeypatch):
     """Retained producer bindings belong to one simulated deployment/test."""
     from server import attendee_names, discovery, help as help_module, identity, insight_summary, stats, ws
@@ -82,7 +113,28 @@ def _isolate_capture_producers(monkeypatch):
         stats._code_cache.clear()
 
     reset()
+    # A replacement process only starts after its predecessor exited, and an
+    # ordinary exit retains write-behind capture (see main._retain_capture).
+    # Tests that reconfigure capture over the same storage model exactly that.
+    from server import capture as capture_module
+
+    configure = capture_module.configure
+    previous: list = []
+
+    def configure_after_predecessor_exit(emitter, *, client=None):
+        for journal in previous:
+            if journal is not emitter.journal and getattr(journal, "write_behind", False):
+                with suppress(Exception):
+                    journal.close()
+        configure(emitter, client=client)
+        previous.append(emitter.journal)
+
+    monkeypatch.setattr(capture_module, "configure", configure_after_predecessor_exit)
     yield
+    for journal in previous:
+        if getattr(journal, "write_behind", False):
+            journal._closed = True
+            journal._flush_wake.set()
     reset()
 
 

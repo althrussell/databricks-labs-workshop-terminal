@@ -13,9 +13,11 @@ local path as evidence of redeploy durability.
 
 from __future__ import annotations
 
+import contextvars
 import copy
 import hashlib
 import json
+import logging
 import os
 import re
 import tempfile
@@ -28,6 +30,8 @@ from typing import Any, Protocol, TypeVar
 
 from .runtime_timing import stage as timing_stage
 from .capture_io import storage_failure
+
+logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
 _OPERATION = re.compile(r"^(\d{20})\.json$")
@@ -435,6 +439,14 @@ class CaptureJournal:
     Callbacks must only mutate their supplied private state and return a value;
     they must not send network requests, publish UI messages or change globals.
     Domain exceptions from a callback propagate without poisoning store health.
+
+    With ``write_behind`` a transaction commits to this process's in-memory
+    state and returns without storage I/O; one background flusher appends the
+    accumulated change as a single operation every ``flush_interval`` seconds.
+    The retained format and hash chain are unchanged. Callers that publish
+    state outside this process (CT collection, closeout, shutdown) call
+    :meth:`flush` first, so nothing observed elsewhere can be lost on a crash.
+    Attendee paths therefore never wait on Workspace storage.
     """
 
     def __init__(
@@ -448,6 +460,8 @@ class CaptureJournal:
         max_operations: int = 100_000,
         max_retries: int = 64,
         checkpoint_interval: int = 128,
+        write_behind: bool | None = None,
+        flush_interval: float = 2.0,
     ) -> None:
         if (
             not isinstance(binding, dict)
@@ -493,6 +507,24 @@ class CaptureJournal:
         self._held = False
         self._checkpoint_error: str | None = None
         self._last_storage_failure: dict[str, Any] | None = None
+        if write_behind is None:
+            write_behind = os.environ.get("WT_CAPTURE_WRITE_BEHIND", "").strip() == "1"
+        if not isinstance(flush_interval, (int, float)) or flush_interval <= 0:
+            raise ValueError("capture flush interval must be positive")
+        self.write_behind = bool(write_behind)
+        self.flush_interval = float(flush_interval)
+        # Write-behind: ``_state`` is live; ``_durable_state`` is the state at
+        # ``_revision``. Pending entries keep each mutator and its context so a
+        # foreign append can be rebased by replaying them (callbacks may rerun).
+        self._durable_state: dict[str, Any] = {}
+        self._pending: list[tuple[Callable[[dict[str, Any]], Any], contextvars.Context]] = []
+        self._flush_lock = threading.Lock()
+        self._flush_wake = threading.Event()
+        self._flusher: threading.Thread | None = None
+        self._closed = False
+        self._flush_error: str | None = None
+        self._last_flush_at: float | None = None
+        self._flush_failures = 0
 
     def health(self) -> dict[str, Any]:
         with self._lock:
@@ -506,6 +538,9 @@ class CaptureJournal:
                 "checkpoint_error": self._checkpoint_error,
                 "operation_capacity_exhausted": self._revision >= self.max_operations,
             }
+            if self.write_behind:
+                value.update(write_behind=True, pending_operations=len(self._pending),
+                             flush_error=self._flush_error, last_flush_at=self._last_flush_at)
             if self._last_storage_failure is not None:
                 # Historical observation, retained even after a healthy retry.
                 value["last_storage_failure"] = dict(self._last_storage_failure)
@@ -828,22 +863,53 @@ class CaptureJournal:
     def read(self) -> dict[str, Any]:
         with self._lock:
             try:
-                self._refresh()
+                if self.write_behind:
+                    self._ensure_loaded()
+                else:
+                    self._refresh()
             except CaptureError as error:
                 self._fault(error)
                 raise
             return copy.deepcopy(self._state)
 
-    @timing_stage("capture.journal_audit")
-    def audit(self, *, observer=None) -> dict[str, Any]:
-        """Replay every retained operation, including history before checkpoints."""
+    def peek(self, key: str) -> Any:
+        """A copy of one top-level value, without copying the whole state."""
         with self._lock:
             try:
-                self._refresh(audit=True, observer=observer)
+                if self.write_behind:
+                    self._ensure_loaded()
+                else:
+                    self._refresh()
             except CaptureError as error:
                 self._fault(error)
                 raise
-            return copy.deepcopy(self._state)
+            return copy.deepcopy(self._state.get(key))
+
+    @timing_stage("capture.journal_audit")
+    def audit(self, *, observer=None) -> dict[str, Any]:
+        """Replay every retained operation, including history before checkpoints."""
+        if not self.write_behind:
+            with self._lock:
+                try:
+                    self._refresh(audit=True, observer=observer)
+                except CaptureError as error:
+                    self._fault(error)
+                    raise
+                return copy.deepcopy(self._state)
+        # Audit proves what storage retains, so everything accepted first
+        # becomes retained. Producers wait only for this rare closeout replay.
+        with self._flush_lock:
+            self._flush_locked()
+            with self._lock:
+                try:
+                    if self._pending:
+                        raise CaptureStorageError("capture changed while preparing its audit")
+                    self._refresh(audit=True, observer=observer)
+                except CaptureError as error:
+                    self._fault(error)
+                    raise
+                self._durable_state = copy.deepcopy(self._state)
+                return copy.deepcopy(self._state)
 
     def audit_snapshot(self, *, progress: Callable[[], None], observer=None) -> CaptureJournal:
         """Fully replay a private snapshot without locking/rewinding live state.
@@ -854,11 +920,12 @@ class CaptureJournal:
         read-only journal may refresh/validate a subsequently appended suffix.
         It must never replace the live journal's newer cache.
         """
+        self.flush()
         snapshot = CaptureJournal(
             _AuditStorage(self.storage, progress), self.binding, self.initial_state,
             max_record_bytes=self.max_record_bytes, max_state_bytes=self.max_state_bytes,
             max_operations=self.max_operations, max_retries=self.max_retries,
-            checkpoint_interval=self.checkpoint_interval,
+            checkpoint_interval=self.checkpoint_interval, write_behind=False,
         )
         try:
             snapshot.audit(observer=observer)
@@ -868,7 +935,26 @@ class CaptureJournal:
         return snapshot
 
     @timing_stage("capture.journal_write")
-    def transaction(self, mutator: Callable[[dict[str, Any]], T]) -> T:
+    def transaction(self, mutator: Callable[[dict[str, Any]], T], *, durable: bool = False) -> T:
+        """Commit ``mutator``. ``durable`` returns only once retained, and a
+        storage failure leaves state unchanged; use it for cold, CT-initiated
+        writes whose caller must know the outcome. Attendee paths never do."""
+        if self.write_behind and not durable:
+            return self._transaction_in_memory(mutator)
+        if self.write_behind:
+            with self._flush_lock:
+                while True:
+                    self._flush_locked()
+                    with self._lock:
+                        if not self._pending:
+                            try:
+                                return self._transaction_retained(mutator)
+                            finally:
+                                # Nothing is pending, so live state is retained state.
+                                self._durable_state = copy.deepcopy(self._state)
+        return self._transaction_retained(mutator)
+
+    def _transaction_retained(self, mutator: Callable[[dict[str, Any]], T]) -> T:
         with self._lock:
             for _ in range(self.max_retries):
                 try:
@@ -924,19 +1010,189 @@ class CaptureJournal:
             self._fault(error)
             raise error
 
-    def _maybe_checkpoint(self) -> None:
-        if self._revision == 0 or self._revision % self.checkpoint_interval:
+    def _ensure_loaded(self) -> None:
+        """Load retained history once; afterwards this process owns the head."""
+        if self._held:
+            raise CaptureHeldError(self._error or "capture history is held")
+        if self._revision < 0:
+            self._refresh()
+            self._durable_state = copy.deepcopy(self._state)
+
+    def _transaction_in_memory(self, mutator: Callable[[dict[str, Any]], T]) -> T:
+        from .closeout_guard import authorize_mutation
+
+        with self._lock:
+            try:
+                self._ensure_loaded()
+            except CaptureError as error:
+                self._fault(error)
+                raise
+            state = copy.deepcopy(self._state)
+            result = mutator(state)
+            authorize_mutation(self, self._state, state)
+            try:
+                if not isinstance(state, dict):
+                    raise CaptureCapacityError("capture state must be an object")
+                self._check_state(state)
+                patch = _delta(self._state, state)
+                if not patch:
+                    return result
+                if self._revision + 1 > self.max_operations:
+                    raise CaptureCapacityError("capture operation capacity is exhausted")
+                # Keep the per-operation limit a producer error, as before.
+                self._encode({"schema_version": SCHEMA_VERSION, "revision": self._revision + 1,
+                              "binding": self.binding, "previous_hash": self._head_hash,
+                              "operation_id": "0" * 32, "patch": patch, "state_sha256": "0" * 64})
+            except CaptureError as error:
+                self._fault(error)
+                raise
+            self._state = state
+            self._pending.append((mutator, contextvars.copy_context(), patch))
+            self._start_flusher()
+            return result
+
+    def flush(self) -> None:
+        """Durability barrier: return only after accepted state is retained."""
+        if not self.write_behind:
+            return
+        with self._flush_lock:
+            self._flush_locked()
+
+    def close(self) -> None:
+        """Stop the background flusher after retaining everything accepted."""
+        self._closed = True
+        self._flush_wake.set()
+        self.flush()
+
+    def _start_flusher(self) -> None:
+        if self._closed or (self._flusher is not None and self._flusher.is_alive()):
+            return
+        self._flusher = threading.Thread(target=self._flush_loop, name="capture-flusher", daemon=True)
+        self._flusher.start()
+
+    def _flush_loop(self) -> None:
+        delay = self.flush_interval
+        while not self._closed:
+            # A fixed cadence coalesces bursts into one retained operation.
+            self._flush_wake.wait(timeout=delay)
+            if self._closed:
+                return
+            try:
+                self.flush()
+                with self._lock:
+                    self._flush_error, self._flush_failures = None, 0
+                delay = self.flush_interval
+            except Exception as error:  # noqa: BLE001 — retried; never reaches producers
+                with self._lock:
+                    self._flush_failures += 1
+                    self._flush_error = str(error)
+                    failures = self._flush_failures
+                delay = min(30.0, self.flush_interval * (2 ** min(failures, 4)))
+                logger.warning("capture flush failed (attempt %s); retrying in %.0fs: %s", failures, delay, error)
+
+    def _flush_locked(self) -> None:
+        """Append accepted changes as one operation (or one per change if large)."""
+        for _ in range(self.max_retries):
+            with self._lock:
+                if self._held:
+                    raise CaptureHeldError(self._error or "capture history is held")
+                if not self._pending:
+                    return
+                pending = list(self._pending)
+                base_revision, base_hash = self._revision, self._head_hash
+                base_state = self._durable_state
+                target = copy.deepcopy(self._state)
+            try:
+                steps = [(_delta(base_state, target), target)]
+                self._encode({"patch": steps[0][0]})
+            except CaptureCapacityError:
+                # A large burst is retained change by change, as it was accepted.
+                steps, state = [], base_state
+                for _mutator, _context, patch in pending:
+                    state = _apply(state, patch)
+                    steps.append((patch, state))
+            committed = self._append_steps(base_revision, base_hash, steps)
+            with self._lock:
+                if committed is not None:
+                    revision, head_hash = committed
+                    self._revision, self._head_hash, self._durable_state = revision, head_hash, steps[-1][1]
+                    del self._pending[:len(pending)]
+                    self._error = None
+                    self._last_flush_at = time.time()
+                    checkpoint = (revision, head_hash, self._durable_state)
+                else:
+                    self._rebase_locked()
+                    checkpoint = None
+            if checkpoint is not None:
+                self._maybe_checkpoint(*checkpoint)
+        error = CaptureStorageError("capture write contention exceeded retry limit")
+        with self._lock:
+            self._fault(error)
+        raise error
+
+    def _append_steps(self, revision: int, head_hash: str, steps: list[tuple[list, dict[str, Any]]]) -> tuple[int, str] | None:
+        """Storage I/O for a flush; ``None`` when another process advanced the head."""
+        for patch, state in steps:
+            revision += 1
+            if revision > self.max_operations:
+                raise CaptureCapacityError("capture operation capacity is exhausted")
+            body = {
+                "schema_version": SCHEMA_VERSION,
+                "revision": revision,
+                "binding": self.binding,
+                "previous_hash": head_hash,
+                "operation_id": uuid.uuid4().hex,
+                "patch": patch,
+                "state_sha256": _digest(state),
+            }
+            raw = self._encode(body)
+            if not self._create_resolved(f"{revision:020d}.json", raw):
+                return None
+            head_hash = json.loads(raw)["hash"]
+        return revision, head_hash
+
+    def _rebase_locked(self) -> None:
+        """Another process appended: load its history, then replay ours on top."""
+        from .closeout_guard import authorize_mutation
+
+        pending = list(self._pending)
+        self._state = copy.deepcopy(self._durable_state)
+        self._refresh()
+        self._durable_state = copy.deepcopy(self._state)
+        state, rebuilt, dropped = self._state, [], 0
+        for mutator, context, _patch in pending:
+            candidate = copy.deepcopy(state)
+            try:
+                context.run(mutator, candidate)
+                context.run(authorize_mutation, self, state, candidate)
+            except Exception:  # noqa: BLE001 — the foreign history now refuses it
+                dropped += 1
+                continue
+            patch = _delta(state, candidate)
+            if patch:
+                rebuilt.append((mutator, context, patch))
+                state = candidate
+        self._state, self._pending = state, rebuilt
+        logger.warning("capture history advanced in another process; rebased %s change(s), dropped %s",
+                       len(rebuilt), dropped)
+
+    def _maybe_checkpoint(self, revision: int | None = None, head_hash: str | None = None,
+                          state: dict[str, Any] | None = None) -> None:
+        revision = self._revision if revision is None else revision
+        head_hash = self._head_hash if head_hash is None else head_hash
+        state = self._state if state is None else state
+        if revision == 0 or revision % self.checkpoint_interval:
             return
         try:
             body = {
                 "schema_version": SCHEMA_VERSION,
-                "revision": self._revision,
+                "revision": revision,
                 "binding": self.binding,
-                "head_hash": self._head_hash,
-                "state": self._state,
+                "head_hash": head_hash,
+                "state": state,
             }
             raw = self._encode(body)
-            if not self._create_resolved(f"checkpoint-{self._revision:020d}.json", raw):
+            if not self._create_resolved(f"checkpoint-{revision:020d}.json", raw):
                 raise CaptureHeldError(
                     "capture checkpoint conflicts with committed state"
                 )

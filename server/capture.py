@@ -58,7 +58,10 @@ def configure(emitter, *, client=None) -> None:
         if sdk is None:
             raise CaptureHeldError("capture app identity is unavailable")
         if journal is None:
-            journal = CaptureJournal(WorkspaceCaptureStorage(sdk, workspace_path(binding)), binding, {})
+            # Write-behind: attendee paths never wait on Workspace storage. CT
+            # collection, closeout and shutdown flush before publishing state.
+            journal = CaptureJournal(WorkspaceCaptureStorage(sdk, workspace_path(binding)), binding, {},
+                                     write_behind=True)
         emitter.configure_journal(journal)
         model_policy.store.configure_capture(journal)
         help_module.configure_capture(journal)  # Help is independent of content consent.
