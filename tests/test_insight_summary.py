@@ -811,3 +811,10 @@ def test_a_broken_signal_lookup_does_not_block_the_summary(monkeypatch, emitter)
     assert insight_summary.summarise_all(
         [_User()], phase="wrap", allow_llm=True, emitter=emitter
     ) == 1
+
+
+def test_the_default_summary_floor_is_ten_minutes(monkeypatch):
+    # 24 Oct 2026: a 20 min floor on CT's ~10 min harvest put summaries up to
+    # ~40 min behind activity. Ten summarises at most once per harvest.
+    monkeypatch.delenv("INSIGHT_SUMMARY_MIN_INTERVAL_MINUTES", raising=False)
+    assert insight_summary.config.insight_summary_min_interval_seconds() == 600

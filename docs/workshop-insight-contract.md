@@ -64,7 +64,7 @@ which is worse than no data because it is confidently wrong about a customer.
 |---|---|---|
 | `WORKSHOP_INSIGHT_CAPTURE` | `false` | Master switch. Off means no signal, no discovery, no summary, and no instruction overlay. |
 | `DISCOVERY_ENABLED` | `true` | Sub-flag. Behavioural signal only when off — no agent-elicited questions, in the home instructions *and* the committed project-level ones. |
-| `INSIGHT_SUMMARY_MIN_INTERVAL_MINUTES` | `20` | Floor between edge summaries for one attendee. Not a consent control — capture is already on if this matters. |
+| `INSIGHT_SUMMARY_MIN_INTERVAL_MINUTES` | `10` | Floor between edge summaries for one attendee. Not a consent control — capture is already on if this matters. |
 
 `WORKSHOP_INSIGHT_CAPTURE` is the only switch that matters. Capture needs no
 delivery configuration at all — see [Transport](#transport) — so an instance
@@ -362,7 +362,7 @@ the only ones.
 Two gates bound the cost, and a consumer should expect both to show:
 
 - an interval floor per attendee (`INSIGHT_SUMMARY_MIN_INTERVAL_MINUTES`,
-  default 20), bypassed by the forcing triggers;
+  default 10), bypassed by the forcing triggers;
 - a **material fingerprint** over the summariser's input, never bypassed. An
   attendee who has not moved since their last summary produces no new event, so
   quiet attendees stop appearing rather than accumulating identical revisions.
