@@ -513,6 +513,9 @@ class SessionManager:
                 # Keep cwd, configs, credentials and native logs in the original
                 # attendee home. Only Codex's lexical socket prefix is shortened.
                 env["HOME"] = codex_shell_home(user.home)
+                from .cli_config import ensure_codex_trusts
+
+                ensure_codex_trusts(user, cwd)
             master_fd, slave_fd = pty.openpty()
             try:
                 process = subprocess.Popen(
