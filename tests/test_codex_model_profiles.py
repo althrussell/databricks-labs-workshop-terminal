@@ -137,3 +137,30 @@ def test_an_override_written_fully_qualified_is_left_alone(monkeypatch):
     monkeypatch.setenv("CODEX_COMPARE_GLM", "system.ai.glm-5-3")
 
     assert models.comparison_models(set())["glm"] == "system.ai.glm-5-3"
+
+
+def test_codex_trusts_the_builds_root_and_every_build(user):
+    """24 Oct 2026 rehearsal: once an attendee created a build, every new Codex
+    tab opened on "Do you trust the contents of this directory?" because only
+    configured folders are trusted. Codex canonicalises, so real paths."""
+    os.makedirs(os.path.join(user.home, "projects", "coastal-hello"))
+    cli_config.configure_codex(user, "tok-1", available=set())
+
+    trusted = {path for path, entry in _toml(user)["projects"].items() if entry["trust_level"] == "trusted"}
+    assert os.path.realpath(os.path.join(user.home, "projects")) in trusted
+    assert os.path.realpath(os.path.join(user.home, "projects", "coastal-hello")) in trusted
+
+
+def test_a_build_made_after_configuration_is_trusted_before_codex_opens(user):
+    cli_config.configure_codex(user, "tok-1", available=set())
+    build = os.path.join(user.home, "projects", "harbour-water-hello")
+    os.makedirs(build)
+
+    cli_config.ensure_codex_trusts(user, build)
+    cli_config.ensure_codex_trusts(user, build)  # idempotent
+
+    config = _toml(user)  # still valid TOML, providers intact
+    assert config["projects"][os.path.realpath(build)]["trust_level"] == "trusted"
+    assert config["model_provider"] == "databricks"
+    with open(os.path.join(user.home, ".codex", "config.toml"), encoding="utf-8") as handle:
+        assert handle.read().count(f'[projects."{os.path.realpath(build)}"]') == 1

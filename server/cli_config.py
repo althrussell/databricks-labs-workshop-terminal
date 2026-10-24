@@ -552,8 +552,45 @@ def configure_codex(
         '"get_route_info", "refresh_openapi", "docs", "search_registry_components", '
         '"add_component", "list_registry_components", "databricks_apps_logs"]\n'
         "startup_timeout_sec = 20\n"
+        + codex_trust_toml(codex_trusted_folders(user))
     )
     _atomic_write_text(os.path.join(codex_dir, "config.toml"), config_toml)
+
+
+def codex_trusted_folders(user: User) -> list[str]:
+    """The builds root and every build in it, by real path.
+
+    Codex asks "Do you trust the contents of this directory?" for any launch
+    folder (or its git root) without a ``[projects."<path>"]`` trust entry.
+    Agents launch in the attendee's current build, so once an attendee had
+    created one, every new Codex tab opened on a trust prompt (24 Oct 2026
+    rehearsal). Paths are real paths because Codex canonicalises the folder.
+    """
+    root = os.path.join(user.home, "projects")
+    folders = {os.path.realpath(root)}
+    if os.path.isdir(root):
+        for entry in os.scandir(root):
+            if entry.is_dir(follow_symlinks=False):
+                folders.add(os.path.realpath(entry.path))
+    return sorted(folders)
+
+
+def codex_trust_toml(folders: list[str]) -> str:
+    return "".join(f'\n[projects.{json.dumps(folder)}]\ntrust_level = "trusted"\n' for folder in folders)
+
+
+def ensure_codex_trusts(user: User, folder: str) -> None:
+    """Trust a launch folder before Codex opens in it (a build made since the
+    config was written). A no-op when Codex is not configured yet."""
+    path = os.path.join(user.home, ".codex", "config.toml")
+    if not os.path.isfile(path):
+        return
+    folder = os.path.realpath(folder)
+    with open(path, encoding="utf-8") as handle:
+        current = handle.read()
+    if f"[projects.{json.dumps(folder)}]" in current:
+        return
+    _atomic_write_text(path, current.rstrip("\n") + "\n" + codex_trust_toml([folder]))
 
 
 def _gateway_token_path(user: User) -> str:
