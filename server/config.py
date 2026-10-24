@@ -560,12 +560,14 @@ def insight_summary_min_interval_seconds() -> int:
     The summary regenerates off the harvest Control Tower already makes rather
     than waiting for a phase an operator may never flip. That harvest runs every
     ~10 minutes, so without a floor a long session would spend a model call per
-    poll per attendee. Twenty minutes keeps a brief current to within one
-    content phase while costing at most every second harvest.
+    poll per attendee. Ten minutes summarises at most once per harvest: a
+    summary reaches Control Tower within about twenty minutes of activity, not
+    forty (24 Oct 2026 rehearsal), at about six model calls per active
+    attendee per hour. The material fingerprint still skips idle attendees.
 
     Zero disables the floor, which is for tests rather than events.
     """
-    return max(0, _env_int("INSIGHT_SUMMARY_MIN_INTERVAL_MINUTES", 20)) * 60
+    return max(0, _env_int("INSIGHT_SUMMARY_MIN_INTERVAL_MINUTES", 10)) * 60
 
 
 def enable_public_mcp() -> bool:
