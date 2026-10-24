@@ -407,6 +407,12 @@ def configure_claude(
     claude_json_path = os.path.join(user.home, ".claude.json")
     claude_json = _read_json(claude_json_path)
     claude_json["hasCompletedOnboarding"] = True
+    if config.auto_mode_enabled():
+        # Claude Code 2.1.30x asks "Make auto mode your default permission
+        # mode?" on first launch when the default mode is not auto, which stops
+        # the attendee before they can type. Declining records exactly this and
+        # keeps bypass permissions; pre-answer it the same way.
+        claude_json["hasSeenAutoDefaultNudge"] = True
     _write_json(claude_json_path, claude_json)
 
 

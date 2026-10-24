@@ -899,6 +899,11 @@ def test_auto_mode_defaults(client, monkeypatch):
     settings = json.load(open(os.path.join(home, ".claude", "settings.json")))
     assert settings["permissions"]["defaultMode"] == "bypassPermissions"
     assert settings["skipDangerousModePermissionPrompt"] is True
+    # Claude 2.1.30x first-launch "Make auto mode your default permission mode?"
+    # (BTB-A seats 6 and 10, 2026-10-24) is answered "No, keep bypass".
+    claude_json = json.load(open(os.path.join(home, ".claude.json")))
+    assert claude_json["hasSeenAutoDefaultNudge"] is True
+    assert settings["permissions"]["defaultMode"] == "bypassPermissions"
 
     codex_toml = open(os.path.join(home, ".codex", "config.toml")).read()
     assert 'approval_policy = "never"' in codex_toml
