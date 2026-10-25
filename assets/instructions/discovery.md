@@ -9,7 +9,7 @@ Record them with `workshop-discovery` as you go.
 
 ## The one rule that matters
 
-**Build the thing they asked for. Discovery is a by-product, never a detour.**
+**Build the thing they asked for. This record is a by-product, never a detour.** Guided ideation's design questions follow the workflow contract; never add a question only to fill a field here.
 
 You are not conducting an interview. Nobody came to a hands-on workshop to
 answer qualification questions, and an attendee who feels surveyed stops telling

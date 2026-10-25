@@ -21,12 +21,30 @@ export interface IdeaPrompt {
 
 export type Persona = "technical" | "business";
 
+export type WorkingApproach = "" | "co_build" | "learn" | "lead";
+export type ExplanationDetail = "" | "adaptive" | "brief" | "detailed";
+export type EngagementPath = "" | "rapid" | "guided";
+
 export interface AttendeeProfile {
   schema_version: 1;
   revision: number;
   help_preference: "" | "guided" | "concise" | "technical";
   source: string;
   legacy_persona: string;
+  /** How the attendee wants to work with their coding agent (W2); "" = not chosen. */
+  working_approach?: WorkingApproach;
+  explanation_detail?: ExplanationDetail;
+  /** Default start for a new idea; a project's recorded path wins. */
+  engagement_path?: EngagementPath;
+  choice_sources?: Record<string, string>;
+}
+
+export interface ProfileSave {
+  expected_revision: number;
+  help_preference?: AttendeeProfile["help_preference"];
+  working_approach?: WorkingApproach;
+  explanation_detail?: ExplanationDetail;
+  engagement_path?: EngagementPath;
 }
 
 export interface WizardIdea {
@@ -77,6 +95,8 @@ export interface WizardBrief {
   seen: boolean;
   skipped: boolean;
   completed_at: string;
+  /** How they chose to start this idea: rapid prototype, guided ideation, or unchosen. */
+  engagement_path?: EngagementPath;
 }
 
 export interface WizardState {
@@ -115,6 +135,7 @@ export interface WizardSave {
   persona?: string;
   skipped?: boolean;
   display_name?: string;
+  engagement_path?: EngagementPath;
 }
 
 export interface CredentialStatus {
@@ -455,7 +476,7 @@ export const api = {
       body: JSON.stringify({ persona }),
     }),
   profile: () => request<AttendeeProfile>("/api/profile"),
-  saveProfile: (body: { expected_revision: number; help_preference: AttendeeProfile["help_preference"] }) =>
+  saveProfile: (body: ProfileSave) =>
     request<AttendeeProfile>("/api/profile", { method: "POST", body: JSON.stringify(body) }),
   wizard: (industry?: string, query?: string, signal?: AbortSignal) => {
     const params = new URLSearchParams();

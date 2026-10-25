@@ -9,7 +9,7 @@
     "claude_binary": "2.1.310",
     "codex_npm_launcher_package": "0.164.0",
     "databricks_cli_archive_linux_x64": "1.22.1",
-    "databricks_agent_skills": "v0.2.28",
+    "databricks_agent_skills": "v0.2.34",
     "node_linux_x64": "24.22.1",
     "uv_binary": "0.13.5",
     "python_3_12_runtime": "3.12.15",
@@ -17,9 +17,9 @@
     "apx_wheel_linux_x64": "0.3.8",
     "bun_linux_x64": "1.4.4",
     "agentbricks_lock": "0.6.0",
-    "impeccable_npm_launcher": "4.1.0",
-    "impeccable_engine_linux_x64": "0.1.14",
-    "impeccable_skill_bundle": "4.5.2"
+    "impeccable_npm_launcher": "4.7.0",
+    "impeccable_engine_linux_x64": "0.1.16",
+    "impeccable_skill_bundle": "4.7.0"
   },
   "libraries": {
     "databricks-sdk": "0.151.0",

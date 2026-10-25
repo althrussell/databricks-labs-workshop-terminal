@@ -24,7 +24,9 @@ def test_seeded_business_persona_does_not_establish_a_preference(attendee):
     persona.write_text("business\n")
     profile = attendee_profile.read(attendee)
     assert profile.help_preference == "" and profile.source == "default"
-    assert "not stated an experience level" in user_content._persona_overlay(attendee)
+    overlay = user_content._persona_overlay(attendee)
+    assert "(default; they have not chosen one)" in overlay and "adapt explanation detail" in overlay
+    assert "plain-language" not in overlay and "technical discussion" not in overlay
 
 
 def test_explicit_legacy_style_migrates_conservatively(attendee):
@@ -44,7 +46,9 @@ def test_new_profile_wins_over_old_brief_persona(attendee, monkeypatch):
     user_content.set_wizard_brief(attendee, brief)
     assert attendee_profile.read(attendee).help_preference == "concise"
     assert wizard.read_brief(attendee).to_json() == brief.to_json()
-    assert "keep it concise" in user_content._persona_overlay(attendee)
+    # Legacy "concise" migrates to brief explanations and proves nothing else.
+    overlay = user_content._persona_overlay(attendee)
+    assert "keep explanations brief" in overlay and "(default; they have not chosen one)" in overlay
 
 
 def test_stale_preference_conflict_and_explicit_reset(attendee):
@@ -100,3 +104,61 @@ print(json.dumps({"brief":brief.to_json(),"prompt":wizard.starter_prompt(brief)}
     restored = json.loads(result.stdout)
     assert restored["brief"] == saved.to_json()
     assert restored["prompt"] == wizard.starter_prompt(saved)
+
+
+
+def test_preferences_are_independent_dimensions_with_provenance(attendee):
+    saved = attendee_profile.save(attendee, None, expected_revision=0, changes={
+        "working_approach": "learn", "explanation_detail": "brief"}, choice_source="chat")
+    assert saved.revision == 1 and saved.help_preference == ""
+    assert saved.choice_sources == {"working_approach": "chat", "explanation_detail": "chat"}
+    # Changing explanation style never touches the approach, the path or the goal.
+    detail = attendee_profile.save(attendee, None, expected_revision=1, changes={"explanation_detail": "detailed"})
+    assert detail.working_approach == "learn" and detail.engagement_path == ""
+    assert detail.choice_sources["explanation_detail"] == "ui"
+    overlay = user_content._persona_overlay(attendee)
+    assert "Teach me while we build" in overlay and "explain in detail" in overlay
+    assert "default; they have not chosen" not in overlay
+
+
+def test_technical_plus_guided_ideation_and_concise_plus_teaching_are_both_expressible(attendee):
+    attendee_profile.save(attendee, "technical", expected_revision=0,
+                          changes={"engagement_path": "guided", "working_approach": "lead"})
+    overlay = user_content._persona_overlay(attendee)
+    assert "technical discussion" in overlay and "Default path for a new idea: guided" in overlay
+    assert "Let me drive" in overlay
+    attendee_profile.save(attendee, "concise", expected_revision=1, changes={"working_approach": "learn"})
+    overlay = user_content._persona_overlay(attendee)
+    assert "keep explanations brief" in overlay and "Teach me while we build" in overlay
+
+
+@pytest.mark.parametrize("legacy, expected", [
+    ("concise", {"explanation_detail": "brief", "working_approach": "co_build"}),
+    ("technical", {"explanation_detail": "adaptive", "technical_vocabulary": True}),
+    ("guided", {"explanation_detail": "adaptive", "plain_language": True, "engagement_path": ""}),
+])
+def test_legacy_preferences_migrate_conservatively(attendee, legacy, expected):
+    attendee_profile.save(attendee, legacy, expected_revision=0)
+    effective = attendee_profile.read(attendee).effective()
+    for key, value in expected.items():
+        assert effective[key] == value
+    # None of them is a stated working approach or consent to a guided interview.
+    assert effective["working_approach_stated"] is False and effective["engagement_path"] == ""
+
+
+def test_unknown_dimension_values_and_a_stale_write_are_refused(attendee):
+    with pytest.raises(ValueError):
+        attendee_profile.save(attendee, None, expected_revision=0, changes={"working_approach": "boss"})
+    with pytest.raises(ValueError):
+        attendee_profile.save(attendee, None, expected_revision=0, changes={"expertise": "high"})
+    attendee_profile.save(attendee, None, expected_revision=0, changes={"working_approach": "lead"})
+    with pytest.raises(attendee_profile.ProfileConflict):
+        attendee_profile.save(attendee, None, expected_revision=0, changes={"working_approach": "learn"})
+
+
+def test_an_older_release_reads_a_newer_profile(attendee):
+    """Additive fields on schema 1: rollback to a release without them keeps working."""
+    saved = attendee_profile.save(attendee, "concise", expected_revision=0, changes={"working_approach": "learn"})
+    legacy_fields = {"schema_version", "revision", "help_preference", "source", "legacy_persona"}
+    legacy_view = {k: v for k, v in saved.to_json().items() if k in legacy_fields}
+    assert attendee_profile.from_json(legacy_view).help_preference == "concise"

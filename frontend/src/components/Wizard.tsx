@@ -5,6 +5,7 @@ import AgentCards, { SetupProgress, SetupSteps, SETUP_POLL_MS } from "./AgentCar
 import { humanIndustry } from "../wizard";
 import { WizardRequests } from "../wizardRequests";
 import HelpPreference from "./HelpPreference";
+import type { EngagementPath } from "../api";
 import { trapDialogTab } from "../dialog";
 
 interface Props {
@@ -19,6 +20,7 @@ interface Props {
 
 interface Draft {
   version: 1;
+  startPath?: EngagementPath;
   revision: number;
   savedAt: number;
   what: string;
@@ -41,6 +43,7 @@ export default function Wizard({ agents, launching, onLaunch, onOpenAgent, onClo
   const [industry, setIndustry] = useState("");
   const [industryStated, setIndustryStated] = useState(false);
   const [intent, setIntent] = useState("");
+  const [startPath, setStartPath] = useState<EngagementPath>("");
   const [stack, setStack] = useState<string[]>([]);
   const [displayName, setDisplayName] = useState("");
   const [selected, setSelected] = useState<WizardIdea | null>(null);
@@ -66,6 +69,7 @@ export default function Wizard({ agents, launching, onLaunch, onOpenAgent, onClo
     setIndustry(brief.industry || ((brief.revision ?? 0) === 0 && !brief.seen ? defaultIndustry : ""));
     setIndustryStated(Boolean(brief.industry_stated));
     setIntent(brief.intent);
+    setStartPath(brief.engagement_path ?? "");
     setStack(brief.current_stack);
     setSelected(brief.selected_idea ? { ...brief.selected_idea, selection_token: brief.selection_token } : null);
   }
@@ -91,6 +95,7 @@ export default function Wizard({ agents, launching, onLaunch, onOpenAgent, onClo
             if (draft.revision === (loaded.brief.revision ?? 0)) {
               setWhat(draft.what); setIndustry(draft.industry); setIndustryStated(draft.industryStated);
               setIntent(draft.intent); setStack(draft.stack);
+              if (draft.startPath === "rapid" || draft.startPath === "guided") setStartPath(draft.startPath);
               setSelected(validSelection(draft.selected) ? draft.selected : null);
               setNewProject(Boolean(draft.newProject));
               setDraftNotice("Your unfinished draft is restored.");
@@ -129,10 +134,10 @@ export default function Wizard({ agents, launching, onLaunch, onOpenAgent, onClo
   useEffect(() => {
     if (!state || !draftKey || step !== 1) return;
     const draft: Draft = { version: 1, revision: state.brief.revision ?? 0, savedAt: Date.now(),
-      what, industry, industryStated, intent, stack, selected, newProject };
+      what, industry, industryStated, intent, stack, selected, newProject, startPath };
     try { localStorage.setItem(draftKey, JSON.stringify(draft)); }
     catch { setDraftNotice("This browser cannot keep an unfinished draft. Continue to save your goal."); }
-  }, [state, draftKey, step, what, industry, industryStated, intent, stack, selected, newProject]);
+  }, [state, draftKey, step, what, industry, industryStated, intent, stack, selected, newProject, startPath]);
 
   useEffect(() => {
     let active = true;
@@ -201,7 +206,7 @@ export default function Wizard({ agents, launching, onLaunch, onOpenAgent, onClo
     try {
       const saved = await api.saveWizard({ operation: newProject ? "change" : "complete", expected_revision: revision,
         what_building: what, industry, industry_stated: industryStated,
-        intent, current_stack: stack, idea_id: selected?.id ?? "",
+        intent, current_stack: stack, idea_id: selected?.id ?? "", engagement_path: startPath,
         selection_token: selected?.selection_token ?? "",
         ...(displayName.trim() ? { display_name: displayName.trim() } : {}) });
       if (signal.aborted) return;
@@ -297,6 +302,7 @@ export default function Wizard({ agents, launching, onLaunch, onOpenAgent, onClo
               {idea.data_mode === "generate" && <span className="wizard-idea-generic">Data to confirm; explore existing data before choosing samples</span>}
             </button>)}</div>
           </div>}
+          <StartChoice value={startPath} onChange={setStartPath} />
           <button className="wizard-context-toggle" aria-expanded={contextOpen} aria-controls="wizard-context" onClick={() => setContextOpen(!contextOpen)}>
             <ChevronDown size={14} className={contextOpen ? "wizard-chevron-open" : ""} /> Optional context</button>
           {contextOpen && <div id="wizard-context" className="wizard-context">
@@ -349,4 +355,23 @@ function validSelection(value: unknown): value is WizardIdea {
     && ["fit_reason", "first_version", "selection_token"].every((key) => selected[key] === undefined || typeof selected[key] === "string")
     && ["assumptions", "unresolved"].every((key) => selected[key] === undefined
       || (Array.isArray(selected[key]) && selected[key].every((item) => typeof item === "string")));
+}
+
+const START_PATHS: [Exclude<EngagementPath, "">, string, string][] = [
+  ["rapid", "Rapid prototype", "Turn what you already know into a working first version, then improve it together."],
+  ["guided", "Guided ideation", "Explore the users, problem and possible approaches before choosing what to build."],
+];
+
+/** One meaningful choice, asked once: the agent reuses it and never asks again. */
+export function StartChoice({ value, onChange }: { value: EngagementPath; onChange: (next: EngagementPath) => void }) {
+  const chosen = START_PATHS.find(([path]) => path === value);
+  return <div className="wizard-field">
+    <span className="wizard-field-label">How would you like to start?</span>
+    <div className="wizard-chips" role="group" aria-label="How would you like to start?">
+      {START_PATHS.map(([path, label]) => <button key={path} aria-pressed={value === path}
+        className={`hero-chip ${value === path ? "hero-chip-active" : ""}`}
+        onClick={() => onChange(value === path ? "" : path)}>{label}</button>)}
+    </div>
+    <p className="wizard-industry-note">{chosen ? chosen[2] : "Not sure? Leave it, and your agent will recommend one for your idea."}</p>
+  </div>;
 }

@@ -305,8 +305,20 @@ def _compose_workshop_contract(text: str) -> str:
         return text.replace(_WORKSHOP_CONTRACT_SLOT, f.read().strip())
 
 
+_APPROACH = {
+    "co_build": "**Build with me**: explain key decisions as you go and let them steer.",
+    "learn": "**Teach me while we build**: offer small, relevant hands-on steps and explain why.",
+    "lead": "**Let me drive**: they set constraints and choose what you implement; ask before acting.",
+}
+_DETAIL = {
+    "adaptive": "adapt explanation detail to each request",
+    "brief": "keep explanations brief: lead with the result",
+    "detailed": "explain in detail when it helps them decide or learn",
+}
+
+
 def _persona_overlay(user: User) -> str:
-    """Inline the speaking preference; it is not an expertise assessment."""
+    """Inline the attendee's working preferences; they are presets, not an assessment."""
     from . import attendee_profile
 
     try:
@@ -314,40 +326,30 @@ def _persona_overlay(user: User) -> str:
     except attendee_profile.ProfileReadError:
         logger.warning("Using adaptive help while attendee profile is unreadable")
         profile = attendee_profile.Profile(source="unavailable")
-    preference = profile.help_preference
-    if preference == "technical":
-        described = (
-            "**technical** in speaking style — use component names and useful implementation detail. "
-            "Use real names (AppKit, Lakebase, SQL warehouse, Unity Catalog) and "
-            "explain the architecture choices you make."
-        )
-    elif preference == "guided":
-        described = (
-            "**business-oriented** in speaking style — use outcomes and plain language. "
-            "Talk about what their product does for them, and keep "
-            "Databricks component names out of it unless they ask. Explain the next "
-            "useful step briefly, and help them try the result."
-        )
-    elif preference == "concise":
-        described = (
-            "asking you to **keep it concise** — lead with the result, give useful "
-            "recommendations briefly, and avoid unnecessary questions."
-        )
-    else:
-        described = (
-            "using **adaptive, business-oriented plain language** by default. "
-            "They have not stated an experience level or help preference. "
-            "Adapt explanation detail to their requests."
-        )
-    return (
-        f"{_PERSONA_MARKER}\n"
-        "## Who you are working with\n\n"
-        f"This attendee is {described}\n\n"
-        f"Profile version 1, revision {profile.revision}; preference source: {profile.source}.\n\n"
-        "Use this as a speaking preference, not an assessment of expertise. "
-        "Follow explicit requests for more or less help and adapt as the "
-        "conversation develops; do not add an experience questionnaire.\n"
-    )
+    effective = profile.effective()
+    approach = _APPROACH[effective["working_approach"]]
+    if not effective["working_approach_stated"]:
+        approach += " (default; they have not chosen one)"
+    lines = [
+        _PERSONA_MARKER,
+        "## How they want to work with you",
+        "",
+        f"- Working approach: {approach}",
+        f"- Explanation detail: {_DETAIL[effective['explanation_detail']]}.",
+    ]
+    if effective["technical_vocabulary"]:
+        lines.append("- They asked for technical discussion: use real component names and implementation detail.")
+    if effective["plain_language"]:
+        lines.append("- They asked for plain-language help: outcomes first, product names only when asked. "
+                     "This is not a request for a guided product interview.")
+    if effective["engagement_path"]:
+        lines.append(f"- Default path for a new idea: {effective['engagement_path']} (a project's recorded "
+                     "path wins; still ask if it does not fit this idea).")
+    lines += [
+        "",
+        f"Profile revision {profile.revision}. Presets they can change any time; in-the-moment requests win.",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def _wizard_overlay(user: User) -> str:
@@ -395,6 +397,10 @@ def _wizard_overlay(user: User) -> str:
         lines.append(f"They are here for: **{described}**.")
     if brief.current_stack:
         lines.append(f"They mentioned using: {', '.join(brief.current_stack)}.")
+    if brief.engagement_path:
+        label = {"rapid": "a rapid prototype to react to", "guided": "guided ideation"}[brief.engagement_path]
+        lines.append(f"They chose to start with **{label}**. Do not ask again; record it in the project with "
+                     f"`workshop-workflow path {brief.engagement_path} --by wizard --source wizard`.")
 
     lines += [
         "",
@@ -587,6 +593,7 @@ def _install_cli_helpers(user: User) -> None:
         "workshop-discovery",
         "workshop-app-deploy",
         "workshop-export",
+        "workshop-workflow",
     ):
         src = os.path.join(_ASSETS, "bin", name)
         if not os.path.isfile(src):

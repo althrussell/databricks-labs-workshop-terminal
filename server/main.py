@@ -777,6 +777,8 @@ class _WizardBody(BaseModel):
     current_stack: list[str] = Field(default_factory=list)
     persona: str = ""
     skipped: bool = False
+    # "rapid" or "guided" when they chose how to start this idea (W2).
+    engagement_path: str = ""
     # Optional, and the only field here that is about the person rather than
     # what they are building. Attendees regularly land on a workspace nobody
     # assigned to them, so the name they type is the first evidence we have of
@@ -786,7 +788,20 @@ class _WizardBody(BaseModel):
 
 class _ProfileBody(BaseModel):
     expected_revision: int = Field(ge=0)
-    help_preference: str
+    help_preference: str | None = None
+    working_approach: str | None = None
+    explanation_detail: str | None = None
+    engagement_path: str | None = None
+
+
+class _AgentProfileBody(_EmailBody):
+    """A direct-conversation preference save from ``workshop-workflow prefs``.
+
+    No ``changes`` reads the profile; otherwise ``expected_revision`` is
+    required, exactly as for the browser, so a stale write is refused.
+    """
+    expected_revision: int | None = Field(default=None, ge=0)
+    changes: dict[str, str] = Field(default_factory=dict)
 
 
 @app.get("/api/profile")
@@ -806,8 +821,12 @@ def save_profile(body: _ProfileBody, principal: Principal = Depends(get_current_
     from .users import user_manager
 
     user = user_manager.get(principal.name)
+    changes = {name: value for name, value in (("working_approach", body.working_approach),
+                                                ("explanation_detail", body.explanation_detail),
+                                                ("engagement_path", body.engagement_path)) if value is not None}
     try:
-        profile = attendee_profile.save(user, body.help_preference, expected_revision=body.expected_revision)
+        profile = attendee_profile.save(user, body.help_preference, expected_revision=body.expected_revision,
+                                        changes=changes, choice_source="ui")
     except attendee_profile.ProfileConflict as exc:
         raise HTTPException(status_code=409, detail={"message": str(exc), "profile": exc.profile.to_json()}) from exc
     except attendee_profile.ProfileReadError as exc:
@@ -821,6 +840,39 @@ def save_profile(body: _ProfileBody, principal: Principal = Depends(get_current_
         # refreshed by the existing launch/bootstrap path; a cache failure must
         # not tell the attendee that the retained preference was rejected.
         logger.warning("saved profile instruction refresh unavailable (%s)", type(exc).__name__)
+    return profile.to_json()
+
+
+@app.post("/api/agent/profile")
+def agent_profile(body: _AgentProfileBody, request: Request):
+    """Read or save preferences an attendee stated in conversation (W2).
+
+    Same revision-checked service as the browser; the save is acknowledged
+    only once it is durable, so an agent never claims to remember a choice
+    that was not kept.
+    """
+    from . import attendee_profile, user_content
+    from .users import user_manager
+
+    principal = _callback_identity(body, request)
+    user = user_manager.get(principal.name)
+    try:
+        if not body.changes:
+            return attendee_profile.read(user).to_json()
+        if body.expected_revision is None:
+            raise HTTPException(status_code=422, detail="expected_revision is required to save")
+        profile = attendee_profile.save(user, None, expected_revision=body.expected_revision,
+                                        changes=body.changes, choice_source="chat")
+    except attendee_profile.ProfileConflict as exc:
+        raise HTTPException(status_code=409, detail={"message": str(exc), "profile": exc.profile.to_json()}) from exc
+    except attendee_profile.ProfileReadError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        user_content._write_instructions(user)
+    except Exception as exc:
+        logger.warning("agent profile instruction refresh unavailable (%s)", type(exc).__name__)
     return profile.to_json()
 
 

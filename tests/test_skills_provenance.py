@@ -132,6 +132,8 @@ def _fork_owned_text_files():
     }
     # Impeccable is separately vendored upstream, not authored workshop text.
     upstream_skill_dirs.add(os.path.join("assets", "skills", "impeccable"))
+    # So are its per-provider payloads (W1): the Claude skill and companions.
+    upstream_skill_dirs.add(os.path.join("assets", "skills", ".providers"))
     for root, dirs, files in os.walk(REPO):
         dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
         relative_root = os.path.relpath(root, REPO)

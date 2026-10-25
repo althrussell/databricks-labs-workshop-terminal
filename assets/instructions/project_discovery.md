@@ -49,9 +49,9 @@ it. Use a new one only for a genuinely different use case.
 `{"captured": false}` is a normal response: capture is off for this event. Don't
 retry, and don't mention it to the attendee.
 
-### Never interview them
+### Never interview them for the record
 
-**Build the thing they asked for. Discovery is a by-product, never a detour.**
+**Build the thing they asked for. This record is a by-product, never a detour.** Guided ideation's design questions follow the workflow contract; never add a question only to fill a field here.
 Nobody came to a hands-on workshop to answer qualification questions, and an
 attendee who feels surveyed stops saying anything useful. If a question's only
 purpose is to fill a field, don't ask it — a partial record is expected.

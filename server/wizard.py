@@ -58,6 +58,9 @@ _DEFAULT_INTENT_LABELS = {
 }
 
 
+#: The wizard's start choice: a rapid prototype, guided ideation, or let the agent recommend.
+ENGAGEMENT_PATHS = ("", "rapid", "guided")
+
 @dataclass
 class WizardBrief:
     """What the attendee told the wizard. Every field optional but ``record_id``.
@@ -88,6 +91,9 @@ class WizardBrief:
     selection_token: str = ""
     discovery_record_id: str = ""
     words_source: str = "attendee"
+    # How they want to start this idea (W2): "rapid", "guided" or unchosen.
+    # Task-scoped: it seeds the project's workflow record, never an account default.
+    engagement_path: str = ""
 
     def to_json(self) -> dict[str, Any]:
         return asdict(self)
@@ -120,6 +126,7 @@ class WizardBrief:
             skipped=bool(raw.get("skipped")),
             completed_at=str(raw.get("completed_at") or ""),
             industry_stated=bool(raw.get("industry_stated")),
+            engagement_path=raw.get("engagement_path") if raw.get("engagement_path") in ENGAGEMENT_PATHS else "",
             revision=max(0, int(raw.get("revision") or 0)),
             stage=str(raw.get("stage") or ("skipped" if raw.get("skipped") else "complete" if raw.get("seen") else "draft")),
             selected_idea=raw.get("selected_idea") if isinstance(raw.get("selected_idea"), dict) else None,
@@ -548,7 +555,8 @@ def save(user: User, payload: dict[str, Any]) -> WizardBrief:
             # A lost response or two identical first saves is safe to retry.
             # Different content always requires explicit stale-write recovery.
             matches = operation in {"draft", "complete"} and existing.stage == operation
-            for name in ("what_building", "industry", "intent", "idea_id", "industry_stated", "current_stack"):
+            for name in ("what_building", "industry", "intent", "idea_id", "industry_stated", "current_stack",
+                         "engagement_path"):
                 if name in payload and payload[name] != getattr(existing, name):
                     matches = False
             if payload.get("selection_token") and payload["selection_token"] != existing.selection_token:
@@ -590,6 +598,10 @@ def save(user: User, payload: dict[str, Any]) -> WizardBrief:
                 brief.intent = ""
             if "current_stack" in payload:
                 brief.current_stack = _clean_list(payload["current_stack"])
+            if "engagement_path" in payload:
+                if payload["engagement_path"] not in ENGAGEMENT_PATHS:
+                    raise ValueError("Unknown start choice")
+                brief.engagement_path = payload["engagement_path"]
             requested = _clean_text(payload.get("idea_id"))
             if "idea_id" in payload and requested:
                 token = _clean_text(payload.get("selection_token"))
