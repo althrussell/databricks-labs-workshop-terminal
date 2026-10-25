@@ -57,7 +57,7 @@ EXACT_DEFAULTS = {
     "claude_code_version": "2.1.310",
     "codex_cli_version": "0.164.0",
     "databricks_cli_version": "1.22.1",
-    "omnigent_version": "0.15.0",
+    "omnigent_version": "0.19.1",
     "node_version": "24.22.1",
 }
 SEMVER_PATTERN = (

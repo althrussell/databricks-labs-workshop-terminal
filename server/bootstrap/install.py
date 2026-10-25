@@ -44,8 +44,8 @@ CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.164.0").strip()
 DATABRICKS_CLI_VERSION = os.environ.get("DATABRICKS_CLI_VERSION", "1.22.1").strip()
 AGENTBRICKS_VERSION = os.environ.get("AGENTBRICKS_VERSION", "0.6.0").strip()
 UV_VERSION = "0.13.5"
-OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "0.15.0").strip()
-OMNIGENT_PROTOCOL_VERSION = "0.15.0"
+OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "0.19.1").strip()
+OMNIGENT_PROTOCOL_VERSION = "0.19.1"
 # Node 24 is the active LTS line; Node 22 is maintenance-only.
 NODE_VERSION = os.environ.get("NODE_VERSION", "24.22.1").strip()
 CLAUDE_INSTALLER_URL = os.environ.get(

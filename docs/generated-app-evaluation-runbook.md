@@ -50,7 +50,7 @@ browser build. A substituted older model does not qualify.
 The [version audit, evidence and explicit compatibility holds](remediation-validation.md#toolchain)
 cover SDK `0.151.0`, agent skills `v0.2.28`, CLI `1.20.0`, AppKit `0.87.0`,
 Node LTS `24.21.0`, and the optional MLflow `3.17.0` quality group. Omnigent
-remains `0.15.0` until its newer client/server pair is qualified separately.
+is `0.19.1`, qualified as one client/server pair (WT release + its dedicated App).
 Run the read-only `python scripts/audit_test_toolchain.py` before preparing a
 new baseline; review and pin updates instead of using floating release aliases.
 

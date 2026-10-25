@@ -113,9 +113,9 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
     assert env["AP_LAKEBASE_ENDPOINT"]["valueFrom"] == "postgres"
     assert env["AP_ARTIFACT_VOLUME_PATH"]["valueFrom"] == "artifact_volume"
     assert env["OMNIGENT_AUTH_PROVIDER"]["value"] == "header"
-    assert env["OMNIGENT_BUILD_VERSION"]["value"] == "0.15.0"
+    assert env["OMNIGENT_BUILD_VERSION"]["value"] == "0.19.1"
     assert (
-        env["OMNIGENT_BUILD_SHA"]["value"] == "c8b9b85f822f2c9203ff995c10f3cc49d064bbe5"
+        env["OMNIGENT_BUILD_SHA"]["value"] == "fbad2c7aaa990e2ff173383ca8dd42d983be7858"
     )
     # The App's env surface is an allowlist so that widening it is a deliberate,
     # reviewed act. Public registry selection and smart-routing knobs are
@@ -172,10 +172,10 @@ def test_wrapper_retains_upstream_control_plane_topology():
     tree = ast.parse(source)
 
     assert lock == {
-        "package": "omnigent[databricks]==0.15.0",
-        "release_commit": "c8b9b85f822f2c9203ff995c10f3cc49d064bbe5",
-        "verified_main_commit": "56c6a7f73024a257a5d359378e8ebb68a66dde7f",
-        "wheel_sha256": "0881c9251dd753ebec140a0db00e5c2b24f7ee711c7e01b9e73e4b9d40ce1f15",
+        "package": "omnigent[databricks]==0.19.1",
+        "release_commit": "fbad2c7aaa990e2ff173383ca8dd42d983be7858",
+        "verified_main_commit": "fbad2c7aaa990e2ff173383ca8dd42d983be7858",
+        "wheel_sha256": "e62d57f41dd34bc7bef6a7679197086e70d399a74c1a6136a7f27c344413e70d",
     }
     assert "sys.version_info < (3, 12)" in source
     assert "host_store = HostStore(DB_URI)" in source
@@ -341,7 +341,7 @@ def test_uv_project_pins_python_and_omnigent_release():
     assert not (APP_DIR / "requirements.txt").exists()
     assert not (APP_DIR / "requirements.in").exists()
     assert project["project"]["requires-python"] == ">=3.12,<3.13"
-    assert project["project"]["dependencies"] == ["omnigent[databricks]==0.15.0"]
+    assert project["project"]["dependencies"] == ["omnigent[databricks]==0.19.1"]
     assert project["tool"]["uv"]["package"] is False
     # Both spellings are the same constraint; uv changed which one it writes.
     assert locked["requires-python"] in (">=3.12, <3.13", "==3.12.*")
@@ -353,15 +353,15 @@ def test_uv_project_pins_python_and_omnigent_release():
     lock_hosts = set(re.findall(r'https://([^/"\s]+)', lock_text))
     assert lock_hosts == {"files.pythonhosted.org", "pypi.org"}
     packages = {(entry["name"], entry["version"]) for entry in locked["package"]}
-    assert ("omnigent", "0.15.0") in packages
-    assert ("omnigent-client", "0.15.0") in packages
-    assert ("omnigent-ui-sdk", "0.15.0") in packages
+    assert ("omnigent", "0.19.1") in packages
+    assert ("omnigent-client", "0.19.1") in packages
+    assert ("omnigent-ui-sdk", "0.19.1") in packages
     omnigent = next(entry for entry in locked["package"] if entry["name"] == "omnigent")
     assert len(omnigent["wheels"]) == 1
     wheel = omnigent["wheels"][0]
-    assert wheel["url"].endswith("/omnigent-0.15.0-py3-none-any.whl")
+    assert wheel["url"].endswith("/omnigent-0.19.1-py3-none-any.whl")
     assert wheel["hash"] == (
-        "sha256:0881c9251dd753ebec140a0db00e5c2b24f7ee711c7e01b9e73e4b9d40ce1f15"
+        "sha256:e62d57f41dd34bc7bef6a7679197086e70d399a74c1a6136a7f27c344413e70d"
     )
 
 

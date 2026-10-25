@@ -23,7 +23,7 @@ def run_detail():
     pair = {
         "contract_version": "1.6",
         "deployment": {"app_name": "omni", "app_url": pair_url, "deployment_id": "omni-deployment",
-            "server_version": "0.15.0", "source_repo": "https://github.com/althrussell/databricks-labs-workshop-terminal",
+            "server_version": "0.19.1", "source_repo": "https://github.com/althrussell/databricks-labs-workshop-terminal",
             "source_ref": "a" * 40, "source_ref_immutable": True, "source_subdir": "deploy/omnigent-app"},
         "resources": {"lakebase_endpoint": "projects/eval/branches/production/endpoints/primary",
             "lakebase_database": "projects/eval/branches/production/databases/default",
@@ -52,7 +52,7 @@ def run_detail():
                  "release_digest": DIGEST, "resource_state": {"deployment": {
                     "mode": "package", "release_digest": DIGEST, "deployment_id": "wt-deployment"}}},
                 {"app_kind": "omnigent", "app_name": "omni", "app_url": pair_url,
-                 "version": "0.15.0", "resource_state": {"handoff": pair}},
+                 "version": "0.19.1", "resource_state": {"handoff": pair}},
             ]}],
         "apps": [], "admin_principals": [{"token": "private-credential"}],
     }
@@ -110,7 +110,7 @@ def test_exact_unit_discovery_retains_assignment_pair_and_package_provenance():
     assert target["attendee_email"] == "synthetic@example.com"
     assert target["expires_at"] == EXPIRES
     assert target["release"] == {"source_kind": "deployed-package", "source_digest": DIGEST}
-    assert target["omnigent"]["deployment"]["server_version"] == "0.15.0"
+    assert target["omnigent"]["deployment"]["server_version"] == "0.19.1"
     assert target["omnigent"]["remote_host"]["status"] == "waiting_for_token"
     assert calls == [("GET", f"/api/labs/{RUN_ID}", None)]
 

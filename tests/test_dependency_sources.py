@@ -59,7 +59,7 @@ def test_project_direct_sources_and_index_overrides_require_review(setting):
 
 
 @pytest.mark.parametrize("path", ["requirements.txt", "requirements-dev.txt",
-                                  "assets/artifacts/omnigent-0.15.0.lock",
+                                  "assets/artifacts/omnigent-0.19.1.lock",
                                   "assets/artifacts/agentbricks-0.6.0.lock"])
 @pytest.mark.parametrize("line", [
     "--extra-index-url https://unlisted.example/simple", "--find-links https://unlisted.example/wheels",

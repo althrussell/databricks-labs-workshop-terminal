@@ -1,6 +1,6 @@
 """Build Omnigent Auto · smart routing for the workshop control plane.
 
-Omnigent 0.15.0 routes from two backends. The external client calls Databricks AI
+Omnigent 0.19.1 routes from two backends. The external client calls Databricks AI
 Gateway ``routes:select``; the built-in judge asks a small model instead.
 Upstream prefers the external one and falls back to the judge per request.
 
