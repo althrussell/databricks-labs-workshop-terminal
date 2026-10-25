@@ -19,6 +19,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import zipfile
 import fcntl
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
@@ -51,6 +52,15 @@ NODE_VERSION = os.environ.get("NODE_VERSION", "24.22.1").strip()
 CLAUDE_INSTALLER_URL = os.environ.get(
     "CLAUDE_INSTALLER_URL", "https://claude.ai/install.sh"
 )
+# The browser agents use to see the attendee's app (W3): Chrome for Testing's
+# headless shell, pinned like every other tool. Optional: if it cannot run in
+# this container, agents get an explicit "no browser" verification gap.
+BROWSER_VERSION = "156.0.8078.47"
+BROWSER_URL = (
+    "https://storage.googleapis.com/chrome-for-testing-public/"
+    f"{BROWSER_VERSION}/linux64/chrome-headless-shell-linux64.zip"
+)
+BROWSER_SHA256 = "0d5acc62c3e213f8c87d3c298d66ffcf9a236d12ea4b9f85318bf85dbc279daa"
 # Omnigent installs from the reviewed manifest only: a checksum-verified uv
 # binary, a pinned Python 3.12 archive, and a fully hashed transitive lock.
 # Omnigent's claude/codex wrappers hard-require tmux and the Apps runtime has
@@ -72,13 +82,20 @@ TMUX_STATIC_SHA256 = os.environ.get("TMUX_STATIC_SHA256", "").strip() or (
 SKILLS_REPO = os.environ.get(
     "SKILLS_REPO", "https://github.com/databricks/databricks-agent-skills.git"
 )
-SKILLS_REF = os.environ.get("SKILLS_REF", "v0.2.28").strip() or "v0.2.28"
+SKILLS_REF = os.environ.get("SKILLS_REF", "v0.2.34").strip() or "v0.2.34"
 # The manifest and readiness key for the skills artifact.
 SKILLS_ARTIFACT = "databricks_agent_skills"
 FORK_SKILLS = frozenset({
     "apx", "workshop-export", "refresh-databricks-skills",
     "impeccable", "workshop-agent-bricks-cli",
 })
+# Provider-specific payloads beside the shared skills (W1): the Claude
+# Impeccable payload, its companion agents and the routing that names them.
+# Not a skill (no SKILL.md), so it is never linked; refreshed with the forks.
+PROVIDER_PAYLOADS = ".providers"
+# The previous published generation, kept so a bad publish can be rolled back
+# as one coherent routing-and-digest set (W1).
+LAST_GOOD_SUFFIX = ".last-good"
 # The directory inside the upstream repository that holds one subdirectory per
 # skill. Each carries SKILL.md for Claude and agents/openai.yaml for Codex.
 SKILLS_UPSTREAM_DIR = "skills"
@@ -1318,6 +1335,48 @@ def _install_tmux() -> None:
                 os.unlink(leftover)
 
 
+def _install_browser() -> None:
+    """The pinned headless browser for agents' rendered checks (W3).
+
+    Optional by design: readiness never waits on it, and a container that
+    cannot run it records why, which the browser helper reports as a gap.
+    """
+    stamp_path = os.path.join(config.shared_prefix(), "browser.install.json")
+    target = os.path.join(config.shared_prefix(), "browser", BROWSER_VERSION)
+    binary = os.path.join(target, "chrome-headless-shell-linux64", "chrome-headless-shell")
+
+    def record(error: str = "") -> None:
+        _write_json_atomic(stamp_path, {"version": BROWSER_VERSION, "binary": "" if error else binary,
+                                        "error": error[-400:]})
+
+    try:
+        artifact_path, artifact = _verified_artifact("chrome_headless_shell_linux_x64")
+        _set("browser", "running", source="network", expected_checksum=artifact["sha256"])
+        stamp = _read_json(stamp_path)
+        if not (os.path.isfile(binary) and stamp.get("binary") == binary and stamp.get("version") == BROWSER_VERSION):
+            staging = target + ".extract"
+            shutil.rmtree(staging, ignore_errors=True)
+            with zipfile.ZipFile(artifact_path) as archive:
+                archive.extractall(staging)
+            os.chmod(os.path.join(staging, "chrome-headless-shell-linux64", "chrome-headless-shell"), 0o755)
+            shutil.rmtree(target, ignore_errors=True)
+            os.replace(staging, target)
+        smoke = subprocess.run([binary, "--headless", "--no-sandbox", "--disable-gpu", "--dump-dom",
+                                "about:blank"], capture_output=True, text=True, timeout=60, env=_install_env())
+        if smoke.returncode != 0:
+            raise RuntimeError("the headless browser cannot run here: "
+                               + (smoke.stderr or smoke.stdout or "no output")[-300:])
+        record()
+        _set("browser", "complete", source=_install_source("staged", "chrome_headless_shell_linux_x64"),
+             expected_checksum=artifact["sha256"])
+    except (ArtifactManifestError, subprocess.TimeoutExpired, OSError, RuntimeError, zipfile.BadZipFile) as error:
+        try:
+            record(str(error))
+        except OSError:
+            pass
+        _set("browser", "error", str(error))
+
+
 def _omnigent_stamp_path() -> str:
     return os.path.join(config.shared_prefix(), "omnigent.install.json")
 
@@ -1568,7 +1627,14 @@ def _install_databricks_cli() -> None:
 
 
 def _publish_skills_tree(staged: str, target: str) -> None:
-    """Swap one complete skills tree into place; never expose a mixed tree."""
+    """Swap one complete skills tree into place; never expose a mixed tree.
+
+    The tree being replaced becomes ``<target>.last-good`` (replacing an older
+    one) when its provider routing still verifies, so ``rollback_skills_tree``
+    can restore a whole generation rather than one provider's payload.
+    """
+    from .impeccable import verify_tree
+
     parent = os.path.dirname(target)
     backup = tempfile.mkdtemp(prefix=".skills-previous-", dir=parent)
     os.rmdir(backup)
@@ -1581,8 +1647,40 @@ def _publish_skills_tree(staged: str, target: str) -> None:
         if had_target and os.path.exists(backup) and not os.path.exists(target):
             os.replace(backup, target)
         raise
+    try:
+        if os.path.isdir(backup):
+            verify_tree(backup)
+            last_good = target + LAST_GOOD_SUFFIX
+            shutil.rmtree(last_good, ignore_errors=True)
+            os.replace(backup, last_good)
+    except (OSError, RuntimeError) as error:
+        logger.info("skills: previous generation not retained for rollback: %s", error)
     finally:
         shutil.rmtree(backup, ignore_errors=True)
+
+
+def rollback_skills_tree(target: str) -> bool:
+    """Restore the previous published generation; False when there is none.
+
+    Only a generation whose routing and payload digests still verify is
+    restored, so a rollback never sends one provider's payload to another.
+    The rolled-back tree is kept as the new ``last-good`` for a roll forward.
+    """
+    from .impeccable import verify_tree
+
+    last_good = target + LAST_GOOD_SUFFIX
+    if not os.path.isdir(last_good):
+        return False
+    verify_tree(last_good)
+    parent = os.path.dirname(target)
+    swap = tempfile.mkdtemp(prefix=".skills-rollback-", dir=parent)
+    os.rmdir(swap)
+    if os.path.exists(target):
+        os.replace(target, swap)
+    os.replace(last_good, target)
+    if os.path.isdir(swap):
+        os.replace(swap, last_good)
+    return True
 
 
 def _stage_vendored_skills(prefix: str) -> str:
@@ -1600,7 +1698,8 @@ def _stage_vendored_skills(prefix: str) -> str:
 
 
 def _fork_skills_current(target: str) -> bool:
-    names = {name for name in FORK_SKILLS if os.path.isdir(os.path.join(_ASSETS_SKILLS, name))}
+    names = {name for name in (*FORK_SKILLS, PROVIDER_PAYLOADS)
+             if os.path.isdir(os.path.join(_ASSETS_SKILLS, name))}
     return (not any(os.path.lexists(os.path.join(target, name)) for name in RETIRED_MANAGED_SKILLS)
             and _directory_checksum(_ASSETS_SKILLS, names) == _directory_checksum(target, names))
 
@@ -1613,7 +1712,7 @@ def _refresh_fork_skills(prefix: str, target: str) -> None:
     try:
         shutil.copytree(target, staged, dirs_exist_ok=True)
         project_skills(staged)
-        for name in FORK_SKILLS:
+        for name in (*FORK_SKILLS, PROVIDER_PAYLOADS):
             source = os.path.join(_ASSETS_SKILLS, name)
             if os.path.isdir(source):
                 destination = os.path.join(staged, name)
@@ -1988,7 +2087,7 @@ def _run_parallel_installers(tasks, *, max_workers: int) -> None:
 
 def run_in_background() -> None:
     omnigent = config.omnigent_offered()
-    steps = ["node", "claude", "codex", "databricks", "skills", "apx", "bun", "uv"]
+    steps = ["node", "claude", "codex", "databricks", "skills", "apx", "bun", "uv", "browser"]
     if omnigent:
         steps += ["tmux", "omnigent"]
     if config.agentbricks_enabled():
@@ -2036,6 +2135,7 @@ def run_in_background() -> None:
         independent = [
             ("claude", _install_claude),
             ("databricks", _install_databricks_cli),
+            ("browser", _install_browser),
         ]
         dependent = [("codex", _install_codex), ("skills", _install_skills)]
         if omnigent:

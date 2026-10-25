@@ -305,8 +305,20 @@ def _compose_workshop_contract(text: str) -> str:
         return text.replace(_WORKSHOP_CONTRACT_SLOT, f.read().strip())
 
 
+_APPROACH = {
+    "co_build": "**Build with me**: explain key decisions as you go and let them steer.",
+    "learn": "**Teach me while we build**: offer small, relevant hands-on steps and explain why.",
+    "lead": "**Let me drive**: they set constraints and choose what you implement; ask before acting.",
+}
+_DETAIL = {
+    "adaptive": "adapt explanation detail to each request",
+    "brief": "keep explanations brief: lead with the result",
+    "detailed": "explain in detail when it helps them decide or learn",
+}
+
+
 def _persona_overlay(user: User) -> str:
-    """Inline the speaking preference; it is not an expertise assessment."""
+    """Inline the attendee's working preferences; they are presets, not an assessment."""
     from . import attendee_profile
 
     try:
@@ -314,40 +326,30 @@ def _persona_overlay(user: User) -> str:
     except attendee_profile.ProfileReadError:
         logger.warning("Using adaptive help while attendee profile is unreadable")
         profile = attendee_profile.Profile(source="unavailable")
-    preference = profile.help_preference
-    if preference == "technical":
-        described = (
-            "**technical** in speaking style — use component names and useful implementation detail. "
-            "Use real names (AppKit, Lakebase, SQL warehouse, Unity Catalog) and "
-            "explain the architecture choices you make."
-        )
-    elif preference == "guided":
-        described = (
-            "**business-oriented** in speaking style — use outcomes and plain language. "
-            "Talk about what their product does for them, and keep "
-            "Databricks component names out of it unless they ask. Explain the next "
-            "useful step briefly, and help them try the result."
-        )
-    elif preference == "concise":
-        described = (
-            "asking you to **keep it concise** — lead with the result, give useful "
-            "recommendations briefly, and avoid unnecessary questions."
-        )
-    else:
-        described = (
-            "using **adaptive, business-oriented plain language** by default. "
-            "They have not stated an experience level or help preference. "
-            "Adapt explanation detail to their requests."
-        )
-    return (
-        f"{_PERSONA_MARKER}\n"
-        "## Who you are working with\n\n"
-        f"This attendee is {described}\n\n"
-        f"Profile version 1, revision {profile.revision}; preference source: {profile.source}.\n\n"
-        "Use this as a speaking preference, not an assessment of expertise. "
-        "Follow explicit requests for more or less help and adapt as the "
-        "conversation develops; do not add an experience questionnaire.\n"
-    )
+    effective = profile.effective()
+    approach = _APPROACH[effective["working_approach"]]
+    if not effective["working_approach_stated"]:
+        approach += " (default; they have not chosen one)"
+    lines = [
+        _PERSONA_MARKER,
+        "## How they want to work with you",
+        "",
+        f"- Working approach: {approach}",
+        f"- Explanation detail: {_DETAIL[effective['explanation_detail']]}.",
+    ]
+    if effective["technical_vocabulary"]:
+        lines.append("- They asked for technical discussion: use real component names and implementation detail.")
+    if effective["plain_language"]:
+        lines.append("- They asked for plain-language help: outcomes first, product names only when asked. "
+                     "This is not a request for a guided product interview.")
+    if effective["engagement_path"]:
+        lines.append(f"- Default path for a new idea: {effective['engagement_path']} (a project's recorded "
+                     "path wins; still ask if it does not fit this idea).")
+    lines += [
+        "",
+        f"Profile revision {profile.revision}. Presets they can change any time; in-the-moment requests win.",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def _wizard_overlay(user: User) -> str:
@@ -395,6 +397,10 @@ def _wizard_overlay(user: User) -> str:
         lines.append(f"They are here for: **{described}**.")
     if brief.current_stack:
         lines.append(f"They mentioned using: {', '.join(brief.current_stack)}.")
+    if brief.engagement_path:
+        label = {"rapid": "a rapid prototype to react to", "guided": "guided ideation"}[brief.engagement_path]
+        lines.append(f"They chose to start with **{label}**. Do not ask again; record it in the project with "
+                     f"`workshop-workflow path {brief.engagement_path} --by wizard --source wizard`.")
 
     lines += [
         "",
@@ -575,6 +581,8 @@ def _install_cli_helpers(user: User) -> None:
       default profile, persists resumable state, and exposes no generic shell.
     - ``workshop-export``: package source and verify its copy in the assigned
       attendee catalog/schema, with on-screen ZIP download instructions.
+    - ``workshop-browser``: real screenshots of the attendee's app for the
+      agent to look at, dead-control checks and write proof as the app (W3).
 
     There is no blocking design-gate helper. Build-time visual defaults and
     practical checks with prepared tooling follow the shared workshop contract.
@@ -587,6 +595,8 @@ def _install_cli_helpers(user: User) -> None:
         "workshop-discovery",
         "workshop-app-deploy",
         "workshop-export",
+        "workshop-workflow",
+        "workshop-browser",
     ):
         src = os.path.join(_ASSETS, "bin", name)
         if not os.path.isfile(src):
@@ -661,8 +671,10 @@ def _link_skills(user: User) -> None:
         previous = []
     roots = tuple(sorted({source, shared_skills_dir(), os.path.join(_ASSETS, "skills"),
                           *(root for root in previous if isinstance(root, str) and os.path.isabs(root))}))
-    for relative in HARNESS_SKILL_DIRS.values():
-        _link_skill_set(source, os.path.join(user.home, relative), names, owned_roots=roots)
+    for harness, relative in HARNESS_SKILL_DIRS.items():
+        _link_skill_set(source, os.path.join(user.home, relative), names, owned_roots=roots,
+                        sources=_provider_sources(source, harness, names))
+    _link_claude_companions(source, user, roots)
     # Move managed links out of Codex's legacy discovery path so one skill is
     # discovered once. Preserve attendee-owned files and links there.
     legacy = os.path.join(user.home, ".codex", "skills")
@@ -670,6 +682,63 @@ def _link_skills(user: User) -> None:
         _link_skill_set(source, legacy, [], owned_roots=roots)
     _atomic_write(state_path, json.dumps({"version": 1, "roots": roots}), 0o600)
     _write_aitools_state(user, source, names)
+    from . import skill_routing
+
+    _atomic_write(os.path.join(user.home, ".config", "workshop", "skill-routing.json"),
+                  json.dumps(skill_routing.audit(user.home, tree=source), indent=2, sort_keys=True), 0o600)
+
+
+def _provider_sources(source: str, harness: str, names: list[str]) -> dict[str, str]:
+    """Per-skill link targets for one harness: its own native payload where one exists.
+
+    W1: Claude used to receive the Codex Impeccable payload. A tree without a
+    verified payload for this harness yields no link for that skill rather than
+    the other provider's copy; the routing audit reports the gap.
+    """
+    from .bootstrap import impeccable
+
+    if harness != "claude" or "impeccable" not in names:
+        return {}
+    path = impeccable.payload_path(source, "claude")
+    return {"impeccable": str(path) if path is not None else ""}
+
+
+def _link_claude_companions(source: str, user: User, roots: tuple[str, ...]) -> None:
+    """Link Impeccable's Claude companion agents into ~/.claude/agents.
+
+    Managed links only: an attendee's own agent file with the same name wins,
+    and links into an earlier managed tree are refreshed or retired.
+    """
+    from .bootstrap import impeccable
+
+    agents = impeccable.payload_path(source, "claude_agents")
+    target = os.path.join(user.home, ".claude", "agents")
+    os.makedirs(target, exist_ok=True)
+    wanted = {name: os.path.join(str(agents), name) for name in os.listdir(agents)} if agents else {}
+    managed = (*roots, os.path.abspath(shared_skills_dir()), os.path.join(_ASSETS, "skills"))
+    for name in os.listdir(target):
+        link = os.path.join(target, name)
+        if name.startswith("impeccable-") and os.path.islink(link) and name not in wanted:
+            destination = os.path.abspath(os.path.join(target, os.readlink(link)))
+            if any(destination.startswith(root + os.sep) for root in managed):
+                os.unlink(link)
+    for name, destination in wanted.items():
+        link = os.path.join(target, name)
+        if os.path.islink(link):
+            if os.readlink(link) == destination:
+                continue
+            current = os.path.abspath(os.path.join(target, os.readlink(link)))
+            if not any(current.startswith(root + os.sep) for root in managed):
+                continue
+        elif os.path.exists(link):
+            continue  # the attendee's own agent wins
+        temporary = link + ".workshop-" + secrets.token_hex(6)
+        try:
+            os.symlink(destination, temporary)
+            os.replace(temporary, link)
+        finally:
+            if os.path.lexists(temporary):
+                os.unlink(temporary)
 
 
 def refresh_skill_links() -> None:
@@ -746,14 +815,20 @@ def _write_aitools_state(user: User, source: str, names: list[str]) -> None:
         json.dump(payload, f, indent=2)
 
 
-def _link_skill_set(source: str, target: str, names: list[str], *, owned_roots: tuple[str, ...] = ()) -> None:
+def _link_skill_set(source: str, target: str, names: list[str], *, owned_roots: tuple[str, ...] = (),
+                    sources: dict[str, str] | None = None) -> None:
     """Symlink each skill into one harness directory, per-skill like the CLI.
 
     Per-skill links rather than one directory link: a harness or the attendee
     may put their own skill next to ours, and a whole-directory symlink would
     either shadow that or (once the directory exists for real) leave the
     Databricks skills unreachable.
+
+    ``sources`` overrides one skill's link target (a provider-native payload).
+    An empty override means this harness has no verified copy: a managed link
+    is removed rather than pointed at another provider's payload.
     """
+    sources = sources or {}
     if os.path.islink(target):
         os.unlink(target)
     os.makedirs(target, exist_ok=True)
@@ -766,17 +841,23 @@ def _link_skill_set(source: str, target: str, names: list[str], *, owned_roots: 
                 os.unlink(link)
     for name in names:
         link = os.path.join(target, name)
+        wanted = sources.get(name, os.path.join(source, name))
         if os.path.islink(link):
             destination = os.path.abspath(os.path.join(target, os.readlink(link)))
             if not any(destination.startswith(root + os.sep) for root in managed_roots):
                 continue  # preserve attendee-owned links too
-            if os.readlink(link) == os.path.join(source, name):
+            if not wanted:
+                os.unlink(link)
+                continue
+            if os.readlink(link) == wanted:
                 continue
         elif os.path.exists(link):
             continue  # the attendee's own copy wins
+        if not wanted:
+            continue
         temporary = link + ".workshop-" + secrets.token_hex(6)
         try:
-            os.symlink(os.path.join(source, name), temporary)
+            os.symlink(wanted, temporary)
             os.replace(temporary, link)
         finally:
             if os.path.lexists(temporary):

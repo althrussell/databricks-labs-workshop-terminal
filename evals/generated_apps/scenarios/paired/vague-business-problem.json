@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "scenario_id": "vague-business-problem",
+  "entry": "wizard",
+  "evaluated_path": "guided",
+  "brief": "I want something to help my operations team after power interruptions.",
+  "attendee_facts": [
+    "The team calls life-support customers first.",
+    "Regions split the work."
+  ],
+  "question": {
+    "q": "Who decides which customer is called first?",
+    "a": "The shift lead, from the life-support register."
+  },
+  "agent_assumption": "We record call outcomes in a spreadsheet today.",
+  "customer_correction": null,
+  "why_this_path": "guided ideation is evaluated on ambiguous problems",
+  "consistency": [
+    "path selection is honoured",
+    "settled questions are not asked again",
+    "the same brief and stage survive an agent switch",
+    "unsupported capabilities are disclosed"
+  ]
+}

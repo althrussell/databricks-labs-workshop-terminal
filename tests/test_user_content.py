@@ -164,7 +164,13 @@ def test_no_tdd_subagents_are_installed(client, monkeypatch):
     agents = os.path.join(home, ".claude", "agents")
 
     assert os.path.isdir(agents)
-    assert [name for name in os.listdir(agents) if name.endswith(".md")] == []
+    # Impeccable's own Claude companions (finish reviewer, documenter, ...) are
+    # part of its native payload (W1); no other agent definition is installed.
+    installed = [name for name in os.listdir(agents) if name.endswith(".md")]
+    assert installed and all(name.startswith("impeccable-") for name in installed)
+    assert all(os.path.islink(os.path.join(agents, name)) for name in installed)
+    for name in ("build-feature.md", "implementer.md", "prd-writer.md", "test-generator.md"):
+        assert name not in installed
 
 
 def test_project_helper_installed(client, monkeypatch):

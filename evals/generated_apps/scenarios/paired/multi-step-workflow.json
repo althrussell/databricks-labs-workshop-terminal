@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "scenario_id": "multi-step-workflow",
+  "entry": "wizard",
+  "evaluated_path": "guided",
+  "brief": "My team needs to find the next customer to call, record the call and move on.",
+  "attendee_facts": [
+    "Calls must not be duplicated across the team."
+  ],
+  "question": {
+    "q": "What happens after a call is recorded?",
+    "a": "The next unassigned customer should appear."
+  },
+  "agent_assumption": "Two people sometimes call the same customer.",
+  "customer_correction": null,
+  "why_this_path": "guided ideation is evaluated on ambiguous problems",
+  "consistency": [
+    "path selection is honoured",
+    "settled questions are not asked again",
+    "the same brief and stage survive an agent switch",
+    "unsupported capabilities are disclosed"
+  ]
+}

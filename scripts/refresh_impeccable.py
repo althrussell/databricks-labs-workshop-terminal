@@ -63,13 +63,23 @@ def refresh(write: bool) -> int:
                                env=env, cwd=root, capture_output=True, text=True, check=True)
         if probe.stdout.strip() != f"impeccable-engine {impeccable.ENGINE_VERSION}":
             raise RuntimeError("Installed skill cannot resolve its reviewed native engine")
-        vendored = ROOT / "assets/skills/impeccable"
-        if write:
-            shutil.rmtree(vendored, ignore_errors=True)
-            shutil.copytree(actual, vendored)
-        elif directory_checksum(actual) != directory_checksum(vendored):
-            raise SystemExit("Impeccable fallback differs from supported install; run --write")
-    print(f"Impeccable {impeccable.SKILL_VERSION}: supported installer and fallback agree ({host_platform})")
+        claude = target / impeccable.PROVIDER_PATHS["claude"]
+        probe = subprocess.run([str(claude / "scripts/impeccable"), "engine-probe"],
+                               env=env, cwd=root, capture_output=True, text=True, check=True)
+        if probe.stdout.strip() != f"impeccable-engine {impeccable.ENGINE_VERSION}":
+            raise RuntimeError("Installed Claude skill cannot resolve its reviewed native engine")
+        # Both native payloads and their routing move together (W1): a fallback
+        # that matched one provider and not the other is not a fallback.
+        vendored = ROOT / "assets/skills"
+        for relative in ("impeccable", ".providers"):
+            if write:
+                shutil.rmtree(vendored / relative, ignore_errors=True)
+                shutil.copytree(target / relative, vendored / relative)
+            elif directory_checksum(target / relative) != directory_checksum(vendored / relative):
+                raise SystemExit(f"Impeccable fallback {relative} differs from supported install; run --write")
+        impeccable.verify_tree(vendored)
+    print(f"Impeccable {impeccable.SKILL_VERSION}: supported installer and fallback agree for Claude and Codex "
+          f"({host_platform})")
     return 0
 
 

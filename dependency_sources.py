@@ -28,6 +28,7 @@ REQUIRED_INPUTS = (
 )
 # These are the existing reviewed toolchain publishers, not alternate indexes.
 ARTIFACT_HOSTS = frozenset({"github.com", "raw.githubusercontent.com", "claude.ai", "downloads.claude.ai", "nodejs.org", "registry.npmjs.org"})
+CHROME_FOR_TESTING_PREFIX = "/chrome-for-testing-public/"
 _URL = re.compile(r"https?://[^\s\"'<>\\]+", re.IGNORECASE)
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _REGISTRY_ENV = frozenset({
@@ -61,6 +62,10 @@ def public_url(value: str, *, kind: str) -> bool:
         if kind == "npm":
             return url.hostname == "registry.npmjs.org" and url.path.startswith("/")
         if kind == "artifact":
+            # Google's official Chrome for Testing bucket only, never all of GCS:
+            # the prepared browser agents use to inspect apps (W3).
+            if url.hostname == "storage.googleapis.com":
+                return url.path.startswith(CHROME_FOR_TESTING_PREFIX)
             return url.hostname in ARTIFACT_HOSTS and url.path.startswith("/")
     except (TypeError, ValueError):
         pass

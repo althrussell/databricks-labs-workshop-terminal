@@ -24,6 +24,7 @@ import pytest
 from .conftest import ALICE
 
 ROOT = Path(__file__).resolve().parents[1]
+CONTRACT = Path(__file__).resolve().parents[1] / "assets/instructions/workshop_contract.md"
 LAB_COACH = ROOT / "assets" / "instructions" / "lab_coach.md"
 
 PERSONA_RELATIVE = os.path.join(".workshop", "persona")
@@ -138,20 +139,21 @@ def test_a_choice_made_before_launching_survives_provisioning(client, monkeypatc
     home = _provisioned_home(client, monkeypatch)
 
     assert _persona_file(home) == "technical"
-    assert "**technical**" in _persona_block(home)
+    # A stated technical style is kept as vocabulary (W2), not an expertise score.
+    assert "technical discussion" in _persona_block(home)
 
 
 def test_changing_it_after_launching_rewrites_the_instructions(client, monkeypatch):
     """The persona is inlined into the instructions, so a later change has to
     rewrite them — otherwise the agent keeps reading a stale line."""
     home = _provisioned_home(client, monkeypatch)
-    assert "business-oriented" in _persona_block(home)
+    assert "technical discussion" not in _persona_block(home)
+    assert "(default; they have not chosen one)" in _persona_block(home)
 
     resp = client.post("/api/persona", json={"persona": "technical"}, headers=ALICE)
 
     assert resp.status_code == 200
-    assert "**technical**" in _persona_block(home)
-    assert "business-oriented" not in _persona_block(home)
+    assert "technical discussion" in _persona_block(home)
 
 
 def test_a_nonsense_persona_is_rejected_rather_than_written(client, monkeypatch):
@@ -181,14 +183,15 @@ def test_both_harnesses_are_told_who_they_are_working_with(
     with open(os.path.join(home, *harness.split("/"))) as f:
         text = f.read()
 
-    assert "Who you are working with" in text
-    assert "speaking preference, not an assessment of expertise" in text
+    text = " ".join(text.split())
+    assert "How they want to work with you" in text
+    assert "never infer expertise from role, jargon or message length" in text
 
 
 def test_the_instructions_adapt_help_without_an_extra_questionnaire(client, monkeypatch):
     home = _provisioned_home(client, monkeypatch)
 
-    assert "do not add an experience questionnaire" in _instructions(home)
+    assert "never run an experience questionnaire" in " ".join(_instructions(home).split())
 
 
 def test_the_coach_no_longer_runs_a_persona_question(client, monkeypatch):
@@ -198,22 +201,26 @@ def test_the_coach_no_longer_runs_a_persona_question(client, monkeypatch):
     assert "~/.workshop/persona" not in coach
     assert "AskUserQuestion" not in coach
     assert "Check for a saved persona" not in coach
-    assert "shared workshop interaction and quality contract" in coach
+    assert "The workflow contract sets the path and the questions" in coach
 
 
 def test_the_coach_still_adapts_its_language_to_the_persona():
-    """Removing the question must not remove the reason for having an answer."""
+    """Removing the question must not remove the reason for having an answer.
+
+    W2 retired persona categories: language follows the topic and the
+    attendee's stated preferences, which every channel carries."""
+    contract = " ".join(CONTRACT.read_text(encoding="utf-8").split())
     coach = " ".join(LAB_COACH.read_text(encoding="utf-8").split())
 
-    assert "Business persona" in coach
-    assert "Technical persona" in coach
+    assert "Detail and vocabulary follow the topic" in contract
+    assert "suited to how they talk" in coach
 
 
 def test_a_wrong_guess_is_corrected_silently():
-    coach = " ".join(LAB_COACH.read_text(encoding="utf-8").split())
+    contract = " ".join(CONTRACT.read_text(encoding="utf-8").split())
 
-    assert "just change how you explain things" in coach
-    assert "do not confirm it with them" in coach
+    assert "just change how you explain things" in contract
+    assert "do not confirm it with them" in contract
 
 
 # --- the first turn points somewhere useful ------------------------------------

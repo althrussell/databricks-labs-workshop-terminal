@@ -446,6 +446,10 @@ class User:
             # The omnigent install is shared across attendees — never
             # self-update (mirrors DISABLE_AUTOUPDATER for claude).
             "OMNIGENT_NO_UPDATE_CHECK": "1",
+            # Impeccable 4.6+ reports anonymous usage unless told not to. An
+            # attendee session never does: the engine honours both switches.
+            "DO_NOT_TRACK": "1",
+            "IMPECCABLE_NO_TELEMETRY": "1",
             # Re-read the app OAuth bearer file every four minutes so long-lived
             # agents promptly adopt SDK refreshes; a 401 also forces refresh.
             "HARNESS_CLAUDE_SDK_GATEWAY_AUTH_REFRESH_INTERVAL_MS": "240000",
@@ -454,6 +458,10 @@ class User:
             # workshop-grant-me) call back into the app with. The serving port
             # itself is never handed over as DATABRICKS_APP_PORT.
             "WORKSHOP_APP_URL": f"http://localhost:{serving_port(src)}",
+            # W5 composition references, read-only in the release. Named here
+            # rather than in the instructions so they cost no start-up context.
+            "WORKSHOP_DESIGN_REFERENCES": os.path.normpath(os.path.join(
+                os.path.dirname(__file__), "..", "assets", "design-references")),
         })
         # Apps and skills read DATABRICKS_APP_PORT for where to listen, so in
         # here it is the agent's test port, never the terminal's.

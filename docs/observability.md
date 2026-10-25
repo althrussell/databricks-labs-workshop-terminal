@@ -86,6 +86,32 @@ Every readiness probe updates the latency metric. The structured readiness
 event is emitted only when state changes or once per minute while unchanged,
 which avoids multiplying Zerobus ingestion cost under fleet polling.
 
+### Journey and agent activity events (W6)
+
+Counts and coarse states only: never prompts, arguments, tool output,
+keystrokes or reasoning. All are buffered for Control Tower and logged to
+`wt_otel_*` through the same `telemetry.emit` path as `journey.status`.
+
+| Event | When | Payload |
+|---|---|---|
+| `journey.status` | the seat's facilitator signal changes | `{phase, path, status, outcome: "observed"}` |
+| `journey.phase` | the workflow moves to another phase | `{from, to, path, seconds}` (time spent in `from`) |
+| `journey.outcome` | the attendee (or a facilitator) records their account at feedback | `{goal_explained, decisions_shaped, main_task, second_change, knows_next_step, confidence, by}` |
+| `agent.activity` | the seat's agent activity counts change (on CT's stats harvest) | `{prompts, tool_calls: {tool: n}, tool_errors: {reason: n}, errors}` |
+
+`tool_calls` names tools (`Bash`, `apply_patch`, MCP tools as `mcp:<server>`);
+`tool_errors` uses coarse reasons (`permission_denied`, `not_found`,
+`timeout`, `rate_limited`, `server_error`, `syntax_or_type`,
+`command_failed`, `other`). The stats row carries the same `agent_activity`,
+and `errors` now adds the agents' failed tool results to failed launches.
+`minutes_building` is each seat's own span from first visit to latest
+activity.
+
+The agents' own OpenTelemetry exporters stay off. Handing attendee processes the
+app's collector endpoint would give them a write path into the central
+telemetry tables, and their logs include tool parameters. WT derives the same
+counts from the transcripts it already reads.
+
 ## Privacy and failure behavior
 
 A process-wide logging filter removes email addresses, authorization headers,

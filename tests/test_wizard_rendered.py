@@ -136,7 +136,10 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
             if request.method == "GET":
                 body = attendee_profile.read(user).to_json()
             else:
-                body = attendee_profile.save(user, payload["help_preference"], expected_revision=payload["expected_revision"]).to_json()
+                body = attendee_profile.save(
+                    user, payload.get("help_preference"), expected_revision=payload["expected_revision"],
+                    changes={k: payload[k] for k in ("working_approach", "explanation_detail", "engagement_path")
+                             if k in payload}).to_json()
         elif path == "/api/sessions":
             if request.method == "POST":
                 if skip_during in {"launch", "launch_failure", "launch_conflict"} and not launch_entered.is_set():
@@ -382,10 +385,14 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
             await page.reload()
             await page.get_by_role("button", name="Agent preferences", exact=True).click()
             preferences = page.get_by_role("dialog", name="Agent preferences")
-            await preferences.get_by_role("combobox").select_option("concise")
-            await preferences.get_by_role("button", name="Save preference", exact=True).click()
+            # Three independent dimensions (W2); changing one leaves the others and the task.
+            await preferences.get_by_label("Explanation detail").select_option("brief")
+            await preferences.get_by_label("How would you like your coding agent to work with you?").select_option("learn")
+            await preferences.get_by_role("button", name="Save preferences", exact=True).click()
             await preferences.get_by_role("status").wait_for()
-            assert attendee_profile.read(user).help_preference == "concise"
+            saved_profile = attendee_profile.read(user)
+            assert saved_profile.explanation_detail == "brief" and saved_profile.working_approach == "learn"
+            assert saved_profile.help_preference == ""
             assert wizard.read_brief(user).to_json() == saved.to_json()
             await preferences.get_by_role("button", name="Done", exact=True).click()
             assert await page.get_by_role("button", name="Agent preferences", exact=True).evaluate("e => e === document.activeElement")

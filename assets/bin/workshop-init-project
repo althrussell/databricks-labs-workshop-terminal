@@ -303,6 +303,9 @@ fi
 # Home skills are unavailable to workers with isolated harness configuration.
 # Commit their actual contents in the standard project discovery directory.
 # Track ownership so future workshop releases can retire only their own copies.
+# Each harness gets its own native payload (W1): Codex reads .agents/skills;
+# Claude reads .claude/skills, which links to the same copy unless Claude's
+# payload differs (Impeccable), in which case Claude's own bytes are committed.
 python3 - <<'PY'
 import hashlib
 import json
@@ -312,14 +315,22 @@ import re
 import shutil
 import subprocess
 
-source = Path.home() / '.claude/skills'
+home = Path.home()
+source = home / '.agents/skills'
+if not source.is_dir():
+    source = home / '.claude/skills'
+claude_home = home / '.claude/skills'
 manifest = Path('.agents/workshop-skills.json')
 previous = json.loads(manifest.read_text()) if manifest.is_file() else {'skills': {}, 'retired': []}
 if not isinstance(previous.get('skills'), dict) or any(
     not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,127}', name) for name in previous['skills']
 ):
     raise SystemExit('workshop-init-project: invalid managed-skills manifest; repair it and retry')
+previous_claude = previous.get('claude') if isinstance(previous.get('claude'), dict) else {}
+previous_agents = previous.get('agents') if isinstance(previous.get('agents'), dict) else {}
 current = {}
+claude_current = {}
+agents_current = {}
 
 def digest(path):
     result = hashlib.sha256()
@@ -327,6 +338,28 @@ def digest(path):
         if item.is_file():
             result.update(item.relative_to(path).as_posix().encode() + b'\0' + item.read_bytes())
     return result.hexdigest()
+
+def copy_native(native, destination, twin_root):
+    """Claude's own payload, with files identical to the Codex copy linked to it.
+
+    Most bytes (scripts, fonts) are shared between the providers; only the
+    differing files are committed twice. Relative links resolve in worktrees.
+    """
+    for item in sorted(native.rglob('*')):
+        rel = item.relative_to(native)
+        out = destination / rel
+        if item.is_dir():
+            out.mkdir(parents=True, exist_ok=True)
+            continue
+        out.parent.mkdir(parents=True, exist_ok=True)
+        twin = twin_root / rel
+        if twin.is_file() and not twin.is_symlink() and twin.read_bytes() == item.read_bytes():
+            out.symlink_to(os.path.relpath(twin, out.parent))
+        else:
+            shutil.copy2(item, out)
+
+def add(path, force=False):
+    subprocess.run(['git', 'add', *(['-f'] if force else []), '--', str(path)], check=True)
 
 for skill in sorted(source.iterdir()) if source.is_dir() else []:
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,127}', skill.name):
@@ -344,14 +377,54 @@ for skill in sorted(source.iterdir()) if source.is_dir() else []:
             shutil.rmtree(target)
         shutil.copytree(skill.resolve(), target)
     current[skill.name] = checksum
+    add(target)
     link = Path('.claude/skills') / skill.name
     link.parent.mkdir(parents=True, exist_ok=True)
     relative = '../../.agents/skills/' + skill.name
+    native = claude_home / skill.name
+    native_checksum = digest(native.resolve()) if (native / 'SKILL.md').is_file() else checksum
+    if native_checksum != checksum:
+        # Claude's own payload differs: commit Claude's bytes, never the Codex copy.
+        owned = link.exists() and not link.is_symlink() and skill.name not in previous_claude
+        if not owned:
+            if link.is_symlink() and os.readlink(link) != relative:
+                continue  # an attendee link elsewhere wins
+            if link.is_symlink():
+                link.unlink()
+            if not link.is_dir() or digest(link) != native_checksum:
+                if link.exists():
+                    shutil.rmtree(link)
+                copy_native(native.resolve(), link, target)
+            claude_current[skill.name] = native_checksum
+            add(link, force=True)
+        continue
+    if skill.name in previous_claude and link.is_dir() and not link.is_symlink():
+        shutil.rmtree(link)  # payloads converged: back to one shared copy
     if not link.exists() and not link.is_symlink():
         link.symlink_to(relative)
-    subprocess.run(['git', 'add', '--', str(target)], check=True)
     if link.is_symlink() and os.readlink(link) == relative:
-        subprocess.run(['git', 'add', '-f', '--', str(link)], check=True)
+        add(link, force=True)
+
+# Claude's Impeccable companion agents, for isolated Claude workers too.
+agents_home = home / '.claude/agents'
+for agent in sorted(agents_home.glob('impeccable-*.md')) if agents_home.is_dir() else []:
+    if not agent.is_symlink():
+        continue  # only WT-managed (linked) companions are copied
+    target = Path('.claude/agents') / agent.name
+    if target.exists() and agent.name not in previous_agents:
+        continue
+    target.parent.mkdir(parents=True, exist_ok=True)
+    data = agent.read_bytes()
+    if not target.is_file() or target.read_bytes() != data:
+        target.write_bytes(data)
+    agents_current[agent.name] = hashlib.sha256(data).hexdigest()
+    add(target, force=True)
+for name in sorted(set(previous_agents) - set(agents_current)):
+    target = Path('.claude/agents') / name
+    if target.is_file() and not target.is_symlink():
+        target.unlink()
+        if subprocess.run(['git', 'ls-files', '--error-unmatch', '--', str(target)], capture_output=True).returncode == 0:
+            subprocess.run(['git', 'add', '-A', '--', str(target)], check=True)
 
 retired = sorted(set(previous['skills']) - set(current))
 for name in retired:
@@ -361,12 +434,23 @@ for name in retired:
     link = Path('.claude/skills') / name
     if link.is_symlink() and os.readlink(link) == '../../.agents/skills/' + name:
         link.unlink()
+    elif name in previous_claude and link.is_dir() and not link.is_symlink():
+        shutil.rmtree(link)
     for path in (target, link):
         if subprocess.run(['git', 'ls-files', '--error-unmatch', '--', str(path)], capture_output=True).returncode == 0:
             subprocess.run(['git', 'add', '-A', '--', str(path)], check=True)
+for name in sorted(set(previous_claude) - set(claude_current) - set(retired)):
+    link = Path('.claude/skills') / name
+    if subprocess.run(['git', 'ls-files', '--error-unmatch', '--', str(link)], capture_output=True).returncode == 0:
+        subprocess.run(['git', 'add', '-A', '--', str(link)], check=True)
 if current or previous['skills']:
     manifest.parent.mkdir(parents=True, exist_ok=True)
-    manifest.write_text(json.dumps({'skills': current, 'retired': retired}, sort_keys=True) + '\n')
+    record = {'skills': current, 'retired': retired}
+    if claude_current:
+        record['claude'] = claude_current
+    if agents_current:
+        record['agents'] = agents_current
+    manifest.write_text(json.dumps(record, sort_keys=True) + '\n')
     subprocess.run(['git', 'add', '--', str(manifest)], check=True)
 PY
 
@@ -524,6 +608,11 @@ if [ -f .agents/workshop-skills.json ]; then
       fi
     done
   done < <(python3 -c 'import json; d=json.load(open(".agents/workshop-skills.json")); print("\n".join(sorted(set(d["skills"]) | set(d["retired"]))))')
+  while IFS= read -r AGENT; do
+    if git ls-files --error-unmatch -- ".claude/agents/$AGENT" >/dev/null 2>&1; then
+      MEMORY_FILES+=(".claude/agents/$AGENT")
+    fi
+  done < <(python3 -c 'import json; d=json.load(open(".agents/workshop-skills.json")); print("\n".join(sorted(d.get("agents") or {})))')
 fi
 if [ "$CREATED" = "1" ]; then
   # Everything in a fresh scaffold belongs to this invocation. Workers need

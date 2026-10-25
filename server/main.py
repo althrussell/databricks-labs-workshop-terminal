@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import logging
 import os
+import subprocess
 import threading
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Literal
 
 import asyncio
@@ -777,6 +779,8 @@ class _WizardBody(BaseModel):
     current_stack: list[str] = Field(default_factory=list)
     persona: str = ""
     skipped: bool = False
+    # "rapid" or "guided" when they chose how to start this idea (W2).
+    engagement_path: str = ""
     # Optional, and the only field here that is about the person rather than
     # what they are building. Attendees regularly land on a workspace nobody
     # assigned to them, so the name they type is the first evidence we have of
@@ -786,7 +790,20 @@ class _WizardBody(BaseModel):
 
 class _ProfileBody(BaseModel):
     expected_revision: int = Field(ge=0)
-    help_preference: str
+    help_preference: str | None = None
+    working_approach: str | None = None
+    explanation_detail: str | None = None
+    engagement_path: str | None = None
+
+
+class _AgentProfileBody(_EmailBody):
+    """A direct-conversation preference save from ``workshop-workflow prefs``.
+
+    No ``changes`` reads the profile; otherwise ``expected_revision`` is
+    required, exactly as for the browser, so a stale write is refused.
+    """
+    expected_revision: int | None = Field(default=None, ge=0)
+    changes: dict[str, str] = Field(default_factory=dict)
 
 
 @app.get("/api/profile")
@@ -806,8 +823,12 @@ def save_profile(body: _ProfileBody, principal: Principal = Depends(get_current_
     from .users import user_manager
 
     user = user_manager.get(principal.name)
+    changes = {name: value for name, value in (("working_approach", body.working_approach),
+                                                ("explanation_detail", body.explanation_detail),
+                                                ("engagement_path", body.engagement_path)) if value is not None}
     try:
-        profile = attendee_profile.save(user, body.help_preference, expected_revision=body.expected_revision)
+        profile = attendee_profile.save(user, body.help_preference, expected_revision=body.expected_revision,
+                                        changes=changes, choice_source="ui")
     except attendee_profile.ProfileConflict as exc:
         raise HTTPException(status_code=409, detail={"message": str(exc), "profile": exc.profile.to_json()}) from exc
     except attendee_profile.ProfileReadError as exc:
@@ -822,6 +843,221 @@ def save_profile(body: _ProfileBody, principal: Principal = Depends(get_current_
         # not tell the attendee that the retained preference was rejected.
         logger.warning("saved profile instruction refresh unavailable (%s)", type(exc).__name__)
     return profile.to_json()
+
+
+@app.post("/api/agent/profile")
+def agent_profile(body: _AgentProfileBody, request: Request):
+    """Read or save preferences an attendee stated in conversation (W2).
+
+    Same revision-checked service as the browser; the save is acknowledged
+    only once it is durable, so an agent never claims to remember a choice
+    that was not kept.
+    """
+    from . import attendee_profile, user_content
+    from .users import user_manager
+
+    principal = _callback_identity(body, request)
+    user = user_manager.get(principal.name)
+    try:
+        if not body.changes:
+            return attendee_profile.read(user).to_json()
+        if body.expected_revision is None:
+            raise HTTPException(status_code=422, detail="expected_revision is required to save")
+        profile = attendee_profile.save(user, None, expected_revision=body.expected_revision,
+                                        changes=body.changes, choice_source="chat")
+    except attendee_profile.ProfileConflict as exc:
+        raise HTTPException(status_code=409, detail={"message": str(exc), "profile": exc.profile.to_json()}) from exc
+    except attendee_profile.ProfileReadError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        user_content._write_instructions(user)
+    except Exception as exc:
+        logger.warning("agent profile instruction refresh unavailable (%s)", type(exc).__name__)
+    return profile.to_json()
+
+
+class _BrowserStatusBody(_EmailBody):
+    pass
+
+
+class _BrowserInspectBody(_EmailBody):
+    url: str = Field(max_length=2000)
+    scope: Literal["local", "deployed"] = "local"
+    viewports: list[str] = Field(default_factory=lambda: ["desktop"], max_length=2)
+    actions: list[str] = Field(default_factory=list, max_length=12)
+    project: str | None = None
+
+
+class _BrowserWriteBody(_EmailBody):
+    app: str = Field(max_length=63)
+    table: str = Field(max_length=400)
+    since_minutes: int = Field(default=30, ge=1, le=240)
+    project: str | None = None
+
+
+def _owned_project(user, requested: str | None) -> Path:
+    """The attendee's own project: given, or the selected one; never another's."""
+    from . import projects
+
+    root = projects.root(user).resolve()
+    if requested:
+        path = Path(requested).resolve()
+    else:
+        active = projects.read(user)["active"]
+        if not active:
+            raise HTTPException(status_code=409, detail="no build is selected yet")
+        path = projects.project_path(user, active).resolve()
+    if path != root and root not in path.parents:
+        raise HTTPException(status_code=403, detail="evidence is recorded only for your own projects")
+    if not path.is_dir():
+        raise HTTPException(status_code=404, detail="that project does not exist yet")
+    return path
+
+
+@app.post("/api/browser/status")
+def browser_status(body: _BrowserStatusBody, request: Request):
+    from . import browser_evidence
+
+    _callback_identity(body, request)
+    return browser_evidence.status()
+
+
+@app.post("/api/browser/inspect")
+def browser_inspect(body: _BrowserInspectBody, request: Request):
+    """Render the attendee's own app and keep real screenshots as evidence (W3).
+
+    A gap (no browser, sign-in blocked, page never loaded) is recorded as a
+    gap and returned with ``ok: false``; it is never reported as a pass.
+    """
+    from . import browser_evidence
+
+    principal = _callback_identity(body, request)
+    user = user_manager.get(principal.name)
+    project = _owned_project(user, body.project)
+    token = browser_evidence.attendee_token(user)[1] if body.scope == "deployed" else ""
+    inspect_request = browser_evidence.InspectRequest(url=body.url, scope=body.scope, viewports=body.viewports,
+                                                      actions=body.actions, project=project, token=token)
+    try:
+        result = browser_evidence.inspect(inspect_request)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except browser_evidence.Gap as gap:
+        entry = {**gap.as_dict(), "scope": body.scope, "url": body.url}
+        revision = browser_evidence.record(project, [entry])
+        return {"ok": False, "gap": entry, "revision": revision}
+    revision = browser_evidence.record(project, result["artifacts"])
+    return {"ok": True, **result, "revision": revision}
+
+
+@app.post("/api/browser/verify-write")
+def browser_verify_write(body: _BrowserWriteBody, request: Request):
+    """Prove a deployed write ran as the app's own identity, or record why not."""
+    from . import browser_evidence
+
+    principal = _callback_identity(body, request)
+    user = user_manager.get(principal.name)
+    project = _owned_project(user, body.project)
+    host, token = browser_evidence.attendee_token(user)
+    try:
+        if not host or not token:
+            raise browser_evidence.Gap("sign_in_unavailable", "your Databricks sign-in is not ready yet")
+        proof = browser_evidence.verify_write(host=host, token=token, app_name=body.app, table=body.table,
+                                              since_minutes=body.since_minutes)
+    except browser_evidence.Gap as gap:
+        entry = {**gap.as_dict(), "scope": "deployed", "app": body.app, "table": body.table}
+        return {"ok": False, "gap": entry, "revision": browser_evidence.record(project, [entry])}
+    return {"ok": proof["proven"], **proof, "revision": browser_evidence.record(project, [proof])}
+
+
+class _BuildRequestBody(BaseModel):
+    kind: Literal["change", "explain"]
+    text: str = Field(min_length=1, max_length=1000)
+
+
+class _BuildDecisionBody(BaseModel):
+    question_id: str | None = Field(default=None, max_length=16)
+    answer: str | None = Field(default=None, max_length=2000)
+    confirm_direction: bool = False
+    path: Literal["rapid", "guided"] | None = None
+
+
+def _active_session_for(user):
+    session = session_manager.active()
+    return session if session is not None and session.owner_email == user.email else None
+
+
+@app.get("/api/build")
+def get_build(principal: Principal = Depends(get_current_user)):
+    """The attendee's own "Your build" view (W4): goal, stage, next decision, preview, changes."""
+    from . import journey
+
+    user = user_manager.get(principal.name)
+    return journey.view(user, session=_active_session_for(user))
+
+
+def _build_project(user) -> Path:
+    from . import journey
+
+    project = journey.active_project(user)
+    if project is None:
+        raise HTTPException(status_code=409, detail="Start or choose a build first.")
+    return project
+
+
+@app.post("/api/build/request")
+def build_request(body: _BuildRequestBody, principal: Principal = Depends(get_current_user)):
+    """Queue a change or an explanation for the agent's next safe boundary; never types into the terminal."""
+    from . import journey
+
+    user = user_manager.get(principal.name)
+    try:
+        entry = journey.add_request(_build_project(user), body.kind, body.text)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    return {"request": entry, "delivery": "next_safe_boundary",
+            "detail": "Your agent picks this up at its next step. To interrupt it now, use Stop current step."}
+
+
+@app.post("/api/build/decide")
+def build_decide(body: _BuildDecisionBody, principal: Principal = Depends(get_current_user)):
+    """Resolve a pending decision into the same record a chat answer writes, once."""
+    from . import design_workflow, journey
+
+    user = user_manager.get(principal.name)
+    try:
+        record = journey.decide(_build_project(user), question_id=body.question_id, answer=body.answer,
+                                confirm_direction=body.confirm_direction, path=body.path)
+    except (ValueError, design_workflow.WorkflowError) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return {"revision": record["revision"], "phase": record["phase"]}
+
+
+@app.post("/api/build/stop")
+def build_stop(principal: Principal = Depends(get_current_user)):
+    """A real interrupt of the agent's current step, reported as exactly that."""
+    from . import journey
+
+    user = user_manager.get(principal.name)
+    return journey.stop(_active_session_for(user))
+
+
+@app.post("/api/export")
+def export_code(principal: Principal = Depends(get_current_user)):
+    """Export my code (WT-P6): the ZIP streams to the browser; the volume copy stays."""
+    from fastapi.responses import FileResponse
+
+    from . import journey
+
+    user = user_manager.get(principal.name)
+    try:
+        result = journey.export(user, reason="attendee")
+    except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired) as error:
+        raise HTTPException(status_code=503, detail=f"Export did not finish: {error}") from error
+    return FileResponse(result["local_zip"], media_type="application/zip", filename=result["filename"],
+                        headers={"X-Workshop-Export-Path": str(result.get("path") or ""),
+                                 "X-Workshop-Export-Files": str(result.get("files", ""))})
 
 
 @app.get("/api/wizard")

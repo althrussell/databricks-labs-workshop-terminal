@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "scenario_id": "follow-up-and-resume",
+  "entry": "chat",
+  "evaluated_path": "rapid",
+  "brief": "Yesterday we built a feeder flag form; add who flagged it and when.",
+  "attendee_facts": [
+    "The flag form already saves to Lakebase."
+  ],
+  "question": null,
+  "agent_assumption": null,
+  "customer_correction": null,
+  "why_this_path": "rapid prototyping is evaluated on well-specified work",
+  "consistency": [
+    "path selection is honoured",
+    "settled questions are not asked again",
+    "the same brief and stage survive an agent switch",
+    "unsupported capabilities are disclosed"
+  ]
+}

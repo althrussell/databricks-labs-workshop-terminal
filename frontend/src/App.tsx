@@ -43,6 +43,7 @@ import ToastHost from "./components/ToastHost";
 import TerminalView from "./components/TerminalView";
 import AgentSwitchDialog from "./components/AgentSwitchDialog";
 import ProjectBar from "./components/ProjectBar";
+import YourBuild from "./components/YourBuild";
 import ResponsiveNav from "./components/ResponsiveNav";
 import { goalChangePrompt, keepSavedCopies, recoverWithConfirmation } from "./projects";
 import { bindIdentityRefresh, onAppEvent } from "./events";
@@ -964,6 +965,8 @@ export default function App() {
           <fieldset className="work-area workshop-inputs" disabled={inputDisabled} aria-label="Workshop activities">
             <ProjectBar inventory={projectInventory} session={session} loading={!projectsLoaded} loadError={projectLoadError}
               onRefresh={refreshProjects} onSelect={selectBuild} />
+            <YourBuild refreshKey={[projectInventory?.active, session?.id, session?.exited]}
+              onGetHelp={() => setHelpChatOpen(true)} />
             {session && view === "agent" && (
               <div className="toolbar">
                 <LaunchBar agents={agents} launching={launching} onLaunch={requestAgent} />

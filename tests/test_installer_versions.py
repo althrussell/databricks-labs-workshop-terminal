@@ -1165,7 +1165,8 @@ def _lay_down_prewarmed_prefix(
     installed.mkdir(parents=True)
     (upstream / "SKILL.md").write_text("same")
     (installed / "SKILL.md").write_text("same")
-    for name in install.FORK_SKILLS:
+    # A prewarmed tree carries the fork skills and the provider payloads (W1).
+    for name in (*install.FORK_SKILLS, install.PROVIDER_PAYLOADS):
         source = Path(install._ASSETS_SKILLS) / name
         if source.is_dir():
             shutil.copytree(source, prefix / "skills" / name)

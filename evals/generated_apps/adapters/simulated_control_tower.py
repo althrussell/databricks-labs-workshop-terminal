@@ -125,7 +125,9 @@ def _reviewed_release(manifest: Mapping) -> tuple[dict, dict]:
     artifacts = manifest.get("artifacts")
     required = _ARTIFACTS - {"pi_npm_package"}
     ux_artifacts = {"impeccable_npm_launcher", "impeccable_engine_linux_x64", "impeccable_skill_bundle"}
-    allowed = _ARTIFACTS | {"agentbricks_lock", "apx_wheel_linux_x64", "bun_linux_x64"} | ux_artifacts
+    # The prepared browser (W3) is optional at boot but pinned like the rest.
+    allowed = (_ARTIFACTS | {"agentbricks_lock", "apx_wheel_linux_x64", "bun_linux_x64",
+                             "chrome_headless_shell_linux_x64"} | ux_artifacts)
     if not isinstance(artifacts, Mapping) or not required <= set(artifacts) <= allowed:
         raise ValueError("simulation requires the complete reviewed artifact manifest")
     if set(artifacts) & ux_artifacts and not ux_artifacts <= set(artifacts):

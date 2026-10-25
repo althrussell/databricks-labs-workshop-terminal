@@ -1,3 +1,4 @@
+import type { BuildView } from "./build";
 import { isWorkshopClosingDetail, notifyWorkshopClosing, type WorkshopStatus } from "./workshopLifecycle";
 
 export interface ShellLink {
@@ -21,12 +22,30 @@ export interface IdeaPrompt {
 
 export type Persona = "technical" | "business";
 
+export type WorkingApproach = "" | "co_build" | "learn" | "lead";
+export type ExplanationDetail = "" | "adaptive" | "brief" | "detailed";
+export type EngagementPath = "" | "rapid" | "guided";
+
 export interface AttendeeProfile {
   schema_version: 1;
   revision: number;
   help_preference: "" | "guided" | "concise" | "technical";
   source: string;
   legacy_persona: string;
+  /** How the attendee wants to work with their coding agent (W2); "" = not chosen. */
+  working_approach?: WorkingApproach;
+  explanation_detail?: ExplanationDetail;
+  /** Default start for a new idea; a project's recorded path wins. */
+  engagement_path?: EngagementPath;
+  choice_sources?: Record<string, string>;
+}
+
+export interface ProfileSave {
+  expected_revision: number;
+  help_preference?: AttendeeProfile["help_preference"];
+  working_approach?: WorkingApproach;
+  explanation_detail?: ExplanationDetail;
+  engagement_path?: EngagementPath;
 }
 
 export interface WizardIdea {
@@ -77,6 +96,8 @@ export interface WizardBrief {
   seen: boolean;
   skipped: boolean;
   completed_at: string;
+  /** How they chose to start this idea: rapid prototype, guided ideation, or unchosen. */
+  engagement_path?: EngagementPath;
 }
 
 export interface WizardState {
@@ -115,6 +136,7 @@ export interface WizardSave {
   persona?: string;
   skipped?: boolean;
   display_name?: string;
+  engagement_path?: EngagementPath;
 }
 
 export interface CredentialStatus {
@@ -409,6 +431,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  build: () => request<BuildView>("/api/build"),
+  buildRequest: (kind: "change" | "explain", text: string) =>
+    request<{ detail: string }>("/api/build/request", { method: "POST", body: JSON.stringify({ kind, text }) }),
+  buildDecide: (decision: { question_id?: string; answer?: string; confirm_direction?: boolean; path?: "rapid" | "guided" }) =>
+    request<{ revision: number }>("/api/build/decide", { method: "POST", body: JSON.stringify(decision) }),
+  buildStop: () => request<{ stopped: boolean; detail: string }>("/api/build/stop", { method: "POST" }),
+  /** Export my code: the ZIP downloads, and a verified copy stays in the workshop Volume. */
+  exportCode: async (): Promise<{ blob: Blob; filename: string; volumePath: string }> => {
+    const resp = await fetch("/api/export", { method: "POST" });
+    if (!resp.ok) {
+      let detail: unknown = resp.statusText;
+      try { detail = (await resp.json()).detail ?? detail; } catch { /* non-JSON error body */ }
+      throw new ApiError(resp.status, detail);
+    }
+    const disposition = resp.headers.get("Content-Disposition") ?? "";
+    const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? "workshop-code.zip";
+    return { blob: await resp.blob(), filename, volumePath: resp.headers.get("X-Workshop-Export-Path") ?? "" };
+  },
   retryAgentSetup: (agentId: string) =>
     request<{ retrying: boolean }>(`/api/agents/${encodeURIComponent(agentId)}/retry-setup`, { method: "POST" }),
   config: () => request<AppConfig>("/api/config"),
@@ -455,7 +495,7 @@ export const api = {
       body: JSON.stringify({ persona }),
     }),
   profile: () => request<AttendeeProfile>("/api/profile"),
-  saveProfile: (body: { expected_revision: number; help_preference: AttendeeProfile["help_preference"] }) =>
+  saveProfile: (body: ProfileSave) =>
     request<AttendeeProfile>("/api/profile", { method: "POST", body: JSON.stringify(body) }),
   wizard: (industry?: string, query?: string, signal?: AbortSignal) => {
     const params = new URLSearchParams();

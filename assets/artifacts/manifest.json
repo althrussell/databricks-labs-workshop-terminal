@@ -21,6 +21,11 @@
       "source": "https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-linux-x64.zip",
       "version": "1.4.4"
     },
+    "chrome_headless_shell_linux_x64": {
+      "sha256": "0d5acc62c3e213f8c87d3c298d66ffcf9a236d12ea4b9f85318bf85dbc279daa",
+      "source": "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.47/linux64/chrome-headless-shell-linux64.zip",
+      "version": "156.0.8078.47"
+    },
     "claude_binary": {
       "sha256": "b73676430af12f97316a798b8371f81d640f90a58bdcb8f3ce56a835bb47df56",
       "source": "https://downloads.claude.ai/claude-code-releases/2.1.310/linux-x64/claude",
@@ -44,11 +49,11 @@
       "version": "0.164.0"
     },
     "databricks_agent_skills": {
-      "commit": "ba45d10df7413de14c32937bbd584aeee17d22a2",
-      "content_sha256": "0ddf4467590698fd17b98ef7035ad4bee90e2a082a34467489e48c53da10d98a",
-      "effective_content_sha256": "904a3f8165b4c2a8a9c194d50948b790c892728f32e074d7dcde35279eaa3f2c",
+      "commit": "5c988a4d9b44b74bf3d638f31fc0447cf486e96b",
+      "content_sha256": "5436bdeb0e4c485192f3d2828c3a0a629a17e402b0c8243466eac2eb7cd9d8a2",
+      "effective_content_sha256": "9f7dc2dda15894655d863d75ce10712627b3d25082def0d652259acbc4e6e680",
       "source": "https://github.com/databricks/databricks-agent-skills.git",
-      "version": "v0.2.28"
+      "version": "v0.2.34"
     },
     "databricks_cli_archive_linux_x64": {
       "sha256": "2f24260441f211e75df4266fba506983cd2373c622cb34437d752befba8261af",
@@ -62,20 +67,22 @@
       "version": "1.22.1"
     },
     "impeccable_engine_linux_x64": {
-      "sha256": "3d31ec1a664ac35c815ea1d7c10abad1155ce364d0f461157eb837a34368efb6",
-      "source": "https://github.com/pbakaus/impeccable/releases/download/engine-v0.1.14/impeccable-linux-x64",
-      "version": "0.1.14"
+      "sha256": "a890a5b4b7d9d79ec54aa74612b5e924e5f5b422600a25fde8bcbda11b031787",
+      "source": "https://github.com/pbakaus/impeccable/releases/download/engine-v0.1.16/impeccable-linux-x64",
+      "version": "0.1.16"
     },
     "impeccable_npm_launcher": {
-      "sha256": "32cd058c6d57da9294335ea668228fd8aaef7f949149df60b422aa845be21b16",
-      "source": "https://registry.npmjs.org/impeccable/-/impeccable-4.1.0.tgz",
-      "version": "4.1.0"
+      "sha256": "6e0fecaf17a06dd96d4bc9951a640db4fc573c9629ff37f954af32cfc4f753c0",
+      "source": "https://registry.npmjs.org/impeccable/-/impeccable-4.7.0.tgz",
+      "version": "4.7.0"
     },
     "impeccable_skill_bundle": {
-      "content_sha256": "4ca760322bb282a22906fa3ff106896b9111dd0264fe1e82e76c0e7b931db950",
-      "sha256": "8b445a7529581a36626b328c3077e3d3dd7fbf247521e20ec8759ca939f77470",
-      "source": "https://github.com/pbakaus/impeccable/releases/download/skill-v4.5.2/universal.zip",
-      "version": "4.5.2"
+      "claude_agents_sha256": "92d899009287800546fd6420a05f9027ebb67ced1c883651ad37406edb1038dc",
+      "claude_content_sha256": "9a21fc3fc7dbab71aad5f9a30b4b35c0b37978c6dab90e5ce78727daa53c1359",
+      "content_sha256": "1dae73bf97e60e1dd75367a39d81895312ee9f3fc97dc448536a81c323898ea7",
+      "sha256": "358c8b6bbc2113e9910bf4adbdba4523612453ec58d56a5c1b14654416a13fe3",
+      "source": "https://github.com/pbakaus/impeccable/releases/download/skill-v4.7.0/universal.zip",
+      "version": "4.7.0"
     },
     "node_linux_arm64": {
       "sha256": "dbabf7a1cbf947e6059ffad2c27b80041db97dea1e553b62afdee7f13fca336e",

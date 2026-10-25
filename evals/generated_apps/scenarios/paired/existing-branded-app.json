@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "scenario_id": "existing-branded-app",
+  "entry": "chat",
+  "evaluated_path": "rapid",
+  "brief": "Add a complaints view to our existing care console. Keep our colours and layout.",
+  "attendee_facts": [
+    "The app already exists with its own brand."
+  ],
+  "question": null,
+  "agent_assumption": null,
+  "customer_correction": "Keep the existing navigation.",
+  "why_this_path": "rapid prototyping is evaluated on well-specified work",
+  "consistency": [
+    "path selection is honoured",
+    "settled questions are not asked again",
+    "the same brief and stage survive an agent switch",
+    "unsupported capabilities are disclosed"
+  ]
+}

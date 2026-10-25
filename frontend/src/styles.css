@@ -2304,3 +2304,20 @@ dialog.wizard {
   .wizard .wizard-head { gap: 16px; }
   .wizard .wizard-foot { flex-wrap: wrap; }
 }
+/* "Your build" (W4) */
+.your-build { flex-shrink: 0; border-bottom: 1px solid var(--border); background: var(--bg-raised); }
+.your-build-bar { display: flex; align-items: center; gap: 12px; padding: 6px 16px; flex-wrap: wrap; }
+.your-build-toggle { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.your-build-next { flex: 1; min-width: 12rem; color: var(--text-dim); overflow-wrap: anywhere; }
+.your-build-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.your-build .btn { display: inline-flex; align-items: center; gap: 6px; }
+.your-build-panel { padding: 8px 16px 14px; max-height: min(420px, 50vh); overflow-y: auto; line-height: 1.5; }
+.your-build-panel h3 { margin: 10px 0 4px; font-size: 14px; }
+.your-build-panel ul { margin: 0 0 8px; padding-left: 18px; }
+.your-build-decision { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0; max-width: 680px; }
+.your-build-decision label { font-weight: 600; width: 100%; }
+.your-build-decision input, .your-build-decision textarea { flex: 1; min-width: 14rem; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+.build-status { font-weight: 500; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--bg); border: 1px solid var(--border); }
+.build-status-ready_to_try { border-color: var(--brand-primary); }
+.build-status-blocked, .build-status-help_requested { border-color: var(--warning); color: var(--warning); }
+.your-build button:focus-visible, .your-build a:focus-visible, .your-build input:focus-visible, .your-build textarea:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 3px; }

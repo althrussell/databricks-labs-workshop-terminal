@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "reference": "conversational-workspace",
+  "status": "pending_owner_review",
+  "measured": {
+    "examples": [
+      "default",
+      "long-label",
+      "empty",
+      "loading",
+      "error"
+    ],
+    "buttons": 2,
+    "controls": 3,
+    "imports": [
+      "react"
+    ],
+    "problems": []
+  },
+  "contrast": [
+    {
+      "pair": [
+        "foreground",
+        "background"
+      ],
+      "ratio": 16.82,
+      "minimum": 4.5
+    },
+    {
+      "pair": [
+        "muted-foreground",
+        "background"
+      ],
+      "ratio": 7.19,
+      "minimum": 4.5
+    },
+    {
+      "pair": [
+        "muted-foreground",
+        "muted"
+      ],
+      "ratio": 6.51,
+      "minimum": 4.5
+    },
+    {
+      "pair": [
+        "primary-foreground",
+        "primary"
+      ],
+      "ratio": 16.82,
+      "minimum": 4.5
+    },
+    {
+      "pair": [
+        "destructive-foreground",
+        "destructive"
+      ],
+      "ratio": 6.54,
+      "minimum": 4.5
+    },
+    {
+      "pair": [
+        "success",
+        "background"
+      ],
+      "ratio": 6.29,
+      "minimum": 4.5
+    },
+    {
+      "pair": [
+        "destructive",
+        "background"
+      ],
+      "ratio": 6.54,
+      "minimum": 4.5
+    },
+    {
+      "pair": [
+        "border",
+        "background"
+      ],
+      "ratio": 3.52,
+      "minimum": 3.0
+    },
+    {
+      "pair": [
+        "ring",
+        "background"
+      ],
+      "ratio": 5.73,
+      "minimum": 3.0
+    },
+    {
+      "pair": [
+        "accent",
+        "background"
+      ],
+      "ratio": 3.62,
+      "minimum": 3.0
+    }
+  ],
+  "screenshots": [],
+  "how_to_capture": "In a live terminal: render each example in an APX app, then `workshop-browser inspect <url> --both` and add the screenshot paths and digests here. A person approves them by setting status to `approved` with their name; pixels alone never approve a design."
+}
