@@ -230,3 +230,13 @@ def test_the_helper_is_installed_with_the_other_workshop_tools():
     assert os.access(helper, os.X_OK)
     text = helper.read_text()
     assert "Open each screenshot with your image tool" in text and "VERIFICATION GAP" in text
+
+
+def test_only_the_official_chrome_for_testing_bucket_is_an_approved_publisher():
+    import dependency_sources
+
+    approved = "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.47/linux64/chrome-headless-shell-linux64.zip"
+    assert dependency_sources.public_url(approved, kind="artifact")
+    assert not dependency_sources.public_url("https://storage.googleapis.com/someone-else/chrome.zip", kind="artifact")
+    assert not dependency_sources.public_url("https://storage.googleapis.com/chrome-for-testing-public/x?alt=1",
+                                             kind="artifact")
