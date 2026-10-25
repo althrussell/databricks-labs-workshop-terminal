@@ -1236,17 +1236,43 @@ def list_projects(principal: Principal = Depends(get_current_user)):
         ensure_user_credentials(user)
         user_content.provision(user)
 
+    def accepting() -> bool:
+        # Restoring commits into the attendee's builds; once closeout begins the
+        # instance is read-only and a restore could only add work to seal.
+        try:
+            event_emitter._ensure_ready()
+            return attendee_status(event_emitter.journal)["accepting_input"]
+        except Exception:  # noqa: BLE001 — unknown lifecycle: do not restore
+            return False
+
     # A fresh container (after an Apps restart) brings saved builds back in the
     # background; this response never waits for it.
     restore = build_restore.restorer.observe(user, value, prepare=prepare,
-                                             busy=lambda: bool(session_manager.active()))
+                                             busy=lambda: bool(session_manager.active()),
+                                             accepting=accepting)
     if restore is not None:
         value["restore"] = restore
     return value
 
 
+@app.get("/api/projects/saved")
+def saved_projects(principal: Principal = Depends(get_current_user)):
+    """List saved Workspace copies. A read, so closeout never waits on it as a writer.
+
+    WT checks saved copies on its own when the build list is empty. As a POST
+    that check was an accepted writer, and a refusal (no credentials yet) left
+    a failed writer that blocked the seal.
+    """
+    return _saved_projects(principal)
+
+
 @app.post("/api/projects/saved")
 def list_saved_projects(principal: Principal = Depends(get_current_user)):
+    """The same list, for tabs loaded before the read existed."""
+    return _saved_projects(principal)
+
+
+def _saved_projects(principal: Principal):
     from . import projects
 
     user = user_manager.get(principal.name)

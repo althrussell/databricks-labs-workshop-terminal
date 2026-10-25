@@ -474,7 +474,8 @@ export const api = {
     request<{ agents: AgentInfo[]; credential: CredentialStatus }>("/api/agents"),
   sessions: () => request<SessionPayload>("/api/sessions"),
   projects: () => request<ProjectInventory>("/api/projects"),
-  savedProjects: () => request<ProjectInventory>("/api/projects/saved", { method: "POST" }),
+  // A read: closeout must never wait on, or fail because of, a saved-copy check.
+  savedProjects: () => request<ProjectInventory>("/api/projects/saved"),
   selectProject: (body: ProjectSelection) =>
     request<ProjectInventory>("/api/projects/select", { method: "POST", body: JSON.stringify(body) }),
   recoverProject: (name: string) =>

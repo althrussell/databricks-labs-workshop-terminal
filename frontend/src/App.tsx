@@ -314,16 +314,19 @@ export default function App() {
   // An empty list on first load may just mean saved copies have not been looked
   // at yet. Look once, quietly, instead of telling the attendee "No builds yet".
   useEffect(() => {
-    if (savedAutoCheck.current || !projectInventory || restoreInProgress(buildRestore)) return;
+    if (savedAutoCheck.current || !projectInventory || restoreInProgress(buildRestore) || workshopState !== "open") return;
     savedAutoCheck.current = true;
     if (projectInventory.active || projectInventory.projects.length) { setSavedChecked(true); return; }
     api.savedProjects()
       .then((value) => {
-        if (!projectMutation.current && !projectInventoryRef.current?.projects.length) acceptProjects(value);
+        // Unprompted, so only a well-formed list may replace what is shown.
+        if (Array.isArray(value?.projects) && !projectMutation.current && !projectInventoryRef.current?.projects.length) {
+          acceptProjects(value);
+        }
       })
       .catch(() => undefined)
       .finally(() => setSavedChecked(true));
-  }, [projectInventory, buildRestore, acceptProjects]);
+  }, [projectInventory, buildRestore, workshopState, acceptProjects]);
 
   const dismissRestore = useCallback(() => {
     const id = buildRestore?.id ?? "";

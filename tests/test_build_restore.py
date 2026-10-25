@@ -14,6 +14,8 @@ import pytest
 from server import build_restore, projects
 from server.users import User
 
+from .test_closeout_api import retained, seal  # noqa: F401 — closeout fixtures
+
 ALICE = {"X-Forwarded-Email": "alice@example.com"}
 
 
@@ -213,7 +215,8 @@ def test_the_build_list_carries_restore_status_without_waiting_for_it(client, mo
 
     seen = []
 
-    def observe(user, inventory, *, prepare, busy):
+    def observe(user, inventory, *, prepare, busy, accepting):
+        assert accepting() is True
         seen.append((user.email, inventory["projects"]))
         return {"id": "1.000", "state": "restoring", "restored": [], "failed": [], "active": "", "saved_at": None}
 
@@ -223,3 +226,39 @@ def test_the_build_list_carries_restore_status_without_waiting_for_it(client, mo
     assert response.status_code == 200
     assert response.json()["restore"]["state"] == "restoring"
     assert seen == [("alice@example.com", [])]
+
+
+def test_closeout_starts_no_restore_and_stops_one_in_progress(attendee, workspace, events):
+    saved, _, calls = workspace
+    saved["repair-desk"] = ({"app.py": "saved copy"}, 1_790_000_000_000)
+    saved["garden-plan"] = ({"app.py": "saved garden"}, 1_790_000_300_000)
+    spawned = []
+    closed = build_restore.BuildRestorer(spawn=lambda *args: spawned.append(args))
+    assert closed.observe(attendee, _empty(attendee), prepare=lambda: None, busy=lambda: False,
+                          accepting=lambda: False) is None
+    assert spawned == [] and calls == []
+
+    # Closeout begins after the first build: the rest is left for manual recovery.
+    answers = iter([True, True, True])
+    status = _restorer().observe(attendee, _empty(attendee), prepare=lambda: None, busy=lambda: False,
+                                 accepting=lambda: next(answers, False))
+    assert status["state"] == "partial"
+    assert status["restored"] == ["garden-plan"] and status["failed"] == ["repair-desk"]
+    assert not projects.project_path(attendee, "repair-desk").exists()
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])  # POST: tabs loaded before the read existed
+def test_a_failing_saved_builds_check_never_blocks_the_seal(client, as_admin, retained, monkeypatch, method):
+    """The automatic check runs on a fresh list, possibly while a capture closes."""
+    import server.main as main
+    from server.credentials import CredentialError
+
+    def unavailable(user):
+        raise CredentialError("No current credential")
+
+    monkeypatch.setattr(main, "ensure_user_credentials", unavailable)
+    response = client.request(method, "/api/projects/saved", headers=ALICE)
+    assert response.status_code == 503
+    assert retained.journal.read().get("closeout", {}).get("writer_outcomes", []) == []
+    sealed = seal(client, retained)
+    assert sealed["phase"] == "SEALED"

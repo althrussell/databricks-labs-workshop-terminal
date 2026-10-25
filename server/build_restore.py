@@ -70,22 +70,26 @@ class BuildRestorer:
         self._lock = threading.Lock()
 
     def observe(self, user, inventory: dict, *, prepare: Callable[[], None],
-                busy: Callable[[], bool]) -> dict | None:
+                busy: Callable[[], bool], accepting: Callable[[], bool] = lambda: True) -> dict | None:
         """Start a restore the first time this attendee is seen with no builds.
 
         ``inventory`` is the local one just computed for the request. Seen with
         builds, the attendee is remembered as not needing one, so a later empty
-        list (they deleted everything) never triggers a restore. Never raises.
+        list (they deleted everything) never triggers a restore. Nothing starts
+        once the workshop stops accepting input (closeout), and a running
+        restore stops at the next build. Never raises.
         """
         try:
             with self._lock:
                 if user.email not in self._records:
                     if inventory.get("projects") or inventory.get("active"):
                         self._records[user.email] = None
-                    else:
+                    elif accepting():
                         record = Restore(started_at=self._clock())
                         self._records[user.email] = record
-                        self._spawn(self._run, user, record, prepare, busy)
+                        self._spawn(self._run, user, record, prepare, busy, accepting)
+                    else:
+                        return None
                 record = self._records[user.email]
                 return record.public() if record is not None else None
         except Exception:  # noqa: BLE001 — a status line never fails the build list
@@ -104,9 +108,10 @@ class BuildRestorer:
                     return False
                 self._sleep(self._poll)
 
-    def _run(self, user, record: Restore, prepare: Callable[[], None], busy: Callable[[], bool]) -> None:
+    def _run(self, user, record: Restore, prepare: Callable[[], None], busy: Callable[[], bool],
+             accepting: Callable[[], bool]) -> None:
         try:
-            self._restore(user, record, prepare, busy)
+            self._restore(user, record, prepare, busy, accepting)
         except Exception:  # noqa: BLE001 — fall back to the manual flow
             logger.warning("build restore failed for %s", user.email, exc_info=True)
             record.state = ("partial" if record.restored else "failed") if record.state == "restoring" else "none"
@@ -115,8 +120,9 @@ class BuildRestorer:
             if record.state != "none":
                 _emit(user.email, record)
 
-    def _restore(self, user, record: Restore, prepare: Callable[[], None], busy: Callable[[], bool]) -> None:
-        if not self._ready(prepare):
+    def _restore(self, user, record: Restore, prepare: Callable[[], None], busy: Callable[[], bool],
+                 accepting: Callable[[], bool]) -> None:
+        if not self._ready(prepare) or not accepting():
             record.state = "none"
             return
         saved = projects.saved_inventory(user)
@@ -133,6 +139,9 @@ class BuildRestorer:
         missing.sort(key=lambda name: (times[name] or 0.0, name), reverse=True)
         record.state = "restoring"
         for name in missing:
+            if not accepting():
+                record.failed.append(name)
+                continue
             try:
                 projects.recover(user, name, activate=False)
                 record.restored.append(name)
