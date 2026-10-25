@@ -80,6 +80,8 @@ def new_record(attendee: str = "", project: str = "") -> dict:
         "phase": "understand", "path": {"value": None, "chosen_by": None, "source": None, "at": None},
         "facts": [], "assumptions": [], "questions": [], "direction": None,
         "success_criteria": [], "evidence": {}, "history": [], "requests": [],
+        # W6: the attendee's own account of the outcome, given at feedback.
+        "outcome": None,
     }
 
 
@@ -286,7 +288,7 @@ def next_step(record: dict) -> str:
     return {"choose_path": "state the interpretation and assumptions, then build",
             "agree": "build the agreed direction", "build": "deploy, then inspect the rendered app",
             "inspect": "exercise the primary action and record what you checked",
-            "improve": "show what changed and recheck", "feedback": "ask them to do their real task"}.get(
+            "improve": "show what changed and recheck", "feedback": "ask them to do their real task, then record their own account with `workshop-workflow outcome`"}.get(
         phase, "continue")
 
 
@@ -366,6 +368,17 @@ def apply(record: dict, args: argparse.Namespace) -> None:
         if request is None:
             raise WorkflowError(f"no request {args.id}")
         request.update(status="done", note=args.text, done_at=now())
+    elif command == "outcome":
+        # Their account, not the agent's guess: a deployed app whose owner is
+        # still confused does not pass, and only they (or a facilitator who
+        # watched them) can say whether it did.
+        if record["phase"] != "feedback":
+            raise WorkflowError("record the outcome at the feedback stage, after they have tried their real task")
+        record["outcome"] = {"goal_explained": args.goal, "decisions_shaped": args.decisions,
+                             "main_task": args.main_task, "second_change": args.second_change,
+                             "knows_next_step": args.next_step, "confidence": args.confidence,
+                             "by": args.by, "at": now(), "brief_revision": record["brief_revision"]}
+        record["history"].append({"at": now(), "event": "outcome", "by": args.by})
     elif command == "direction":
         if args.confirmed_by not in (None, "attendee"):
             raise WorkflowError("only the attendee confirms a direction")
@@ -437,6 +450,13 @@ def main(argv: list[str] | None = None) -> int:
     direction = sub.add_parser("direction")
     direction.add_argument("text")
     direction.add_argument("--confirmed-by", choices=("attendee",))
+    outcome = sub.add_parser("outcome", help="the attendee's own account at feedback (never the agent's)")
+    outcome.add_argument("--by", required=True, choices=("attendee", "facilitator"))
+    for flag, choices in (("--goal", ("yes", "partly", "no")), ("--decisions", ("yes", "partly", "no")),
+                          ("--main-task", ("yes", "partly", "no")), ("--second-change", ("made", "requested", "no")),
+                          ("--next-step", ("yes", "no"))):
+        outcome.add_argument(flag, required=True, choices=choices)
+    outcome.add_argument("--confidence", type=int, choices=range(1, 6), required=True)
     sub.add_parser("requests")
     done = sub.add_parser("done")
     done.add_argument("id")

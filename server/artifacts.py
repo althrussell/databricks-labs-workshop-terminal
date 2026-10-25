@@ -32,6 +32,7 @@ so anything on disk here may contain something they pasted.
 from __future__ import annotations
 
 import json
+import re
 import logging
 import os
 import stat
@@ -142,6 +143,12 @@ class Harvest:
     documents: list[tuple[str, str]] = field(default_factory=list)
     # Every attendee turn, including the continuations withheld from ``prompts``.
     prompt_count: int = 0
+    # W6 data collection: counts only, never arguments or output. Tool calls by
+    # normalised tool name, failed tool results by coarse reason, and every
+    # error occurrence (``errors`` keeps the distinct first lines).
+    tool_calls: dict[str, int] = field(default_factory=dict)
+    tool_errors: dict[str, int] = field(default_factory=dict)
+    error_count: int = 0
     redactions: int = 0
     # Assurance metadata only. Paths and exception messages stay local; a final
     # closeout must distinguish an empty session from material it could not read.
@@ -206,9 +213,68 @@ def _content_blocks(container) -> list[str]:
     return out
 
 
+_LEADING_TAG = re.compile(r"^\s*<([a-zA-Z_][\w-]*)\b[^>]*>.*?</\1>\s*", re.DOTALL)
+
+
+def _authored(text: str) -> str:
+    """The attendee's words, after any harness-injected ``<tag>…</tag>`` preamble.
+
+    Codex can deliver an environment or instructions block in the same text as
+    the prompt that follows it. Treating the whole text as synthetic because it
+    starts with ``<`` silently drops the prompt (test1025 seat 3's summary
+    stopped at three prompts while Codex kept working).
+    """
+    remainder = text
+    while True:
+        match = _LEADING_TAG.match(remainder)
+        if match is None:
+            return remainder.strip()
+        remainder = remainder[match.end():]
+
+
 def _is_synthetic(text: str) -> bool:
-    lowered = text.strip().lower()
+    lowered = _authored(text).lower()
     return not lowered or lowered.startswith(_SYNTHETIC_PREFIXES)
+
+
+def _codex_user_message(entry: dict) -> str | None:
+    """Codex's own record of what the attendee typed (``event_msg`` / ``user_message``)."""
+    payload = entry.get("payload")
+    if str(entry.get("type") or "") != "event_msg" or not isinstance(payload, dict):
+        return None
+    if str(payload.get("type") or "") != "user_message":
+        return None
+    message = payload.get("message")
+    return message if isinstance(message, str) else None
+
+
+# Coarse, content-free reasons for a failed tool result, checked in order.
+_ERROR_REASONS = (
+    ("permission_denied", ("permission denied", "forbidden", "403", "not authorized", "unauthorized", "401")),
+    ("not_found", ("not found", "no such file", "does not exist", "404")),
+    ("timeout", ("timed out", "timeout", "deadline exceeded")),
+    ("rate_limited", ("rate limit", "429", "too many requests")),
+    ("server_error", ("500", "502", "503", "504", "internal server error", "bad gateway")),
+    ("syntax_or_type", ("syntaxerror", "typeerror", "error ts", "type error", "parse error")),
+    ("command_failed", ("exit code", "exited with", "command failed", "non-zero")),
+)
+
+
+def error_reason(text: str) -> str:
+    lowered = text.lower()
+    for reason, needles in _ERROR_REASONS:
+        if any(needle in lowered for needle in needles):
+            return reason
+    return "other"
+
+
+def _tool_name(raw: str) -> str:
+    """A bounded tool label: MCP tools by server, everything else by name."""
+    name = raw.strip()
+    if name.startswith("mcp__"):
+        parts = name.split("__")
+        return f"mcp:{parts[1]}" if len(parts) > 1 and parts[1] else "mcp"
+    return name[:40] or "unknown"
 
 
 def _role_of(entry: dict) -> str:
@@ -339,7 +405,18 @@ def _transcript_files(home: str, harvest: Harvest | None = None) -> list[str]:
                     _issue(harvest, "transcript_read_failed")
                     continue
     found.sort(reverse=True)
-    return [path for _, path in found[:MAX_TRANSCRIPT_FILES]]
+    # Each harness's newest transcript is read first, so one harness's many
+    # small session files can never push another harness's live session out
+    # of the file or byte budget.
+    roots = (".claude", ".codex", ".omnigent")
+    newest = []
+    for root_name in roots:
+        prefix = os.path.join(home, root_name) + os.sep
+        first = next((path for _, path in found if path.startswith(prefix)), None)
+        if first is not None:
+            newest.append(first)
+    ordered = newest + [path for _, path in found if path not in newest]
+    return ordered[:MAX_TRANSCRIPT_FILES]
 
 
 def _scan_transcripts(home: str, harvest: Harvest) -> None:
@@ -347,6 +424,7 @@ def _scan_transcripts(home: str, harvest: Harvest) -> None:
     seen_errors: set[str] = set()
     seen_targets: set[str] = set()
     for path in _transcript_files(home, harvest):
+        seen_prompts: set[str] = set()
         if budget <= 0:
             break
         try:
@@ -367,19 +445,31 @@ def _scan_transcripts(home: str, harvest: Harvest) -> None:
                         _issue(harvest, "transcript_parse_failed")
                         continue
                     if isinstance(entry, dict):
-                        _absorb(entry, harvest, seen_errors, seen_targets)
+                        _absorb(entry, harvest, seen_errors, seen_targets, seen_prompts)
         except OSError as exc:
             logger.debug("transcript unreadable (%s): %s", path, exc)
             _issue(harvest, "transcript_read_failed")
 
 
 def _absorb(
-    entry: dict, harvest: Harvest, seen_errors: set[str], seen_targets: set[str]
+    entry: dict, harvest: Harvest, seen_errors: set[str], seen_targets: set[str],
+    seen_prompts: set[str] | None = None,
 ) -> None:
-    if _role_of(entry) == "user":
-        for text in _content_blocks(_body_of(entry)):
-            if _is_synthetic(text):
+    seen_prompts = seen_prompts if seen_prompts is not None else set()
+    codex_typed = _codex_user_message(entry)
+    texts = [codex_typed] if codex_typed is not None else (
+        _content_blocks(_body_of(entry)) if _role_of(entry) == "user" else [])
+    if texts:
+        for raw in texts:
+            if _is_synthetic(raw):
                 continue
+            text = _authored(raw)
+            # Codex writes each prompt twice: as a model-visible message and as
+            # its own ``user_message`` event. Count it once per session file.
+            key = " ".join(text.split())[:400].lower()
+            if key in seen_prompts:
+                continue
+            seen_prompts.add(key)
             harvest.prompt_count += 1
             cleaned, hits = _clean(text, MAX_PROMPT_CHARS)
             harvest.redactions += hits
@@ -394,6 +484,9 @@ def _absorb(
     # this harvest produces.
     for call in _tool_calls(entry):
         name = str(call.get("name") or "").strip()
+        label = _tool_name(name)
+        if len(harvest.tool_calls) < 64 or label in harvest.tool_calls:
+            harvest.tool_calls[label] = harvest.tool_calls.get(label, 0) + 1
         payload = _tool_input(call)
         if name.lower() in _PLAN_TOOLS:
             for text in _plan_text(name.lower(), payload):
@@ -416,6 +509,9 @@ def _absorb(
             break
 
     for text in _errors_from(entry):
+        harvest.error_count += 1
+        reason = error_reason(text)
+        harvest.tool_errors[reason] = harvest.tool_errors.get(reason, 0) + 1
         first, hits = _first_line(text, MAX_ERROR_CHARS)
         harvest.redactions += hits
         # Deduped on the first line: one broken credential produces the same
@@ -547,6 +643,19 @@ def _commit_subjects(home: str, harvest: Harvest) -> None:
             commits += 1
 
 
+def activity(home: str) -> dict:
+    """Counts-only agent activity from transcripts (W6), for stats and telemetry. Never raises."""
+    result = Harvest()
+    try:
+        _scan_transcripts(home, result)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("agent activity scan failed: %s", exc)
+        _issue(result, "transcript_read_failed")
+    return {"prompts": result.prompt_count, "tool_calls": dict(sorted(result.tool_calls.items())),
+            "tool_errors": dict(sorted(result.tool_errors.items())), "errors": result.error_count,
+            "issues": list(result.issues)}
+
+
 def harvest_user(user: User, *, single_attendee: bool = True) -> Harvest:
     """Collect one attendee's residue. Never raises.
 
@@ -569,6 +678,8 @@ def harvest_user(user: User, *, single_attendee: bool = True) -> Harvest:
 __all__ = [
     "Artifact",
     "Harvest",
+    "activity",
+    "error_reason",
     "MAX_DOCUMENTS",
     "MAX_PROMPTS",
     "harvest_user",

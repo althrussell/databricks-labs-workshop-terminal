@@ -485,6 +485,10 @@ def _harvest_open_stats(final: bool):
 
     users = user_manager.all()
     payload = stats.gather_all(users)
+    try:
+        stats.emit_activity(payload)
+    except Exception:  # noqa: BLE001 — telemetry never costs the harvest
+        logger.debug("agent activity telemetry failed", exc_info=True)
     payload["instance"] = {
         "phase": content_service.phase,
         "started_at": content_service.started_at,
@@ -906,6 +910,7 @@ def _journey(user) -> dict | None:
     try:
         signal = journey.journey(user)
         journey.emit_if_changed(user.email, signal)
+        journey.emit_outcome_if_changed(user)
         return signal
     except Exception:  # noqa: BLE001 — an unreadable record never breaks presence
         logger.debug("journey unavailable for %s", user.email, exc_info=True)

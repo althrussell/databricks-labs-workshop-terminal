@@ -42,16 +42,23 @@ _CODE_EXTENSIONS = {
 _MANAGED_DIRS = frozenset({
     ".agents", ".claude", ".codex", ".workshop", ".impeccable", ".databricks",
     "node_modules", "dist", "build", ".build", "__dist__", ".venv", "venv",
+    ".next", ".nuxt", ".turbo", ".parcel-cache", "out", "coverage", "target",
+    "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".cache",
 })
 _GENERATED_FILES = frozenset({
     "package-lock.json", "bun.lock", "bun.lockb", "yarn.lock", "pnpm-lock.yaml", "uv.lock", "poetry.lock",
+    "routeTree.gen.ts",
 })
+# Generated or minified output an agent wrote but nobody authored.
+_GENERATED_SUFFIXES = (".min.js", ".min.css", ".map", ".gen.ts", ".gen.tsx", ".generated.ts")
 
 
 def counted(rel: str) -> bool:
     """Whether a tracked path is attendee code for the lines-of-code count."""
     parts = rel.replace("\\", "/").split("/")
     if any(part in _MANAGED_DIRS for part in parts[:-1]) or parts[-1] in _GENERATED_FILES:
+        return False
+    if parts[-1].endswith(_GENERATED_SUFFIXES):
         return False
     return os.path.splitext(rel)[1].lower() in _CODE_EXTENSIONS
 
@@ -501,7 +508,10 @@ def gather_user(
             # older observations for confirmation of the live counter delta.
             checkpoint_unavailable = True
     now = time.time()
-    minutes = int((now - user.first_seen) / 60) if user.first_seen else 0
+    # This seat's own activity span: from the attendee's first visit to their
+    # latest activity. ``now - first_seen`` made every seat in a room report
+    # the same elapsed time (87 minutes for all three seats in test1025).
+    minutes = int(max(0.0, (user.last_seen or user.first_seen) - user.first_seen) / 60) if user.first_seen else 0
     agent_sessions = sum(
         n for agent, n in user.sessions_launched.items() if agent != "bash"
     )
@@ -510,6 +520,7 @@ def gather_user(
     saved = _saved_stats(user)
     code, code_observation = _code_observation(user, fresh=fresh, saved=saved)
     discovery_records = _discovery_count(user.email)
+    activity = agent_activity(user, fresh=fresh)
     observations_unavailable = checkpoint_unavailable or saved.get("unavailable") or discovery_records is None
     return {
         "email": user.email,
@@ -518,8 +529,12 @@ def gather_user(
         "terminal_sessions": sum(user.sessions_launched.values()),
         "topics": sorted(user.topics.keys()),
         "code": code,
-        # P1-14 error/abandonment telemetry.
-        "errors": user.errors,
+        # P1-14 error/abandonment telemetry: failed launches plus the agents'
+        # own failed tool results, which is where an attendee's errors happen
+        # (the launch counter alone was always 0 in test1025).
+        "errors": user.errors + int(activity.get("errors") or 0),
+        # W6: counts only (tool calls by tool, tool errors by coarse reason).
+        "agent_activity": {key: activity[key] for key in ("prompts", "tool_calls", "tool_errors") if key in activity},
         "idle_seconds": idle_seconds,
         # C6 behavioural rollup. Present regardless of WORKSHOP_INSIGHT_CAPTURE:
         # it is derived from counters already in this payload and carries no
@@ -532,6 +547,44 @@ def gather_user(
         "capture_observation": {"code": code_observation, "recovered": user._capture_recovered,
                                 "journal": "unavailable" if observations_unavailable else "ready"},
     }
+
+
+_ACTIVITY_TTL = 300
+_activity_cache: dict[str, tuple[float, dict]] = {}
+
+
+def agent_activity(user: User, *, fresh: bool = True) -> dict:
+    """Counts-only agent activity from the attendee's transcripts, cached like code stats."""
+    from . import artifacts
+
+    cached = _activity_cache.get(user.email)
+    now = time.monotonic()
+    if cached is not None and (not fresh or now - cached[0] < _ACTIVITY_TTL):
+        return cached[1]
+    result = artifacts.activity(user.home)
+    _activity_cache[user.email] = (now, result)
+    return result
+
+
+_activity_emitted: dict[str, str] = {}
+
+
+def emit_activity(payload: dict) -> int:
+    """A compact ``agent.activity`` event per attendee whose activity changed. Never raises."""
+    from . import telemetry
+
+    sent = 0
+    for row in payload.get("users") or []:
+        email, activity = row.get("email"), row.get("agent_activity")
+        if not email or not isinstance(activity, dict):
+            continue
+        fingerprint = _fingerprint(activity)
+        if _activity_emitted.get(email) == fingerprint:
+            continue
+        _activity_emitted[email] = fingerprint
+        telemetry.emit("agent.activity", email, {**activity, "errors": row.get("errors", 0)})
+        sent += 1
+    return sent
 
 
 def gather(user: User) -> dict:

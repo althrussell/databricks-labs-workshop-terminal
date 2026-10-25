@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "scenario_id": "precise-build-request",
+  "entry": "chat",
+  "evaluated_path": "rapid",
+  "brief": "Build a page listing open solar connection applications, oldest first, with days waiting and a filter by region.",
+  "attendee_facts": [
+    "Applications live in the workshop's energy demo data."
+  ],
+  "question": null,
+  "agent_assumption": null,
+  "customer_correction": null,
+  "why_this_path": "rapid prototyping is evaluated on well-specified work",
+  "consistency": [
+    "path selection is honoured",
+    "settled questions are not asked again",
+    "the same brief and stage survive an agent switch",
+    "unsupported capabilities are disclosed"
+  ]
+}

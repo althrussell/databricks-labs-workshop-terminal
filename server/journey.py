@@ -129,16 +129,52 @@ def journey(user) -> dict:
     return {key: current.get(key) for key in ("phase", "path", "status", "next_decision", "updated_at")}
 
 
+_phase_since: dict[str, tuple[str, float]] = {}
+_outcomes: dict[str, str] = {}
+
+
 def emit_if_changed(email: str, signal: dict) -> bool:
-    """A compact ``journey.status`` event when the seat's signal changes (for CT insight)."""
+    """A compact ``journey.status`` event when the seat's signal changes (for CT insight).
+
+    A phase change also emits ``journey.phase`` with the coarse time spent in
+    the previous phase, so an operator can see where a seat's time went
+    without anyone recording keystrokes.
+    """
     key = (signal.get("phase"), signal.get("path"), signal.get("status"))
     if _emitted.get(email) == key:
         return False
     _emitted[email] = key
     from . import telemetry
 
+    now = time.monotonic()
+    previous = _phase_since.get(email)
+    if previous is None or previous[0] != key[0]:
+        if previous is not None:
+            telemetry.emit("journey.phase", email, {"from": previous[0], "to": key[0], "path": key[1],
+                                                    "seconds": int(now - previous[1])})
+        _phase_since[email] = (str(key[0]), now)
     telemetry.emit("journey.status", email, {"phase": key[0], "path": key[1], "status": key[2],
                                               "outcome": "observed"})
+    return True
+
+
+def emit_outcome_if_changed(user) -> bool:
+    """``journey.outcome`` once per new attendee account of their outcome (W6 measures)."""
+    project = active_project(user)
+    if project is None:
+        return False
+    outcome = design_workflow.read(project).get("outcome")
+    if not isinstance(outcome, dict):
+        return False
+    stamp = f"{project.name}:{outcome.get('at')}"
+    if _outcomes.get(user.email) == stamp:
+        return False
+    _outcomes[user.email] = stamp
+    from . import telemetry
+
+    telemetry.emit("journey.outcome", user.email, {key: outcome.get(key) for key in (
+        "goal_explained", "decisions_shaped", "main_task", "second_change", "knows_next_step",
+        "confidence", "by")})
     return True
 
 
@@ -234,6 +270,8 @@ def has_projects(user) -> bool:
 def reset_for_tests() -> None:
     _exports.clear()
     _emitted.clear()
+    _phase_since.clear()
+    _outcomes.clear()
 
 
 __all__ = ["STATUSES", "add_request", "decide", "emit_if_changed", "export", "has_projects", "journey",

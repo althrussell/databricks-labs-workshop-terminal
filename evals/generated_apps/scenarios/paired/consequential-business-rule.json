@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "scenario_id": "consequential-business-rule",
+  "entry": "chat",
+  "evaluated_path": "guided",
+  "brief": "Help me decide which feeders need an upgrade review.",
+  "attendee_facts": [
+    "A feeder is reviewed when reduced export limits exceed a third of recent approvals."
+  ],
+  "question": {
+    "q": "Is that rule agreed with network planning?",
+    "a": "Yes, it is the published planning rule."
+  },
+  "agent_assumption": "It is a screening rule, not an engineering determination.",
+  "customer_correction": null,
+  "why_this_path": "guided ideation is evaluated on ambiguous problems",
+  "consistency": [
+    "path selection is honoured",
+    "settled questions are not asked again",
+    "the same brief and stage survive an agent switch",
+    "unsupported capabilities are disclosed"
+  ]
+}
