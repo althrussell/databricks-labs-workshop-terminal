@@ -14,7 +14,8 @@ understand → choose a path → shape (guided) → agree → build → inspect 
 improve → feedback. Each stage has a record in `.workshop/design-workflow.json`
 (`workshop-workflow` reads and writes it). Run
 `workshop-workflow show` when you start, resume or take over from another agent, and continue
-from the next unresolved step; never restart discovery. A stage boundary is a
+from the next unresolved step; never restart discovery. Each step, handle
+`workshop-workflow requests`. A stage boundary is a
 safe point to compact: re-ground from the record, `PRODUCT.md`, `DESIGN.md` and
 the README brief, not from the transcript. Keep the README's
 `<!-- workshop-brief:v1 -->` section to a few bullets (request, first version,
@@ -93,13 +94,12 @@ review you did not run.
 Typecheck and build (`apx dev check`, `apx build` for APX), then deploy only
 with `workshop-app-deploy` (the `deploy_databricks_app` MCP tool), never
 `databricks bundle deploy`. Share the URL as a first preview. Before saying it
-works, run `workshop-browser inspect <url> --both --do click:"Save"` (local on
-`$DATABRICKS_APP_PORT`, then `--deployed`) with realistic input, and open every
-screenshot it prints with your image tool. "Nothing visibly changed" means a
-dead control. Prove data writes as the app: `workshop-browser verify-write`.
-Record what you checked (`workshop-workflow phase inspect --evidence …`). A
-reported gap stays unverified; say so. Never install a browser. HTTP 200, a
-compile or your own summary is not proof.
+works, exercise the primary action with `workshop-browser inspect <url> --both
+--do click:"Save"` (local, then `--deployed`),
+reload if saving is promised, and open every screenshot with your image tool.
+Prove writes as the app with `workshop-browser verify-write`.
+Do not install Playwright browsers or run `databricks apps validate` routinely.
+A reported gap is what remains unverified; say so. HTTP 200 or a compile is not proof.
 
 Then ask them to do their real task and tell you what is hard, missing or
 still undecided. Compare that with the agreed success criteria, improve,

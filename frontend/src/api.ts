@@ -1,3 +1,4 @@
+import type { BuildView } from "./build";
 import { isWorkshopClosingDetail, notifyWorkshopClosing, type WorkshopStatus } from "./workshopLifecycle";
 
 export interface ShellLink {
@@ -430,6 +431,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  build: () => request<BuildView>("/api/build"),
+  buildRequest: (kind: "change" | "explain", text: string) =>
+    request<{ detail: string }>("/api/build/request", { method: "POST", body: JSON.stringify({ kind, text }) }),
+  buildDecide: (decision: { question_id?: string; answer?: string; confirm_direction?: boolean; path?: "rapid" | "guided" }) =>
+    request<{ revision: number }>("/api/build/decide", { method: "POST", body: JSON.stringify(decision) }),
+  buildStop: () => request<{ stopped: boolean; detail: string }>("/api/build/stop", { method: "POST" }),
+  /** Export my code: the ZIP downloads, and a verified copy stays in the workshop Volume. */
+  exportCode: async (): Promise<{ blob: Blob; filename: string; volumePath: string }> => {
+    const resp = await fetch("/api/export", { method: "POST" });
+    if (!resp.ok) {
+      let detail: unknown = resp.statusText;
+      try { detail = (await resp.json()).detail ?? detail; } catch { /* non-JSON error body */ }
+      throw new ApiError(resp.status, detail);
+    }
+    const disposition = resp.headers.get("Content-Disposition") ?? "";
+    const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? "workshop-code.zip";
+    return { blob: await resp.blob(), filename, volumePath: resp.headers.get("X-Workshop-Export-Path") ?? "" };
+  },
   retryAgentSetup: (agentId: string) =>
     request<{ retrying: boolean }>(`/api/agents/${encodeURIComponent(agentId)}/retry-setup`, { method: "POST" }),
   config: () => request<AppConfig>("/api/config"),

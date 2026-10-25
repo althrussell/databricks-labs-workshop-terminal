@@ -36,6 +36,7 @@ SUPPORTED_EVENTS = frozenset({
     "obo.health", "omnigent.host_health", "attendee.error_seen", "session.create_failed",
     "install.step_failed", "omnigent.error_detected", "app.error_detected", "selfheal.attempted",
     "identity.resolved", "workshop.signal", "discovery.record", "insight.summary", "attendee.identity",
+    "journey.status",
 })
 REQUIRED_CATEGORIES = ("workshop.signal", "insight.summary", "discovery.record",
                        "attendee.identity", "identity.resolved", "help")

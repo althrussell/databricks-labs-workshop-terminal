@@ -16,6 +16,8 @@ confirm a direction. An agent's own summary is never an approval.
     workshop-workflow direction "summary" [--confirmed-by attendee]
     workshop-workflow check [--json]
     workshop-workflow verification [--json]
+    workshop-workflow requests                  # changes/explanations the attendee asked for in the UI
+    workshop-workflow done <request-id> "what you did"
     workshop-workflow prefs [--approach co_build|learn|lead] [--detail adaptive|brief|detailed]
                             [--default-path rapid|guided]
 
@@ -77,7 +79,7 @@ def new_record(attendee: str = "", project: str = "") -> dict:
         "attendee": attendee, "project": project, "revision": 0, "brief_revision": 0,
         "phase": "understand", "path": {"value": None, "chosen_by": None, "source": None, "at": None},
         "facts": [], "assumptions": [], "questions": [], "direction": None,
-        "success_criteria": [], "evidence": {}, "history": [],
+        "success_criteria": [], "evidence": {}, "history": [], "requests": [],
     }
 
 
@@ -270,6 +272,9 @@ def check(record: dict, project: Path | None = None) -> list[str]:
 
 def next_step(record: dict) -> str:
     path, phase = record["path"].get("value"), record["phase"]
+    waiting = [r for r in record.get("requests", []) if r.get("status") == "open"]
+    if waiting:
+        return f"handle the attendee's {waiting[0]['kind']} request [{waiting[0]['id']}]: {waiting[0]['text']}"
     if not path:
         return "recommend a path and ask once: rapid prototype or guided ideation"
     if path == "guided" and phase in {"choose_path", "shape"}:
@@ -356,6 +361,11 @@ def apply(record: dict, args: argparse.Namespace) -> None:
             raise WorkflowError(f"no question {args.id}")
         question.update(answer=args.text, answered_by="attendee", answered_at=now())
         _brief_changed(record)
+    elif command == "done":
+        request = next((r for r in record.get("requests", []) if r["id"] == args.id), None)
+        if request is None:
+            raise WorkflowError(f"no request {args.id}")
+        request.update(status="done", note=args.text, done_at=now())
     elif command == "direction":
         if args.confirmed_by not in (None, "attendee"):
             raise WorkflowError("only the attendee confirms a direction")
@@ -427,6 +437,10 @@ def main(argv: list[str] | None = None) -> int:
     direction = sub.add_parser("direction")
     direction.add_argument("text")
     direction.add_argument("--confirmed-by", choices=("attendee",))
+    sub.add_parser("requests")
+    done = sub.add_parser("done")
+    done.add_argument("id")
+    done.add_argument("text")
     checker = sub.add_parser("check")
     checker.add_argument("--json", action="store_true")
     verify = sub.add_parser("verification")
@@ -444,6 +458,11 @@ def main(argv: list[str] | None = None) -> int:
         record = load(project)
         if args.command == "show":
             print(json.dumps(record, indent=2, sort_keys=True) if args.json else summary(record))
+            return 0
+        if args.command == "requests":
+            waiting = [r for r in record.get("requests", []) if r.get("status") == "open"]
+            print("\n".join(f"[{r['id']}] {r['kind']}: {r['text']}" for r in waiting)
+                  or "No open requests from the attendee.")
             return 0
         if args.command == "verification":
             state = verification(record, project)

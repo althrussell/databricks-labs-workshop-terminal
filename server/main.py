@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import subprocess
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -968,6 +969,95 @@ def browser_verify_write(body: _BrowserWriteBody, request: Request):
         entry = {**gap.as_dict(), "scope": "deployed", "app": body.app, "table": body.table}
         return {"ok": False, "gap": entry, "revision": browser_evidence.record(project, [entry])}
     return {"ok": proof["proven"], **proof, "revision": browser_evidence.record(project, [proof])}
+
+
+class _BuildRequestBody(BaseModel):
+    kind: Literal["change", "explain"]
+    text: str = Field(min_length=1, max_length=1000)
+
+
+class _BuildDecisionBody(BaseModel):
+    question_id: str | None = Field(default=None, max_length=16)
+    answer: str | None = Field(default=None, max_length=2000)
+    confirm_direction: bool = False
+    path: Literal["rapid", "guided"] | None = None
+
+
+def _active_session_for(user):
+    session = session_manager.active()
+    return session if session is not None and session.owner_email == user.email else None
+
+
+@app.get("/api/build")
+def get_build(principal: Principal = Depends(get_current_user)):
+    """The attendee's own "Your build" view (W4): goal, stage, next decision, preview, changes."""
+    from . import journey
+
+    user = user_manager.get(principal.name)
+    return journey.view(user, session=_active_session_for(user))
+
+
+def _build_project(user) -> Path:
+    from . import journey
+
+    project = journey.active_project(user)
+    if project is None:
+        raise HTTPException(status_code=409, detail="Start or choose a build first.")
+    return project
+
+
+@app.post("/api/build/request")
+def build_request(body: _BuildRequestBody, principal: Principal = Depends(get_current_user)):
+    """Queue a change or an explanation for the agent's next safe boundary; never types into the terminal."""
+    from . import journey
+
+    user = user_manager.get(principal.name)
+    try:
+        entry = journey.add_request(_build_project(user), body.kind, body.text)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    return {"request": entry, "delivery": "next_safe_boundary",
+            "detail": "Your agent picks this up at its next step. To interrupt it now, use Stop current step."}
+
+
+@app.post("/api/build/decide")
+def build_decide(body: _BuildDecisionBody, principal: Principal = Depends(get_current_user)):
+    """Resolve a pending decision into the same record a chat answer writes, once."""
+    from . import design_workflow, journey
+
+    user = user_manager.get(principal.name)
+    try:
+        record = journey.decide(_build_project(user), question_id=body.question_id, answer=body.answer,
+                                confirm_direction=body.confirm_direction, path=body.path)
+    except (ValueError, design_workflow.WorkflowError) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return {"revision": record["revision"], "phase": record["phase"]}
+
+
+@app.post("/api/build/stop")
+def build_stop(principal: Principal = Depends(get_current_user)):
+    """A real interrupt of the agent's current step, reported as exactly that."""
+    from . import journey
+
+    user = user_manager.get(principal.name)
+    return journey.stop(_active_session_for(user))
+
+
+@app.post("/api/export")
+def export_code(principal: Principal = Depends(get_current_user)):
+    """Export my code (WT-P6): the ZIP streams to the browser; the volume copy stays."""
+    from fastapi.responses import FileResponse
+
+    from . import journey
+
+    user = user_manager.get(principal.name)
+    try:
+        result = journey.export(user, reason="attendee")
+    except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired) as error:
+        raise HTTPException(status_code=503, detail=f"Export did not finish: {error}") from error
+    return FileResponse(result["local_zip"], media_type="application/zip", filename=result["filename"],
+                        headers={"X-Workshop-Export-Path": str(result.get("path") or ""),
+                                 "X-Workshop-Export-Files": str(result.get("files", ""))})
 
 
 @app.get("/api/wizard")

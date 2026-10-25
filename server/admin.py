@@ -872,6 +872,46 @@ def recover_attendee(body: RecoverBody):
     }
 
 
+class _AdminExportBody(BaseModel):
+    reason: str = Field(default="operator", max_length=64)
+
+
+@router.post("/export")
+def admin_export(body: _AdminExportBody | None = None):
+    """Export every attendee's code on this terminal (CT's wrap-up lane, T−15).
+
+    Idempotent within a few minutes: a repeat reuses the export just made. The
+    first successful export's volume path and size lead the response.
+    """
+    from . import journey
+
+    reason = (body.reason if body else "operator") or "operator"
+    exports, failed = [], []
+    for user in user_manager.all():
+        if not journey.has_projects(user):
+            continue
+        try:
+            result = journey.export(user, reason=reason, reuse=True)
+            exports.append({"email": user.email, "path": result.get("path"), "bytes": result.get("bytes", 0),
+                            "files": result.get("files"), "reused": result.get("reused", False)})
+        except Exception as error:  # noqa: BLE001 — one attendee's failure is reported, not raised
+            failed.append({"email": user.email, "error": str(error)[-300:]})
+    lead = exports[0] if exports else {}
+    return {"path": lead.get("path"), "bytes": lead.get("bytes", 0), "exports": exports, "failed": failed}
+
+
+def _journey(user) -> dict | None:
+    from . import journey
+
+    try:
+        signal = journey.journey(user)
+        journey.emit_if_changed(user.email, signal)
+        return signal
+    except Exception:  # noqa: BLE001 — an unreadable record never breaks presence
+        logger.debug("journey unavailable for %s", user.email, exc_info=True)
+        return None
+
+
 @router.get("/presence")
 def presence():
     now = time.time()
@@ -888,10 +928,16 @@ def presence():
                 "obo": obo.obo_manager.status(user.email),
                 "workspace_sync": user_content.workspace_sync_status(user),
                 "sessions": [s.to_dict() for s in sessions],
+                "journey": _journey(user),
             }
         )
+    ranked = sorted(users, key=lambda u: u["email"])
+    seat = next((u["journey"] for u in ranked if u["journey"] and u["journey"].get("phase")), None)
     return {
-        "users": sorted(users, key=lambda u: u["email"]),
+        "users": ranked,
+        # The seat's coarse signal (W4): needs_decision, ready_to_try, blocked,
+        # help_requested or working. Never prompts, keystrokes or reasoning.
+        "journey": seat,
         "session_count": session_manager.count_all(),
         "credential": credential_manager.status(),
         "entitlements": entitlement_manager.status(),
