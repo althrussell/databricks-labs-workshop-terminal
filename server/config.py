@@ -498,6 +498,20 @@ def lab_coach_enabled() -> bool:
     return _env("LAB_COACH", "true").lower() not in ("false", "0", "no", "off")
 
 
+CODEX_REASONING_EFFORTS = ("low", "medium", "high", "xhigh")
+
+
+def codex_reasoning_effort() -> str:
+    """Codex's ``model_reasoning_effort``, from Control Tower's CODEX_REASONING_EFFORT.
+
+    High by default (owner, 25 Oct 2026: Codex "need high thinking"). A value
+    this release does not know falls back to the default rather than writing a
+    config.toml Codex would reject, which would take every session down.
+    """
+    value = _env("CODEX_REASONING_EFFORT", "high").strip().lower()
+    return value if value in CODEX_REASONING_EFFORTS else "high"
+
+
 def auto_mode_enabled() -> bool:
     """Lab 'auto mode': agents run without permission prompts. Attendees work
     in isolated per-user HOMEs inside a disposable workshop container, so the

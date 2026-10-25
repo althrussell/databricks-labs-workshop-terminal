@@ -571,3 +571,39 @@ def test_supported_harnesses_are_never_offered_a_chat_only_model(fake_omnigent):
 
     assert shaped["codex"] == ["system.ai.gpt-5.6-luna"]
     assert shaped["claude-sdk"] == ["system.ai.claude-sonnet-5"]
+
+
+def test_a_superseded_arm_is_dropped_when_its_successor_is_on_the_menu(fake_omnigent):
+    """test1025: every Omnigent turn went to claude-opus-5 because Opus 5.5 was
+    not on the menu. With both offered the judge only sees the newer Opus."""
+    shaped = smart_routing.shape_judge_menu(
+        {
+            "claude-native": [
+                "system.ai.claude-opus-5",
+                "system.ai.claude-opus-5-5",
+                "system.ai.claude-sonnet-5",
+            ],
+            "codex-native": ["system.ai.gpt-5-6-sol", "system.ai.gpt-6-1-sol", "system.ai.gpt-5-6-luna"],
+        },
+        env={},
+    )
+
+    assert shaped["claude-native"] == ["system.ai.claude-sonnet-5", "system.ai.claude-opus-5-5"]
+    assert shaped["codex-native"] == ["system.ai.gpt-5-6-luna", "system.ai.gpt-6-1-sol"]
+
+
+def test_a_region_serving_only_the_older_arm_keeps_it(fake_omnigent):
+    shaped = smart_routing.shape_judge_menu(
+        {"claude-native": ["system.ai.claude-opus-5", "system.ai.claude-sonnet-5"]}, env={}
+    )
+
+    assert shaped == {"claude-native": ["system.ai.claude-sonnet-5", "system.ai.claude-opus-5"]}
+
+
+def test_the_current_generation_is_ranked_rather_than_unranked():
+    """An arm missing from the order sorts after every ranked one, which is how
+    Opus 5.5 lost to Opus 5. Each 5.5/6.1 arm is ranked within its tier."""
+    order = smart_routing._DEFAULT_MODEL_ORDER
+    for older, newer in smart_routing._SUPERSEDED.items():
+        assert older in order and newer in order
+        assert order.index(older) < order.index(newer)

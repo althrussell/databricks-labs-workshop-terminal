@@ -192,17 +192,24 @@ def _serves(
 # discovery kept calling it READY while it answered 501. It is gone rather than
 # demoted because a rung that exists in one region and not the next is exactly
 # the drift this chain is meant to absorb, and three rungs already do that.
+#
+# The 5.5 generation leads each Claude chain (owner, 25 Oct 2026: Claude on
+# Opus 5.5). It matters most for Haiku: test1025's pool denied haiku-4-5, so the
+# fast slot fell through to "the first approved Claude service", which is
+# alphabetical, and only happened to be haiku-5-5.
 _OPUS = (
+    "claude-opus-5-5",
     "claude-opus-5",
     "claude-opus-4-8",
     "claude-opus-4-6",
 )
 _SONNET = (
+    "claude-sonnet-5-5",
     "claude-sonnet-5",
     "claude-sonnet-4-6",
     "claude-sonnet-4-5",
 )
-_HAIKU = ("claude-haiku-4-5",)
+_HAIKU = ("claude-haiku-5-5", "claude-haiku-4-5")
 
 # Responses-API chains for Codex. The GPT-5.6 tiers are capability names that
 # OpenAI intends to keep across generations — Sol the flagship, Terra the
@@ -215,7 +222,10 @@ _HAIKU = ("claude-haiku-4-5",)
 # gpt-5-5 used to sit behind it and is gone with the legacy retirement — it was
 # both the most expensive rung ($5/$30) and the weakest of the three on coding,
 # so nothing is owed to it.
-_CODEX_STRONG = ("gpt-5-6-sol",)
+#
+# GPT-6.1 Sol leads the strong tier (owner, 25 Oct 2026: Codex on gpt-6-1-sol
+# with high reasoning); 5.6 Sol stays behind it for a region a release behind.
+_CODEX_STRONG = ("gpt-6-1-sol", "gpt-5-6-sol")
 _CODEX_BALANCED = ("gpt-5-6-terra",)
 _CODEX_CHEAP = ("gpt-5-6-luna",)
 _CODEX_TAIL = ("gpt-5-3-codex",)
@@ -341,10 +351,11 @@ class Profile:
     insight: tuple[str, ...]
 
 
-# ``balanced`` reproduces what the terminal shipped before this module existed,
-# so an unset WORKSHOP_MODEL_PROFILE changes nothing about a running event: a
-# Sonnet driver that falls through to Opus when no Sonnet is READY, Opus in
-# Claude's Opus slot, Haiku in its fast slot.
+# ``balanced`` is the default. Its driver is Opus first (owner, 25 Oct 2026:
+# "we default to avg models"), falling through to Sonnet where no Opus is
+# served; Opus in Claude's Opus slot, Haiku in its fast slot. Codex stays on the
+# balanced GPT tier unless the event pins CODEX_MODEL, which Control Tower's
+# fleet default does.
 #
 # ``economy`` is the one profile that takes something away, and does it where it
 # costs the most: Claude's Opus slot resolves to Sonnet, so an attendee typing
@@ -366,7 +377,7 @@ PROFILES: dict[str, Profile] = {
     ),
     "balanced": Profile(
         name="balanced",
-        driver=_SONNET + _OPUS,
+        driver=_OPUS + _SONNET,
         frontier=_OPUS,
         standard=_SONNET,
         fast=_HAIKU,

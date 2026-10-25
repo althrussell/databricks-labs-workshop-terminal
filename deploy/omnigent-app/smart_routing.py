@@ -127,14 +127,35 @@ def _app_bearer(workspace_client: Any) -> str:
 # bucket, where the only tiebreak is the model id. That can sort an expensive
 # model ahead of haiku, opus and sonnet by spelling alone, so a cheap prompt can
 # buy the flagship.
+#
+# Each family's current generation sits beside the one it replaces. test1025
+# (25 Oct 2026) routed every turn of an Omnigent seat to claude-opus-5, because
+# Opus 5.5 was not on this menu at all and so sorted as unranked; see
+# _SUPERSEDED for why the older rung is now also dropped when both are served.
 _DEFAULT_MODEL_ORDER = (
     "claude-haiku-4-5",
+    "claude-haiku-5-5",
     "gpt-5-6-luna",
     "claude-sonnet-5",
+    "claude-sonnet-5-5",
     "gpt-5-6-terra",
     "claude-opus-5",
+    "claude-opus-5-5",
     "gpt-5-6-sol",
+    "gpt-6-1-sol",
 )
+
+# Older arm -> the arm that replaces it. When a harness is offered both, the
+# older one is dropped, so the judge never spends a turn on the previous
+# generation of the same tier (Omnigent on Opus 5 looped where Claude Code on
+# Opus 5.5 did not, test1025). A region that serves only the older arm keeps
+# it: the entry applies only when its successor is on the same menu.
+_SUPERSEDED = {
+    "claude-haiku-4-5": "claude-haiku-5-5",
+    "claude-sonnet-5": "claude-sonnet-5-5",
+    "claude-opus-5": "claude-opus-5-5",
+    "gpt-5-6-sol": "gpt-6-1-sol",
+}
 
 # Never routable, whatever the prompt.
 #
@@ -271,6 +292,8 @@ def shape_judge_menu(
             and _bare_model_id(model) not in chat_only
             and not (harness_bars_model and harness_bars_model(harness, model))
         ]
+        offered = {_bare_model_id(model) for model in kept}
+        kept = [model for model in kept if _SUPERSEDED.get(_bare_model_id(model)) not in offered]
         if kept:
             shaped[harness] = sorted(kept, key=rank)
 

@@ -316,9 +316,9 @@ def test_configure_all_discovers_endpoints_once_for_all_three_configs(
     assert user.cli_ready >= {"claude", "codex", "omnigent"}
 
 
-def test_default_claude_model_is_sonnet_5(user, monkeypatch):
-    """With models available and no ANTHROPIC_MODEL pin, the default Claude
-    model is Sonnet 5 (not Opus)."""
+def test_default_claude_model_is_the_claude_driver(user, monkeypatch):
+    """With no ANTHROPIC_MODEL pin Omnigent's Claude default is Claude Code's
+    driver, which is Opus first: here the newest Opus the workspace serves."""
     monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
     monkeypatch.setattr(cli_config, "gateway_host", lambda: "")
     monkeypatch.setattr(
@@ -331,8 +331,8 @@ def test_default_claude_model_is_sonnet_5(user, monkeypatch):
     cli_config.configure_omnigent(user, "tok-1")
     with open(_config_path(user)) as f:
         text = f.read()
-    assert "default: system.ai.claude-sonnet-5" in text
-    assert "default: system.ai.claude-opus-4-8" not in text
+    assert "default: system.ai.claude-opus-4-8" in text
+    assert "default: system.ai.claude-sonnet-5" not in text
 
 
 def test_runner_idle_timeout_written(user, monkeypatch):

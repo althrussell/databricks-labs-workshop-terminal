@@ -66,22 +66,41 @@ def test_profile_names_are_matched_case_insensitively(monkeypatch):
 
 # -- the roles the balanced profile fills, which is what deployments run today --
 
-def test_the_everyday_driver_is_sonnet_before_opus():
-    """Sonnet 5 is $2/$10 per million against Opus's $5/$25 and is the right
-    everyday driver; an event that wants Opus by default says so with a profile
-    or a pin. Opus stays on the tail so a region with no Sonnet still works."""
+def test_the_everyday_driver_is_opus_5_5_before_sonnet():
+    """Owner, 25 Oct 2026: Claude on Opus 5.5 ("we default to avg models").
+    Sonnet stays on the tail, so a region with no Opus still works; an event
+    that wants Sonnet by default says so with the economy profile or a pin."""
     driver = models.chain("driver")
-    assert driver[0] == "claude-sonnet-5"
-    assert "claude-opus-5" in driver
-    assert driver.index("claude-sonnet-5") < driver.index(
-        "claude-opus-5"
-    )
+    assert driver[0] == "claude-opus-5-5"
+    assert "claude-sonnet-5" in driver
+    assert driver.index("claude-opus-5") < driver.index("claude-sonnet-5")
 
 
-def test_the_frontier_slot_leads_with_opus_5():
-    """The reason this module exists: the Opus chain had not learned that Opus 5
-    shipped, so /model opus resolved to a superseded endpoint."""
-    assert models.chain("frontier")[0] == "claude-opus-5"
+def test_the_frontier_slot_leads_with_opus_5_5():
+    """The reason this module exists: the Opus chain had not learned that a new
+    Opus shipped, so /model opus resolved to a superseded endpoint."""
+    assert models.chain("frontier")[:2] == ("claude-opus-5-5", "claude-opus-5")
+
+
+def test_the_fast_slot_leads_with_haiku_5_5():
+    """test1025's pool denied haiku-4-5. With no 5.5 rung the fast slot fell to
+    the alphabetically first approved Claude service, which was luck."""
+    assert models.chain("fast")[0] == "claude-haiku-5-5"
+
+
+def test_the_strong_codex_tier_leads_with_gpt_6_1_sol(monkeypatch):
+    monkeypatch.setenv("WORKSHOP_MODEL_PROFILE", "frontier")
+    assert models.chain("codex")[:2] == ("gpt-6-1-sol", "gpt-5-6-sol")
+
+
+def test_control_towers_pins_lead_their_chains(monkeypatch):
+    """CT's fleet default pins Opus 5.5 and GPT-6.1 Sol; each leads its chain
+    rather than replacing it, in the qualified spelling CT sends."""
+    monkeypatch.setenv("ANTHROPIC_MODEL", "system.ai.claude-opus-5-5")
+    monkeypatch.setenv("CODEX_MODEL", "system.ai.gpt-6-1-sol")
+    assert models.chain("driver")[0] == "claude-opus-5-5"
+    assert models.chain("codex")[0] == "gpt-6-1-sol"
+    assert models.resolve("codex", {"gpt-6-1-sol": frozenset({models.OPENAI_RESPONSES})}) == "system.ai.gpt-6-1-sol"
 
 
 def test_fable_is_not_the_frontier_default():
@@ -167,7 +186,7 @@ def test_roles_without_a_pin_ignore_a_same_named_variable(monkeypatch):
     profile is the only way to move them."""
     monkeypatch.setenv("frontier", "claude-fable-5")
     monkeypatch.setenv("ANTHROPIC_MODEL", "claude-sonnet-5")
-    assert models.chain("frontier")[0] == "claude-opus-5"
+    assert models.chain("frontier")[0] == "claude-opus-5-5"
 
 
 # -- resolution against what a workspace actually serves --
@@ -182,7 +201,7 @@ def test_resolution_walks_past_what_the_workspace_does_not_serve():
 def test_empty_discovery_returns_the_chain_head_unverified():
     """Empty means the API call failed, not that the workspace serves nothing.
     Writing a config with the newest model we know of beats writing none."""
-    assert models.resolve("frontier", set()) == "system.ai.claude-opus-5"
+    assert models.resolve("frontier", set()) == "system.ai.claude-opus-5-5"
 
 
 def test_resolution_prefers_the_earliest_served_candidate():
@@ -354,7 +373,7 @@ def test_economy_puts_a_ceiling_on_the_opus_slot(monkeypatch):
     """The lever a large free event needs: an attendee typing /model opus gets
     Sonnet, at a fifth of Opus's output price. A real ceiling, not advice."""
     monkeypatch.setenv("WORKSHOP_MODEL_PROFILE", "economy")
-    assert models.chain("frontier")[0] == "claude-sonnet-5"
+    assert models.chain("frontier")[0] == "claude-sonnet-5-5"
     assert not any("opus" in c for c in models.chain("frontier"))
     assert not any("opus" in c for c in models.chain("driver"))
 
@@ -372,8 +391,8 @@ def test_economy_moves_the_summariser_to_the_cheapest_thing_that_works(monkeypat
 
 def test_frontier_promotes_the_everyday_driver(monkeypatch):
     monkeypatch.setenv("WORKSHOP_MODEL_PROFILE", "frontier")
-    assert models.chain("driver")[0] == "claude-opus-5"
-    assert models.chain("codex")[0] == "gpt-5-6-sol"
+    assert models.chain("driver")[0] == "claude-opus-5-5"
+    assert models.chain("codex")[0] == "gpt-6-1-sol"
 
 
 def test_every_profile_still_degrades_across_at_least_two_generations():

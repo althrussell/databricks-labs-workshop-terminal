@@ -28,7 +28,7 @@ jobs:
           python-version: "3.11"
       - uses: astral-sh/setup-uv@v6
         with:
-          version: "0.13.0"
+          version: "0.13.5"
       - name: Validate sources before project dependency resolution
         run: python scripts/check_dependency_sources.py
 
@@ -46,12 +46,12 @@ jobs:
           python-version: "3.11"
       - uses: actions/setup-node@v4
         with:
-          node-version: "24.21.0"
+          node-version: "24.22.1"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - uses: astral-sh/setup-uv@v6
         with:
-          version: "0.13.0"
+          version: "0.13.5"
       - name: Verify immutable tag checkout
         run: test "$(git rev-list -n 1 "${GITHUB_REF_NAME}")" = "${GITHUB_SHA}"
       - name: Validate uv lock and source-deployment exports

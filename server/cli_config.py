@@ -150,6 +150,14 @@ def beta_negotiation_env(gateway_backed: bool) -> dict:
     window. Omnigent 0.15.0 launches its own Claude terminals with
     ``CLAUDE_CODE_USE_GATEWAY=1`` for this reason, and re-adds the disable flag
     whenever it does not see that variable.
+
+    Negotiating is visible in the gateway's usage table: the first request of
+    a Claude session answers HTTP 400 and the retry a second or two later, on
+    the same model, answers 200 (test1025: one or two per session start, on
+    the main model and on Haiku). That is the negotiation, not a fault. The
+    gateway records no reason for the 400, so which beta it refuses cannot be
+    pinned from here; disabling the betas would stop the 400s at the cost of
+    MCP tool search, which is the worse trade.
     """
     if gateway_backed:
         return {"CLAUDE_CODE_USE_GATEWAY": "1"}
@@ -395,6 +403,20 @@ def configure_claude(
     allowed = permissions.setdefault("allow", [])
     if deploy_permission not in allowed:
         allowed.append(deploy_permission)
+    # Omnigent hands every agent its embedded-browser tools, but they only work
+    # with the Omnigent desktop app as their renderer. In the Workshop Terminal
+    # there never is one, so each call answers "no browser renderer is
+    # connected" and the agent loops on it (test1025, seat 1). Omnigent runs
+    # Claude with user settings, so a deny here removes them; agents verify an
+    # app over HTTP instead. Deny rules hold in bypassPermissions mode too.
+    denied = permissions.setdefault("deny", [])
+    for tool in OMNIGENT_RENDERER_TOOLS:
+        if config.omnigent_offered() and tool not in denied:
+            denied.append(tool)
+        elif not config.omnigent_offered() and tool in denied:
+            denied.remove(tool)
+    if not denied:
+        permissions.pop("deny", None)
     if config.auto_mode_enabled():
         permissions["defaultMode"] = "bypassPermissions"
         # One-time "are you sure?" prompt is honored from user-scope settings.
@@ -415,6 +437,13 @@ def configure_claude(
         claude_json["hasSeenAutoDefaultNudge"] = True
     _write_json(claude_json_path, claude_json)
 
+
+#: Omnigent 0.15's embedded-browser tools, as Claude sees them through
+#: Omnigent's MCP server. They need the Omnigent desktop app as a renderer.
+OMNIGENT_RENDERER_TOOLS = tuple(
+    f"mcp__omnigent__browser_{action}"
+    for action in ("navigate", "snapshot", "click", "type", "screenshot")
+)
 
 # The `[model_providers.X]` id in ~/.codex/config.toml. Omnigent's config
 # points at this table by id, so the two files have to agree on the name.
@@ -518,6 +547,7 @@ def configure_codex(
     config_toml = (
         "# Databricks Model Serving configuration (generated — do not edit)\n"
         f'model = "{model}"\n'
+        f'model_reasoning_effort = "{config.codex_reasoning_effort()}"\n'
         f'model_provider = "{_CODEX_MODEL_PROVIDER}"\n'
         'web_search = "disabled"\n'
         f"{auto_mode}"
