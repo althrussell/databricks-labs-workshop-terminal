@@ -130,6 +130,20 @@ def test_memory_distinguishes_preview_from_verified_task(client, monkeypatch):
         assert "what remains unverified" in text
 
 
+def test_every_agent_gets_impeccables_setup_in_order_on_both_paths(client, monkeypatch):
+    """Live run 2: Claude read "rapid" as licence to skip Impeccable's setup and
+    built a plain table; Codex loaded the craft floor. The order is explicit so
+    every harness does the same design work before UI code."""
+    home = _provisioned_home(client, monkeypatch)
+    for parts in _MEMORY_CHANNELS:
+        text = " ".join(open(os.path.join(home, *parts)).read().split())
+        assert "Rapid means no interview, not fewer design steps" in text
+        order = [text.index(step) for step in ("impeccable context", "reference/new-work.md",
+                                                "reference/craft-floor.md", "$WORKSHOP_DESIGN_REFERENCES",
+                                                "run `detect` once")]
+        assert order == sorted(order)
+
+
 def test_no_memory_channel_puts_playwright_on_the_critical_path(client, monkeypatch):
     """Agents follow the written gate literally — the Space Invaders run put
     "update smoke test selectors" and "run validate + design gate" on its todo

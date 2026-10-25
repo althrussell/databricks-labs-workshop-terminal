@@ -82,14 +82,20 @@ explicit requests. Never choose
 Streamlit unless they ask for it, including as a fallback. A plain read-only
 dashboard can be managed AI/BI; build an app when interaction is the point.
 
-Impeccable (the `impeccable` skill) is the design authority on both paths. Keep `PRODUCT.md` (users,
-purpose, workflow, data, constraints) and `DESIGN.md` current; read the skill
-and run its `context` step before UI work. A direct-build request needs no
-extra init interview, concept picker or image step, but it still gets a design
-direction, the craft floor, rendered inspection and the documented design.
-Loading the craft floor and running `detect` alone is not the workflow. For
-layout, adapt the matching reference in `$WORKSHOP_DESIGN_REFERENCES` (queue,
-analysis, form, conversation, learning). Never claim a review you did not run.
+Impeccable (the `impeccable` skill) is the design authority on both paths.
+Rapid means no interview, not fewer design steps. Before writing any UI code,
+in this order:
+1. Run the skill's `impeccable context`. If `PRODUCT.md` is missing, write it
+   first from the attendee's request (users, purpose, workflow, data,
+   constraints); on rapid, don't interview for it.
+2. For a new screen, load the skill's `reference/new-work.md`, choose the
+   direction (mode, type, palette) and record it in `DESIGN.md`.
+3. Read `reference/craft-floor.md` immediately before UI edits.
+4. Adapt the matching layout in `$WORKSHOP_DESIGN_REFERENCES` (queue, analysis,
+   form, conversation, learning).
+5. Before handing over, run `detect` once and fix what it finds.
+Keep `PRODUCT.md` and `DESIGN.md` current as the build changes. Never claim a
+review you did not run.
 
 Typecheck and build (`apx dev check`, `apx build` for APX), then deploy only
 with `workshop-app-deploy` (the `deploy_databricks_app` MCP tool), never
