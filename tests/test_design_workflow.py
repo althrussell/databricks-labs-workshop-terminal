@@ -48,26 +48,20 @@ def test_a_new_project_asks_for_a_path_and_an_agent_cannot_choose_it(project):
     assert not (project / design_workflow.RECORD).exists()
 
 
-def test_rapid_builds_without_an_interview_but_not_without_evidence(project):
+def test_rapid_builds_without_an_interview_and_looking_at_the_page_is_optional(project):
     assert run(project, "path", "rapid", "--by", "attendee", "--source", "chat").returncode == 0
     assert run(project, "phase", "build").returncode == 0  # no shaping round for rapid
     blocked = run(project, "phase", "inspect")
     assert blocked.returncode == 2 and "build evidence" in blocked.stderr
     assert run(project, "phase", "inspect", "--evidence", "preview=https://app.example").returncode == 0
-    blocked = run(project, "phase", "feedback")
-    assert blocked.returncode == 2 and "record what you inspected" in blocked.stderr
-    # A note alone is not evidence that anything was seen (W3).
-    noted = run(project, "phase", "feedback", "--evidence", "checked=primary action, reload, phone width")
-    assert noted.returncode == 2 and "real screenshots" in noted.stderr
-    assert run(project, "phase", "feedback", "--evidence", "checked=primary action, reload, phone width",
-               "--evidence", "gap=no browser on this terminal").returncode == 0
+    # No screenshot ritual: the attendee can always check the app themselves.
+    assert run(project, "phase", "feedback", "--evidence", "checked=primary action and reload").returncode == 0
     assert run(project, "check").returncode == 0
     saved = record(project)
     assert saved["path"] == {**saved["path"], "value": "rapid", "chosen_by": "attendee", "source": "chat"}
     assert saved["evidence"]["build"]["preview"] == "https://app.example"
     assert saved["evidence"]["inspect"]["checked"].startswith("primary action")
-    assert saved["evidence"]["inspect"]["gaps"][0]["detail"] == "no browser on this terminal"
-    assert '"state": "unverified"' in run(project, "verification", "--json").stdout
+    assert '"state": "none"' in run(project, "verification", "--json").stdout
 
 
 def test_guided_ideation_waits_for_a_confirmed_direction(project):
@@ -141,8 +135,9 @@ def test_the_validator_flags_untrustworthy_claims():
     problems = " | ".join(design_workflow.check(record))
     for expected in ("not chosen by the attendee", "guided build without an attendee-confirmed direction",
                      "only be confirmed by the attendee", "marked answered without the attendee",
-                     "no recorded inspection", "no recorded build or preview"):
+                     "no recorded build or preview"):
         assert expected in problems
+    assert "inspection" not in problems  # looking at the page is optional
 
 
 def test_the_helper_is_installed_and_named_in_every_channel(client, monkeypatch):

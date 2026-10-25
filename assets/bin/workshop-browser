@@ -10,14 +10,9 @@ describe the page: a file name is not proof that you saw it.
     workshop-browser inspect http://localhost:$DATABRICKS_APP_PORT [--phone|--both]
                      [--do click:"Log an outage"] [--do fill:'#title=Fallen line'] [--do press:Enter]
     workshop-browser inspect https://<your-app>.databricksapps.com --deployed [--do ...]
-    workshop-browser verify-write --app <app-name> --table <catalog.schema.table>
 
 Local checks the render on this terminal. --deployed opens your Databricks App
-signed in as the attendee. verify-write proves the deployed app itself wrote a
-Unity Catalog table (query history shows the app's service principal). It
-cannot see Lakebase Postgres writes, which never reach query history: for those
-it reports a gap. Then write through the deployed app (inspect --deployed --do),
-read the row back, and tell the attendee the app-identity check is unverified.
+signed in as the attendee. Use it when seeing the page helps; it is optional.
 
 Exit status: 0 observed, 3 a verification gap (say it is unverified), 1 error.
 """
@@ -82,10 +77,6 @@ def main(argv: list[str] | None = None) -> int:
     size.add_argument("--phone", action="store_true")
     size.add_argument("--both", action="store_true")
     inspect.add_argument("--do", action="append", default=[], metavar="ACTION")
-    write = sub.add_parser("verify-write")
-    write.add_argument("--app", required=True)
-    write.add_argument("--table", required=True)
-    write.add_argument("--since", type=int, default=30, help="minutes of history to read")
     args = parser.parse_args(argv)
 
     if args.command == "status":
@@ -115,18 +106,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"The page answered HTTP {result['document_status']}.")
         print("Open each screenshot with your image tool now and describe what you actually see.")
         return 0
-    result = _call("/api/browser/verify-write", {"app": args.app, "table": args.table,
-                                                 "since_minutes": args.since, "project": _project()}, 120)
-    if result.get("gap"):
-        return _gap(result)
-    if result.get("proven"):
-        kinds = ", ".join(sorted({s["statement_type"] for s in result.get("statements", [])}))
-        print(f"Proven: the app ({result.get('principal')}) ran {kinds} on {args.table} in the last {args.since} min.")
-        return 0
-    print(f"NOT PROVEN: no write to {args.table} by the app ({result.get('principal')}) in the last {args.since} min. "
-          "Use the app's own form to write, then run this again.")
-    return 3
-
+    return 2
 
 if __name__ == "__main__":
     raise SystemExit(main())

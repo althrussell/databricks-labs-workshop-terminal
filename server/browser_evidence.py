@@ -12,12 +12,11 @@ dump or OCR text is never treated as proof that the model saw the page.
 Local and deployed verification are separate. ``local`` renders a dev server on
 this machine. ``deployed`` opens the attendee's Databricks App signed in as the
 attendee (their own OBO token, sent only to the app's origin). Operator
-credentials are never used. A write path is proven only when query history
-shows the *app's* service principal ran the statement: seat 1 in test1025 could
-only show that the agent itself had written the table.
+credentials are never used. Inspection is optional: the agent uses it when
+seeing the page helps, and the attendee can always check the app themselves.
 
-Anything missing (no browser, sign-in blocked, history not visible) becomes an
-explicit verification gap, never a pass.
+Anything missing (no browser, sign-in blocked) becomes an explicit gap, never a
+pass.
 """
 from __future__ import annotations
 
@@ -37,7 +36,7 @@ import tempfile
 import threading
 import time
 from typing import Any
-from urllib.parse import quote, urlsplit
+from urllib.parse import urlsplit
 
 from . import config
 from .bootstrap import browser_runtime
@@ -470,93 +469,6 @@ def _capture(devtools: _DevTools, session: str, out: Path, request: InspectReque
     }
 
 
-# ---------------------------------------------------------------------------
-# Deployed writes, proven as the app's own identity
-# ---------------------------------------------------------------------------
-
-_WRITE = re.compile(r"\b(insert|update|merge|delete)\b", re.I)
-# Unity Catalog formats whose rows live in Lakebase Postgres. An app writes them
-# over the Postgres wire protocol, which SQL query history never records.
-_POSTGRES_FORMATS = {"POSTGRESQL_FORMAT", "DATABRICKS_ROW_STORE_FORMAT"}
-_LAKEBASE_NEXT = (
-    "Lakebase Postgres writes never appear in SQL query history, so this check cannot prove them. "
-    "Write through the deployed app instead (workshop-browser inspect <app url> --deployed --do click:\"Save\" ...), "
-    "read the row back (reload the page, or query the table), and tell the attendee the app-identity check is unverified."
-)
-
-
-def _uses_lakebase(app: dict) -> bool:
-    return any(isinstance(resource, dict) and ({"database", "postgres", "lakebase"} & set(resource))
-               for resource in app.get("resources") or [])
-
-
-def _require_query_history_coverage(client, base: str, headers: dict, table: str, app: dict) -> None:
-    """Raise a Lakebase gap when query history cannot show who wrote ``table``."""
-    parts = [part.strip("`") for part in table.strip().split(".")]
-    via = " and the app uses a Lakebase database" if _uses_lakebase(app) else ""
-    if len(parts) != 3 or not all(parts):
-        raise Gap("lakebase_not_in_query_history",
-                  f"{table!r} is not a Unity Catalog name (catalog.schema.table){via}. " + _LAKEBASE_NEXT)
-    response = client.get(f"{base}/api/2.1/unity-catalog/tables/{quote('.'.join(parts), safe='.')}",
-                          headers=headers, timeout=30)
-    if response.status_code == 404:
-        raise Gap("lakebase_not_in_query_history", f"{table} is not a Unity Catalog table{via}. " + _LAKEBASE_NEXT)
-    if response.status_code >= 400:
-        return  # cannot tell from here; query history still decides
-    if str(response.json().get("data_source_format") or "").upper() in _POSTGRES_FORMATS:
-        raise Gap("lakebase_not_in_query_history", f"{table} is a Lakebase Postgres table. " + _LAKEBASE_NEXT)
-
-
-def verify_write(*, host: str, token: str, app_name: str, table: str, since_minutes: int = 30,
-                 http=None) -> dict:
-    """Did the deployed app's service principal write ``table`` recently?
-
-    Reads query history as the attendee. The proof is a write statement whose
-    executing principal is the app, not the agent or the attendee. Only Unity
-    Catalog tables written through SQL appear there; a Lakebase table is an
-    explicit gap, never a silent "not proven".
-    """
-    import requests  # a runtime dependency; httpx ships only with the test client
-
-    client = http or requests.Session()
-    headers = {"Authorization": f"Bearer {token}"}
-    base = host.rstrip("/")
-    app = client.get(f"{base}/api/2.0/apps/{app_name}", headers=headers, timeout=30)
-    if app.status_code == 404:
-        raise Gap("app_not_found", f"no app named {app_name!r} in this workspace")
-    if app.status_code >= 400:
-        raise Gap("app_unreadable", f"the app could not be read (HTTP {app.status_code})")
-    details = app.json()
-    principal_id = str(details.get("service_principal_id") or "")
-    principal_name = str(details.get("service_principal_name") or details.get("service_principal_client_id") or "")
-    if not principal_id:
-        raise Gap("app_identity_unknown", "the app reports no service principal")
-    _require_query_history_coverage(client, base, headers, table, details)
-    since_ms = int((time.time() - since_minutes * 60) * 1000)
-    history = client.get(f"{base}/api/2.0/sql/history/queries", headers=headers, timeout=30, params={
-        "filter_by.user_ids": principal_id,
-        "filter_by.query_start_time_range.start_time_ms": since_ms,
-        "max_results": 100,
-    })
-    if history.status_code in {401, 403}:
-        raise Gap("query_history_unavailable", "query history is not visible to you, so a write by the app "
-                  "cannot be proven; check the table in the app instead and say it is unverified")
-    if history.status_code >= 400:
-        raise Gap("query_history_error", f"query history returned HTTP {history.status_code}")
-    wanted = table.split(".")[-1].strip("`").lower()
-    statements = []
-    for query in history.json().get("res") or []:
-        text = str(query.get("query_text") or "")
-        kind = str(query.get("statement_type") or "")
-        if (kind.upper() in {"INSERT", "UPDATE", "MERGE", "DELETE"} or _WRITE.search(text)) and wanted in text.lower():
-            statements.append({"query_id": query.get("query_id"), "statement_type": kind or _WRITE.search(text).group(1).upper(),
-                               "status": query.get("status"), "at_ms": query.get("query_start_time_ms")})
-    return {"kind": "write_proof", "proven": bool(statements), "table": table, "app": app_name,
-            "principal": principal_name, "statements": statements[:10],
-            "checked_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "since_minutes": since_minutes}
-
-
 def attendee_token(user) -> tuple[str, str]:
     """The attendee's own Databricks host and OBO token from their CLI profile."""
     parser = configparser.ConfigParser(interpolation=None)
@@ -579,7 +491,7 @@ def record(project: Path, entries: list[dict]) -> int:
     base = current["revision"]
     inspect_evidence = current["evidence"].setdefault("inspect", {})
     for entry in entries:
-        bucket = {"screenshot": "artifacts", "write_proof": "write_proofs"}.get(entry.get("kind"), "gaps")
+        bucket = "artifacts" if entry.get("kind") == "screenshot" else "gaps"
         inspect_evidence.setdefault(bucket, []).append(entry)
     current["history"].append({"at": workflow.now(), "event": "evidence",
                                "kinds": sorted({e.get("kind", "gap") for e in entries})})
@@ -588,4 +500,4 @@ def record(project: Path, entries: list[dict]) -> int:
 
 
 __all__ = ["Gap", "InspectRequest", "attendee_token", "browser_binary", "check_target", "inspect",
-           "parse_actions", "record", "status", "verify_write"]
+           "parse_actions", "record", "status"]
