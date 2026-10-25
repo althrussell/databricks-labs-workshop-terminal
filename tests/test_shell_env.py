@@ -7,8 +7,17 @@ allowlist construction so no current or future secret can leak in.
 """
 
 import os
+import socket
 
+import pytest
+
+from server import users
 from server.users import User
+
+
+@pytest.fixture(autouse=True)
+def _fresh_agent_ports(monkeypatch):
+    monkeypatch.setattr(users, "_agent_ports", {})
 
 
 # Representative secrets / app-internal vars that MUST NOT reach an attendee
@@ -23,7 +32,6 @@ _FORBIDDEN = [
     "ANTHROPIC_API_KEY",
     "OPENAI_API_KEY",
     "NPM_TOKEN",
-    "DATABRICKS_APP_PORT",
     "SOME_FUTURE_SECRET",  # the whole point: unknown vars are denied, not allowed
 ]
 
@@ -48,6 +56,7 @@ def test_only_allowlisted_and_explicit_keys_present(monkeypatch):
         "HARNESS_CLAUDE_SDK_GATEWAY_AUTH_REFRESH_INTERVAL_MS",
         "HARNESS_CODEX_GATEWAY_AUTH_REFRESH_INTERVAL_MS",
         "WORKSHOP_APP_URL",
+        "DATABRICKS_APP_PORT", "WORKSHOP_TEST_PORT",
         # Conditional (only when configured): WORKSHOP_CATALOG, WORKSHOP_SCHEMA,
         # OBO_PROFILE_NAME — covered in test_obo.py.
     }
@@ -77,3 +86,59 @@ def test_locale_passes_through(monkeypatch):
     env = User("alice@example.com").shell_env()
     assert env["LANG"] == "en_GB.UTF-8"
     assert env["LC_CTYPE"] == "en_GB.UTF-8"
+
+
+def test_agents_get_their_own_port_never_the_terminals(monkeypatch):
+    """The 25 Oct 2026 incident: an agent defaulted to 8000, found the
+    terminal there and killed it to free the port."""
+    monkeypatch.setenv("DATABRICKS_APP_PORT", "8100")
+    env = User("alice@example.com").shell_env()
+
+    port = env["DATABRICKS_APP_PORT"]
+    assert port != "8100"
+    assert 8100 <= int(port) <= 8199
+    assert env["WORKSHOP_TEST_PORT"] == port
+    assert env["WORKSHOP_APP_URL"] == "http://localhost:8100"
+
+
+def test_the_host_serving_port_is_never_copied_through(monkeypatch):
+    monkeypatch.setenv("DATABRICKS_APP_PORT", "8000")
+    env = User("alice@example.com").shell_env()
+
+    assert env["DATABRICKS_APP_PORT"] != "8000"
+    assert env["WORKSHOP_APP_URL"] == "http://localhost:8000"
+
+
+def test_a_plane_keeps_its_port_and_planes_never_share_one():
+    first = User("alice@example.com").shell_env()["DATABRICKS_APP_PORT"]
+    again = User("alice@example.com").shell_env()["DATABRICKS_APP_PORT"]
+    omnigent = users.agent_port_env("omnigent")["DATABRICKS_APP_PORT"]
+
+    assert again == first
+    assert omnigent != first
+    assert users.agent_port_env("omnigent")["DATABRICKS_APP_PORT"] == omnigent
+
+
+def test_a_port_already_in_use_is_skipped():
+    busy = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    busy.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        port = next(p for p in users.AGENT_PORTS if users._bindable(p))
+        busy.bind(("0.0.0.0", port))
+        busy.listen()
+        assert users.agent_port_env()["DATABRICKS_APP_PORT"] != str(port)
+    finally:
+        busy.close()
+
+
+def test_the_omnigent_host_gets_a_different_port_from_the_terminal(monkeypatch, tmp_path):
+    from server.omnigent_remote import build_host_launch
+
+    user = User("alice@example.com")
+    monkeypatch.setattr(user, "home", str(tmp_path / "alice"))
+    user.bootstrap_home()
+    terminal = user.shell_env()
+    _, host, _ = build_host_launch(user, "/opt/bin/omnigent", "https://omnigent.example")
+
+    assert host["DATABRICKS_APP_PORT"] == host["WORKSHOP_TEST_PORT"]
+    assert host["DATABRICKS_APP_PORT"] != terminal["DATABRICKS_APP_PORT"]

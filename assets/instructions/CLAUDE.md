@@ -1,5 +1,7 @@
 # Claude Code on Databricks — Workshop Edition
 
+<!-- terminal-safety-slot -->
+
 Welcome! This workshop environment comes pre-configured with AI coding agents,
 a full library of Databricks skills, and an authenticated Databricks CLI.
 

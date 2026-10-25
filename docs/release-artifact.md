@@ -38,6 +38,24 @@ discard. OTel environment and
 fleet identity are merged before `server.main` imports. Uvicorn always receives
 `--workers 1`.
 
+On Linux the launcher then stays resident as Uvicorn's supervisor
+(`server/supervisor.py`) instead of exec'ing it, because attendee agents run as
+the same Unix user and can signal the server:
+
+- If Uvicorn exits when the platform didn't ask, it restarts after 1 s, backing
+  off to 16 s for repeated quick deaths. After 5 restarts in 10 minutes the
+  launcher exits non-zero so the platform marks the app crashed.
+- Stop signals are read with `sigtimedwait`. One sent from inside the app's own
+  process tree is ignored and recorded as `server.kill_blocked`; any other sender
+  is the platform, and is forwarded to Uvicorn as SIGTERM within the 15 s Apps
+  shutdown window.
+- The supervisor holds the platform's OAuth secret to restart the server, so it
+  runs only when it can make itself non-dumpable. Otherwise, off Linux, or with
+  `WORKSHOP_SUPERVISOR=0`, the launcher execs Uvicorn as before.
+
+The new server process records `server.restarted` and `server.kill_blocked` in
+the WT OTel logs.
+
 ## Release manifest
 
 `release-manifest.json` is deliberately flat so Control Tower can validate it

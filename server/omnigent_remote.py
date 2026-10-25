@@ -22,7 +22,7 @@ from typing import Callable
 from . import attendee as attendee_binding
 from . import cli_config
 from . import config
-from .users import User, email_slug
+from .users import User, agent_port_env, email_slug
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +88,8 @@ def build_host_launch(
         "OMNIGENT_HOST_TOKEN",
     ):
         env.pop(key, None)
+    # Its agents test-run servers alongside the terminal's, on another port.
+    env.update(agent_port_env("omnigent"))
     # Native terminals inherit this environment (their OSEnvSpec is
     # "caller_process"), so it is the agent's Databricks environment as much as
     # the host's. It points at the attendee-only config rather than

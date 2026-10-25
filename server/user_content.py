@@ -47,6 +47,7 @@ _DISCOVERY_MARKER = "<!-- workshop-discovery -->"
 # discovery tier is on and removed entirely when it is off.
 _DISCOVERY_ANCHOR_SLOT = "<!-- discovery-anchor -->"
 _WORKSHOP_CONTRACT_SLOT = "<!-- workshop-contract-slot -->"
+_TERMINAL_SAFETY_SLOT = "<!-- terminal-safety-slot -->"
 _CALLBACK_CAPABILITY = os.path.join(".config", "workshop", "callback-capability")
 
 DEFAULT_DEEPWIKI_MCP = "https://mcp.deepwiki.com/mcp"
@@ -270,6 +271,12 @@ def _compose_workshop_contract(text: str) -> str:
     """
     if text.count(_WORKSHOP_CONTRACT_SLOT) != 1:
         raise ValueError("Workshop instructions require exactly one contract slot")
+    # The one rule that protects the terminal itself sits at the top of every
+    # channel rather than inside the contract, so it is read first.
+    if text.count(_TERMINAL_SAFETY_SLOT) != 1:
+        raise ValueError("Workshop instructions require exactly one terminal safety slot")
+    with open(os.path.join(_ASSETS, "instructions", "terminal_safety.md")) as f:
+        text = text.replace(_TERMINAL_SAFETY_SLOT, f.read().strip())
     with open(os.path.join(_ASSETS, "instructions", "workshop_contract.md")) as f:
         return text.replace(_WORKSHOP_CONTRACT_SLOT, f.read().strip())
 

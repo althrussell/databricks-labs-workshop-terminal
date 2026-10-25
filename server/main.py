@@ -36,6 +36,7 @@ from . import (
     readiness,
     selfheal,
     spend,
+    supervisor,
     telemetry,
     user_content,
 )
@@ -246,6 +247,9 @@ def _shutdown_runtime(emitter_stop, emitter_threads, *, timeout: float = 10.0) -
 async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
     previous_asyncio_handler = observability.install_asyncio_exception_handler(loop)
+    # Restarts and blocked kills are seen by the supervisor, which has no
+    # telemetry of its own; this process records them.
+    supervisor.relay_events(observability.record)
     from . import topology, ws
 
     ws.start_capture_operations()

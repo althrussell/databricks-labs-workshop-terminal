@@ -75,9 +75,14 @@ def instrumentation_enabled(env: Mapping[str, str]) -> bool:
     )
 
 
+def serving_port(env: Mapping[str, str]) -> str:
+    """The port the platform routes to this terminal."""
+    return env.get("DATABRICKS_APP_PORT", "").strip() or "8000"
+
+
 def uvicorn_command(env: Mapping[str, str]) -> list[str]:
     """Resolve the runtime port before passing argv to uvicorn."""
-    port = env.get("DATABRICKS_APP_PORT", "").strip() or "8000"
+    port = serving_port(env)
     command = [
         "uvicorn",
         "server.main:app",
@@ -110,6 +115,13 @@ def uvicorn_command(env: Mapping[str, str]) -> list[str]:
 def main() -> None:
     prepare_environment(os.environ)
     command = uvicorn_command(os.environ)
+    from . import supervisor
+
+    # Supervised, an agent that kills the server gets it restarted, and one
+    # that signals this launcher is ignored. Without a safe supervisor (not
+    # Linux, can't be made non-dumpable, or switched off) exec as before.
+    if supervisor.enabled(os.environ) and supervisor.harden():
+        raise SystemExit(supervisor.supervise(command))
     os.execvp(command[0], command)
 
 

@@ -14,6 +14,8 @@ from .test_user_content import _MEMORY_CHANNELS, _provisioned_home
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "assets/instructions/workshop_contract.md"
 MARKER = "<!-- workshop-interaction-contract:v1 -->"
+TERMINAL_SAFETY = ROOT / "assets/instructions/terminal_safety.md"
+TERMINAL_SAFETY_MARKER = "<!-- workshop-terminal-safety:v1 -->"
 
 
 @pytest.mark.parametrize("coach", [False, True])
@@ -47,10 +49,33 @@ def test_one_identical_contract_reaches_all_channels(
             assert ("workshop-lab-coach" in text) == coach
 
 
-@pytest.mark.parametrize("text", ["no slot", "<!-- workshop-contract-slot -->" * 2])
+@pytest.mark.parametrize("text", [
+    "no slot",
+    "<!-- workshop-contract-slot -->" * 2,
+    "<!-- workshop-contract-slot -->",
+    "<!-- workshop-contract-slot --><!-- terminal-safety-slot -->" + "<!-- terminal-safety-slot -->",
+])
 def test_broken_adapter_cannot_silently_omit_or_duplicate_contract(text):
     with pytest.raises(ValueError, match="exactly one"):
         user_content._compose_workshop_contract(text)
+
+
+@pytest.mark.parametrize("discovery", [False, True])
+def test_terminal_safety_rule_opens_every_channel(client, monkeypatch, discovery):
+    """An agent killed the terminal to free port 8000 on 25 Oct 2026. The
+    rule is read first: before any section, in Claude, Codex and project files."""
+    monkeypatch.setenv("DISCOVERY_ENABLED", str(discovery).lower())
+    home = _provisioned_home(client, monkeypatch)
+    canonical = TERMINAL_SAFETY.read_text().strip()
+
+    assert "$DATABRICKS_APP_PORT" in canonical
+    assert "8000" in canonical and "pkill" in canonical
+    for parts in _MEMORY_CHANNELS:
+        text = Path(home, *parts).read_text()
+        assert text.count(TERMINAL_SAFETY_MARKER) == 1
+        assert canonical in text
+        assert "terminal-safety-slot" not in text
+        assert text.index(TERMINAL_SAFETY_MARKER) < text.index("\n## ")
 
 
 def test_data_first_policy_and_observed_manifest_reach_project_workers(client, monkeypatch):
