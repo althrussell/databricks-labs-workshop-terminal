@@ -429,13 +429,19 @@ def _impeccable_entries(npm: str) -> dict:
     bundle_url = ("https://github.com/pbakaus/impeccable/releases/download/"
                   f"skill-v{impeccable.SKILL_VERSION}/universal.zip")
     checksum, archive = _download_sha256(bundle_url)
+    # W1: each provider's native payload is pinned separately. Codex keeps the
+    # established key; Claude's skill and its companion agents get their own.
     try:
         with tempfile.TemporaryDirectory(prefix="manifest-impeccable-") as root:
             with zipfile.ZipFile(archive) as bundle:
                 for member in bundle.infolist():
-                    if member.filename.startswith(".agents/skills/impeccable/"):
+                    name = member.filename
+                    if (name.startswith((".agents/skills/impeccable/", ".claude/skills/impeccable/"))
+                            or name.startswith(".claude/agents/impeccable-") and name.endswith(".md")):
                         bundle.extract(member, root)
             content = directory_checksum(os.path.join(root, ".agents/skills/impeccable"))
+            claude_content = directory_checksum(os.path.join(root, ".claude/skills/impeccable"))
+            claude_agents = directory_checksum(os.path.join(root, ".claude/agents"))
     finally:
         os.unlink(archive)
     return {
@@ -446,6 +452,7 @@ def _impeccable_entries(npm: str) -> dict:
         "impeccable_skill_bundle": {
             "version": impeccable.SKILL_VERSION, "source": bundle_url,
             "sha256": checksum, "content_sha256": content,
+            "claude_content_sha256": claude_content, "claude_agents_sha256": claude_agents,
         },
     }
 

@@ -37,6 +37,13 @@ def test_packaged_fallback_is_the_reviewed_compiled_skill():
     skill = ROOT / 'assets/skills/impeccable'
     entry = load_manifest('')['artifacts']['impeccable_skill_bundle']
     assert directory_checksum(skill) == entry['content_sha256']
+    # Both native payloads ship, each verified against its own reviewed digest.
+    assert impeccable.verify_tree(ROOT / 'assets/skills') == {
+        'codex': entry['content_sha256'], 'claude': entry['claude_content_sha256'],
+        'claude_agents': entry['claude_agents_sha256']}
+    claude = ROOT / 'assets/skills' / impeccable.PROVIDER_PATHS['claude']
+    assert (claude / 'SKILL.md').read_bytes() != (skill / 'SKILL.md').read_bytes()
+    assert not (claude / 'scripts/bin').exists()
     assert (skill / 'scripts/VERSION').read_text().strip() == impeccable.ENGINE_VERSION
     assert not (skill / 'scripts/bin').exists(), 'native binary must stay out of Git/project copies'
     for name in RETIRED_UX_SKILLS:
@@ -51,13 +58,18 @@ def test_packaged_fallback_is_the_reviewed_compiled_skill():
 @pytest.fixture
 def installer_inputs(tmp_path):
     skill_root = tmp_path / 'bundle'
+    # Deliberately different native fixtures (W1): each provider's own bytes.
     for provider in ('.agents', '.claude'):
         skill = skill_root / provider / 'skills/impeccable'
         (skill / 'scripts').mkdir(parents=True)
-        (skill / 'SKILL.md').write_text('upstream skill')
+        (skill / 'SKILL.md').write_text(f'upstream skill for {provider}')
         (skill / 'scripts/VERSION').write_text(impeccable.ENGINE_VERSION + '\n')
         (skill / 'scripts/impeccable').write_text('#!/bin/sh\n')
+    (skill_root / '.claude/agents').mkdir()
+    (skill_root / '.claude/agents/impeccable-finish-reviewer.md').write_text('claude reviewer')
     digest = directory_checksum(skill_root / '.agents/skills/impeccable')
+    claude_digest = directory_checksum(skill_root / '.claude/skills/impeccable')
+    agents_digest = directory_checksum(skill_root / '.claude/agents')
     bundle = Path(shutil.make_archive(str(tmp_path / 'bundle-archive'), 'zip', skill_root))
     package = tmp_path / 'npm/package/cli/bin'
     package.mkdir(parents=True)
@@ -70,7 +82,9 @@ def installer_inputs(tmp_path):
     entries = {
         'impeccable_npm_launcher': (str(npm), {'version': impeccable.LAUNCHER_VERSION}),
         'impeccable_engine_linux_x64': (str(engine), {'version': impeccable.ENGINE_VERSION}),
-        'impeccable_skill_bundle': (str(bundle), {'version': impeccable.SKILL_VERSION, 'content_sha256': digest}),
+        'impeccable_skill_bundle': (str(bundle), {'version': impeccable.SKILL_VERSION, 'content_sha256': digest,
+                                                  'claude_content_sha256': claude_digest,
+                                                  'claude_agents_sha256': agents_digest}),
     }
     return entries
 
@@ -91,13 +105,20 @@ def test_supported_installer_uses_pinned_bundle_engine_and_no_hooks(tmp_path, mo
             source = bundle / provider / 'skills/impeccable'
             assert (source / 'scripts/bin/linux-x64/impeccable').is_file()
             shutil.copytree(source, Path(cwd) / provider / 'skills/impeccable')
+        shutil.copytree(bundle / '.claude/agents', Path(cwd) / '.claude/agents')
         return subprocess.CompletedProcess(argv, 0, '', '')
 
     monkeypatch.setattr(impeccable.subprocess, 'run', installer)
     impeccable.install_skill(str(target), str(prefix), installer_inputs.__getitem__, {})
     assert len(calls) == 1
-    assert directory_checksum(target / 'impeccable') == installer_inputs['impeccable_skill_bundle'][1]['content_sha256']
+    entry = installer_inputs['impeccable_skill_bundle'][1]
+    assert directory_checksum(target / 'impeccable') == entry['content_sha256']
+    assert directory_checksum(target / impeccable.PROVIDER_PATHS['claude']) == entry['claude_content_sha256']
+    assert directory_checksum(target / impeccable.CLAUDE_AGENTS) == entry['claude_agents_sha256']
+    assert impeccable.verify_tree(target) == {'codex': entry['content_sha256'], 'claude': entry['claude_content_sha256'],
+                                              'claude_agents': entry['claude_agents_sha256']}
     assert not (target / 'impeccable/scripts/bin').exists()
+    assert not (target / impeccable.PROVIDER_PATHS['claude'] / 'scripts/bin').exists()
     assert (prefix / 'bin/impeccable').stat().st_mode & 0o111
     assert 'IMPECCABLE_BIN=' in (prefix / 'bin/impeccable').read_text()
 

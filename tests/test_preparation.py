@@ -455,9 +455,17 @@ def test_isolated_worktree_receives_actual_skills_and_can_refresh(attendee, tmp_
     skill = worktree / ".agents/skills/databricks-apps/SKILL.md"
     assert skill.is_file() and not skill.is_symlink()
     assert skill.read_bytes() == (Path(attendee.home) / ".claude/skills/databricks-apps/SKILL.md").read_bytes()
+    # W1: each harness's own native payload, as real committed bytes.
     ux = worktree / ".agents/skills/impeccable"
-    assert (ux / "SKILL.md").read_bytes() == (Path(attendee.home) / ".claude/skills/impeccable/SKILL.md").read_bytes()
-    assert not (ux / "scripts/bin").exists()
+    assert (ux / "SKILL.md").read_bytes() == (Path(attendee.home) / ".agents/skills/impeccable/SKILL.md").read_bytes()
+    claude_ux = worktree / ".claude/skills/impeccable"
+    assert claude_ux.is_dir() and not claude_ux.is_symlink()
+    assert (claude_ux / "SKILL.md").read_bytes() == (Path(attendee.home) / ".claude/skills/impeccable/SKILL.md").read_bytes()
+    assert (claude_ux / "SKILL.md").read_bytes() != (ux / "SKILL.md").read_bytes()
+    assert sorted(p.name for p in (worktree / ".claude/agents").glob("impeccable-*.md")) == [
+        "impeccable-asset-producer.md", "impeccable-documenter.md", "impeccable-finish-reviewer.md",
+        "impeccable-manual-edit-applier.md"]
+    assert not (ux / "scripts/bin").exists() and not (claude_ux / "scripts/bin").exists()
     for name in ("workshop-design-studio", "databricks-app-design", "promote"):
         assert not (worktree / ".agents/skills" / name).exists()
     # A .git file marks a real worktree. Adopting it must not reinitialize Git.

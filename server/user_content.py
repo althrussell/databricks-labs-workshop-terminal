@@ -661,8 +661,10 @@ def _link_skills(user: User) -> None:
         previous = []
     roots = tuple(sorted({source, shared_skills_dir(), os.path.join(_ASSETS, "skills"),
                           *(root for root in previous if isinstance(root, str) and os.path.isabs(root))}))
-    for relative in HARNESS_SKILL_DIRS.values():
-        _link_skill_set(source, os.path.join(user.home, relative), names, owned_roots=roots)
+    for harness, relative in HARNESS_SKILL_DIRS.items():
+        _link_skill_set(source, os.path.join(user.home, relative), names, owned_roots=roots,
+                        sources=_provider_sources(source, harness, names))
+    _link_claude_companions(source, user, roots)
     # Move managed links out of Codex's legacy discovery path so one skill is
     # discovered once. Preserve attendee-owned files and links there.
     legacy = os.path.join(user.home, ".codex", "skills")
@@ -670,6 +672,63 @@ def _link_skills(user: User) -> None:
         _link_skill_set(source, legacy, [], owned_roots=roots)
     _atomic_write(state_path, json.dumps({"version": 1, "roots": roots}), 0o600)
     _write_aitools_state(user, source, names)
+    from . import skill_routing
+
+    _atomic_write(os.path.join(user.home, ".config", "workshop", "skill-routing.json"),
+                  json.dumps(skill_routing.audit(user.home, tree=source), indent=2, sort_keys=True), 0o600)
+
+
+def _provider_sources(source: str, harness: str, names: list[str]) -> dict[str, str]:
+    """Per-skill link targets for one harness: its own native payload where one exists.
+
+    W1: Claude used to receive the Codex Impeccable payload. A tree without a
+    verified payload for this harness yields no link for that skill rather than
+    the other provider's copy; the routing audit reports the gap.
+    """
+    from .bootstrap import impeccable
+
+    if harness != "claude" or "impeccable" not in names:
+        return {}
+    path = impeccable.payload_path(source, "claude")
+    return {"impeccable": str(path) if path is not None else ""}
+
+
+def _link_claude_companions(source: str, user: User, roots: tuple[str, ...]) -> None:
+    """Link Impeccable's Claude companion agents into ~/.claude/agents.
+
+    Managed links only: an attendee's own agent file with the same name wins,
+    and links into an earlier managed tree are refreshed or retired.
+    """
+    from .bootstrap import impeccable
+
+    agents = impeccable.payload_path(source, "claude_agents")
+    target = os.path.join(user.home, ".claude", "agents")
+    os.makedirs(target, exist_ok=True)
+    wanted = {name: os.path.join(str(agents), name) for name in os.listdir(agents)} if agents else {}
+    managed = (*roots, os.path.abspath(shared_skills_dir()), os.path.join(_ASSETS, "skills"))
+    for name in os.listdir(target):
+        link = os.path.join(target, name)
+        if name.startswith("impeccable-") and os.path.islink(link) and name not in wanted:
+            destination = os.path.abspath(os.path.join(target, os.readlink(link)))
+            if any(destination.startswith(root + os.sep) for root in managed):
+                os.unlink(link)
+    for name, destination in wanted.items():
+        link = os.path.join(target, name)
+        if os.path.islink(link):
+            if os.readlink(link) == destination:
+                continue
+            current = os.path.abspath(os.path.join(target, os.readlink(link)))
+            if not any(current.startswith(root + os.sep) for root in managed):
+                continue
+        elif os.path.exists(link):
+            continue  # the attendee's own agent wins
+        temporary = link + ".workshop-" + secrets.token_hex(6)
+        try:
+            os.symlink(destination, temporary)
+            os.replace(temporary, link)
+        finally:
+            if os.path.lexists(temporary):
+                os.unlink(temporary)
 
 
 def refresh_skill_links() -> None:
@@ -746,14 +805,20 @@ def _write_aitools_state(user: User, source: str, names: list[str]) -> None:
         json.dump(payload, f, indent=2)
 
 
-def _link_skill_set(source: str, target: str, names: list[str], *, owned_roots: tuple[str, ...] = ()) -> None:
+def _link_skill_set(source: str, target: str, names: list[str], *, owned_roots: tuple[str, ...] = (),
+                    sources: dict[str, str] | None = None) -> None:
     """Symlink each skill into one harness directory, per-skill like the CLI.
 
     Per-skill links rather than one directory link: a harness or the attendee
     may put their own skill next to ours, and a whole-directory symlink would
     either shadow that or (once the directory exists for real) leave the
     Databricks skills unreachable.
+
+    ``sources`` overrides one skill's link target (a provider-native payload).
+    An empty override means this harness has no verified copy: a managed link
+    is removed rather than pointed at another provider's payload.
     """
+    sources = sources or {}
     if os.path.islink(target):
         os.unlink(target)
     os.makedirs(target, exist_ok=True)
@@ -766,17 +831,23 @@ def _link_skill_set(source: str, target: str, names: list[str], *, owned_roots: 
                 os.unlink(link)
     for name in names:
         link = os.path.join(target, name)
+        wanted = sources.get(name, os.path.join(source, name))
         if os.path.islink(link):
             destination = os.path.abspath(os.path.join(target, os.readlink(link)))
             if not any(destination.startswith(root + os.sep) for root in managed_roots):
                 continue  # preserve attendee-owned links too
-            if os.readlink(link) == os.path.join(source, name):
+            if not wanted:
+                os.unlink(link)
+                continue
+            if os.readlink(link) == wanted:
                 continue
         elif os.path.exists(link):
             continue  # the attendee's own copy wins
+        if not wanted:
+            continue
         temporary = link + ".workshop-" + secrets.token_hex(6)
         try:
-            os.symlink(os.path.join(source, name), temporary)
+            os.symlink(wanted, temporary)
             os.replace(temporary, link)
         finally:
             if os.path.lexists(temporary):

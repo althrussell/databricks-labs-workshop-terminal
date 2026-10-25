@@ -1,0 +1,18 @@
+{
+  "providers": {
+    "claude": {
+      "path": ".providers/claude/impeccable",
+      "sha256": "40438ab91a48204a846fabfea094333d8c27c768e4252c4e316ff6f23d937149"
+    },
+    "claude_agents": {
+      "path": ".providers/claude/agents",
+      "sha256": "995e2b756e7fe00bbb6154969ac01667e8e3525166e8d9f169551b80baf8e918"
+    },
+    "codex": {
+      "path": "impeccable",
+      "sha256": "4ca760322bb282a22906fa3ff106896b9111dd0264fe1e82e76c0e7b931db950"
+    }
+  },
+  "skill_version": "4.5.2",
+  "version": 1
+}

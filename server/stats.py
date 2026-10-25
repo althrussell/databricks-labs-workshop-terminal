@@ -35,6 +35,27 @@ _CODE_EXTENSIONS = {
     ".yaml", ".yml", ".json", ".md", ".html", ".css", ".toml", ".ipynb",
 }
 
+# Committed paths that are not the attendee's code (W1, test1025): managed
+# skill copies alone added ~82k "lines" to every project before an agent wrote
+# anything. Workshop state, design artifacts, lockfiles and build output are
+# tooling, not code an attendee wrote either.
+_MANAGED_DIRS = frozenset({
+    ".agents", ".claude", ".codex", ".workshop", ".impeccable", ".databricks",
+    "node_modules", "dist", "build", ".build", "__dist__", ".venv", "venv",
+})
+_GENERATED_FILES = frozenset({
+    "package-lock.json", "bun.lock", "bun.lockb", "yarn.lock", "pnpm-lock.yaml", "uv.lock", "poetry.lock",
+})
+
+
+def counted(rel: str) -> bool:
+    """Whether a tracked path is attendee code for the lines-of-code count."""
+    parts = rel.replace("\\", "/").split("/")
+    if any(part in _MANAGED_DIRS for part in parts[:-1]) or parts[-1] in _GENERATED_FILES:
+        return False
+    return os.path.splitext(rel)[1].lower() in _CODE_EXTENSIONS
+
+
 # Code stats walk git repos — cache per user so periodic harvesting (Control
 # Tower polls /api/admin/stats) stays cheap.
 _CODE_CACHE_TTL = 300
@@ -115,7 +136,7 @@ def _code_stats_uncached(user: User) -> dict:
         if count is None or tracked is None:
             confirmed = False
         for rel in (tracked or "").splitlines():
-            if os.path.splitext(rel)[1].lower() not in _CODE_EXTENSIONS:
+            if not counted(rel):
                 continue
             path = os.path.join(repo, rel)
             try:

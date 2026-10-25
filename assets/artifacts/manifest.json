@@ -72,6 +72,8 @@
       "version": "4.1.0"
     },
     "impeccable_skill_bundle": {
+      "claude_agents_sha256": "995e2b756e7fe00bbb6154969ac01667e8e3525166e8d9f169551b80baf8e918",
+      "claude_content_sha256": "40438ab91a48204a846fabfea094333d8c27c768e4252c4e316ff6f23d937149",
       "content_sha256": "4ca760322bb282a22906fa3ff106896b9111dd0264fe1e82e76c0e7b931db950",
       "sha256": "8b445a7529581a36626b328c3077e3d3dd7fbf247521e20ec8759ca939f77470",
       "source": "https://github.com/pbakaus/impeccable/releases/download/skill-v4.5.2/universal.zip",

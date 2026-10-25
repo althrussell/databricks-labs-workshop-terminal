@@ -79,6 +79,13 @@ FORK_SKILLS = frozenset({
     "apx", "workshop-export", "refresh-databricks-skills",
     "impeccable", "workshop-agent-bricks-cli",
 })
+# Provider-specific payloads beside the shared skills (W1): the Claude
+# Impeccable payload, its companion agents and the routing that names them.
+# Not a skill (no SKILL.md), so it is never linked; refreshed with the forks.
+PROVIDER_PAYLOADS = ".providers"
+# The previous published generation, kept so a bad publish can be rolled back
+# as one coherent routing-and-digest set (W1).
+LAST_GOOD_SUFFIX = ".last-good"
 # The directory inside the upstream repository that holds one subdirectory per
 # skill. Each carries SKILL.md for Claude and agents/openai.yaml for Codex.
 SKILLS_UPSTREAM_DIR = "skills"
@@ -1568,7 +1575,14 @@ def _install_databricks_cli() -> None:
 
 
 def _publish_skills_tree(staged: str, target: str) -> None:
-    """Swap one complete skills tree into place; never expose a mixed tree."""
+    """Swap one complete skills tree into place; never expose a mixed tree.
+
+    The tree being replaced becomes ``<target>.last-good`` (replacing an older
+    one) when its provider routing still verifies, so ``rollback_skills_tree``
+    can restore a whole generation rather than one provider's payload.
+    """
+    from .impeccable import verify_tree
+
     parent = os.path.dirname(target)
     backup = tempfile.mkdtemp(prefix=".skills-previous-", dir=parent)
     os.rmdir(backup)
@@ -1581,8 +1595,40 @@ def _publish_skills_tree(staged: str, target: str) -> None:
         if had_target and os.path.exists(backup) and not os.path.exists(target):
             os.replace(backup, target)
         raise
+    try:
+        if os.path.isdir(backup):
+            verify_tree(backup)
+            last_good = target + LAST_GOOD_SUFFIX
+            shutil.rmtree(last_good, ignore_errors=True)
+            os.replace(backup, last_good)
+    except (OSError, RuntimeError) as error:
+        logger.info("skills: previous generation not retained for rollback: %s", error)
     finally:
         shutil.rmtree(backup, ignore_errors=True)
+
+
+def rollback_skills_tree(target: str) -> bool:
+    """Restore the previous published generation; False when there is none.
+
+    Only a generation whose routing and payload digests still verify is
+    restored, so a rollback never sends one provider's payload to another.
+    The rolled-back tree is kept as the new ``last-good`` for a roll forward.
+    """
+    from .impeccable import verify_tree
+
+    last_good = target + LAST_GOOD_SUFFIX
+    if not os.path.isdir(last_good):
+        return False
+    verify_tree(last_good)
+    parent = os.path.dirname(target)
+    swap = tempfile.mkdtemp(prefix=".skills-rollback-", dir=parent)
+    os.rmdir(swap)
+    if os.path.exists(target):
+        os.replace(target, swap)
+    os.replace(last_good, target)
+    if os.path.isdir(swap):
+        os.replace(swap, last_good)
+    return True
 
 
 def _stage_vendored_skills(prefix: str) -> str:
@@ -1600,7 +1646,8 @@ def _stage_vendored_skills(prefix: str) -> str:
 
 
 def _fork_skills_current(target: str) -> bool:
-    names = {name for name in FORK_SKILLS if os.path.isdir(os.path.join(_ASSETS_SKILLS, name))}
+    names = {name for name in (*FORK_SKILLS, PROVIDER_PAYLOADS)
+             if os.path.isdir(os.path.join(_ASSETS_SKILLS, name))}
     return (not any(os.path.lexists(os.path.join(target, name)) for name in RETIRED_MANAGED_SKILLS)
             and _directory_checksum(_ASSETS_SKILLS, names) == _directory_checksum(target, names))
 
@@ -1613,7 +1660,7 @@ def _refresh_fork_skills(prefix: str, target: str) -> None:
     try:
         shutil.copytree(target, staged, dirs_exist_ok=True)
         project_skills(staged)
-        for name in FORK_SKILLS:
+        for name in (*FORK_SKILLS, PROVIDER_PAYLOADS):
             source = os.path.join(_ASSETS_SKILLS, name)
             if os.path.isdir(source):
                 destination = os.path.join(staged, name)
