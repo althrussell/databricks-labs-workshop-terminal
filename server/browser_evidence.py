@@ -37,7 +37,7 @@ import tempfile
 import threading
 import time
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from . import config
 from .bootstrap import browser_runtime
@@ -475,6 +475,36 @@ def _capture(devtools: _DevTools, session: str, out: Path, request: InspectReque
 # ---------------------------------------------------------------------------
 
 _WRITE = re.compile(r"\b(insert|update|merge|delete)\b", re.I)
+# Unity Catalog formats whose rows live in Lakebase Postgres. An app writes them
+# over the Postgres wire protocol, which SQL query history never records.
+_POSTGRES_FORMATS = {"POSTGRESQL_FORMAT", "DATABRICKS_ROW_STORE_FORMAT"}
+_LAKEBASE_NEXT = (
+    "Lakebase Postgres writes never appear in SQL query history, so this check cannot prove them. "
+    "Write through the deployed app instead (workshop-browser inspect <app url> --deployed --do click:\"Save\" ...), "
+    "read the row back (reload the page, or query the table), and tell the attendee the app-identity check is unverified."
+)
+
+
+def _uses_lakebase(app: dict) -> bool:
+    return any(isinstance(resource, dict) and ({"database", "postgres", "lakebase"} & set(resource))
+               for resource in app.get("resources") or [])
+
+
+def _require_query_history_coverage(client, base: str, headers: dict, table: str, app: dict) -> None:
+    """Raise a Lakebase gap when query history cannot show who wrote ``table``."""
+    parts = [part.strip("`") for part in table.strip().split(".")]
+    via = " and the app uses a Lakebase database" if _uses_lakebase(app) else ""
+    if len(parts) != 3 or not all(parts):
+        raise Gap("lakebase_not_in_query_history",
+                  f"{table!r} is not a Unity Catalog name (catalog.schema.table){via}. " + _LAKEBASE_NEXT)
+    response = client.get(f"{base}/api/2.1/unity-catalog/tables/{quote('.'.join(parts), safe='.')}",
+                          headers=headers, timeout=30)
+    if response.status_code == 404:
+        raise Gap("lakebase_not_in_query_history", f"{table} is not a Unity Catalog table{via}. " + _LAKEBASE_NEXT)
+    if response.status_code >= 400:
+        return  # cannot tell from here; query history still decides
+    if str(response.json().get("data_source_format") or "").upper() in _POSTGRES_FORMATS:
+        raise Gap("lakebase_not_in_query_history", f"{table} is a Lakebase Postgres table. " + _LAKEBASE_NEXT)
 
 
 def verify_write(*, host: str, token: str, app_name: str, table: str, since_minutes: int = 30,
@@ -482,14 +512,16 @@ def verify_write(*, host: str, token: str, app_name: str, table: str, since_minu
     """Did the deployed app's service principal write ``table`` recently?
 
     Reads query history as the attendee. The proof is a write statement whose
-    executing principal is the app, not the agent or the attendee.
+    executing principal is the app, not the agent or the attendee. Only Unity
+    Catalog tables written through SQL appear there; a Lakebase table is an
+    explicit gap, never a silent "not proven".
     """
-    import httpx
+    import requests  # a runtime dependency; httpx ships only with the test client
 
-    client = http or httpx.Client(timeout=30)
+    client = http or requests.Session()
     headers = {"Authorization": f"Bearer {token}"}
     base = host.rstrip("/")
-    app = client.get(f"{base}/api/2.0/apps/{app_name}", headers=headers)
+    app = client.get(f"{base}/api/2.0/apps/{app_name}", headers=headers, timeout=30)
     if app.status_code == 404:
         raise Gap("app_not_found", f"no app named {app_name!r} in this workspace")
     if app.status_code >= 400:
@@ -499,8 +531,9 @@ def verify_write(*, host: str, token: str, app_name: str, table: str, since_minu
     principal_name = str(details.get("service_principal_name") or details.get("service_principal_client_id") or "")
     if not principal_id:
         raise Gap("app_identity_unknown", "the app reports no service principal")
+    _require_query_history_coverage(client, base, headers, table, details)
     since_ms = int((time.time() - since_minutes * 60) * 1000)
-    history = client.get(f"{base}/api/2.0/sql/history/queries", headers=headers, params={
+    history = client.get(f"{base}/api/2.0/sql/history/queries", headers=headers, timeout=30, params={
         "filter_by.user_ids": principal_id,
         "filter_by.query_start_time_range.start_time_ms": since_ms,
         "max_results": 100,
