@@ -57,6 +57,7 @@ def test_only_allowlisted_and_explicit_keys_present(monkeypatch):
         "HARNESS_CLAUDE_SDK_GATEWAY_AUTH_REFRESH_INTERVAL_MS",
         "HARNESS_CODEX_GATEWAY_AUTH_REFRESH_INTERVAL_MS",
         "WORKSHOP_APP_URL",
+        "WORKSHOP_DESIGN_REFERENCES",
         "DATABRICKS_APP_PORT", "WORKSHOP_TEST_PORT",
         # Conditional (only when configured): WORKSHOP_CATALOG, WORKSHOP_SCHEMA,
         # OBO_PROFILE_NAME — covered in test_obo.py.

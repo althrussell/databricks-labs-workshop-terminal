@@ -87,9 +87,9 @@ purpose, workflow, data, constraints) and `DESIGN.md` current; read the skill
 and run its `context` step before UI work. A direct-build request needs no
 extra init interview, concept picker or image step, but it still gets a design
 direction, the craft floor, rendered inspection and the documented design.
-Loading the craft floor and running `detect` alone is not the workflow. Use a
-companion reviewer only where your harness supports delegation; never claim a
-review you did not run.
+Loading the craft floor and running `detect` alone is not the workflow. For
+layout, adapt the matching reference in `$WORKSHOP_DESIGN_REFERENCES` (queue,
+analysis, form, conversation, learning). Never claim a review you did not run.
 
 Typecheck and build (`apx dev check`, `apx build` for APX), then deploy only
 with `workshop-app-deploy` (the `deploy_databricks_app` MCP tool), never

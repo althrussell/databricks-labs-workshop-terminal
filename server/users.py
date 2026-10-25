@@ -458,6 +458,10 @@ class User:
             # workshop-grant-me) call back into the app with. The serving port
             # itself is never handed over as DATABRICKS_APP_PORT.
             "WORKSHOP_APP_URL": f"http://localhost:{serving_port(src)}",
+            # W5 composition references, read-only in the release. Named here
+            # rather than in the instructions so they cost no start-up context.
+            "WORKSHOP_DESIGN_REFERENCES": os.path.normpath(os.path.join(
+                os.path.dirname(__file__), "..", "assets", "design-references")),
         })
         # Apps and skills read DATABRICKS_APP_PORT for where to listen, so in
         # here it is the agent's test port, never the terminal's.

@@ -122,6 +122,9 @@ def qualify(prefix: Path, temporary: Path) -> dict:
     # Exercise the actual MCP protocol, with no model or workspace call.
     tools = mcp_tools(prefix, project, env)
     assert {"check", "routes", "docs", "add_component", "search_registry_components"} <= tools, tools
+    # W5: the composition references must compile against this pinned stack.
+    from scripts.check_design_references import copy_into
+    references = copy_into(project)
     for command in (["apx", "dev", "check"], ["apx", "build"]):
         result = subprocess.run(command, cwd=project, env=env, capture_output=True, text=True, timeout=600)
         if result.returncode:
@@ -131,6 +134,7 @@ def qualify(prefix: Path, temporary: Path) -> dict:
     return {"versions": {name: install._read_cli_version(str(prefix / "bin" / name))
                          for name in ("apx", "bun", "uv")},
             "mcp_tools": sorted(tools), "scaffold_and_build": "passed", "post_build_routes": "passed",
+            "design_references_compiled": [path.stem for path in references],
             "workspace_requests": 0}
 
 
