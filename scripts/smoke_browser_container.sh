@@ -42,7 +42,10 @@ smoke() {
   image="$(pull "$@")"
   rm -rf "${WORK}/${label}"
   cp -R "${WORK}/staged" "${WORK}/${label}"
+  # As the invoking user, like the Apps runtime (not root), so everything the
+  # container writes stays removable and readable here.
   docker run --rm --pull never --platform linux/amd64 --network none \
+    --user "$(id -u):$(id -g)" --env HOME=/tmp \
     --volume "${ROOT}:/source:ro" \
     --volume "${DIST}:/release:ro" \
     --volume "${WORK}/${label}:/work" \
