@@ -818,3 +818,61 @@ def test_the_default_summary_floor_is_ten_minutes(monkeypatch):
     # ~40 min behind activity. Ten summarises at most once per harvest.
     monkeypatch.delenv("INSIGHT_SUMMARY_MIN_INTERVAL_MINUTES", raising=False)
     assert insight_summary.config.insight_summary_min_interval_seconds() == 600
+
+
+# --- models that refuse ``temperature`` (live qualification, 25 Oct 2026) -------
+
+
+class _Resp:
+    def __init__(self, status: int, payload: dict | None = None, text: str = ""):
+        self.status_code, self._payload, self.text = status, payload or {}, text
+
+    def json(self):
+        return self._payload
+
+
+def test_a_model_that_refuses_temperature_is_asked_again_without_it(monkeypatch):
+    """Claude Opus 5.5 answers 400 to ``temperature``; every summary fell back to extraction."""
+    import requests
+
+    from server import cli_config, model_policy
+    from server.credentials import credential_manager
+
+    sent: list[dict] = []
+
+    def post(url, headers=None, json=None, timeout=None):
+        sent.append(dict(json))
+        if "temperature" in json:
+            return _Resp(400, text='{"error_code":"BAD_REQUEST","message":"BAD_REQUEST: Model '
+                                    'global.anthropic.claude-opus-5-5 does not support the temperature parameter."}')
+        return _Resp(200, {"choices": [{"message": {"content": '{"headline": "Outage tracker with write-back"}'}}]})
+
+    monkeypatch.setattr(requests, "post", post)
+    monkeypatch.setattr(cli_config, "unified_chat_url", lambda: "https://gw.example/mlflow/v1/chat/completions")
+    monkeypatch.setattr(credential_manager, "token", lambda: "t")
+    monkeypatch.setattr(model_policy, "request_tags", lambda purpose: purpose)
+    monkeypatch.setattr(insight_summary, "_pick_model", lambda token: "system.ai.claude-opus-5-5")
+
+    answer, model = insight_summary._ask_model(_harvest(), None)
+
+    assert answer["headline"] == "Outage tracker with write-back" and model == "system.ai.claude-opus-5-5"
+    assert [("temperature" in body) for body in sent] == [True, False]
+
+
+def test_other_400s_are_not_retried(monkeypatch):
+    import pytest
+    import requests
+
+    from server import cli_config, model_policy
+    from server.credentials import credential_manager
+
+    calls = []
+    monkeypatch.setattr(requests, "post", lambda *a, **k: calls.append(1) or _Resp(400, text='{"message":"bad model"}'))
+    monkeypatch.setattr(cli_config, "unified_chat_url", lambda: "https://gw.example/mlflow/v1/chat/completions")
+    monkeypatch.setattr(credential_manager, "token", lambda: "t")
+    monkeypatch.setattr(model_policy, "request_tags", lambda purpose: purpose)
+    monkeypatch.setattr(insight_summary, "_pick_model", lambda token: "system.ai.gpt-oss-120b")
+
+    with pytest.raises(insight_summary.ModelUnavailable):
+        insight_summary._ask_model(_harvest(), None)
+    assert calls == [1]
