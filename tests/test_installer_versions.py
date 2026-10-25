@@ -700,7 +700,7 @@ def test_omnigent_missing_staged_supply_chain_sets_installer_error(
 
 
 def test_all_release_candidate_defaults_are_exact():
-    assert install.CLAUDE_VERSION == "2.1.308"
+    assert install.CLAUDE_VERSION == "2.1.310"
     assert install.CODEX_VERSION == "0.164.0"
     assert install.DATABRICKS_CLI_VERSION == "1.22.1"
     assert install.OMNIGENT_VERSION == "0.15.0"

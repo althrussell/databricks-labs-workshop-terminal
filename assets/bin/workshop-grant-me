@@ -27,13 +27,21 @@ if [[ -n "$RESOURCE_TYPE" ]]; then
   DATA="{\"email\":\"${EMAIL}\",\"resource_type\":\"${RESOURCE_TYPE}\"}"
 fi
 
-if curl -fsS -X POST "$APP/api/entitlements/reconcile" \
+# The status and the server's reason are kept apart from the body, so a refusal
+# says what was refused instead of guessing that the feature is off.
+if ! RESPONSE="$(curl -sS -X POST "$APP/api/entitlements/reconcile" \
      -H 'Content-Type: application/json' \
      -H "X-Workshop-Capability: $(<"$CAPABILITY_FILE")" \
-     -d "$DATA"; then
-  echo ""
-  echo "Requested a verified entitlement handoff for resources created during this workshop run."
-else
-  echo "Could not reach the workshop app to reconcile entitlements (it may be disabled for this event)." >&2
+     -d "$DATA" -w $'\n%{http_code}')"; then
+  echo "Could not reach the workshop app at $APP to reconcile entitlements." >&2
   exit 1
 fi
+STATUS="${RESPONSE##*$'\n'}"
+BODY="${RESPONSE%$'\n'*}"
+if [[ "$STATUS" != 2* ]]; then
+  echo "The workshop app refused the entitlement handoff (HTTP $STATUS): $BODY" >&2
+  exit 1
+fi
+echo "$BODY"
+echo ""
+echo "Requested a verified entitlement handoff for resources created during this workshop run."

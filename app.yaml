@@ -251,15 +251,15 @@ env:
   # until CT has synchronized the approved system.ai model pool.
   - name: WORKSHOP_MODEL_POLICY_REQUIRED
     value: "false"
-  # An event's cost posture, in one word. Empty means "balanced", which is what
-  # every event ran before this knob existed: a Sonnet 5 driver with Opus still
-  # reachable via /model, and Codex on the balanced GPT tier.
+  # An event's cost posture, in one word. Empty means "balanced": an Opus
+  # driver (Sonnet where no Opus is served) and Codex on the balanced GPT tier.
   #
   #   economy   Caps the ceiling rather than suggesting one — Claude's Opus slot
   #             resolves to Sonnet, so /model opus costs a fifth of Opus output.
   #             Codex drops to the cheap GPT tier and the wrap summary to
   #             gpt-oss-120b. For a large free event.
-  #   balanced  The default. Sonnet driver, Opus reachable, Codex balanced.
+  #   balanced  The default. Opus driver (Sonnet where no Opus is served), Codex
+  #             balanced.
   #   frontier  Opus as the everyday driver, Codex on the flagship GPT tier. For
   #             a small paid engagement where attention costs more than tokens.
   #
@@ -280,10 +280,13 @@ env:
     value: ""
   - name: CODEX_MODEL
     value: ""
+  # Codex model_reasoning_effort: low, medium, high or xhigh. Empty means high.
+  - name: CODEX_REASONING_EFFORT
+    value: ""
   # Release-candidate CLI pins. Control Tower may override these only as part
   # of a reviewed event release.
   - name: CLAUDE_CODE_VERSION
-    value: "2.1.308"
+    value: "2.1.310"
   - name: CODEX_CLI_VERSION
     value: "0.164.0"
   - name: DATABRICKS_CLI_VERSION
@@ -296,7 +299,7 @@ env:
     value: "0.6.0"
   # Node 24 is the active LTS line used by Codex.
   - name: NODE_VERSION
-    value: "24.21.0"
+    value: "24.22.1"
   # OPTIONAL mirror override. The reviewed contract (source + SHA-256 for every
   # installer/archive/package, plus the skills commit/content digest) ships in
   # the image at assets/artifacts/manifest.json, so boot needs nothing here.

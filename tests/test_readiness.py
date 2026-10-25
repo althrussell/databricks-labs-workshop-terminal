@@ -81,7 +81,7 @@ def _good_inputs(tmp_path):
                 "databricks": "1.8.0",
                 "node": "24.20.0",
                 "omnigent": "0.9.0",
-                "apx": "0.3.8", "bun": "1.4.3", "uv": "0.13.0",
+                "apx": "0.3.8", "bun": "1.4.4", "uv": "0.13.5",
             }.items()
         }
         | {

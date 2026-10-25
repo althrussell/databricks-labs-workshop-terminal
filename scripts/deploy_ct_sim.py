@@ -54,11 +54,11 @@ REPO_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
 DEFAULT_SCOPES = "catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql"
 BASELINE_SCOPES = frozenset(DEFAULT_SCOPES.split(","))
 EXACT_DEFAULTS = {
-    "claude_code_version": "2.1.308",
+    "claude_code_version": "2.1.310",
     "codex_cli_version": "0.164.0",
     "databricks_cli_version": "1.22.1",
     "omnigent_version": "0.15.0",
-    "node_version": "24.21.0",
+    "node_version": "24.22.1",
 }
 SEMVER_PATTERN = (
     r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"

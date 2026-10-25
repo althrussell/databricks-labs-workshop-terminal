@@ -20,7 +20,7 @@ from ..runtime_timing import stage as timing_stage
 
 VERSION = "0.3.8"
 SOURCE_COMMIT = "50073e561a689ae5292f82e69ae0505417d75d3e"
-BUN_VERSION = "1.4.3"  # Qualified with the official APX wheel in Linux CI.
+BUN_VERSION = "1.4.4"  # Qualified with the official APX wheel in Linux CI.
 ARTIFACTS = ("apx_wheel_linux_x64", "bun_linux_x64", "uv_binary", "python_3_12_runtime")
 
 

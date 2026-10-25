@@ -556,6 +556,8 @@ def _callback_identity(body: _EmailBody, request: Request) -> Principal:
     if capability:
         email = (body.email or "").strip().lower()
         if not email:
+            email = user_content.callback_capability_owner(capability) or ""
+        if not email:
             raise HTTPException(status_code=422, detail="email required")
         if not user_content.verify_callback_capability(email, capability):
             raise HTTPException(status_code=403, detail="invalid callback capability")

@@ -26,6 +26,10 @@ from .users import User, email_slug
 
 logger = logging.getLogger(__name__)
 
+#: Omnigent's operator hook for extra host->runner env names (its runner env
+#: is otherwise an allowlist; ``omnigent.host.connect``).
+RUNNER_ENV_PASSTHROUGH = "OMNIGENT_RUNNER_ENV_PASSTHROUGH"
+
 REMOTE_HOST_STATES = {
     "disabled",
     "waiting_for_token",
@@ -109,6 +113,16 @@ def build_host_launch(
     identity = stable_host_identity(user, server_url)
     env["OMNIGENT_HOST_ID"] = identity.host_id
     env["OMNIGENT_HOST_NAME"] = identity.name
+    # Omnigent's host hands each runner (and so each agent terminal) only its
+    # own small allowlist of this environment. Everything else an attendee
+    # shell has (WORKSHOP_USER_EMAIL, the catalog and schema hints, the
+    # loopback app URL, the agent test port) was silently dropped, so
+    # workshop-grant-me sent an empty email and got HTTP 422 (test1025, seat 1)
+    # and workshop-export had no catalog. This environment is the attendee
+    # shell's, which is secret-free by construction, so all of it forwards.
+    env[RUNNER_ENV_PASSTHROUGH] = ",".join(
+        sorted(key for key in env if not key.startswith("OMNIGENT_"))
+    )
     argv = [
         os.path.realpath(binary),
         "host",

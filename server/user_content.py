@@ -131,6 +131,30 @@ def verify_callback_capability(email: str, supplied: str) -> bool:
     return bool(expected) and hmac.compare_digest(expected, supplied)
 
 
+def callback_capability_owner(supplied: str) -> str | None:
+    """The attendee whose capability this is, for a helper that lost its email.
+
+    A harness that filters its environment (Omnigent's runner did, test1025)
+    leaves a helper with the capability file but no WORKSHOP_USER_EMAIL. The
+    capability is a per-attendee secret, so it identifies its owner by itself;
+    every attendee is compared, so the answer takes the same time either way.
+    """
+    from .users import user_manager
+
+    if not supplied:
+        return None
+    owner = None
+    for user in user_manager.all():
+        try:
+            with open(callback_capability_path(user)) as f:
+                expected = f.read().strip()
+        except OSError:
+            continue
+        if expected and hmac.compare_digest(expected, supplied):
+            owner = user.email
+    return owner
+
+
 # -- persona (technical vs business) --
 
 # The coach adapts its whole vocabulary to this, so it used to be the agent's

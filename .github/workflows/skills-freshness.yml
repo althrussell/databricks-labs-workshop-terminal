@@ -34,7 +34,7 @@ jobs:
           python-version: "3.11"
       - uses: astral-sh/setup-uv@v6
         with:
-          version: "0.13.0"
+          version: "0.13.5"
       - name: Validate sources before project dependency resolution
         run: python scripts/check_dependency_sources.py
 
@@ -50,7 +50,7 @@ jobs:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v6
         with:
-          version: "0.13.0"
+          version: "0.13.5"
       - name: Install dependencies
         run: uv sync --frozen --no-group release
       # Clones the manifest's pinned commit, verifies the clone against the
@@ -74,7 +74,7 @@ jobs:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v6
         with:
-          version: "0.13.0"
+          version: "0.13.5"
       - name: Install dependencies
         run: uv sync --frozen --no-group release
       # Re-derives every artifact checksum from its upstream source. A failure
