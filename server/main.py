@@ -12,6 +12,7 @@ import os
 import threading
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Literal
 
 import asyncio
@@ -874,6 +875,99 @@ def agent_profile(body: _AgentProfileBody, request: Request):
     except Exception as exc:
         logger.warning("agent profile instruction refresh unavailable (%s)", type(exc).__name__)
     return profile.to_json()
+
+
+class _BrowserStatusBody(_EmailBody):
+    pass
+
+
+class _BrowserInspectBody(_EmailBody):
+    url: str = Field(max_length=2000)
+    scope: Literal["local", "deployed"] = "local"
+    viewports: list[str] = Field(default_factory=lambda: ["desktop"], max_length=2)
+    actions: list[str] = Field(default_factory=list, max_length=12)
+    project: str | None = None
+
+
+class _BrowserWriteBody(_EmailBody):
+    app: str = Field(max_length=63)
+    table: str = Field(max_length=400)
+    since_minutes: int = Field(default=30, ge=1, le=240)
+    project: str | None = None
+
+
+def _owned_project(user, requested: str | None) -> Path:
+    """The attendee's own project: given, or the selected one; never another's."""
+    from . import projects
+
+    root = projects.root(user).resolve()
+    if requested:
+        path = Path(requested).resolve()
+    else:
+        active = projects.read(user)["active"]
+        if not active:
+            raise HTTPException(status_code=409, detail="no build is selected yet")
+        path = projects.project_path(user, active).resolve()
+    if path != root and root not in path.parents:
+        raise HTTPException(status_code=403, detail="evidence is recorded only for your own projects")
+    if not path.is_dir():
+        raise HTTPException(status_code=404, detail="that project does not exist yet")
+    return path
+
+
+@app.post("/api/browser/status")
+def browser_status(body: _BrowserStatusBody, request: Request):
+    from . import browser_evidence
+
+    _callback_identity(body, request)
+    return browser_evidence.status()
+
+
+@app.post("/api/browser/inspect")
+def browser_inspect(body: _BrowserInspectBody, request: Request):
+    """Render the attendee's own app and keep real screenshots as evidence (W3).
+
+    A gap (no browser, sign-in blocked, page never loaded) is recorded as a
+    gap and returned with ``ok: false``; it is never reported as a pass.
+    """
+    from . import browser_evidence
+
+    principal = _callback_identity(body, request)
+    user = user_manager.get(principal.name)
+    project = _owned_project(user, body.project)
+    token = browser_evidence.attendee_token(user)[1] if body.scope == "deployed" else ""
+    inspect_request = browser_evidence.InspectRequest(url=body.url, scope=body.scope, viewports=body.viewports,
+                                                      actions=body.actions, project=project, token=token)
+    try:
+        result = browser_evidence.inspect(inspect_request)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except browser_evidence.Gap as gap:
+        entry = {**gap.as_dict(), "scope": body.scope, "url": body.url}
+        revision = browser_evidence.record(project, [entry])
+        return {"ok": False, "gap": entry, "revision": revision}
+    revision = browser_evidence.record(project, result["artifacts"])
+    return {"ok": True, **result, "revision": revision}
+
+
+@app.post("/api/browser/verify-write")
+def browser_verify_write(body: _BrowserWriteBody, request: Request):
+    """Prove a deployed write ran as the app's own identity, or record why not."""
+    from . import browser_evidence
+
+    principal = _callback_identity(body, request)
+    user = user_manager.get(principal.name)
+    project = _owned_project(user, body.project)
+    host, token = browser_evidence.attendee_token(user)
+    try:
+        if not host or not token:
+            raise browser_evidence.Gap("sign_in_unavailable", "your Databricks sign-in is not ready yet")
+        proof = browser_evidence.verify_write(host=host, token=token, app_name=body.app, table=body.table,
+                                              since_minutes=body.since_minutes)
+    except browser_evidence.Gap as gap:
+        entry = {**gap.as_dict(), "scope": "deployed", "app": body.app, "table": body.table}
+        return {"ok": False, "gap": entry, "revision": browser_evidence.record(project, [entry])}
+    return {"ok": proof["proven"], **proof, "revision": browser_evidence.record(project, [proof])}
 
 
 @app.get("/api/wizard")

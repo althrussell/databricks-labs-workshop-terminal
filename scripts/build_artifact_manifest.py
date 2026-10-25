@@ -207,6 +207,11 @@ def build() -> dict:
             "source": install.TMUX_STATIC_URL,
             "sha256": install.TMUX_STATIC_SHA256,
         },
+        "chrome_headless_shell_linux_x64": {
+            "version": install.BROWSER_VERSION,
+            "source": install.BROWSER_URL,
+            "sha256": install.BROWSER_SHA256,
+        },
         "claude_installer": {
             # _vendored_script_entry swaps source for the vendored filename and
             # keeps this URL as `upstream`, so it must be the URL, not the file.

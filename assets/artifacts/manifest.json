@@ -21,6 +21,11 @@
       "source": "https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-linux-x64.zip",
       "version": "1.4.4"
     },
+    "chrome_headless_shell_linux_x64": {
+      "sha256": "0d5acc62c3e213f8c87d3c298d66ffcf9a236d12ea4b9f85318bf85dbc279daa",
+      "source": "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.47/linux64/chrome-headless-shell-linux64.zip",
+      "version": "156.0.8078.47"
+    },
     "claude_binary": {
       "sha256": "b73676430af12f97316a798b8371f81d640f90a58bdcb8f3ce56a835bb47df56",
       "source": "https://downloads.claude.ai/claude-code-releases/2.1.310/linux-x64/claude",

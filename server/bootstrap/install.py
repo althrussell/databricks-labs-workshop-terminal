@@ -19,6 +19,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import zipfile
 import fcntl
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
@@ -51,6 +52,15 @@ NODE_VERSION = os.environ.get("NODE_VERSION", "24.22.1").strip()
 CLAUDE_INSTALLER_URL = os.environ.get(
     "CLAUDE_INSTALLER_URL", "https://claude.ai/install.sh"
 )
+# The browser agents use to see the attendee's app (W3): Chrome for Testing's
+# headless shell, pinned like every other tool. Optional: if it cannot run in
+# this container, agents get an explicit "no browser" verification gap.
+BROWSER_VERSION = "156.0.8078.47"
+BROWSER_URL = (
+    "https://storage.googleapis.com/chrome-for-testing-public/"
+    f"{BROWSER_VERSION}/linux64/chrome-headless-shell-linux64.zip"
+)
+BROWSER_SHA256 = "0d5acc62c3e213f8c87d3c298d66ffcf9a236d12ea4b9f85318bf85dbc279daa"
 # Omnigent installs from the reviewed manifest only: a checksum-verified uv
 # binary, a pinned Python 3.12 archive, and a fully hashed transitive lock.
 # Omnigent's claude/codex wrappers hard-require tmux and the Apps runtime has
@@ -1325,6 +1335,48 @@ def _install_tmux() -> None:
                 os.unlink(leftover)
 
 
+def _install_browser() -> None:
+    """The pinned headless browser for agents' rendered checks (W3).
+
+    Optional by design: readiness never waits on it, and a container that
+    cannot run it records why, which the browser helper reports as a gap.
+    """
+    stamp_path = os.path.join(config.shared_prefix(), "browser.install.json")
+    target = os.path.join(config.shared_prefix(), "browser", BROWSER_VERSION)
+    binary = os.path.join(target, "chrome-headless-shell-linux64", "chrome-headless-shell")
+
+    def record(error: str = "") -> None:
+        _write_json_atomic(stamp_path, {"version": BROWSER_VERSION, "binary": "" if error else binary,
+                                        "error": error[-400:]})
+
+    try:
+        artifact_path, artifact = _verified_artifact("chrome_headless_shell_linux_x64")
+        _set("browser", "running", source="network", expected_checksum=artifact["sha256"])
+        stamp = _read_json(stamp_path)
+        if not (os.path.isfile(binary) and stamp.get("binary") == binary and stamp.get("version") == BROWSER_VERSION):
+            staging = target + ".extract"
+            shutil.rmtree(staging, ignore_errors=True)
+            with zipfile.ZipFile(artifact_path) as archive:
+                archive.extractall(staging)
+            os.chmod(os.path.join(staging, "chrome-headless-shell-linux64", "chrome-headless-shell"), 0o755)
+            shutil.rmtree(target, ignore_errors=True)
+            os.replace(staging, target)
+        smoke = subprocess.run([binary, "--headless", "--no-sandbox", "--disable-gpu", "--dump-dom",
+                                "about:blank"], capture_output=True, text=True, timeout=60, env=_install_env())
+        if smoke.returncode != 0:
+            raise RuntimeError("the headless browser cannot run here: "
+                               + (smoke.stderr or smoke.stdout or "no output")[-300:])
+        record()
+        _set("browser", "complete", source=_install_source("staged", "chrome_headless_shell_linux_x64"),
+             expected_checksum=artifact["sha256"])
+    except (ArtifactManifestError, subprocess.TimeoutExpired, OSError, RuntimeError, zipfile.BadZipFile) as error:
+        try:
+            record(str(error))
+        except OSError:
+            pass
+        _set("browser", "error", str(error))
+
+
 def _omnigent_stamp_path() -> str:
     return os.path.join(config.shared_prefix(), "omnigent.install.json")
 
@@ -2035,7 +2087,7 @@ def _run_parallel_installers(tasks, *, max_workers: int) -> None:
 
 def run_in_background() -> None:
     omnigent = config.omnigent_offered()
-    steps = ["node", "claude", "codex", "databricks", "skills", "apx", "bun", "uv"]
+    steps = ["node", "claude", "codex", "databricks", "skills", "apx", "bun", "uv", "browser"]
     if omnigent:
         steps += ["tmux", "omnigent"]
     if config.agentbricks_enabled():
@@ -2083,6 +2135,7 @@ def run_in_background() -> None:
         independent = [
             ("claude", _install_claude),
             ("databricks", _install_databricks_cli),
+            ("browser", _install_browser),
         ]
         dependent = [("codex", _install_codex), ("skills", _install_skills)]
         if omnigent:

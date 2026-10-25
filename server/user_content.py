@@ -581,6 +581,8 @@ def _install_cli_helpers(user: User) -> None:
       default profile, persists resumable state, and exposes no generic shell.
     - ``workshop-export``: package source and verify its copy in the assigned
       attendee catalog/schema, with on-screen ZIP download instructions.
+    - ``workshop-browser``: real screenshots of the attendee's app for the
+      agent to look at, dead-control checks and write proof as the app (W3).
 
     There is no blocking design-gate helper. Build-time visual defaults and
     practical checks with prepared tooling follow the shared workshop contract.
@@ -594,6 +596,7 @@ def _install_cli_helpers(user: User) -> None:
         "workshop-app-deploy",
         "workshop-export",
         "workshop-workflow",
+        "workshop-browser",
     ):
         src = os.path.join(_ASSETS, "bin", name)
         if not os.path.isfile(src):

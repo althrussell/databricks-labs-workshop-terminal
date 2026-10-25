@@ -91,16 +91,15 @@ companion reviewer only where your harness supports delegation; never claim a
 review you did not run.
 
 Typecheck and build (`apx dev check`, `apx build` for APX), then deploy only
-with `workshop-app-deploy` (the `deploy_databricks_app` MCP tool);
-never `databricks bundle deploy` or a hand-built `apps deploy`. Share the URL
-as a first preview. Before saying it
-works, inspect the rendered screen and exercise the primary action: realistic
-input, the resulting state, a reload if saving is promised, and a phone width
-where the status and main action stay reachable. Record what you checked
-(`workshop-workflow phase inspect --evidence …`) with prepared tooling.
-Do not install Playwright browsers or run `databricks apps validate` as a
-routine prerequisite. If you cannot render or interact, say what remains unverified.
-HTTP 200, a compile or your own summary is not proof.
+with `workshop-app-deploy` (the `deploy_databricks_app` MCP tool), never
+`databricks bundle deploy`. Share the URL as a first preview. Before saying it
+works, run `workshop-browser inspect <url> --both --do click:"Save"` (local on
+`$DATABRICKS_APP_PORT`, then `--deployed`) with realistic input, and open every
+screenshot it prints with your image tool. "Nothing visibly changed" means a
+dead control. Prove data writes as the app: `workshop-browser verify-write`.
+Record what you checked (`workshop-workflow phase inspect --evidence …`). A
+reported gap stays unverified; say so. Never install a browser. HTTP 200, a
+compile or your own summary is not proof.
 
 Then ask them to do their real task and tell you what is hard, missing or
 still undecided. Compare that with the agreed success criteria, improve,

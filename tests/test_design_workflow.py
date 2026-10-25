@@ -56,12 +56,18 @@ def test_rapid_builds_without_an_interview_but_not_without_evidence(project):
     assert run(project, "phase", "inspect", "--evidence", "preview=https://app.example").returncode == 0
     blocked = run(project, "phase", "feedback")
     assert blocked.returncode == 2 and "record what you inspected" in blocked.stderr
-    assert run(project, "phase", "feedback", "--evidence", "checked=primary action, reload, phone width").returncode == 0
+    # A note alone is not evidence that anything was seen (W3).
+    noted = run(project, "phase", "feedback", "--evidence", "checked=primary action, reload, phone width")
+    assert noted.returncode == 2 and "real screenshots" in noted.stderr
+    assert run(project, "phase", "feedback", "--evidence", "checked=primary action, reload, phone width",
+               "--evidence", "gap=no browser on this terminal").returncode == 0
     assert run(project, "check").returncode == 0
     saved = record(project)
     assert saved["path"] == {**saved["path"], "value": "rapid", "chosen_by": "attendee", "source": "chat"}
     assert saved["evidence"]["build"]["preview"] == "https://app.example"
     assert saved["evidence"]["inspect"]["checked"].startswith("primary action")
+    assert saved["evidence"]["inspect"]["gaps"][0]["detail"] == "no browser on this terminal"
+    assert '"state": "unverified"' in run(project, "verification", "--json").stdout
 
 
 def test_guided_ideation_waits_for_a_confirmed_direction(project):

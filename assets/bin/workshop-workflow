@@ -15,6 +15,7 @@ confirm a direction. An agent's own summary is never an approval.
     workshop-workflow answer <question-id> "text"
     workshop-workflow direction "summary" [--confirmed-by attendee]
     workshop-workflow check [--json]
+    workshop-workflow verification [--json]
     workshop-workflow prefs [--approach co_build|learn|lead] [--detail adaptive|brief|detailed]
                             [--default-path rapid|guided]
 
@@ -24,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -164,8 +166,13 @@ def transition_problems(record: dict, target: str, evidence: dict) -> list[str]:
         problems.append("guided ideation shapes and agrees a direction before building")
     if target == "inspect" and not ({"preview", "build"} & set(evidence)):
         problems.append("inspect needs build evidence: --evidence preview=<url> or build=<result>")
-    if current == "inspect" and target in {"improve", "feedback"} and not ({"checked"} & set(evidence)):
-        problems.append("record what you inspected: --evidence checked=\"primary action, reload, phone width\"")
+    if current == "inspect" and target in {"improve", "feedback"}:
+        if not ({"checked"} & set(evidence)):
+            problems.append("record what you inspected: --evidence checked=\"primary action, reload, phone width\"")
+        inspect = record.get("evidence", {}).get("inspect", {})
+        if not (inspect.get("artifacts") or inspect.get("gaps") or "gap" in evidence):
+            problems.append("inspection needs real screenshots (`workshop-browser inspect <url>`) or an explicit "
+                            "gap: --evidence gap=\"why it could not be checked\"")
     return problems
 
 
@@ -174,7 +181,58 @@ def _direction_confirmed(record: dict) -> bool:
     return isinstance(direction, dict) and direction.get("confirmed_by") == "attendee"
 
 
-def check(record: dict) -> list[str]:
+def _artifact_problems(record: dict, project: Path | None) -> list[str]:
+    """Screenshots must still be the bytes that were captured (W3)."""
+    if project is None:
+        return []
+    problems = []
+    for artifact in record.get("evidence", {}).get("inspect", {}).get("artifacts", []):
+        path = project / str(artifact.get("path", ""))
+        try:
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            problems.append(f"screenshot {artifact.get('path')} is missing")
+            continue
+        if digest != artifact.get("sha256"):
+            problems.append(f"screenshot {artifact.get('path')} no longer matches what was captured")
+    return problems
+
+
+def head_revision(project: Path) -> str:
+    try:
+        done = subprocess.run(["git", "-C", str(project), "rev-parse", "HEAD"], capture_output=True,
+                              text=True, timeout=10)
+        return done.stdout.strip() if done.returncode == 0 else ""
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def verification(record: dict, project: Path | None = None) -> dict:
+    """Review status, kept apart from the stage and from deployment (W4).
+
+    ``verified``: screenshots of the current source revision exist and are
+    intact. ``stale``: the reviewed surface changed since. ``unverified``: only
+    gaps were recorded. ``none``: nothing was inspected.
+    """
+    inspect = record.get("evidence", {}).get("inspect", {})
+    artifacts = [a for a in inspect.get("artifacts", []) if a.get("kind") == "screenshot"]
+    gaps = inspect.get("gaps", [])
+    proofs = inspect.get("write_proofs", [])
+    if not artifacts:
+        return {"state": "unverified" if gaps else "none", "gaps": [g.get("detail") or g.get("code") for g in gaps[-3:]],
+                "write_proven": any(p.get("proven") for p in proofs)}
+    latest = artifacts[-1]
+    problems = _artifact_problems(record, project)
+    head = head_revision(project) if project is not None else ""
+    reviewed = (latest.get("revision") or {}).get("commit", "")
+    stale = bool(problems) or bool(head and reviewed and head != reviewed)
+    return {"state": "stale" if stale else "verified", "latest": latest.get("path"),
+            "captured_at": latest.get("captured_at"), "scope": latest.get("scope"),
+            "gaps": [g.get("detail") or g.get("code") for g in gaps[-3:]], "problems": problems,
+            "write_proven": any(p.get("proven") for p in proofs)}
+
+
+def check(record: dict, project: Path | None = None) -> list[str]:
     """What makes the record's claims untrustworthy; empty when it is sound.
 
     A validator, not a judge: it checks context, transitions, evidence and
@@ -198,8 +256,13 @@ def check(record: dict) -> list[str]:
         if question.get("answer") is not None and question.get("answered_by") != "attendee":
             problems.append(f"question {question.get('id')} is marked answered without the attendee")
     evidence = record.get("evidence", {})
-    if phase in {"improve", "feedback"} and not evidence.get("inspect", {}).get("checked"):
+    inspect = evidence.get("inspect", {})
+    if phase in {"improve", "feedback"} and not inspect.get("checked"):
         problems.append(f"at {phase} with no recorded inspection")
+    if phase in {"improve", "feedback"} and not (inspect.get("artifacts") or inspect.get("gaps")):
+        # Agent-written notes are not an attestation that anything was seen.
+        problems.append(f"at {phase} with no screenshots and no recorded verification gap")
+    problems.extend(_artifact_problems(record, project))
     if phase in {"inspect", "improve", "feedback"} and not ({"preview", "build"} & set(evidence.get("build", {}))):
         problems.append(f"at {phase} with no recorded build or preview")
     return problems
@@ -265,6 +328,10 @@ def apply(record: dict, args: argparse.Namespace) -> None:
             raise WorkflowError("; ".join(problems))
         for key, value in evidence.items():
             # Build output and what was inspected are kept where check() reads them.
+            if key == "gap":
+                record["evidence"].setdefault("inspect", {}).setdefault("gaps", []).append(
+                    {"kind": "gap", "code": "agent_reported", "detail": value, "at": now()})
+                continue
             bucket = "build" if key in {"preview", "build"} else "inspect" if key == "checked" else args.stage
             record["evidence"].setdefault(bucket, {})[key] = value
         record["history"].append({"at": now(), "event": "stage", "from": record["phase"], "to": args.stage,
@@ -362,6 +429,8 @@ def main(argv: list[str] | None = None) -> int:
     direction.add_argument("--confirmed-by", choices=("attendee",))
     checker = sub.add_parser("check")
     checker.add_argument("--json", action="store_true")
+    verify = sub.add_parser("verification")
+    verify.add_argument("--json", action="store_true")
     prefs = sub.add_parser("prefs")
     prefs.add_argument("--approach", choices=APPROACHES)
     prefs.add_argument("--detail", choices=DETAILS)
@@ -376,8 +445,14 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "show":
             print(json.dumps(record, indent=2, sort_keys=True) if args.json else summary(record))
             return 0
+        if args.command == "verification":
+            state = verification(record, project)
+            print(json.dumps(state, indent=2) if args.json else
+                  f"Review: {state['state']}" + (f" ({state.get('latest')})" if state.get("latest") else "")
+                  + ("; gaps: " + "; ".join(state["gaps"]) if state.get("gaps") else ""))
+            return 0
         if args.command == "check":
-            problems = check(record)
+            problems = check(record, project)
             if args.json:
                 print(json.dumps({"ok": not problems, "problems": problems}, indent=2))
             else:

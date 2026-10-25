@@ -34,12 +34,16 @@ def read(project: str | Path) -> dict:
     return workflow.load(Path(project))
 
 
-def check(record: dict) -> list[str]:
-    return workflow.check(record)
+def check(record: dict, project: str | Path | None = None) -> list[str]:
+    return workflow.check(record, Path(project) if project is not None else None)
+
+
+def verification(record: dict, project: str | Path | None = None) -> dict:
+    return workflow.verification(record, Path(project) if project is not None else None)
 
 
 def summary(record: dict) -> str:
     return workflow.summary(record)
 
 
-__all__ = ["PATHS", "PHASES", "RECORD", "WorkflowError", "check", "read", "summary", "workflow"]
+__all__ = ["PATHS", "PHASES", "RECORD", "WorkflowError", "check", "read", "summary", "verification", "workflow"]
