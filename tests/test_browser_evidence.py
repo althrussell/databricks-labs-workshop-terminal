@@ -212,6 +212,8 @@ def test_the_browser_install_is_optional_and_says_why_it_cannot_run(monkeypatch,
         bundle.writestr(info, "#!/bin/sh\necho 'error while loading shared libraries: libnss3.so' >&2\nexit 127\n")
     monkeypatch.setattr(install.config, "shared_prefix", lambda: str(tmp_path / "shared"))
     monkeypatch.setattr(install, "_verified_artifact", lambda name: (str(archive), {"sha256": "x" * 64}))
+    monkeypatch.setattr(install.browser_runtime, "unpack",
+                        lambda debs, runtime: (os.makedirs(runtime), Path(runtime, "fonts.conf").write_text("")))
     states = []
     monkeypatch.setattr(install, "_set", lambda step, status, *a, **k: states.append((step, status, a)))
     install._install_browser()

@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from .. import config
 from . import mirror as toolchain_mirror
+from . import browser_runtime
 from .artifacts import (
     ArtifactManifest,
     ArtifactManifestError,
@@ -61,6 +62,7 @@ BROWSER_URL = (
     f"{BROWSER_VERSION}/linux64/chrome-headless-shell-linux64.zip"
 )
 BROWSER_SHA256 = "0d5acc62c3e213f8c87d3c298d66ffcf9a236d12ea4b9f85318bf85dbc279daa"
+BROWSER_ARTIFACT = "chrome_headless_shell_linux_x64"
 # Omnigent installs from the reviewed manifest only: a checksum-verified uv
 # binary, a pinned Python 3.12 archive, and a fully hashed transitive lock.
 # Omnigent's claude/codex wrappers hard-require tmux and the Apps runtime has
@@ -282,6 +284,7 @@ def _set(
     expected_checksum: str | None = None,
     actual_checksum: str | None = None,
     clear_release: bool = False,
+    reason_code: str | None = None,
 ) -> None:
     now = time.time()
     with _state_lock:
@@ -354,9 +357,10 @@ def _set(
             status,
             current.get("duration_ms") or 0,
             str(current.get("source") or current.get("release_source") or "unknown"),
+            code=reason_code or "",
         )
         if status in ("error", "degraded"):
-            telemetry.install_step_failed(step, status, error or "")
+            telemetry.install_step_failed(step, status, error or "", code=reason_code or "")
 
 
 def _release_specs() -> dict[str, tuple[bool, str]]:
@@ -1335,23 +1339,57 @@ def _install_tmux() -> None:
                 os.unlink(leftover)
 
 
+def _artifact_source(*artifact_names: str) -> str:
+    """Where the bytes for these artifacts came from this boot, as one word.
+
+    ``volume`` or ``network`` when every artifact agrees, ``cached`` when they
+    were already staged here, otherwise ``mixed``.
+    """
+    with _state_lock:
+        sources = {_artifact_sources.get(name) or "unknown" for name in artifact_names}
+    return sources.pop() if len(sources) == 1 else "mixed"
+
+
+def _browser_reason_code(stage: str, error: BaseException) -> str:
+    """A fixed, exportable reason the browser cannot run here."""
+    text = str(error).lower()
+    if isinstance(error, subprocess.TimeoutExpired):
+        return "timeout"
+    if stage == "fetch":
+        if "checksum mismatch" in text:
+            return "checksum_mismatch"
+        return "mirror_unavailable" if "toolchain mirror" in text else "download_failed"
+    if stage == "extract":
+        return "extract_failed"
+    return "missing_library" if "error while loading shared libraries" in text else "launch_failed"
+
+
 def _install_browser() -> None:
     """The pinned headless browser for agents' rendered checks (W3).
 
     Optional by design: readiness never waits on it, and a container that
-    cannot run it records why, which the browser helper reports as a gap.
+    cannot run it records why, which the browser helper reports as a gap. Its
+    shared libraries and fonts come from pinned artifacts too (Apps has no
+    package manager) and only the browser process is pointed at them.
     """
     stamp_path = os.path.join(config.shared_prefix(), "browser.install.json")
     target = os.path.join(config.shared_prefix(), "browser", BROWSER_VERSION)
     binary = os.path.join(target, "chrome-headless-shell-linux64", "chrome-headless-shell")
+    runtime = os.path.join(config.shared_prefix(), "browser", f"runtime-{browser_runtime.runtime_digest()[:16]}")
+    names = [BROWSER_ARTIFACT, *browser_runtime.artifact_names()]
 
-    def record(error: str = "") -> None:
+    def record(error: str = "", reason_code: str = "") -> None:
         _write_json_atomic(stamp_path, {"version": BROWSER_VERSION, "binary": "" if error else binary,
-                                        "error": error[-400:]})
+                                        "runtime": "" if error else runtime,
+                                        "error": error[-400:], "reason_code": reason_code})
 
+    stage = "fetch"
     try:
-        artifact_path, artifact = _verified_artifact("chrome_headless_shell_linux_x64")
-        _set("browser", "running", source="network", expected_checksum=artifact["sha256"])
+        _set("browser", "running", expected_checksum=BROWSER_SHA256)
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            fetched = dict(zip(names, pool.map(_verified_artifact, names)))
+        artifact_path, artifact = fetched[BROWSER_ARTIFACT]
+        stage = "extract"
         stamp = _read_json(stamp_path)
         if not (os.path.isfile(binary) and stamp.get("binary") == binary and stamp.get("version") == BROWSER_VERSION):
             staging = target + ".extract"
@@ -1361,20 +1399,27 @@ def _install_browser() -> None:
             os.chmod(os.path.join(staging, "chrome-headless-shell-linux64", "chrome-headless-shell"), 0o755)
             shutil.rmtree(target, ignore_errors=True)
             os.replace(staging, target)
+        if not os.path.isfile(os.path.join(runtime, "fonts.conf")):
+            browser_runtime.unpack([fetched[name][0] for name in names[1:]], runtime)
+        stage = "launch"
         smoke = subprocess.run([binary, "--headless", "--no-sandbox", "--disable-gpu", "--dump-dom",
-                                "about:blank"], capture_output=True, text=True, timeout=60, env=_install_env())
+                                "about:blank"], capture_output=True, text=True, timeout=60,
+                               env={**_install_env(), **browser_runtime.runtime_env(runtime)})
         if smoke.returncode != 0:
             raise RuntimeError("the headless browser cannot run here: "
                                + (smoke.stderr or smoke.stdout or "no output")[-300:])
         record()
-        _set("browser", "complete", source=_install_source("staged", "chrome_headless_shell_linux_x64"),
-             expected_checksum=artifact["sha256"])
+        _set("browser", "complete", source=_artifact_source(*names), expected_checksum=artifact["sha256"])
     except (ArtifactManifestError, subprocess.TimeoutExpired, OSError, RuntimeError, zipfile.BadZipFile) as error:
+        code = _browser_reason_code(stage, error)
+        logger.warning("browser install failed (reason_code=%s, stage=%s): %s", code, stage,
+                       str(error)[-300:])
         try:
-            record(str(error))
+            record(str(error), code)
         except OSError:
             pass
-        _set("browser", "error", str(error))
+        _set("browser", "error", str(error), reason_code=code,
+             source=_artifact_source(*names) if stage != "fetch" else None)
 
 
 def _omnigent_stamp_path() -> str:

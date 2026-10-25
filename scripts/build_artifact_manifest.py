@@ -9,8 +9,8 @@ upstream sources rather than trusting whatever a reviewer pasted in.
     python3 scripts/build_artifact_manifest.py --check     # verify, change nothing
     python3 scripts/build_artifact_manifest.py --write     # rewrite the manifest
 
-Needs outbound access to nodejs.org, github.com, downloads.claude.ai, and an npm
-registry. Run it from a network that reaches all four; the manifest it produces
+Needs outbound access to nodejs.org, github.com, downloads.claude.ai,
+launchpad.net, and an npm registry. Run it from a network that reaches all five; the manifest it produces
 is what attendees install, so partial regeneration is not accepted. npm is read
 through whatever registry npm is configured with -- on a Databricks laptop that
 is the managed proxy, since registry.npmjs.org does not resolve there -- while
@@ -41,6 +41,7 @@ sys.path.insert(0, REPO_ROOT)
 from server.bootstrap import install  # noqa: E402
 from server.bootstrap import impeccable  # noqa: E402
 from server.bootstrap import apx  # noqa: E402
+from server.bootstrap import browser_runtime  # noqa: E402
 from server.bootstrap.skill_projection import project_skills  # noqa: E402
 from server.bootstrap.artifacts import DEFAULT_MANIFEST_PATH, directory_checksum  # noqa: E402
 
@@ -283,6 +284,7 @@ def build() -> dict:
         "databricks_agent_skills": _skills_entry(),
         **_impeccable_entries(npm),
         **_apx_entries(),
+        **_browser_runtime_entries(),
     }
 
     # Vendored scripts: checksum what is committed rather than the live URL,
@@ -302,6 +304,19 @@ def build() -> dict:
         "databricks cli linux-amd64",
     )
     return {"schema_version": 1, "reviewed": True, "artifacts": artifacts}
+
+
+def _browser_runtime_entries() -> dict:
+    """The browser's shared libraries and fonts, each download checked against its pin."""
+    entries = {}
+    for package, version, filename, sha256 in browser_runtime.RUNTIME_DEBS:
+        url = browser_runtime.source_url(filename)
+        entries[browser_runtime.artifact_name(package)] = {
+            "version": version,
+            "source": url,
+            "sha256": _verified(url, sha256, package),
+        }
+    return entries
 
 
 def _vendored_script_entry(name: str, entry: dict) -> dict:

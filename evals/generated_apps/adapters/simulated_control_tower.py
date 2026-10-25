@@ -31,6 +31,7 @@ _EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 _PROFILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
 _DIGEST = re.compile(r"[a-f0-9]{64}")
 _COMMIT = re.compile(r"[a-fA-F0-9]{40}")
+_BROWSER_RUNTIME = re.compile(r"browser_runtime_[a-z0-9_]{1,48}")
 _VERSION = re.compile(r"\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?")
 _SPEC_FIELDS = frozenset({
     "marker", "workspace_host", "workspace_id", "profile", "attendee_email",
@@ -125,17 +126,22 @@ def _reviewed_release(manifest: Mapping) -> tuple[dict, dict]:
     artifacts = manifest.get("artifacts")
     required = _ARTIFACTS - {"pi_npm_package"}
     ux_artifacts = {"impeccable_npm_launcher", "impeccable_engine_linux_x64", "impeccable_skill_bundle"}
-    # The prepared browser (W3) is optional at boot but pinned like the rest.
+    # The prepared browser (W3) is optional at boot but pinned like the rest,
+    # and so are the Ubuntu packages that carry its shared libraries and fonts.
     allowed = (_ARTIFACTS | {"agentbricks_lock", "apx_wheel_linux_x64", "bun_linux_x64",
                              "chrome_headless_shell_linux_x64"} | ux_artifacts)
-    if not isinstance(artifacts, Mapping) or not required <= set(artifacts) <= allowed:
+    if not isinstance(artifacts, Mapping) or not required <= {
+            name for name in artifacts if not _BROWSER_RUNTIME.fullmatch(name)} <= allowed:
         raise ValueError("simulation requires the complete reviewed artifact manifest")
     if set(artifacts) & ux_artifacts and not ux_artifacts <= set(artifacts):
         raise ValueError("simulation requires all pinned Impeccable artifacts")
     for name, entry in artifacts.items():
+        # Debian versions carry an epoch and tildes (``2:3.98-0ubuntu0.20.04.2``).
+        version = (r"[0-9][A-Za-z0-9.+~:_-]{0,63}" if _BROWSER_RUNTIME.fullmatch(name)
+                   else r"[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}")
         if (not isinstance(entry, Mapping) or not isinstance(entry.get("source"), str)
                 or not entry["source"] or not isinstance(entry.get("version"), str)
-                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}", entry["version"])):
+                or not re.fullmatch(version, entry["version"])):
             raise ValueError("invalid reviewed artifact entry")
         if ":" in entry["source"]:
             _url(entry["source"])

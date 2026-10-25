@@ -40,6 +40,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from . import config
+from .bootstrap import browser_runtime
 
 #: The pinned build bootstrap installs (``chrome_headless_shell_linux_x64``).
 BROWSER_STAMP = "browser.install.json"
@@ -83,17 +84,37 @@ def browser_binary() -> str | None:
     return binary if binary and os.path.isfile(binary) and os.access(binary, os.X_OK) else None
 
 
+def browser_env(binary: str) -> dict[str, str]:
+    """Environment for the browser process alone.
+
+    The prepared browser's libraries and fonts are not on the system paths, so
+    its process (and only its process) gets ``LD_LIBRARY_PATH`` and
+    ``FONTCONFIG_FILE``. App credentials are not handed to it.
+    """
+    env = {key: value for key, value in os.environ.items()
+           if key not in {"DATABRICKS_CLIENT_ID", "DATABRICKS_CLIENT_SECRET", "LD_LIBRARY_PATH", "FONTCONFIG_FILE"}}
+    try:
+        stamp = json.loads((Path(config.shared_prefix()) / BROWSER_STAMP).read_text())
+    except (OSError, ValueError):
+        return env
+    runtime = str(stamp.get("runtime") or "")
+    if stamp.get("binary") == binary and runtime and os.path.isdir(runtime):
+        env.update(browser_runtime.runtime_env(runtime))
+    return env
+
+
 def status() -> dict:
     """Whether agents can inspect pages here, and if not, why not."""
     binary = browser_binary()
     if binary is None:
-        reason = "the prepared browser is not installed on this terminal"
+        reason, code = "the prepared browser is not installed on this terminal", "not_installed"
         try:
             stamp = json.loads((Path(config.shared_prefix()) / BROWSER_STAMP).read_text())
             reason = str(stamp.get("error") or reason)
+            code = str(stamp.get("reason_code") or code)
         except (OSError, ValueError):
             pass
-        return {"available": False, "reason": reason}
+        return {"available": False, "reason": reason, "reason_code": code}
     try:
         stamp = json.loads((Path(config.shared_prefix()) / BROWSER_STAMP).read_text())
     except (OSError, ValueError):
@@ -377,7 +398,7 @@ def inspect(request: InspectRequest, *, binary: str | None = None) -> dict:
     with _inspect_lock:
         profile = tempfile.mkdtemp(prefix="workshop-browser-")
         process = subprocess.Popen(launch_args(binary, profile), stdout=subprocess.DEVNULL,
-                                   stderr=subprocess.PIPE, start_new_session=True)
+                                   stderr=subprocess.PIPE, start_new_session=True, env=browser_env(binary))
         devtools = None
         try:
             devtools = _DevTools(_devtools_url(process), auth_origin=_origin(request.url),
