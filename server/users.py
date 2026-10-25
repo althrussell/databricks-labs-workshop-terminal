@@ -446,6 +446,10 @@ class User:
             # The omnigent install is shared across attendees — never
             # self-update (mirrors DISABLE_AUTOUPDATER for claude).
             "OMNIGENT_NO_UPDATE_CHECK": "1",
+            # Impeccable 4.6+ reports anonymous usage unless told not to. An
+            # attendee session never does: the engine honours both switches.
+            "DO_NOT_TRACK": "1",
+            "IMPECCABLE_NO_TELEMETRY": "1",
             # Re-read the app OAuth bearer file every four minutes so long-lived
             # agents promptly adopt SDK refreshes; a 401 also forces refresh.
             "HARNESS_CLAUDE_SDK_GATEWAY_AUTH_REFRESH_INTERVAL_MS": "240000",

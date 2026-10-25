@@ -254,3 +254,16 @@ def test_managed_and_generated_paths_are_not_attendee_code(rel, expected):
     from server.stats import counted
 
     assert counted(rel) is expected
+
+
+def test_attendee_sessions_turn_impeccable_telemetry_off(attendee):
+    """Impeccable 4.6+ reports anonymous usage unless DO_NOT_TRACK or
+    IMPECCABLE_NO_TELEMETRY is set; the engine honours both."""
+    env = attendee.shell_env()
+    assert env["DO_NOT_TRACK"] == "1" and env["IMPECCABLE_NO_TELEMETRY"] == "1"
+
+
+def test_the_shared_impeccable_wrapper_turns_telemetry_off(tmp_path, monkeypatch):
+
+    source = (ROOT / "server/bootstrap/impeccable.py").read_text()
+    assert "export DO_NOT_TRACK=1 IMPECCABLE_NO_TELEMETRY=1" in source

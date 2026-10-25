@@ -40,7 +40,9 @@ VENDORED_DIR = os.path.normpath(
 # ceremony onto builds that need to reach a live URL in minutes. Keeping them out
 # of this set is deliberate -- a refresh now deletes them on sight, so a stray
 # reintroduction cannot survive.
-FORK_ONLY = install.FORK_SKILLS
+# The provider payloads (W1) are fork-owned too: Impeccable's Claude copy and
+# routing, refreshed by scripts/refresh_impeccable.py.
+FORK_ONLY = install.FORK_SKILLS | {install.PROVIDER_PAYLOADS}
 
 
 def _directories(path: str) -> set[str]:

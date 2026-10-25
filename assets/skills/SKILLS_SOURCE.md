@@ -14,10 +14,10 @@ Do not hand-edit platform skills; regenerate through the refresh scripts.
 |-------|-------|
 | Upstream repo | https://github.com/databricks/databricks-agent-skills |
 | Source path | `skills/` |
-| Pinned tag | `v0.2.28` |
-| Pinned commit | `ba45d10df7413de14c32937bbd584aeee17d22a2` |
-| Content SHA-256 | `0ddf4467590698fd17b98ef7035ad4bee90e2a082a34467489e48c53da10d98a` |
-| Synced on | 2026-10-10 |
+| Pinned tag | `v0.2.34` |
+| Pinned commit | `5c988a4d9b44b74bf3d638f31fc0447cf486e96b` |
+| Content SHA-256 | `5436bdeb0e4c485192f3d2828c3a0a629a17e402b0c8243466eac2eb7cd9d8a2` |
+| Synced on | 2026-10-25 |
 | Synced by | refresh-databricks-skills |
 
 The tag, commit and raw digest above equal the `databricks_agent_skills`
@@ -30,8 +30,11 @@ manifest entry. `effective_content_sha256` verifies the delivered projection.
   license in `assets/artifacts/IMPECCABLE-LICENSE`. WT uses the supported
   `impeccable install --providers=claude,codex --scope=project --no-hooks`
   installer, with its supported `IMPECCABLE_BUNDLE_PATH` override for the reviewed
-  bundle. Launcher **4.1.0**, engine **0.1.14**, compiled skill **4.5.2** are
-  independently pinned in the artifact manifest. The text fallback is installer
+  bundle. Launcher **4.7.0**, engine **0.1.16**, compiled skill **4.7.0** are
+  independently pinned in the artifact manifest (skill 4.7.0 pins engine 0.1.16
+  in its `scripts/VERSION`). Each provider's native payload is pinned and
+  delivered separately: the Codex skill here, the Claude skill and its
+  companion agents under `.providers/claude/`, named by `.providers/routing.json`. The text fallback is installer
   output; the native engine is downloaded/verified at bootstrap and stays out
   of project commits. Refresh/check with `scripts/refresh_impeccable.py`.
 - `workshop-agent-bricks-cli` — custom-agent CLI workflow for the WT identity,

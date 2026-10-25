@@ -72,7 +72,7 @@ TMUX_STATIC_SHA256 = os.environ.get("TMUX_STATIC_SHA256", "").strip() or (
 SKILLS_REPO = os.environ.get(
     "SKILLS_REPO", "https://github.com/databricks/databricks-agent-skills.git"
 )
-SKILLS_REF = os.environ.get("SKILLS_REF", "v0.2.28").strip() or "v0.2.28"
+SKILLS_REF = os.environ.get("SKILLS_REF", "v0.2.34").strip() or "v0.2.34"
 # The manifest and readiness key for the skills artifact.
 SKILLS_ARTIFACT = "databricks_agent_skills"
 FORK_SKILLS = frozenset({

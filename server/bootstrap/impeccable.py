@@ -26,9 +26,9 @@ import zipfile
 
 from .artifacts import directory_checksum
 
-LAUNCHER_VERSION = "4.1.0"
-ENGINE_VERSION = "0.1.14"
-SKILL_VERSION = "4.5.2"
+LAUNCHER_VERSION = "4.7.0"
+ENGINE_VERSION = "0.1.16"
+SKILL_VERSION = "4.7.0"
 ARTIFACTS = {
     "impeccable_npm_launcher": LAUNCHER_VERSION,
     "impeccable_engine_linux_x64": ENGINE_VERSION,
@@ -175,7 +175,8 @@ def install_skill(target: str, prefix: str, fetch, env: dict, *, platform: str =
         (runtime / "engine").chmod(0o755)
         wrapper = Path(prefix) / "bin/impeccable"
         wrapper.write_text(
-            "#!/bin/sh\nexport IMPECCABLE_BIN=" + shlex.quote(str(runtime / "engine"))
+            "#!/bin/sh\nexport DO_NOT_TRACK=1 IMPECCABLE_NO_TELEMETRY=1\n"
+            "export IMPECCABLE_BIN=" + shlex.quote(str(runtime / "engine"))
             + "\nexec " + shlex.quote(str(Path(prefix) / "bin/node")) + " "
             + shlex.quote(str(runtime / "launcher/cli/bin/cli.js")) + ' "$@"\n'
         )
