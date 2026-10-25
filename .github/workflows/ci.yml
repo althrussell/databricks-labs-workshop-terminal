@@ -183,6 +183,16 @@ jobs:
           cmp dist/release-manifest.json dist-repro/release-manifest.json
       - name: Smoke in clean Linux without a network
         run: scripts/smoke_release_container.sh dist
+      - name: Install the prepared browser and screenshot a page in clean Linux
+        run: scripts/smoke_browser_container.sh dist dist/browser-smoke
+      - name: Publish the browser screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-smoke-${{ github.sha }}
+          path: dist/browser-smoke/
+          if-no-files-found: warn
+          retention-days: 14
       - name: Publish CI evidence
         uses: actions/upload-artifact@v4
         with:

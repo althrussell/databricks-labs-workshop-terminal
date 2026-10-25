@@ -67,6 +67,8 @@ def test_packaged_ci_is_linux_cp311_reproducible_and_offline_smoked():
     assert commands.count("scripts/build_release.py") == 2
     assert "cmp dist/workshop-terminal.pex dist-repro/workshop-terminal.pex" in commands
     assert "scripts/smoke_release_container.sh dist" in commands
+    # The prepared browser (W3) must install and render in clean Linux too.
+    assert "scripts/smoke_browser_container.sh dist" in commands
     assert "pip install" not in commands
 
 

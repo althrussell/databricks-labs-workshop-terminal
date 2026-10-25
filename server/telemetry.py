@@ -20,6 +20,7 @@ Telemetry that can break a session launch is worse than no telemetry.
 from __future__ import annotations
 
 import logging
+import re
 import time
 
 logger = logging.getLogger(__name__)
@@ -190,11 +191,18 @@ def session_exited(
     )
 
 
+def _reason_code(code: str) -> str:
+    """A reason code is a fixed snake_case word, never free text."""
+    return code if re.fullmatch(r"[a-z][a-z0-9_]{0,39}", code or "") else "unknown"
+
+
 def bootstrap_phase(
     step: str,
     outcome: str,
     duration_ms: float,
     source: str = "",
+    *,
+    code: str = "",
 ) -> None:
     emit(
         "bootstrap.phase",
@@ -202,7 +210,7 @@ def bootstrap_phase(
         {
             "step": step,
             "outcome": outcome,
-            "code": outcome,
+            "code": _reason_code(code) if code else outcome,
             "duration_ms": max(0, round(duration_ms)),
             "source": source or "unknown",
         },
@@ -319,14 +327,15 @@ def otel_health(env) -> dict:
         }
 
 
-def install_step_failed(step: str, status: str, error: str = "") -> None:
+def install_step_failed(step: str, status: str, error: str = "", *, code: str = "") -> None:
     """A step that ends in error or degraded. An attendee sees this as an agent
-    that never becomes launchable, so it must not be visible only in a spinner."""
-    emit(
-        "install.step_failed",
-        "system",
-        {"step": step, "status": status, "error": (error or "")[:300]},
-    )
+    that never becomes launchable, so it must not be visible only in a spinner.
+
+    ``code`` is the step's own reason code, exported as ``event.reason_code``."""
+    payload = {"step": step, "status": status, "error": (error or "")[:300]}
+    if code:
+        payload["code"] = _reason_code(code)
+    emit("install.step_failed", "system", payload)
 
 
 def omnigent_host_health(attendee: str, status: str, detail: dict | None = None) -> bool:

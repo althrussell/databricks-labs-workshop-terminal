@@ -15,6 +15,151 @@
       "source": "https://github.com/databricks-solutions/apx/releases/download/v0.3.8/apx-0.3.8-py3-none-manylinux_2_28_x86_64.whl",
       "version": "0.3.8"
     },
+    "browser_runtime_fonts_liberation": {
+      "sha256": "d359cba9c3ac8a40fb57773881e20827845e9fab1b2d6fd25cde4b7bade7d57f",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/fonts-liberation_1.07.4-11_all.deb",
+      "version": "1:1.07.4-11"
+    },
+    "browser_runtime_libasound2": {
+      "sha256": "5ea02b4590b210bb2d4a180007184c10e8941d0ee1f025361950b0d0084578a6",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libasound2_1.2.2-2.1ubuntu2.5_amd64.deb",
+      "version": "1.2.2-2.1ubuntu2.5"
+    },
+    "browser_runtime_libatk1_0_0": {
+      "sha256": "3bfb6d72e35771481be152dcc96d39b899d6ff246c995658c181114357f46656",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libatk1.0-0_2.35.1-1ubuntu2_amd64.deb",
+      "version": "2.35.1-1ubuntu2"
+    },
+    "browser_runtime_libatk_bridge2_0_0": {
+      "sha256": "2fcfc11cdb476274e1c11f0321c2dcabe97186dab45eb9ca91ee9dc1f6906603",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libatk-bridge2.0-0_2.34.2-0ubuntu2~20.04.1_amd64.deb",
+      "version": "2.34.2-0ubuntu2~20.04.1"
+    },
+    "browser_runtime_libatspi2_0_0": {
+      "sha256": "482f7e0c7081e9fd16b7cd71d3fc937271b1f722fdcfb0c40f934e108e9fdb80",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libatspi2.0-0_2.36.0-2_amd64.deb",
+      "version": "2.36.0-2"
+    },
+    "browser_runtime_libbsd0": {
+      "sha256": "4f668025fe923a372eb7fc368d6769fcfff6809233d48fd20fc072917cd82e60",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libbsd0_0.10.0-1_amd64.deb",
+      "version": "0.10.0-1"
+    },
+    "browser_runtime_libdbus_1_3": {
+      "sha256": "624e7f78a22f483477bf806c3c4278ce3d5c6707d1176a646baf1dfc453a0982",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libdbus-1-3_1.12.16-2ubuntu2.3_amd64.deb",
+      "version": "1.12.16-2ubuntu2.3"
+    },
+    "browser_runtime_libdrm2": {
+      "sha256": "9b01d73313841abe8e3f24c2715edced675fbe329bbd10be912a5b135cd51fb6",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libdrm2_2.4.107-8ubuntu1~20.04.2_amd64.deb",
+      "version": "2.4.107-8ubuntu1~20.04.2"
+    },
+    "browser_runtime_libexpat1": {
+      "sha256": "021d56318dba1f753dc8284623161fad3051e4ec2f69ad84c16d649b1ac7d0c0",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libexpat1_2.2.9-1ubuntu0.8_amd64.deb",
+      "version": "2.2.9-1ubuntu0.8"
+    },
+    "browser_runtime_libffi7": {
+      "sha256": "4584aa8fef1bf5086168ce2f7078cd2ebd78fdc4cc0d86d958d795d4e0b0f50d",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libffi7_3.3-4_amd64.deb",
+      "version": "3.3-4"
+    },
+    "browser_runtime_libgbm1": {
+      "sha256": "58b610bf61b00e2fb599d44c5247850ea422ff712085639224b0a1cbcee95e50",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libgbm1_21.2.6-0ubuntu0.1~20.04.2_amd64.deb",
+      "version": "21.2.6-0ubuntu0.1~20.04.2"
+    },
+    "browser_runtime_libglib2_0_0": {
+      "sha256": "459d8f08c5e3e8c0454b1cb16660fc7a11274729c83bd41886e5a1388feeddbd",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libglib2.0-0_2.64.6-1~ubuntu20.04.9_amd64.deb",
+      "version": "2.64.6-1~ubuntu20.04.9"
+    },
+    "browser_runtime_libnspr4": {
+      "sha256": "da98b529dfe37aedbf7d23d2edf5faae4d817c40e5a60932e791ba4cdec4dd88",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libnspr4_4.35-0ubuntu0.20.04.1_amd64.deb",
+      "version": "2:4.35-0ubuntu0.20.04.1"
+    },
+    "browser_runtime_libnss3": {
+      "sha256": "1e711911ad3ae2de8a19bc6cb048fa81e2e2c2c09d0aad186b7c14d78517bb16",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libnss3_3.98-0ubuntu0.20.04.2_amd64.deb",
+      "version": "2:3.98-0ubuntu0.20.04.2"
+    },
+    "browser_runtime_libpcre3": {
+      "sha256": "98c25f98cc8df949e774a7ebaff509c37a6baea4dab83786a3c1efecb850bfae",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libpcre3_8.39-12ubuntu0.1_amd64.deb",
+      "version": "2:8.39-12ubuntu0.1"
+    },
+    "browser_runtime_libwayland_server0": {
+      "sha256": "c1470c26861afaaafda54c9b9802b55a7bcc873841c239d4a844f6f5160e2363",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libwayland-server0_1.18.0-1ubuntu0.1_amd64.deb",
+      "version": "1.18.0-1ubuntu0.1"
+    },
+    "browser_runtime_libx11_6": {
+      "sha256": "20d7c0a8ea7a138d49d777a5db8e652071a3c47c78136450ec7417b5232b84ac",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libx11-6_1.6.9-2ubuntu1.6_amd64.deb",
+      "version": "2:1.6.9-2ubuntu1.6"
+    },
+    "browser_runtime_libxau6": {
+      "sha256": "58a0d78302a35e4584f96cd598af16b563ae7aae4af589e2a7cee6dc6666d979",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libxau6_1.0.9-0ubuntu1_amd64.deb",
+      "version": "1:1.0.9-0ubuntu1"
+    },
+    "browser_runtime_libxcb1": {
+      "sha256": "3fcab5cc6a70bcb1e4157748f9c626be21bc18b4c8459447e4c213cba98b9831",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libxcb1_1.14-2_amd64.deb",
+      "version": "1.14-2"
+    },
+    "browser_runtime_libxcb_randr0": {
+      "sha256": "508da595aaca39deb9ab09e3aad5619ad7b7703032413d39a226a72a28f36765",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libxcb-randr0_1.14-2_amd64.deb",
+      "version": "1.14-2"
+    },
+    "browser_runtime_libxcomposite1": {
+      "sha256": "d87e5d52d4bfa714bd56bb3103999e045b4f50638917736e544b67db361d0c8e",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libxcomposite1_0.4.5-1_amd64.deb",
+      "version": "1:0.4.5-1"
+    },
+    "browser_runtime_libxdamage1": {
+      "sha256": "77f4088c85b973a05a9e12825db9fc8e0cc5a577bed57ac29f4427e187c2896f",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libxdamage1_1.1.5-2_amd64.deb",
+      "version": "1:1.1.5-2"
+    },
+    "browser_runtime_libxdmcp6": {
+      "sha256": "8a612b0fb60a41b92698f87258bc5ec6467da88e38d3de79411e02921c42af87",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libxdmcp6_1.1.3-0ubuntu1_amd64.deb",
+      "version": "1:1.1.3-0ubuntu1"
+    },
+    "browser_runtime_libxext6": {
+      "sha256": "a3c546490c0ae0f9247cf8f2919fc7b99b386a538ac91ae48a4ebb96a2a69834",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libxext6_1.3.4-0ubuntu1_amd64.deb",
+      "version": "2:1.3.4-0ubuntu1"
+    },
+    "browser_runtime_libxfixes3": {
+      "sha256": "ee3d380e5f825048a381fea92e8215bc65662fa4ce06346579fbaada2b1f7acc",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libxfixes3_5.0.3-2_amd64.deb",
+      "version": "1:5.0.3-2"
+    },
+    "browser_runtime_libxi6": {
+      "sha256": "462b5067ba80ab8dad197c83d1da7b4b1b51b0b392138e20f03029e8d33f9565",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libxi6_1.7.10-0ubuntu1_amd64.deb",
+      "version": "2:1.7.10-0ubuntu1"
+    },
+    "browser_runtime_libxkbcommon0": {
+      "sha256": "b704ce1751dd938025b88a84c4054d4f36651661e473efeb3da8ed39aaf05868",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libxkbcommon0_0.10.0-1_amd64.deb",
+      "version": "0.10.0-1"
+    },
+    "browser_runtime_libxrandr2": {
+      "sha256": "e6b232c3b2e6f8858aee0f1e46d2cec1575de1b85cb9cfdff93b8b951b15ff97",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libxrandr2_1.5.2-0ubuntu1_amd64.deb",
+      "version": "2:1.5.2-0ubuntu1"
+    },
+    "browser_runtime_libxrender1": {
+      "sha256": "bfda6dc44a39d6500ac2974b3113105477adce457699aadd99f022d5a4858c1c",
+      "source": "https://launchpad.net/ubuntu/+archive/primary/+files/libxrender1_0.9.10-1_amd64.deb",
+      "version": "1:0.9.10-1"
+    },
     "bun_linux_x64": {
       "executable_sha256": "10702245766b225e70bbf6235fd6b47214fd94b4760d00ffaed8ab0df57ac235",
       "sha256": "bf8ccbfb2b0b80159e0f9a6d15c55317add8077534dbc6130a3edb52fccb395c",
