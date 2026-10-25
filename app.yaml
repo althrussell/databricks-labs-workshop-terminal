@@ -1,8 +1,11 @@
 command:
   # This wrapper merges Control Tower identity with Databricks-provided OTel
   # resource attributes before auto-instrumentation imports the FastAPI app.
-  # With telemetry disabled it execs uvicorn directly, so this release remains
-  # safe before CT enables the Public Preview destination.
+  # With telemetry disabled it starts uvicorn without instrumentation, so this
+  # release remains safe before CT enables the Public Preview destination.
+  # On Linux it stays as uvicorn's supervisor (server/supervisor.py): a killed
+  # server restarts, and stop signals from attendee processes are ignored.
+  # WORKSHOP_SUPERVISOR=0 restores the plain exec.
   - python
   - -m
   - server.otel_bootstrap

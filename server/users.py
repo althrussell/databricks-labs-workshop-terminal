@@ -14,12 +14,14 @@ import math
 import logging
 import os
 import re
+import socket
 import tempfile
 import threading
 import uuid
 
 from . import config
 from .capture_journal import CaptureHeldError
+from .otel_bootstrap import serving_port
 
 # Deny-by-default allowlist for attendee PTY environments (gap P0-1). Only
 # non-secret, shell-functional host vars are copied through; PATH/TERM/HOME/USER
@@ -32,6 +34,44 @@ _SHELL_ENV_ALLOWLIST = frozenset({
 _SHELL_ENV_ALLOWLIST_PREFIXES = ("LC_",)
 
 _topology_log = logging.getLogger("workshop.topology")
+
+# Agents test-run apps on a port of their own. The serving port (8000) is this
+# terminal: on 25 Oct 2026 an agent freed it for a test server and took the
+# attendee's terminal down. Each plane (the PTY sessions, the Omnigent host)
+# keeps the port it was first given, so a relaunched agent finds its app where
+# it left it, and two planes never share one.
+AGENT_PORTS = range(8100, 8200)
+_agent_ports: dict[str, int] = {}
+_agent_ports_lock = threading.Lock()
+
+
+def _bindable(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        try:
+            probe.bind(("0.0.0.0", port))
+        except OSError:
+            return False
+    return True
+
+
+def agent_port_env(plane: str = "terminal") -> dict[str, str]:
+    """``DATABRICKS_APP_PORT``/``WORKSHOP_TEST_PORT`` for one plane's agents."""
+    serving = serving_port(os.environ)
+    with _agent_ports_lock:
+        port = _agent_ports.get(plane)
+        if port is None:
+            taken = set(_agent_ports.values())
+            port = next((
+                candidate for candidate in AGENT_PORTS
+                if str(candidate) != serving and candidate not in taken
+                and _bindable(candidate)
+            ), None)
+            if port is None:
+                logging.getLogger(__name__).warning("no free agent test port in %s", AGENT_PORTS)
+                return {}
+            _agent_ports[plane] = port
+    return {"DATABRICKS_APP_PORT": str(port), "WORKSHOP_TEST_PORT": str(port)}
+
 
 # Decides whether the Omnigent card joins an existing conversation or starts a
 # new one. It reads the attendee's own mirrored bearer and asks the App, because
@@ -411,10 +451,13 @@ class User:
             "HARNESS_CLAUDE_SDK_GATEWAY_AUTH_REFRESH_INTERVAL_MS": "240000",
             "HARNESS_CODEX_GATEWAY_AUTH_REFRESH_INTERVAL_MS": "240000",
             # Loopback URL the per-user CLI helpers (databricks-me,
-            # workshop-grant-me) call back into the app with. Derived from the
-            # app's serving port; never exposes the raw DATABRICKS_APP_PORT.
-            "WORKSHOP_APP_URL": f"http://localhost:{src.get('DATABRICKS_APP_PORT', '8000').strip() or '8000'}",
+            # workshop-grant-me) call back into the app with. The serving port
+            # itself is never handed over as DATABRICKS_APP_PORT.
+            "WORKSHOP_APP_URL": f"http://localhost:{serving_port(src)}",
         })
+        # Apps and skills read DATABRICKS_APP_PORT for where to listen, so in
+        # here it is the agent's test port, never the terminal's.
+        env.update(agent_port_env())
         # Non-secret namespace hints so the agent/skills create objects inside
         # the attendee's catalog (inherited grants make them usable as `me`).
         # The OBO token itself never enters the shell — deny-by-default covers it.

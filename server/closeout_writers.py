@@ -12,6 +12,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from . import supervisor
+
 
 def process_group_alive(pgid: int) -> bool:
     """A zombie cannot write; Linux containers can retain adopted zombies."""
@@ -74,6 +76,9 @@ def census_attendee_writers(users, *, proc_root: Path | None = None, deadline: f
                 "matched": 0, "unreadable": 0}
     matched = unreadable = inspected = 0
     timed_out = False
+    # This server and its supervisor are non-dumpable by design, so unreadable,
+    # and neither is an attendee program.
+    own = {os.getpid(), supervisor.supervisor_pid()}
 
     def owned(path: str) -> bool:
         # Linux appends this suffix when a live process retains a deleted cwd.
@@ -89,7 +94,7 @@ def census_attendee_writers(users, *, proc_root: Path | None = None, deadline: f
         if deadline is not None and time.monotonic() >= deadline:
             timed_out = True
             break
-        if not item.name.isdigit() or int(item.name) == os.getpid():
+        if not item.name.isdigit() or int(item.name) in own:
             continue
         try:
             if item.stat().st_uid != os.getuid():

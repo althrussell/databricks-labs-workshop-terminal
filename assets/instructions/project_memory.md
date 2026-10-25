@@ -1,6 +1,9 @@
 # Project memory — Databricks Workshop
 
 <!-- workshop-project-memory -->
+
+<!-- terminal-safety-slot -->
+
 Read `.workshop/project.json`, the README workshop brief and existing PRODUCT/DESIGN
 notes when resuming this project. Treat its current goal as product context;
 keep other builds separate and preserve the attendee's framework and written work.

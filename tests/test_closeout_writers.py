@@ -587,6 +587,25 @@ def test_process_census_reports_unreadable_potentially_owned_process(tmp_path):
     assert result["unreadable"] == 1
 
 
+def test_process_census_skips_the_supervisor_it_cannot_read(tmp_path, monkeypatch):
+    from server import supervisor
+    from server.closeout_writers import census_attendee_writers
+
+    root = tmp_path / "proc"
+    root.mkdir()
+    entry = _proc_entry(root, os.getppid(), home="/platform", cwd="/tmp")
+    (entry / "environ").unlink()
+    monkeypatch.setenv(supervisor.SUPERVISOR_PID_ENV, str(os.getppid()))
+    result = census_attendee_writers([SimpleNamespace(home="/attendee")], proc_root=root)
+    assert result["complete"], result
+    assert result["unreadable"] == 0
+
+    monkeypatch.delenv(supervisor.SUPERVISOR_PID_ENV)
+    assert census_attendee_writers(
+        [SimpleNamespace(home="/attendee")], proc_root=root,
+    )["issues"] == ["attendee_process_census_unreadable"]
+
+
 def test_process_census_never_infers_success_when_unavailable(tmp_path):
     from server.closeout_writers import census_attendee_writers
 

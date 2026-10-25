@@ -52,6 +52,18 @@ limiting, readiness state changes, OBO/Omnigent health, attendee-visible error
 codes, and uncaught async task failures. `app.deploy` carries only bounded
 duration, outcome, reason, attempts, resume state, and MCP/CLI source.
 
+The supervisor (see [release-artifact.md](release-artifact.md)) has no
+telemetry of its own; the server it starts records its events:
+
+- `server.restarted`: the previous server's exit code or signal, how long it
+  ran (`operation.duration_s`), and restarts in the last 10 minutes
+  (`operation.attempts`).
+- `server.kill_blocked`: a stop signal from inside the app was ignored, with the
+  signal, `event.reason_code` (`descendant` or `vanished`) and the attempts
+  since the last report. At most one record per signal every 5 seconds.
+
+Neither is in Control Tower's collection buffer.
+
 Metric names are stable:
 
 - `workshop.session.launches`
