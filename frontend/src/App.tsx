@@ -20,6 +20,7 @@ import {
   ApiError,
   AppConfig,
   PriorSessionInfo,
+  BuildRestore,
   ProjectInventory,
   ProjectSelection,
   SessionInfo,
@@ -45,7 +46,7 @@ import AgentSwitchDialog from "./components/AgentSwitchDialog";
 import ProjectBar from "./components/ProjectBar";
 import YourBuild from "./components/YourBuild";
 import ResponsiveNav from "./components/ResponsiveNav";
-import { goalChangePrompt, keepSavedCopies, recoverWithConfirmation } from "./projects";
+import { goalChangePrompt, keepSavedCopies, recoverWithConfirmation, restoreInProgress, restoreNotice } from "./projects";
 import { bindIdentityRefresh, onAppEvent } from "./events";
 import { ideaPromptAction } from "./ideation";
 import { friendlyError, type RecoveryAction } from "./errors";
@@ -101,6 +102,9 @@ const LINK_ICONS: Record<string, typeof LinkIcon> = {
   link: LinkIcon,
 };
 
+/** The restore notice an attendee dismissed (server/build_restore.py), so it is told once. */
+const restoreSeenKey = "workshop.buildRestore.seen";
+
 export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [workshopState, setWorkshopState] = useState<WorkshopState | null>(null);
@@ -136,6 +140,12 @@ export default function App() {
   const projectMutation = useRef(false);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectLoadError, setProjectLoadError] = useState("");
+  const [buildRestore, setBuildRestore] = useState<BuildRestore | null>(null);
+  const [restoreSeen, setRestoreSeen] = useState(() => {
+    try { return localStorage.getItem(restoreSeenKey) ?? ""; } catch { return ""; }
+  });
+  const [savedChecked, setSavedChecked] = useState(false);
+  const savedAutoCheck = useRef(false);
   const helpChatOpenRef = useRef(false);
   const wizardChecked = useRef(false);
   const [view, setView] = useState<"home" | "agent" | "operator">(
@@ -167,6 +177,7 @@ export default function App() {
     const requestId = ++projectRequest.current;
     try {
       const value = saved ? await api.savedProjects() : await api.projects();
+      if (!saved) setBuildRestore(value.restore ?? null);
       if (requestId === projectRequest.current) acceptProjects(saved ? value : keepSavedCopies(value, projectInventoryRef.current));
     } catch (caught) {
       if (requestId === projectRequest.current) setProjectLoadError(caught instanceof Error ? caught.message : String(caught));
@@ -291,6 +302,38 @@ export default function App() {
       stopIdentityRefresh();
     };
   }, [refreshAgents, refreshIdentity, refreshSessions, refreshProjects]);
+
+  // A restarted container restores saved builds in the background; follow it
+  // closely until it finishes rather than at the 15 s cadence.
+  useEffect(() => {
+    if (!restoreInProgress(buildRestore)) return;
+    const timer = setTimeout(() => { void refreshProjects().catch(() => undefined); }, 3000);
+    return () => clearTimeout(timer);
+  }, [buildRestore, refreshProjects]);
+
+  // An empty list on first load may just mean saved copies have not been looked
+  // at yet. Look once, quietly, instead of telling the attendee "No builds yet".
+  useEffect(() => {
+    if (savedAutoCheck.current || !projectInventory || restoreInProgress(buildRestore) || workshopState !== "open") return;
+    savedAutoCheck.current = true;
+    if (projectInventory.active || projectInventory.projects.length) { setSavedChecked(true); return; }
+    api.savedProjects()
+      .then((value) => {
+        // Unprompted, so only a well-formed list may replace what is shown.
+        if (Array.isArray(value?.projects) && !projectMutation.current && !projectInventoryRef.current?.projects.length) {
+          acceptProjects(value);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => setSavedChecked(true));
+  }, [projectInventory, buildRestore, workshopState, acceptProjects]);
+
+  const dismissRestore = useCallback(() => {
+    const id = buildRestore?.id ?? "";
+    setRestoreSeen(id);
+    try { localStorage.setItem(restoreSeenKey, id); } catch { /* the notice simply returns on reload */ }
+  }, [buildRestore]);
+  const restoreMessage = buildRestore && buildRestore.id !== restoreSeen ? restoreNotice(buildRestore) : "";
 
   useEffect(() => {
     helpChatOpenRef.current = helpChatOpen;
@@ -964,7 +1007,9 @@ export default function App() {
         <div className="main">
           <fieldset className="work-area workshop-inputs" disabled={inputDisabled} aria-label="Workshop activities">
             <ProjectBar inventory={projectInventory} session={session} loading={!projectsLoaded} loadError={projectLoadError}
-              onRefresh={refreshProjects} onSelect={selectBuild} />
+              onRefresh={refreshProjects} onSelect={selectBuild} savedChecked={savedChecked}
+              restoreNotice={restoreMessage}
+              onDismissRestore={restoreInProgress(buildRestore) ? undefined : dismissRestore} />
             <YourBuild refreshKey={[projectInventory?.active, session?.id, session?.exited]}
               onGetHelp={() => setHelpChatOpen(true)} />
             {session && view === "agent" && (

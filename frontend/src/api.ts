@@ -246,9 +246,20 @@ export interface WorkshopProject {
   missing: boolean;
 }
 
+/** Saved builds brought back after a container restart (server/build_restore.py). */
+export interface BuildRestore {
+  id: string;
+  state: "checking" | "restoring" | "restored" | "partial" | "failed";
+  restored: string[];
+  failed: string[];
+  active: string;
+  saved_at: number | null;
+}
+
 export interface ProjectInventory {
   active: string;
   projects: WorkshopProject[];
+  restore?: BuildRestore;
 }
 
 export interface ProjectSelection {
@@ -463,7 +474,8 @@ export const api = {
     request<{ agents: AgentInfo[]; credential: CredentialStatus }>("/api/agents"),
   sessions: () => request<SessionPayload>("/api/sessions"),
   projects: () => request<ProjectInventory>("/api/projects"),
-  savedProjects: () => request<ProjectInventory>("/api/projects/saved", { method: "POST" }),
+  // A read: closeout must never wait on, or fail because of, a saved-copy check.
+  savedProjects: () => request<ProjectInventory>("/api/projects/saved"),
   selectProject: (body: ProjectSelection) =>
     request<ProjectInventory>("/api/projects/select", { method: "POST", body: JSON.stringify(body) }),
   recoverProject: (name: string) =>

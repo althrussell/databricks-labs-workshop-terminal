@@ -10,9 +10,15 @@ interface Props {
   loadError: string;
   onRefresh: (saved: boolean) => Promise<void>;
   onSelect: (selection: ProjectSelection, stopSessionId?: string) => Promise<string>;
+  /** False until saved copies were checked once; until then an empty list is not "no builds". */
+  savedChecked?: boolean;
+  /** Saved builds brought back after the terminal restarted, said once. */
+  restoreNotice?: string;
+  onDismissRestore?: () => void;
 }
 
-export default function ProjectBar({ inventory, session, loading, loadError, onRefresh, onSelect }: Props) {
+export default function ProjectBar({ inventory, session, loading, loadError, onRefresh, onSelect,
+  savedChecked = true, restoreNotice = "", onDismissRestore }: Props) {
   const id = useId();
   const [panel, setPanel] = useState<"list" | "new" | "goal" | null>(null);
   const [name, setName] = useState("");
@@ -71,7 +77,8 @@ export default function ProjectBar({ inventory, session, loading, loadError, onR
         <p>Switch between builds without mixing their files or goals. Starting a new build keeps earlier work.</p>
         {loading && <p role="status">Loading builds…</p>}
         {!loading && !inventory && <button className="btn btn-ghost" disabled={busy} onClick={() => void refresh(false)}>Retry loading builds</button>}
-        {inventory?.projects.length === 0 && <p>No builds yet. You can start one here or directly in an agent.</p>}
+        {inventory?.projects.length === 0 && <p>{savedChecked ? "No builds yet. You can start one here or directly in an agent."
+          : "Checking your saved builds…"}</p>}
         <ul className="project-list">{inventory?.projects.map((item) => <li key={item.name}>
           <div><strong>{item.name}{item.name === inventory.active ? " · current" : ""}</strong>
             <span>{item.goal || (item.missing ? "Local source is unavailable" : item.available ? "Ready to continue" : "Ready to start")}</span>
@@ -107,6 +114,8 @@ export default function ProjectBar({ inventory, session, loading, loadError, onR
     </div>}
     {(error || loadError) && <p className="project-feedback project-error" role="alert">{error || loadError}</p>}
     {notice && <p className="project-feedback" role="status">{notice}</p>}
+    {restoreNotice && <p className="project-feedback project-restore" role="status">{restoreNotice}
+      {onDismissRestore && <button className="btn btn-ghost" onClick={onDismissRestore}>Dismiss</button>}</p>}
     {current?.missing && panel !== "list" && <p className="project-feedback">This build's local source is missing. Open My builds and check saved builds to recover it.</p>}
   </section>;
 }

@@ -56,6 +56,10 @@ def produces_capture(scope) -> bool:
         return False
     if path.startswith("/api/admin/capture-closeout/") or path in {
         "/api/admin/insight-events/ack", "/api/admin/help/ack",
+        # Lists saved Workspace copies (and refreshes local launch content); it
+        # records nothing. WT runs it unprompted on an empty build list, so as a
+        # writer its credential refusal would block the seal.
+        "/api/projects/saved",
     }:
         return False
     return scope.get("method") in {"POST", "PUT", "PATCH", "DELETE"} or path == "/api/certificate"

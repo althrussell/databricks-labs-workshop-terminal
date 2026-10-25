@@ -67,6 +67,7 @@ body {
 .project-switch-confirm .btn + .btn { margin-left: 8px; }
 .project-feedback { margin: 0; padding: 8px 16px 12px; line-height: 1.5; }
 .project-error { color: var(--warning); }
+.project-restore .btn { margin-left: 8px; }
 .project-controls button:focus-visible, .project-controls input:focus-visible, .project-controls textarea:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 3px; }
 .project-controls ::selection { color: var(--text); background: var(--border); }
 .project-controls button:disabled { opacity: .55; cursor: default; }
