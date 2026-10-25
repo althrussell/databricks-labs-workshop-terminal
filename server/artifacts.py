@@ -31,12 +31,14 @@ so anything on disk here may contain something they pasted.
 
 from __future__ import annotations
 
+import glob
 import json
 import re
 import logging
 import os
 import stat
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 
 from .discovery import redact
@@ -77,6 +79,9 @@ _SKIP_DIRS = frozenset({
     ".git", "node_modules", ".venv", "venv", "__pycache__", ".next", "dist",
     "build", "target", ".mypy_cache", ".pytest_cache", "site-packages",
 })
+# Codex keeps plugin and marketplace clones under ``.tmp``, test fixtures and
+# all. They are not session logs.
+_TRANSCRIPT_SKIP_DIRS = _SKIP_DIRS | {".tmp"}
 
 # Content blocks that are tool traffic rather than authored text.
 _TOOL_BLOCK_TYPES = frozenset({
@@ -91,7 +96,29 @@ _TEXT_BLOCK_TYPES = frozenset({"text", "input_text", "output_text"})
 _SYNTHETIC_PREFIXES = (
     "<", "caveat:", "[request interrupted", "api error", "this session is being",
     "please continue", "system:",
+    # Fallbacks for releases that do not flag these structurally: Claude Code
+    # loads a skill's body as a user-role turn, and Codex sends AGENTS.md as one.
+    "base directory for this skill:", "# agents.md instructions",
 )
+# Claude Code's wrapper for a message the attendee sent while the agent was
+# working. The words after it are the attendee's.
+_QUEUED_WRAPPER = "the user sent a new message while you were working:"
+# Claude Code's own flags for user-role entries nobody typed: skill bodies and
+# pasted-image notes (``isMeta``), a sub-agent's task from its parent
+# (``isSidechain``), and compaction summaries.
+_INJECTED_FLAGS = ("isMeta", "isSidechain", "isCompactSummary", "isVisibleInTranscriptOnly")
+# Codex sessions another program started rather than the attendee: its own
+# sub-agents and guardian reviews, ``codex exec`` and MCP-served runs.
+_CODEX_AUTOMATION_SOURCES = frozenset({"exec", "mcp"})
+# A bare status line says a command failed, not why. Counted, never a blocker.
+_BARE_EXIT = re.compile(r"^(?:exit code|exited with code|exit status)\s*:?\s*-?\d+\.?$", re.IGNORECASE)
+# Omnigent 0.19's claude-native bridge, which logs every hook payload of the
+# Claude Code sessions it runs as polly's sub-agents.
+_OMNIGENT_BRIDGE_GLOB = os.path.join("omnigent-*", "claude-native", "*")
+MAX_OMNIGENT_BRIDGES = 256
+# The session id is in every record, and the first is written at SessionStart,
+# so the head of each ledger is enough. ``state.json`` holds the current one.
+MAX_OMNIGENT_LEDGER_BYTES = 64 * 1024
 # Context-free continuations. Kept out of what the summariser reads because they
 # carry no meaning standalone, but still counted: fifty of them is a real signal
 # about how the session went.
@@ -228,13 +255,129 @@ def _authored(text: str) -> str:
     while True:
         match = _LEADING_TAG.match(remainder)
         if match is None:
-            return remainder.strip()
+            break
         remainder = remainder[match.end():]
+    remainder = remainder.strip()
+    if remainder.lower().startswith(_QUEUED_WRAPPER):
+        remainder = remainder[len(_QUEUED_WRAPPER):].strip()
+    return remainder
 
 
 def _is_synthetic(text: str) -> bool:
     lowered = _authored(text).lower()
     return not lowered or lowered.startswith(_SYNTHETIC_PREFIXES)
+
+
+def _injected(entry: dict) -> bool:
+    """A user-role entry the harness wrote, by the harness's own flags.
+
+    ``origin`` names who sent a Claude Code turn; anything but a human (a
+    background task's notification, another session, a coordinator) is not
+    the attendee.
+    """
+    if any(entry.get(flag) for flag in _INJECTED_FLAGS):
+        return True
+    origin = entry.get("origin")
+    kind = str(origin.get("kind") or "").lower() if isinstance(origin, dict) else ""
+    return bool(kind) and kind != "human"
+
+
+@dataclass
+class _Session:
+    """What one transcript file says about who drove it."""
+
+    # False once the file shows a program, not the attendee, wrote its prompts.
+    # Tool calls and errors still count: that work was done for the attendee.
+    attendee: bool = True
+    # Codex records what was typed as ``user_message`` events. Its model-visible
+    # user-role copies also carry AGENTS.md, the environment and skills, so they
+    # are only a fallback for a rollout with no such events.
+    codex_typed: bool = False
+    codex_fallback: list[str] = field(default_factory=list)
+
+
+def _session_for(path: str, home: str, workers: frozenset[str]) -> _Session:
+    """The file-level verdict, from where the file is and Omnigent's ledger."""
+    parts = os.path.relpath(path, home).split(os.sep)
+    stem = os.path.splitext(os.path.basename(path))[0]
+    automated = (
+        # Claude Code writes a sub-agent's transcript beside its parent's.
+        "subagents" in parts[:-1]
+        # Omnigent runs its Codex workers in a private CODEX_HOME.
+        or (parts[:1] == [".omnigent"] and "codex-home" in parts)
+        or stem in workers
+        or os.path.realpath(path) in workers
+    )
+    return _Session(attendee=not automated)
+
+
+def _note_driver(entry: dict, session: _Session) -> None:
+    """Flip the file to automation when an entry says a program drove it."""
+    if str(entry.get("type") or "") == "session_meta":
+        payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
+        source = payload.get("source")
+        originator = str(payload.get("originator") or "").lower()
+        if (isinstance(source, dict) and "subagent" in source) or (
+            isinstance(source, str) and source.lower() in _CODEX_AUTOMATION_SOURCES
+        ) or "omnigent" in originator:
+            session.attendee = False
+    # ``claude -p``: a headless run a script or another agent started. (The
+    # Agent SDK's sdk-py/sdk-ts are kept: Omnigent's polly runs on it, and its
+    # turns are the attendee's messages.)
+    elif str(entry.get("entrypoint") or "").lower() == "sdk-cli":
+        session.attendee = False
+
+
+def _omnigent_bridge_roots() -> set[str]:
+    """Where Omnigent's runner puts its bridge tree: its temp dir, normally /tmp."""
+    return {tempfile.gettempdir(), "/tmp"}
+
+
+def _omnigent_worker_transcripts() -> frozenset[str]:
+    """Claude Code sessions Omnigent runs as polly's sub-agents.
+
+    polly hands a worker its task by typing into the worker's terminal, so the
+    worker's transcript records polly's instructions as typed prompts and
+    nothing in the file says otherwise. Omnigent's bridge does: it logs every
+    hook payload of the sessions it runs, each naming the session and its
+    transcript (``<tmp>/omnigent-<uid>/claude-native/<bridge>/hooks.jsonl`` and
+    ``state.json``). A Claude Code transcript is named after its session id, so
+    the id still matches after the worker moves it into a worktree. Read-only,
+    bounded, fail-soft: no ledger means no known workers, which is how this
+    behaved before. Exclusion only, so a ledger from another attendee on a
+    shared container can never add prompts here.
+    """
+    found: set[str] = set()
+    bridges = sorted({path for root in _omnigent_bridge_roots()
+                      for path in glob.glob(os.path.join(root, _OMNIGENT_BRIDGE_GLOB))})
+    for bridge in bridges[:MAX_OMNIGENT_BRIDGES]:
+        try:
+            with open(os.path.join(bridge, "state.json"), encoding="utf-8") as handle:
+                state = json.load(handle)
+            if isinstance(state, dict) and isinstance(state.get("claude_session_id"), str):
+                found.add(state["claude_session_id"])
+        except (OSError, ValueError):
+            pass
+        try:
+            with open(os.path.join(bridge, "hooks.jsonl"), encoding="utf-8", errors="replace") as handle:
+                ledger = handle.read(MAX_OMNIGENT_LEDGER_BYTES)
+        except OSError:
+            continue
+        for line in ledger.splitlines():
+            if "session_id" not in line and "transcript_path" not in line:
+                continue
+            try:
+                payload = json.loads(line).get("payload")
+            except (ValueError, AttributeError):
+                continue
+            if not isinstance(payload, dict):
+                continue
+            if isinstance(payload.get("session_id"), str):
+                found.add(payload["session_id"])
+            if isinstance(payload.get("transcript_path"), str):
+                found.add(os.path.realpath(payload["transcript_path"]))
+    found.discard("")
+    return frozenset(found)
 
 
 def _codex_user_message(entry: dict) -> str | None:
@@ -394,7 +537,7 @@ def _transcript_files(home: str, harvest: Harvest | None = None) -> list[str]:
         for directory, dirs, files in os.walk(
             root, onerror=lambda _error: _issue(harvest, "transcript_read_failed"),
         ):
-            dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+            dirs[:] = [d for d in dirs if d not in _TRANSCRIPT_SKIP_DIRS]
             for name in files:
                 if not name.endswith((".jsonl", ".ndjson")):
                     continue
@@ -423,8 +566,10 @@ def _scan_transcripts(home: str, harvest: Harvest) -> None:
     budget = MAX_TRANSCRIPT_BYTES
     seen_errors: set[str] = set()
     seen_targets: set[str] = set()
+    workers = _omnigent_worker_transcripts()
     for path in _transcript_files(home, harvest):
         seen_prompts: set[str] = set()
+        session = _session_for(path, home, workers)
         if budget <= 0:
             break
         try:
@@ -445,38 +590,53 @@ def _scan_transcripts(home: str, harvest: Harvest) -> None:
                         _issue(harvest, "transcript_parse_failed")
                         continue
                     if isinstance(entry, dict):
-                        _absorb(entry, harvest, seen_errors, seen_targets, seen_prompts)
+                        _absorb(entry, harvest, seen_errors, seen_targets, seen_prompts, session)
         except OSError as exc:
             logger.debug("transcript unreadable (%s): %s", path, exc)
             _issue(harvest, "transcript_read_failed")
+            continue
+        if session.attendee and not session.codex_typed:
+            _take_prompts(session.codex_fallback, harvest, seen_prompts)
+
+
+def _take_prompts(texts: list[str], harvest: Harvest, seen_prompts: set[str]) -> None:
+    for raw in texts:
+        if _is_synthetic(raw):
+            continue
+        text = _authored(raw)
+        # Codex writes each prompt twice: as a model-visible message and as
+        # its own ``user_message`` event. Count it once per session file.
+        key = " ".join(text.split())[:400].lower()
+        if key in seen_prompts:
+            continue
+        seen_prompts.add(key)
+        harvest.prompt_count += 1
+        cleaned, hits = _clean(text, MAX_PROMPT_CHARS)
+        harvest.redactions += hits
+        if not cleaned or cleaned.lower() in _CONTINUATIONS:
+            continue
+        if len(harvest.prompts) < MAX_PROMPTS:
+            harvest.prompts.append(cleaned)
 
 
 def _absorb(
     entry: dict, harvest: Harvest, seen_errors: set[str], seen_targets: set[str],
-    seen_prompts: set[str] | None = None,
+    seen_prompts: set[str] | None = None, session: _Session | None = None,
 ) -> None:
     seen_prompts = seen_prompts if seen_prompts is not None else set()
+    session = session if session is not None else _Session()
+    _note_driver(entry, session)
     codex_typed = _codex_user_message(entry)
-    texts = [codex_typed] if codex_typed is not None else (
-        _content_blocks(_body_of(entry)) if _role_of(entry) == "user" else [])
-    if texts:
-        for raw in texts:
-            if _is_synthetic(raw):
-                continue
-            text = _authored(raw)
-            # Codex writes each prompt twice: as a model-visible message and as
-            # its own ``user_message`` event. Count it once per session file.
-            key = " ".join(text.split())[:400].lower()
-            if key in seen_prompts:
-                continue
-            seen_prompts.add(key)
-            harvest.prompt_count += 1
-            cleaned, hits = _clean(text, MAX_PROMPT_CHARS)
-            harvest.redactions += hits
-            if not cleaned or cleaned.lower() in _CONTINUATIONS:
-                continue
-            if len(harvest.prompts) < MAX_PROMPTS:
-                harvest.prompts.append(cleaned)
+    if codex_typed is not None:
+        session.codex_typed = True
+        if session.attendee:
+            _take_prompts([codex_typed], harvest, seen_prompts)
+    elif _role_of(entry) == "user" and not _injected(entry):
+        texts = _content_blocks(_body_of(entry))
+        if str(entry.get("type") or "") == "response_item":
+            session.codex_fallback.extend(texts)
+        elif session.attendee:
+            _take_prompts(texts, harvest, seen_prompts)
 
     # Errors and tool calls are read regardless of role. Claude Code delivers a
     # failed tool result on the *user* role, so an early return for user entries
@@ -517,7 +677,7 @@ def _absorb(
         # Deduped on the first line: one broken credential produces the same
         # error fifty times, and fifty copies would drown the other blockers.
         key = first.lower()
-        if first and key not in seen_errors:
+        if first and not _BARE_EXIT.match(first) and key not in seen_errors:
             seen_errors.add(key)
             if len(harvest.errors) < MAX_ERRORS:
                 harvest.errors.append(first)
