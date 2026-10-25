@@ -967,8 +967,25 @@ def browser_verify_write(body: _BrowserWriteBody, request: Request):
                                               since_minutes=body.since_minutes)
     except browser_evidence.Gap as gap:
         entry = {**gap.as_dict(), "scope": "deployed", "app": body.app, "table": body.table}
-        return {"ok": False, "gap": entry, "revision": browser_evidence.record(project, [entry])}
-    return {"ok": proof["proven"], **proof, "revision": browser_evidence.record(project, [proof])}
+        return {"ok": False, "gap": entry, "revision": _record_evidence(project, entry)}
+    except Exception as error:  # noqa: BLE001 — an agent gets a gap to report, never a 500
+        logger.warning("browser.verify_write_failed app=%s: %s: %s", body.app, type(error).__name__, error)
+        gap = browser_evidence.Gap("verify_failed", f"the write check failed unexpectedly ({type(error).__name__}); "
+                                   "the write is unverified, say so")
+        entry = {**gap.as_dict(), "scope": "deployed", "app": body.app, "table": body.table}
+        return {"ok": False, "gap": entry, "revision": _record_evidence(project, entry)}
+    return {"ok": proof["proven"], **proof, "revision": _record_evidence(project, proof)}
+
+
+def _record_evidence(project, entry: dict) -> int | None:
+    """Record evidence in the workflow record; a failed save never fails the check itself."""
+    from . import browser_evidence
+
+    try:
+        return browser_evidence.record(project, [entry])
+    except Exception as error:  # noqa: BLE001
+        logger.warning("browser.evidence_record_failed: %s: %s", type(error).__name__, error)
+        return None
 
 
 class _BuildRequestBody(BaseModel):

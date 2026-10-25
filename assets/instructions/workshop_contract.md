@@ -97,7 +97,9 @@ with `workshop-app-deploy` (the `deploy_databricks_app` MCP tool), never
 works, exercise the primary action with `workshop-browser inspect <url> --both
 --do click:"Save"` (local, then `--deployed`),
 reload if saving is promised, and open every screenshot with your image tool.
-Prove writes as the app with `workshop-browser verify-write`.
+Prove writes to Unity Catalog tables as the app with `workshop-browser verify-write`.
+It cannot see Lakebase Postgres writes: write through the deployed app
+(`--deployed --do`), read the row back, and say the app-identity check is unverified.
 Do not install Playwright browsers or run `databricks apps validate` routinely.
 A reported gap is what remains unverified; say so. HTTP 200 or a compile is not proof.
 

@@ -13,9 +13,11 @@ describe the page: a file name is not proof that you saw it.
     workshop-browser verify-write --app <app-name> --table <catalog.schema.table>
 
 Local checks the render on this terminal. --deployed opens your Databricks App
-signed in as the attendee. verify-write proves the deployed app itself wrote
-the table (query history shows the app's service principal), which is the only
-proof that a write path works for real users.
+signed in as the attendee. verify-write proves the deployed app itself wrote a
+Unity Catalog table (query history shows the app's service principal). It
+cannot see Lakebase Postgres writes, which never reach query history: for those
+it reports a gap. Then write through the deployed app (inspect --deployed --do),
+read the row back, and tell the attendee the app-identity check is unverified.
 
 Exit status: 0 observed, 3 a verification gap (say it is unverified), 1 error.
 """
