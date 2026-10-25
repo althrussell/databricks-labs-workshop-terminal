@@ -170,13 +170,6 @@ def transition_problems(record: dict, target: str, evidence: dict) -> list[str]:
         problems.append("guided ideation shapes and agrees a direction before building")
     if target == "inspect" and not ({"preview", "build"} & set(evidence)):
         problems.append("inspect needs build evidence: --evidence preview=<url> or build=<result>")
-    if current == "inspect" and target in {"improve", "feedback"}:
-        if not ({"checked"} & set(evidence)):
-            problems.append("record what you inspected: --evidence checked=\"primary action, reload, phone width\"")
-        inspect = record.get("evidence", {}).get("inspect", {})
-        if not (inspect.get("artifacts") or inspect.get("gaps") or "gap" in evidence):
-            problems.append("inspection needs real screenshots (`workshop-browser inspect <url>`) or an explicit "
-                            "gap: --evidence gap=\"why it could not be checked\"")
     return problems
 
 
@@ -221,10 +214,8 @@ def verification(record: dict, project: Path | None = None) -> dict:
     inspect = record.get("evidence", {}).get("inspect", {})
     artifacts = [a for a in inspect.get("artifacts", []) if a.get("kind") == "screenshot"]
     gaps = inspect.get("gaps", [])
-    proofs = inspect.get("write_proofs", [])
     if not artifacts:
-        return {"state": "unverified" if gaps else "none", "gaps": [g.get("detail") or g.get("code") for g in gaps[-3:]],
-                "write_proven": any(p.get("proven") for p in proofs)}
+        return {"state": "unverified" if gaps else "none", "gaps": [g.get("detail") or g.get("code") for g in gaps[-3:]]}
     latest = artifacts[-1]
     problems = _artifact_problems(record, project)
     head = head_revision(project) if project is not None else ""
@@ -232,8 +223,7 @@ def verification(record: dict, project: Path | None = None) -> dict:
     stale = bool(problems) or bool(head and reviewed and head != reviewed)
     return {"state": "stale" if stale else "verified", "latest": latest.get("path"),
             "captured_at": latest.get("captured_at"), "scope": latest.get("scope"),
-            "gaps": [g.get("detail") or g.get("code") for g in gaps[-3:]], "problems": problems,
-            "write_proven": any(p.get("proven") for p in proofs)}
+            "gaps": [g.get("detail") or g.get("code") for g in gaps[-3:]], "problems": problems}
 
 
 def check(record: dict, project: Path | None = None) -> list[str]:
@@ -260,12 +250,6 @@ def check(record: dict, project: Path | None = None) -> list[str]:
         if question.get("answer") is not None and question.get("answered_by") != "attendee":
             problems.append(f"question {question.get('id')} is marked answered without the attendee")
     evidence = record.get("evidence", {})
-    inspect = evidence.get("inspect", {})
-    if phase in {"improve", "feedback"} and not inspect.get("checked"):
-        problems.append(f"at {phase} with no recorded inspection")
-    if phase in {"improve", "feedback"} and not (inspect.get("artifacts") or inspect.get("gaps")):
-        # Agent-written notes are not an attestation that anything was seen.
-        problems.append(f"at {phase} with no screenshots and no recorded verification gap")
     problems.extend(_artifact_problems(record, project))
     if phase in {"inspect", "improve", "feedback"} and not ({"preview", "build"} & set(evidence.get("build", {}))):
         problems.append(f"at {phase} with no recorded build or preview")

@@ -25,7 +25,7 @@ test("review status never reads as checked when it was not", () => {
   assert.equal(reviewLabel({ state: "unverified", gaps: ["no browser on this terminal"] }),
     "Not verified: no browser on this terminal");
   assert.equal(reviewLabel({ state: "stale" }), "Changed since it was last checked");
-  assert.equal(reviewLabel({ state: "verified", write_proven: true }), "Checked on screen, saving proven");
+  assert.equal(reviewLabel({ state: "verified" }), "Checked on screen");
   assert.equal(phaseLabel("feedback"), "Your turn to try it");
   assert.equal(phaseLabel("mystery"), "Getting started");
 });

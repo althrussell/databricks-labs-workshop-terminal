@@ -890,13 +890,6 @@ class _BrowserInspectBody(_EmailBody):
     project: str | None = None
 
 
-class _BrowserWriteBody(_EmailBody):
-    app: str = Field(max_length=63)
-    table: str = Field(max_length=400)
-    since_minutes: int = Field(default=30, ge=1, le=240)
-    project: str | None = None
-
-
 def _owned_project(user, requested: str | None) -> Path:
     """The attendee's own project: given, or the selected one; never another's."""
     from . import projects
@@ -949,43 +942,6 @@ def browser_inspect(body: _BrowserInspectBody, request: Request):
         return {"ok": False, "gap": entry, "revision": revision}
     revision = browser_evidence.record(project, result["artifacts"])
     return {"ok": True, **result, "revision": revision}
-
-
-@app.post("/api/browser/verify-write")
-def browser_verify_write(body: _BrowserWriteBody, request: Request):
-    """Prove a deployed write ran as the app's own identity, or record why not."""
-    from . import browser_evidence
-
-    principal = _callback_identity(body, request)
-    user = user_manager.get(principal.name)
-    project = _owned_project(user, body.project)
-    host, token = browser_evidence.attendee_token(user)
-    try:
-        if not host or not token:
-            raise browser_evidence.Gap("sign_in_unavailable", "your Databricks sign-in is not ready yet")
-        proof = browser_evidence.verify_write(host=host, token=token, app_name=body.app, table=body.table,
-                                              since_minutes=body.since_minutes)
-    except browser_evidence.Gap as gap:
-        entry = {**gap.as_dict(), "scope": "deployed", "app": body.app, "table": body.table}
-        return {"ok": False, "gap": entry, "revision": _record_evidence(project, entry)}
-    except Exception as error:  # noqa: BLE001 — an agent gets a gap to report, never a 500
-        logger.warning("browser.verify_write_failed app=%s: %s: %s", body.app, type(error).__name__, error)
-        gap = browser_evidence.Gap("verify_failed", f"the write check failed unexpectedly ({type(error).__name__}); "
-                                   "the write is unverified, say so")
-        entry = {**gap.as_dict(), "scope": "deployed", "app": body.app, "table": body.table}
-        return {"ok": False, "gap": entry, "revision": _record_evidence(project, entry)}
-    return {"ok": proof["proven"], **proof, "revision": _record_evidence(project, proof)}
-
-
-def _record_evidence(project, entry: dict) -> int | None:
-    """Record evidence in the workflow record; a failed save never fails the check itself."""
-    from . import browser_evidence
-
-    try:
-        return browser_evidence.record(project, [entry])
-    except Exception as error:  # noqa: BLE001
-        logger.warning("browser.evidence_record_failed: %s: %s", type(error).__name__, error)
-        return None
 
 
 class _BuildRequestBody(BaseModel):

@@ -93,15 +93,13 @@ analysis, form, conversation, learning). Never claim a review you did not run.
 
 Typecheck and build (`apx dev check`, `apx build` for APX), then deploy only
 with `workshop-app-deploy` (the `deploy_databricks_app` MCP tool), never
-`databricks bundle deploy`. Share the URL as a first preview. Before saying it
-works, exercise the primary action with `workshop-browser inspect <url> --both
---do click:"Save"` (local, then `--deployed`),
-reload if saving is promised, and open every screenshot with your image tool.
-Prove writes to Unity Catalog tables as the app with `workshop-browser verify-write`.
-It cannot see Lakebase Postgres writes: write through the deployed app
-(`--deployed --do`), read the row back, and say the app-identity check is unverified.
+`databricks bundle deploy`. Share the URL as a first preview and invite the
+attendee to try it. Before saying it works, exercise the primary action and
+reload if saving is promised; say what remains unverified. HTTP 200 or a
+compile is not proof. `workshop-browser inspect <url>` (add `--deployed` for the
+live app) is optional: use it when seeing the page helps, and open the
+screenshot with your image tool before describing it.
 Do not install Playwright browsers or run `databricks apps validate` routinely.
-A reported gap is what remains unverified; say so. HTTP 200 or a compile is not proof.
 
 Then ask them to do their real task and tell you what is hard, missing or
 still undecided. Compare that with the agreed success criteria, improve,

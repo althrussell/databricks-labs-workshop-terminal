@@ -6,7 +6,6 @@ export interface BuildReview {
   state: "verified" | "stale" | "unverified" | "none";
   latest?: string | null;
   gaps?: string[];
-  write_proven?: boolean;
 }
 
 export interface BuildView {
@@ -38,7 +37,7 @@ export function phaseLabel(phase: string): string {
 
 export function reviewLabel(review: BuildReview): string {
   switch (review.state) {
-    case "verified": return review.write_proven ? "Checked on screen, saving proven" : "Checked on screen";
+    case "verified": return "Checked on screen";
     case "stale": return "Changed since it was last checked";
     case "unverified": return `Not verified${review.gaps?.length ? `: ${review.gaps[review.gaps.length - 1]}` : ""}`;
     default: return "Not checked yet";
