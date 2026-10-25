@@ -188,11 +188,11 @@ wheels = [
 
 [[package]]
 name = "certifi"
-version = "2026.7.22"
+version = "2026.10.19"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/a3/c2/24167ea9858356b47a87a50d39908bfdb72ceeefe0041586e704e5376b3a/certifi-2026.7.22.tar.gz", hash = "sha256:741e2c3b351ddf169a738da9f2c048608ff7f2c5cc02f1ebc6b118bb090d5d55", size = 138112, upload-time = "2026-07-22T03:35:12.644Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a6/bd/1436c50cc46699de0230fbaacc1d1de7bfec413176099949e9d5112e88f2/certifi-2026.10.19.tar.gz", hash = "sha256:035c1e85572b141bf1c3a3eff0e33a8eb74917522f2559075ff8d2fea780a1ae", size = 137598, upload-time = "2026-10-20T02:24:16.604Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl", hash = "sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775", size = 136983, upload-time = "2026-07-22T03:35:11.276Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/51/29046e48f693c54e5b7412216d447a1d8362c9653148d98c02cdf65fa733/certifi-2026.10.19-py3-none-any.whl", hash = "sha256:42d35340cc5b9ba78e818ddbff0c5b1c2b779de448a340fd1b989f5fa8670e1b", size = 136464, upload-time = "2026-10-20T02:24:15.072Z" },
 ]
 
 [[package]]
@@ -1245,7 +1245,7 @@ wheels = [
 
 [[package]]
 name = "omnigent"
-version = "0.15.0"
+version = "0.19.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "alembic" },
@@ -1289,9 +1289,9 @@ dependencies = [
     { name = "websockets" },
     { name = "zstandard" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0a/f3/68fbc0d3406910358a205f186830830da6b9ec939dceb5ac9db2d84d2af4/omnigent-0.15.0.tar.gz", hash = "sha256:23614c8b006c5f0ea4fdc218f73b8dafd8f0858ea278da6666f9b3329eed988a", size = 13742521, upload-time = "2026-09-22T15:11:02.411Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b6/37/3563468c0b14b167393bcd5e2fa696f9a2544184d52cf855b77eef42d2cb/omnigent-0.19.1.tar.gz", hash = "sha256:49456db48d115b17eaa5d6ff643740031fe4cd8fa9bc1110456b60e5cff908bc", size = 13823084, upload-time = "2026-10-21T23:44:40.679Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8e/fc/6ef63b44ed61b02c8e49b876c137e2024bbf34c59a5a63de0f4be00b4356/omnigent-0.15.0-py3-none-any.whl", hash = "sha256:0881c9251dd753ebec140a0db00e5c2b24f7ee711c7e01b9e73e4b9d40ce1f15", size = 13355864, upload-time = "2026-09-22T15:10:55.683Z" },
+    { url = "https://files.pythonhosted.org/packages/23/6f/e9aaeef5665416dd2788476edc5c54a8e2a57b44a8b1ead73ac0a115181e/omnigent-0.19.1-py3-none-any.whl", hash = "sha256:e62d57f41dd34bc7bef6a7679197086e70d399a74c1a6136a7f27c344413e70d", size = 14128665, upload-time = "2026-10-21T23:44:37.872Z" },
 ]
 
 [package.optional-dependencies]
@@ -1306,21 +1306,21 @@ databricks = [
 
 [[package]]
 name = "omnigent-client"
-version = "0.15.0"
+version = "0.19.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "omnigent" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7c/45/44d62c8f16c4f9de060e4be0a1aa43cdf8ebb7f3f7e7e2cd681ee56dd073/omnigent_client-0.15.0.tar.gz", hash = "sha256:f526ac4ad4c73b165477de467073e922e4e93b224f743348a3effa689270bcee", size = 101524, upload-time = "2026-09-22T15:11:04.696Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9c/71/86c506cd9e1bc25a38f38359c27b2630728b38d9efc310ef45552b83188b/omnigent_client-0.19.1.tar.gz", hash = "sha256:bfa8006e0865c08fb0a82ac002415be30379970f4538b03b25ffaae1795496d6", size = 102109, upload-time = "2026-10-21T23:43:57.152Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2a/8e/ad4d0bf85e2ee98536f57757f0ad98e757d4c0e1b71a90a00682d60bd243/omnigent_client-0.15.0-py3-none-any.whl", hash = "sha256:9fd9141f0b19107d99a8b1dbcad2186eec678ef80580161fde037889d843d5f2", size = 116585, upload-time = "2026-09-22T15:10:59.335Z" },
+    { url = "https://files.pythonhosted.org/packages/7e/75/ea38ccf3892ea056ccc0b41df7c4430ea60fee03c9c8eb7b3d12ffb0d754/omnigent_client-0.19.1-py3-none-any.whl", hash = "sha256:fec8f9df7b495f9d07c67b00c10a46ae48a5e012181f20690b36c217af3eb5aa", size = 117189, upload-time = "2026-10-21T23:43:55.923Z" },
 ]
 
 [[package]]
 name = "omnigent-ui-sdk"
-version = "0.15.0"
+version = "0.19.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "omnigent-client" },
@@ -1328,9 +1328,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "rich" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/16/8a/8ff2cd8185f039de3054b310257b3265d7400013799ec84d705beb666252/omnigent_ui_sdk-0.15.0.tar.gz", hash = "sha256:bc2ead64b7b8df8adb159e20fd3fbd75583f5dfc0315a458d5f2c0efab74daf7", size = 86045, upload-time = "2026-09-22T15:11:05.733Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/48/11/05e94c93d0a653bcd21f99768e6a4ffe159f76e00c9939cc889ef80c0d19/omnigent_ui_sdk-0.19.1.tar.gz", hash = "sha256:b926bc86155dd89934b0df15b0855092e334b33a4c424e45eb15348e068ac395", size = 86103, upload-time = "2026-10-21T23:44:16.133Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/06/a9/a8fd3bddf37c59b099fc85503935f64e1b9c91ac9e79ab620f3f5797e740/omnigent_ui_sdk-0.15.0-py3-none-any.whl", hash = "sha256:53560b066ebbd1782045b1bfce476826472ba75a2b7f751715d93f582bfe32b1", size = 89882, upload-time = "2026-09-22T15:11:00.717Z" },
+    { url = "https://files.pythonhosted.org/packages/c2/0c/cf3b52c4882f4e3ed2adcefa3bf1758be677cb8b49f32d560c6ef5f353aa/omnigent_ui_sdk-0.19.1-py3-none-any.whl", hash = "sha256:739a3ac5b26e1fe62833c1364e7d0e857e2f0f127315880b64de992dc5a4a37f", size = 89948, upload-time = "2026-10-21T23:44:14.93Z" },
 ]
 
 [[package]]
@@ -2363,7 +2363,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "omnigent", extras = ["databricks"], specifier = "==0.15.0" }]
+requires-dist = [{ name = "omnigent", extras = ["databricks"], specifier = "==0.19.1" }]
 
 [[package]]
 name = "wrapt"

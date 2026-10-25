@@ -326,7 +326,7 @@ env:
     value: "false"
 
   # --- Omnigent (agent meta-harness) ---
-  # Feature flag, default ON: installs the reviewed Omnigent 0.15.0 artifact
+  # Feature flag, default ON: installs the reviewed Omnigent 0.19.1 artifact
   # set (including transitive siblings) plus tmux, then leads the catalog with
   # the Omnigent session. Set to "false" to opt out.
   - name: OMNIGENT_ENABLED
@@ -336,7 +336,7 @@ env:
   # TMUX_STATIC_URL/SHA256 are pinned in code; the env overrides below exist
   # for emergencies (e.g. GitHub release unreachable).
   - name: OMNIGENT_VERSION
-    value: "0.15.0"
+    value: "0.19.1"
   # Dedicated Omnigent App URL. Empty preserves the existing local-server
   # behavior. Control Tower sets the attendee-specific HTTPS URL when remote
   # host/TUI integration is enabled.
