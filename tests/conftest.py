@@ -36,6 +36,21 @@ def client(_test_env):
 
 
 @pytest.fixture(autouse=True)
+def _no_background_build_restore(monkeypatch):
+    """Never run the after-restart build restore behind an unrelated test.
+
+    It would reach for real credentials and the Databricks CLI on a daemon
+    thread that outlives the test. tests/test_build_restore.py drives its own
+    instances directly.
+    """
+    from types import SimpleNamespace
+
+    from server import build_restore
+
+    monkeypatch.setattr(build_restore, "restorer", SimpleNamespace(observe=lambda *args, **kwargs: None))
+
+
+@pytest.fixture(autouse=True)
 def _isolate_user_registry():
     """Drop attendees cached by earlier tests, whose homes point elsewhere.
 

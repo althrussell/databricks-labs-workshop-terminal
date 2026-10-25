@@ -246,9 +246,20 @@ export interface WorkshopProject {
   missing: boolean;
 }
 
+/** Saved builds brought back after a container restart (server/build_restore.py). */
+export interface BuildRestore {
+  id: string;
+  state: "checking" | "restoring" | "restored" | "partial" | "failed";
+  restored: string[];
+  failed: string[];
+  active: string;
+  saved_at: number | null;
+}
+
 export interface ProjectInventory {
   active: string;
   projects: WorkshopProject[];
+  restore?: BuildRestore;
 }
 
 export interface ProjectSelection {

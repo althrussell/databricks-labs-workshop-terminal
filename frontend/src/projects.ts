@@ -1,4 +1,4 @@
-import type { ProjectInventory } from "./api";
+import type { BuildRestore, ProjectInventory } from "./api";
 
 export function buildName(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
@@ -40,4 +40,38 @@ export async function recoverWithConfirmation(
     if (current.active === name && source?.available && !source.missing) return current;
     throw caught;
   }
+}
+
+export function restoreInProgress(restore: BuildRestore | null | undefined): boolean {
+  return restore?.state === "checking" || restore?.state === "restoring";
+}
+
+function names(items: string[]): string {
+  return items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/** What the attendee is told, once, after their terminal restarted. */
+export function restoreNotice(
+  restore: BuildRestore | null | undefined,
+  time: (epochSeconds: number) => string = (seconds) =>
+    new Date(seconds * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+): string {
+  if (!restore || restore.state === "checking") return "";
+  if (restore.state === "restoring") return "Your terminal restarted. Restoring your saved builds…";
+  const caveat = "Changes after that commit aren't included, and the agent's earlier conversation isn't either.";
+  const parts: string[] = [];
+  if (restore.active) {
+    const when = restore.saved_at ? ` (${time(restore.saved_at)})` : "";
+    parts.push(`Your terminal restarted. We restored ${restore.active} from your last saved commit${when}. ${caveat}`);
+    const others = restore.restored.filter((name) => name !== restore.active);
+    if (others.length) parts.push(`${names(others)} ${others.length === 1 ? "is" : "are"} back in My builds too.`);
+  } else if (restore.restored.length) {
+    parts.push(`Your terminal restarted. We restored ${names(restore.restored)} from your last saved ` +
+      `${restore.restored.length === 1 ? "commit" : "commits"}; open My builds to continue. ${caveat}`);
+  }
+  if (restore.failed.length) {
+    parts.push(`${parts.length ? "" : "Your terminal restarted. "}We couldn't restore ${names(restore.failed)} automatically. ` +
+      "Open My builds and choose Recover source; nothing on this terminal was overwritten.");
+  }
+  return parts.join(" ");
 }

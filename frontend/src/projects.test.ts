@@ -39,3 +39,26 @@ test("a failed confirmation read retains the original error", async () => {
   const lost = new TypeError("Failed to fetch");
   await assert.rejects(recoverWithConfirmation("film-club", "", async () => {throw lost;}, async () => {throw new TypeError("Unavailable");}), caught => caught === lost);
 });
+
+test("after a restart the attendee is told what came back and what did not", async () => {
+  const { restoreNotice, restoreInProgress } = await import("./projects");
+  const at = (seconds: number) => `t${seconds}`;
+  const base = { id: "1.000", restored: [], failed: [], active: "", saved_at: null };
+  assert.equal(restoreNotice({ ...base, state: "checking" }, at), "");
+  assert.equal(restoreInProgress({ ...base, state: "checking" }), true);
+  assert.match(restoreNotice({ ...base, state: "restoring" }, at), /Restoring your saved builds/);
+  assert.equal(
+    restoreNotice({ ...base, state: "restored", restored: ["substation-outages", "repair-desk"], active: "substation-outages", saved_at: 42 }, at),
+    "Your terminal restarted. We restored substation-outages from your last saved commit (t42). " +
+      "Changes after that commit aren't included, and the agent's earlier conversation isn't either. " +
+      "repair-desk is back in My builds too.");
+  assert.match(restoreNotice({ ...base, state: "restored", restored: ["repair-desk"] }, at),
+    /We restored repair-desk from your last saved commit; open My builds to continue/);
+  const partial = restoreNotice({ ...base, state: "partial", restored: ["repair-desk"], failed: ["garden-plan"], active: "repair-desk", saved_at: 7 }, at);
+  assert.match(partial, /We restored repair-desk from your last saved commit \(t7\)/);
+  assert.match(partial, /We couldn't restore garden-plan automatically\. Open My builds and choose Recover source; nothing on this terminal was overwritten\./);
+  assert.equal(restoreNotice({ ...base, state: "failed", failed: ["a", "b"] }, at),
+    "Your terminal restarted. We couldn't restore a and b automatically. Open My builds and choose Recover source; nothing on this terminal was overwritten.");
+  assert.equal(restoreInProgress({ ...base, state: "restored" }), false);
+  assert.equal(restoreNotice(null, at), "");
+});

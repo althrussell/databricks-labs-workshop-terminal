@@ -124,7 +124,8 @@ def inventory(user) -> dict:
     return {"active": state["active"], "projects": entries}
 
 
-def select(user, name: str, *, goal: str | None = None, new: bool = False) -> dict:
+def select(user, name: str, *, goal: str | None = None, new: bool = False, activate: bool = True) -> dict:
+    """Record a build and, unless ``activate`` is false, make it the current one."""
     path = project_path(user, name)
     with user.content_lock:
         state = read(user)
@@ -138,7 +139,8 @@ def select(user, name: str, *, goal: str | None = None, new: bool = False) -> di
             goal = _goal(path)
             if goal is None:
                 goal = state["goals"].get(name, "")
-        state["active"] = name
+        if activate:
+            state["active"] = name
         state["goals"][name] = goal
         if path.exists():
             state["materialized"] = sorted(set(state["materialized"]) | {name})
@@ -228,58 +230,90 @@ def saved_inventory(user) -> dict:
     return value
 
 
-def recover(user, name: str) -> dict:
+def saved_at(user, name: str) -> float | None:
+    """When a build's synced copy last changed, in epoch seconds, if Workspace says.
+
+    Workspace reports no time for a directory, only for files, so this is the
+    newest file at the top of the copy. Each commit syncs the whole tree, so that
+    tracks the last saved commit closely enough to order builds and to tell the
+    attendee roughly what they got back.
+    """
+    result = _cli(user, ["workspace", "list", f"{_workspace_root(user)}/{valid_name(name)}", "--output", "json"])
     try:
-        return _recover(user, name)
+        payload = json.loads(result.stdout or "[]")
+        entries = payload if isinstance(payload, list) else payload.get("objects", [])
+        times = [entry["modified_at"] for entry in entries
+                 if isinstance(entry, dict) and isinstance(entry.get("modified_at"), (int, float))]
+    except (ValueError, TypeError, AttributeError):
+        return None
+    return max(times) / 1000 if times else None
+
+
+def recover(user, name: str, *, activate: bool = True) -> dict:
+    try:
+        return _recover(user, name, activate=activate)
     except (OSError, subprocess.SubprocessError) as error:
         raise ProjectError("Recovery did not finish. Any recovered local files are retained; check My builds and retry project setup before continuing.") from error
 
 
-def _recover(user, name: str) -> dict:
-    """Recover source into a fresh directory; never overwrite local work."""
+def _recover(user, name: str, *, activate: bool = True) -> dict:
+    """Recover source into a fresh directory; never overwrite local work.
+
+    The download runs outside the content lock, so a slow export never holds up
+    an agent launch. The lock covers only the step that creates the build, and
+    copytree's exclusive mkdir still refuses a build that appeared meanwhile.
+    """
     target = project_path(user, name)
-    with user.content_lock:
-        if target.exists():
-            raise ProjectError("This build already has local files. Continue it; recovery will not overwrite them.")
-        saved = saved_inventory(user)
-        if not any(entry["name"] == name and entry["saved"] for entry in saved["projects"]):
-            raise ProjectError("No synced source was found for this build. Check its recorded deployment source; nothing was recreated.")
-        with tempfile.TemporaryDirectory(prefix=".recover-", dir=root(user)) as temporary:
-            staged = Path(temporary) / name
-            _cli(user, ["workspace", "export-dir", f"{_workspace_root(user)}/{name}", str(staged)], timeout=180)
-            # Workspace sync contains source, not Git history. Strip runtime
-            # products. Retain custom skill assets and ownership manifests so
-            # setup can refresh only workshop-managed copies.
-            files = 0
-            for directory, dirs, names in os.walk(staged, followlinks=False):
-                parent = Path(directory)
-                for child in list(dirs):
-                    candidate = parent / child
-                    if child in SKIP_DIRS or candidate.is_symlink():
-                        dirs.remove(child)
-                        if candidate.is_symlink():
-                            candidate.unlink()
-                        else:
-                            shutil.rmtree(candidate)
-                for child in names:
-                    candidate = parent / child
+    if target.exists():
+        raise ProjectError("This build already has local files. Continue it; recovery will not overwrite them.")
+    saved = saved_inventory(user)
+    if not any(entry["name"] == name and entry["saved"] for entry in saved["projects"]):
+        raise ProjectError("No synced source was found for this build. Check its recorded deployment source; nothing was recreated.")
+    with tempfile.TemporaryDirectory(prefix=".recover-", dir=root(user)) as temporary:
+        staged = Path(temporary) / name
+        _cli(user, ["workspace", "export-dir", f"{_workspace_root(user)}/{name}", str(staged)], timeout=180)
+        # Workspace sync contains source, not Git history. Strip runtime
+        # products. Retain custom skill assets and ownership manifests so
+        # setup can refresh only workshop-managed copies.
+        files = 0
+        for directory, dirs, names in os.walk(staged, followlinks=False):
+            parent = Path(directory)
+            for child in list(dirs):
+                candidate = parent / child
+                if child in SKIP_DIRS or candidate.is_symlink():
+                    dirs.remove(child)
                     if candidate.is_symlink():
                         candidate.unlink()
                     else:
-                        files += 1
-            if not files:
-                raise ProjectError("The saved build contains no source files. Local work was not recreated.")
+                        shutil.rmtree(candidate)
+            for child in names:
+                candidate = parent / child
+                if candidate.is_symlink():
+                    candidate.unlink()
+                else:
+                    files += 1
+        if not files:
+            raise ProjectError("The saved build contains no source files. Local work was not recreated.")
+        with user.content_lock:
             # copytree's exclusive mkdir rejects a target created during the
             # download, rather than replacing that newly written work.
             try:
                 shutil.copytree(staged, target)
             except FileExistsError as error:
                 raise ProjectError("Local files appeared during recovery. They were not overwritten; check My builds before continuing.") from error
-        env = user.shell_env()
-        helper = Path(__file__).resolve().parents[1] / "assets/bin/workshop-init-project"
-        prepared = subprocess.run(["bash", str(helper), name, "--json"], env=env,
-                                  capture_output=True, text=True, timeout=90)
-        if prepared.returncode:
-            raise ProjectError("Source recovered, but project setup is incomplete. Local files are retained; reopen an agent and retry workshop-init-project for this build.")
-        select(user, name, goal=_goal(target))
+            previous = read(user)["active"]
+            env = user.shell_env()
+            helper = Path(__file__).resolve().parents[1] / "assets/bin/workshop-init-project"
+            prepared = subprocess.run(["bash", str(helper), name, "--json"], env=env,
+                                      capture_output=True, text=True, timeout=90)
+            if prepared.returncode:
+                raise ProjectError("Source recovered, but project setup is incomplete. Local files are retained; reopen an agent and retry workshop-init-project for this build.")
+            select(user, name, goal=_goal(target), activate=activate)
+            if not activate:
+                # The helper makes the build it prepares current; put back the
+                # attendee's own selection.
+                state = read(user)
+                if state["active"] != previous:
+                    state["active"] = previous
+                    _write(selection_path(user), state, within=Path(user.home))
     return inventory(user)

@@ -1222,16 +1222,27 @@ class SelectProjectBody(BaseModel):
 
 @app.get("/api/projects")
 def list_projects(principal: Principal = Depends(get_current_user)):
-    from . import projects
+    from . import build_restore, projects
 
     try:
         user = user_manager.get(principal.name)
         with user.content_lock:
             value = projects.inventory(user)
             session_manager.update_project(user, value["active"])
-            return value
     except projects.ProjectError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
+
+    def prepare() -> None:
+        ensure_user_credentials(user)
+        user_content.provision(user)
+
+    # A fresh container (after an Apps restart) brings saved builds back in the
+    # background; this response never waits for it.
+    restore = build_restore.restorer.observe(user, value, prepare=prepare,
+                                             busy=lambda: bool(session_manager.active()))
+    if restore is not None:
+        value["restore"] = restore
+    return value
 
 
 @app.post("/api/projects/saved")
