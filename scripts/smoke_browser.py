@@ -167,7 +167,7 @@ def run(work: Path, out: Path) -> None:
     project.mkdir(exist_ok=True)
     try:
         result = browser_evidence.inspect(browser_evidence.InspectRequest(
-            url=f"http://localhost:{server.server_address[1]}/", scope="local", viewports=["desktop", "phone"],
+            url=f"http://localhost:{server.server_address[1]}/", scope="local", viewports=["desktop"],
             actions=["click:Log an outage"], project=project, settle_seconds=0.5))
     finally:
         server.shutdown()

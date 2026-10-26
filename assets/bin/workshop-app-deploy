@@ -915,6 +915,8 @@ class DeployController:
         state["reason"] = reason
         state["finished_at"] = self.wall_time()
         store.save(state)
+        if status == "succeeded" and state.get("app_url") and state.get("project_path"):
+            self._record_workflow_preview(Path(state["project_path"]), str(state["app_url"]))
         result = self._result(
             state, status, reason, resumed, call_started, message=message
         )
@@ -922,6 +924,64 @@ class DeployController:
         if cleanup is not None:
             cleanup(state)
         return result
+
+    def _record_workflow_preview(self, project: Path, app_url: str) -> None:
+        workflow_path = project / ".workshop" / "design-workflow.json"
+        if workflow_path.is_symlink() or workflow_path.parent.is_symlink():
+            return
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self.wall_time()))
+        try:
+            record = json.loads(workflow_path.read_text(encoding="utf-8")) if workflow_path.is_file() else {
+                "schema": "workshop-design-workflow",
+                "version": 1,
+                "workflow_version": 2,
+                "attendee": self.env.get("WORKSHOP_USER_EMAIL", ""),
+                "project": project.name,
+                "revision": 0,
+                "brief_revision": 0,
+                "phase": "build",
+                "path": {"value": "rapid", "chosen_by": "attendee", "source": "chat", "at": now},
+                "facts": [],
+                "assumptions": [],
+                "questions": [],
+                "direction": None,
+                "success_criteria": [],
+                "evidence": {},
+                "history": [],
+                "requests": [],
+                "outcome": None,
+            }
+            if not isinstance(record, dict) or record.get("schema") != "workshop-design-workflow":
+                return
+            if not (record.get("path") or {}).get("value"):
+                record["path"] = {"value": "rapid", "chosen_by": "attendee", "source": "chat", "at": now}
+            build_evidence = record.setdefault("evidence", {}).setdefault("build", {})
+            build_evidence["preview"] = app_url
+            build_evidence.setdefault("build", "deployed")
+            previous_phase = record.get("phase") or "build"
+            if previous_phase in {"understand", "choose_path", "shape", "agree", "build", "inspect", "improve"}:
+                record["phase"] = "feedback"
+                record.setdefault("history", []).append({
+                    "at": now,
+                    "event": "stage",
+                    "from": previous_phase,
+                    "to": "feedback",
+                    "evidence": {"preview": app_url},
+                    "brief_revision": record.get("brief_revision", 0),
+                })
+            record["revision"] = int(record.get("revision") or 0) + 1
+            workflow_path.parent.mkdir(parents=True, exist_ok=True)
+            fd, temporary = tempfile.mkstemp(prefix=".design-workflow-", dir=workflow_path.parent)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    json.dump(record, handle, indent=2, sort_keys=True)
+                    handle.write("\n")
+                os.replace(temporary, workflow_path)
+            finally:
+                with contextlib.suppress(FileNotFoundError):
+                    os.unlink(temporary)
+        except OSError:
+            return
 
     def _result(
         self,

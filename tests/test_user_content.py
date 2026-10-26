@@ -125,9 +125,9 @@ def test_memory_distinguishes_preview_from_verified_task(client, monkeypatch):
         text = open(os.path.join(home, *parts)).read()
         assert "apx dev check" in text
         assert "first preview" in text
-        assert "exercise the primary action" in text
-        assert "reload if saving is promised" in text
+        assert "try in their browser" in text
         assert "what remains unverified" in text
+        assert "impeccable-finish-reviewer" in text
 
 
 def test_every_agent_gets_impeccables_setup_in_order_on_both_paths(client, monkeypatch):
@@ -138,7 +138,7 @@ def test_every_agent_gets_impeccables_setup_in_order_on_both_paths(client, monke
     for parts in _MEMORY_CHANNELS:
         text = " ".join(open(os.path.join(home, *parts)).read().split())
         assert "Rapid means no interview" not in text
-        order = [text.index(step) for step in ("impeccable context", "reference/new-work.md",
+        order = [text.index(step) for step in ("impeccable context", "DESIGN.md",
                                                 "reference/craft-floor.md", "$WORKSHOP_DESIGN_REFERENCES",
                                                 "run `detect` once")]
         assert order == sorted(order)

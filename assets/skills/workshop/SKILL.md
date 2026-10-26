@@ -71,11 +71,11 @@ their UI deploys with the workshop app tool. Test-run apps only on
 
 ## Seeing the app (optional)
 
-`workshop-browser inspect <url>` (add `--deployed` for the live app, `--phone`
-or `--both` for sizes, `--do click:"Save"` for an action) takes screenshots into
-`.workshop/evidence/`. Open each one with your image tool before you describe
-it. Use it when seeing the page helps; it isn't a step for every change. Don't
-install Playwright browsers or run `databricks apps validate` routinely.
+The attendee tests the live URL directly in their browser after deploy. Do not
+install Playwright browsers, spawn headless screenshot loops or run
+`databricks apps validate`. (If the facilitator enabled `workshop-browser` for
+this event, `workshop-browser inspect <url>` runs a single optional desktop
+check.)
 
 ## The workflow helper
 

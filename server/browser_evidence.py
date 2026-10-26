@@ -46,7 +46,6 @@ BROWSER_STAMP = "browser.install.json"
 VIEWPORTS = {
     # name: (width, height, device scale, mobile)
     "desktop": (1280, 800, 1, False),
-    "phone": (390, 844, 3, True),
 }
 EVIDENCE_DIR = ".workshop/evidence"
 _START_SECONDS = 20.0
@@ -71,10 +70,17 @@ class Gap(Exception):
 # The prepared browser
 # ---------------------------------------------------------------------------
 
+def _explicitly_disabled() -> bool:
+    raw = os.environ.get("WORKSHOP_BROWSER_ENABLED")
+    return raw is not None and raw.strip() != "" and not config.workshop_browser_enabled()
+
+
 def browser_binary() -> str | None:
     explicit = os.environ.get("WORKSHOP_BROWSER", "").strip()
     if explicit:
         return explicit if os.path.isfile(explicit) and os.access(explicit, os.X_OK) else None
+    if _explicitly_disabled():
+        return None
     try:
         stamp = json.loads((Path(config.shared_prefix()) / BROWSER_STAMP).read_text())
     except (OSError, ValueError):
@@ -104,9 +110,19 @@ def browser_env(binary: str) -> dict[str, str]:
 
 def status() -> dict:
     """Whether agents can inspect pages here, and if not, why not."""
+    if _explicitly_disabled() and not os.environ.get("WORKSHOP_BROWSER", "").strip():
+        return {
+            "available": False,
+            "reason": "browser inspection is disabled for this event (WORKSHOP_BROWSER_ENABLED=false)",
+            "reason_code": "disabled",
+        }
     binary = browser_binary()
     if binary is None:
-        reason, code = "the prepared browser is not installed on this terminal", "not_installed"
+        if config.workshop_browser_enabled():
+            reason, code = "the prepared browser is not installed on this terminal", "not_installed"
+        else:
+            reason = "browser inspection is disabled for this event (WORKSHOP_BROWSER_ENABLED=false)"
+            code = "disabled"
         try:
             stamp = json.loads((Path(config.shared_prefix()) / BROWSER_STAMP).read_text())
             reason = str(stamp.get("error") or reason)
