@@ -23,13 +23,15 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 INSTRUCTIONS = ROOT / "assets" / "instructions" / "CLAUDE.md"
+# The mechanics moved out of the always-loaded file into the on-demand skill.
+WORKSHOP_SKILL = ROOT / "assets" / "skills" / "workshop" / "SKILL.md"
 README = ROOT / "README.md"
 PACK = ROOT / "content" / "default_pack.json"
 
 
 @pytest.fixture(scope="module")
 def instructions() -> str:
-    return INSTRUCTIONS.read_text()
+    return INSTRUCTIONS.read_text() + WORKSHOP_SKILL.read_text()
 
 
 @pytest.fixture(scope="module")

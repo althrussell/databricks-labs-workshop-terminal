@@ -48,6 +48,9 @@ _DISCOVERY_MARKER = "<!-- workshop-discovery -->"
 _DISCOVERY_ANCHOR_SLOT = "<!-- discovery-anchor -->"
 _WORKSHOP_CONTRACT_SLOT = "<!-- workshop-contract-slot -->"
 _TERMINAL_SAFETY_SLOT = "<!-- terminal-safety-slot -->"
+# Who the agent is and how it works with the attendee. Home channels only: a
+# project worker is handed tasks by another agent and never meets the attendee.
+_TEAMMATE_SLOT = "<!-- workshop-teammate-slot -->"
 _CALLBACK_CAPABILITY = os.path.join(".config", "workshop", "callback-capability")
 
 DEFAULT_DEEPWIKI_MCP = "https://mcp.deepwiki.com/mcp"
@@ -258,6 +261,10 @@ def _overlay(text: str, name: str, marker: str) -> str:
 def _base_instructions() -> str:
     with open(os.path.join(_ASSETS, "instructions", "CLAUDE.md")) as f:
         text = _compose_workshop_contract(f.read())
+    if text.count(_TEAMMATE_SLOT) != 1:
+        raise ValueError("Home instructions require exactly one teammate slot")
+    with open(os.path.join(_ASSETS, "instructions", "teammate.md")) as f:
+        text = text.replace(_TEAMMATE_SLOT, f.read().strip())
     if config.lab_coach_enabled():
         text = _overlay(text, "lab_coach.md", _COACH_MARKER)
     # C6: the agent is the only thing positioned to notice what an attendee is
@@ -310,6 +317,12 @@ _APPROACH = {
     "learn": "**Teach me while we build**: offer small, relevant hands-on steps and explain why.",
     "lead": "**Let me drive**: they set constraints and choose what you implement; ask before acting.",
 }
+_BACKGROUND = {
+    "domain": "**business or domain side**: outcomes first in plain language; you handle the implementation",
+    "data": "**data and SQL**: keep their queries and data choices visible; explain query to API to app",
+    "developer": "**software developer**: real component names, architecture and diffs; they set constraints",
+    "exploring": "**just exploring**: concrete examples and prepared data first, then their own idea",
+}
 _DETAIL = {
     "adaptive": "adapt explanation detail to each request",
     "brief": "keep explanations brief: lead with the result",
@@ -329,12 +342,17 @@ def _persona_overlay(user: User) -> str:
     effective = profile.effective()
     approach = _APPROACH[effective["working_approach"]]
     if not effective["working_approach_stated"]:
-        approach += " (default; they have not chosen one)"
+        approach += (" (default; they have not chosen one). Not chosen yet: offer the three ways of working "
+                     "when you meet them, and save their answer.")
+    background = effective.get("background") or ""
+    starting = (_BACKGROUND[background] if background in _BACKGROUND and effective.get("background_stated")
+                else "not known yet: ask once when you meet them, and save their answer")
     lines = [
         _PERSONA_MARKER,
         "## How they want to work with you",
         "",
         f"- Working approach: {approach}",
+        f"- Starting point: {starting}.",
         f"- Explanation detail: {_DETAIL[effective['explanation_detail']]}.",
     ]
     if effective["technical_vocabulary"]:
@@ -364,8 +382,8 @@ def _wizard_overlay(user: User) -> str:
     two unrelated use cases and the account brief reads as though they wanted two
     different things.
 
-    Empty when the attendee skipped, which leaves the agent in exactly the state
-    it was in before the wizard existed — free to ask.
+    Empty when the attendee skipped: the agent then meets them itself and asks
+    what the wizard would have (teammate.md, "Meeting them").
     """
     from . import content, wizard
 
@@ -506,6 +524,8 @@ def _write_instructions_locked(user: User) -> None:
     agents_md = os.path.join(user.home, ".codex", "AGENTS.md")
     os.makedirs(os.path.dirname(agents_md), exist_ok=True)
     adapted = re.sub(r"^#\s+.*$", "# Codex Agent Instructions", text, count=1, flags=re.MULTILINE)
+    # Codex discovers skills in ~/.agents/skills; ~/.claude/skills holds Claude's payloads.
+    adapted = adapted.replace("`~/.claude/skills`", "`~/.agents/skills`")
     _atomic_write(agents_md, adapted, 0o600)
 
 

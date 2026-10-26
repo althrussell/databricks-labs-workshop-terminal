@@ -1,13 +1,16 @@
 """Optional collaboration preferences, independent of a product's saved goal.
 
-Three independent dimensions (W2), each optional and changeable at any time:
+Four independent dimensions (W2), each optional and changeable at any time:
 
 - **working approach** with the coding agent: ``co_build`` (build with me),
   ``learn`` (teach me while we build) or ``lead`` (let me drive). Unset
   defaults gently to building together;
 - **explanation detail**: ``adaptive``, ``brief`` or ``detailed``;
 - **engagement path** default: ``rapid`` or ``guided``. A project's own
-  recorded path (``.workshop/design-workflow.json``) takes precedence.
+  recorded path (``.workshop/design-workflow.json``) takes precedence;
+- **background**, the starting point they told us: ``domain`` (business or
+  domain side), ``data`` (data and SQL), ``developer`` or ``exploring``. It is
+  only ever what they said, never inferred from role, jargon or message length.
 
 They are additive fields on schema version 1, so an older release reading a
 newer profile keeps working. ``help_preference`` is the legacy single choice;
@@ -27,8 +30,10 @@ PREFERENCES = ("", "guided", "concise", "technical")
 APPROACHES = ("", "co_build", "learn", "lead")
 DETAILS = ("", "adaptive", "brief", "detailed")
 ENGAGEMENT_PATHS = ("", "rapid", "guided")
+BACKGROUNDS = ("", "domain", "data", "developer", "exploring")
 CHOICE_SOURCES = ("ui", "chat", "wizard", "migrated")
-FIELDS = {"working_approach": APPROACHES, "explanation_detail": DETAILS, "engagement_path": ENGAGEMENT_PATHS}
+FIELDS = {"working_approach": APPROACHES, "explanation_detail": DETAILS, "engagement_path": ENGAGEMENT_PATHS,
+          "background": BACKGROUNDS}
 
 
 @dataclass
@@ -41,6 +46,7 @@ class Profile:
     working_approach: str = ""
     explanation_detail: str = ""
     engagement_path: str = ""
+    background: str = ""
     choice_sources: dict = field(default_factory=dict)
 
     def to_json(self) -> dict:
@@ -62,6 +68,8 @@ class Profile:
             "working_approach_stated": bool(self.working_approach),
             "explanation_detail": detail or "adaptive",
             "engagement_path": self.engagement_path,
+            "background": self.background,
+            "background_stated": bool(self.background),
             "technical_vocabulary": self.help_preference == "technical",
             "plain_language": self.help_preference == "guided",
             "sources": sources,

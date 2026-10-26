@@ -1,4 +1,4 @@
-import type { AttendeeProfile, ExplanationDetail, ProfileSave, WorkingApproach } from "./api.ts";
+import type { AttendeeProfile, Background, ExplanationDetail, ProfileSave, WorkingApproach } from "./api.ts";
 
 export type Vocabulary = "" | "guided" | "technical";
 
@@ -6,6 +6,7 @@ export interface Choices {
   approach: WorkingApproach;
   detail: ExplanationDetail;
   vocabulary: Vocabulary;
+  background: Background;
 }
 
 /** The choices a saved profile shows, with the legacy single preference migrated (W2). */
@@ -17,6 +18,7 @@ export function choicesFrom(profile: AttendeeProfile): Choices {
     // "Keep it concise" was a detail level all along.
     detail: profile.explanation_detail || (legacy === "concise" ? "brief" : ""),
     vocabulary: legacy === "technical" || legacy === "guided" ? legacy : "",
+    background: profile.background || "",
   };
 }
 
@@ -31,6 +33,7 @@ export function changesFrom(profile: AttendeeProfile, choices: Choices): Profile
   if (choices.vocabulary !== saved.vocabulary || profile.help_preference === "concise") {
     body.help_preference = choices.vocabulary;
   }
+  if (choices.background !== saved.background) body.background = choices.background;
   return body;
 }
 

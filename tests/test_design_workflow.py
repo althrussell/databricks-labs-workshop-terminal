@@ -222,3 +222,63 @@ def test_wizard_on_and_off_reach_the_same_project_choice(client, project, monkey
     assert "path rapid" in run(project, "show").stdout
     with pytest.raises(ValueError):
         wizard.save(user, {"what_building": "Care console", "engagement_path": "something-else"})
+
+
+def test_the_browser_and_the_conversation_save_a_starting_point(client):
+    owner = {"X-Forwarded-Email": "ui-background@example.com"}
+    profile = client.get("/api/profile", headers=owner).json()
+    assert profile["background"] == ""
+    saved = client.post("/api/profile", headers=owner, json={
+        "expected_revision": profile["revision"], "background": "developer"})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["background"] == "developer" and saved.json()["choice_sources"]["background"] == "ui"
+    refused = client.post("/api/profile", headers=owner, json={
+        "expected_revision": saved.json()["revision"], "background": "rockstar"})
+    assert refused.status_code == 422
+
+    from server.users import user_manager
+
+    user = user_manager.get("chat-background@example.com")
+    user.bootstrap_home()
+    headers = {"X-Workshop-Capability": _capability(user)}
+    chat = client.post("/api/agent/profile", headers=headers, json={
+        "email": "chat-background@example.com", "expected_revision": 0, "changes": {"background": "exploring"}})
+    assert chat.status_code == 200, chat.text
+    assert chat.json()["background"] == "exploring" and chat.json()["choice_sources"] == {"background": "chat"}
+
+
+def test_prefs_sends_a_starting_point_through_the_profile_service(tmp_path, monkeypatch):
+    import importlib.machinery
+    import importlib.util
+    import io
+    import urllib.request
+
+    loader = importlib.machinery.SourceFileLoader("workshop_workflow_cli", str(HELPER))
+    cli = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+    loader.exec_module(cli)
+    home = tmp_path / "home"
+    (home / ".config/workshop").mkdir(parents=True)
+    (home / ".config/workshop/callback-capability").write_text("capability")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("WORKSHOP_USER_EMAIL", "a@example.com")
+    sent = []
+
+    class Reply(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+    def urlopen(request, timeout=15):
+        body = json.loads(request.data)
+        sent.append(body)
+        return Reply(json.dumps({"revision": 5 if body.get("changes") else 4,
+                                 **(body.get("changes") or {})}).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    assert cli.main(["prefs", "--background", "data"]) == 0
+    assert sent == [{"email": "a@example.com"},
+                    {"email": "a@example.com", "expected_revision": 4, "changes": {"background": "data"}}]
+    with pytest.raises(SystemExit):
+        cli.main(["prefs", "--background", "guru"])

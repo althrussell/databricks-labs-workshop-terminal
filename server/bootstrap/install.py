@@ -35,7 +35,7 @@ from .artifacts import (
 from .codex_artifacts import install_native_alias, validate_codex_tarballs
 from .proof import FileDigestProof
 from ..runtime_timing import stage as timing_stage
-from .skill_projection import RETIRED_MANAGED_SKILLS, RETIRED_UX_SKILLS, RETIRED_WORKSHOP_SKILLS, project_skills
+from .skill_projection import PROJECTED_OUT, RETIRED_MANAGED_SKILLS, RETIRED_WORKSHOP_SKILLS, project_skills
 from .apx import VERSION as APX_VERSION, BUN_VERSION
 
 logger = logging.getLogger(__name__)
@@ -89,7 +89,7 @@ SKILLS_REF = os.environ.get("SKILLS_REF", "v0.2.34").strip() or "v0.2.34"
 SKILLS_ARTIFACT = "databricks_agent_skills"
 FORK_SKILLS = frozenset({
     "apx", "workshop-export", "refresh-databricks-skills",
-    "impeccable", "workshop-agent-bricks-cli",
+    "impeccable", "workshop-agent-bricks-cli", "workshop",
 })
 # Provider-specific payloads beside the shared skills (W1): the Claude
 # Impeccable payload, its companion agents and the routing that names them.
@@ -879,7 +879,7 @@ def _persistent_skills_install(
     if not names:
         return None
     upstream_checksum = _directory_checksum(upstream, names)
-    installed_checksum = _directory_checksum(skills_dir, names - RETIRED_UX_SKILLS)
+    installed_checksum = _directory_checksum(skills_dir, names - PROJECTED_OUT)
     effective = artifact.get("effective_content_sha256", expected_checksum)
     if upstream_checksum != expected_checksum or installed_checksum != effective:
         return None
@@ -1907,7 +1907,7 @@ def _install_skills() -> None:
                 "skills content differs from reviewed manifest"
             )
         project_skills(staged)
-        names -= RETIRED_UX_SKILLS
+        names -= PROJECTED_OUT
         checksum = _directory_checksum(staged, names)
         if checksum != artifact.get("effective_content_sha256", artifact["content_sha256"]):
             raise SkillsContractError("projected skills differ from reviewed manifest")
