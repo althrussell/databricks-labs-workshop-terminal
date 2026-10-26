@@ -137,7 +137,7 @@ def test_every_agent_gets_impeccables_setup_in_order_on_both_paths(client, monke
     home = _provisioned_home(client, monkeypatch)
     for parts in _MEMORY_CHANNELS:
         text = " ".join(open(os.path.join(home, *parts)).read().split())
-        assert "Rapid means no interview, not fewer design steps" in text
+        assert "Rapid means no interview" not in text
         order = [text.index(step) for step in ("impeccable context", "reference/new-work.md",
                                                 "reference/craft-floor.md", "$WORKSHOP_DESIGN_REFERENCES",
                                                 "run `detect` once")]
@@ -198,11 +198,13 @@ def test_project_helper_installed(client, monkeypatch):
     assert APX_DEFAULT in open(template).read()
 
 
-def test_custom_agent_skill_is_available_to_both_harnesses(client, monkeypatch):
+@pytest.mark.parametrize("enabled", [False, True])
+def test_custom_agent_skill_is_available_to_both_harnesses_when_enabled(client, monkeypatch, enabled):
+    monkeypatch.setenv("AGENTBRICKS_ENABLED", str(enabled).lower())
     home = _provisioned_home(client, monkeypatch)
     for harness in (".claude", ".agents"):
         skill = Path(home) / harness / "skills/workshop-agent-bricks-cli/SKILL.md"
-        assert skill.is_file()
+        assert skill.is_file() is enabled
 
 
 def test_project_helper_commits_default_stack_memory(client, monkeypatch, tmp_path):

@@ -673,7 +673,7 @@ def launch_context(brief: WizardBrief) -> dict[str, Any]:
         "intent": brief.intent,
         "current_stack": list(brief.current_stack),
         "discovery_record_id": brief.discovery_record_id,
-        "consultation": "Clarify only material unknowns, recommend a small first version, then build.",
+        "consultation": "Reuse these facts without re-asking; confirm the MVP scope, Databricks building blocks and build plan before changing files.",
     }
 
 

@@ -82,7 +82,7 @@ def provision(user: User) -> None:
             _link_skills,
             _write_claude_json,
         )
-        for step in (*steps, _write_git_setup, _write_npm_setup):
+        for step in (*steps, _write_git_setup, _write_npm_setup, _write_shell_setup):
             try:
                 if step == user.refresh_launchers:
                     step()
@@ -313,12 +313,12 @@ def _compose_workshop_contract(text: str) -> str:
 
 
 _APPROACH = {
-    "co_build": "**Build with me**: explain key decisions as you go and let them steer.",
-    "learn": "**Teach me while we build**: offer small, relevant hands-on steps and explain why.",
-    "lead": "**Let me drive**: they set constraints and choose what you implement; ask before acting.",
+    "co_build": "**Build with me**: co-design the MVP, Databricks building blocks and plan first (stop and wait for their go-ahead), then explain key decisions as you go.",
+    "learn": "**Teach me while we build**: co-design and confirm the plan first, then offer small, relevant hands-on steps and explain why.",
+    "lead": "**Let me drive**: they set constraints and choose what you implement at every step; offer options and wait before acting.",
 }
 _BACKGROUND = {
-    "domain": "**business or domain side**: outcomes first in plain language; you handle the implementation",
+    "domain": "**business or domain side**: outcomes first in plain language; explain which Databricks building blocks fit and why without jargon",
     "data": "**data and SQL**: keep their queries and data choices visible; explain query to API to app",
     "developer": "**software developer**: real component names, architecture and diffs; they set constraints",
     "exploring": "**just exploring**: concrete examples and prepared data first, then their own idea",
@@ -358,8 +358,8 @@ def _persona_overlay(user: User) -> str:
     if effective["technical_vocabulary"]:
         lines.append("- They asked for technical discussion: use real component names and implementation detail.")
     if effective["plain_language"]:
-        lines.append("- They asked for plain-language help: outcomes first, product names only when asked. "
-                     "This is not a request for a guided product interview.")
+        lines.append("- They asked for plain-language help: lead with business outcomes and explain each "
+                     "Databricks building block and why it fits in plain English.")
     if effective["engagement_path"]:
         lines.append(f"- Default path for a new idea: {effective['engagement_path']} (a project's recorded "
                      "path wins; still ask if it does not fit this idea).")
@@ -423,10 +423,10 @@ def _wizard_overlay(user: User) -> str:
     lines += [
         "",
         "They told us these facts on the way in, so **do not ask them again**. "
-        "Apply the workshop interaction contract: reuse this context, briefly "
-        "clarify only consequential gaps, and recommend a useful first version. "
-        "A picked idea provides context; it does not confirm unstated workflow "
-        "or integration assumptions.",
+        "Still follow the teammate co-design steps before changing any files: "
+        "confirm the sharpened MVP idea, propose the Databricks building blocks "
+        "with a one-line why for each (inviting questions), state the build "
+        "plan, and wait for their go-ahead before creating a project, file or table.",
     ]
 
     lines += ["", "Canonical task context (selected suggestions are not attendee-authored words):",
@@ -532,24 +532,21 @@ def _write_instructions_locked(user: User) -> None:
 # -- project memory (project-level CLAUDE.md / AGENTS.md via a bootstrap helper) --
 
 def _project_memory() -> str:
-    """The project-memory template, with the discovery mandate folded in.
+    """The worker-only project-memory template (never duplicates the home contract).
 
     Substituted rather than shipped in the template for the same reason as the
     home instructions: turning discovery off must remove every instruction to
     elicit, which is the consent boundary DISCOVERY_ENABLED exists to draw.
-
-    The overlay here is a *separate, self-contained* file rather than the home
-    ``discovery.md``. This copy is read by sub-agents that cannot see the home
-    file, so it cannot refer to it — it has to carry the helper name, the fields
-    and the intent values inline.
     """
     with open(os.path.join(_ASSETS, "instructions", "project_memory.md")) as f:
-        text = _compose_workshop_contract(f.read())
+        text = f.read()
+    if text.count(_TERMINAL_SAFETY_SLOT) != 1:
+        raise ValueError("Project instructions require exactly one terminal safety slot")
+    with open(os.path.join(_ASSETS, "instructions", "terminal_safety.md")) as f:
+        text = text.replace(_TERMINAL_SAFETY_SLOT, f.read().strip())
     if not config.discovery_enabled():
-        return text.replace(f"\n{_DISCOVERY_ANCHOR_SLOT}\n", "")
-    with open(os.path.join(_ASSETS, "instructions", "discovery_anchor.md")) as f:
-        anchor = f.read().strip()
-    text = text.replace(_DISCOVERY_ANCHOR_SLOT, anchor)
+        return text.replace(f"\n{_DISCOVERY_ANCHOR_SLOT}\n", "").replace(_DISCOVERY_ANCHOR_SLOT, "")
+    text = text.replace(f"\n{_DISCOVERY_ANCHOR_SLOT}\n", "").replace(_DISCOVERY_ANCHOR_SLOT, "")
     return _overlay(text, "project_discovery.md", _DISCOVERY_MARKER)
 
 
@@ -674,10 +671,15 @@ def _link_skills(user: User) -> None:
     # Use this package's assets until this boot verifies/publishes the shared set.
     if not install.skills_ready() or not os.path.isdir(source):
         source = os.path.join(_ASSETS, "skills")
+    excluded = set(RETIRED_WORKSHOP_SKILLS) | {"refresh-databricks-skills"}
+    if not config.agentbricks_enabled():
+        excluded.add("workshop-agent-bricks-cli")
+    if not config.discovery_enabled():
+        excluded.add("workshop-discovery")
     names = sorted(
         name
         for name in os.listdir(source)
-        if name not in RETIRED_WORKSHOP_SKILLS and os.path.isfile(os.path.join(source, name, "SKILL.md"))
+        if name not in excluded and os.path.isfile(os.path.join(source, name, "SKILL.md"))
     )
     # Packaged fallback paths change with PEX versions. Remember ownership so
     # a link into the previous package is refreshed on the next deployment.
@@ -1209,6 +1211,30 @@ def _write_npm_setup(user: User) -> None:
         return
     with open(npmrc, "w") as f:
         f.write("audit=false\nfund=false\n")
+
+
+def _write_shell_setup(user: User) -> None:
+    """Keep ~/.local/bin and the shared toolchain on PATH across login shells.
+
+    Codex spawns shell commands in a login shell that sources /etc/profile,
+    which resets PATH to /usr/local/bin:/usr/bin:/bin and drops the workshop
+    helpers and shared CLIs unless ~/.profile and ~/.bashrc restore them.
+    """
+    shared_bin = os.path.join(config.shared_prefix(), "bin")
+    snippet = (
+        "# workshop-path:begin\n"
+        f'export PATH="$HOME/.local/bin:{shared_bin}:$PATH"\n'
+        "# workshop-path:end\n"
+    )
+    for name in (".profile", ".bashrc"):
+        path = os.path.join(user.home, name)
+        try:
+            existing = open(path).read() if os.path.exists(path) else ""
+        except OSError:
+            existing = ""
+        if "# workshop-path:begin" in existing:
+            continue
+        _atomic_write(path, (existing.rstrip() + "\n\n" + snippet).lstrip(), 0o644)
 
 
 def workspace_sync_status_path(user: User) -> str:

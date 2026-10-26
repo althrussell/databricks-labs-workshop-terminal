@@ -204,9 +204,11 @@ def test_the_agent_asks_how_they_want_to_work_once_and_never_infers(client, monk
 def test_the_coach_no_longer_runs_a_persona_question(client, monkeypatch):
     """Meeting them is three short questions in the contract, not a coach questionnaire."""
     coach = " ".join(LAB_COACH.read_text(encoding="utf-8").split())
+    teammate = " ".join(TEAMMATE.read_text(encoding="utf-8").split())
 
     assert "~/.workshop/persona" not in coach
     assert "AskUserQuestion" not in coach
+    assert "AskUserQuestion" in teammate
     assert "Check for a saved persona" not in coach
     assert "These add to being their build partner" in coach
 

@@ -90,6 +90,7 @@ SKILLS_ARTIFACT = "databricks_agent_skills"
 FORK_SKILLS = frozenset({
     "apx", "workshop-export", "refresh-databricks-skills",
     "impeccable", "workshop-agent-bricks-cli", "workshop",
+    "workshop-discovery",
 })
 # Provider-specific payloads beside the shared skills (W1): the Claude
 # Impeccable payload, its companion agents and the routing that names them.

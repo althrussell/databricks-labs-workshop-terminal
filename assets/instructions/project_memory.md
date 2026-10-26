@@ -1,28 +1,13 @@
-# Project memory — Databricks Workshop
+# Project memory
 
 <!-- workshop-project-memory -->
 
 <!-- terminal-safety-slot -->
 
-This file is committed as both `CLAUDE.md` and `AGENTS.md`, so every agent
-working in this project receives it, including an Omnigent worker in an
-isolated worktree. If another agent handed you a task, do that task and report
-back to it. When you resume or take over, read `.workshop/project.json`,
-`workshop-workflow show`, the README workshop brief and `PRODUCT.md`/`DESIGN.md`.
-Keep other builds separate and preserve the attendee's framework and work.
-
-<!-- workshop-contract-slot -->
+If another agent handed you a task, do that task and report back to it. On resume, read `workshop-workflow show` and README; a stage boundary is a safe point to compact.
 
 ## Deployment — typecheck, deploy, share the preview
 
-Official APX (React + FastAPI) is the default: scaffold new apps with
-`workshop-init-project <name> --apx` (AppKit through `databricks-apps`). Typecheck and
-build (`apx dev check`, `apx build`), then deploy only with the
-`deploy_databricks_app` MCP tool (absolute project path from `pwd`, target `dev`
-for APX) or `workshop-app-deploy --project "$PWD" --target <target>`, never
-`databricks bundle deploy`. Share the URL as a first preview. A deploy timeout
-resumes; it isn't a failure. Use `databricks-lakebase` for shared saved data
-and `workshop-export` for take-home code. If something breaks, read the error
-and fix what it names.
-
-<!-- discovery-anchor -->
+- Ask if no path is recorded: "Would you like a rapid prototype to react to, or guided ideation" ("Shall I build this direction, or refine it further?"). Check available data before inventing it.
+- Official APX (React + FastAPI) is the default (`workshop-init-project <name> --apx`, `apx`; AppKit via `databricks-apps`). Use `impeccable`: `impeccable context`, `reference/new-work.md`, `reference/craft-floor.md`, `$WORKSHOP_DESIGN_REFERENCES`, and run `detect` once.
+- Run `apx dev check` and `apx build`, deploy with `workshop-app-deploy` (never `databricks bundle deploy`), share first preview, exercise the primary action, reload if saving is promised, say what remains unverified. Do not install Playwright browsers or run `databricks apps validate`.

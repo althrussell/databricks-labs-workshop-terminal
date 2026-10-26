@@ -145,11 +145,14 @@ def launch_block(agent: dict, email: str) -> str:
 
 
 #: The first message of an attendee's first agent session when nothing has told
-#: the agent who they are yet (no wizard, no stated working approach). The CLI
-#: sends it once its UI is ready, so the agent greets them and gets to know them
-#: instead of waiting at an empty prompt. It appears in the terminal as their
-#: first message.
+#: the agent who they are yet (no wizard, no stated working approach, no build).
+#: The CLI sends it once its UI is ready, so the agent greets them and gets to
+#: know them instead of waiting at an empty prompt.
 WORKSHOP_OPENER = "Hi! I've just sat down for the workshop. Let's get started."
+
+#: The first message of any later fresh session (preferences saved, a build
+#: exists, or they already had their first session).
+RETURN_OPENER = "Hi! I'm back at the workshop. Let's pick up where we left off."
 
 #: How each CLI takes a first message at launch: ``claude [prompt]``,
 #: ``codex [PROMPT]`` and Omnigent's ``-p/--prompt`` ("Send this as the first
@@ -157,22 +160,51 @@ WORKSHOP_OPENER = "Hi! I've just sat down for the workshop. Let's get started."
 _FIRST_MESSAGE_FLAGS = {"claude": (), "codex": (), "omnigent": ("-p",)}
 
 
-def claim_opener(user) -> str | None:
-    """The workshop opener, at most once per attendee, while no working approach is stated.
+def switch_opener(agent: dict | str) -> str:
+    """The first message when switching to another agent without a starter prompt."""
+    if isinstance(agent, dict):
+        name = str(agent.get("label") or agent.get("id") or "this agent").strip()
+    else:
+        name = str(agent or "this agent").strip()
+    return f"I've just switched to {name}. Let's pick up where we left off."
 
-    Claimed under the attendee's state lock, so two tabs opening an agent at
-    once type it into one session only. Any failure means no opener: it must
-    never stand in the way of opening an agent.
+
+def claim_opener(
+    user,
+    agent: dict | str | None = None,
+    *,
+    has_starter_prompt: bool = False,
+    replaces_agent_id: str | None = None,
+) -> str | None:
+    """Choose the session opener so every fresh or switched session speaks first.
+
+    - Wizard or idea-chip starter prompt (``has_starter_prompt``): no opener.
+    - Agent switch without a starter prompt (``replaces_agent_id``): switch opener.
+    - First-ever session (no saved preferences, no build, no prior opener):
+      ``WORKSHOP_OPENER``, claimed atomically under the attendee's state lock.
+    - Any later fresh session: ``RETURN_OPENER``.
     """
-    from . import attendee_profile, attendee_state
+    if has_starter_prompt:
+        return None
+    if replaces_agent_id:
+        return switch_opener(agent or replaces_agent_id)
+
+    from . import attendee_profile, attendee_state, projects
 
     try:
-        if attendee_profile.read(user).effective()["working_approach_stated"]:
-            return None
+        effective = attendee_profile.read(user).effective()
+        has_prefs = bool(
+            effective.get("working_approach_stated")
+            or effective.get("background_stated")
+        )
+        inv = projects.inventory(user)
+        has_build = bool(inv.get("active") or inv.get("projects"))
+        if has_prefs or has_build:
+            return RETURN_OPENER
         marker = os.path.join(user.home, ".workshop", "opener.json")
         with attendee_state.locked(marker):
             if attendee_state.read_json(marker):
-                return None
+                return RETURN_OPENER
             attendee_state.write_json(marker, {"opener_sent_at": time.time()})
     except Exception as error:  # noqa: BLE001
         logger.warning("workshop opener unavailable (%s)", type(error).__name__)
@@ -181,7 +213,7 @@ def claim_opener(user) -> str | None:
 
 
 def release_opener(user) -> None:
-    """Give the opener back when the session it was claimed for never started."""
+    """Give the first-session opener back when the session it was claimed for never started."""
     try:
         os.remove(os.path.join(user.home, ".workshop", "opener.json"))
     except OSError:

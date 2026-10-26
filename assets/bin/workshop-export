@@ -31,6 +31,8 @@ SKIP_FILES = frozenset({
     "id_rsa", "id_ed25519", ".DS_Store",
 })
 ENV_EXAMPLES = frozenset({".env.example", ".env.sample", ".env.template"})
+_MANAGED_BEGIN = "<!-- workshop-managed:begin -->"
+_MANAGED_END = "<!-- workshop-managed:end -->"
 
 
 class ExportError(RuntimeError):
@@ -41,6 +43,20 @@ def excluded_file(name: str) -> bool:
     return (name in SKIP_FILES
             or (name.startswith(".env") and name not in ENV_EXAMPLES)
             or Path(name).suffix.lower() in {".pem", ".key", ".p12", ".pfx", ".pyc"})
+
+
+def _strip_workshop_managed(text: str) -> str:
+    """Remove workshop-managed instruction blocks while keeping attendee/scaffold notes."""
+    if _MANAGED_BEGIN in text and _MANAGED_END in text:
+        before, rest = text.split(_MANAGED_BEGIN, 1)
+        _, after = rest.split(_MANAGED_END, 1)
+        cleaned = (before.rstrip() + "\n\n" + after.lstrip()).strip()
+        if cleaned.startswith("## Notes that were already in this project"):
+            cleaned = cleaned.removeprefix("## Notes that were already in this project").strip()
+        return (cleaned + "\n") if cleaned else ""
+    if "<!-- workshop-project-memory -->" in text:
+        return ""
+    return text
 
 
 def build_archive(source: Path, destination: Path, *, single_project: bool) -> dict:
@@ -73,6 +89,16 @@ def build_archive(source: Path, destination: Path, *, single_project: bool) -> d
                     omitted.append(relative.as_posix())
                     continue
                 member = Path(source.name) / relative if single_project else relative
+                if name in {"AGENTS.md", "CLAUDE.md"}:
+                    raw_text = path.read_text(encoding="utf-8", errors="replace")
+                    stripped = _strip_workshop_managed(raw_text)
+                    if not stripped:
+                        omitted.append(relative.as_posix())
+                        continue
+                    if stripped != raw_text:
+                        archive.writestr((Path("workshop-code") / member).as_posix(), stripped)
+                        included.append(member.as_posix())
+                        continue
                 archive.write(path, arcname=(Path("workshop-code") / member).as_posix())
                 included.append(member.as_posix())
         if not included:

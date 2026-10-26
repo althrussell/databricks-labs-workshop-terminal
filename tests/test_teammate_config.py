@@ -66,7 +66,7 @@ def test_the_first_agent_opens_with_the_workshop_opener_and_only_once(client, mo
     _open(client, person, "claude")
 
     assert launched[0] == f"claude {agents.shlex.quote(agents.WORKSHOP_OPENER)}"
-    assert launched[1] == "claude"
+    assert launched[1] == f"claude {agents.shlex.quote(agents.RETURN_OPENER)}"
 
 
 @pytest.mark.parametrize("agent, expected", [
@@ -82,20 +82,29 @@ def test_each_cli_receives_the_opener_its_own_way(agent, expected):
 
 
 def test_no_opener_on_top_of_the_wizard_prompt_or_an_agent_switch(client, monkeypatch, person):
+    from server import agents
+
     launched = _ready(monkeypatch)
     _open(client, person, "claude", has_starter_prompt=True)
     _open(client, person, "codex", replaces_agent_id="claude")
+    _open(client, person, "claude", replaces_agent_id="codex", has_starter_prompt=True)
 
-    assert launched == ["claude", "codex --no-daemon"]
+    assert launched == [
+        "claude",
+        f"codex --no-daemon {agents.shlex.quote(agents.switch_opener('Codex'))}",
+        "claude",
+    ]
 
 
 def test_no_opener_once_they_have_said_how_they_want_to_work(client, monkeypatch, person):
+    from server import agents
+
     launched = _ready(monkeypatch)
     response = client.post("/api/profile", json={"working_approach": "learn", "expected_revision": 0}, headers=person)
     assert response.status_code == 200, response.text
     _open(client, person, "claude")
 
-    assert launched == ["claude"]
+    assert launched == [f"claude {agents.shlex.quote(agents.RETURN_OPENER)}"]
 
 
 def test_two_tabs_opening_at_once_claim_the_opener_once(client, monkeypatch, person):
@@ -178,7 +187,7 @@ def test_only_the_main_session_meets_the_attendee(client, monkeypatch, person):
             in " ".join(channels["project"].split()))
 
 
-def test_standing_instructions_stay_lean(monkeypatch):
+def test_standing_instructions_stay_lean(client, monkeypatch, person):
     """test1025 and run 2 loaded about 4,300 words per agent inside a project."""
     monkeypatch.setenv("LAB_COACH", "false")
     monkeypatch.setenv("DISCOVERY_ENABLED", "false")
@@ -187,7 +196,22 @@ def test_standing_instructions_stay_lean(monkeypatch):
     home = _words(user_content._base_instructions())
     project = _words(user_content._project_memory())
     assert home <= 1300, home
-    assert project <= 650, project
+    assert project <= 300, project
+
+    # Real event configuration: capture on, discovery on, coach on, demo data on.
+    monkeypatch.setenv("LAB_COACH", "true")
+    monkeypatch.setenv("WORKSHOP_INSIGHT_CAPTURE", "true")
+    monkeypatch.setenv("DISCOVERY_ENABLED", "true")
+    monkeypatch.setattr(user_content, "_demo_data_overlay", lambda _: (
+        "<!-- workshop-demo-data -->\n## Demo data in `$WORKSHOP_DEMO_CATALOG` (read-only)\n"
+        "- `workshop_demo.energy_utilities.outages` (200 rows)\n"
+    ))
+    _ready(monkeypatch)
+    _open(client, person, "claude", has_starter_prompt=True)
+    channels = _channels(_home(person))
+    assert _words(channels["claude"]) <= 1600, _words(channels["claude"])
+    assert _words(channels["project"]) <= 300, _words(channels["project"])
+    assert "<!-- workshop-workflow-contract:v3 -->" not in channels["project"]
 
 
 def test_codex_is_told_its_own_skills_folder(client, monkeypatch, person):
@@ -241,6 +265,40 @@ def test_each_agent_discovers_every_skill_exactly_once(client, monkeypatch, pers
         names = sorted(os.listdir(os.path.join(home, relative)))
         assert len(names) == len(set(names)), relative
         assert "workshop" in names and "databricks-core" in names, relative
+        assert "refresh-databricks-skills" not in names, relative
         assert not {"databricks-iceberg", "databricks-app-design"} & set(names), relative
     legacy = os.path.join(home, ".codex", "skills")
     assert not os.path.isdir(legacy) or not os.listdir(legacy)
+    for rc in (".profile", ".bashrc"):
+        assert ".local/bin:" in Path(home, rc).read_text(), rc
+
+
+def test_export_strips_workshop_managed_project_instructions(tmp_path):
+    from importlib.machinery import SourceFileLoader
+    from importlib.util import module_from_spec, spec_from_loader
+    import zipfile
+
+    loader = SourceFileLoader("workshop_export", str(ROOT / "assets/bin/workshop-export"))
+    spec = spec_from_loader(loader.name, loader)
+    export_mod = module_from_spec(spec)
+    loader.exec_module(export_mod)
+
+    project = tmp_path / "my-app"
+    project.mkdir()
+    (project / "app.py").write_text("print('ok')\n")
+    (project / "AGENTS.md").write_text(
+        "<!-- workshop-managed:begin -->\nWorkshop rules\n<!-- workshop-managed:end -->\n"
+    )
+    (project / "CLAUDE.md").write_text(
+        "<!-- workshop-managed:begin -->\nWorkshop rules\n<!-- workshop-managed:end -->\n"
+        "\n## Notes that were already in this project\n\nKeep this note.\n"
+    )
+    archive_path = tmp_path / "out.zip"
+    export_mod.build_archive(project, archive_path, single_project=True)
+    with zipfile.ZipFile(archive_path) as zf:
+        names = set(zf.namelist())
+        assert "workshop-code/my-app/AGENTS.md" not in names
+        assert "workshop-code/my-app/CLAUDE.md" in names
+        claude_text = zf.read("workshop-code/my-app/CLAUDE.md").decode()
+        assert "Workshop rules" not in claude_text
+        assert "Keep this note." in claude_text
