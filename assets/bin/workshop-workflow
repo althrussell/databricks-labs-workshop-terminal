@@ -279,6 +279,12 @@ def check(record: dict, project: Path | None = None) -> list[str]:
     return problems
 
 
+def _browser_enabled() -> bool:
+    return os.environ.get("WORKSHOP_BROWSER_ENABLED", "").strip().lower() in {
+        "1", "true", "yes", "on", "enabled", "enable",
+    }
+
+
 def next_step(record: dict) -> str:
     path, phase = record["path"].get("value"), record["phase"]
     waiting = [r for r in record.get("requests", []) if r.get("status") == "open"]
@@ -292,10 +298,15 @@ def next_step(record: dict) -> str:
                 else "present the brief and ask: build this direction, or refine it further?")
     if path == "guided" and phase == "agree" and not _direction_confirmed(record):
         return "wait for the attendee to confirm the direction"
+    build_step = (
+        "deploy, then inspect the desktop render with workshop-browser (desktop only, never phone/mobile)"
+        if _browser_enabled()
+        else "run apx dev check and apx build, deploy, and share the live preview URL with the attendee"
+    )
     return {"choose_path": "confirm the MVP scope, Databricks building blocks and build plan with the attendee, then build",
             "agree": "build the agreed direction",
-            "build": "run apx dev check and apx build, deploy, and share the live preview URL with the attendee",
-            "inspect": "share the live preview URL with the attendee and record what you checked",
+            "build": build_step,
+            "inspect": "exercise the primary action on desktop and record what you checked",
             "improve": "show what changed and recheck", "feedback": "ask them to do their real task, then record their own account with `workshop-workflow outcome`"}.get(
         phase, "continue")
 

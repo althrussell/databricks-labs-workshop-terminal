@@ -69,13 +69,17 @@ Custom agent backends use `workshop-agent-bricks-cli` and `agentbricks deploy`;
 their UI deploys with the workshop app tool. Test-run apps only on
 `$DATABRICKS_APP_PORT`.
 
-## Seeing the app (optional)
+## Seeing the app (when `workshop-browser` is enabled)
 
-The attendee tests the live URL directly in their browser after deploy. Do not
-install Playwright browsers, spawn headless screenshot loops or run
-`databricks apps validate`. (If the facilitator enabled `workshop-browser` for
-this event, `workshop-browser inspect <url>` runs a single optional desktop
-check.)
+When `WORKSHOP_BROWSER_ENABLED=false` (default), `workshop-browser` is not
+installed: do one fast Impeccable pass, deploy, and let the attendee test the
+live URL in their browser. When enabled for the event
+(`WORKSHOP_BROWSER_ENABLED=true`), `workshop-browser inspect <url>` (add
+`--deployed` for the live app, `--do click:"Save"` for an action) captures
+**desktop-only** screenshots into `.workshop/evidence/` so you can review and
+iterate on the rendered page. Open each screenshot with your image tool before
+describing it. Never render phone/mobile viewports, install Playwright
+browsers, or run `databricks apps validate`.
 
 ## The workflow helper
 
