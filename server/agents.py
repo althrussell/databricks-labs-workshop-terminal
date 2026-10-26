@@ -13,6 +13,7 @@ import logging
 import os
 import shlex
 import threading
+import time
 
 from . import config
 
@@ -143,12 +144,67 @@ def launch_block(agent: dict, email: str) -> str:
     return ""
 
 
-def launch_command(agent: dict) -> list[str]:
-    """PTY command for an agent. Exiting the CLI exits the PTY as well.
+#: The first message of an attendee's first agent session when nothing has told
+#: the agent who they are yet (no wizard, no stated working approach). The CLI
+#: sends it once its UI is ready, so the agent greets them and gets to know them
+#: instead of waiting at an empty prompt. It appears in the terminal as their
+#: first message.
+WORKSHOP_OPENER = "Hi! I've just sat down for the workshop. Let's get started."
 
-    Note: no prompt injection here — coaching context belongs in the agent's
-    memory files (~/.claude/CLAUDE.md, written by user_content), never in a
-    fabricated user message."""
+#: How each CLI takes a first message at launch: ``claude [prompt]``,
+#: ``codex [PROMPT]`` and Omnigent's ``-p/--prompt`` ("Send this as the first
+#: message when the REPL starts").
+_FIRST_MESSAGE_FLAGS = {"claude": (), "codex": (), "omnigent": ("-p",)}
+
+
+def claim_opener(user) -> str | None:
+    """The workshop opener, at most once per attendee, while no working approach is stated.
+
+    Claimed under the attendee's state lock, so two tabs opening an agent at
+    once type it into one session only. Any failure means no opener: it must
+    never stand in the way of opening an agent.
+    """
+    from . import attendee_profile, attendee_state
+
+    try:
+        if attendee_profile.read(user).effective()["working_approach_stated"]:
+            return None
+        marker = os.path.join(user.home, ".workshop", "opener.json")
+        with attendee_state.locked(marker):
+            if attendee_state.read_json(marker):
+                return None
+            attendee_state.write_json(marker, {"opener_sent_at": time.time()})
+    except Exception as error:  # noqa: BLE001
+        logger.warning("workshop opener unavailable (%s)", type(error).__name__)
+        return None
+    return WORKSHOP_OPENER
+
+
+def release_opener(user) -> None:
+    """Give the opener back when the session it was claimed for never started."""
+    try:
+        os.remove(os.path.join(user.home, ".workshop", "opener.json"))
+    except OSError:
+        pass
+
+
+def with_first_message(agent: dict, first_message: str) -> dict:
+    """The catalogue agent, launched so its CLI sends ``first_message`` first.
+
+    Coaching context belongs in the agent's memory files (~/.claude/CLAUDE.md,
+    written by user_content), never in a fabricated user message. The one
+    exception is the visible ``WORKSHOP_OPENER`` that starts an attendee's
+    first conversation.
+    """
+    cmd = str(agent.get("command") or "").strip()
+    if not first_message or not cmd or agent.get("id") not in _FIRST_MESSAGE_FLAGS:
+        return agent
+    flags = _FIRST_MESSAGE_FLAGS[agent["id"]]
+    return {**agent, "command": " ".join((cmd, *flags, shlex.quote(first_message)))}
+
+
+def launch_command(agent: dict) -> list[str]:
+    """PTY command for an agent. Exiting the CLI exits the PTY as well."""
     if agent.get("id") not in SUPPORTED_AGENT_IDS:
         raise ValueError(f"Unsupported agent '{agent.get('id', '')}'")
     cmd = str(agent.get("command") or "").strip()

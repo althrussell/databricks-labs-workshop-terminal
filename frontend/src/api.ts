@@ -25,6 +25,8 @@ export type Persona = "technical" | "business";
 export type WorkingApproach = "" | "co_build" | "learn" | "lead";
 export type ExplanationDetail = "" | "adaptive" | "brief" | "detailed";
 export type EngagementPath = "" | "rapid" | "guided";
+/** The attendee's own starting point, only ever what they said; "" = not set. */
+export type Background = "" | "domain" | "data" | "developer" | "exploring";
 
 export interface AttendeeProfile {
   schema_version: 1;
@@ -37,6 +39,7 @@ export interface AttendeeProfile {
   explanation_detail?: ExplanationDetail;
   /** Default start for a new idea; a project's recorded path wins. */
   engagement_path?: EngagementPath;
+  background?: Background;
   choice_sources?: Record<string, string>;
 }
 
@@ -46,6 +49,7 @@ export interface ProfileSave {
   working_approach?: WorkingApproach;
   explanation_detail?: ExplanationDetail;
   engagement_path?: EngagementPath;
+  background?: Background;
 }
 
 export interface WizardIdea {
@@ -480,13 +484,14 @@ export const api = {
     request<ProjectInventory>("/api/projects/select", { method: "POST", body: JSON.stringify(body) }),
   recoverProject: (name: string) =>
     request<ProjectInventory>(`/api/projects/${encodeURIComponent(name)}/recover`, { method: "POST" }),
-  createSession: (agentId: string, replacesAgentId?: string, projectName?: string) =>
+  createSession: (agentId: string, replacesAgentId?: string, projectName?: string, hasStarterPrompt = false) =>
     request<{ session: SessionInfo }>("/api/sessions", {
       method: "POST",
       body: JSON.stringify({
         agent_id: agentId,
         ...(replacesAgentId ? { replaces_agent_id: replacesAgentId } : {}),
         ...(projectName !== undefined ? { project_name: projectName } : {}),
+        ...(hasStarterPrompt ? { has_starter_prompt: true } : {}),
       }),
     }),
   closeSession: (id: string) => request(`/api/sessions/${id}`, { method: "DELETE" }),

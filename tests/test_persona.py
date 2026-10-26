@@ -26,6 +26,7 @@ from .conftest import ALICE
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = Path(__file__).resolve().parents[1] / "assets/instructions/workshop_contract.md"
 LAB_COACH = ROOT / "assets" / "instructions" / "lab_coach.md"
+TEAMMATE = ROOT / "assets" / "instructions" / "teammate.md"
 
 PERSONA_RELATIVE = os.path.join(".workshop", "persona")
 
@@ -185,50 +186,50 @@ def test_both_harnesses_are_told_who_they_are_working_with(
 
     text = " ".join(text.split())
     assert "How they want to work with you" in text
-    assert "never infer expertise from role, jargon or message length" in text
+    assert "never guess them from their role, jargon or message length" in text
 
 
-def test_the_instructions_adapt_help_without_an_extra_questionnaire(client, monkeypatch):
-    home = _provisioned_home(client, monkeypatch)
+def test_the_agent_asks_how_they_want_to_work_once_and_never_infers(client, monkeypatch):
+    """The review requires direct conversation to collect the same choices as the
+    wizard when it is skipped: ask once, save, never infer, never ask again."""
+    text = " ".join(_instructions(_provisioned_home(client, monkeypatch)).split())
 
-    assert "never run an experience questionnaire" in " ".join(_instructions(home).split())
+    for choice in ("*Build with me*", "*Teach me as we go*", "*Let me drive*",
+                   "business or domain side, data and SQL, software developer, or just exploring"):
+        assert choice in text
+    assert "workshop-workflow prefs --approach co_build|learn|lead --background" in text
+    assert "Never ask them again on resume, follow-up or agent switch" in text
 
 
 def test_the_coach_no_longer_runs_a_persona_question(client, monkeypatch):
-    """The whole point. If this text comes back, so does the slow first turn."""
+    """Meeting them is three short questions in the contract, not a coach questionnaire."""
     coach = " ".join(LAB_COACH.read_text(encoding="utf-8").split())
 
     assert "~/.workshop/persona" not in coach
     assert "AskUserQuestion" not in coach
     assert "Check for a saved persona" not in coach
-    assert "The workflow contract sets the path and the questions" in coach
+    assert "These add to being their build partner" in coach
 
 
-def test_the_coach_still_adapts_its_language_to_the_persona():
-    """Removing the question must not remove the reason for having an answer.
+def test_how_they_are_helped_follows_where_they_start_and_what_they_ask():
+    teammate = " ".join(TEAMMATE.read_text(encoding="utf-8").split())
 
-    W2 retired persona categories: language follows the topic and the
-    attendee's stated preferences, which every channel carries."""
-    contract = " ".join(CONTRACT.read_text(encoding="utf-8").split())
-    coach = " ".join(LAB_COACH.read_text(encoding="utf-8").split())
-
-    assert "Detail and vocabulary follow the topic" in contract
-    assert "suited to how they talk" in coach
+    assert "Fit where they're starting from." in teammate
+    assert "Presets, never limits:" in teammate and "in-the-moment requests win" in teammate
 
 
-def test_a_wrong_guess_is_corrected_silently():
-    contract = " ".join(CONTRACT.read_text(encoding="utf-8").split())
+def test_a_change_in_how_they_talk_is_followed_silently():
+    teammate = " ".join(TEAMMATE.read_text(encoding="utf-8").split())
 
-    assert "just change how you explain things" in contract
-    assert "do not confirm it with them" in contract
+    assert "just change how you explain; don't make them confirm it" in teammate
 
 
 # --- the first turn points somewhere useful ------------------------------------
 
 
 def test_the_attendee_is_no_longer_told_to_say_hi():
-    """"Say hi" spends the first turn on a greeting, and greetings are exactly
-    the input the coach is told NOT to build from."""
+    """"Say hi" spends the first turn on a greeting the attendee has to type; the
+    workshop opener starts the conversation instead."""
     app = (ROOT / "frontend" / "src" / "App.tsx").read_text(encoding="utf-8")
     pack = (ROOT / "content" / "default_pack.json").read_text(encoding="utf-8")
 
@@ -236,17 +237,14 @@ def test_the_attendee_is_no_longer_told_to_say_hi():
     assert "Say hi to begin" not in pack
 
 
-def test_the_hint_offers_a_short_idea_choice_before_building():
-    """Uncertainty gets one useful choice, consistent with the R02 contract."""
+def test_no_banner_types_a_canned_idea_prompt():
+    """The coach banner and its "two small demo ideas" prompt competed with the
+    instructions. The agent meets the attendee and offers ideas itself."""
     app = (ROOT / "frontend" / "src" / "App.tsx").read_text(encoding="utf-8")
 
-    assert "STARTER_PROMPT" in app
-    assert "Suggest two small Databricks demo ideas" in app
-    assert "Recommend one" in app
-    assert "Wait for my choice before building" in app
-    assert "pick a good example for a Databricks workshop and just go" not in app
-    assert "When the prompt appears" in app
-    assert "Your coach is ready" not in app
+    assert "STARTER_PROMPT" not in app
+    assert "coach-hint" not in app
+    assert "When the prompt appears" not in app
 
 
 def test_preferences_work_when_onboarding_is_disabled(client, monkeypatch):

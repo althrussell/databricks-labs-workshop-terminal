@@ -69,11 +69,6 @@ import {
 
 // An attendee who needs an idea gets one short choice before implementation.
 // This is typed UNSENT, like the other idea chips.
-const STARTER_PROMPT =
-  "Suggest two small Databricks demo ideas I can finish in this workshop. " +
-  "Recommend one and explain why in a sentence, then ask which I'd like to try. " +
-  "Wait for my choice before building.";
-
 /** Type into a just-launched session as soon as it will take input.
  *
  * A blind 4s wait used to sit between launch and the first prompt. Trying
@@ -113,7 +108,6 @@ export default function App() {
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [priorSessions, setPriorSessions] = useState<PriorSessionInfo[]>([]);
   const [launching, setLaunching] = useState<string | null>(null);
-  const [hintSessionId, setHintSessionId] = useState<string | null>(null);
   const [pendingSwitch, setPendingSwitch] = useState<{
     agentId: string;
     starterPrompt?: string;
@@ -271,7 +265,6 @@ export default function App() {
     setPreferencesOpen(false);
     setCertOpen(false);
     setPendingSwitch(null);
-    setHintSessionId(null);
   }, [inputDisabled]);
 
   useEffect(() => {
@@ -419,10 +412,10 @@ export default function App() {
     setLaunching(agentId);
     setError("");
     try {
-      const { session: created } = await api.createSession(agentId, undefined, projectInventoryRef.current?.active);
+      const { session: created } = await api.createSession(agentId, undefined, projectInventoryRef.current?.active,
+        Boolean(starterPrompt));
       setSession(created);
       setView("agent");
-      setHintSessionId(created.id);
       return created;
     } catch (e) {
       if (signal?.aborted) return null;
@@ -553,7 +546,7 @@ export default function App() {
         }
         return "Goal saved. Your next agent reads this build's context; tell it when you're ready to make the change.";
       }
-      setSession(null); setHintSessionId(null); setView("home");
+      setSession(null); setView("home");
       return selection.recover
         ? "Source recovered and selected. Choose an agent to continue; its previous conversation and Git history were not restored."
         : `${selection.name} is selected. Choose an agent to ${selection.new ? "begin" : "continue"}.`;
@@ -670,8 +663,7 @@ export default function App() {
     setSession((current) => {
       if (current?.id !== id) return current;
       setView((currentView) => (currentView === "agent" ? "home" : currentView));
-      setHintSessionId(null);
-      return null;
+        return null;
     });
   }, []);
 
@@ -681,7 +673,6 @@ export default function App() {
     setSession((current) =>
       current?.id === id ? { ...current, exited: true } : current
     );
-    setHintSessionId((current) => current === id ? null : current);
   }, []);
 
   async function confirmSwitch() {
@@ -699,7 +690,6 @@ export default function App() {
           (await api.createSession(agentId, replacesAgentId, projectInventoryRef.current?.active)).session,
       });
       setSession(created);
-      setHintSessionId(created.id);
       setView("agent");
       setPendingSwitch(null);
       if (requested.starterPrompt) {
@@ -1038,25 +1028,6 @@ export default function App() {
               </div>
             )}
 
-            {session && !session.exited && hintSessionId === session.id && view === "agent" && (
-              <div className="coach-hint">
-                <span>
-                  👋 When the prompt appears, tell your coach what you'd like to build.
-                </span>
-                <button
-                  className="coach-hint-action"
-                  onClick={() => {
-                    setHintSessionId(null);
-                    ideaToSession(STARTER_PROMPT);
-                  }}
-                >
-                  Help me choose an idea
-                </button>
-                <button className="icon-btn" aria-label="Dismiss coach hint" onClick={() => setHintSessionId(null)}>
-                  <X size={12} />
-                </button>
-              </div>
-            )}
             <div className="terminal-stage">
               {priorSessions.length > 0 && (view === "home" || !session) && (
                 <section className="prior-sessions" aria-label="Sessions ended on restart">

@@ -196,7 +196,7 @@
     "databricks_agent_skills": {
       "commit": "5c988a4d9b44b74bf3d638f31fc0447cf486e96b",
       "content_sha256": "5436bdeb0e4c485192f3d2828c3a0a629a17e402b0c8243466eac2eb7cd9d8a2",
-      "effective_content_sha256": "9f7dc2dda15894655d863d75ce10712627b3d25082def0d652259acbc4e6e680",
+      "effective_content_sha256": "4980dcdfe04e09fe0ae4e7ecf50975f75bf7ee78b10825496af7b9cef83dd60f",
       "source": "https://github.com/databricks/databricks-agent-skills.git",
       "version": "v0.2.34"
     },

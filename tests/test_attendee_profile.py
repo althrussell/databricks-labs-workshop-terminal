@@ -162,3 +162,26 @@ def test_an_older_release_reads_a_newer_profile(attendee):
     legacy_fields = {"schema_version", "revision", "help_preference", "source", "legacy_persona"}
     legacy_view = {k: v for k, v in saved.to_json().items() if k in legacy_fields}
     assert attendee_profile.from_json(legacy_view).help_preference == "concise"
+
+
+def test_a_starting_point_is_only_what_they_said_and_changes_on_its_own(attendee):
+    unset = attendee_profile.read(attendee).effective()
+    assert unset["background"] == "" and unset["background_stated"] is False
+    saved = attendee_profile.save(attendee, None, expected_revision=0, changes={"background": "data"},
+                                  choice_source="chat")
+    effective = saved.effective()
+    assert effective["background"] == "data" and effective["background_stated"] is True
+    # It is a dimension of its own: no approach, path or detail is implied by it.
+    assert saved.choice_sources == {"background": "chat"} and saved.working_approach == ""
+    assert effective["working_approach_stated"] is False and saved.engagement_path == ""
+    cleared = attendee_profile.save(attendee, None, expected_revision=1, changes={"background": ""})
+    assert cleared.background == "" and "background" not in cleared.choice_sources
+    with pytest.raises(ValueError):
+        attendee_profile.save(attendee, None, expected_revision=2, changes={"background": "expert"})
+
+
+def test_a_profile_saved_before_the_starting_point_existed_still_reads(attendee):
+    older = {k: v for k, v in attendee_profile.Profile(working_approach="lead").to_json().items() if k != "background"}
+    restored = attendee_profile.from_json(older)
+    assert restored.background == "" and restored.effective()["background_stated"] is False
+    assert restored.working_approach == "lead"

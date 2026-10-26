@@ -794,6 +794,7 @@ class _ProfileBody(BaseModel):
     working_approach: str | None = None
     explanation_detail: str | None = None
     engagement_path: str | None = None
+    background: str | None = None
 
 
 class _AgentProfileBody(_EmailBody):
@@ -825,7 +826,8 @@ def save_profile(body: _ProfileBody, principal: Principal = Depends(get_current_
     user = user_manager.get(principal.name)
     changes = {name: value for name, value in (("working_approach", body.working_approach),
                                                 ("explanation_detail", body.explanation_detail),
-                                                ("engagement_path", body.engagement_path)) if value is not None}
+                                                ("engagement_path", body.engagement_path),
+                                                ("background", body.background)) if value is not None}
     try:
         profile = attendee_profile.save(user, body.help_preference, expected_revision=body.expected_revision,
                                         changes=changes, choice_source="ui")
@@ -1185,6 +1187,9 @@ class CreateSessionBody(BaseModel):
     agent_id: str
     replaces_agent_id: str | None = Field(default=None, max_length=32)
     project_name: str | None = Field(default=None, max_length=63)
+    # The wizard, an idea chip or a switch is about to type its own first
+    # prompt: never add the workshop opener on top of it.
+    has_starter_prompt: bool = False
 
 
 class SelectProjectBody(BaseModel):
@@ -1494,7 +1499,19 @@ def create_session(
                 raise HTTPException(status_code=409, detail="The active build changed in another tab. Refresh My builds before opening an agent.")
             if projects.read(user)["active"]:
                 user_content._write_instructions(user)
-            session = session_manager.create(user, agent["id"], agents.launch_command(agent), agent["label"])
+            # A first visit with nothing chosen yet starts with the workshop opener,
+            # so the agent speaks first. Never on top of the wizard's own prompt,
+            # an idea chip or an agent switch.
+            opener = ("" if body.has_starter_prompt or body.replaces_agent_id
+                      else agents.claim_opener(user) or "")
+            try:
+                launched = agents.with_first_message(agent, opener)
+                session = session_manager.create(user, agent["id"], agents.launch_command(launched),
+                                                 agent["label"])
+            except BaseException:
+                if opener:
+                    agents.release_opener(user)
+                raise
     except spend.SpendBlocked as e:
         telemetry.session_create_failed(
             principal.name, agent["id"], "agents_paused", e.message

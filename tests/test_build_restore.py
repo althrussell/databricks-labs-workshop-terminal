@@ -140,6 +140,28 @@ def test_a_failed_restore_falls_back_to_manual_recovery_and_overwrites_nothing(a
     assert events[0][2]["outcome"] == "partial"
 
 
+def test_a_build_whose_setup_fails_never_stays_current(attendee, workspace, monkeypatch):
+    """Found in the local harness (26 Oct): workshop-init-project marks the build
+    current before its last steps, then failed on an old saved build. The
+    half-prepared build stayed current behind the page, and every agent launch
+    was refused as "The active build changed in another tab"."""
+    saved, _, _ = workspace
+    saved["hello-world"] = ({"notes.md": "an old build"}, 1_790_000_000_000)
+
+    def helper_marks_current_then_fails(arguments, **kwargs):
+        state = projects.read(attendee)
+        state["active"] = arguments[2]
+        projects._write(projects.selection_path(attendee), state, within=Path(attendee.home))
+        return subprocess.CompletedProcess(arguments, 1, "", "commit failed")
+
+    monkeypatch.setattr(projects.subprocess, "run", helper_marks_current_then_fails)
+    with pytest.raises(projects.ProjectError, match="project setup is incomplete"):
+        projects.recover(attendee, "hello-world", activate=False)
+
+    assert projects.read(attendee)["active"] == ""
+    assert projects.project_path(attendee, "hello-world").exists()  # local files retained
+
+
 def test_local_files_that_appear_during_the_download_are_never_replaced(attendee, workspace, monkeypatch):
     saved, _, _ = workspace
     saved["repair-desk"] = ({"app.py": "saved copy"}, 1_790_000_000_000)

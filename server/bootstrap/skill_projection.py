@@ -1,15 +1,29 @@
 """Deterministic workshop routing over checksum-verified platform skills.
 
 Keep raw upstream provenance separate from the delivered digest. This projection
-only retires the competing UX skill and its callers; platform/API guidance stays
-upstream-owned. Refresh and bootstrap use the same projection.
+only retires the competing UX skill and its callers and leaves out the skills the
+workshop doesn't use; platform/API guidance stays upstream-owned. Refresh and
+bootstrap use the same projection.
 """
 from pathlib import Path
 import shutil
 
 RETIRED_UX_SKILLS = frozenset({"workshop-design-studio", "databricks-app-design"})
 RETIRED_WORKSHOP_SKILLS = frozenset({"promote"})
-RETIRED_MANAGED_SKILLS = RETIRED_UX_SKILLS | RETIRED_WORKSHOP_SKILLS | {"databricks-app-apx"}
+#: Upstream skills this workshop doesn't install. Attendees build apps and agents
+#: in an afternoon, and these invite detours; every other skill stays exactly as
+#: databricks-agent-skills publishes it (owner decision, 26 Oct 2026).
+WORKSHOP_UNUSED_SKILLS = frozenset({
+    "databricks-ai-runtime", "databricks-iceberg", "databricks-zerobus-ingest",
+    "databricks-serverless-migration", "databricks-ml-training",
+    "databricks-spark-structured-streaming", "databricks-lakeflow-connect",
+    "databricks-unstructured-pdf-generation", "databricks-setup-local",
+    "databricks-metric-views", "databricks-mlflow-evaluation",
+})
+#: Upstream skills the workshop projection removes from the published tree.
+PROJECTED_OUT = RETIRED_UX_SKILLS | WORKSHOP_UNUSED_SKILLS
+RETIRED_MANAGED_SKILLS = (RETIRED_UX_SKILLS | RETIRED_WORKSHOP_SKILLS | {"databricks-app-apx"}
+                          | WORKSHOP_UNUSED_SKILLS)
 APX_ROUTE = """<!-- workshop-app-stack:v1 -->
 ## Workshop app framework
 

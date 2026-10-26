@@ -22,6 +22,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 INSTRUCTIONS = ROOT / "assets" / "instructions" / "CLAUDE.md"
+# The mechanics moved out of the always-loaded file into the on-demand skill.
+WORKSHOP_SKILL = ROOT / "assets" / "skills" / "workshop" / "SKILL.md"
 PROJECT_MEMORY = ROOT / "assets" / "instructions" / "project_memory.md"
 AGENT_FACING = (INSTRUCTIONS, PROJECT_MEMORY)
 
@@ -80,7 +82,7 @@ def test_every_surface_points_at_the_helper_instead(path):
 def test_the_instructions_say_why_not_just_what():
     """An agent that only knows the rule will drop it the moment the rule is
     inconvenient. The reason is what survives a context squeeze."""
-    body = _read(INSTRUCTIONS).lower()
+    body = (_read(INSTRUCTIONS) + _read(WORKSHOP_SKILL)).lower()
     assert "never run `databricks apps init` yourself" in body
     assert "subdirectory" in body, "the nesting has to be named as the cause"
     assert "claude.md" in body, "and the cost — losing the project memory"
@@ -90,7 +92,7 @@ def test_the_deploy_step_does_not_expect_to_block():
     """A first deploy starts cold app compute and routinely outlives a
     foreground timeout. Read as a failure, that costs a pointless retry — or
     worse, an agent 'fixing' code that was already fine."""
-    body = _read(INSTRUCTIONS)
+    body = (_read(INSTRUCTIONS) + _read(WORKSHOP_SKILL))
     assert "databricks apps get" in body, "there must be a way to poll for state"
     assert "ACTIVE" in body, "and a stated condition to wait for"
     lowered = body.lower()
@@ -165,7 +167,7 @@ def test_no_surface_tells_an_agent_to_run_jq():
                     f"{path.name} pipes a command through jq, which is not "
                     f"installed: {stripped!r} — parse JSON with python3 -c"
                 )
-    body = _read(INSTRUCTIONS).lower()
+    body = (_read(INSTRUCTIONS) + _read(WORKSHOP_SKILL)).lower()
     assert "not installed" in body and "jq" in body, (
         "and say so once, or an agent reaches for it out of habit"
     )
@@ -181,7 +183,7 @@ def test_the_deploy_command_is_named():
     about too: it uploads the code and leaves the app stopped with no URL,
     which looks like success until someone opens the link.
     """
-    body = _read(INSTRUCTIONS)
+    body = (_read(INSTRUCTIONS) + _read(WORKSHOP_SKILL))
     assert "databricks apps deploy" in body, "the ship gate must name the command"
     lowered = " ".join(body.split()).lower()
     assert "bundle deploy" in lowered, "and warn off the one that silently no-ops"

@@ -13,7 +13,7 @@ from .test_user_content import _MEMORY_CHANNELS, _provisioned_home
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "assets/instructions/workshop_contract.md"
-MARKER = "<!-- workshop-workflow-contract:v2 -->"
+MARKER = "<!-- workshop-workflow-contract:v3 -->"
 TERMINAL_SAFETY = ROOT / "assets/instructions/terminal_safety.md"
 TERMINAL_SAFETY_MARKER = "<!-- workshop-terminal-safety:v1 -->"
 

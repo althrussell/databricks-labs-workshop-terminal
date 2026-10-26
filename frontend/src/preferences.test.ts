@@ -9,7 +9,7 @@ function profile(extra: Partial<AttendeeProfile> = {}): AttendeeProfile {
 
 test("an unchosen approach shows the gentle default and nothing is sent unchanged", () => {
   const saved = profile();
-  assert.deepEqual(choicesFrom(saved), { approach: "co_build", detail: "", vocabulary: "" });
+  assert.deepEqual(choicesFrom(saved), { approach: "co_build", detail: "", vocabulary: "", background: "" });
   assert.deepEqual(changesFrom(saved, choicesFrom(saved)), { expected_revision: 3 });
 });
 
@@ -25,4 +25,13 @@ test("each dimension changes independently", () => {
   const body = changesFrom(saved, { ...choicesFrom(saved), detail: "brief" });
   assert.deepEqual(body, { expected_revision: 3, explanation_detail: "brief" });
   assert.equal(choicesFrom(saved).vocabulary, "technical");
+});
+
+test("a starting point is optional and saved on its own", () => {
+  const saved = profile({ working_approach: "learn" });
+  assert.equal(choicesFrom(saved).background, "");
+  assert.deepEqual(changesFrom(saved, { ...choicesFrom(saved), background: "data" }),
+    { expected_revision: 3, background: "data" });
+  const set = profile({ background: "developer" });
+  assert.deepEqual(changesFrom(set, { ...choicesFrom(set), background: "" }), { expected_revision: 3, background: "" });
 });

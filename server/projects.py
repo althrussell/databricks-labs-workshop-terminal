@@ -307,13 +307,21 @@ def _recover(user, name: str, *, activate: bool = True) -> dict:
             prepared = subprocess.run(["bash", str(helper), name, "--json"], env=env,
                                       capture_output=True, text=True, timeout=90)
             if prepared.returncode:
+                # The helper makes the build current before its last steps. A
+                # half-prepared build must not stay current: the next launch would
+                # open in it, or be refused as a change made in another tab.
+                _restore_selection(user, previous)
                 raise ProjectError("Source recovered, but project setup is incomplete. Local files are retained; reopen an agent and retry workshop-init-project for this build.")
             select(user, name, goal=_goal(target), activate=activate)
             if not activate:
                 # The helper makes the build it prepares current; put back the
                 # attendee's own selection.
-                state = read(user)
-                if state["active"] != previous:
-                    state["active"] = previous
-                    _write(selection_path(user), state, within=Path(user.home))
+                _restore_selection(user, previous)
     return inventory(user)
+
+
+def _restore_selection(user, previous: str) -> None:
+    state = read(user)
+    if state["active"] != previous:
+        state["active"] = previous
+        _write(selection_path(user), state, within=Path(user.home))

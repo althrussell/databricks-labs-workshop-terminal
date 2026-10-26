@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { api, AttendeeProfile, ExplanationDetail, WorkingApproach } from "../api";
+import { api, AttendeeProfile, Background, ExplanationDetail, WorkingApproach } from "../api";
 import { changesFrom, Choices, choicesFrom, Vocabulary } from "../preferences";
 import { trapDialogTab } from "../dialog";
 
@@ -7,7 +7,7 @@ import { trapDialogTab } from "../dialog";
 export default function HelpPreference() {
   const id = useId();
   const [profile, setProfile] = useState<AttendeeProfile | null>(null);
-  const [choices, setChoices] = useState<Choices>({ approach: "co_build", detail: "", vocabulary: "" });
+  const [choices, setChoices] = useState<Choices>({ approach: "co_build", detail: "", vocabulary: "", background: "" });
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -59,6 +59,13 @@ export default function HelpPreference() {
       onChange={(event) => set({ vocabulary: event.target.value as Vocabulary })}>
       <option value="">Follow the topic</option><option value="guided">Plain language</option>
       <option value="technical">Technical names and choices</option>
+    </select>
+    <label className="wizard-field-label" htmlFor={`${id}-background`}>Your starting point</label>
+    <select id={`${id}-background`} className="wizard-other-input" value={choices.background} disabled={!profile || busy}
+      onChange={(event) => set({ background: event.target.value as Background })}>
+      <option value="">Not set</option><option value="domain">Business or domain side</option>
+      <option value="data">Data and SQL</option><option value="developer">Software developer</option>
+      <option value="exploring">Just exploring</option>
     </select>
     {profile && <button className="btn btn-ghost" disabled={busy || unchanged} onClick={() => void save()}>
       {busy ? "Saving…" : "Save preferences"}</button>}
