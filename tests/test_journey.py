@@ -194,3 +194,34 @@ def test_admin_export_and_presence_carry_the_seat_contract(client, as_admin, mon
     queued = client.post("/api/build/request", json={"kind": "explain", "text": "Why a queue?"}, headers=ALICE)
     assert queued.status_code == 200 and queued.json()["delivery"] == "next_safe_boundary"
     assert client.post("/api/build/stop", headers=ALICE).json()["stopped"] is False
+
+
+def test_scaffolded_project_transitions_out_of_choosing_how_to_work_and_into_feedback_on_deploy(attendee):
+    project = projects.project_path(attendee, "outages")
+    # Once workshop-init-project has scaffolded the project (.workshop/preparation.json exists),
+    # recording path rapid (or starting build work) advances the Your build header to Building.
+    (project / ".workshop").mkdir(exist_ok=True)
+    (project / ".workshop/preparation.json").write_text(json.dumps({"ready": True}))
+    helper = Path(__file__).resolve().parents[1] / "assets/bin/workshop-workflow"
+    res = subprocess.run([str(helper), "--project", str(project), "path", "rapid", "--by", "attendee"],
+                         capture_output=True, text=True, env=attendee.shell_env())
+    assert res.returncode == 0, res.stderr
+    view = journey.view(attendee)
+    assert view["phase"] == "build"
+    assert view["status"] == "working"
+    assert "apx dev check" in view["next_decision"]
+
+    # When deploy succeeds, Your build moves to feedback (ready_to_try) with preview_url even without browser screenshots.
+    res_deploy = subprocess.run(
+        [str(helper), "--project", str(project), "phase", "feedback",
+         "--evidence", "preview=https://outages.aws.databricksapps.com"],
+        capture_output=True, text=True, env=attendee.shell_env(),
+    )
+    assert res_deploy.returncode == 0, res_deploy.stderr
+    view_after = journey.view(attendee)
+    assert view_after["phase"] == "feedback"
+    assert view_after["status"] == "ready_to_try"
+    assert view_after["deploy"] == {
+        "state": "deployed",
+        "preview_url": "https://outages.aws.databricksapps.com",
+    }

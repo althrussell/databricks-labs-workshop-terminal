@@ -38,6 +38,11 @@ def agentbricks_enabled() -> bool:
     return _env_bool("AGENTBRICKS_ENABLED", False)
 
 
+def workshop_browser_enabled() -> bool:
+    """Opt-in headless desktop browser screenshot helper (default off)."""
+    return _env_bool("WORKSHOP_BROWSER_ENABLED", False)
+
+
 def ensure_https(url: str) -> str:
     if url and not url.startswith(("http://", "https://")):
         return f"https://{url}"

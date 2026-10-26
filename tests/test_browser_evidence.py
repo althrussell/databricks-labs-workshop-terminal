@@ -114,9 +114,10 @@ def test_a_real_render_captures_screenshots_and_catches_a_dead_action(project, m
     finally:
         server.shutdown()
     shots = result["artifacts"]
-    # initial + four non-wait actions, at two viewports
-    assert len(shots) == 10
+    # initial + four non-wait actions, strictly desktop-only (phone viewport removed)
+    assert len(shots) == 5
     for shot in shots:
+        assert shot["viewport"] == "desktop"
         data = (project / shot["path"]).read_bytes()
         assert data[:8] == b"\x89PNG\r\n\x1a\n" and hashlib.sha256(data).hexdigest() == shot["sha256"]
         assert shot["title"] == "Outage log" and shot["revision"]["commit"]
@@ -125,8 +126,7 @@ def test_a_real_render_captures_screenshots_and_catches_a_dead_action(project, m
     assert desktop[1]["result"] == "ok" and desktop[1]["visible_change"] is True    # the live action works
     assert desktop[2]["result"] == "ok" and desktop[2]["visible_change"] is False   # a dead action, caught
     assert desktop[3]["result"] == "not_found"
-    phone = [shot for shot in shots if shot["viewport"] == "phone"]
-    assert phone and phone[0]["label"] == "initial"
+    assert not [shot for shot in shots if shot["viewport"] == "phone"]
 
     browser_evidence.record(project, shots)
     saved = design_workflow.read(project)
@@ -181,11 +181,25 @@ def test_the_browser_install_is_optional_and_says_why_it_cannot_run(monkeypatch,
     assert "browser" not in readiness.__dict__.get("REQUIRED_STEPS", ()), "readiness never waits on the browser"
 
 
-def test_the_helper_is_installed_with_the_other_workshop_tools():
+def test_the_helper_is_installed_only_when_workshop_browser_enabled(client, monkeypatch):
+    from server import user_content
+    from server.users import user_manager
+    from tests.test_user_content import _provisioned_home
+
     helper = Path(__file__).resolve().parents[1] / "assets" / "bin" / "workshop-browser"
     assert os.access(helper, os.X_OK)
     text = helper.read_text()
     assert "Open each screenshot with your image tool" in text and "VERIFICATION GAP" in text
+    assert "--phone" not in text and "--both" not in text
+
+    monkeypatch.delenv("WORKSHOP_BROWSER_ENABLED", raising=False)
+    home_default = _provisioned_home(client, monkeypatch)
+    assert not (Path(home_default) / ".local" / "bin" / "workshop-browser").exists()
+    assert browser_evidence.status()["reason_code"] == "disabled"
+
+    monkeypatch.setenv("WORKSHOP_BROWSER_ENABLED", "true")
+    user_content.provision(user_manager.get("alice@example.com"))
+    assert os.access(Path(home_default) / ".local" / "bin" / "workshop-browser", os.X_OK)
 
 
 def test_only_the_official_chrome_for_testing_bucket_is_an_approved_publisher():

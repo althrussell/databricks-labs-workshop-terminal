@@ -606,15 +606,21 @@ def _install_cli_helpers(user: User) -> None:
     """
     local_bin = os.path.join(user.home, ".local", "bin")
     os.makedirs(local_bin, exist_ok=True)
-    for name in (
+    helpers = [
         "databricks-me",
         "workshop-grant-me",
         "workshop-discovery",
         "workshop-app-deploy",
         "workshop-export",
         "workshop-workflow",
-        "workshop-browser",
-    ):
+    ]
+    if config.workshop_browser_enabled():
+        helpers.append("workshop-browser")
+    else:
+        browser_dst = os.path.join(local_bin, "workshop-browser")
+        if os.path.lexists(browser_dst):
+            os.unlink(browser_dst)
+    for name in helpers:
         src = os.path.join(_ASSETS, "bin", name)
         if not os.path.isfile(src):
             raise FileNotFoundError(f"Required workshop helper missing: {name}")

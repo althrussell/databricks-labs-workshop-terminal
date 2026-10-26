@@ -51,10 +51,10 @@ TRANSITIONS = {
     "choose_path": {"shape", "agree", "build"},
     "shape": {"agree"},
     "agree": {"build", "shape"},
-    "build": {"inspect"},
+    "build": {"inspect", "feedback"},
     "inspect": {"improve", "feedback", "build"},
-    "improve": {"inspect", "build"},
-    "feedback": {"improve"},
+    "improve": {"inspect", "build", "feedback"},
+    "feedback": {"improve", "build"},
 }
 #: Stages that claim something was built, and so need a path behind them.
 BUILT = {"build", "inspect", "improve", "feedback"}
@@ -89,6 +89,16 @@ def new_record(attendee: str = "", project: str = "") -> dict:
 
 def project_root(start: str | None = None) -> Path:
     cwd = Path(start or os.getcwd())
+    if start is None:
+        home = Path.home()
+        if cwd.resolve() in {home.resolve(), (home / "projects").resolve()}:
+            selection = home / ".config/workshop/projects.json"
+            try:
+                active = json.loads(selection.read_text()).get("active", "")
+            except (OSError, ValueError, AttributeError):
+                active = ""
+            if active and (home / "projects" / active).is_dir():
+                return (home / "projects" / active).resolve()
     try:
         top = subprocess.run(["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],
                              capture_output=True, text=True, timeout=10)
@@ -97,6 +107,10 @@ def project_root(start: str | None = None) -> Path:
     except (OSError, subprocess.TimeoutExpired):
         pass
     return cwd
+
+
+def _is_scaffolded_build(project: Path | None) -> bool:
+    return project is not None and (project / ".workshop/preparation.json").is_file()
 
 
 def load(project: Path) -> dict:
@@ -139,7 +153,7 @@ def _brief_changed(record: dict) -> None:
     record["brief_revision"] = record.get("brief_revision", 0) + 1
 
 
-def choose_path(record: dict, value: str, *, by: str, source: str | None) -> None:
+def choose_path(record: dict, value: str, *, by: str, source: str | None, project: Path | None = None) -> None:
     if value not in PATHS:
         raise WorkflowError(f"path must be one of {', '.join(PATHS)}")
     if by not in CHOOSERS:
@@ -152,6 +166,9 @@ def choose_path(record: dict, value: str, *, by: str, source: str | None) -> Non
         record["history"].append({"at": now(), "event": "path_switched", "from": previous, "to": value, "by": by})
     if record["phase"] == "understand":
         record["phase"] = "choose_path"
+    if _is_scaffolded_build(project) and record["phase"] in {"understand", "choose_path"}:
+        if value == "rapid" or (value == "guided" and _direction_confirmed(record)):
+            record["phase"] = "build"
 
 
 def transition_problems(record: dict, target: str, evidence: dict) -> list[str]:
@@ -172,6 +189,10 @@ def transition_problems(record: dict, target: str, evidence: dict) -> list[str]:
         problems.append("guided ideation shapes and agrees a direction before building")
     if target == "inspect" and not ({"preview", "build"} & set(evidence)):
         problems.append("inspect needs build evidence: --evidence preview=<url> or build=<result>")
+    if target == "feedback" and not (
+        {"preview", "build"} & (set(evidence) | set(record.get("evidence", {}).get("build", {})))
+    ):
+        problems.append("feedback needs build evidence: --evidence preview=<url> or build=<result>")
     return problems
 
 
@@ -272,8 +293,9 @@ def next_step(record: dict) -> str:
     if path == "guided" and phase == "agree" and not _direction_confirmed(record):
         return "wait for the attendee to confirm the direction"
     return {"choose_path": "confirm the MVP scope, Databricks building blocks and build plan with the attendee, then build",
-            "agree": "build the agreed direction", "build": "deploy, then inspect the rendered app",
-            "inspect": "exercise the primary action and record what you checked",
+            "agree": "build the agreed direction",
+            "build": "run apx dev check and apx build, deploy, and share the live preview URL with the attendee",
+            "inspect": "share the live preview URL with the attendee and record what you checked",
             "improve": "show what changed and recheck", "feedback": "ask them to do their real task, then record their own account with `workshop-workflow outcome`"}.get(
         phase, "continue")
 
@@ -309,11 +331,11 @@ def _evidence(pairs: list[str]) -> dict:
     return evidence
 
 
-def apply(record: dict, args: argparse.Namespace) -> None:
+def apply(record: dict, args: argparse.Namespace, *, project: Path | None = None) -> None:
     command = args.command
     by = getattr(args, "by", None) or "agent"
     if command == "path":
-        choose_path(record, args.value, by=args.by, source=args.source)
+        choose_path(record, args.value, by=args.by, source=args.source, project=project)
     elif command == "phase":
         evidence = _evidence(args.evidence)
         problems = transition_problems(record, args.stage, evidence)
@@ -369,6 +391,13 @@ def apply(record: dict, args: argparse.Namespace) -> None:
         if args.confirmed_by not in (None, "attendee"):
             raise WorkflowError("only the attendee confirms a direction")
         record["direction"] = {"text": args.text, "confirmed_by": args.confirmed_by, "at": now()}
+        if (
+            args.confirmed_by == "attendee"
+            and _is_scaffolded_build(project)
+            and record["path"].get("value") == "guided"
+            and record["phase"] in {"understand", "choose_path", "shape", "agree"}
+        ):
+            record["phase"] = "build"
         _brief_changed(record)
 
 
@@ -486,7 +515,7 @@ def main(argv: list[str] | None = None) -> int:
                 print("\n".join(problems) or "Workflow record is consistent.")
             return 1 if problems else 0
         base = record["revision"]
-        apply(record, args)
+        apply(record, args, project=project)
         saved = save(project, record, expected_revision=args.expect_revision, base_revision=base)
         print(summary(saved))
         return 0

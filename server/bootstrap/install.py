@@ -2133,7 +2133,10 @@ def _run_parallel_installers(tasks, *, max_workers: int) -> None:
 
 def run_in_background() -> None:
     omnigent = config.omnigent_offered()
-    steps = ["node", "claude", "codex", "databricks", "skills", "apx", "bun", "uv", "browser"]
+    browser = config.workshop_browser_enabled()
+    steps = ["node", "claude", "codex", "databricks", "skills", "apx", "bun", "uv"]
+    if browser:
+        steps.append("browser")
     if omnigent:
         steps += ["tmux", "omnigent"]
     if config.agentbricks_enabled():
@@ -2181,8 +2184,9 @@ def run_in_background() -> None:
         independent = [
             ("claude", _install_claude),
             ("databricks", _install_databricks_cli),
-            ("browser", _install_browser),
         ]
+        if browser:
+            independent.append(("browser", _install_browser))
         dependent = [("codex", _install_codex), ("skills", _install_skills)]
         if omnigent:
             independent.extend([

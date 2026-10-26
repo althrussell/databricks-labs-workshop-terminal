@@ -60,6 +60,34 @@ def _help_raised() -> bool:
         return False
 
 
+def _effective_record(project: Path, record: dict) -> dict:
+    """Infer build progression when the project has already been scaffolded by workshop-init-project."""
+    scaffolded = (
+        (project / ".workshop/preparation.json").is_file()
+        or (project / "PRODUCT.md").is_file()
+        or (project / "DESIGN.md").is_file()
+    )
+    if not scaffolded:
+        return record
+    open_questions = [q for q in record.get("questions", []) if q.get("answer") is None]
+    if open_questions:
+        return record
+    effective = dict(record)
+    path_info = dict(record.get("path") or {})
+    if not path_info.get("value"):
+        path_info = {"value": "rapid", "chosen_by": "attendee", "source": "chat", "at": None}
+        effective["path"] = path_info
+    chosen = path_info.get("value")
+    direction = record.get("direction") or {}
+    if effective.get("phase") in {"understand", "choose_path"} and (
+        chosen == "rapid" or (chosen == "guided" and direction.get("confirmed_by") == "attendee")
+    ):
+        effective["phase"] = "build"
+    elif effective.get("phase") == "agree" and chosen == "guided" and direction.get("confirmed_by") == "attendee":
+        effective["phase"] = "build"
+    return effective
+
+
 def status_for(record: dict, verification: dict, problems: list[str], *, help_raised: bool) -> str:
     path, phase = (record.get("path") or {}).get("value"), record.get("phase")
     open_questions = [q for q in record.get("questions", []) if q.get("answer") is None]
@@ -73,7 +101,10 @@ def status_for(record: dict, verification: dict, problems: list[str], *, help_ra
                                        and direction.get("confirmed_by") != "attendee")):
         return "needs_decision"
     preview = record.get("evidence", {}).get("build", {}).get("preview")
-    if preview and phase in {"inspect", "improve", "feedback"} and verification.get("state") == "verified":
+    if preview and (
+        phase == "feedback"
+        or (phase in {"inspect", "improve"} and verification.get("state") == "verified")
+    ):
         return "ready_to_try"
     return "working"
 
@@ -89,14 +120,20 @@ def view(user, *, session=None) -> dict:
                 "review": {"state": "none"}, "deploy": {"state": "not_deployed", "preview_url": None},
                 "what_changed": [], "open_questions": [], "requests": [], "session": _session(session),
                 "updated_at": None}
-    record = design_workflow.read(project)
+    raw_record = design_workflow.read(project)
+    record = _effective_record(project, raw_record)
     verification = design_workflow.verification(record, project)
     problems = design_workflow.check(record, project)
     preview = record.get("evidence", {}).get("build", {}).get("preview")
     history = record.get("history") or []
+    goal = state["goals"].get(project.name, "")
+    if not goal:
+        facts = [f.get("text", "") for f in record.get("facts", []) if isinstance(f, dict) and f.get("text")]
+        if facts:
+            goal = facts[0]
     return {
         "project": project.name,
-        "goal": state["goals"].get(project.name, ""),
+        "goal": goal,
         "phase": record["phase"],
         "path": record["path"].get("value"),
         "status": status_for(record, verification, problems, help_raised=_help_raised()),

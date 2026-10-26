@@ -7,7 +7,7 @@ the page in a prepared browser and saves PNGs in the project under
 describe the page: a file name is not proof that you saw it.
 
     workshop-browser status
-    workshop-browser inspect http://localhost:$DATABRICKS_APP_PORT [--phone|--both]
+    workshop-browser inspect http://localhost:$DATABRICKS_APP_PORT
                      [--do click:"Log an outage"] [--do fill:'#title=Fallen line'] [--do press:Enter]
     workshop-browser inspect https://<your-app>.databricksapps.com --deployed [--do ...]
 
@@ -73,9 +73,6 @@ def main(argv: list[str] | None = None) -> int:
     inspect = sub.add_parser("inspect")
     inspect.add_argument("url")
     inspect.add_argument("--deployed", action="store_true")
-    size = inspect.add_mutually_exclusive_group()
-    size.add_argument("--phone", action="store_true")
-    size.add_argument("--both", action="store_true")
     inspect.add_argument("--do", action="append", default=[], metavar="ACTION")
     args = parser.parse_args(argv)
 
@@ -85,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
               if result.get("available") else f"No browser here: {result.get('reason')}")
         return 0 if result.get("available") else 3
     if args.command == "inspect":
-        viewports = ["phone"] if args.phone else ["desktop", "phone"] if args.both else ["desktop"]
+        viewports = ["desktop"]
         result = _call("/api/browser/inspect", {
             "url": args.url, "scope": "deployed" if args.deployed else "local", "viewports": viewports,
             "actions": args.do, "project": _project()}, 300)

@@ -561,15 +561,71 @@ import tempfile
 import sys
 
 name = sys.argv[1]
-selection = Path.home() / '.config/workshop/projects.json'
+home = Path.home()
+selection = home / '.config/workshop/projects.json'
 context = Path('.workshop/project.json')
+workflow_path = Path('.workshop/design-workflow.json')
 if selection.is_symlink() or context.is_symlink() or context.parent.is_symlink():
     raise SystemExit('workshop-init-project: project context is a symlink; retain it separately and retry')
 state = json.loads(selection.read_text()) if selection.is_file() else {'version': 1, 'active': '', 'goals': {}}
 if state.get('version') != 1 or not isinstance(state.get('goals'), dict):
     raise SystemExit('workshop-init-project: invalid project selection; repair it and retry')
+
+# Migrate any pre-scaffold workflow record written in ~ or ~/projects during discovery.
+record = json.loads(workflow_path.read_text()) if workflow_path.is_file() else None
+for stray in (home / '.workshop/design-workflow.json', home / 'projects/.workshop/design-workflow.json'):
+    if not stray.is_file() or stray.is_symlink():
+        continue
+    try:
+         prior = json.loads(stray.read_text())
+    except (OSError, ValueError):
+        continue
+    if not isinstance(prior, dict) or prior.get('schema') != 'workshop-design-workflow':
+        continue
+    if record is None:
+        record = dict(prior, project=name)
+    else:
+        if not (record.get('path') or {}).get('value') and (prior.get('path') or {}).get('value'):
+            record['path'] = prior['path']
+        for key in ('facts', 'assumptions', 'questions', 'success_criteria'):
+            seen = {item.get('text') for item in record.get(key, []) if isinstance(item, dict)}
+            for item in prior.get(key, []):
+                if isinstance(item, dict) and item.get('text') not in seen:
+                    record.setdefault(key, []).append(item)
+                    seen.add(item.get('text'))
+        if not record.get('direction') and prior.get('direction'):
+            record['direction'] = prior['direction']
+    try:
+        stray.unlink()
+    except OSError:
+        pass
+
+if isinstance(record, dict):
+    chosen_path = (record.get('path') or {}).get('value')
+    direction = record.get('direction') or {}
+    if record.get('phase') in {'understand', 'choose_path', 'agree'} and (
+        chosen_path == 'rapid' or (chosen_path == 'guided' and direction.get('confirmed_by') == 'attendee')
+    ):
+        record['phase'] = 'build'
+    record['project'] = name
+    record['revision'] = int(record.get('revision') or 0) + 1
+    workflow_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix='.design-workflow-', dir=workflow_path.parent)
+    try:
+        with os.fdopen(fd, 'w') as handle:
+            json.dump(record, handle, indent=2, sort_keys=True)
+            handle.write('\n')
+        os.replace(temporary, workflow_path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
 previous = json.loads(context.read_text()) if context.is_file() else {}
 goal = previous.get('goal', state['goals'].get(name, ''))
+if not goal and isinstance(record, dict):
+    facts = [f.get('text', '') for f in record.get('facts', []) if isinstance(f, dict) and f.get('text')]
+    if facts:
+        goal = facts[0]
 state['active'] = name
 state['goals'][name] = goal
 state['materialized'] = sorted(set(state.get('materialized', [])) | {name})
@@ -587,6 +643,10 @@ for path, value in ((context, {'version': 1, 'name': name, 'goal': goal}), (sele
 PY
 git add -f -- .workshop/project.json
 MEMORY_FILES+=(.workshop/project.json)
+if [ -f .workshop/design-workflow.json ]; then
+  git add -f -- .workshop/design-workflow.json
+  MEMORY_FILES+=(.workshop/design-workflow.json)
+fi
 if [ -n "$WORKSHOP_LINT_FILE" ]; then
   MEMORY_FILES+=("$WORKSHOP_LINT_FILE")
 fi
