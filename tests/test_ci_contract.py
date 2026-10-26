@@ -45,7 +45,6 @@ def test_backend_ci_runs_full_suite_from_the_uv_lock():
     assert "pip install" not in commands
     assert workflow["jobs"]["backend"]["strategy"]["matrix"]["python-version"] == [
         "3.11",
-        "3.12",
     ]
 
 
