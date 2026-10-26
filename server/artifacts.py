@@ -99,6 +99,11 @@ _SYNTHETIC_PREFIXES = (
     # Fallbacks for releases that do not flag these structurally: Claude Code
     # loads a skill's body as a user-role turn, and Codex sends AGENTS.md as one.
     "base directory for this skill:", "# agents.md instructions",
+    # Workshop Terminal's automatic session openers: passed as the CLI's first
+    # message so the agent speaks first, never typed by the attendee.
+    "hi! i've just sat down for the workshop.",
+    "hi! i'm back at the workshop.",
+    "i've just switched to ",
 )
 # Claude Code's wrapper for a message the attendee sent while the agent was
 # working. The words after it are the attendee's.

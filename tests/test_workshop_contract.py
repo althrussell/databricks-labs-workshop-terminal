@@ -33,7 +33,8 @@ def test_one_identical_contract_reaches_all_channels(
         user_content._write_instructions(user)
 
     canonical = CONTRACT.read_text().strip()
-    for parts in _MEMORY_CHANNELS:
+    home_channels = _MEMORY_CHANNELS[:2]
+    for parts in home_channels:
         text = Path(home, *parts).read_text()
         assert text.count(MARKER) == 1
         assert canonical in text
@@ -45,8 +46,14 @@ def test_one_identical_contract_reaches_all_channels(
         assert "one line on what the app is for" not in text
         if not discovery:
             assert "workshop-discovery" not in text
-        if parts != _MEMORY_CHANNELS[-1]:
-            assert ("workshop-lab-coach" in text) == coach
+        assert ("workshop-lab-coach" in text) == coach
+
+    # Project memory is worker-only and does not duplicate the home contract.
+    project_text = Path(home, *_MEMORY_CHANNELS[-1]).read_text()
+    assert "<!-- workshop-project-memory -->" in project_text
+    assert MARKER not in project_text
+    if not discovery:
+        assert "workshop-discovery" not in project_text
 
 
 @pytest.mark.parametrize("text", [
@@ -122,7 +129,7 @@ def test_project_only_worker_gets_policy_and_preserved_brief(tmp_path, monkeypat
     subprocess.run(["git", "-C", str(project), "worktree", "add", "--detach", str(worker)],
                    env=env, check=True, capture_output=True)
     for name in ("CLAUDE.md", "AGENTS.md"):
-        assert CONTRACT.read_text().strip() in (worker / name).read_text()
+        assert user_content._project_memory().strip() in (worker / name).read_text()
     assert (worker / "README.md").read_text() == readme
 
 

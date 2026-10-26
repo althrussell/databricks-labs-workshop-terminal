@@ -687,7 +687,8 @@ export default function App() {
         close: api.closeSession,
         refresh: refreshSessions,
         create: async (agentId, replacesAgentId) =>
-          (await api.createSession(agentId, replacesAgentId, projectInventoryRef.current?.active)).session,
+          (await api.createSession(agentId, replacesAgentId, projectInventoryRef.current?.active,
+            Boolean(requested.starterPrompt))).session,
       });
       setSession(created);
       setView("agent");

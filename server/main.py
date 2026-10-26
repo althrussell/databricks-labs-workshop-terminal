@@ -1499,17 +1499,24 @@ def create_session(
                 raise HTTPException(status_code=409, detail="The active build changed in another tab. Refresh My builds before opening an agent.")
             if projects.read(user)["active"]:
                 user_content._write_instructions(user)
-            # A first visit with nothing chosen yet starts with the workshop opener,
-            # so the agent speaks first. Never on top of the wizard's own prompt,
-            # an idea chip or an agent switch.
-            opener = ("" if body.has_starter_prompt or body.replaces_agent_id
-                      else agents.claim_opener(user) or "")
+            # Every fresh or switched session without a starter prompt gets an
+            # opener (meeting opener on first visit, return opener on later
+            # sessions, or switch opener when changing agents).
+            opener = (
+                agents.claim_opener(
+                    user,
+                    agent,
+                    has_starter_prompt=body.has_starter_prompt,
+                    replaces_agent_id=body.replaces_agent_id,
+                )
+                or ""
+            )
             try:
                 launched = agents.with_first_message(agent, opener)
                 session = session_manager.create(user, agent["id"], agents.launch_command(launched),
                                                  agent["label"])
             except BaseException:
-                if opener:
+                if opener == agents.WORKSHOP_OPENER:
                     agents.release_opener(user)
                 raise
     except spend.SpendBlocked as e:

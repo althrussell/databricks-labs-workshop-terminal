@@ -271,7 +271,7 @@ def next_step(record: dict) -> str:
                 else "present the brief and ask: build this direction, or refine it further?")
     if path == "guided" and phase == "agree" and not _direction_confirmed(record):
         return "wait for the attendee to confirm the direction"
-    return {"choose_path": "state the interpretation and assumptions, then build",
+    return {"choose_path": "confirm the MVP scope, Databricks building blocks and build plan with the attendee, then build",
             "agree": "build the agreed direction", "build": "deploy, then inspect the rendered app",
             "inspect": "exercise the primary action and record what you checked",
             "improve": "show what changed and recheck", "feedback": "ask them to do their real task, then record their own account with `workshop-workflow outcome`"}.get(
