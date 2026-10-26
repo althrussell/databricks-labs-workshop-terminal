@@ -25,12 +25,10 @@ on resume, follow-up or agent switch.
   `$WORKSHOP_DEMO_CATALOG` (read-only), then `$WORKSHOP_CATALOG`. Use fast
   `databricks tables list` checks before approval. Label sample data and
   simulated parts.
-- **UI design (one fast Impeccable pass):** Impeccable (`impeccable` skill) is
-  the design authority: `impeccable context` (`PRODUCT.md`), `DESIGN.md`,
-  `reference/craft-floor.md`, `$WORKSHOP_DESIGN_REFERENCES`, and run `detect`
-  once. Skip `reference/new-work.md`, browser screenshots, and
-  `impeccable-finish-reviewer` / `impeccable-documenter`.
-- **Claims:** Share first preview for the attendee to try in their browser; say what remains unverified. Do not install Playwright browsers or run `databricks apps validate`.
-- **Resuming:** `workshop-workflow show` on resume; a stage boundary is a safe
-  point to compact and re-ground from the record, `PRODUCT.md`, `DESIGN.md` and
-  the README brief.
+- **UI design:** Impeccable (`impeccable` skill) is the design authority:
+  `impeccable context` (`PRODUCT.md`), `DESIGN.md`, `reference/craft-floor.md`,
+  `$WORKSHOP_DESIGN_REFERENCES`, and run `detect` once (never render phone
+  viewports or spawn `impeccable-finish-reviewer`).
+- **Claims:** Share first preview to try in their browser (with `workshop-browser`, inspect desktop and exercise primary action; without, one fast pass); say what remains unverified. Do not install Playwright browsers or run `databricks apps validate`.
+- **Resuming:** `workshop-workflow show` on resume; stage boundaries are a safe
+  point to compact (`PRODUCT.md`, `DESIGN.md`, README).
