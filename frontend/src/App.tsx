@@ -434,15 +434,7 @@ export default function App() {
           setIndustryOpen(true);
         }
       })
-      .catch(() => {
-        if (!session && !projectInventoryRef.current?.active && !isDismissed()) {
-          if (config.onboarding_wizard.enabled) {
-            setWizardOpen(true);
-          } else {
-            setIndustryOpen(true);
-          }
-        }
-      });
+      .catch(() => { if (config.onboarding_wizard.enabled && !session && !projectInventoryRef.current?.active && !isDismissed()) setWizardOpen(true); });
   }, [config, inputDisabled, sessionsLoaded, projectsLoaded, session, wizardDismissalKey]);
 
   useEffect(() => {

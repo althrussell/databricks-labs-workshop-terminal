@@ -745,7 +745,12 @@ def state(user: User, industry: str | None = None, query: str = "") -> dict[str,
         # holds for a reload, a second tab and any future caller of this
         # endpoint at once.
         "should_show": enabled and not brief.seen,
-        "should_ask_industry": (not enabled) and (not brief.seen) and (not brief.industry_stated),
+        "should_ask_industry": (
+            (not enabled)
+            and (not brief.seen)
+            and (not brief.industry_stated)
+            and (bool(seeded) or demo_data.enabled() or config.discovery_enabled())
+        ),
         "default_industry": default_industry(),
         # Everything the notebook can seed, offered whether or not this
         # deployment got it. ``seeded_industries`` is the subset that is really
