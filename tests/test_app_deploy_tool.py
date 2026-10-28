@@ -768,6 +768,10 @@ def test_claude_and_codex_register_and_allow_the_same_tool(client, monkeypatch):
         "deploy_databricks_app"
     ]
     assert codex["mcp_servers"]["workshop"]["tool_timeout_sec"] == 3600
+    # Codex gives stdio MCP servers only a default allowlist; the helper's
+    # callbacks need the terminal URL and attendee forwarded by name.
+    forwarded = codex["mcp_servers"]["workshop"]["env_vars"]
+    assert {"WORKSHOP_APP_URL", "WORKSHOP_USER_EMAIL", "WORKSHOP_PROJECTS_ROOT"} <= set(forwarded)
 
 
 def test_app_deploy_callback_emits_only_bounded_operational_fields(

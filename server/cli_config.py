@@ -459,6 +459,20 @@ OMNIGENT_RENDERER_TOOLS = tuple(
 _CODEX_MODEL_PROVIDER = "databricks"
 _CODEX_PROVIDER_DISPLAY_NAME = "Databricks Model Serving"
 
+# What `workshop-app-deploy --mcp` reads to report back to the terminal. Claude
+# Code hands a stdio MCP server its whole environment; Codex hands it only a
+# small default allowlist plus the names listed here. Without these the helper
+# deployed fine but its callbacks were silently skipped, so Codex deploys left
+# no app.deploy event, no deploy screenshot and no early app grant (28 Oct E2E,
+# seat 2, for both the Codex terminal and Omnigent's codex-native harness).
+_WORKSHOP_MCP_ENV_VARS = (
+    "WORKSHOP_APP_URL",
+    "WORKSHOP_USER_EMAIL",
+    "WORKSHOP_PROJECTS_ROOT",
+    "WORKSHOP_APP_DEPLOY_STATE_DIR",
+    "WORKSHOP_APP_DEPLOY_POLL_SECONDS",
+)
+
 # Codex once carried a second provider on the plain chat-completions surface so
 # GLM, Kimi and Gemini — which answer on chat completions and nowhere else —
 # were reachable as `codex --profile <name>`. codex-cli 0.144.6 removed the chat
@@ -581,6 +595,7 @@ def configure_codex(
         "[mcp_servers.workshop]\n"
         f"command = {json.dumps(os.path.join(user.home, '.local', 'bin', 'workshop-app-deploy'))}\n"
         'args = ["--mcp"]\n'
+        f"env_vars = {json.dumps(list(_WORKSHOP_MCP_ENV_VARS))}\n"
         'enabled_tools = ["deploy_databricks_app"]\n'
         "startup_timeout_sec = 10\n"
         "tool_timeout_sec = 3600\n"
