@@ -150,6 +150,17 @@ def classify_verdict(
     return "ok"
 
 
+def is_outage_shaped(
+    *, received_count: int, http_rtt_ms: int | None, ws_rtt_ms: int | None
+) -> bool:
+    """Nothing came back at all, matching ``isOutageShaped`` in networkCheck.ts.
+
+    Still a ``blocked`` verdict, but a dropped connection rather than a proxy
+    holding back small events, so it must not be met with proxy advice.
+    """
+    return received_count == 0 and http_rtt_ms is None and ws_rtt_ms is None
+
+
 @router.get("/ping")
 def ping(_: Principal = Depends(get_current_user)) -> dict[str, Any]:
     return {"ok": True, "server_time_ms": int(time.time() * 1000)}
@@ -222,6 +233,11 @@ def record_result(
         "http_rtt_ms": body.http_rtt_ms,
         "browser_family": body.browser_family.strip()[:64],
         "network_label": label,
+        "outage": is_outage_shaped(
+            received_count=body.received_count,
+            http_rtt_ms=body.http_rtt_ms,
+            ws_rtt_ms=body.ws_rtt_ms,
+        ),
     }
     with _lock:
         _load_locked()

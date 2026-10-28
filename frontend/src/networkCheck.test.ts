@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { evaluateSamples, formatNetworkSummary } from "./networkCheck";
+import {
+  evaluateSamples,
+  formatNetworkSummary,
+  isOutageShaped,
+  nextRetryDelayMs,
+  type NetworkCheckResult,
+} from "./networkCheck";
 
 test("normal SSE stream with low lag and working WS produces ok verdict", () => {
   const samples = [0, 1000, 2000, 3000, 5000, 8000, 12000, 17000, 23000, 30000].map(
@@ -92,4 +98,39 @@ test("a clean stream is ok even when the WebSocket RTT is still unknown", () => 
   assert.equal(result.verdict, "ok");
   assert.equal(result.ws_rtt_ms, null);
   assert.equal(formatNetworkSummary({ ...result, checked_at: "" }).terminalConnection, "Terminal connection: unavailable");
+});
+
+
+function outageResult(): NetworkCheckResult {
+  return {
+    ...evaluateSamples([], 11, null, null),
+    checked_at: "2026-10-28T07:21:51Z",
+  };
+}
+
+test("a check where nothing came back is an outage, still blocked, with no proxy wording", () => {
+  // E2E 28 Oct: a DNS outage on the laptop, 0 of 11 events, no round trips.
+  const result = outageResult();
+  assert.equal(result.verdict, "blocked");
+  assert.equal(isOutageShaped(result), true);
+  assert.equal(formatNetworkSummary(result).liveUpdates, "Live updates: no connection");
+});
+
+test("a held-back stream with working round trips is not an outage", () => {
+  const samples = [0, 1000, 2000, 3000, 5000, 8000, 12000, 17000, 23000, 30000].map((ms, seq) => ({
+    seq,
+    server_elapsed_ms: ms,
+    client_elapsed_ms: 30100 + seq * 5,
+    flush: false,
+  }));
+  const result = { ...evaluateSamples(samples, 11, 60, 40), checked_at: "2026-10-28T07:21:51Z" };
+  assert.equal(result.verdict, "blocked");
+  assert.equal(isOutageShaped(result), false);
+  assert.equal(isOutageShaped({ ...outageResult(), http_rtt_ms: 35 }), false);
+  assert.equal(isOutageShaped(null), false);
+});
+
+test("a not-ok verdict is re-checked after 30 s, then 2 min, then every 5 min", () => {
+  assert.deepEqual([0, 1, 2, 3, 9].map(nextRetryDelayMs), [30_000, 120_000, 300_000, 300_000, 300_000]);
+  assert.equal(nextRetryDelayMs(-1), 30_000);
 });

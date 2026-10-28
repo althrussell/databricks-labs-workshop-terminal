@@ -82,6 +82,7 @@ _SAFE_FIELD_MAP = {
     "http_rtt_ms": "network.http_rtt_ms",
     "browser_family": "network.browser_family",
     "network_label": "network.label",
+    "outage": "network.outage",
     "harness": "omnigent.harness",
     "launch_to_interactive_ms": "omnigent.launch_to_interactive_ms",
     "ready_to_first_message_ms": "omnigent.ready_to_first_message_ms",

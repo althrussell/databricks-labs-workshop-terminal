@@ -2,12 +2,16 @@ import { useEffect, useState } from "react";
 import { RefreshCw, Wifi, WifiOff, X } from "lucide-react";
 import {
   formatNetworkSummary,
+  isOutageShaped,
   type NetworkCheckResult,
   type NetworkStatusKind,
 } from "../networkCheck";
 
 export const NETWORK_BLOCKED_COPY =
   "This network is holding back live updates. New Claude chats in Omnigent won't start here. Switch to guest Wi-Fi or a phone hotspot, or use Claude in the terminal.";
+
+export const NETWORK_OUTAGE_COPY =
+  "Connection lost. Checking again automatically; this clears once you're back online.";
 
 export function NetworkNotice({ result }: { result: NetworkCheckResult | null }) {
   const [dismissedCheckedAt, setDismissedCheckedAt] = useState<string | null>(null);
@@ -27,7 +31,7 @@ export function NetworkNotice({ result }: { result: NetworkCheckResult | null })
   return (
     <div className="banner banner-warning network-notice" role="status" aria-live="polite">
       <WifiOff size={16} aria-hidden="true" />
-      <span>{NETWORK_BLOCKED_COPY}</span>
+      <span>{isOutageShaped(result) ? NETWORK_OUTAGE_COPY : NETWORK_BLOCKED_COPY}</span>
       <button
         type="button"
         className="icon-btn"
@@ -64,7 +68,9 @@ export function NetworkStatusControl({
         ? "Network: OK"
         : status === "slow"
           ? "Network: slow"
-          : "Network: live updates held back";
+          : isOutageShaped(result)
+            ? "Network: connection lost"
+            : "Network: live updates held back";
 
   return (
     <div className="network-status-wrap" style={{ position: "relative", display: "inline-flex" }}>

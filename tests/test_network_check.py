@@ -69,6 +69,7 @@ def test_network_check_result_persists_emits_telemetry_and_shows_in_presence(
     body = resp.json()
     assert body["verdict"] == "blocked"
     assert body["clumped"] is True
+    assert body["outage"] is False
     assert len(body["network_label"]) == 12
     assert "203.0.113.42" not in json.dumps(body)
 
@@ -86,3 +87,25 @@ def test_network_check_result_persists_emits_telemetry_and_shows_in_presence(
     email = ALICE["X-Forwarded-Email"].lower()
     assert users[email]["network_check"]["verdict"] == "blocked"
     assert users[email]["network_check"]["network_label"] == body["network_label"]
+
+
+def test_a_check_where_nothing_came_back_is_recorded_as_an_outage(client, monkeypatch, tmp_path):
+    """E2E 28 Oct: a DNS outage on the attendee's laptop gave 0 of 11 events and
+    no round trips. Still blocked, but flagged so nobody blames a proxy."""
+    from server import config
+    from server.users import user_manager
+
+    network_check.reset_for_tests()
+    monkeypatch.setattr(config, "data_root", lambda: str(tmp_path))
+    user_manager.get(ALICE["X-Forwarded-Email"])
+    resp = client.post(
+        "/api/network-check/result",
+        headers=ALICE,
+        json={"verdict": "blocked", "received_count": 0, "expected_count": 11,
+              "first_event_ms": None, "max_lag_ms": None, "ws_rtt_ms": None, "http_rtt_ms": None},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["verdict"] == "blocked"
+    assert resp.json()["outage"] is True
+    assert network_check.is_outage_shaped(received_count=0, http_rtt_ms=40, ws_rtt_ms=None) is False
+    assert "outage" in observability._SAFE_FIELD_MAP
