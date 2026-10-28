@@ -128,9 +128,12 @@ def test_memory_distinguishes_preview_from_verified_task(client, monkeypatch):
         assert "try in their browser" in text
         assert "what remains unverified" in text
         assert "impeccable-finish-reviewer" in text
-        # E2E 28 Oct: Claude told the attendee it couldn't sign in to the live
-        # app and never looked; --deployed signs in as the attendee.
-        assert "--deployed` opens the live app signed in as the attendee" in text
+    # E2E 28 Oct: Claude told the attendee it couldn't sign in to the live app
+    # and never looked; --deployed signs in as the attendee. The home contract
+    # carries it; the project worker's memory stays within its word budget.
+    for parts in _MEMORY_CHANNELS[:2]:
+        text = open(os.path.join(home, *parts)).read()
+        assert "workshop-browser --deployed`, try primary action as the attendee" in text
 
 
 def test_every_agent_gets_impeccables_setup_in_order_on_both_paths(client, monkeypatch):

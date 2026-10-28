@@ -29,7 +29,6 @@ on resume, follow-up or agent switch.
   `impeccable context` (`PRODUCT.md`), `DESIGN.md`, `reference/craft-floor.md`,
   `$WORKSHOP_DESIGN_REFERENCES`, and run `detect` once (never render phone
   viewports or spawn `impeccable-finish-reviewer`).
-- **Claims:** Share first preview to try in their browser (with `workshop-browser`, inspect desktop and exercise primary action; without, one fast pass); say what remains unverified. Do not install Playwright browsers or run `databricks apps validate`.
-  When `workshop-browser` is installed and you can't see a page you changed, `workshop-browser inspect <url> --deployed` opens the live app signed in as the attendee; optional, use it when seeing the page helps.
+- **Claims:** Share first preview to try in their browser (with `workshop-browser --deployed`, try primary action as the attendee; without, one fast pass); say what remains unverified. Do not install Playwright browsers or run `databricks apps validate`.
 - **Resuming:** `workshop-workflow show` on resume; stage boundaries are a safe
   point to compact (`PRODUCT.md`, `DESIGN.md`, README).
