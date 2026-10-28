@@ -192,7 +192,6 @@ class ContentService:
         self._lock = threading.Lock()
         self._pack = self._load_initial_pack()
         self._phase = config.workshop_phase_default()
-        self._phase_explicitly_set = False
         self._broadcast: Broadcast | None = None
         self._broadcast_at = 0.0
         self._topic_regex = self._compile_topics(self._pack)
@@ -380,22 +379,19 @@ class ContentService:
             self._topic_regex = self._compile_topics(pack)
             if self._phase not in pack.phases and pack.phases:
                 self._phase = pack.phases[0]
-                self._phase_explicitly_set = False
         logger.info("content pack replaced (%d nuggets, %d topics)",
                     len(pack.nuggets), len(pack.topics))
 
-    def set_phase(self, phase: str, *, explicit: bool = False) -> None:
+    def set_phase(self, phase: str) -> None:
         with self._lock:
             self._phase = phase
-            self._phase_explicitly_set = explicit
         logger.info("workshop phase -> %s", phase)
 
     def advance_to_build_if_default(self) -> bool:
         """Automatically advance from intro/setup to build on first build activity."""
         with self._lock:
             if (
-                self._phase_explicitly_set
-                or self._phase not in {"intro", "setup"}
+                self._phase not in {"intro", "setup"}
                 or "build" not in self._pack.phases
             ):
                 return False
@@ -407,34 +403,7 @@ class ContentService:
         """Automatically advance to wrap when the T-30/T-15 wrap-up window begins."""
         with self._lock:
             if (
-                self._phase_explicitly_set
-                or self._phase == "wrap"
-                or "wrap" not in self._pack.phases
-            ):
-                return False
-            self._phase = "wrap"
-        logger.info("workshop phase auto-advanced -> wrap")
-        return True
-
-    def advance_to_build_if_default(self) -> bool:
-        """Automatically advance from intro/setup to build on first build activity."""
-        with self._lock:
-            if (
-                self._phase_explicitly_set
-                or self._phase not in {"intro", "setup"}
-                or "build" not in self._pack.phases
-            ):
-                return False
-            self._phase = "build"
-        logger.info("workshop phase auto-advanced -> build")
-        return True
-
-    def advance_to_wrap_if_default(self) -> bool:
-        """Automatically advance to wrap when the T-30/T-15 wrap-up window begins."""
-        with self._lock:
-            if (
-                self._phase_explicitly_set
-                or self._phase == "wrap"
+                self._phase == "wrap"
                 or "wrap" not in self._pack.phases
             ):
                 return False

@@ -318,7 +318,7 @@ def set_phase(body: PhaseBody):
             status_code=422,
             detail=f"Unknown phase '{body.phase}' — pack defines {content_service.pack.phases}",
         )
-    content_service.set_phase(body.phase, explicit=True)
+    content_service.set_phase(body.phase)
     event_hub.publish({"t": "phase", "phase": body.phase})
     # C6 phase 4: wrap is no longer the only edge-summary trigger — the harvest
     # rolls one continuously — but it is still the best one, because the app is
@@ -901,8 +901,9 @@ def admin_export(body: _AdminExportBody | None = None):
     from . import journey
 
     reason = (body.reason if body else "operator") or "operator"
-    if reason == "wrap_up" and content_service.advance_to_wrap_if_default():
-        event_hub.publish({"t": "phase", "phase": "wrap"})
+    if reason == "wrap_up":
+        if content_service.advance_to_wrap_if_default():
+            event_hub.publish({"t": "phase", "phase": "wrap"})
         from . import insight_summary
 
         insight_summary.summarise_in_background(

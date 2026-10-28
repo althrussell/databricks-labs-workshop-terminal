@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Award,
   BookOpen,
-  Building2,
   Download,
   GraduationCap,
   House,
@@ -36,9 +35,7 @@ import databricksLogo from "./assets/databricks-logo.svg";
 import BannerBar from "./components/BannerBar";
 import Hero from "./components/Hero";
 import Wizard from "./components/Wizard";
-import IndustryDialog from "./components/IndustryDialog";
 import { PreferencesDialog } from "./components/HelpPreference";
-import { humanIndustry } from "./wizard";
 import LaunchBar from "./components/LaunchBar";
 import NuggetsPane from "./components/NuggetsPane";
 import OperatorPanel from "./components/OperatorPanel";
@@ -137,20 +134,8 @@ export default function App() {
   const [helpUnread, setHelpUnread] = useState(0);
   const [helpRaised, setHelpRaised] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
-  const [industryOpen, setIndustryOpen] = useState(false);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [brief, setBrief] = useState<WizardBrief | null>(null);
-  const briefRef = useRef<WizardBrief | null>(null);
-  const acceptBrief = useCallback((next: WizardBrief) => {
-    setBrief((prev) => {
-      if (prev && (prev.revision ?? 0) > (next.revision ?? 0)) {
-        briefRef.current = prev;
-        return prev;
-      }
-      briefRef.current = next;
-      return next;
-    });
-  }, []);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [projectInventory, setProjectInventory] = useState<ProjectInventory | null>(null);
   const projectInventoryRef = useRef<ProjectInventory | null>(null);
@@ -428,27 +413,20 @@ export default function App() {
     // attendee closed their last terminal, which is precisely when they are
     // least in the mood for it.
     wizardChecked.current = true;
-    const isDismissed = () => {
-      try {
-        return sessionStorage.getItem(wizardDismissalKey) === "true";
-      } catch {
-        return false;
-      }
-    };
+    let dismissed = false;
+    try {
+      dismissed = sessionStorage.getItem(wizardDismissalKey) === "true";
+    } catch { /* The server's durable state remains the normal dismissal source. */ }
     api
       .wizard()
       .then((state) => {
-        acceptBrief(state.brief);
-        const current = briefRef.current ?? state.brief;
-        const alreadyHandled = Boolean(current.seen || current.industry_stated) || isDismissed();
-        if (state.enabled && state.should_show && !session && !projectInventoryRef.current?.active && !alreadyHandled) {
+        setBrief(state.brief);
+        if (state.enabled && state.should_show && !session && !projectInventoryRef.current?.active && !dismissed) {
           setWizardOpen(true);
-        } else if (!state.enabled && state.should_ask_industry && !session && !projectInventoryRef.current?.active && !alreadyHandled) {
-          setIndustryOpen(true);
         }
       })
-      .catch(() => { if (config.onboarding_wizard.enabled && !session && !projectInventoryRef.current?.active && !isDismissed()) setWizardOpen(true); });
-  }, [config, inputDisabled, sessionsLoaded, projectsLoaded, session, wizardDismissalKey, acceptBrief]);
+      .catch(() => { if (config.onboarding_wizard.enabled && !session && !projectInventoryRef.current?.active && !dismissed) setWizardOpen(true); });
+  }, [config, inputDisabled, sessionsLoaded, projectsLoaded, session, wizardDismissalKey]);
 
   useEffect(() => {
     if (config?.help) setHelpRaised(config.help.raised);
@@ -1017,20 +995,6 @@ export default function App() {
             </a>
           )}
           {/* 3. Actions, then the promoted CTA at the far right */}
-          <button
-            className="operator-toggle"
-            disabled={inputDisabled}
-            onClick={() => setIndustryOpen(true)}
-            aria-label="Industry"
-            title="Set or change your industry so your agent uses matching domain knowledge and demo tables"
-          >
-            <Building2 size={16} aria-hidden="true" />
-            <span className="nav-label">
-              {brief?.industry_stated && brief.industry
-                ? humanIndustry(brief.industry)
-                : "Industry"}
-            </span>
-          </button>
           <button className="operator-toggle" disabled={inputDisabled} onClick={() => setPreferencesOpen(true)} aria-label="Agent preferences" title="Agent preferences — change how your agent helps">
             <Settings2 size={16} aria-hidden="true" /><span className="nav-label">Agent preferences</span>
           </button>
@@ -1094,21 +1058,6 @@ export default function App() {
         </div>
       )}
       {preferencesOpen && !inputDisabled && <PreferencesDialog onClose={() => setPreferencesOpen(false)} />}
-      {industryOpen && !inputDisabled && (
-        <IndustryDialog
-          onClose={(skipped) => {
-            setIndustryOpen(false);
-            if (skipped) {
-              try {
-                sessionStorage.setItem(wizardDismissalKey, "true");
-              } catch {
-                /* sessionStorage is optional */
-              }
-            }
-          }}
-          onSaved={acceptBrief}
-        />
-      )}
       {/* The tab rule. Above the other banners because a stale sign-in is the
           cause of most of what they warn about. */}
       {!inputDisabled && <SignInNotice
@@ -1292,7 +1241,6 @@ export default function App() {
                   onLaunch={requestAgent}
                   onIdea={ideaToSession}
                   onEditBrief={openWizard}
-                  onEditIndustry={() => setIndustryOpen(true)}
                 />
               )}
               {session && (
@@ -1327,7 +1275,7 @@ export default function App() {
           onLaunch={launchFromWizard}
           onOpenAgent={() => { setView("agent"); setWizardOpen(false); }}
           onClose={closeWizard}
-          onSaved={acceptBrief}
+          onSaved={setBrief}
           draftKey={config ? `wt-wizard-draft:v1:${config.workspace_url}:${config.user.email}` : undefined}
         />
       )}

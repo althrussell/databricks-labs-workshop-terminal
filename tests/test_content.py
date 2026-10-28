@@ -125,3 +125,24 @@ def test_presence_lists_attendees(client, as_admin, launchable_agents):
     presence = client.get("/api/admin/presence", headers=ADMIN).json()
     emails = [u["email"] for u in presence["users"]]
     assert "alice@example.com" in emails
+
+
+def test_manual_build_phase_still_auto_advances_to_wrap_once(client, as_admin):
+    from server.content import content_service
+
+    pack_with_wrap = {
+        **PACK,
+        "phases": ["intro", "build", "wrap"],
+    }
+    client.post("/api/admin/content-pack", json=pack_with_wrap, headers=ADMIN)
+    client.post("/api/admin/phase", json={"phase": "build"}, headers=ADMIN)
+    assert content_service.phase == "build"
+
+    resp = client.post(
+        "/api/admin/broadcast",
+        json={"message": "30 minutes left: the workshop ends at 17:00."},
+        headers=ADMIN,
+    )
+    assert resp.status_code == 200
+    assert content_service.phase == "wrap"
+

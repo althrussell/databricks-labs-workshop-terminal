@@ -77,20 +77,7 @@ observability.install_logging_redaction()
 logger = logging.getLogger("workshop-terminal")
 
 _STATIC_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "static"))
-_session_topic_tail: dict[str, str] = {}
 _transcript_topic_scan_at: dict[str, float] = {}
-
-_RESOURCE_TYPE_TO_TOPIC = {
-    "apps": "apps",
-    "app-service-principals": "apps",
-    "database-instances": "lakebase",
-    "database-projects": "lakebase",
-    "jobs": "jobs",
-    "pipelines": "pipelines",
-    "serving-endpoints": "serving",
-    "dashboards": "dashboards",
-    "warehouses": "dbsql",
-}
 
 _DISCOVERY_PRODUCT_TO_TOPIC = {
     "lakebase": "lakebase",
@@ -126,11 +113,9 @@ def _observe_output(session, chunk: str) -> None:
     insights. Only topic names are recorded — never the text itself."""
     if not config.topic_detection_enabled():
         return
-    sid = getattr(session, "id", "") or ""
-    prior_tail = _session_topic_tail.get(sid, "") if sid else ""
+    prior_tail = getattr(session, "_topic_tail", "") or ""
     combined = (prior_tail + chunk) if prior_tail else chunk
-    if sid:
-        _session_topic_tail[sid] = combined[-256:]
+    session._topic_tail = combined[-256:]
     topics = content_service.scan_topics(combined)
     if not topics:
         return
@@ -149,7 +134,7 @@ def _observe_output(session, chunk: str) -> None:
                 event_hub.publish({"t": "phase", "phase": "build"})
             except Exception:  # noqa: BLE001
                 pass
-        elif should_notify:
+        if should_notify:
             try:
                 event_hub.publish({"t": "content_updated"})
             except Exception:  # noqa: BLE001
@@ -895,6 +880,24 @@ def submit_discovery(body: _DiscoveryBody, request: Request):
         # Withdrawn by the attendee, or the per-attendee cap is reached. Both are
         # deliberate refusals, not failures, and neither is the agent's business.
         return {"captured": False, "reason": "not_stored"}
+    if config.topic_detection_enabled() and getattr(stored, "agent", "") != "wizard":
+        user = user_manager.peek(principal.name)
+        if user:
+            now = time.time()
+            should_notify = False
+            for prod in getattr(stored, "databricks_products", ()) or ():
+                slug = str(prod).strip().lower().replace(" ", "-")
+                mapped = _DISCOVERY_PRODUCT_TO_TOPIC.get(slug)
+                if mapped:
+                    if now - user.topics.get(mapped, 0.0) > 30.0:
+                        should_notify = True
+                    user.topics[mapped] = now
+                    user.topic_hits[mapped] = user.topic_hits.get(mapped, 0) + 1
+            if should_notify:
+                try:
+                    event_hub.publish({"t": "content_updated"})
+                except Exception:  # noqa: BLE001
+                    pass
     return {
         "captured": True,
         "record_id": stored.record_id,
@@ -995,6 +998,7 @@ class _ProfileBody(BaseModel):
     explanation_detail: str | None = None
     engagement_path: str | None = None
     background: str | None = None
+    industry: str | None = None
 
 
 class _AgentProfileBody(_EmailBody):
@@ -1027,7 +1031,8 @@ def save_profile(body: _ProfileBody, principal: Principal = Depends(get_current_
     changes = {name: value for name, value in (("working_approach", body.working_approach),
                                                 ("explanation_detail", body.explanation_detail),
                                                 ("engagement_path", body.engagement_path),
-                                                ("background", body.background)) if value is not None}
+                                                ("background", body.background),
+                                                ("industry", body.industry)) if value is not None}
     try:
         profile = attendee_profile.save(user, body.help_preference, expected_revision=body.expected_revision,
                                         changes=changes, choice_source="ui")
@@ -1920,69 +1925,35 @@ def get_nuggets(principal: Principal = Depends(get_current_user)):
     idle_minutes = 0.0
     has_building_activity = bool(sessions)
     if user:
-        if user.sessions_launched:
-            has_building_activity = True
-        try:
-            if projects.read(user).get("active"):
-                has_building_activity = True
-        except Exception:  # noqa: BLE001
-            pass
-
         if config.topic_detection_enabled():
-            # 1. Scan agent transcript tool targets periodically (covers Claude, Codex, Omnigent)
+            # Scan new agent transcript tool targets periodically (covers Claude, Codex, Omnigent)
             last_scan = _transcript_topic_scan_at.get(principal.name, 0.0)
             if now - last_scan >= 20.0:
-                _transcript_topic_scan_at[principal.name] = now
                 try:
                     harvest = artifacts.harvest_user(user)
-                    if harvest.tool_targets:
+                    _transcript_topic_scan_at[principal.name] = now
+                    seen_targets = getattr(user, "_seen_tool_targets", None)
+                    if seen_targets is None:
+                        seen_targets = set()
+                        user._seen_tool_targets = seen_targets
+                    new_targets = [
+                        t for t in (harvest.tool_targets or ()) if t not in seen_targets
+                    ]
+                    if new_targets:
+                        seen_targets.update(new_targets)
                         for topic in content_service.scan_topics(
-                            "\n".join(harvest.tool_targets)
+                            "\n".join(new_targets)
                         ):
-                            if topic not in user.topics:
-                                user.topic_hits[topic] = (
-                                    user.topic_hits.get(topic, 0) + 1
-                                )
                             user.topics[topic] = now
+                            user.topic_hits[topic] = (
+                                user.topic_hits.get(topic, 0) + 1
+                            )
                 except Exception:  # noqa: BLE001
                     pass
-
-            # 2. Fold in handed-off Databricks resources for this attendee
-            try:
-                ent_details = (
-                    (entitlement_manager.status().get("handoff") or {}).get("details")
-                    or []
-                )
-                for item in ent_details:
-                    if (
-                        isinstance(item, dict)
-                        and item.get("state") == "handed_off"
-                        and item.get("principal") == principal.name
-                    ):
-                        mapped = _RESOURCE_TYPE_TO_TOPIC.get(
-                            str(item.get("resource_type") or "")
-                        )
-                        if mapped:
-                            user.topics[mapped] = now
-            except Exception:  # noqa: BLE001
-                pass
-
-            # 3. Fold in products recorded via workshop-discovery
-            try:
-                for rec in discovery.discovery_store.for_attendee(principal.name):
-                    for prod in getattr(rec, "databricks_products", ()) or ():
-                        slug = str(prod).strip().lower().replace(" ", "-")
-                        mapped = _DISCOVERY_PRODUCT_TO_TOPIC.get(slug)
-                        if mapped:
-                            user.topics[mapped] = now
-            except Exception:  # noqa: BLE001
-                pass
 
             live_topics = {
                 t for t, at in user.topics.items() if now - at < TOPIC_TTL_SECONDS
             }
-            if live_topics:
-                has_building_activity = True
 
         # True idle = no input AND no terminal output. Session activity covers
         # both (the reader thread touches it on output), so an agent working

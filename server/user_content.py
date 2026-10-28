@@ -346,13 +346,27 @@ def _persona_overlay(user: User) -> str:
                      "when you meet them, and save their answer.")
     background = effective.get("background") or ""
     starting = (_BACKGROUND[background] if background in _BACKGROUND and effective.get("background_stated")
-                else "not known yet: ask once when you meet them, and save their answer")
+                else "not known yet (ask when you meet them)")
+    stated_industry = effective.get("industry") if effective.get("industry_stated") else ""
+    if not stated_industry:
+        try:
+            from . import wizard
+
+            stated_industry = wizard.read_brief(user).stated_industry
+        except Exception:  # noqa: BLE001
+            stated_industry = ""
+    industry = (
+        f"**{stated_industry.replace('_', ' ')}**"
+        if stated_industry
+        else "not known yet (ask when you meet them)"
+    )
     lines = [
         _PERSONA_MARKER,
         "## How they want to work with you",
         "",
         f"- Working approach: {approach}",
         f"- Starting point: {starting}.",
+        f"- Industry: {industry}.",
         f"- Explanation detail: {_DETAIL[effective['explanation_detail']]}.",
     ]
     if effective["technical_vocabulary"]:
@@ -389,12 +403,6 @@ def _wizard_overlay(user: User) -> str:
 
     brief = wizard.read_brief(user)
     if brief.skipped or brief.stage != "complete" or not brief.has_content:
-        if brief.stated_industry:
-            return (
-                f"{_WIZARD_MARKER}\n"
-                "## Attendee context\n\n"
-                f"Industry: **{brief.stated_industry.replace('_', ' ')}**.\n"
-            )
         return ""
 
     lines = [_WIZARD_MARKER, "## What this attendee came to build", ""]
@@ -461,12 +469,17 @@ def _demo_data_overlay(user: User) -> str:
     Empty when the catalog is unset or unreachable, so a deployment without demo
     data never promises the agent tables it cannot query.
     """
-    from . import demo_data, wizard
+    from . import attendee_profile, demo_data, wizard
 
     if not demo_data.enabled():
         return ""
     brief = wizard.read_brief(user)
     scoped = brief.stated_industry
+    if not scoped:
+        try:
+            scoped = attendee_profile.read(user).industry
+        except Exception:  # noqa: BLE001
+            scoped = ""
     if not scoped and brief.stage == "complete" and not brief.skipped and brief.selected_idea:
         schemas = {ref.partition(".")[0] for ref in brief.selected_idea.get("demo_tables", [])}
         if len(schemas) == 1:

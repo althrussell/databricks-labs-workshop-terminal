@@ -109,7 +109,6 @@ export interface WizardState {
   /** False when the workshop was created with the wizard switched off. */
   enabled: boolean;
   should_show: boolean;
-  should_ask_industry?: boolean;
   default_industry: string;
   /** Every industry the seed notebook knows, offered whether or not this
    * deployment has them. Gating the picker on live inventory is what made an
@@ -130,7 +129,7 @@ export interface WizardState {
 
 export interface WizardSave {
   expected_revision?: number;
-  operation?: "draft" | "complete" | "skip" | "clear" | "change" | "industry";
+  operation?: "draft" | "complete" | "skip" | "clear" | "change";
   selection_token?: string;
   what_building?: string;
   industry?: string;
