@@ -1045,3 +1045,29 @@ def test_topic_detection_opt_out(client, monkeypatch):
     # tests the opt-out rather than the sample happening not to match.
     _observe_output(session, "$ databricks lakebase create-database-instance db1")
     assert user.topics == {}
+
+
+def test_ansi_codes_and_new_products_rank_topical_nuggets_first(client, monkeypatch):
+    from server.content import content_service
+    from server.main import _observe_output
+    from server.sessions import session_manager
+    from server.users import user_manager
+
+    _provisioned_home(client, monkeypatch)
+    session = session_manager.list_for("alice@example.com")[0]
+    user = user_manager.get("alice@example.com")
+    user.topics.clear()
+
+    # ANSI-wrapped SQL using ai_classify and workshop-app-deploy
+    _observe_output(
+        session,
+        "\x1b[32mSELECT ai_classify(description, ARRAY('urgent', 'routine')) FROM tickets;\x1b[0m",
+    )
+    assert "ai-functions" in user.topics
+
+    resp = client.get("/api/nuggets", headers=ALICE).json()
+    # Phase automatically advances from default 'intro' to 'build' when building
+    assert resp["phase"] == "build"
+    assert resp["nuggets"][0]["id"] == "topic-ai-functions"
+    assert resp["nuggets"][0]["matched_topic"] == "ai-functions"
+

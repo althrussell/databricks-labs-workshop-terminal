@@ -30,9 +30,10 @@ KNOWN_TRIGGERS = {"always", "claude_active", "codex_active", "bash_active"}
 _ELAPSED_PREFIX = "elapsed_gt_"
 _TOPIC_PREFIX = "topic:"
 _IDLE_RE = re.compile(r"^idle_(\d+)m$")
-TOPIC_TTL_SECONDS = 600  # a spotted topic stays "live" for 10 minutes
+TOPIC_TTL_SECONDS = 1200  # a spotted topic stays "live" for 20 minutes
 
-# Markdown code spans and fences, stripped before topic matching.
+# Markdown code spans/fences and ANSI terminal escape sequences, stripped
+# before topic matching.
 #
 # Backticks are the one reliable tell that the terminal is *displaying
 # documentation* rather than running something. Skills and instructions are full
@@ -44,13 +45,15 @@ TOPIC_TTL_SECONDS = 600  # a spotted topic stays "live" for 10 minutes
 #
 # Real activity never looks like this: a command the agent actually runs, and the
 # output it produces, carry no backticks.
+_ANSI_ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
 _FENCED = re.compile(r"```.*?```", re.S)
 _INLINE_CODE = re.compile(r"`[^`\n]*`")
 
 
 def strip_documentation_markup(text: str) -> str:
-    """Remove markdown code spans/fences so quoted commands aren't read as use."""
-    return _INLINE_CODE.sub(" ", _FENCED.sub(" ", text))
+    """Remove ANSI codes and markdown code spans/fences before topic matching."""
+    cleaned = _ANSI_ESCAPE.sub("", text)
+    return _INLINE_CODE.sub(" ", _FENCED.sub(" ", cleaned))
 
 
 class NuggetLink(BaseModel):
@@ -189,6 +192,7 @@ class ContentService:
         self._lock = threading.Lock()
         self._pack = self._load_initial_pack()
         self._phase = config.workshop_phase_default()
+        self._phase_explicitly_set = False
         self._broadcast: Broadcast | None = None
         self._broadcast_at = 0.0
         self._topic_regex = self._compile_topics(self._pack)
@@ -242,9 +246,14 @@ class ContentService:
         with self._lock:
             return self._phase
 
-    def prompts_for_phase(self) -> list[dict]:
+    @property
+    def phase_explicitly_set(self) -> bool:
         with self._lock:
-            pack, phase = self._pack, self._phase
+            return self._phase_explicitly_set
+
+    def prompts_for_phase(self, phase_override: str | None = None) -> list[dict]:
+        with self._lock:
+            pack, phase = self._pack, phase_override or self._phase
         chips = list(pack.prompts.get("all", [])) + list(pack.prompts.get(phase, []))
         return [c.model_dump() for c in chips]
 
@@ -285,19 +294,27 @@ class ContentService:
             self._broadcast = None
             self._broadcast_at = 0.0
 
-    def nuggets_for(self, active_triggers: set[str], live_topics: set[str] | None = None,
-                    idle_minutes: float = 0.0, limit: int = 8) -> list[dict]:
+    def nuggets_for(
+        self,
+        active_triggers: set[str],
+        live_topics: set[str] | None = None,
+        idle_minutes: float = 0.0,
+        limit: int = 8,
+        *,
+        phase_override: str | None = None,
+        topic_recency: dict[str, float] | None = None,
+    ) -> list[dict]:
         """Nuggets for the current phase whose triggers are satisfied.
 
-        Order: pinned, then nudges (idle-triggered next steps / ideas — the
-        attendee is paused, so these are the most relevant thing on screen),
-        then nuggets matching a topic spotted in the user's terminal, then a
-        stable weighted shuffle of the rest."""
+        When live product/service topics are detected, topical cards sort first
+        (most recently spotted first), followed by pinned cards, idle nudges,
+        and a stable weighted shuffle of the rest."""
         with self._lock:
-            pack, phase = self._pack, self._phase
+            pack, phase = self._pack, phase_override or self._phase
 
         elapsed_min = (time.time() - self.started_at) / 60
         live_topics = live_topics or set()
+        recency = topic_recency or {}
 
         def matched_topic(n: Nugget) -> str | None:
             for t in n.triggers:
@@ -341,9 +358,14 @@ class ContentService:
         rng = random.Random(int(time.time() // 300))
         rest = sorted(rest, key=lambda n: rng.random() / max(n.weight, 1))
         nudges = sorted(nudges, key=lambda n: -n.weight)
+        topical = sorted(
+            topical,
+            key=lambda n: (-recency.get(matched_topic(n) or "", 0.0), -n.weight),
+        )
 
+        ordered = (topical + pinned + nudges + rest) if topical else (pinned + nudges + rest)
         results = []
-        for n in (pinned + nudges + topical + rest)[:limit]:
+        for n in ordered[:limit]:
             item = n.model_dump()
             item["matched_topic"] = matched_topic(n)
             item["nudge"] = is_nudge(n)
@@ -356,6 +378,7 @@ class ContentService:
         with self._lock:
             self._pack = pack
             self._topic_regex = self._compile_topics(pack)
+            self._phase_explicitly_set = False
             if self._phase not in pack.phases and pack.phases:
                 self._phase = pack.phases[0]
         logger.info("content pack replaced (%d nuggets, %d topics)",
@@ -364,6 +387,7 @@ class ContentService:
     def set_phase(self, phase: str) -> None:
         with self._lock:
             self._phase = phase
+            self._phase_explicitly_set = True
         logger.info("workshop phase -> %s", phase)
 
     def set_broadcast(self, broadcast: Broadcast) -> None:

@@ -77,6 +77,48 @@ observability.install_logging_redaction()
 logger = logging.getLogger("workshop-terminal")
 
 _STATIC_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "static"))
+_session_topic_tail: dict[str, str] = {}
+_transcript_topic_scan_at: dict[str, float] = {}
+
+_RESOURCE_TYPE_TO_TOPIC = {
+    "apps": "apps",
+    "app-service-principals": "apps",
+    "database-instances": "lakebase",
+    "database-projects": "lakebase",
+    "jobs": "jobs",
+    "pipelines": "pipelines",
+    "serving-endpoints": "serving",
+    "dashboards": "dashboards",
+    "warehouses": "dbsql",
+}
+
+_DISCOVERY_PRODUCT_TO_TOPIC = {
+    "lakebase": "lakebase",
+    "postgres": "lakebase",
+    "genie": "genie",
+    "ai-bi": "dashboards",
+    "aibi": "dashboards",
+    "dashboards": "dashboards",
+    "lakeview": "dashboards",
+    "unity-catalog": "unity-catalog",
+    "uc": "unity-catalog",
+    "pipelines": "pipelines",
+    "lakeflow": "pipelines",
+    "dlt": "pipelines",
+    "vector-search": "vector-search",
+    "mlflow": "mlflow",
+    "serving": "serving",
+    "model-serving": "serving",
+    "fmapi": "serving",
+    "ai-functions": "ai-functions",
+    "ai_functions": "ai-functions",
+    "agent-bricks": "agent-bricks",
+    "dbsql": "dbsql",
+    "sql-warehouse": "dbsql",
+    "apps": "apps",
+    "databricks-apps": "apps",
+    "jobs": "jobs",
+}
 
 
 def _observe_output(session, chunk: str) -> None:
@@ -84,15 +126,29 @@ def _observe_output(session, chunk: str) -> None:
     insights. Only topic names are recorded — never the text itself."""
     if not config.topic_detection_enabled():
         return
-    topics = content_service.scan_topics(chunk)
+    sid = getattr(session, "id", "") or ""
+    prior_tail = _session_topic_tail.get(sid, "") if sid else ""
+    combined = (prior_tail + chunk) if prior_tail else chunk
+    if sid:
+        _session_topic_tail[sid] = combined[-256:]
+    topics = content_service.scan_topics(combined)
     if not topics:
         return
     user = user_manager.peek(session.owner_email)
     if user:
         now = time.time()
+        should_notify = False
         for topic in topics:
+            prev_at = user.topics.get(topic, 0.0)
+            if now - prev_at > 30.0:
+                should_notify = True
             user.topics[topic] = now
             user.topic_hits[topic] = user.topic_hits.get(topic, 0) + 1
+        if should_notify:
+            try:
+                event_hub.publish({"t": "content_updated"})
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def _start_control_tower_threads(
@@ -679,6 +735,21 @@ def record_app_deploy_event(body: _AppDeployEventBody, request: Request):
     )
     if not captured:
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL)
+    if config.topic_detection_enabled():
+        deploy_user = user_manager.peek(principal.name)
+        if deploy_user is not None:
+            now_ts = time.time()
+            deploy_user.topics["apps"] = now_ts
+            deploy_user.topic_hits["apps"] = deploy_user.topic_hits.get("apps", 0) + 1
+            if body.outcome == "succeeded":
+                deploy_user.topics["build-complete"] = now_ts
+                deploy_user.topic_hits["build-complete"] = (
+                    deploy_user.topic_hits.get("build-complete", 0) + 1
+                )
+            try:
+                event_hub.publish({"t": "content_updated"})
+            except Exception:  # noqa: BLE001
+                pass
     if body.outcome == "succeeded":
         def _bg_screenshot(owner_email: str) -> None:
             try:
@@ -1827,6 +1898,7 @@ def report_attendee_error(
 
 @app.get("/api/nuggets")
 def get_nuggets(principal: Principal = Depends(get_current_user)):
+    from . import artifacts, discovery, projects
     from .content import TOPIC_TTL_SECONDS
 
     now = time.time()
@@ -1837,10 +1909,72 @@ def get_nuggets(principal: Principal = Depends(get_current_user)):
     user = user_manager.peek(principal.name)
     live_topics: set[str] = set()
     idle_minutes = 0.0
+    has_building_activity = bool(sessions)
     if user:
-        live_topics = {
-            t for t, at in user.topics.items() if now - at < TOPIC_TTL_SECONDS
-        }
+        if user.sessions_launched:
+            has_building_activity = True
+        try:
+            if projects.read(user).get("active"):
+                has_building_activity = True
+        except Exception:  # noqa: BLE001
+            pass
+
+        if config.topic_detection_enabled():
+            # 1. Scan agent transcript tool targets periodically (covers Claude, Codex, Omnigent)
+            last_scan = _transcript_topic_scan_at.get(principal.name, 0.0)
+            if now - last_scan >= 20.0:
+                _transcript_topic_scan_at[principal.name] = now
+                try:
+                    harvest = artifacts.harvest_user(user)
+                    if harvest.tool_targets:
+                        for topic in content_service.scan_topics(
+                            "\n".join(harvest.tool_targets)
+                        ):
+                            if topic not in user.topics:
+                                user.topics[topic] = now
+                                user.topic_hits[topic] = (
+                                    user.topic_hits.get(topic, 0) + 1
+                                )
+                except Exception:  # noqa: BLE001
+                    pass
+
+            # 2. Fold in handed-off Databricks resources for this attendee
+            try:
+                ent_details = (
+                    (entitlement_manager.status().get("handoff") or {}).get("details")
+                    or []
+                )
+                for item in ent_details:
+                    if (
+                        isinstance(item, dict)
+                        and item.get("state") == "handed_off"
+                        and item.get("principal") == principal.name
+                    ):
+                        mapped = _RESOURCE_TYPE_TO_TOPIC.get(
+                            str(item.get("resource_type") or "")
+                        )
+                        if mapped and mapped not in user.topics:
+                            user.topics[mapped] = now
+            except Exception:  # noqa: BLE001
+                pass
+
+            # 3. Fold in products recorded via workshop-discovery
+            try:
+                for rec in discovery.discovery_store.for_attendee(principal.name):
+                    for prod in getattr(rec, "databricks_products", ()) or ():
+                        slug = str(prod).strip().lower().replace(" ", "-")
+                        mapped = _DISCOVERY_PRODUCT_TO_TOPIC.get(slug)
+                        if mapped and mapped not in user.topics:
+                            user.topics[mapped] = now
+            except Exception:  # noqa: BLE001
+                pass
+
+            live_topics = {
+                t for t, at in user.topics.items() if now - at < TOPIC_TTL_SECONDS
+            }
+            if live_topics:
+                has_building_activity = True
+
         # True idle = no input AND no terminal output. Session activity covers
         # both (the reader thread touches it on output), so an agent working
         # away on the attendee's behalf never counts as idle.
@@ -1849,10 +1983,25 @@ def get_nuggets(principal: Principal = Depends(get_current_user)):
             signals.append(user.last_seen)
         if signals:
             idle_minutes = max(0.0, (now - max(signals)) / 60)
+
+    effective_phase = content_service.phase
+    if (
+        effective_phase == "intro"
+        and has_building_activity
+        and "build" in content_service.pack.phases
+    ):
+        effective_phase = "build"
+
     return {
-        "phase": content_service.phase,
-        "nuggets": content_service.nuggets_for(triggers, live_topics, idle_minutes),
-        "prompts": content_service.prompts_for_phase(),
+        "phase": effective_phase,
+        "nuggets": content_service.nuggets_for(
+            triggers,
+            live_topics,
+            idle_minutes,
+            phase_override=effective_phase,
+            topic_recency=dict(user.topics) if user else None,
+        ),
+        "prompts": content_service.prompts_for_phase(phase_override=effective_phase),
     }
 
 

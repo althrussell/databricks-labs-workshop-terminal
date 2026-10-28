@@ -389,6 +389,12 @@ def _wizard_overlay(user: User) -> str:
 
     brief = wizard.read_brief(user)
     if brief.skipped or brief.stage != "complete" or not brief.has_content:
+        if brief.stated_industry:
+            return (
+                f"{_WIZARD_MARKER}\n"
+                "## Attendee context\n\n"
+                f"Industry: **{brief.stated_industry.replace('_', ' ')}**.\n"
+            )
         return ""
 
     lines = [_WIZARD_MARKER, "## What this attendee came to build", ""]

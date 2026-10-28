@@ -18,6 +18,7 @@ interface Props {
   onLaunch: (agentId: string) => void;
   onIdea: (prompt: string) => void;
   onEditBrief: () => void;
+  onEditIndustry?: () => void;
 }
 
 // Home: the place attendees launch from, get ideas from, and come back to.
@@ -33,6 +34,7 @@ export default function Hero({
   onLaunch,
   onIdea,
   onEditBrief,
+  onEditIndustry,
 }: Props) {
   const [steps, setSteps] = useState<SetupSteps | null>(null);
   const [installing, setInstalling] = useState(false);
@@ -75,8 +77,7 @@ export default function Hero({
   // visible and changeable rather than something that vanished into a modal —
   // an attendee whose plan changed an hour in has nowhere else to say so.
   const briefLine = brief && !brief.skipped ? brief.what_building.trim() : "";
-  const briefIndustry =
-    brief && !brief.skipped && brief.industry_stated ? brief.industry : "";
+  const briefIndustry = brief && brief.industry_stated ? brief.industry : "";
 
   return (
     <div className="hero">
@@ -92,7 +93,7 @@ export default function Hero({
           already wired up — nothing to paste, nothing to configure.
         </p>
 
-        {briefLine && (
+        {briefLine ? (
           <div className="hero-brief">
             <span className="hero-brief-label">You're building</span>
             <span className="hero-brief-text">{briefLine}</span>
@@ -101,13 +102,33 @@ export default function Hero({
                 {humanIndustry(briefIndustry)}
               </span>
             )}
-            {canEditBrief && (
+            {canEditBrief ? (
               <button className="hero-brief-edit" onClick={onEditBrief}>
                 <Pencil size={11} /> Change what I'm building
               </button>
+            ) : onEditIndustry ? (
+              <button className="hero-brief-edit" onClick={onEditIndustry}>
+                <Pencil size={11} /> {briefIndustry ? "Change industry" : "Set industry"}
+              </button>
+            ) : null}
+          </div>
+        ) : (briefIndustry || onEditIndustry) ? (
+          <div className="hero-brief">
+            <span className="hero-brief-label">Industry</span>
+            {briefIndustry ? (
+              <span className="hero-brief-industry">
+                {humanIndustry(briefIndustry)}
+              </span>
+            ) : (
+              <span className="hero-brief-text">Not set yet</span>
+            )}
+            {onEditIndustry && (
+              <button className="hero-brief-edit" onClick={onEditIndustry}>
+                <Pencil size={11} /> {briefIndustry ? "Change industry" : "Set your industry"}
+              </button>
             )}
           </div>
-        )}
+        ) : null}
 
         <AgentCards agents={agents} launching={launching} onLaunch={onLaunch} />
 

@@ -1082,3 +1082,34 @@ def test_idea_payload_labels_generate_vs_demo(seeded):
     )
     assert wizard.idea_payload(tagged)["data_mode"] == "demo"
     assert wizard.idea_payload(generic)["data_mode"] == "generate"
+
+
+def test_standalone_industry_save_when_wizard_disabled(user, seeded, monkeypatch):
+    from server import user_content
+
+    monkeypatch.setattr(wizard.config, "onboarding_wizard_enabled", lambda: False)
+    initial = wizard.state(user)
+    assert initial["enabled"] is False
+    assert initial["should_show"] is False
+    assert initial["should_ask_industry"] is True
+
+    saved = wizard.save(
+        user,
+        {
+            "operation": "industry",
+            "industry": "energy_utilities",
+            "industry_stated": True,
+            "expected_revision": initial["brief"]["revision"],
+        },
+    )
+    assert saved.stated_industry == "energy_utilities"
+    assert saved.seen is True
+
+    after = wizard.state(user)
+    assert after["should_ask_industry"] is False
+    assert after["brief"]["industry"] == "energy_utilities"
+    assert after["brief"]["industry_stated"] is True
+
+    overlay = user_content._wizard_overlay(user)
+    assert "Industry: **energy utilities**." in overlay
+

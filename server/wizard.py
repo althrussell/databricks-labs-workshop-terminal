@@ -554,7 +554,10 @@ def save(user: User, payload: dict[str, Any]) -> WizardBrief:
         if expected is not None and expected != existing.revision:
             # A lost response or two identical first saves is safe to retry.
             # Different content always requires explicit stale-write recovery.
-            matches = operation in {"draft", "complete"} and existing.stage == operation
+            matches = (
+                (operation in {"draft", "complete"} and existing.stage == operation)
+                or operation == "industry"
+            )
             for name in ("what_building", "industry", "intent", "idea_id", "industry_stated", "current_stack",
                          "engagement_path"):
                 if name in payload and payload[name] != getattr(existing, name):
@@ -564,7 +567,7 @@ def save(user: User, payload: dict[str, Any]) -> WizardBrief:
             if matches:
                 return existing.to_json()
             raise BriefConflict(existing)
-        if operation not in {"draft", "complete", "skip", "clear", "change"}:
+        if operation not in {"draft", "complete", "skip", "clear", "change", "industry"}:
             raise ValueError("Unknown goal operation")
         brief = WizardBrief.from_json(existing.to_json())
         brief.record_id = existing.record_id or new_record_id
@@ -581,6 +584,13 @@ def save(user: User, payload: dict[str, Any]) -> WizardBrief:
             if existing.stage != "complete" or not existing.has_content:
                 brief.skipped = True
                 brief.stage = "skipped"
+        elif operation == "industry":
+            raw_ind = _clean_text(payload.get("industry"))
+            brief.industry = demo_data.industry_slug(raw_ind[:64]) if raw_ind else ""
+            brief.industry_stated = (
+                bool(payload.get("industry_stated", True)) and bool(brief.industry)
+            )
+            brief.seen = True
         else:
             what_changed = ("what_building" in payload
                             and _clean_text(payload["what_building"]) != existing.what_building)
@@ -735,6 +745,7 @@ def state(user: User, industry: str | None = None, query: str = "") -> dict[str,
         # holds for a reload, a second tab and any future caller of this
         # endpoint at once.
         "should_show": enabled and not brief.seen,
+        "should_ask_industry": (not enabled) and (not brief.seen) and (not brief.industry_stated),
         "default_industry": default_industry(),
         # Everything the notebook can seed, offered whether or not this
         # deployment got it. ``seeded_industries`` is the subset that is really
