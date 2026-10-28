@@ -50,11 +50,10 @@ _FIRST_MESSAGE_TIMEOUT_S = 200.0
 _START_STALL_TIMEOUT_S = 120.0
 _EARLY_TERMINAL_EXIT_S = 60.0
 
-_NOISY_SUCCESS_LINE = re.compile(
-    r'HTTP Request: (?:POST [^\s"]+/events "HTTP/1\.[01] 202|'
-    r'GET [^\s"]+/(?:healthz?|readyz) "HTTP/1\.[01] 200|'
-    r'GET [^\s"]+/v1/sessions/[^\s"]+\?include_items=false[^\s"]* "HTTP/1\.[01] 200)'
-)
+# Any successful httpx request line. Omnigent's runner logs one per policy
+# evaluation, event post and poll; on the 28 Oct E2E run these were about half
+# of everything forwarded. A non-2xx request line still forwards.
+_NOISY_SUCCESS_LINE = re.compile(r'HTTP Request: [A-Z]+ [^\s"]+ "HTTP/[12](?:\.[01])? 2\d\d\b')
 _CLI_ARGV = re.compile(r"(CLI start\s+[—-]\s+argv=)\[.*\]")
 _CONV_SESSION = re.compile(r"\b(?:session|conv|conversation)[=: ]+([0-9a-f]{8,32})\b", re.IGNORECASE)
 _HARNESS_NAME = re.compile(r"\bharness=([A-Za-z0-9_.-]+)")

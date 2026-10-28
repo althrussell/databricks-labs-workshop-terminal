@@ -299,6 +299,8 @@ def test_info_forwarder_drops_debug_and_noisy_202_and_caps_rate(attendee, tmp_pa
         "DEBUG 10-27 02:44:48.438 asyncio  __init__ | Using selector: EpollSelector\n"
         'INFO  10-27 02:44:49.178 httpx  _single_request | HTTP Request: POST https://omni.example/v1/sessions/8c0251b5/events "HTTP/1.1 202 Accepted"\n'
         'INFO  10-27 02:44:49.200 httpx  _single_request | HTTP Request: GET https://omni.example/health "HTTP/1.1 200 OK"\n'
+        'INFO  10-27 02:44:49.210 httpx  _single_request | HTTP Request: POST https://omni.example/v1/sessions/8c0251b5/policies/evaluate "HTTP/1.1 200 OK"\n'
+        'INFO  10-27 02:44:49.220 httpx  _single_request | HTTP Request: POST https://omni.example/v1/sessions/8c0251b5/policies/evaluate "HTTP/1.1 302 Found"\n'
         "INFO  10-27 02:44:49.300 runner.app  step1 | line one\n"
         "INFO  10-27 02:44:49.400 runner.app  step2 | line two\n"
         "INFO  10-27 02:44:49.500 runner.app  step3 | line three\n"
@@ -308,6 +310,10 @@ def test_info_forwarder_drops_debug_and_noisy_202_and_caps_rate(attendee, tmp_pa
     messages = [item["message"] for item in collector.forwarded_lines]
     assert not any("EpollSelector" in m for m in messages)
     assert not any("202 Accepted" in m for m in messages)
+    # Every successful request line is noise; a redirect (the stale-token
+    # policy relay failure at EQL) still forwards.
+    assert not any('"HTTP/1.1 200 OK"' in m for m in messages)
+    assert any("302 Found" in m for m in messages)
     assert not any("secret prompt" in m for m in messages)
     assert any("[REDACTED_ARGV]" in m for m in messages)
     assert any("dropped" in m for m in messages)
