@@ -252,6 +252,16 @@ omnigent-ui-sdk and certifi, wheels and sdists) was downloaded from
 `files.pythonhosted.org` and matched its lock hash. The Omnigent wheel SHA-256 is
 `e62d57f41dd34bc7bef6a7679197086e70d399a74c1a6136a7f27c344413e70d`.
 
+On 28 Oct 2026 the lock gained `opentelemetry-exporter-otlp-proto-grpc==1.44.0` and
+`opentelemetry-instrumentation-fastapi==0.65b0`, matching the OpenTelemetry SDK
+Omnigent already locks. Without the exporter, `otel_bootstrap.py` started
+`opentelemetry-instrument` for the platform's grpc destination and the SDK gave
+up ("Requested component 'otlp_proto_grpc' not found"), so Omni exported no
+spans or metrics. Resolved the same way (mirror, uv 0.12.19, lock revision 3,
+no existing version changed); all 25 new artifacts were downloaded from
+`files.pythonhosted.org` and matched their lock hashes. The attendee-host
+install set does not need them and was not re-exported.
+
 `assets/artifacts/omnigent-<version>.lock` (the attendee-host install set) is
 exported from this project's `uv.lock` with `uv export`, so the two resolutions
 stay identical. Export from the frozen, public-host lock in offline mode to avoid silently
