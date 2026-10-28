@@ -103,3 +103,12 @@ test("a replacement create failure is returned after the slot is proven empty", 
     /Codex failed to start/
   );
 });
+
+test("a reopened tab shows the agent that is still running, not Home", async () => {
+  const { viewOnLoad } = await import("./sessionSwitch.ts");
+  const codex = session("s-1", "codex", "Codex");
+  assert.equal(viewOnLoad("home", codex), "agent");
+  assert.equal(viewOnLoad("home", null), "home");
+  assert.equal(viewOnLoad("home", { ...codex, exited: true }), "home");
+  assert.equal(viewOnLoad("operator", codex), "operator");
+});
