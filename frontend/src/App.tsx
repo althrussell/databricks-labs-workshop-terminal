@@ -140,6 +140,17 @@ export default function App() {
   const [industryOpen, setIndustryOpen] = useState(false);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [brief, setBrief] = useState<WizardBrief | null>(null);
+  const briefRef = useRef<WizardBrief | null>(null);
+  const acceptBrief = useCallback((next: WizardBrief) => {
+    setBrief((prev) => {
+      if (prev && (prev.revision ?? 0) > (next.revision ?? 0)) {
+        briefRef.current = prev;
+        return prev;
+      }
+      briefRef.current = next;
+      return next;
+    });
+  }, []);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [projectInventory, setProjectInventory] = useState<ProjectInventory | null>(null);
   const projectInventoryRef = useRef<ProjectInventory | null>(null);
@@ -427,15 +438,17 @@ export default function App() {
     api
       .wizard()
       .then((state) => {
-        setBrief(state.brief);
-        if (state.enabled && state.should_show && !session && !projectInventoryRef.current?.active && !isDismissed()) {
+        acceptBrief(state.brief);
+        const current = briefRef.current ?? state.brief;
+        const alreadyHandled = Boolean(current.seen || current.industry_stated) || isDismissed();
+        if (state.enabled && state.should_show && !session && !projectInventoryRef.current?.active && !alreadyHandled) {
           setWizardOpen(true);
-        } else if (!state.enabled && state.should_ask_industry && !session && !projectInventoryRef.current?.active && !isDismissed()) {
+        } else if (!state.enabled && state.should_ask_industry && !session && !projectInventoryRef.current?.active && !alreadyHandled) {
           setIndustryOpen(true);
         }
       })
       .catch(() => { if (config.onboarding_wizard.enabled && !session && !projectInventoryRef.current?.active && !isDismissed()) setWizardOpen(true); });
-  }, [config, inputDisabled, sessionsLoaded, projectsLoaded, session, wizardDismissalKey]);
+  }, [config, inputDisabled, sessionsLoaded, projectsLoaded, session, wizardDismissalKey, acceptBrief]);
 
   useEffect(() => {
     if (config?.help) setHelpRaised(config.help.raised);
@@ -1093,7 +1106,7 @@ export default function App() {
               }
             }
           }}
-          onSaved={setBrief}
+          onSaved={acceptBrief}
         />
       )}
       {/* The tab rule. Above the other banners because a stale sign-in is the
@@ -1314,7 +1327,7 @@ export default function App() {
           onLaunch={launchFromWizard}
           onOpenAgent={() => { setView("agent"); setWizardOpen(false); }}
           onClose={closeWizard}
-          onSaved={setBrief}
+          onSaved={acceptBrief}
           draftKey={config ? `wt-wizard-draft:v1:${config.workspace_url}:${config.user.email}` : undefined}
         />
       )}

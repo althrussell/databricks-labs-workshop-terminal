@@ -352,10 +352,9 @@ def broadcast(body: Broadcast):
     event_hub.publish({"t": "broadcast", **body.model_dump()})
     msg_lower = (body.message or "").lower()
     if (
-        "the workshop ends at" in msg_lower
-        or "take your work home" in msg_lower
-        or "min to wrap-up" in msg_lower
-    ) and content_service.advance_to_wrap_if_default():
+        "minutes left: the workshop ends at " in msg_lower
+        and content_service.advance_to_wrap_if_default()
+    ):
         event_hub.publish({"t": "phase", "phase": "wrap"})
         from . import insight_summary
 

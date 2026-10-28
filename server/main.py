@@ -1993,14 +1993,12 @@ def get_nuggets(principal: Principal = Depends(get_current_user)):
         if signals:
             idle_minutes = max(0.0, (now - max(signals)) / 60)
 
+    if has_building_activity and content_service.advance_to_build_if_default():
+        try:
+            event_hub.publish({"t": "phase", "phase": "build"})
+        except Exception:  # noqa: BLE001
+            pass
     effective_phase = content_service.phase
-    if (
-        not content_service.phase_explicitly_set
-        and effective_phase == "intro"
-        and has_building_activity
-        and "build" in content_service.pack.phases
-    ):
-        effective_phase = "build"
 
     return {
         "phase": effective_phase,

@@ -378,9 +378,9 @@ class ContentService:
         with self._lock:
             self._pack = pack
             self._topic_regex = self._compile_topics(pack)
-            self._phase_explicitly_set = False
             if self._phase not in pack.phases and pack.phases:
                 self._phase = pack.phases[0]
+                self._phase_explicitly_set = False
         logger.info("content pack replaced (%d nuggets, %d topics)",
                     len(pack.nuggets), len(pack.topics))
 
