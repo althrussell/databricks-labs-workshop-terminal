@@ -41,6 +41,10 @@ test("ordinary terminal prose cannot create a false budget banner", () => {
   assert.equal(terminalGatewayLimit("Our project budget is $100"), null);
   assert.equal(terminalGatewayLimit("HTTP 403 from a storage API"), null);
   assert.equal(
+    terminalGatewayLimit("HTTP 403 forbidden on table main.sales\r\nBuilding budget vs actual dashboard"),
+    null
+  );
+  assert.equal(
     terminalGatewayLimit("403 from storage" + ".".repeat(900) + "project budget"),
     null
   );
@@ -49,6 +53,10 @@ test("ordinary terminal prose cannot create a false budget banner", () => {
 test("gateway machine-readable spend codes are recognised", () => {
   assert.equal(
     terminalGatewayLimit("429 service_spend_limit_reached"),
+    "gateway_allowance_exhausted"
+  );
+  assert.equal(
+    terminalGatewayLimit('API Error: 429 {"error_code":"SERVICE_SPEND_LIMIT_REACHED","message":"Spend limit reached"}'),
     "gateway_allowance_exhausted"
   );
 });

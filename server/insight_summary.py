@@ -91,6 +91,11 @@ empty rather than inferring it.
 - Distinguish what the attendee asked for from what the agent did on its own.
 - An attendee who built nothing but hit a wall is a valuable record: say what the \
 wall was. Do not describe a session as successful when the errors say otherwise.
+- In "blockers", include ONLY actual technical, permission, authentication, or \
+tooling failures that interrupted building or deploying during the session. \
+NEVER put prototype scope disclaimers, synthetic/sample data notes (e.g. \
+"Workshop data is synthetic", "Pole locations are synthetic"), or unconfigured \
+external customer production systems into "blockers".
 - Do not flatter. "Explored Lakeflow ingestion and hit a permissions wall" beats \
 "showed strong engagement with the platform".
 
@@ -332,7 +337,9 @@ def _fingerprint(harvest: artifacts.Harvest, signal: dict | None) -> str:
         # The newest error and artifact, so a session that swaps one failure for
         # another registers as movement even at unchanged counts.
         harvest.errors[-1] if harvest.errors else "",
+        harvest.artifacts[0].title if harvest.artifacts else "",
         harvest.artifacts[-1].title if harvest.artifacts else "",
+        [f"{a.kind}:{a.title}" for a in harvest.artifacts],
         # The signal fields the prompt is given. Engagement crossing from
         # explorer to builder changes the summary even on identical prompts.
         signal.get("engagement", ""),
@@ -463,9 +470,6 @@ def _ask_model(harvest: artifacts.Harvest, signal: dict | None) -> tuple[dict, s
             {"role": "user", "content": _material(harvest, signal)},
         ],
         "max_tokens": _MAX_TOKENS,
-        # Deterministic where the model allows it: the same session should not
-        # produce a different brief on a re-run.
-        "temperature": 0.0,
     }
     headers = {
         "Authorization": f"Bearer {token}",

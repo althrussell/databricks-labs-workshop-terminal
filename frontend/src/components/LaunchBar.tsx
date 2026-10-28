@@ -30,8 +30,11 @@ export default function LaunchBar({ agents, launching, onLaunch }: Props) {
             key={agent.id}
             className="launch-btn"
             disabled={!agent.ready || busy}
-            title={agent.ready ? agent.description : `${agent.label} is installing…`}
-            onClick={() => onLaunch(agent.id)}
+            title={agent.ready ? (agent.external_url ? `${agent.description} (Opens in a new tab)` : agent.description) : `${agent.label} is installing…`}
+            onClick={() => {
+              if (agent.external_url) window.open(agent.external_url, "_blank", "noopener,noreferrer");
+              else onLaunch(agent.id);
+            }}
           >
             {busy || !agent.ready ? (
               <Loader2 size={16} className="spin" />

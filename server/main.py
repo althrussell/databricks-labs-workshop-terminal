@@ -587,6 +587,23 @@ def _callback_identity(body: _EmailBody, request: Request) -> Principal:
     return principal
 
 
+@app.get("/api/auth/keepalive")
+def auth_keepalive(principal: Principal = Depends(get_current_user)):
+    """Silent same-origin keepalive loaded in a hidden iframe.
+
+    Browser ``fetch()`` cannot follow cross-origin OIDC 302 redirects to the
+    workspace IdP when the Apps proxy session cookie nears expiry, whereas a
+    hidden iframe navigation completes the silent OIDC redirect and delivers a
+    fresh ``x-forwarded-access-token`` to ``get_current_user``.
+    """
+    from fastapi.responses import HTMLResponse
+
+    return HTMLResponse(
+        content="<!doctype html><meta charset=utf-8><title>ok</title>",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @app.post("/api/obo/refresh")
 def obo_refresh(body: _EmailBody, request: Request):
     """Reactive OBO self-heal (layer 2). Called by the ``databricks-me`` wrapper
@@ -595,6 +612,9 @@ def obo_refresh(body: _EmailBody, request: Request):
     connected tab to deliver an even fresher token on its next poll."""
     principal = _callback_identity(body, request)
     email = principal.name
+    forwarded_obo = (request.headers.get("x-workshop-forwarded-obo-token") or "").strip()
+    if forwarded_obo and not principal.access_token:
+        obo.obo_manager.capture(email, forwarded_obo)
     written = obo.obo_manager.force_refresh(email)
     try:
         # Attendee-neutral nudge: every tab may refresh its own authenticated
@@ -657,7 +677,109 @@ def record_app_deploy_event(body: _AppDeployEventBody, request: Request):
     )
     if not captured:
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL)
+    if body.outcome == "succeeded":
+        def _bg_screenshot(owner_email: str) -> None:
+            try:
+                from . import browser_evidence, projects
+
+                if not browser_evidence.browser_binary():
+                    return
+                user = user_manager.get(owner_email)
+                root = projects.root(user)
+                if root.is_dir():
+                    for child in sorted(root.iterdir()):
+                        if child.is_dir() and not child.is_symlink() and not child.name.startswith("."):
+                            browser_evidence.capture_project_preview_screenshot(user, child)
+            except Exception:  # noqa: BLE001
+                pass
+
+        threading.Thread(
+            target=_bg_screenshot,
+            args=(principal.name,),
+            daemon=True,
+            name="app-deploy-screenshot",
+        ).start()
     return {"recorded": True}
+
+
+class _AppLogsBody(_EmailBody):
+    app_name: str = Field(..., min_length=1, max_length=120)
+    tail_lines: int = Field(default=200, ge=0, le=5000)
+    search: str = Field(default="", max_length=300)
+
+
+@app.post("/api/apps/logs")
+def stream_app_logs_snapshot(body: _AppLogsBody, request: Request):
+    """Fetch recent log lines from a deployed Databricks App's /logz/stream WebSocket.
+
+    The Databricks CLI ``apps logs`` subcommand rejects token-backed profiles
+    with ``OAuth Token not supported for current auth type pat``. Using the
+    Workshop Terminal's app-identity OAuth bearer and ``Origin`` header against
+    ``wss://<app-url>/logz/stream`` returns the real JSON log entries.
+    """
+    from datetime import datetime, timezone
+    import urllib.request
+    from websockets.sync.client import connect
+
+    _callback_identity(body, request)
+    host = config.databricks_host().rstrip("/")
+    tok = credential_manager.token()
+    if not host or not tok:
+        raise HTTPException(status_code=503, detail="Workshop credential is not ready")
+
+    app_req = urllib.request.Request(
+        f"{host}/api/2.0/apps/{body.app_name.strip()}",
+        headers={"Authorization": f"Bearer {tok}", "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(app_req, timeout=15) as resp:
+            info = json.load(resp)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"Could not read app {body.app_name!r}: {exc}") from exc
+
+    app_url = str(info.get("url") or "").rstrip("/")
+    if not app_url.startswith("https://"):
+        raise HTTPException(status_code=409, detail=f"App {body.app_name!r} has no HTTPS URL yet")
+
+    ws_url = app_url.replace("https://", "wss://", 1) + "/logz/stream"
+    lines: list[str] = []
+    try:
+        with connect(
+            ws_url,
+            additional_headers={"Authorization": f"Bearer {tok}"},
+            origin=app_url,
+            open_timeout=10,
+        ) as sock:
+            sock.send(body.search or "")
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                try:
+                    raw = sock.recv(timeout=0.5)
+                except TimeoutError:
+                    break
+                if raw == "\x00":
+                    break
+                try:
+                    entry = json.loads(raw)
+                    ts = entry.get("timestamp")
+                    iso = (
+                        datetime.fromtimestamp(float(ts), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                        if isinstance(ts, (int, float)) and ts > 0
+                        else ""
+                    )
+                    src = entry.get("source") or "APP"
+                    msg = (entry.get("message") or "").rstrip("\r\n")
+                    lines.append(f"{iso} [{src}] {msg}".strip())
+                except Exception:  # noqa: BLE001
+                    text = str(raw or "").strip()
+                    if text:
+                        lines.append(text)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Log stream failed for {body.app_name!r}: {exc}") from exc
+
+    if body.tail_lines > 0:
+        lines = lines[-body.tail_lines :]
+    return {"app_name": body.app_name, "lines": lines}
 
 
 class _DiscoveryBody(_EmailBody):
@@ -1018,6 +1140,61 @@ def build_stop(principal: Principal = Depends(get_current_user)):
     return journey.stop(_active_session_for(user))
 
 
+class AttachImageBody(BaseModel):
+    filename: str = Field(default="screenshot.png", max_length=120)
+    data_base64: str = Field(min_length=4, max_length=15_000_000)
+    project_name: str | None = Field(default=None, max_length=63)
+
+
+@app.post("/api/projects/attach-image")
+def attach_project_image(
+    body: AttachImageBody,
+    principal: Principal = Depends(get_current_user),
+):
+    """Save a pasted or uploaded screenshot into the attendee's project."""
+    import base64 as _b64
+
+    from . import projects
+
+    user = user_manager.get(principal.name)
+    state = projects.read(user)
+    target_name = (body.project_name or state.get("active") or "default").strip()
+    root = projects.root(user)
+    root.mkdir(parents=True, exist_ok=True)
+    if not state.get("active"):
+        try:
+            projects.select(user, target_name, new=True)
+        except Exception:  # noqa: BLE001
+            pass
+    project_dir = projects.project_path(user, target_name)
+    project_dir.mkdir(parents=True, exist_ok=True)
+    attachments_dir = project_dir / ".workshop" / "attachments"
+    attachments_dir.mkdir(parents=True, exist_ok=True)
+
+    raw_b64 = body.data_base64.strip()
+    if "," in raw_b64 and raw_b64.lower().startswith("data:"):
+        raw_b64 = raw_b64.split(",", 1)[1]
+    try:
+        decoded = _b64.b64decode(raw_b64, validate=True)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="Invalid base64 image data") from exc
+    if not decoded or len(decoded) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=422, detail="Image must be under 10 MB")
+
+    safe_stem = re.sub(r"[^A-Za-z0-9_.-]+", "-", os.path.basename(body.filename or "screenshot.png")).strip("-.") or "screenshot.png"
+    if not any(safe_stem.lower().endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".webp", ".gif")):
+        safe_stem += ".png"
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    dest = attachments_dir / f"{stamp}-{safe_stem}"
+    dest.write_bytes(decoded)
+    return {
+        "path": str(dest),
+        "relative_path": str(dest.relative_to(project_dir)),
+        "bytes": len(decoded),
+        "project": target_name,
+    }
+
+
 @app.post("/api/export")
 def export_code(principal: Principal = Depends(get_current_user)):
     """Export my code (WT-P6): the ZIP streams to the browser; the volume copy stays."""
@@ -1148,6 +1325,7 @@ def surprise_wizard(
 @app.get("/api/agents")
 def list_agents(principal: Principal = Depends(get_current_user)):
     ready = install.ready()
+    remote_url = config.omnigent_app_url() if config.omnigent_remote_enabled() else ""
     catalog = []
     for agent in agents.load_catalog():
         requires = agent.get("requires", [])
@@ -1159,17 +1337,18 @@ def list_agents(principal: Principal = Depends(get_current_user)):
         # A failed step needs explicit recovery; show a setup retry instead of
         # spinning or trying to launch the broken harness.
         install_error = "" if installed else install.failure_for(requires)
-        catalog.append(
-            {
-                **{
-                    k: agent[k] for k in ("id", "label", "description", "icon", "order")
-                },
-                "ready": installed and not blocked,
-                "blocked": blocked,
-                "install_error": install_error,
-                "needs_credentials": bool(requires),
-            }
-        )
+        entry = {
+            **{
+                k: agent[k] for k in ("id", "label", "description", "icon", "order")
+            },
+            "ready": installed and not blocked,
+            "blocked": blocked,
+            "install_error": install_error,
+            "needs_credentials": bool(requires),
+        }
+        if agent.get("id") == "omnigent" and remote_url:
+            entry["external_url"] = remote_url
+        catalog.append(entry)
     return {"agents": catalog, "credential": credential_manager.status()}
 
 

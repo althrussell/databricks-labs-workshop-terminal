@@ -198,6 +198,8 @@ export interface AgentInfo {
   /** Which install step failed terminally, when the agent will never go ready. */
   install_error?: string;
   needs_credentials: boolean;
+  /** When set, clicking the card opens the dedicated web app in a new tab. */
+  external_url?: string;
 }
 
 export interface OboStatus {
@@ -427,7 +429,24 @@ export function sessionConflictFrom(error: unknown): SessionConflict | null {
   return candidate as SessionConflict;
 }
 
+type WrongIdentityListener = (detail: string) => void;
+const wrongIdentityListeners = new Set<WrongIdentityListener>();
+let wrongIdentityLatched: string | null = null;
+
+export function onWrongIdentity(listener: WrongIdentityListener): () => void {
+  if (wrongIdentityLatched) listener(wrongIdentityLatched);
+  wrongIdentityListeners.add(listener);
+  return () => wrongIdentityListeners.delete(listener);
+}
+
+export function isWrongIdentityLocked(): boolean {
+  return wrongIdentityLatched !== null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if (wrongIdentityLatched && !path.startsWith("/api/admin/")) {
+    throw new ApiError(403, wrongIdentityLatched);
+  }
   const resp = await fetch(path, {
     headers: { "Content-Type": "application/json" },
     ...init,
@@ -440,6 +459,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       /* non-JSON error body */
     }
     if (resp.status === 409 && isWorkshopClosingDetail(detail)) notifyWorkshopClosing();
+    const errorCode = resp.headers?.get?.("X-Workshop-Error-Code") ?? "";
+    const isWrongSeat =
+      errorCode === "wrong_seat_identity" ||
+      (typeof detail === "string" && detail.includes("This workshop instance is assigned to "));
+    if (resp.status === 403 && isWrongSeat && !path.startsWith("/api/admin/")) {
+      const msg = typeof detail === "string" ? detail : "This workshop seat is assigned to another attendee.";
+      if (!wrongIdentityLatched) {
+        wrongIdentityLatched = msg;
+        wrongIdentityListeners.forEach((fn) => fn(msg));
+      }
+    }
     throw new ApiError(resp.status, detail);
   }
   return resp.json();
@@ -464,6 +494,11 @@ export const api = {
     const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? "workshop-code.zip";
     return { blob: await resp.blob(), filename, volumePath: resp.headers.get("X-Workshop-Export-Path") ?? "" };
   },
+  attachImage: (body: { filename: string; data_base64: string; project_name?: string }) =>
+    request<{ path: string; relative_path: string; bytes: number; project: string }>(
+      "/api/projects/attach-image",
+      { method: "POST", body: JSON.stringify(body) }
+    ),
   retryAgentSetup: (agentId: string) =>
     request<{ retrying: boolean }>(`/api/agents/${encodeURIComponent(agentId)}/retry-setup`, { method: "POST" }),
   config: () => request<AppConfig>("/api/config"),

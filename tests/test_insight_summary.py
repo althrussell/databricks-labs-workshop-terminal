@@ -831,8 +831,8 @@ class _Resp:
         return self._payload
 
 
-def test_a_model_that_refuses_temperature_is_asked_again_without_it(monkeypatch):
-    """Claude Opus 5.5 answers 400 to ``temperature``; every summary fell back to extraction."""
+def test_a_model_that_refuses_temperature_is_asked_without_it_on_first_call(monkeypatch):
+    """Claude Opus 5.5 answers 400 to ``temperature``; omit it up front so no call is wasted."""
     import requests
 
     from server import cli_config, model_policy
@@ -856,7 +856,7 @@ def test_a_model_that_refuses_temperature_is_asked_again_without_it(monkeypatch)
     answer, model = insight_summary._ask_model(_harvest(), None)
 
     assert answer["headline"] == "Outage tracker with write-back" and model == "system.ai.claude-opus-5-5"
-    assert [("temperature" in body) for body in sent] == [True, False]
+    assert [("temperature" in body) for body in sent] == [False]
 
 
 def test_other_400s_are_not_retried(monkeypatch):

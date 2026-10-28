@@ -352,6 +352,19 @@ def _grant_catalog_privileges(
     return _patch(url, bearer, body)
 
 
+def _patch_uc_privileges(
+    host: str,
+    bearer: str,
+    securable_type: str,
+    full_name: str,
+    principal: str,
+    privileges: tuple[str, ...],
+) -> tuple[bool, EntitlementApiError | None]:
+    url = f"{host}/api/2.1/unity-catalog/permissions/{securable_type}/{full_name}"
+    body = {"changes": [{"principal": principal, "add": list(privileges)}]}
+    return _patch(url, bearer, body)
+
+
 def _catalog_privileges_for(
     host: str, bearer: str, catalog: str, principal: str
 ) -> tuple[set[str] | None, EntitlementApiError | None]:
@@ -565,6 +578,7 @@ class EntitlementManager:
         # client_id -> catalog it has been proven readable on. Keeps the app-SP
         # grant a one-shot per app rather than a per-sweep re-grant.
         self._app_sp_grants: dict[str, str] = {}
+        self._last_telemetry_emitted_at = 0.0
 
     def start(self) -> None:
         if not config.entitlements_enabled():
@@ -1089,20 +1103,29 @@ class EntitlementManager:
                 }
                 from . import telemetry
 
-                telemetry.entitlement_reconcile(
-                    source=source,
-                    outcome=outcome,
-                    reason=reason_code,
-                    duration_ms=(self._monotonic() - started_at) * 1000,
-                    rate_limited=bool(stats.rate_limits),
-                    request_count=stats.requests,
-                    rate_limit_count=stats.rate_limits,
-                    http_429_count=stats.http_429s,
-                    backoff_seconds=backoff_seconds,
-                    cache_hits=stats.cache_hits,
-                    cache_misses=stats.cache_misses,
-                    convergence_ms=convergence_ms,
+                should_emit = (
+                    not no_change
+                    or bool(stats.rate_limits)
+                    or source != "background"
+                    or (now - self._last_telemetry_emitted_at) >= 900.0
                 )
+                if should_emit:
+                    with self._lock:
+                        self._last_telemetry_emitted_at = now
+                    telemetry.entitlement_reconcile(
+                        source=source,
+                        outcome=outcome,
+                        reason=reason_code,
+                        duration_ms=(self._monotonic() - started_at) * 1000,
+                        rate_limited=bool(stats.rate_limits),
+                        request_count=stats.requests,
+                        rate_limit_count=stats.rate_limits,
+                        http_429_count=stats.http_429s,
+                        backoff_seconds=backoff_seconds,
+                        cache_hits=stats.cache_hits,
+                        cache_misses=stats.cache_misses,
+                        convergence_ms=convergence_ms,
+                    )
                 return result
             finally:
                 _request_stats.reset(stats_token)
@@ -1406,11 +1429,14 @@ class EntitlementManager:
         produced the 429s in the servco handoff ledgers. A failed grant is not
         memoized, so it retries.
         """
-        if not _created_by_sp(_APPS_SPEC, app, sp_identities):
-            # An app this SP did not create is not the attendee's build. Most
-            # likely it is the Workshop Terminal itself, whose grants belong to
-            # Control Tower.
+        if not _created_by_sp(_APPS_SPEC, app, sp_identities | {principal}):
+            # An app neither this SP nor the attendee created is not the
+            # attendee's build (most likely Workshop Terminal or Omnigent).
             return []
+        app_name = str(app.get("name") or "").strip()
+        if app_name in {"wt", "omni", "workshop-terminal"}:
+            if not _created_by_sp(_APPS_SPEC, app, sp_identities):
+                return []
         client_id = str(
             app.get("service_principal_client_id")
             or app.get("service_principal_id")
@@ -1435,6 +1461,40 @@ class EntitlementManager:
                 principal, "app-service-principals", app_name, "failed", error=message
             )
             return [f"app {app_name} ({client_id}): {message}"]
+
+        schema = config.workshop_schema().strip()
+        if schema:
+            schema_ok, schema_err = _patch_uc_privileges(
+                host,
+                bearer,
+                "schema",
+                f"{catalog}.{schema}",
+                client_id,
+                (
+                    "USE_SCHEMA",
+                    "SELECT",
+                    "MODIFY",
+                    "CREATE_TABLE",
+                    "CREATE_VOLUME",
+                    "READ_VOLUME",
+                    "WRITE_VOLUME",
+                ),
+            )
+            if not schema_ok and "404" not in (schema_err or ""):
+                message = f"app service principal schema grant ({catalog}.{schema}): {schema_err or 'failed'}"
+                self._transition(
+                    principal, "app-service-principals", app_name, "failed", error=message
+                )
+                return [f"app {app_name} ({client_id}): {message}"]
+        demo_catalog = config.workshop_demo_catalog().strip()
+        if demo_catalog and demo_catalog != catalog:
+            _grant_catalog_privileges(
+                host,
+                bearer,
+                demo_catalog,
+                client_id,
+                ("USE_CATALOG", "USE_SCHEMA", "SELECT"),
+            )
 
         held, read_error = _catalog_privileges_for(host, bearer, catalog, client_id)
         if read_error:

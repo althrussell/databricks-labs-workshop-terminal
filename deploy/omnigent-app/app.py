@@ -12,6 +12,7 @@ Workshop Terminal gateway token — not the App service principal.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -19,6 +20,7 @@ import tempfile
 import threading
 import time
 import traceback
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -206,6 +208,63 @@ try:
         scheduled_task_store=scheduled_task_store,
         auth_provider=auth_provider,
     )
+
+    _forwarded_obo_lock = threading.Lock()
+    _forwarded_obo_tokens: dict[str, tuple[str, float]] = {}
+
+    def _forward_obo_to_workshop(wt_url: str, email: str, token: str) -> None:
+        now = time.monotonic()
+        with _forwarded_obo_lock:
+            prior = _forwarded_obo_tokens.get(email)
+            if prior is not None and prior[0] == token and now - prior[1] < 300.0:
+                return
+            _forwarded_obo_tokens[email] = (token, now)
+
+        def _send() -> None:
+            try:
+                body = json.dumps({"email": email}).encode("utf-8")
+                req = urllib.request.Request(
+                    f"{wt_url.rstrip('/')}/api/obo/refresh",
+                    data=body,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {token}",
+                        "X-Workshop-Forwarded-Obo-Token": token,
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=5.0):
+                    pass
+            except Exception:  # noqa: BLE001 — best-effort cross-app mirror refresh
+                pass
+
+        threading.Thread(target=_send, daemon=True, name="obo-forward").start()
+
+    class _OboForwarderMiddleware:
+        """Forward fresh browser OBO tokens from Omnigent to Workshop Terminal."""
+
+        def __init__(self, inner):
+            self.inner = inner
+
+        async def __call__(self, scope, receive, send):
+            if scope.get("type") in {"http", "websocket"}:
+                wt_url = os.environ.get("WORKSHOP_APP_URL", "").strip()
+                if wt_url:
+                    headers = {
+                        k.decode("latin1").lower(): v.decode("latin1")
+                        for k, v in (scope.get("headers") or ())
+                    }
+                    email = (
+                        headers.get("x-forwarded-email")
+                        or headers.get("x-forwarded-user")
+                        or ""
+                    ).strip().lower()
+                    token = (headers.get("x-forwarded-access-token") or "").strip()
+                    if email and "@" in email and token:
+                        _forward_obo_to_workshop(wt_url, email, token)
+            await self.inner(scope, receive, send)
+
+    app = _OboForwarderMiddleware(app)
 
     if __name__ == "__main__":
         logger.info(

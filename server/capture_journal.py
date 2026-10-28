@@ -13,6 +13,7 @@ local path as evidence of redeploy durability.
 
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import copy
 import hashlib
@@ -578,9 +579,9 @@ class CaptureJournal:
         # The SDK already retries. Only recover short transient failures here;
         # do not multiply an SDK call which has already consumed its budget.
         # These are attempt/pause bounds, not a total synchronous I/O deadline.
-        delay = 0.05 * attempts
+        delay = min(0.25, 0.05 * (2 ** max(0, attempts - 1)))
         if (not diagnostics["retryable"] or attempts >= 3
-                or time.monotonic() - started + delay > 5.0):
+                or time.monotonic() - started + delay > 2.5):
             return False
         time.sleep(delay)
         return True
@@ -1055,8 +1056,33 @@ class CaptureJournal:
         """Durability barrier: return only after accepted state is retained."""
         if not self.write_behind:
             return
-        with self._flush_lock:
+        with self._flush_lock, self._process_file_lock():
             self._flush_locked()
+
+    @contextlib.contextmanager
+    def _process_file_lock(self):
+        try:
+            import fcntl
+
+            lock_dir = config.data_root()
+            os.makedirs(lock_dir, exist_ok=True)
+            lock_path = os.path.join(lock_dir, ".capture.lock")
+            fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+        except Exception:  # noqa: BLE001
+            yield
+            return
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            except OSError:
+                pass
+            try:
+                os.close(fd)
+            except OSError:
+                pass
 
     def close(self) -> None:
         """Stop the background flusher after retaining everything accepted."""

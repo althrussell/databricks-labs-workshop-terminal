@@ -135,6 +135,7 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
         # reads as cheapest-first.
         "WORKSHOP_ROUTING_MODEL_ORDER",
         "WORKSHOP_ROUTING_MODEL_EXCLUDE",
+        "WORKSHOP_APP_URL",
     }
     required = {
         "AP_LAKEBASE_ENDPOINT",
@@ -153,8 +154,14 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
     # The judge is the one model the App itself calls, so it is pinned rather
     # than left to a built-in default that could drift under us.
     assert env["WORKSHOP_ROUTING_JUDGE_MODEL"]["value"] == "system.ai.gpt-5-6-luna"
-    for name in allowed - {"WORKSHOP_SMART_ROUTING", "WORKSHOP_ROUTING_JUDGE_MODEL",
-                           "UV_DEFAULT_INDEX", "PIP_INDEX_URL", "NPM_CONFIG_REGISTRY", "npm_config_registry"}:
+    for name in allowed - {
+        "WORKSHOP_SMART_ROUTING",
+        "WORKSHOP_ROUTING_JUDGE_MODEL",
+        "UV_DEFAULT_INDEX",
+        "PIP_INDEX_URL",
+        "NPM_CONFIG_REGISTRY",
+        "npm_config_registry",
+    }:
         assert env[name].get("value", "") == "", f"{name} must ship empty"
     assert not {
         "DATABRICKS_TOKEN",

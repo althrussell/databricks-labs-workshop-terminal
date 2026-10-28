@@ -54,7 +54,12 @@ export type SetupSteps = Record<string, { status: string; error?: string | null 
  * the operator they eventually asked.
  */
 function cardState(agent: AgentInfo): { text: string; kind: string; title?: string } {
-  if (agent.ready) return { text: "ready", kind: "is-ready" };
+  if (agent.ready) {
+    return {
+      text: agent.external_url ? "Opens in a new tab" : "ready",
+      kind: "is-ready",
+    };
+  }
   if (agent.blocked === "operator_demoted") {
     return {
       text: "paused by your host",
@@ -124,6 +129,7 @@ export default function AgentCards({ agents, launching, onLaunch }: Props) {
               title={state.title}
               onClick={() => {
                 if (!agent.ready && agent.install_error) void retry(agent.id);
+                else if (agent.external_url) window.open(agent.external_url, "_blank", "noopener,noreferrer");
                 else onLaunch(agent.id);
               }}
             >

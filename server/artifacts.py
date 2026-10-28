@@ -777,6 +777,31 @@ def _commit_subjects(home: str, harvest: Harvest) -> None:
         return
     commits = 0
     for name in names:
+        repo = os.path.join(projects, name)
+        workflow_file = os.path.join(repo, ".workshop", "design-workflow.json")
+        if os.path.isfile(workflow_file) and not os.path.islink(workflow_file):
+            try:
+                with open(workflow_file, encoding="utf-8", errors="replace") as wf_handle:
+                    wf_doc = json.load(wf_handle)
+                preview_url = (
+                    ((wf_doc.get("evidence") or {}).get("build") or {}).get("preview")
+                    if isinstance(wf_doc, dict)
+                    else None
+                )
+                if isinstance(preview_url, str) and preview_url.strip():
+                    cleaned_url, hits = _clean(preview_url.strip(), MAX_TARGET_CHARS)
+                    harvest.redactions += hits
+                    if cleaned_url:
+                        harvest.artifacts.append(
+                            Artifact(
+                                kind="deployed_app",
+                                title=f"{name}: {cleaned_url}",
+                                bytes=len(cleaned_url),
+                            )
+                        )
+            except (OSError, ValueError):
+                pass
+    for name in names:
         if commits >= MAX_COMMITS:
             return
         repo = os.path.join(projects, name)

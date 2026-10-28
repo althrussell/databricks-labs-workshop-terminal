@@ -1,6 +1,6 @@
 /** "Your build" (W4): what the attendee sees about their own project. */
 
-export type BuildStatus = "needs_decision" | "ready_to_try" | "blocked" | "help_requested" | "working";
+export type BuildStatus = "not_started" | "needs_decision" | "ready_to_try" | "blocked" | "help_requested" | "working";
 
 export interface BuildReview {
   state: "verified" | "stale" | "unverified" | "none";

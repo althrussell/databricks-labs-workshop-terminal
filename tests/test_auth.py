@@ -314,3 +314,17 @@ def test_websocket_rejected_without_identity(client, monkeypatch):
         with pytest.raises(WebSocketDisconnect) as exc:
             ws.receive_text()
     assert exc.value.code == 4403
+
+
+def test_comma_separated_admin_group_allows_workshop_admins(client, monkeypatch):
+    from server import auth
+
+    monkeypatch.setenv("ADMIN_GROUP", "platform_admins,workshop_admins")
+    monkeypatch.setattr(auth, "get_groups", lambda _p: {"workshop_admins"})
+
+    resp = client.get(
+        "/api/admin/diagnostics",
+        headers={"X-Forwarded-Email": "operator@databricks.com"},
+    )
+    assert resp.status_code == 200
+

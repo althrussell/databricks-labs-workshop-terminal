@@ -34,6 +34,14 @@ when set); the attendee has `ALL PRIVILEGES` there. Never create a new
 top-level catalog. Apps, jobs, Lakebase, pipelines and serving endpoints are
 shared with the attendee automatically; `workshop-grant-me` grants `CAN_MANAGE`
 immediately. Copy shared demo data into an owned table before changing it.
+Metastore `system.*` tables (`system.billing`, `system.access`, `system.compute`,
+`system.lakeflow`, `system.ai_gateway`, `system.serving`) are restricted for
+multi-tenant isolation: for FinOps or observability apps, use
+`$WORKSHOP_DEMO_CATALOG` or synthetic tables in `$WORKSHOP_CATALOG` instead of
+probing `system.*`. On views, use `DESCRIBE TABLE` rather than `DESCRIBE DETAIL`.
+Workshop compute is complimentary during the session; if an attendee asks about
+cost, explain that their workshop seat is free and give standard production DBU
+sizing guidance.
 
 ## Starting a project
 
@@ -102,7 +110,9 @@ with the record before delegating so worktree workers receive both.
 ## Documents and take-home
 
 Write documents only when asked, inside the project. For "take my work home",
-use the `workshop-export` skill (`--project <path>` for one project). Show its
+tell the attendee they can click **Download my code** in the Workshop Terminal
+header to download the ZIP directly, or use the `workshop-export` skill
+(`--project <path>` for one project). Show its
 Volume link and the Catalog → … → workshop_exports → code →
 File options → Download file steps. "It's committed and synced" is not the same as "it's saved"
 on their computer: everything here is deleted after the workshop, so remind them

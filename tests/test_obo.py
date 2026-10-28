@@ -173,7 +173,8 @@ def test_capture_mirrors_me_into_the_omnigent_config_without_the_sp(
     assert omni["me"]["token"].count(".") == 2  # the captured JWT
     assert omni["me"]["host"]
     assert "sp-default-token" not in omni["me"].values()
-    assert omni.defaults() == {}
+    assert "sp-default-token" not in omni.defaults().values()
+    assert omni.defaults().get("token") == omni["me"]["token"]
 
 
 def test_default_rotation_does_not_clobber_me(client, monkeypatch, enable_obo):
@@ -590,6 +591,35 @@ def test_obo_refresh_preserves_loopback_helper_body_email(client, monkeypatch):
 
     assert response.status_code == 200
     assert refreshed == ["helper@example.com"]
+
+
+def test_obo_keepalive_and_cross_app_forwarded_token_capture(client, monkeypatch):
+    from server import obo
+    from .conftest import ALICE
+
+    captured = []
+    monkeypatch.setattr(
+        obo.obo_manager,
+        "capture",
+        lambda email, token: captured.append((email, token)),
+    )
+    monkeypatch.setattr(obo.obo_manager, "force_refresh", lambda email: True)
+    keepalive = client.get(
+        "/api/auth/keepalive",
+        headers={**ALICE, "X-Forwarded-Access-Token": "iframe-obo-token"},
+    )
+    assert keepalive.status_code == 200
+    assert "<!doctype html>" in keepalive.text.lower()
+    assert ("alice@example.com", "iframe-obo-token") in captured
+
+    captured.clear()
+    forwarded = client.post(
+        "/api/obo/refresh",
+        json={"email": "alice@example.com"},
+        headers={**ALICE, "X-Workshop-Forwarded-Obo-Token": "omni-forwarded-token"},
+    )
+    assert forwarded.status_code == 200
+    assert ("alice@example.com", "omni-forwarded-token") in captured
 
 
 def test_entitlements_reconcile_endpoint_disabled(client, monkeypatch):
