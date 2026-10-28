@@ -876,3 +876,38 @@ def test_other_400s_are_not_retried(monkeypatch):
     with pytest.raises(insight_summary.ModelUnavailable):
         insight_summary._ask_model(_harvest(), None)
     assert calls == [1]
+
+
+def test_an_unparseable_answer_is_asked_once_more_before_falling_back(monkeypatch):
+    """28 Oct E2E, seat 1: one cut-off answer pushed the summary onto keyword extraction."""
+    import pytest
+    import requests
+
+    from server import cli_config, model_policy
+    from server.credentials import credential_manager
+
+    answers = [
+        _Resp(200, {"choices": [{"finish_reason": "length",
+                                 "message": {"content": '{"headline": "Life support call list", "use_cases": ["ca'}}]}),
+        _Resp(200, {"choices": [{"message": {"content": '{"headline": "Life support call list"}'}}]}),
+    ]
+    sent: list[dict] = []
+    monkeypatch.setattr(requests, "post", lambda url, headers=None, json=None, timeout=None:
+                        sent.append(dict(json)) or answers.pop(0))
+    monkeypatch.setattr(cli_config, "unified_chat_url", lambda: "https://gw.example/mlflow/v1/chat/completions")
+    monkeypatch.setattr(credential_manager, "token", lambda: "t")
+    monkeypatch.setattr(model_policy, "request_tags", lambda purpose: purpose)
+    monkeypatch.setattr(insight_summary, "_pick_model", lambda token: "system.ai.claude-opus-5-5")
+
+    answer, _model = insight_summary._ask_model(_harvest(), None)
+
+    assert answer == {"headline": "Life support call list"}
+    assert [body["max_tokens"] for body in sent] == [insight_summary._MAX_TOKENS, insight_summary._MAX_TOKENS * 2]
+
+    # Twice unusable still falls back, after exactly two asks.
+    calls = []
+    monkeypatch.setattr(requests, "post", lambda *a, **k: calls.append(1) or _Resp(
+        200, {"choices": [{"message": {"content": "Here is a summary, in prose."}}]}))
+    with pytest.raises(insight_summary.ModelUnavailable):
+        insight_summary._ask_model(_harvest(), None)
+    assert calls == [1, 1]

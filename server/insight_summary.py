@@ -377,6 +377,10 @@ class ModelUnavailable(RuntimeError):
     """No reachable model service, or it answered with something unusable."""
 
 
+class _UnusableAnswer(ModelUnavailable):
+    """The model answered, but not with a JSON object; worth asking once more."""
+
+
 def _served_models(token: str) -> dict[str, frozenset[str]]:
     from .cli_config import current_model_catalogue
 
@@ -424,13 +428,13 @@ def _extract_json(text: str) -> dict:
     except ValueError:
         start, end = candidate.find("{"), candidate.rfind("}")
         if start < 0 or end <= start:
-            raise ModelUnavailable("model did not return JSON") from None
+            raise _UnusableAnswer("model did not return JSON") from None
         try:
             parsed = json.loads(candidate[start : end + 1])
         except ValueError:
-            raise ModelUnavailable("model returned unparseable JSON") from None
+            raise _UnusableAnswer("model returned unparseable JSON") from None
     if not isinstance(parsed, dict):
-        raise ModelUnavailable("model returned JSON that is not an object")
+        raise _UnusableAnswer("model returned JSON that is not an object")
     return parsed
 
 
@@ -475,27 +479,40 @@ def _ask_model(harvest: artifacts.Harvest, signal: dict | None) -> tuple[dict, s
         "Authorization": f"Bearer {token}",
         "Databricks-Ai-Gateway-Request-Tags": model_policy.request_tags("insight-summary"),
     }
-    try:
-        resp = requests.post(url, headers=headers, json=body, timeout=_MODEL_TIMEOUT)
-        if _rejects_temperature(resp):
-            # Claude Opus 5.x through the gateway refuses the parameter outright
-            # ("does not support the temperature parameter"), so every summary
-            # fell back to extraction (live qualification, 25 Oct 2026).
-            body.pop("temperature")
+    # One more ask when the answer is not a JSON object: on the 28 Oct E2E run
+    # seat 1's first summary fell back to keyword extraction on "model returned
+    # unparseable JSON", and the next revision ten minutes later was fine. An
+    # answer cut off at the token limit gets a larger, still bounded, budget.
+    for attempt in range(2):
+        try:
             resp = requests.post(url, headers=headers, json=body, timeout=_MODEL_TIMEOUT)
-    except requests.RequestException as exc:
-        raise ModelUnavailable(f"AI Gateway unreachable: {exc}") from exc
-    if resp.status_code != 200:
-        raise ModelUnavailable(describe(resp))
-    try:
-        content = resp.json()["choices"][0]["message"]["content"]
-    except (ValueError, KeyError, IndexError, TypeError) as exc:
-        raise ModelUnavailable(f"unexpected serving response shape: {exc}") from exc
-    if isinstance(content, list):  # some endpoints return content blocks
-        content = "".join(
-            block.get("text", "") for block in content if isinstance(block, dict)
-        )
-    return _extract_json(str(content)), model
+            if _rejects_temperature(resp):
+                # Claude Opus 5.x through the gateway refuses the parameter outright
+                # ("does not support the temperature parameter"), so every summary
+                # fell back to extraction (live qualification, 25 Oct 2026).
+                body.pop("temperature")
+                resp = requests.post(url, headers=headers, json=body, timeout=_MODEL_TIMEOUT)
+        except requests.RequestException as exc:
+            raise ModelUnavailable(f"AI Gateway unreachable: {exc}") from exc
+        if resp.status_code != 200:
+            raise ModelUnavailable(describe(resp))
+        try:
+            choice = resp.json()["choices"][0]
+            content = choice["message"]["content"]
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            raise ModelUnavailable(f"unexpected serving response shape: {exc}") from exc
+        if isinstance(content, list):  # some endpoints return content blocks
+            content = "".join(
+                block.get("text", "") for block in content if isinstance(block, dict)
+            )
+        try:
+            return _extract_json(str(content)), model
+        except _UnusableAnswer:
+            if attempt:
+                raise
+            if isinstance(choice, dict) and choice.get("finish_reason") == "length":
+                body["max_tokens"] = _MAX_TOKENS * 2
+    raise AssertionError("unreachable")
 
 
 def _material(harvest: artifacts.Harvest, signal: dict | None) -> str:
