@@ -361,3 +361,40 @@ def test_seat22_lifecycle_fixtures_detect_ready_first_message_missing_and_early_
     assert len(by_type.get("omnigent.terminal_exited_early", [])) == 1
     assert by_type["omnigent.terminal_exited_early"][0]["session_id"] == "49270f8f738d4fcd8122a46dce5ad264"
 
+
+
+def test_a_terminal_repl_at_an_idle_prompt_is_ready_not_stalled(attendee, tmp_path):
+    # 28 Oct E2E, seat 1: the terminal Omnigent REPL came up in 0.3 s and sat at
+    # `polly · ready` with no greeting (by design since WT #132), yet the
+    # detector reported omnigent.session_start_stalled at 120 s, which CT filed
+    # as blocked friction on a healthy seat.
+    import time as time_mod
+
+    emitter = _Emitter()
+    collector = LogCollector(
+        journal=Journal(tmp_path / "diagnostics.json", capacity=50),
+        users=_Roster(attendee),
+        emitter=emitter,
+        interval=0.01,
+        first_message_timeout_s=200.0,
+        start_stall_timeout_s=120.0,
+    )
+    _log(attendee, "runner", "runner-ac9e54d36ca3452abc226f88352bf79a-20261028.log").write_text(
+        "INFO  10-28 05:27:13.852 runner.app  _spawn_entry | harness started for conversation ac9e54d36ca3452abc226f88352bf79a (harness=claude-sdk)\n"
+        "INFO  10-28 05:27:13.854 runner.app  _auto_create_repl | Auto-created omnigent REPL terminal for session ac9e54d36ca3452abc226f88352bf79a: terminal_id=terminal_tui_main server_url=https://omni.example elapsed_ms=305\n"
+    )
+    # A launch that never reaches its REPL is still a stall.
+    _log(attendee, "runner", "runner-5f1c0d2e9a8b4c7d6e5f4a3b2c1d0e9f-20261028.log").write_text(
+        "INFO  10-28 05:40:01.000 runner.app  _spawn_entry | harness started for conversation 5f1c0d2e9a8b4c7d6e5f4a3b2c1d0e9f (harness=claude-sdk)\n"
+    )
+
+    collector.sweep()
+    collector.sweep(now_mono=time_mod.monotonic() + 250.0)
+
+    by_type = {}
+    for event_type, _who, payload in emitter.events:
+        by_type.setdefault(event_type, []).append(payload["session_id"])
+
+    assert by_type.get("omnigent.session_ready") == ["ac9e54d36ca3452abc226f88352bf79a"]
+    assert by_type.get("omnigent.session_start_stalled") == ["5f1c0d2e9a8b4c7d6e5f4a3b2c1d0e9f"]
+    assert "omnigent.first_message_missing" not in by_type

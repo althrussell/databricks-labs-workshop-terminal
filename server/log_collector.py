@@ -209,6 +209,9 @@ class _SessionLifecycle:
     missing_emitted: bool = False
     stalled_emitted: bool = False
     early_exit_emitted: bool = False
+    # A terminal REPL waits for the attendee to type; it sends no greeting
+    # (WT #132), so a quiet prompt there is normal, not a lost first message.
+    repl: bool = False
     recent_lines: list[str] = field(default_factory=list)
 
 
@@ -484,7 +487,13 @@ class LogCollector:
                 state.harness = harness_match.group(1)
             state.recent_lines.append(sanitized)
 
-        if "Native terminal became interactive" in msg:
+        # The web app's native harnesses report "Native terminal became
+        # interactive"; the terminal REPL (claude-sdk, `polly`) never does, and
+        # its readiness is the REPL terminal coming up. Without this, every
+        # terminal launch was reported stalled at 120 s while it sat at
+        # `polly · ready` (28 Oct E2E, seat 1).
+        repl_ready = "Auto-created omnigent REPL terminal" in msg
+        if "Native terminal became interactive" in msg or repl_ready:
             if state is None:
                 state = _SessionLifecycle(
                     session_id=session_id,
@@ -495,6 +504,7 @@ class LogCollector:
             harness_match = _HARNESS_NAME.search(msg)
             if harness_match:
                 state.harness = harness_match.group(1)
+            state.repl = state.repl or repl_ready
             state.interactive_at = ts
             state.interactive_mono = time.monotonic()
             if not state.ready_emitted:
@@ -569,6 +579,7 @@ class LogCollector:
             if (
                 state.interactive_mono is not None
                 and state.first_message_at is None
+                and not state.repl
                 and not state.missing_emitted
                 and (now - state.interactive_mono) >= self.first_message_timeout_s
             ):
