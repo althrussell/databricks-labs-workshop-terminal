@@ -400,7 +400,7 @@ def test_signalled_agent_reports_the_process_signal(monkeypatch, tmp_path):
 
     manager.create(user, "codex", ["/bin/sh", "-c", "kill -TERM $$"], "Codex")
     deadline = time.time() + 2
-    while manager.count_all() and time.time() < deadline:
+    while (manager.count_all() or not observed) and time.time() < deadline:
         time.sleep(0.01)
 
     assert manager.count_all() == 0
