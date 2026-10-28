@@ -113,10 +113,11 @@ def _observe_output(session, chunk: str) -> None:
     insights. Only topic names are recorded — never the text itself."""
     if not config.topic_detection_enabled():
         return
+    from .content import consume_topic_chunk
+
     prior_tail = getattr(session, "_topic_tail", "") or ""
-    combined = (prior_tail + chunk) if prior_tail else chunk
-    session._topic_tail = combined[-256:]
-    topics = content_service.scan_topics(combined)
+    scannable, session._topic_tail = consume_topic_chunk(prior_tail, chunk)
+    topics = content_service.scan_topics(scannable)
     if not topics:
         return
     user = user_manager.peek(session.owner_email)
@@ -1912,7 +1913,7 @@ def report_attendee_error(
 
 @app.get("/api/nuggets")
 def get_nuggets(principal: Principal = Depends(get_current_user)):
-    from . import artifacts, discovery, projects
+    from . import artifacts
     from .content import TOPIC_TTL_SECONDS
 
     now = time.time()
@@ -1930,17 +1931,13 @@ def get_nuggets(principal: Principal = Depends(get_current_user)):
             last_scan = _transcript_topic_scan_at.get(principal.name, 0.0)
             if now - last_scan >= 20.0:
                 try:
-                    harvest = artifacts.harvest_user(user)
                     _transcript_topic_scan_at[principal.name] = now
-                    seen_targets = getattr(user, "_seen_tool_targets", None)
-                    if seen_targets is None:
-                        seen_targets = set()
-                        user._seen_tool_targets = seen_targets
-                    new_targets = [
-                        t for t in (harvest.tool_targets or ()) if t not in seen_targets
-                    ]
+                    cursors = getattr(user, "_transcript_topic_cursors", None)
+                    if cursors is None:
+                        cursors = {}
+                        user._transcript_topic_cursors = cursors
+                    new_targets = artifacts.scan_new_tool_targets(user.home, cursors)
                     if new_targets:
-                        seen_targets.update(new_targets)
                         for topic in content_service.scan_topics(
                             "\n".join(new_targets)
                         ):

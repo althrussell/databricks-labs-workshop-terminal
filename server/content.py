@@ -56,6 +56,62 @@ def strip_documentation_markup(text: str) -> str:
     return _INLINE_CODE.sub(" ", _FENCED.sub(" ", cleaned))
 
 
+def consume_topic_chunk(
+    prior_tail: str, chunk: str, tail_limit: int = 256
+) -> tuple[str, str]:
+    """Sanitize a streaming terminal chunk and compute the state tail for the next chunk.
+
+    Returns ``(scannable_text, next_tail)`` so documentation fences and inline
+    code spans that exceed ``tail_limit`` or straddle chunk boundaries never
+    lose their opening delimiter and leak quoted commands into topic detection.
+    """
+    combined = (prior_tail + chunk) if prior_tail else chunk
+    cleaned = _ANSI_ESCAPE.sub("", combined)
+    cleaned = _FENCED.sub(" ", cleaned)
+
+    fence_idx = cleaned.find("```")
+    if fence_idx != -1:
+        scannable = _INLINE_CODE.sub(" ", cleaned[:fence_idx])
+        last_nl = scannable.rfind("\n")
+        bt_idx = scannable.find("`", last_nl + 1)
+        if bt_idx != -1:
+            scannable = scannable[:bt_idx]
+        fence_body = cleaned[fence_idx + 3 :]
+        trailing_ticks = min(2, len(fence_body) - len(fence_body.rstrip("`")))
+        next_tail = "```\n" + ("`" * trailing_ticks)
+        return scannable, next_tail
+
+    split_fence_opener = ""
+    if cleaned.endswith("``"):
+        split_fence_opener = "``"
+        cleaned = cleaned[:-2]
+
+    cleaned = _INLINE_CODE.sub(" ", cleaned)
+    last_nl = cleaned.rfind("\n")
+    line_tail = cleaned[last_nl + 1 :]
+    bt_idx = line_tail.find("`")
+    if bt_idx != -1:
+        scannable = cleaned[: last_nl + 1 + bt_idx]
+        before_bt = line_tail[:bt_idx]
+        after_bt = line_tail[bt_idx + 1 :]
+        if split_fence_opener:
+            after_bt = after_bt + split_fence_opener
+        span_tail = "`" + after_bt[-(tail_limit - 1) :]
+        prefix_budget = max(0, tail_limit - len(span_tail))
+        next_tail = (before_bt[-prefix_budget:] if prefix_budget else "") + span_tail
+        return scannable, next_tail
+
+    scannable = cleaned
+    if split_fence_opener:
+        prefix_budget = max(0, tail_limit - len(split_fence_opener))
+        next_tail = (
+            line_tail[-prefix_budget:] if prefix_budget else ""
+        ) + split_fence_opener
+    else:
+        next_tail = line_tail[-tail_limit:]
+    return scannable, next_tail
+
+
 class NuggetLink(BaseModel):
     url: str
     label: str = "Learn more"

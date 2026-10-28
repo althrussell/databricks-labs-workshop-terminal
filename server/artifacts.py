@@ -846,6 +846,80 @@ def activity(home: str) -> dict:
             "issues": list(result.issues)}
 
 
+def scan_new_tool_targets(
+    home: str, cursors: dict[str, int] | None = None
+) -> list[str]:
+    """Incrementally read newly appended tool targets from agent transcripts.
+
+    Unlike ``harvest_user()``, which caps ``tool_targets`` at the first
+    ``MAX_TOOL_TARGETS`` entries for summary payloads, this tracks per-file byte
+    offsets in ``cursors`` and returns every new tool target appended since the
+    previous scan so long-running sessions continue spotting services past 60
+    tool calls.
+    """
+    state = cursors if cursors is not None else {}
+    budget = MAX_TRANSCRIPT_BYTES
+    targets: list[str] = []
+    seen: set[str] = set()
+    try:
+        for path in _transcript_files(home):
+            if budget <= 0:
+                break
+            try:
+                size = os.path.getsize(path)
+            except OSError:
+                continue
+            offset = state.get(path, 0)
+            if size < offset:
+                offset = 0
+            if size == offset:
+                continue
+            budget -= size - offset
+            try:
+                with open(path, "rb") as handle:
+                    handle.seek(offset)
+                    pos = offset
+                    while True:
+                        raw_line = handle.readline()
+                        if not raw_line:
+                            break
+                        if len(raw_line) > MAX_LINE_BYTES:
+                            pos = handle.tell()
+                            continue
+                        line = raw_line.decode("utf-8", errors="replace")
+                        try:
+                            entry = json.loads(line)
+                        except ValueError:
+                            if not raw_line.endswith(b"\n"):
+                                break
+                            pos = handle.tell()
+                            continue
+                        pos = handle.tell()
+                        if not isinstance(entry, dict):
+                            continue
+                        for call in _tool_calls(entry):
+                            name = str(call.get("name") or "").strip()
+                            if name.lower() in _PLAN_TOOLS:
+                                continue
+                            payload = _tool_input(call)
+                            for key in _TARGET_KEYS:
+                                value = payload.get(key)
+                                if not isinstance(value, str) or not value.strip():
+                                    continue
+                                target, _ = _first_line(value, MAX_TARGET_CHARS)
+                                entryline = f"{name} {target}".strip()
+                                if entryline and entryline not in seen:
+                                    seen.add(entryline)
+                                    targets.append(entryline)
+                                break
+                    state[path] = pos
+            except OSError as exc:
+                logger.debug("transcript unreadable (%s): %s", path, exc)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("incremental transcript target scan failed: %s", exc)
+    return targets
+
+
 def harvest_user(user: User, *, single_attendee: bool = True) -> Harvest:
     """Collect one attendee's residue. Never raises.
 
@@ -877,4 +951,5 @@ __all__ = [
     "MAX_DOCUMENTS",
     "MAX_PROMPTS",
     "harvest_user",
+    "scan_new_tool_targets",
 ]
