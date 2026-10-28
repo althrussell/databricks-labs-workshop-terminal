@@ -64,6 +64,7 @@ from .event_emitter import event_emitter, flush_loop
 from .events import event_hub
 from .evaluation import router as evaluation_router
 from .log_collector import install_app_error_journal, log_collector
+from .network_check import router as network_check_router
 from .omnigent_remote import remote_host_manager
 from .sessions import SessionConfigurationError, SessionConflictError, session_manager
 from .users import user_manager
@@ -344,6 +345,7 @@ app = FastAPI(title="Databricks Workshop Terminal", lifespan=lifespan)
 app.add_middleware(CloseoutAdmissionMiddleware)
 app.include_router(admin_router)
 app.include_router(evaluation_router)
+app.include_router(network_check_router)
 app.include_router(ws_router)
 
 

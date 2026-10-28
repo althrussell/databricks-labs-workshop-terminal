@@ -270,3 +270,94 @@ def test_a_sweep_survives_an_attendee_whose_home_does_not_exist_yet(tmp_path):
         journal=Journal(None), users=_Roster(missing), emitter=_Emitter()
     )
     assert collector.sweep() == 0
+
+
+def test_version_guard_matches_omnigent_upstream_lock():
+    import json
+    from server.log_collector import OMNIGENT_LIFECYCLE_LOCKED_VERSION
+
+    lock = json.loads(
+        (Path(__file__).resolve().parents[1] / "deploy" / "omnigent-app" / "upstream-lock.json").read_text()
+    )
+    assert lock["package"] == f"omnigent[databricks]=={OMNIGENT_LIFECYCLE_LOCKED_VERSION}"
+
+
+def test_info_forwarder_drops_debug_and_noisy_202_and_caps_rate(attendee, tmp_path):
+    emitter = _Emitter()
+    collector = LogCollector(
+        journal=Journal(tmp_path / "diagnostics.json", capacity=50),
+        users=_Roster(attendee),
+        emitter=emitter,
+        interval=0.01,
+        rate_limit_per_sec=3,
+    )
+    (Path(attendee.home) / ".omnigent" / "logs" / "cli").mkdir(parents=True, exist_ok=True)
+    _log(attendee, "cli", "cli-1.log").write_text(
+        'INFO  10-27 02:43:01.020 cli_diagnostics  setup_cli_logging | CLI start — argv=["polly", "-p", "secret prompt"] pid=1036\n'
+    )
+    _log(attendee, "runner", "runner-8c0251b5-20261027.log").write_text(
+        "DEBUG 10-27 02:44:48.438 asyncio  __init__ | Using selector: EpollSelector\n"
+        'INFO  10-27 02:44:49.178 httpx  _single_request | HTTP Request: POST https://omni.example/v1/sessions/8c0251b5/events "HTTP/1.1 202 Accepted"\n'
+        'INFO  10-27 02:44:49.200 httpx  _single_request | HTTP Request: GET https://omni.example/health "HTTP/1.1 200 OK"\n'
+        "INFO  10-27 02:44:49.300 runner.app  step1 | line one\n"
+        "INFO  10-27 02:44:49.400 runner.app  step2 | line two\n"
+        "INFO  10-27 02:44:49.500 runner.app  step3 | line three\n"
+        "INFO  10-27 02:44:49.600 runner.app  step4 | line four\n"
+    )
+    collector.sweep()
+    messages = [item["message"] for item in collector.forwarded_lines]
+    assert not any("EpollSelector" in m for m in messages)
+    assert not any("202 Accepted" in m for m in messages)
+    assert not any("secret prompt" in m for m in messages)
+    assert any("[REDACTED_ARGV]" in m for m in messages)
+    assert any("dropped" in m for m in messages)
+
+
+def test_seat22_lifecycle_fixtures_detect_ready_first_message_missing_and_early_exit(
+    attendee, tmp_path
+):
+    import time as time_mod
+
+    emitter = _Emitter()
+    collector = LogCollector(
+        journal=Journal(tmp_path / "diagnostics.json", capacity=50),
+        users=_Roster(attendee),
+        emitter=emitter,
+        interval=0.01,
+        first_message_timeout_s=200.0,
+    )
+    # Seat 22 fixture 1: cfc71bc2 (interactive in ~3s, first message in ~1s)
+    _log(attendee, "runner", "runner-cfc71bc293574bb0b0a94457bcecb06a-20261027.log").write_text(
+        "INFO  10-27 03:01:40.000 runner.app  _claude_terminal | Claude terminal tmux launch requested: session=cfc71bc293574bb0b0a94457bcecb06a command=claude\n"
+        "INFO  10-27 03:01:42.862 runner.app  _nal_interactive | Native terminal became interactive: session=cfc71bc293574bb0b0a94457bcecb06a harness=claude-native terminal_id=terminal_claude_main\n"
+        "INFO  10-27 03:01:43.861 runner.app  _session_events | post_session_events: conv=cfc71bc293574bb0b0a94457bcecb06a type=message active=False buffer_len=0 content_types=['input_text'] model_override=None\n"
+    )
+    # Seat 22 fixture 2: 8c0251b5 (interactive in ~3s, never receives first message)
+    _log(attendee, "runner", "runner-8c0251b52eaf462b83fc948244cbab30-20261027.log").write_text(
+        "INFO  10-27 02:44:49.452 runner.app  _claude_terminal | Claude terminal tmux launch requested: session=8c0251b52eaf462b83fc948244cbab30 command=claude\n"
+        "INFO  10-27 02:44:52.100 runner.app  _nal_interactive | Native terminal became interactive: session=8c0251b52eaf462b83fc948244cbab30 harness=claude-native terminal_id=terminal_claude_main\n"
+    )
+    # Seat 4 fixture 3: 49270f8f (launched with -p, stopped after 28s)
+    _log(attendee, "runner", "runner-49270f8f738d4fcd8122a46dce5ad264-20261027.log").write_text(
+        "INFO  10-27 02:43:03.820 runner.app  _spawn_entry | harness started for conversation 49270f8f738d4fcd8122a46dce5ad264 (harness=claude-sdk)\n"
+        "INFO  10-27 02:43:32.297 runner.app  _session_events | post_session_events: conv=49270f8f738d4fcd8122a46dce5ad264 type=stop_session active=False buffer_len=0 content_types=[] model_override=None\n"
+    )
+
+    collector.sweep()
+    collector.sweep(now_mono=time_mod.monotonic() + 250.0)
+
+    by_type = {}
+    for event_type, _who, payload in emitter.events:
+        by_type.setdefault(event_type, []).append(payload)
+
+    assert len(by_type.get("omnigent.session_ready", [])) == 2
+    assert len(by_type.get("omnigent.first_message", [])) == 1
+    assert by_type["omnigent.first_message"][0]["session_id"] == "cfc71bc293574bb0b0a94457bcecb06a"
+    assert by_type["omnigent.first_message"][0]["ready_to_first_message_ms"] == 999
+
+    assert len(by_type.get("omnigent.first_message_missing", [])) == 1
+    assert by_type["omnigent.first_message_missing"][0]["session_id"] == "8c0251b52eaf462b83fc948244cbab30"
+
+    assert len(by_type.get("omnigent.terminal_exited_early", [])) == 1
+    assert by_type["omnigent.terminal_exited_early"][0]["session_id"] == "49270f8f738d4fcd8122a46dce5ad264"
+

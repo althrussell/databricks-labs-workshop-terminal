@@ -859,6 +859,10 @@ def harvest_user(user: User, *, single_attendee: bool = True) -> Harvest:
         _scan_transcripts(user.home, result)
         _scan_documents(user.home, result, include_shared_tmp=single_attendee)
         _commit_subjects(user.home, result)
+        if result.errors:
+            from . import friction_scanner
+
+            friction_scanner.scan_error_lines(user.email, result.errors)
     except Exception as exc:  # noqa: BLE001 — insight is never worth a 500
         logger.warning("artifact harvest failed for %s: %s", user.email, exc)
         _issue(result, "artifact_harvest_failed")

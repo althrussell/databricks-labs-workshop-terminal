@@ -108,7 +108,7 @@ def _assert_schema(instance, schema, path="$"):
 def test_app_yaml_binds_runtime_port_and_required_resources():
     config = yaml.safe_load((APP_DIR / "app.yaml").read_text())
 
-    assert config["command"] == ["python", "app.py"]
+    assert config["command"] == ["python", "otel_bootstrap.py"]
     env = {entry["name"]: entry for entry in config["env"]}
     assert env["AP_LAKEBASE_ENDPOINT"]["valueFrom"] == "postgres"
     assert env["AP_ARTIFACT_VOLUME_PATH"]["valueFrom"] == "artifact_volume"
@@ -136,6 +136,13 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
         "WORKSHOP_ROUTING_MODEL_ORDER",
         "WORKSHOP_ROUTING_MODEL_EXCLUDE",
         "WORKSHOP_APP_URL",
+        "WORKSHOP_RUN_ID",
+        "WORKSHOP_UNIT_ID",
+        "EVENT_NAME",
+        "WORKSHOP_RELEASE_SHA",
+        "OTEL_TRACES_SAMPLER",
+        "OTEL_TRACES_SAMPLER_ARG",
+        "OTEL_PYTHON_FASTAPI_EXCLUDED_URLS",
     }
     required = {
         "AP_LAKEBASE_ENDPOINT",
@@ -161,6 +168,9 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
         "PIP_INDEX_URL",
         "NPM_CONFIG_REGISTRY",
         "npm_config_registry",
+        "OTEL_TRACES_SAMPLER",
+        "OTEL_TRACES_SAMPLER_ARG",
+        "OTEL_PYTHON_FASTAPI_EXCLUDED_URLS",
     }:
         assert env[name].get("value", "") == "", f"{name} must ship empty"
     assert not {
