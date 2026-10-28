@@ -5,6 +5,7 @@ import {
   Download,
   GraduationCap,
   House,
+  ImagePlus,
   Link as LinkIcon,
   MessageSquare,
   Rocket,
@@ -25,6 +26,7 @@ import {
   ProjectSelection,
   SessionInfo,
   WizardBrief,
+  onWrongIdentity,
   relaunchAndAcknowledge,
   sessionConflictFrom,
   splitSessionPayload,
@@ -139,6 +141,11 @@ export default function App() {
     try { return localStorage.getItem(restoreSeenKey) ?? ""; } catch { return ""; }
   });
   const [savedChecked, setSavedChecked] = useState(false);
+  const [keepaliveNonce, setKeepaliveNonce] = useState(0);
+  const [wrongIdentityDetail, setWrongIdentityDetail] = useState<string | null>(null);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [attachBusy, setAttachBusy] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
   const savedAutoCheck = useRef(false);
   const helpChatOpenRef = useRef(false);
   const wizardChecked = useRef(false);
@@ -223,6 +230,7 @@ export default function App() {
   }, [wizardDismissalKey]);
 
   const refreshIdentity = useCallback(async () => {
+    setKeepaliveNonce((n) => n + 1);
     const cfg = await api.config();
     setConfig(cfg);
     setWorkshopState((current) => advanceWorkshopState(current, cfg.workshop.state));
@@ -267,7 +275,12 @@ export default function App() {
     setPendingSwitch(null);
   }, [inputDisabled]);
 
+  useEffect(() => onWrongIdentity((detail) => {
+    setWrongIdentityDetail(detail);
+  }), []);
+
   useEffect(() => {
+    if (wrongIdentityDetail) return;
     const refresh = () =>
       refreshIdentity().catch((e) =>
         setError(e instanceof Error ? e.message : String(e))
@@ -279,22 +292,22 @@ export default function App() {
       .catch((e) => setError(
         e instanceof Error ? e.message : String(e)
       ))
-      // Either way the answer is known, which is what the wizard is waiting on.
-      // A failed lookup counts as loaded: an attendee whose very first request
-      // failed is not mid-build, and suppressing the wizard forever on a network
-      // blip is the worse of the two mistakes.
       .finally(() => setSessionsLoaded(true));
 
     refreshAgents();
     void refreshProjects().catch(() => undefined);
     const interval = setInterval(refreshAgents, 5000);
     const projectInterval = setInterval(() => { void refreshProjects().catch(() => undefined); }, 15000);
+    const keepaliveInterval = setInterval(() => {
+      refresh();
+    }, 600000);
     return () => {
       clearInterval(interval);
       clearInterval(projectInterval);
+      clearInterval(keepaliveInterval);
       stopIdentityRefresh();
     };
-  }, [refreshAgents, refreshIdentity, refreshSessions, refreshProjects]);
+  }, [wrongIdentityDetail, refreshAgents, refreshIdentity, refreshSessions, refreshProjects]);
 
   // A restarted container restores saved builds in the background; follow it
   // closely until it finishes rather than at the 15 s cadence.
@@ -554,6 +567,12 @@ export default function App() {
   }
 
   async function requestAgent(agentId: string, starterPrompt = "") {
+    const target = agents.find((a) => a.id === agentId);
+    const externalUrl = target?.external_url || (agentId === "omnigent" && config?.omnigent_remote?.enabled ? config.omnigent_remote.url : "");
+    if (externalUrl) {
+      window.open(externalUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
     const selection = agentSelection(session, agentId);
     if (selection === "focus") {
       setView("agent");
@@ -583,6 +602,13 @@ export default function App() {
    */
   async function launchFromWizard(agentId: string, starterPrompt: string, signal: AbortSignal) {
     if (signal.aborted) return;
+    const target = agents.find((a) => a.id === agentId);
+    const externalUrl = target?.external_url || (agentId === "omnigent" && config?.omnigent_remote?.enabled ? config.omnigent_remote.url : "");
+    if (externalUrl) {
+      window.open(externalUrl, "_blank", "noopener,noreferrer");
+      setWizardOpen(false);
+      return;
+    }
     if (session && !session.exited) {
       if (session.agent_id !== agentId) {
         throw new Error("An agent is already open. Choose that agent, or close it before opening another.");
@@ -774,6 +800,59 @@ export default function App() {
     }
   }
 
+  async function downloadAllCode() {
+    if (inputDisabled || exportBusy) return;
+    setExportBusy(true);
+    try {
+      const { blob, filename } = await api.exportCode();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExportBusy(false);
+    }
+  }
+
+  async function attachImageFile(file: File) {
+    if (inputDisabled || attachBusy) return;
+    setAttachBusy(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("Could not read image file"));
+        reader.readAsDataURL(file);
+      });
+      const res = await api.attachImage({
+        filename: file.name || "screenshot.png",
+        data_base64: dataUrl,
+        project_name: projectInventory?.active || undefined,
+      });
+      if (session && !session.exited) {
+        await api.typeIntoSession(session.id, `${res.path} `);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAttachBusy(false);
+    }
+  }
+
+  if (wrongIdentityDetail) {
+    return (
+      <div className="boot-screen" role="alert">
+        <div style={{ maxWidth: "480px", textAlign: "center", lineHeight: 1.5 }}>
+          <h2 style={{ marginBottom: "8px" }}>Signed in as a different user</h2>
+          <p>{wrongIdentityDetail}</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!config && !error) {
     return <div className="boot-screen">Loading workshop…</div>;
   }
@@ -876,6 +955,18 @@ export default function App() {
           <button className="operator-toggle" disabled={inputDisabled} onClick={() => setPreferencesOpen(true)} aria-label="Agent preferences" title="Agent preferences — change how your agent helps">
             <Settings2 size={16} aria-hidden="true" /><span className="nav-label">Agent preferences</span>
           </button>
+          {Boolean(projectInventory?.active || (projectInventory?.projects && projectInventory.projects.length > 0)) && (
+            <button
+              className="operator-toggle"
+              disabled={inputDisabled || exportBusy}
+              onClick={() => void downloadAllCode()}
+              aria-label="Download my code"
+              title="Download a ZIP of your workshop projects"
+            >
+              <Download size={16} aria-hidden="true" />
+              <span className="nav-label">{exportBusy ? "Exporting…" : "Download my code"}</span>
+            </button>
+          )}
           <button className="operator-toggle" disabled={inputDisabled} onClick={openCertificate} aria-label="Certificate" title="Download your certificate">
             <Award size={16} aria-hidden="true" />
             <span className="nav-label">Certificate</span>
@@ -926,6 +1017,15 @@ export default function App() {
         obo={config?.obo}
         onReload={() => location.reload()}
       />}
+      {!inputDisabled && (config?.omnigent_remote.enabled || config?.obo.enabled) && keepaliveNonce > 0 && (
+        <iframe
+          src={`/api/auth/keepalive?t=${keepaliveNonce}`}
+          title="Sign-in keepalive"
+          aria-hidden="true"
+          tabIndex={-1}
+          style={{ display: "none" }}
+        />
+      )}
       <ToastHost
         onOpenHelp={() => setHelpChatOpen(true)}
         helpOpen={helpChatOpen}
@@ -1007,6 +1107,30 @@ export default function App() {
               <div className="toolbar">
                 <LaunchBar agents={agents} launching={launching} onLaunch={requestAgent} />
                 <div className="active-agent">
+                  {!session.exited && (
+                    <>
+                      <input
+                        ref={imageInputRef}
+                        type="file"
+                        accept="image/*"
+                        style={{ display: "none" }}
+                        onChange={(ev) => {
+                          const file = ev.target.files?.[0];
+                          ev.target.value = "";
+                          if (file) void attachImageFile(file);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        disabled={inputDisabled || attachBusy}
+                        title="Save a screenshot into your project and insert its path into the prompt"
+                        onClick={() => imageInputRef.current?.click()}
+                      >
+                        <ImagePlus size={14} aria-hidden="true" /> {attachBusy ? "Attaching…" : "Attach image"}
+                      </button>
+                    </>
+                  )}
                   <span>{session.label} {session.exited ? "has ended" : "is running"}</span>
                   {session.exited && (
                     <button

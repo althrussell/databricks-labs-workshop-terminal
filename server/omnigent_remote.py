@@ -133,6 +133,10 @@ def build_host_launch(
         "--non-interactive",
     ]
     cwd = os.path.join(user.home, "projects")
+    env["WORKSHOP_PROJECTS_ROOT"] = cwd
+    env[RUNNER_ENV_PASSTHROUGH] = ",".join(
+        sorted(key for key in env if not key.startswith("OMNIGENT_"))
+    )
     return argv, env, cwd
 
 

@@ -25,7 +25,7 @@ from typing import Any
 from . import design_workflow, projects
 
 #: Coarse facilitator signals. ``working`` covers everything else.
-STATUSES = ("needs_decision", "ready_to_try", "blocked", "help_requested", "working")
+STATUSES = ("not_started", "needs_decision", "ready_to_try", "blocked", "help_requested", "working")
 _BLOCKING_GAPS = {"sign_in_blocked", "page_did_not_load", "app_not_found", "browser_failed_to_start"}
 EXPORT_REUSE_SECONDS = 300
 _exports: dict[str, dict] = {}
@@ -114,7 +114,7 @@ def view(user, *, session=None) -> dict:
     project = active_project(user)
     state = projects.read(user)
     if project is None:
-        return {"project": state["active"] or None, "status": "needs_decision", "phase": "understand",
+        return {"project": state["active"] or None, "status": "not_started", "phase": "understand",
                 "path": None, "next_decision": "choose or name a build to start",
                 "goal": state["goals"].get(state["active"], "") if state["active"] else "",
                 "review": {"state": "none"}, "deploy": {"state": "not_deployed", "preview_url": None},
@@ -284,6 +284,17 @@ def export(user, *, reason: str = "attendee", reuse: bool = False) -> dict:
         cached = _exports.get(user.email)
         if reuse and cached and time.time() - cached["at"] < EXPORT_REUSE_SECONDS:
             return {**cached["result"], "reused": True}
+        try:
+            from . import browser_evidence
+
+            if browser_evidence.browser_binary(allow_system_capture=True):
+                root = projects.root(user)
+                if root.is_dir():
+                    for child in sorted(root.iterdir()):
+                        if child.is_dir() and not child.is_symlink() and not child.name.startswith("."):
+                            browser_evidence.capture_project_preview_screenshot(user, child)
+        except Exception:  # noqa: BLE001 — screenshot capture never blocks code export
+            pass
         helper = os.path.join(user.home, ".local", "bin", "workshop-export")
         if not os.path.isfile(helper):
             helper = os.path.join(os.path.dirname(__file__), "..", "assets", "bin", "workshop-export")

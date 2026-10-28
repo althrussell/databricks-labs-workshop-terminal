@@ -14,37 +14,24 @@ export function terminalGatewayLimit(
 ): Extract<AttendeeErrorCode, "gateway_allowance_exhausted" | "gateway_rate_limited"> | null {
   const text = output.replace(ANSI_ESCAPE, "").toLowerCase();
   const failure = "(?:\\b403\\b|\\b429\\b|forbidden|too many requests)";
-  const allowance = [
-    "budget",
-    "spend[ _-]limit",
-    "allowance",
-    "quota[ _-]exhausted",
-    "cost[ _-]limit",
-    "usage[ _-]limit",
-    "out[ _-]of[ _-]credits",
-    "exceeded[ _-]limit",
-  ].join("|");
   const rateLimit = [
     "rate[ _-]limit",
     "too many requests",
     "tpm[ _-]exceeded",
     "rpm[ _-]exceeded",
   ].join("|");
-  // Prefer an explicit request/token rate-limit denial over generic allowance
-  // words. The rolling terminal window can contain ordinary project prose
-  // such as "budget" immediately before a definitive 429 TPM/RPM error.
   if (text.includes("too many requests")) return "gateway_rate_limited";
   const rateLimitFailure = new RegExp(
-    `(?:${failure})[\\s\\S]{0,768}(?:${rateLimit})|(?:${rateLimit})[\\s\\S]{0,768}(?:${failure})`
+    `(?:${failure})[\\s\\S]{0,200}(?:${rateLimit})|(?:${rateLimit})[\\s\\S]{0,200}(?:${failure})`
   );
   if (rateLimitFailure.test(text)) return "gateway_rate_limited";
 
-  // Require the HTTP denial and allowance wording to be part of the same
-  // nearby error. A project can legitimately print both words at different
-  // times; that must not become a workshop budget banner.
-  const allowanceFailure = new RegExp(
-    `(?:${failure})[\\s\\S]{0,768}(?:${allowance})|(?:${allowance})[\\s\\S]{0,768}(?:${failure})`
-  );
-  if (allowanceFailure.test(text)) return "gateway_allowance_exhausted";
+  // Require an explicit AI Gateway / API Error prefix or machine-readable
+  // spend code on the same line, never loose "403" + "budget" anywhere in the
+  // 4 KB terminal scrollback (Seat 23 built a budget-vs-actual app and got a
+  // false allowance banner, EQL 27 Oct 2026).
+  const explicitAllowance =
+    /\b429\s+service_spend_limit_reached\b|(?:api\s+error|error)\s*[: ]\s*40[39][^\r\n]{0,120}\b(?:ai\s+gateway\s+budget|budget\s+policy\s+limit|spend[ _-]limit|allowance\s+exhausted|quota[ _-]exhausted|out[ _-]of[ _-]credits)\b/;
+  if (explicitAllowance.test(text)) return "gateway_allowance_exhausted";
   return null;
 }

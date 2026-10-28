@@ -8,10 +8,11 @@
 
 ## Databricks essentials
 
-- `databricks …` (`DEFAULT` profile) builds, deploys and provisions;
-  `databricks-me …` (`me` profile) reads as the attendee. In Python:
-  `WorkspaceClient(profile="DEFAULT")` builds, `profile="me"` reads. Run
-  `workshop-grant-me` for instant access.
+- `databricks …` (`DEFAULT`) builds, deploys, provisions, and reads;
+  `databricks-me …` (`me`) reads as the attendee when testing row/column
+  security. In Python: `WorkspaceClient(profile="DEFAULT")` builds, `profile="me"`
+  reads. Run `workshop-grant-me` for instant access. Never query `system.*`
+  tables (`system.billing`, `system.access`, `system.compute`).
 - Create Unity Catalog objects in `$WORKSHOP_CATALOG` (`$WORKSHOP_SCHEMA` when
   set), never a new catalog. Clone `$WORKSHOP_DEMO_CATALOG` tables with `DEEP
   CLONE` into `$WORKSHOP_CATALOG` to write. Prefer serverless.
@@ -24,7 +25,7 @@
 
 Run `apx dev check` and `apx build`, then deploy only with
 `workshop-app-deploy` (`deploy_databricks_app` MCP), never `databricks bundle
-deploy`. Share the URL as a first preview. A deploy timeout resumes when rerun.
+deploy`. Share the URL as a preview. A deploy timeout resumes when rerun.
 
 <!-- discovery-anchor -->
 

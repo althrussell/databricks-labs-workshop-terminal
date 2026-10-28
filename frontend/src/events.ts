@@ -206,14 +206,39 @@ function connect() {
 }
 
 // Heartbeat keeps presence fresh and detects half-open connections.
-setInterval(() => {
+const heartbeatTimer = setInterval(() => {
   appConnection?.ping();
 }, 20000);
+(heartbeatTimer as { unref?: () => void })?.unref?.();
 
 export function onAppEvent(listener: Listener): () => void {
   listeners.add(listener);
   if (!appConnection) connect();
   return () => listeners.delete(listener);
+}
+
+/** Measure round-trip time over the shared /ws/events socket. */
+export function pingAppSocket(timeoutMs = 5000): Promise<number | null> {
+  if (!appConnection) connect();
+  return new Promise((resolve) => {
+    const started = typeof performance !== "undefined" ? performance.now() : Date.now();
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      unsubscribe();
+      resolve(null);
+    }, timeoutMs);
+    const unsubscribe = onAppEvent((event) => {
+      if (event.t !== "pong" || settled) return;
+      settled = true;
+      clearTimeout(timer);
+      unsubscribe();
+      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+      resolve(Math.max(0, Math.round(now - started)));
+    });
+    appConnection?.ping();
+  });
 }
 
 interface EventSource {

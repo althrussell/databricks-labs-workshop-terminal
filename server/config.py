@@ -119,6 +119,12 @@ def admin_group() -> str:
     return _env("ADMIN_GROUP", "platform_admins")
 
 
+def admin_groups() -> frozenset[str]:
+    """All configured operator groups (comma-separated in ``ADMIN_GROUP``)."""
+    raw = admin_group()
+    return frozenset(part.strip() for part in raw.split(",") if part.strip())
+
+
 def access_group() -> str:
     return _env("ACCESS_GROUP")
 
@@ -433,7 +439,7 @@ def omnigent_stale_grace() -> int:
     Past this it is stood down into ``waiting_for_token`` — visibly gated and
     recoverable — rather than left running and failing every session with an
     auth error the attendee cannot act on."""
-    return max(5, _env_int("OMNIGENT_STALE_GRACE_S", 60))
+    return max(5, _env_int("OMNIGENT_STALE_GRACE_S", 300))
 
 
 def obo_renew_lead() -> int:
@@ -632,7 +638,7 @@ def obo_scopes() -> str:
     """
     return _env(
         "OBO_SCOPES",
-        "catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql",
+        "catalog.catalogs:read,catalog.schemas:read,catalog.tables:read,sql,sql.warehouses:read,postgres,files,ai-gateway,model-serving",
     )
 
 

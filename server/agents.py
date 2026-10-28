@@ -154,10 +154,11 @@ WORKSHOP_OPENER = "Hi! I've just sat down for the workshop. Let's get started."
 #: exists, or they already had their first session).
 RETURN_OPENER = "Hi! I'm back at the workshop. Let's pick up where we left off."
 
-#: How each CLI takes a first message at launch: ``claude [prompt]``,
-#: ``codex [PROMPT]`` and Omnigent's ``-p/--prompt`` ("Send this as the first
-#: message when the REPL starts").
-_FIRST_MESSAGE_FLAGS = {"claude": (), "codex": (), "omnigent": ("-p",)}
+#: How each CLI takes a first message at launch: ``claude [prompt]`` and
+#: ``codex [PROMPT]``. Omnigent's ``-p`` flag is intentionally omitted: passing
+#: ``-p`` skips ``workshop-omnigent``'s resume/continue probe and causes the
+#: 0.19.1 REPL to stop its session after the greeting turn (EQL, 27 Oct 2026).
+_FIRST_MESSAGE_FLAGS = {"claude": (), "codex": ()}
 
 
 def switch_opener(agent: dict | str) -> str:

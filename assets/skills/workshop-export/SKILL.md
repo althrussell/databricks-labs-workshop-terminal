@@ -40,8 +40,10 @@ environment variable before exporting. Do not copy home configuration or
 tokens into the project to make it run elsewhere. Databricks resources and
 application data are separate from this source export.
 
-After a verified upload, show the attendee the exact Volume link, ZIP filename
-and these download steps on screen:
+After a verified upload, tell the attendee they can click **Download my code**
+in the Workshop Terminal header to download the ZIP directly to their computer,
+and also show the exact Volume link, ZIP filename and these Catalog Explorer
+fallback steps on screen:
 
 1. Open **Catalog** in Databricks, then the assigned **catalog → schema**.
 2. Open **Volumes → workshop_exports → code**.

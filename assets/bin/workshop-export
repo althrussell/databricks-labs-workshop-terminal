@@ -81,6 +81,22 @@ def build_archive(source: Path, destination: Path, *, single_project: bool) -> d
                         member = Path(source.name) / relative if single_project else relative
                         archive.write(context, arcname=(Path("workshop-code") / member).as_posix())
                         included.append(member.as_posix())
+                    evidence_dir = path / "evidence"
+                    if (name == ".workshop" and project_root and not path.is_symlink()
+                            and evidence_dir.is_dir() and not evidence_dir.is_symlink()):
+                        for shot in sorted(evidence_dir.glob("*.png")):
+                            if shot.is_file() and not shot.is_symlink():
+                                rel_project = parent.relative_to(source)
+                                shot_member = (
+                                    Path(source.name) / "screenshots" / shot.name
+                                    if single_project
+                                    else rel_project / "screenshots" / shot.name
+                                )
+                                archive.write(
+                                    shot,
+                                    arcname=(Path("workshop-code") / shot_member).as_posix(),
+                                )
+                                included.append(shot_member.as_posix())
             dirs.sort()
             for name in sorted(files):
                 path = parent / name
@@ -209,6 +225,31 @@ def workspace_host() -> str:
     return host.rstrip("/")
 
 
+def upload_screenshots(source: Path, catalog: str, schema: str, *, single_project: bool) -> list[str]:
+    uploaded: list[str] = []
+    candidates = [source] if single_project else [
+        child for child in sorted(source.iterdir())
+        if child.is_dir() and not child.is_symlink() and not child.name.startswith(".")
+    ]
+    shots: list[tuple[str, Path]] = []
+    for proj in candidates:
+        evidence = proj / ".workshop" / "evidence"
+        if evidence.is_dir() and not evidence.is_symlink():
+            pngs = [p for p in sorted(evidence.glob("*.png")) if p.is_file() and not p.is_symlink()]
+            if pngs:
+                shots.append((proj.name, pngs[-1]))
+    if not shots:
+        return uploaded
+    folder = f"/Volumes/{catalog}/{schema}/{VOLUME}/screenshots"
+    run_cli(["fs", "mkdirs", "dbfs:" + folder], allow_failure=True)
+    for proj_name, png in shots:
+        dest = f"{folder}/{proj_name}-{png.name}"
+        cp_res = run_cli(["fs", "cp", str(png), "dbfs:" + dest], allow_failure=True)
+        if cp_res.returncode == 0:
+            uploaded.append(dest)
+    return uploaded
+
+
 def export(project: str | None = None) -> dict:
     catalog, schema = namespace()
     projects = Path.home() / "projects"
@@ -224,13 +265,16 @@ def export(project: str | None = None) -> dict:
     # A local copy survives an upload/authentication failure; it is outside the
     # source tree so repeat exports never recursively include previous ZIPs.
     archive.touch(mode=0o600, exist_ok=False)
-    result = build_archive(source, archive, single_project=project is not None)
+    single_project = project is not None
+    result = build_archive(source, archive, single_project=single_project)
     try:
         path = upload_archive(archive, catalog, schema)
     except (ExportError, OSError, ValueError) as error:
         raise ExportError(f"{error}\nLocal ZIP retained at {archive}") from None
+    screenshots = upload_screenshots(source, catalog, schema, single_project=single_project)
     host = workspace_host()
     return {**result, "local_zip": str(archive), "volume_path": path,
+            "screenshots": screenshots,
             "volume": f"{catalog}.{schema}.{VOLUME}", "filename": archive.name,
             "verified": True,
             "volume_url": (host + "/explore/data/volumes/" + "/".join(

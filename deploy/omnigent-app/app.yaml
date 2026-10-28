@@ -51,3 +51,5 @@ env:
     value: ""
   - name: WORKSHOP_ROUTING_MODEL_EXCLUDE
     value: ""
+  - name: WORKSHOP_APP_URL
+    value: ""

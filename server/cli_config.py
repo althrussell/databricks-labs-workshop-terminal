@@ -384,6 +384,12 @@ def configure_claude(
             # denied request ten times, wasting workshop time while implying the
             # failure may clear on its own. Return the first denial immediately.
             "CLAUDE_CODE_MAX_RETRIES": "0",
+            # Suppress non-essential startup/background probes that send
+            # unsupported parameters to the Databricks AI Gateway (313 x 400 at
+            # EQL session start, 27 Oct 2026).
+            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+            "DISABLE_TELEMETRY": "1",
+            "DISABLE_ERROR_reporting": "1",
         }
     )
     # A static ANTHROPIC_AUTH_TOKEN in the env block would take precedence over
@@ -415,6 +421,9 @@ def configure_claude(
             denied.append(tool)
         elif not config.omnigent_offered() and tool in denied:
             denied.remove(tool)
+    if gateway:
+        if "WebSearch" not in denied:
+            denied.append("WebSearch")
     if not denied:
         permissions.pop("deny", None)
     if config.auto_mode_enabled():
@@ -886,15 +895,22 @@ def configure_databricks_cli(user: User, token: str) -> None:
 def _write_omnigent_profile_locked(user: User, obo_token: str) -> None:
     """Mirror the attendee profile into the Omnigent-plane config.
 
-    Whole-file write rather than read-modify-write: this file holds exactly one
-    profile by design, and rebuilding it is how we guarantee no other credential
-    can accumulate in it.
+    Whole-file write rather than read-modify-write: this file holds only the
+    attendee's OBO credential (never the app service principal). Writing both
+    ``[DEFAULT]`` and ``[me]`` with the attendee's OBO token guarantees that
+    Python code calling ``WorkspaceClient(profile="DEFAULT")`` inside Omnigent
+    never fails with ``profile DEFAULT not found`` while keeping the Omnigent
+    plane 100% SP-free.
     """
     parser = configparser.ConfigParser()
+    host = config.databricks_host()
+    parser["DEFAULT"]["host"] = host
+    parser["DEFAULT"]["token"] = obo_token
     profile = config.obo_profile_name()
-    parser.add_section(profile)
-    parser[profile]["host"] = config.databricks_host()
-    parser[profile]["token"] = obo_token
+    if profile.upper() != "DEFAULT":
+        parser.add_section(profile)
+        parser[profile]["host"] = host
+        parser[profile]["token"] = obo_token
     import io
 
     output = io.StringIO()

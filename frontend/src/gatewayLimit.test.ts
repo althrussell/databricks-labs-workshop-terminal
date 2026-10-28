@@ -41,6 +41,10 @@ test("ordinary terminal prose cannot create a false budget banner", () => {
   assert.equal(terminalGatewayLimit("Our project budget is $100"), null);
   assert.equal(terminalGatewayLimit("HTTP 403 from a storage API"), null);
   assert.equal(
+    terminalGatewayLimit("HTTP 403 forbidden on table main.sales\r\nBuilding budget vs actual dashboard"),
+    null
+  );
+  assert.equal(
     terminalGatewayLimit("403 from storage" + ".".repeat(900) + "project budget"),
     null
   );

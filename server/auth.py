@@ -319,7 +319,8 @@ def require_admin(request: Request) -> Principal:
     else:
         principal = _principal_from_headers(request.headers)
 
-    if config.admin_group() not in get_groups(principal):
+    allowed = config.admin_groups() | {config.admin_group()}
+    if not (allowed & get_groups(principal)):
         raise HTTPException(
             status_code=403,
             detail=f"Operator access requires membership in the '{config.admin_group()}' group",
@@ -328,4 +329,5 @@ def require_admin(request: Request) -> Principal:
 
 
 def is_admin(principal: Principal) -> bool:
-    return config.admin_group() in get_groups(principal)
+    allowed = config.admin_groups() | {config.admin_group()}
+    return bool(allowed & get_groups(principal))

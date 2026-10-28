@@ -879,7 +879,8 @@ class DeployController:
 
     def _observe_app(self, state: dict[str, Any], project: Path) -> None:
         try:
-            snapshot = _snapshot(self.backend.get_app(project, state["app_name"]))
+            app_payload = self.backend.get_app(project, state["app_name"])
+            snapshot = _snapshot(app_payload)
         except CliError:
             return
         if snapshot["url"]:
@@ -888,6 +889,18 @@ class DeployController:
             state["deployment_id"] = _new_deployment_id(
                 snapshot, set(state.get("baseline_deployment_ids") or [])
             )
+        sp_id = (
+            app_payload.get("service_principal_client_id")
+            or app_payload.get("service_principal_id")
+        )
+        if sp_id and not state.get("early_entitlement_reconciled"):
+            post = getattr(self.reporter, "_post", None)
+            if callable(post):
+                try:
+                    post("/api/entitlements/reconcile", {"resource_type": "apps"})
+                    state["early_entitlement_reconciled"] = True
+                except Exception:
+                    pass
 
     def _pause(self, cancel: threading.Event, deadline: float) -> None:
         remaining = max(0.0, deadline - self.monotonic())
@@ -926,6 +939,18 @@ class DeployController:
         return result
 
     def _record_workflow_preview(self, project: Path, app_url: str) -> None:
+        readme_path = project / "README.md"
+        if readme_path.is_file() and not readme_path.is_symlink():
+            try:
+                readme_text = readme_path.read_text(encoding="utf-8", errors="replace")
+                updated_readme = readme_text.replace(
+                    "Live URL: (added once the app is deployed)",
+                    f"Live URL: {app_url}",
+                )
+                if updated_readme != readme_text:
+                    readme_path.write_text(updated_readme, encoding="utf-8")
+            except OSError:
+                pass
         workflow_path = project / ".workshop" / "design-workflow.json"
         if workflow_path.is_symlink() or workflow_path.parent.is_symlink():
             return

@@ -72,7 +72,7 @@ def test_the_first_agent_opens_with_the_workshop_opener_and_only_once(client, mo
 @pytest.mark.parametrize("agent, expected", [
     ("claude", "claude 'Hi! I'\"'\"'ve just sat down for the workshop. Let'\"'\"'s get started.'"),
     ("codex", "codex --no-daemon 'Hi! I'\"'\"'ve just sat down for the workshop. Let'\"'\"'s get started.'"),
-    ("omnigent", "workshop-omnigent -p 'Hi! I'\"'\"'ve just sat down for the workshop. Let'\"'\"'s get started.'"),
+    ("omnigent", "workshop-omnigent"),
 ])
 def test_each_cli_receives_the_opener_its_own_way(agent, expected):
     from server import agents

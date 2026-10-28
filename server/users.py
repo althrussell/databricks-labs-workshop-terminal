@@ -284,6 +284,9 @@ class User:
             "  export DATABRICKS_CONFIG_FILE\n"
             "  unset DATABRICKS_CONFIG_PROFILE\n"
             "fi\n"
+            'if [ "${1:-}" = "apps" ] && [ "${2:-}" = "logs" ] && [ -n "${3:-}" ]; then\n'
+            f'  exec python3 -c \'import configparser,json,os, subprocess, sys, urllib.request; cfg=configparser.ConfigParser(); cfg.read(os.path.expanduser(os.environ.get("DATABRICKS_CONFIG_FILE","~/.databrickscfg"))); tok=cfg.get("DEFAULT","token",fallback=""); info=json.loads(subprocess.check_output(["{real}","apps","get",sys.argv[1],"--output","json"],text=True)); url=(info.get("url") or "").rstrip("/"); req=urllib.request.Request(url+"/logz",headers={{"Authorization":"Bearer "+tok}}); sys.stdout.write(urllib.request.urlopen(req,timeout=15).read().decode("utf-8","replace"))\' "$3"\n'
+            "fi\n"
             f'exec "{real}" "$@"\n'
         )
         self._write_generated(path, content)

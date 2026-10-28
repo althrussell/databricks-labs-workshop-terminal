@@ -75,11 +75,11 @@ def _explicitly_disabled() -> bool:
     return raw is not None and raw.strip() != "" and not config.workshop_browser_enabled()
 
 
-def browser_binary() -> str | None:
+def browser_binary(*, allow_system_capture: bool = False) -> str | None:
     explicit = os.environ.get("WORKSHOP_BROWSER", "").strip()
     if explicit:
         return explicit if os.path.isfile(explicit) and os.access(explicit, os.X_OK) else None
-    if _explicitly_disabled():
+    if _explicitly_disabled() and not allow_system_capture:
         return None
     try:
         stamp = json.loads((Path(config.shared_prefix()) / BROWSER_STAMP).read_text())
@@ -396,12 +396,17 @@ class InspectRequest:
     settle_seconds: float = 2.0
 
 
-def inspect(request: InspectRequest, *, binary: str | None = None) -> dict:
+def inspect(
+    request: InspectRequest,
+    *,
+    binary: str | None = None,
+    allow_system_capture: bool = False,
+) -> dict:
     """Render the app, run the actions, and write real screenshots into the project."""
     check_target(request.url, request.scope)
     actions = parse_actions(request.actions)
     viewports = [v for v in request.viewports if v in VIEWPORTS] or ["desktop"]
-    binary = binary or browser_binary()
+    binary = binary or browser_binary(allow_system_capture=allow_system_capture)
     if binary is None:
         raise Gap("browser_unavailable", status().get("reason", "no prepared browser"))
     if request.scope == "deployed" and not request.token:
@@ -495,6 +500,75 @@ def attendee_token(user) -> tuple[str, str]:
     return parser.get(profile, "host", fallback="").rstrip("/"), parser.get(profile, "token", fallback="")
 
 
+def archival_token(user) -> str:
+    """Fresh attendee OBO token, falling back to WT's app SP token for pre-teardown archival."""
+    from . import obo
+
+    status = obo.obo_manager.status(user.email)
+    if status.get("fresh"):
+        _host, tok = attendee_token(user)
+        if tok:
+            return tok
+    try:
+        from .credentials import credential_manager
+
+        return credential_manager.token()
+    except Exception:  # noqa: BLE001
+        _host, tok = attendee_token(user)
+        return tok
+
+
+def capture_project_preview_screenshot(user, project: Path) -> dict | None:
+    """Best-effort desktop screenshot of a project's deployed preview_url."""
+    from . import design_workflow
+
+    try:
+        record_doc = design_workflow.read(project)
+    except Exception:  # noqa: BLE001
+        return None
+    preview_url = (
+        ((record_doc.get("evidence") or {}).get("build") or {}).get("preview")
+        if isinstance(record_doc, dict)
+        else None
+    )
+    if not isinstance(preview_url, str) or not preview_url.strip():
+        return None
+    artifacts = (
+        ((record_doc.get("evidence") or {}).get("inspect") or {}).get("artifacts") or []
+    )
+    current_rev = _revision(project)
+    for item in artifacts:
+        if (
+            isinstance(item, dict)
+            and item.get("kind") == "screenshot"
+            and item.get("revision") == current_rev
+            and item.get("path")
+            and (project / str(item["path"])).is_file()
+        ):
+            return item
+    token = archival_token(user)
+    if not token:
+        return None
+    try:
+        req = InspectRequest(
+            url=preview_url.strip(),
+            scope="deployed",
+            viewports=["desktop"],
+            actions=[],
+            project=project,
+            token=token,
+            settle_seconds=2.5,
+        )
+        res = inspect(req, allow_system_capture=True)
+        shots = res.get("artifacts") or []
+        if shots:
+            record(project, shots)
+            return shots[0]
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
 # ---------------------------------------------------------------------------
 # The workflow record
 # ---------------------------------------------------------------------------
@@ -515,5 +589,16 @@ def record(project: Path, entries: list[dict]) -> int:
     return saved["revision"]
 
 
-__all__ = ["Gap", "InspectRequest", "attendee_token", "browser_binary", "check_target", "inspect",
-           "parse_actions", "record", "status"]
+__all__ = [
+    "Gap",
+    "InspectRequest",
+    "archival_token",
+    "attendee_token",
+    "browser_binary",
+    "capture_project_preview_screenshot",
+    "check_target",
+    "inspect",
+    "parse_actions",
+    "record",
+    "status",
+]
