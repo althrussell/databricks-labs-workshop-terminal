@@ -112,6 +112,7 @@ def build_host_launch(
     # eagerly. Gated on a resolved gateway for the same reason as the harness
     # settings: the serving-endpoints fallback is not the negotiating surface.
     env.update(cli_config.beta_negotiation_env(bool(cli_config.gateway_host())))
+    env.update(cli_config.CLAUDE_QUIET_ENV)
     identity = stable_host_identity(user, server_url)
     env["OMNIGENT_HOST_ID"] = identity.host_id
     env["OMNIGENT_HOST_NAME"] = identity.name
