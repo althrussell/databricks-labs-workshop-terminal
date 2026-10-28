@@ -133,7 +133,7 @@ def test_memory_distinguishes_preview_from_verified_task(client, monkeypatch):
     # carries it; the project worker's memory stays within its word budget.
     for parts in _MEMORY_CHANNELS[:2]:
         text = open(os.path.join(home, *parts)).read()
-        assert "workshop-browser --deployed`, try primary action as the attendee" in text
+        assert "workshop-browser inspect <url> --deployed`, check as attendee" in text
 
 
 def test_every_agent_gets_impeccables_setup_in_order_on_both_paths(client, monkeypatch):
