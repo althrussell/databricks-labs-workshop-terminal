@@ -7,6 +7,7 @@ process-local.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import subprocess
@@ -720,6 +721,7 @@ def stream_app_logs_snapshot(body: _AppLogsBody, request: Request):
     ``wss://<app-url>/logz/stream`` returns the real JSON log entries.
     """
     from datetime import datetime, timezone
+    import urllib.error
     import urllib.request
     from websockets.sync.client import connect
 
@@ -736,8 +738,13 @@ def stream_app_logs_snapshot(body: _AppLogsBody, request: Request):
     try:
         with urllib.request.urlopen(app_req, timeout=15) as resp:
             info = json.load(resp)
-    except Exception as exc:
-        raise HTTPException(status_code=404, detail=f"Could not read app {body.app_name!r}: {exc}") from exc
+    except urllib.error.HTTPError as exc:
+        # Only a real "no such app" is a 404; a refused or failing Apps API is
+        # the platform's problem, not the attendee's app name.
+        status = 404 if exc.code == 404 else 502
+        raise HTTPException(status_code=status, detail=f"Could not read app {body.app_name!r}: {exc}") from exc
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail=f"Could not read app {body.app_name!r}: {exc}") from exc
 
     app_url = str(info.get("url") or "").rstrip("/")
     if not app_url.startswith("https://"):
