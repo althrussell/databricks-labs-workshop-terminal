@@ -144,7 +144,12 @@ def _observe_output(session, chunk: str) -> None:
                 should_notify = True
             user.topics[topic] = now
             user.topic_hits[topic] = user.topic_hits.get(topic, 0) + 1
-        if should_notify:
+        if content_service.advance_to_build_if_default():
+            try:
+                event_hub.publish({"t": "phase", "phase": "build"})
+            except Exception:  # noqa: BLE001
+                pass
+        elif should_notify:
             try:
                 event_hub.publish({"t": "content_updated"})
             except Exception:  # noqa: BLE001
@@ -1528,6 +1533,8 @@ def select_project(body: SelectProjectBody, principal: Principal = Depends(get_c
                 raise HTTPException(status_code=409, detail="Close the current agent before switching builds. Its written files stay in place.")
             value = projects.select(user, body.name, goal=body.goal, new=body.new)
             user_content.provision(user)
+            if content_service.advance_to_build_if_default():
+                event_hub.publish({"t": "phase", "phase": "build"})
             return value
     except projects.ProjectError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
@@ -1797,6 +1804,8 @@ def create_session(
         raise HTTPException(status_code=503, detail=str(e)) from e
     user.sessions_launched[agent["id"]] = user.sessions_launched.get(agent["id"], 0) + 1
     user_manager.checkpoint(user)
+    if content_service.advance_to_build_if_default():
+        event_hub.publish({"t": "phase", "phase": "build"})
     telemetry.session_started(principal.name, agent["id"], session.id)
     entitlement_manager.wake("session_start")
     if body.replaces_agent_id and body.replaces_agent_id != agent["id"]:

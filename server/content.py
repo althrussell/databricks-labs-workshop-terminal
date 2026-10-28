@@ -390,6 +390,58 @@ class ContentService:
             self._phase_explicitly_set = explicit
         logger.info("workshop phase -> %s", phase)
 
+    def advance_to_build_if_default(self) -> bool:
+        """Automatically advance from intro/setup to build on first build activity."""
+        with self._lock:
+            if (
+                self._phase_explicitly_set
+                or self._phase not in {"intro", "setup"}
+                or "build" not in self._pack.phases
+            ):
+                return False
+            self._phase = "build"
+        logger.info("workshop phase auto-advanced -> build")
+        return True
+
+    def advance_to_wrap_if_default(self) -> bool:
+        """Automatically advance to wrap when the T-30/T-15 wrap-up window begins."""
+        with self._lock:
+            if (
+                self._phase_explicitly_set
+                or self._phase == "wrap"
+                or "wrap" not in self._pack.phases
+            ):
+                return False
+            self._phase = "wrap"
+        logger.info("workshop phase auto-advanced -> wrap")
+        return True
+
+    def advance_to_build_if_default(self) -> bool:
+        """Automatically advance from intro/setup to build on first build activity."""
+        with self._lock:
+            if (
+                self._phase_explicitly_set
+                or self._phase not in {"intro", "setup"}
+                or "build" not in self._pack.phases
+            ):
+                return False
+            self._phase = "build"
+        logger.info("workshop phase auto-advanced -> build")
+        return True
+
+    def advance_to_wrap_if_default(self) -> bool:
+        """Automatically advance to wrap when the T-30/T-15 wrap-up window begins."""
+        with self._lock:
+            if (
+                self._phase_explicitly_set
+                or self._phase == "wrap"
+                or "wrap" not in self._pack.phases
+            ):
+                return False
+            self._phase = "wrap"
+        logger.info("workshop phase auto-advanced -> wrap")
+        return True
+
     def set_broadcast(self, broadcast: Broadcast) -> None:
         with self._lock:
             self._broadcast = broadcast
