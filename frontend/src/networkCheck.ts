@@ -32,6 +32,27 @@ export interface NetworkCheckResult {
 
 export const EXPECTED_EVENT_COUNT = 11;
 export const RECHECK_COOLDOWN_MS = 10 * 60 * 1000;
+/** Re-check delays while the verdict is not ok: 30 s, 2 min, then every 5 min. */
+export const NOT_OK_RETRY_DELAYS_MS = [30_000, 120_000, 300_000];
+
+export function nextRetryDelayMs(attempt: number): number {
+  const index = Math.min(Math.max(0, Math.floor(attempt)), NOT_OK_RETRY_DELAYS_MS.length - 1);
+  return NOT_OK_RETRY_DELAYS_MS[index];
+}
+
+/**
+ * Nothing came back at all: no live event, no HTTP ping, no socket. That is a
+ * dropped connection (E2E 28 Oct: a DNS outage on the attendee's laptop), not
+ * a proxy holding back small events, so it must not get the proxy advice.
+ */
+export function isOutageShaped(result: NetworkCheckResult | null): boolean {
+  return Boolean(
+    result &&
+      result.received_count === 0 &&
+      result.http_rtt_ms === null &&
+      result.ws_rtt_ms === null
+  );
+}
 
 export function detectBrowserFamily(ua = typeof navigator !== "undefined" ? navigator.userAgent : ""): string {
   const lower = ua.toLowerCase();
@@ -121,8 +142,9 @@ export function formatNetworkSummary(result: NetworkCheckResult | null): {
     };
   }
   const lagSec = result.max_lag_ms !== null ? (result.max_lag_ms / 1000).toFixed(1) : "—";
-  const liveUpdates =
-    result.verdict === "ok"
+  const liveUpdates = isOutageShaped(result)
+    ? "Live updates: no connection"
+    : result.verdict === "ok"
       ? `Live updates: OK (${lagSec} s)`
       : result.verdict === "slow"
         ? `Live updates: slow (${lagSec} s lag)`

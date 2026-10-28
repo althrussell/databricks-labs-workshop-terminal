@@ -43,6 +43,7 @@ import SignInNotice from "./components/SignInNotice";
 import { NetworkNotice, NetworkStatusControl } from "./components/NetworkNotice";
 import {
   RECHECK_COOLDOWN_MS,
+  nextRetryDelayMs,
   runNetworkCheck,
   type NetworkCheckResult,
   type NetworkStatusKind,
@@ -158,6 +159,7 @@ export default function App() {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const networkLastRunAt = useRef(0);
   const networkRunning = useRef(false);
+  const networkRetryAttempt = useRef(0);
   const savedAutoCheck = useRef(false);
   const helpChatOpenRef = useRef(false);
   const wizardChecked = useRef(false);
@@ -274,18 +276,46 @@ export default function App() {
       });
   }, []);
 
+  const networkNotOk = networkResult !== null && networkResult.verdict !== "ok";
+
   useEffect(() => {
     if (!config || inputDisabled) return;
     triggerNetworkCheck(false);
-    const onOnline = () => triggerNetworkCheck(false);
-    window.addEventListener("online", onOnline);
-    const conn = (navigator as unknown as { connection?: EventTarget }).connection;
-    conn?.addEventListener?.("change", onOnline);
-    return () => {
-      window.removeEventListener("online", onOnline);
-      conn?.removeEventListener?.("change", onOnline);
-    };
   }, [Boolean(config), inputDisabled, triggerNetworkCheck]);
+
+  // A bad verdict must not outlive the problem (E2E 28 Oct: both seats stayed
+  // "blocked" after a DNS outage cleared, because the check ran only on load
+  // and the 10-minute cooldown swallowed the "online" event). While it is not
+  // ok, coming back online or returning to the tab checks again straight away.
+  useEffect(() => {
+    if (!config || inputDisabled) return;
+    const recheck = () => triggerNetworkCheck(networkNotOk);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") recheck();
+    };
+    window.addEventListener("online", recheck);
+    document.addEventListener("visibilitychange", onVisible);
+    const conn = (navigator as unknown as { connection?: EventTarget }).connection;
+    conn?.addEventListener?.("change", recheck);
+    return () => {
+      window.removeEventListener("online", recheck);
+      document.removeEventListener("visibilitychange", onVisible);
+      conn?.removeEventListener?.("change", recheck);
+    };
+  }, [Boolean(config), inputDisabled, networkNotOk, triggerNetworkCheck]);
+
+  // ...and on its own, backing off from 30 s to every 5 minutes.
+  useEffect(() => {
+    if (!config || inputDisabled || !networkResult) return;
+    if (networkResult.verdict === "ok") {
+      networkRetryAttempt.current = 0;
+      return;
+    }
+    const delay = nextRetryDelayMs(networkRetryAttempt.current);
+    networkRetryAttempt.current += 1;
+    const timer = window.setTimeout(() => triggerNetworkCheck(true), delay);
+    return () => window.clearTimeout(timer);
+  }, [Boolean(config), inputDisabled, networkResult, triggerNetworkCheck]);
 
   useEffect(() => onWorkshopClosing(() => {
     setWorkshopState((current) => advanceWorkshopState(current, "closing"));
