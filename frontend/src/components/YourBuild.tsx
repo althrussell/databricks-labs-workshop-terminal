@@ -41,7 +41,7 @@ export default function YourBuild({ refreshKey, onGetHelp }: { refreshKey: unkno
         <span id={`${id}-title`}>Your build</span>
         <span className={`build-status build-status-${view.status}`}>{phaseLabel(view.phase)}</span>
       </button>
-      <span className="your-build-next">Next: {view.next_decision}</span>
+      <span className="your-build-next">Next: {view.attendee_next ?? view.next_decision}</span>
       <div className="your-build-actions">
         {actions.tryApp && <a className="btn btn-ghost" href={view.deploy.preview_url ?? undefined} target="_blank" rel="noreferrer">
           <ExternalLink size={14} aria-hidden="true" />Try the app</a>}

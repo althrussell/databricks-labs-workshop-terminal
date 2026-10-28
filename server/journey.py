@@ -109,6 +109,38 @@ def status_for(record: dict, verification: dict, problems: list[str], *, help_ra
     return "working"
 
 
+#: What the attendee reads in "Your build" for each workflow phase. The
+#: workflow's own next step is written to the agent ("ask them to do their real
+#: task, then record their own account with `workshop-workflow outcome`"), and
+#: showing that to the attendee read as instructions meant for someone else
+#: (28 Oct E2E). CT's room board keeps the agent's wording.
+_ATTENDEE_NEXT = {
+    "choose_path": "Agree the plan with your agent; it builds next",
+    "agree": "Your agent is building the direction you agreed",
+    "build": "Your agent is building and deploying your app",
+    "inspect": "Your agent is checking your app",
+    "improve": "Your agent is making your changes",
+    "feedback": "Try the app on a real task, then tell your agent how it went",
+}
+
+
+def attendee_next_step(record: dict) -> str:
+    """The next step in the attendee's own terms, never the agent's instructions."""
+    phase = record.get("phase")
+    path = (record.get("path") or {}).get("value")
+    if any(r.get("status") == "open" for r in record.get("requests", [])):
+        return "Your agent is handling your request"
+    if not path:
+        return "Tell your agent how you want to work: a rapid prototype or guided ideation"
+    if path == "guided" and phase in {"choose_path", "shape"}:
+        if any(q.get("answer") is None for q in record.get("questions", [])):
+            return "Answer your agent's design questions"
+        return "Read the brief your agent proposes: build it, or refine it further"
+    if path == "guided" and phase == "agree" and (record.get("direction") or {}).get("confirmed_by") != "attendee":
+        return "Confirm the direction so your agent can build it"
+    return _ATTENDEE_NEXT.get(phase, "Keep going with your agent")
+
+
 def view(user, *, session=None) -> dict:
     """Everything the "Your build" area shows, for this attendee's project only."""
     project = active_project(user)
@@ -116,6 +148,7 @@ def view(user, *, session=None) -> dict:
     if project is None:
         return {"project": state["active"] or None, "status": "not_started", "phase": "understand",
                 "path": None, "next_decision": "choose or name a build to start",
+                "attendee_next": "Choose or name a build to start",
                 "goal": state["goals"].get(state["active"], "") if state["active"] else "",
                 "review": {"state": "none"}, "deploy": {"state": "not_deployed", "preview_url": None},
                 "what_changed": [], "open_questions": [], "requests": [], "session": _session(session),
@@ -138,6 +171,7 @@ def view(user, *, session=None) -> dict:
         "path": record["path"].get("value"),
         "status": status_for(record, verification, problems, help_raised=_help_raised()),
         "next_decision": design_workflow.workflow.next_step(record),
+        "attendee_next": attendee_next_step(record),
         "direction": record.get("direction"),
         "open_questions": [{"id": q["id"], "text": q["text"]} for q in record.get("questions", [])
                            if q.get("answer") is None],
