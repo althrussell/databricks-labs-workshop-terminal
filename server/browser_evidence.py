@@ -50,6 +50,13 @@ VIEWPORTS = {
 EVIDENCE_DIR = ".workshop/evidence"
 _START_SECONDS = 20.0
 _LOAD_SECONDS = 30.0
+#: After the load event, how long a capture waits for the page's own data.
+#: Workshop apps fetch from a SQL warehouse once the page has loaded, so the
+#: load event alone photographed grey skeleton rows on the 28 Oct E2E run.
+#: Bounded, so a page that never settles still gets its screenshot.
+_READY_SECONDS = 10.0
+_ARCHIVE_READY_SECONDS = 20.0
+_READY_QUIET_SECONDS = 1.0
 _MAX_ACTIONS = 12
 _inspect_lock = threading.Semaphore(2)
 
@@ -177,6 +184,8 @@ class _DevTools:
         self._auth_origin = auth_origin
         self._token = token
         self.console_errors: list[str] = []
+        self._inflight: dict[str | None, set[str]] = {}
+        self._network_at: dict[str | None, float] = {}
         self.document_status: int | None = None
 
     def close(self) -> None:
@@ -208,6 +217,14 @@ class _DevTools:
             self.console_errors.append(" ".join(str(a.get("value", a.get("description", ""))) for a in args)[:300])
         elif method == "Network.responseReceived" and params.get("type") == "Document":
             self.document_status = int((params.get("response") or {}).get("status") or 0)
+        if method == "Network.requestWillBeSent" and params.get("type") not in {"EventSource", "WebSocket"}:
+            # Streams stay open for the page's lifetime; counting them would
+            # make every live-updating app look permanently busy.
+            self._inflight.setdefault(session, set()).add(str(params.get("requestId")))
+            self._network_at[session] = time.monotonic()
+        elif method in {"Network.loadingFinished", "Network.loadingFailed"}:
+            self._inflight.get(session, set()).discard(str(params.get("requestId")))
+            self._network_at[session] = time.monotonic()
         self._events.append(message)
 
     def _send(self, method: str, params: dict | None, session: str | None, *, expect: bool = True) -> int:
@@ -250,6 +267,12 @@ class _DevTools:
                 if message.get("method") == method and message.get("sessionId") == session:
                     return True
         return False
+
+    def network_quiet(self, session: str, quiet: float) -> bool:
+        """No request in flight for ``session``, and none finished in ``quiet`` seconds."""
+        if self._inflight.get(session):
+            return False
+        return time.monotonic() - self._network_at.get(session, 0.0) >= quiet
 
     def settle(self, seconds: float) -> None:
         deadline = time.monotonic() + seconds
@@ -329,6 +352,41 @@ _FACTS_JS = """
 """
 
 
+#: What a page shows while it is still fetching: a visible spinner, skeleton,
+#: progress bar or aria-busy region. Only visible ones count, so a hidden
+#: loading component left in the DOM cannot hold a capture to its bound.
+_BUSY_JS = """
+() => {
+  const selector = '[aria-busy="true"], [role="progressbar"], .animate-pulse, '
+    + '[class*="skeleton" i], [class*="spinner" i], [data-loading="true"]';
+  const busy = Array.from(document.querySelectorAll(selector)).some((n) => n.getClientRects().length > 0);
+  const text = document.body ? document.body.innerText : '';
+  return {busy, text: text.slice(0, 20000)};
+}
+"""
+
+
+def _wait_until_ready(devtools: _DevTools, session: str, minimum: float, bound: float,
+                      *, clock=time.monotonic) -> bool:
+    """Settle, then wait until the page stops loading its own data, up to ``bound`` seconds.
+
+    Ready means no request in flight for a second, nothing visibly loading, and
+    the text unchanged between two reads. False means the bound was reached;
+    the caller captures anyway, because a late screenshot beats none.
+    """
+    devtools.settle(minimum)
+    deadline = clock() + max(0.0, bound - minimum)
+    previous = None
+    while clock() < deadline:
+        state = _evaluate(devtools, session, _BUSY_JS) or {}
+        if (devtools.network_quiet(session, _READY_QUIET_SECONDS) and not state.get("busy")
+                and state.get("text") == previous):
+            return True
+        previous = state.get("text")
+        devtools.settle(0.5)
+    return False
+
+
 def _evaluate(devtools: _DevTools, session: str, function: str, *args: Any) -> Any:
     expression = f"({function})({', '.join(json.dumps(a) for a in args)})"
     result = devtools.call("Runtime.evaluate", {"expression": expression, "returnByValue": True,
@@ -394,6 +452,7 @@ class InspectRequest:
     project: Path
     token: str = ""
     settle_seconds: float = 2.0
+    ready_seconds: float = _READY_SECONDS
 
 
 def inspect(
@@ -438,7 +497,8 @@ def inspect(
                 devtools.call("Page.navigate", {"url": request.url}, session)
                 if not devtools.wait_for("Page.loadEventFired", session, _LOAD_SECONDS):
                     raise Gap("page_did_not_load", f"{request.url} did not finish loading in {_LOAD_SECONDS:.0f}s")
-                devtools.settle(request.settle_seconds)
+                _wait_until_ready(devtools, session, request.settle_seconds,
+                                  max(request.settle_seconds, request.ready_seconds))
                 facts = _evaluate(devtools, session, _FACTS_JS) or {}
                 if request.scope == "deployed" and _origin(str(facts.get("url", ""))) != _origin(request.url):
                     raise Gap("sign_in_blocked", "the app redirected away from itself (a sign-in page); "
@@ -547,6 +607,7 @@ def capture_project_preview_screenshot(user, project: Path) -> dict | None:
             project=project,
             token=token,
             settle_seconds=1.5,
+            ready_seconds=_ARCHIVE_READY_SECONDS,
         )
         res = inspect(req)
         shots = res.get("artifacts") or []
