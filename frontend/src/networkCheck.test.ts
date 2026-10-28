@@ -80,3 +80,16 @@ test("formatNetworkSummary renders plain-language status lines", () => {
   assert.equal(summary.liveUpdates, "Live updates: held back 30 s");
   assert.equal(summary.terminalConnection, "Terminal connection: OK (80 ms)");
 });
+
+test("a clean stream is ok even when the WebSocket RTT is still unknown", () => {
+  // 28 Oct E2E, seat 1 after a reload: 11 of 11 events, 111 ms lag, no
+  // clumping, but no WebSocket RTT yet, and the seat was reported slow.
+  const samples = [0, 1000, 2000, 3000, 5000, 8000, 12000, 17000, 23000, 30000].map(
+    (ms, seq) => ({ seq, server_elapsed_ms: ms, client_elapsed_ms: ms + 98, flush: false })
+  );
+  samples.push({ seq: 10, server_elapsed_ms: 30000, client_elapsed_ms: 30111, flush: true });
+  const result = evaluateSamples(samples, 11, null, 39);
+  assert.equal(result.verdict, "ok");
+  assert.equal(result.ws_rtt_ms, null);
+  assert.equal(formatNetworkSummary({ ...result, checked_at: "" }).terminalConnection, "Terminal connection: unavailable");
+});

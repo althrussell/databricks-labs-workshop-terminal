@@ -86,7 +86,9 @@ export function evaluateSamples(
   ) {
     verdict = "blocked";
   } else if (
-    wsRttMs === null ||
+    // The verdict grades live updates (the stream). A WebSocket RTT that is
+    // unknown, often only because the socket was still connecting at page
+    // load, is reported as "Terminal connection: unavailable", never as slow.
     receivedCount < expectedCount ||
     (maxLagMs !== null && maxLagMs >= 3000)
   ) {
@@ -159,7 +161,7 @@ export async function runNetworkCheck(options?: { fast?: boolean }): Promise<Net
   }
 
   // 2. WebSocket ping RTT (in parallel with stream)
-  const wsPromise = pingAppSocket(5000);
+  const wsPromise = pingAppSocket(10000);
 
   // 3. SSE stream via fetch + ReadableStream reader
   const samples: NetworkSample[] = [];

@@ -340,3 +340,24 @@ test("valid server frame clears auth reload guard for a later auth failure", asy
   assert.equal(reloads, 2);
   connection.stop();
 });
+
+test("a ping is only sent, and reported sent, once the socket is open", async () => {
+  // 28 Oct E2E: a network check right after a reload pinged a socket that was
+  // still connecting; the ping went nowhere and the seat was reported slow.
+  const events = await import("./events.ts");
+  const socket = new FakeSocket();
+  const sent: string[] = [];
+  socket.send = (data: string) => { sent.push(data); };
+  const connection = events.createAppEventConnection({
+    socketFactory: () => socket,
+    schedule: () => 0,
+    publish: () => {},
+  });
+  connection.start();
+  assert.equal(connection.ping(), false);
+  assert.deepEqual(sent, []);
+  socket.readyState = 1;
+  assert.equal(connection.ping(), true);
+  assert.deepEqual(sent, [JSON.stringify({ t: "ping" })]);
+  connection.stop();
+});

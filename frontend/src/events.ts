@@ -187,8 +187,11 @@ export function createAppEventConnection(options: EventConnectionOptions) {
       current?.close();
       current = null;
     },
-    ping: () => {
-      if (current?.readyState === 1) current.send(JSON.stringify({ t: "ping" }));
+    /** Send a ping if the socket is open. False means nothing was sent. */
+    ping: (): boolean => {
+      if (current?.readyState !== 1) return false;
+      current.send(JSON.stringify({ t: "ping" }));
+      return true;
     },
   };
 }
@@ -218,26 +221,35 @@ export function onAppEvent(listener: Listener): () => void {
 }
 
 /** Measure round-trip time over the shared /ws/events socket. */
-export function pingAppSocket(timeoutMs = 5000): Promise<number | null> {
+export function pingAppSocket(timeoutMs = 10000): Promise<number | null> {
   if (!appConnection) connect();
+  const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
   return new Promise((resolve) => {
-    const started = typeof performance !== "undefined" ? performance.now() : Date.now();
+    // Right after a page load the socket is still connecting, and a ping sent
+    // then went nowhere: the check timed out and reported the network as slow
+    // on a healthy seat (28 Oct E2E). Keep trying until the socket is open,
+    // and time the round trip from the ping that was actually sent.
+    let sentAt: number | null = null;
     let settled = false;
-    const timer = setTimeout(() => {
+    const finish = (value: number | null) => {
       if (settled) return;
       settled = true;
-      unsubscribe();
-      resolve(null);
-    }, timeoutMs);
-    const unsubscribe = onAppEvent((event) => {
-      if (event.t !== "pong" || settled) return;
-      settled = true;
       clearTimeout(timer);
+      clearInterval(retry);
       unsubscribe();
-      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
-      resolve(Math.max(0, Math.round(now - started)));
+      resolve(value);
+    };
+    const trySend = () => {
+      if (!settled && sentAt === null && appConnection?.ping()) sentAt = now();
+    };
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    const retry = setInterval(trySend, 250);
+    const unsubscribe = onAppEvent((event) => {
+      // A heartbeat's pong before our own ping was sent says nothing about RTT.
+      if (event.t !== "pong" || sentAt === null) return;
+      finish(Math.max(0, Math.round(now() - sentAt)));
     });
-    appConnection?.ping();
+    trySend();
   });
 }
 
