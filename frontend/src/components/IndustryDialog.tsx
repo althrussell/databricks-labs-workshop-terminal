@@ -36,7 +36,7 @@ export default function IndustryDialog({ onClose, onSaved }: Props) {
           loaded.brief.industry ||
           ((loaded.brief.revision ?? 0) === 0 && !loaded.brief.seen ? loaded.default_industry : "");
         setIndustry(currentIndustry);
-        setIndustryStated(Boolean(loaded.brief.industry_stated || currentIndustry));
+        setIndustryStated(Boolean(loaded.brief.industry_stated));
       })
       .catch((caught) => {
         if (active) setError(caught instanceof Error ? caught.message : String(caught));
@@ -72,14 +72,20 @@ export default function IndustryDialog({ onClose, onSaved }: Props) {
   }
 
   async function skip() {
-    onClose(true);
+    setSaving(true);
     try {
-      await api.saveWizard({
-        operation: "skip",
+      const saved = await api.saveWizard({
+        operation: "industry",
+        industry: state?.brief.industry_stated ? state.brief.industry : "",
+        industry_stated: Boolean(state?.brief.industry_stated),
         expected_revision: state?.brief.revision ?? 0,
       });
+      onSaved?.(saved.brief);
     } catch {
       /* Dismissal in current tab still holds if network write fails. */
+    } finally {
+      setSaving(false);
+      onClose(true);
     }
   }
 
@@ -192,6 +198,11 @@ export default function IndustryDialog({ onClose, onSaved }: Props) {
                     Use this industry
                   </button>
                 </div>
+              )}
+              {industry && !industryStated && (
+                <p className="wizard-industry-note">
+                  Suggested for this workshop: <strong>{labelIndustry(industry)}</strong>. Click Save industry to confirm, or choose another.
+                </p>
               )}
             </div>
 
