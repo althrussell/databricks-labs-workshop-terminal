@@ -80,10 +80,11 @@ export default function NuggetsPane({ collapsed, inputDisabled = false, onToggle
     );
   }
 
-  // Anchor: the top nudge or matched card always holds slot 1; the rest rotate.
-  const anchor = nuggets.find((n) => n.nudge) ?? nuggets.find((n) => n.matched_topic) ?? null;
+  // Anchor: matched Databricks service/product cards hold the top slot first,
+  // followed by idle nudges; remaining slots rotate through the pool.
+  const anchor = nuggets.find((n) => n.matched_topic) ?? nuggets.find((n) => n.nudge) ?? null;
   const pool = anchor ? nuggets.filter((n) => n.id !== anchor.id) : nuggets;
-  const slots = anchor ? fitCount - 1 : fitCount;
+  const slots = anchor ? Math.max(0, fitCount - 1) : fitCount;
   const rotated =
     pool.length <= slots
       ? pool
@@ -120,7 +121,10 @@ export default function NuggetsPane({ collapsed, inputDisabled = false, onToggle
             ) : (
               nugget.matched_topic && (
                 <div className="nugget-matched-label">
-                  <Sparkle size={10} /> {nugget.cta ?? "Take the next step →"}
+                  <Sparkle size={10} />{" "}
+                  {nugget.matched_topic === "build-complete"
+                    ? (nugget.cta ?? "Next step →")
+                    : `Spotted in your build · ${nugget.matched_topic.replace(/-/g, " ")}`}
                 </div>
               )
             )}

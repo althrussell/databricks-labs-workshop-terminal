@@ -350,6 +350,17 @@ def broadcast(body: Broadcast):
     if body.surface == "banner":
         content_service.set_broadcast(body)
     event_hub.publish({"t": "broadcast", **body.model_dump()})
+    msg_lower = (body.message or "").lower()
+    if (
+        "minutes left: the workshop ends at " in msg_lower
+        and content_service.advance_to_wrap_if_default()
+    ):
+        event_hub.publish({"t": "phase", "phase": "wrap"})
+        from . import insight_summary
+
+        insight_summary.summarise_in_background(
+            user_manager.all(), phase="wrap", force=True
+        )
     return {"status": "ok"}
 
 
@@ -890,6 +901,14 @@ def admin_export(body: _AdminExportBody | None = None):
     from . import journey
 
     reason = (body.reason if body else "operator") or "operator"
+    if reason == "wrap_up":
+        if content_service.advance_to_wrap_if_default():
+            event_hub.publish({"t": "phase", "phase": "wrap"})
+        from . import insight_summary
+
+        insight_summary.summarise_in_background(
+            user_manager.all(), phase="wrap", force=True
+        )
     exports, failed = [], []
     for user in user_manager.all():
         if not journey.has_projects(user):

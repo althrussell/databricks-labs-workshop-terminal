@@ -21,6 +21,7 @@ confirm a direction. An agent's own summary is never an approval.
     workshop-workflow prefs [--approach co_build|learn|lead] [--detail adaptive|brief|detailed]
                             [--default-path rapid|guided]
                             [--background domain|data|developer|exploring]
+                            [--industry <industry>]
 
 Every write takes ``--expect-revision N`` to refuse a stale update.
 """
@@ -417,7 +418,8 @@ def _prefs(args: argparse.Namespace) -> int:
     changes = {key: value for key, value in (("working_approach", args.approach),
                                               ("explanation_detail", args.detail),
                                               ("engagement_path", args.default_path),
-                                              ("background", args.background)) if value}
+                                              ("background", args.background),
+                                              ("industry", args.industry)) if value}
     email = os.environ.get("WORKSHOP_USER_EMAIL", "")
     capability_file = Path.home() / ".config/workshop/callback-capability"
     app = os.environ.get("WORKSHOP_APP_URL", "http://localhost:8000").rstrip("/")
@@ -497,6 +499,7 @@ def main(argv: list[str] | None = None) -> int:
     prefs.add_argument("--detail", choices=DETAILS)
     prefs.add_argument("--default-path", choices=PATHS)
     prefs.add_argument("--background", choices=BACKGROUNDS)
+    prefs.add_argument("--industry")
     args = parser.parse_args(argv)
 
     if args.command == "prefs":

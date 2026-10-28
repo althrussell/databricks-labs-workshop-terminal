@@ -99,7 +99,7 @@ browsers, or run `databricks apps validate`.
 - `workshop-workflow phase <stage> --evidence preview=<url>` moves the stage.
 - `workshop-workflow prefs [--approach co_build|learn|lead] [--detail
   adaptive|brief|detailed] [--default-path rapid|guided] [--background
-  domain|data|developer|exploring]` saves a lasting preference. Mention it once
+  domain|data|developer|exploring] [--industry <industry>]` saves a lasting preference. Mention it once
   the helper confirms.
 - `workshop-workflow check` validates the record before you hand over.
 
