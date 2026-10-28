@@ -1931,10 +1931,10 @@ def get_nuggets(principal: Principal = Depends(get_current_user)):
                             "\n".join(harvest.tool_targets)
                         ):
                             if topic not in user.topics:
-                                user.topics[topic] = now
                                 user.topic_hits[topic] = (
                                     user.topic_hits.get(topic, 0) + 1
                                 )
+                            user.topics[topic] = now
                 except Exception:  # noqa: BLE001
                     pass
 
@@ -1953,7 +1953,7 @@ def get_nuggets(principal: Principal = Depends(get_current_user)):
                         mapped = _RESOURCE_TYPE_TO_TOPIC.get(
                             str(item.get("resource_type") or "")
                         )
-                        if mapped and mapped not in user.topics:
+                        if mapped:
                             user.topics[mapped] = now
             except Exception:  # noqa: BLE001
                 pass
@@ -1964,7 +1964,7 @@ def get_nuggets(principal: Principal = Depends(get_current_user)):
                     for prod in getattr(rec, "databricks_products", ()) or ():
                         slug = str(prod).strip().lower().replace(" ", "-")
                         mapped = _DISCOVERY_PRODUCT_TO_TOPIC.get(slug)
-                        if mapped and mapped not in user.topics:
+                        if mapped:
                             user.topics[mapped] = now
             except Exception:  # noqa: BLE001
                 pass
@@ -1986,7 +1986,8 @@ def get_nuggets(principal: Principal = Depends(get_current_user)):
 
     effective_phase = content_service.phase
     if (
-        effective_phase == "intro"
+        not content_service.phase_explicitly_set
+        and effective_phase == "intro"
         and has_building_activity
         and "build" in content_service.pack.phases
     ):

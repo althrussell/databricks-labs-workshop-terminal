@@ -384,10 +384,10 @@ class ContentService:
         logger.info("content pack replaced (%d nuggets, %d topics)",
                     len(pack.nuggets), len(pack.topics))
 
-    def set_phase(self, phase: str) -> None:
+    def set_phase(self, phase: str, *, explicit: bool = False) -> None:
         with self._lock:
             self._phase = phase
-            self._phase_explicitly_set = True
+            self._phase_explicitly_set = explicit
         logger.info("workshop phase -> %s", phase)
 
     def set_broadcast(self, broadcast: Broadcast) -> None:

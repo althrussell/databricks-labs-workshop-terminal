@@ -417,21 +417,24 @@ export default function App() {
     // attendee closed their last terminal, which is precisely when they are
     // least in the mood for it.
     wizardChecked.current = true;
-    let dismissed = false;
-    try {
-      dismissed = sessionStorage.getItem(wizardDismissalKey) === "true";
-    } catch { /* The server's durable state remains the normal dismissal source. */ }
+    const isDismissed = () => {
+      try {
+        return sessionStorage.getItem(wizardDismissalKey) === "true";
+      } catch {
+        return false;
+      }
+    };
     api
       .wizard()
       .then((state) => {
         setBrief(state.brief);
-        if (state.enabled && state.should_show && !session && !projectInventoryRef.current?.active && !dismissed) {
+        if (state.enabled && state.should_show && !session && !projectInventoryRef.current?.active && !isDismissed()) {
           setWizardOpen(true);
-        } else if (!state.enabled && state.should_ask_industry && !session && !projectInventoryRef.current?.active && !dismissed) {
+        } else if (!state.enabled && state.should_ask_industry && !session && !projectInventoryRef.current?.active && !isDismissed()) {
           setIndustryOpen(true);
         }
       })
-      .catch(() => { if (config.onboarding_wizard.enabled && !session && !projectInventoryRef.current?.active && !dismissed) setWizardOpen(true); });
+      .catch(() => { if (config.onboarding_wizard.enabled && !session && !projectInventoryRef.current?.active && !isDismissed()) setWizardOpen(true); });
   }, [config, inputDisabled, sessionsLoaded, projectsLoaded, session, wizardDismissalKey]);
 
   useEffect(() => {
