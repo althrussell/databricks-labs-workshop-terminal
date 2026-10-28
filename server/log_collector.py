@@ -50,11 +50,10 @@ _FIRST_MESSAGE_TIMEOUT_S = 200.0
 _START_STALL_TIMEOUT_S = 120.0
 _EARLY_TERMINAL_EXIT_S = 60.0
 
-_NOISY_SUCCESS_LINE = re.compile(
-    r'HTTP Request: (?:POST [^\s"]+/events "HTTP/1\.[01] 202|'
-    r'GET [^\s"]+/(?:healthz?|readyz) "HTTP/1\.[01] 200|'
-    r'GET [^\s"]+/v1/sessions/[^\s"]+\?include_items=false[^\s"]* "HTTP/1\.[01] 200)'
-)
+# Any successful httpx request line. Omnigent's runner logs one per policy
+# evaluation, event post and poll; on the 28 Oct E2E run these were about half
+# of everything forwarded. A non-2xx request line still forwards.
+_NOISY_SUCCESS_LINE = re.compile(r'HTTP Request: [A-Z]+ [^\s"]+ "HTTP/[12](?:\.[01])? 2\d\d\b')
 _CLI_ARGV = re.compile(r"(CLI start\s+[—-]\s+argv=)\[.*\]")
 _CONV_SESSION = re.compile(r"\b(?:session|conv|conversation)[=: ]+([0-9a-f]{8,32})\b", re.IGNORECASE)
 _HARNESS_NAME = re.compile(r"\bharness=([A-Za-z0-9_.-]+)")
@@ -209,6 +208,9 @@ class _SessionLifecycle:
     missing_emitted: bool = False
     stalled_emitted: bool = False
     early_exit_emitted: bool = False
+    # A terminal REPL waits for the attendee to type; it sends no greeting
+    # (WT #132), so a quiet prompt there is normal, not a lost first message.
+    repl: bool = False
     recent_lines: list[str] = field(default_factory=list)
 
 
@@ -484,7 +486,13 @@ class LogCollector:
                 state.harness = harness_match.group(1)
             state.recent_lines.append(sanitized)
 
-        if "Native terminal became interactive" in msg:
+        # The web app's native harnesses report "Native terminal became
+        # interactive"; the terminal REPL (claude-sdk, `polly`) never does, and
+        # its readiness is the REPL terminal coming up. Without this, every
+        # terminal launch was reported stalled at 120 s while it sat at
+        # `polly · ready` (28 Oct E2E, seat 1).
+        repl_ready = "Auto-created omnigent REPL terminal" in msg
+        if "Native terminal became interactive" in msg or repl_ready:
             if state is None:
                 state = _SessionLifecycle(
                     session_id=session_id,
@@ -495,6 +503,7 @@ class LogCollector:
             harness_match = _HARNESS_NAME.search(msg)
             if harness_match:
                 state.harness = harness_match.group(1)
+            state.repl = state.repl or repl_ready
             state.interactive_at = ts
             state.interactive_mono = time.monotonic()
             if not state.ready_emitted:
@@ -569,6 +578,7 @@ class LogCollector:
             if (
                 state.interactive_mono is not None
                 and state.first_message_at is None
+                and not state.repl
                 and not state.missing_emitted
                 and (now - state.interactive_mono) >= self.first_message_timeout_s
             ):

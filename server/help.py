@@ -386,6 +386,13 @@ def _log_push_rejection(status: int) -> None:
 
 
 def _ct_post(url: str, payload: dict[str, str]) -> bool:
+    # Control Tower's Apps proxy refuses this app's token before any Control
+    # Tower code runs, so once it has said so every later push would be refused
+    # too (28 Oct E2E: a 401 for every raise and every seen receipt). Help and
+    # receipts already reach Control Tower through its 10 s collection, so stop
+    # posting for the rest of this process instead of repeating the 401.
+    if _push_rejection["logged"]:
+        return False
     bearer = app_identity_bearer()
     if not bearer:
         _log.debug("help.ct_push_skipped: no app identity bearer")

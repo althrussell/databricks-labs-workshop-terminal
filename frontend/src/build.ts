@@ -15,6 +15,8 @@ export interface BuildView {
   path: "rapid" | "guided" | null;
   status: BuildStatus;
   next_decision: string;
+  /** The next step in the attendee's own terms; next_decision is the agent's. */
+  attendee_next?: string;
   direction?: { text: string; confirmed_by: string | null } | null;
   open_questions: { id: string; text: string }[];
   review: BuildReview;

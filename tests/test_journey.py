@@ -225,3 +225,19 @@ def test_scaffolded_project_transitions_out_of_choosing_how_to_work_and_into_fee
         "state": "deployed",
         "preview_url": "https://outages.aws.databricksapps.com",
     }
+
+
+def test_the_attendee_reads_their_own_next_step_not_the_agents_instructions(attendee):
+    # 28 Oct E2E: "Your build" showed the agent's next step to the attendee:
+    # "ask them to do their real task, then record their own account with
+    # `workshop-workflow outcome`".
+    project = projects.project_path(attendee, "outages")
+    assert "rapid prototype or guided ideation" in journey.view(attendee)["attendee_next"]
+    _write(project, lambda r: design_workflow.workflow.choose_path(r, "rapid", by="attendee", source="ui"))
+    _write(project, lambda r: r.update(phase="feedback",
+                                       evidence={"build": {"preview": "https://outages.aws.databricksapps.com"}}))
+    view = journey.view(attendee)
+    assert "workshop-workflow" in view["next_decision"]          # the agent's wording, for CT
+    assert view["attendee_next"] == "Try the app on a real task, then tell your agent how it went"
+    assert "workshop-workflow" not in view["attendee_next"] and " them " not in f" {view['attendee_next']} "
+    assert set(journey.journey(attendee)) == {"phase", "path", "status", "next_decision", "updated_at"}

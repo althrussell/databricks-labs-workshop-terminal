@@ -135,6 +135,18 @@ def _is_omnigent_gateway_form(url: str) -> bool:
     return (parsed.path or "").startswith("/" + _AI_GATEWAY_LABEL + "/")
 
 
+#: Claude Code's non-essential startup and background probes send parameters
+#: the Databricks AI Gateway rejects (313 x HTTP 400 at EQL session start, 27 Oct
+#: 2026). Claude reads these from settings.json for terminal sessions; the
+#: Omnigent host exports them too, because its Claude harnesses still answered
+#: 400 at session start on the 28 Oct E2E run.
+CLAUDE_QUIET_ENV = {
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+}
+
+
 def beta_negotiation_env(gateway_backed: bool) -> dict:
     """How Claude Code should settle its ``anthropic-beta`` set.
 
@@ -384,12 +396,7 @@ def configure_claude(
             # denied request ten times, wasting workshop time while implying the
             # failure may clear on its own. Return the first denial immediately.
             "CLAUDE_CODE_MAX_RETRIES": "0",
-            # Suppress non-essential startup/background probes that send
-            # unsupported parameters to the Databricks AI Gateway (313 x 400 at
-            # EQL session start, 27 Oct 2026).
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
-            "DISABLE_TELEMETRY": "1",
-            "DISABLE_ERROR_REPORTING": "1",
+            **CLAUDE_QUIET_ENV,
         }
     )
     # A static ANTHROPIC_AUTH_TOKEN in the env block would take precedence over
@@ -458,6 +465,20 @@ OMNIGENT_RENDERER_TOOLS = tuple(
 # points at this table by id, so the two files have to agree on the name.
 _CODEX_MODEL_PROVIDER = "databricks"
 _CODEX_PROVIDER_DISPLAY_NAME = "Databricks Model Serving"
+
+# What `workshop-app-deploy --mcp` reads to report back to the terminal. Claude
+# Code hands a stdio MCP server its whole environment; Codex hands it only a
+# small default allowlist plus the names listed here. Without these the helper
+# deployed fine but its callbacks were silently skipped, so Codex deploys left
+# no app.deploy event, no deploy screenshot and no early app grant (28 Oct E2E,
+# seat 2, for both the Codex terminal and Omnigent's codex-native harness).
+_WORKSHOP_MCP_ENV_VARS = (
+    "WORKSHOP_APP_URL",
+    "WORKSHOP_USER_EMAIL",
+    "WORKSHOP_PROJECTS_ROOT",
+    "WORKSHOP_APP_DEPLOY_STATE_DIR",
+    "WORKSHOP_APP_DEPLOY_POLL_SECONDS",
+)
 
 # Codex once carried a second provider on the plain chat-completions surface so
 # GLM, Kimi and Gemini — which answer on chat completions and nowhere else —
@@ -581,6 +602,7 @@ def configure_codex(
         "[mcp_servers.workshop]\n"
         f"command = {json.dumps(os.path.join(user.home, '.local', 'bin', 'workshop-app-deploy'))}\n"
         'args = ["--mcp"]\n'
+        f"env_vars = {json.dumps(list(_WORKSHOP_MCP_ENV_VARS))}\n"
         'enabled_tools = ["deploy_databricks_app"]\n'
         "startup_timeout_sec = 10\n"
         "tool_timeout_sec = 3600\n"

@@ -118,6 +118,10 @@ def test_omnigents_runner_keeps_the_attendees_environment(monkeypatch, tmp_path)
     assert not any(name.startswith("OMNIGENT_") for name in forwarded)
     assert "DATABRICKS_CLIENT_SECRET" not in forwarded and "DATABRICKS_CLIENT_SECRET" not in env
     assert forwarded <= set(env)
+    # Omnigent's Claude harnesses must not send Claude Code's non-essential
+    # startup probes, which the gateway answers with HTTP 400.
+    assert env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] == "1"
+    assert "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" in forwarded
 
 
 def test_a_helper_that_lost_its_email_is_identified_by_its_capability(client):

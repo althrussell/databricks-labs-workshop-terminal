@@ -128,9 +128,12 @@ def classify_verdict(
     expected_count: int,
     clumped: bool,
     max_gap_ms: int | None = None,
-    ws_ok: bool = True,
 ) -> Literal["ok", "slow", "blocked"]:
-    """Server-side reference verdict maths matching frontend/src/networkCheck.ts."""
+    """Server-side reference verdict maths matching frontend/src/networkCheck.ts.
+
+    Grades the live-update stream only; the WebSocket RTT is reported alongside
+    and never downgrades a clean stream.
+    """
     if (
         received_count == 0
         or clumped
@@ -140,8 +143,7 @@ def classify_verdict(
     ):
         return "blocked"
     if (
-        not ws_ok
-        or received_count < expected_count
+        received_count < expected_count
         or (max_lag_ms is not None and max_lag_ms >= 3_000)
     ):
         return "slow"

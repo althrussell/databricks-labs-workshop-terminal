@@ -12,6 +12,17 @@ export type SessionConflictResolution =
       starterPrompt: string;
     };
 
+/** Where the page opens once the first session list arrives.
+ *
+ * Reopening the tab used to land on Home while the attendee's agent kept
+ * running out of sight (28 Oct E2E, seat 2). A live session opens instead,
+ * unless the page was opened somewhere other than Home, such as /operator.
+ */
+export function viewOnLoad<V extends string>(current: V, active: SessionInfo | null): V | "agent" {
+  if (current !== "home" || !active || active.exited) return current;
+  return "agent";
+}
+
 export function agentSelection(
   active: SessionInfo | null,
   requestedAgentId: string

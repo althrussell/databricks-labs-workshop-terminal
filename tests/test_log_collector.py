@@ -299,6 +299,8 @@ def test_info_forwarder_drops_debug_and_noisy_202_and_caps_rate(attendee, tmp_pa
         "DEBUG 10-27 02:44:48.438 asyncio  __init__ | Using selector: EpollSelector\n"
         'INFO  10-27 02:44:49.178 httpx  _single_request | HTTP Request: POST https://omni.example/v1/sessions/8c0251b5/events "HTTP/1.1 202 Accepted"\n'
         'INFO  10-27 02:44:49.200 httpx  _single_request | HTTP Request: GET https://omni.example/health "HTTP/1.1 200 OK"\n'
+        'INFO  10-27 02:44:49.210 httpx  _single_request | HTTP Request: POST https://omni.example/v1/sessions/8c0251b5/policies/evaluate "HTTP/1.1 200 OK"\n'
+        'INFO  10-27 02:44:49.220 httpx  _single_request | HTTP Request: POST https://omni.example/v1/sessions/8c0251b5/policies/evaluate "HTTP/1.1 302 Found"\n'
         "INFO  10-27 02:44:49.300 runner.app  step1 | line one\n"
         "INFO  10-27 02:44:49.400 runner.app  step2 | line two\n"
         "INFO  10-27 02:44:49.500 runner.app  step3 | line three\n"
@@ -308,6 +310,10 @@ def test_info_forwarder_drops_debug_and_noisy_202_and_caps_rate(attendee, tmp_pa
     messages = [item["message"] for item in collector.forwarded_lines]
     assert not any("EpollSelector" in m for m in messages)
     assert not any("202 Accepted" in m for m in messages)
+    # Every successful request line is noise; a redirect (the stale-token
+    # policy relay failure at EQL) still forwards.
+    assert not any('"HTTP/1.1 200 OK"' in m for m in messages)
+    assert any("302 Found" in m for m in messages)
     assert not any("secret prompt" in m for m in messages)
     assert any("[REDACTED_ARGV]" in m for m in messages)
     assert any("dropped" in m for m in messages)
@@ -361,3 +367,40 @@ def test_seat22_lifecycle_fixtures_detect_ready_first_message_missing_and_early_
     assert len(by_type.get("omnigent.terminal_exited_early", [])) == 1
     assert by_type["omnigent.terminal_exited_early"][0]["session_id"] == "49270f8f738d4fcd8122a46dce5ad264"
 
+
+
+def test_a_terminal_repl_at_an_idle_prompt_is_ready_not_stalled(attendee, tmp_path):
+    # 28 Oct E2E, seat 1: the terminal Omnigent REPL came up in 0.3 s and sat at
+    # `polly · ready` with no greeting (by design since WT #132), yet the
+    # detector reported omnigent.session_start_stalled at 120 s, which CT filed
+    # as blocked friction on a healthy seat.
+    import time as time_mod
+
+    emitter = _Emitter()
+    collector = LogCollector(
+        journal=Journal(tmp_path / "diagnostics.json", capacity=50),
+        users=_Roster(attendee),
+        emitter=emitter,
+        interval=0.01,
+        first_message_timeout_s=200.0,
+        start_stall_timeout_s=120.0,
+    )
+    _log(attendee, "runner", "runner-ac9e54d36ca3452abc226f88352bf79a-20261028.log").write_text(
+        "INFO  10-28 05:27:13.852 runner.app  _spawn_entry | harness started for conversation ac9e54d36ca3452abc226f88352bf79a (harness=claude-sdk)\n"
+        "INFO  10-28 05:27:13.854 runner.app  _auto_create_repl | Auto-created omnigent REPL terminal for session ac9e54d36ca3452abc226f88352bf79a: terminal_id=terminal_tui_main server_url=https://omni.example elapsed_ms=305\n"
+    )
+    # A launch that never reaches its REPL is still a stall.
+    _log(attendee, "runner", "runner-5f1c0d2e9a8b4c7d6e5f4a3b2c1d0e9f-20261028.log").write_text(
+        "INFO  10-28 05:40:01.000 runner.app  _spawn_entry | harness started for conversation 5f1c0d2e9a8b4c7d6e5f4a3b2c1d0e9f (harness=claude-sdk)\n"
+    )
+
+    collector.sweep()
+    collector.sweep(now_mono=time_mod.monotonic() + 250.0)
+
+    by_type = {}
+    for event_type, _who, payload in emitter.events:
+        by_type.setdefault(event_type, []).append(payload["session_id"])
+
+    assert by_type.get("omnigent.session_ready") == ["ac9e54d36ca3452abc226f88352bf79a"]
+    assert by_type.get("omnigent.session_start_stalled") == ["5f1c0d2e9a8b4c7d6e5f4a3b2c1d0e9f"]
+    assert "omnigent.first_message_missing" not in by_type

@@ -358,7 +358,11 @@ def test_uv_project_pins_python_and_omnigent_release():
     assert not (APP_DIR / "requirements.txt").exists()
     assert not (APP_DIR / "requirements.in").exists()
     assert project["project"]["requires-python"] == ">=3.12,<3.13"
-    assert project["project"]["dependencies"] == ["omnigent[databricks]==0.19.1"]
+    assert project["project"]["dependencies"] == [
+        "omnigent[databricks]==0.19.1",
+        "opentelemetry-exporter-otlp-proto-grpc==1.44.0",
+        "opentelemetry-instrumentation-fastapi==0.65b0",
+    ]
     assert project["tool"]["uv"]["package"] is False
     # Both spellings are the same constraint; uv changed which one it writes.
     assert locked["requires-python"] in (">=3.12, <3.13", "==3.12.*")
@@ -557,3 +561,22 @@ def test_handoff_docs_cover_lifecycle_security_and_upstream_gap():
     assert "revocation" in readme
     assert "Provision" in checklist
     assert "Teardown" in checklist
+
+
+def test_the_exporter_the_bootstrap_instruments_for_is_installed():
+    # 28 Oct E2E: Omni exported no spans, metrics or structured logs. The
+    # bootstrap launched opentelemetry-instrument for the grpc destination the
+    # platform supplies, and the SDK failed with "Requested component
+    # 'otlp_proto_grpc' not found in entry point 'opentelemetry_traces_exporter'".
+    from importlib.util import spec_from_file_location, module_from_spec
+
+    spec = spec_from_file_location("omni_otel_bootstrap", APP_DIR / "otel_bootstrap.py")
+    bootstrap = module_from_spec(spec)
+    spec.loader.exec_module(bootstrap)
+    assert bootstrap.instrumentation_enabled(
+        {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4317", "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc"})
+    locked = {entry["name"]: entry["version"]
+              for entry in tomllib.loads((APP_DIR / "uv.lock").read_text())["package"]}
+    sdk = locked["opentelemetry-sdk"]
+    assert locked["opentelemetry-exporter-otlp-proto-grpc"] == sdk
+    assert "grpcio" in locked and "opentelemetry-instrumentation-fastapi" in locked

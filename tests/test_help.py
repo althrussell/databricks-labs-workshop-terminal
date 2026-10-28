@@ -426,3 +426,16 @@ def test_admin_help_message_ingest(client, as_admin):
     assert len(msgs) == 1
     assert msgs[0]["body"] == "try restarting the warehouse"
     assert msgs[0]["sender_role"] == "operator"
+
+
+def test_a_refused_push_is_not_retried_for_the_rest_of_the_process(monkeypatch):
+    # CT's Apps proxy answers 401 before CT code runs; help still arrives
+    # through CT's 10 s collection, so repeating the post is only noise.
+    calls = []
+    monkeypatch.setattr(help_module, "app_identity_bearer", lambda: "token")
+    monkeypatch.setattr(help_module.requests, "post",
+                        lambda *a, **k: calls.append(a[0]) or MagicMock(status_code=401, text=""))
+
+    assert help_module._ct_post("https://ct.example/api/help/raise", {}) is False
+    assert help_module._ct_post("https://ct.example/api/help/messages/m1/seen", {}) is False
+    assert calls == ["https://ct.example/api/help/raise"]

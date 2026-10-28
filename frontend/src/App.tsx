@@ -65,6 +65,7 @@ import {
   agentSelection,
   closeThenCreate,
   resolveSessionConflict,
+  viewOnLoad,
 } from "./sessionSwitch";
 import { wizardDeliveryId } from "./wizardRequests";
 import {
@@ -332,6 +333,7 @@ export default function App() {
     const stopIdentityRefresh = bindIdentityRefresh(refresh);
 
     refreshSessions()
+      .then((active) => setView((current) => viewOnLoad(current, active)))
       .catch((e) => setError(
         e instanceof Error ? e.message : String(e)
       ))

@@ -45,9 +45,14 @@ def _no_background_build_restore(monkeypatch):
     """
     from types import SimpleNamespace
 
-    from server import build_restore
+    from server import build_restore, network_check
 
     monkeypatch.setattr(build_restore, "restorer", SimpleNamespace(observe=lambda *args, **kwargs: None))
+    monkeypatch.setattr(
+        network_check,
+        "SCHEDULE_SECONDS",
+        tuple(t * 0.01 for t in network_check.SCHEDULE_SECONDS),
+    )
 
 
 @pytest.fixture(autouse=True)

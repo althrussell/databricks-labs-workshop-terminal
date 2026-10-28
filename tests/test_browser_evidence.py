@@ -210,3 +210,64 @@ def test_only_the_official_chrome_for_testing_bucket_is_an_approved_publisher():
     assert not dependency_sources.public_url("https://storage.googleapis.com/someone-else/chrome.zip", kind="artifact")
     assert not dependency_sources.public_url("https://storage.googleapis.com/chrome-for-testing-public/x?alt=1",
                                              kind="artifact")
+
+
+_LOADED = "Mapoon ZS is worst, with 3,747,583 customer minutes lost across 308 outages."
+_SLOW_PAGE = b"""<!doctype html><html><head><title>Substation Watch</title></head><body>
+<h1>Substation Watch</h1><p id="status">Adding up 12 months of outages...</p>
+<div id="rows"><div class="h-8 animate-pulse"></div><div class="h-8 animate-pulse"></div></div>
+<script>fetch('/data').then((r) => r.text()).then((t) => {
+  document.getElementById('status').textContent = t;
+  document.getElementById('rows').remove(); });</script></body></html>"""
+
+
+@pytest.mark.skipif(_chrome() is None, reason="no Chromium on this machine")
+def test_a_capture_waits_for_the_pages_own_data_not_just_the_load_event(project, monkeypatch):
+    # 28 Oct E2E: both deploy screenshots on seat 1 showed grey skeleton rows,
+    # because the warehouse query had not returned 1.5 s after the load event.
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            if self.path == "/data":
+                import time
+                time.sleep(3)
+                body, kind = _LOADED.encode(), "text/plain"
+            else:
+                body, kind = _SLOW_PAGE, "text/html"
+            self.send_response(200)
+            self.send_header("Content-Type", kind)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    monkeypatch.setenv("DATABRICKS_APP_PORT", "8000")
+    try:
+        request = browser_evidence.InspectRequest(
+            url=f"http://localhost:{server.server_address[1]}/", scope="local", viewports=["desktop"],
+            project=project, actions=[], settle_seconds=0.5)
+        shot, = browser_evidence.inspect(request, binary=_chrome())["artifacts"]
+    finally:
+        server.shutdown()
+    assert shot["text_chars"] >= len("Substation Watch") + len(_LOADED)
+
+
+def test_a_page_that_never_settles_is_captured_at_the_bound():
+    clock = {"now": 0.0}
+
+    class Devtools:
+        def settle(self, seconds):
+            clock["now"] += seconds
+
+        def network_quiet(self, session, quiet):
+            return False  # a request always in flight
+
+        def call(self, method, params=None, session=None, timeout=20.0):
+            clock["now"] += 0.05
+            return {"result": {"value": {"busy": True, "text": "Loading"}}}
+
+    ready = browser_evidence._wait_until_ready(Devtools(), "s", 1.5, 20.0, clock=lambda: clock["now"])
+    assert ready is False
+    assert 20.0 <= clock["now"] < 21.5
