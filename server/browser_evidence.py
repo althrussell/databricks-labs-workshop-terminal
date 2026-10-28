@@ -75,11 +75,11 @@ def _explicitly_disabled() -> bool:
     return raw is not None and raw.strip() != "" and not config.workshop_browser_enabled()
 
 
-def browser_binary(*, allow_system_capture: bool = False) -> str | None:
+def browser_binary() -> str | None:
     explicit = os.environ.get("WORKSHOP_BROWSER", "").strip()
     if explicit:
         return explicit if os.path.isfile(explicit) and os.access(explicit, os.X_OK) else None
-    if _explicitly_disabled() and not allow_system_capture:
+    if _explicitly_disabled():
         return None
     try:
         stamp = json.loads((Path(config.shared_prefix()) / BROWSER_STAMP).read_text())
@@ -400,13 +400,12 @@ def inspect(
     request: InspectRequest,
     *,
     binary: str | None = None,
-    allow_system_capture: bool = False,
 ) -> dict:
     """Render the app, run the actions, and write real screenshots into the project."""
     check_target(request.url, request.scope)
     actions = parse_actions(request.actions)
     viewports = [v for v in request.viewports if v in VIEWPORTS] or ["desktop"]
-    binary = binary or browser_binary(allow_system_capture=allow_system_capture)
+    binary = binary or browser_binary()
     if binary is None:
         raise Gap("browser_unavailable", status().get("reason", "no prepared browser"))
     if request.scope == "deployed" and not request.token:
@@ -501,25 +500,15 @@ def attendee_token(user) -> tuple[str, str]:
 
 
 def archival_token(user) -> str:
-    """Fresh attendee OBO token, falling back to WT's app SP token for pre-teardown archival."""
-    from . import obo
-
-    status = obo.obo_manager.status(user.email)
-    if status.get("fresh"):
-        _host, tok = attendee_token(user)
-        if tok:
-            return tok
-    try:
-        from .credentials import credential_manager
-
-        return credential_manager.token()
-    except Exception:  # noqa: BLE001
-        _host, tok = attendee_token(user)
-        return tok
+    """The attendee's own OBO token for deployed app preview inspection."""
+    _host, tok = attendee_token(user)
+    return tok
 
 
 def capture_project_preview_screenshot(user, project: Path) -> dict | None:
     """Best-effort desktop screenshot of a project's deployed preview_url."""
+    if not browser_binary():
+        return None
     from . import design_workflow
 
     try:
@@ -557,9 +546,9 @@ def capture_project_preview_screenshot(user, project: Path) -> dict | None:
             actions=[],
             project=project,
             token=token,
-            settle_seconds=2.5,
+            settle_seconds=1.5,
         )
-        res = inspect(req, allow_system_capture=True)
+        res = inspect(req)
         shots = res.get("artifacts") or []
         if shots:
             record(project, shots)

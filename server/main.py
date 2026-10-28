@@ -682,7 +682,7 @@ def record_app_deploy_event(body: _AppDeployEventBody, request: Request):
             try:
                 from . import browser_evidence, projects
 
-                if not browser_evidence.browser_binary(allow_system_capture=True):
+                if not browser_evidence.browser_binary():
                     return
                 user = user_manager.get(owner_email)
                 root = projects.root(user)
@@ -700,6 +700,86 @@ def record_app_deploy_event(body: _AppDeployEventBody, request: Request):
             name="app-deploy-screenshot",
         ).start()
     return {"recorded": True}
+
+
+class _AppLogsBody(_EmailBody):
+    app_name: str = Field(..., min_length=1, max_length=120)
+    tail_lines: int = Field(default=200, ge=0, le=5000)
+    search: str = Field(default="", max_length=300)
+
+
+@app.post("/api/apps/logs")
+def stream_app_logs_snapshot(body: _AppLogsBody, request: Request):
+    """Fetch recent log lines from a deployed Databricks App's /logz/stream WebSocket.
+
+    The Databricks CLI ``apps logs`` subcommand rejects token-backed profiles
+    with ``OAuth Token not supported for current auth type pat``. Using the
+    Workshop Terminal's app-identity OAuth bearer and ``Origin`` header against
+    ``wss://<app-url>/logz/stream`` returns the real JSON log entries.
+    """
+    from datetime import datetime, timezone
+    import urllib.request
+    from websockets.sync.client import connect
+
+    _callback_identity(body, request)
+    host = config.databricks_host().rstrip("/")
+    tok = credential_manager.token()
+    if not host or not tok:
+        raise HTTPException(status_code=503, detail="Workshop credential is not ready")
+
+    app_req = urllib.request.Request(
+        f"{host}/api/2.0/apps/{body.app_name.strip()}",
+        headers={"Authorization": f"Bearer {tok}", "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(app_req, timeout=15) as resp:
+            info = json.load(resp)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"Could not read app {body.app_name!r}: {exc}") from exc
+
+    app_url = str(info.get("url") or "").rstrip("/")
+    if not app_url.startswith("https://"):
+        raise HTTPException(status_code=409, detail=f"App {body.app_name!r} has no HTTPS URL yet")
+
+    ws_url = app_url.replace("https://", "wss://", 1) + "/logz/stream"
+    lines: list[str] = []
+    try:
+        with connect(
+            ws_url,
+            additional_headers={"Authorization": f"Bearer {tok}"},
+            origin=app_url,
+            open_timeout=10,
+        ) as sock:
+            sock.send(body.search or "")
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                try:
+                    raw = sock.recv(timeout=0.5)
+                except TimeoutError:
+                    break
+                if raw == "\x00":
+                    break
+                try:
+                    entry = json.loads(raw)
+                    ts = entry.get("timestamp")
+                    iso = (
+                        datetime.fromtimestamp(float(ts), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                        if isinstance(ts, (int, float)) and ts > 0
+                        else ""
+                    )
+                    src = entry.get("source") or "APP"
+                    msg = (entry.get("message") or "").rstrip("\r\n")
+                    lines.append(f"{iso} [{src}] {msg}".strip())
+                except Exception:  # noqa: BLE001
+                    text = str(raw or "").strip()
+                    if text:
+                        lines.append(text)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Log stream failed for {body.app_name!r}: {exc}") from exc
+
+    if body.tail_lines > 0:
+        lines = lines[-body.tail_lines :]
+    return {"app_name": body.app_name, "lines": lines}
 
 
 class _DiscoveryBody(_EmailBody):

@@ -31,7 +31,7 @@ export function terminalGatewayLimit(
   // 4 KB terminal scrollback (Seat 23 built a budget-vs-actual app and got a
   // false allowance banner, EQL 27 Oct 2026).
   const explicitAllowance =
-    /\b429\s+service_spend_limit_reached\b|(?:api\s+error|error)\s*[: ]\s*40[39][^\r\n]{0,120}\b(?:ai\s+gateway\s+budget|budget\s+policy\s+limit|spend[ _-]limit|allowance\s+exhausted|quota[ _-]exhausted|out[ _-]of[ _-]credits)\b/;
+    /\bservice_spend_limit_reached\b|(?:api\s+error|error)\s*[: ]\s*(?:40[39]|429)[^\r\n]{0,160}\b(?:ai\s+gateway\s+budget|budget\s+policy\s+limit|spend[ _-]limit|allowance\s+exhausted|quota[ _-]exhausted|out[ _-]of[ _-]credits)\b/;
   if (explicitAllowance.test(text)) return "gateway_allowance_exhausted";
   return null;
 }

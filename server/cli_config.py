@@ -389,7 +389,7 @@ def configure_claude(
             # EQL session start, 27 Oct 2026).
             "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
             "DISABLE_TELEMETRY": "1",
-            "DISABLE_ERROR_reporting": "1",
+            "DISABLE_ERROR_REPORTING": "1",
         }
     )
     # A static ANTHROPIC_AUTH_TOKEN in the env block would take precedence over

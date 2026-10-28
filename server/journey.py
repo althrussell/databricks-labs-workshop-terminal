@@ -284,17 +284,6 @@ def export(user, *, reason: str = "attendee", reuse: bool = False) -> dict:
         cached = _exports.get(user.email)
         if reuse and cached and time.time() - cached["at"] < EXPORT_REUSE_SECONDS:
             return {**cached["result"], "reused": True}
-        try:
-            from . import browser_evidence
-
-            if browser_evidence.browser_binary(allow_system_capture=True):
-                root = projects.root(user)
-                if root.is_dir():
-                    for child in sorted(root.iterdir()):
-                        if child.is_dir() and not child.is_symlink() and not child.name.startswith("."):
-                            browser_evidence.capture_project_preview_screenshot(user, child)
-        except Exception:  # noqa: BLE001 — screenshot capture never blocks code export
-            pass
         helper = os.path.join(user.home, ".local", "bin", "workshop-export")
         if not os.path.isfile(helper):
             helper = os.path.join(os.path.dirname(__file__), "..", "assets", "bin", "workshop-export")
@@ -307,7 +296,31 @@ def export(user, *, reason: str = "attendee", reuse: bool = False) -> dict:
         result = {**result, "path": result.get("volume_path"),
                   "bytes": os.path.getsize(local) if local and os.path.isfile(local) else 0, "reused": False}
         _exports[user.email] = {"at": time.time(), "result": result}
-        return result
+
+    def _post_export_screenshots() -> None:
+        try:
+            from . import browser_evidence
+
+            if not browser_evidence.browser_binary():
+                return
+            deadline = time.monotonic() + 20.0
+            root = projects.root(user)
+            if not root.is_dir():
+                return
+            for child in sorted(root.iterdir()):
+                if time.monotonic() >= deadline:
+                    break
+                if child.is_dir() and not child.is_symlink() and not child.name.startswith("."):
+                    browser_evidence.capture_project_preview_screenshot(user, child)
+        except Exception:  # noqa: BLE001 — screenshot capture never blocks code export
+            pass
+
+    threading.Thread(
+        target=_post_export_screenshots,
+        daemon=True,
+        name="post-export-screenshots",
+    ).start()
+    return result
 
 
 def has_projects(user) -> bool:

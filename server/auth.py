@@ -252,6 +252,7 @@ def _check_access(principal: Principal) -> None:
                 f"This workshop instance is assigned to {attendee}; "
                 "request a separate attendee instance."
             ),
+            headers={"X-Workshop-Error-Code": "wrong_seat_identity"},
         )
     if not attendee and not config.local_dev() and not config.allow_shared_topology():
         raise HTTPException(

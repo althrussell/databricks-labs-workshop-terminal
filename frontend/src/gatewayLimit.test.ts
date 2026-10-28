@@ -55,4 +55,8 @@ test("gateway machine-readable spend codes are recognised", () => {
     terminalGatewayLimit("429 service_spend_limit_reached"),
     "gateway_allowance_exhausted"
   );
+  assert.equal(
+    terminalGatewayLimit('API Error: 429 {"error_code":"SERVICE_SPEND_LIMIT_REACHED","message":"Spend limit reached"}'),
+    "gateway_allowance_exhausted"
+  );
 });

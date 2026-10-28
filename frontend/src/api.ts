@@ -459,7 +459,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       /* non-JSON error body */
     }
     if (resp.status === 409 && isWorkshopClosingDetail(detail)) notifyWorkshopClosing();
-    if (resp.status === 403 && !path.startsWith("/api/admin/")) {
+    const errorCode = resp.headers?.get?.("X-Workshop-Error-Code") ?? "";
+    const isWrongSeat =
+      errorCode === "wrong_seat_identity" ||
+      (typeof detail === "string" && detail.includes("This workshop instance is assigned to "));
+    if (resp.status === 403 && isWrongSeat && !path.startsWith("/api/admin/")) {
       const msg = typeof detail === "string" ? detail : "This workshop seat is assigned to another attendee.";
       if (!wrongIdentityLatched) {
         wrongIdentityLatched = msg;

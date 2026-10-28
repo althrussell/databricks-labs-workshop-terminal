@@ -1434,7 +1434,7 @@ class EntitlementManager:
             # attendee's build (most likely Workshop Terminal or Omnigent).
             return []
         app_name = str(app.get("name") or "").strip()
-        if app_name in {"wt", "omni"} or app_name.startswith(("wt-", "omni-")):
+        if app_name in {"wt", "omni", "workshop-terminal"}:
             if not _created_by_sp(_APPS_SPEC, app, sp_identities):
                 return []
         client_id = str(
@@ -1464,7 +1464,7 @@ class EntitlementManager:
 
         schema = config.workshop_schema().strip()
         if schema:
-            _patch_uc_privileges(
+            schema_ok, schema_err = _patch_uc_privileges(
                 host,
                 bearer,
                 "schema",
@@ -1480,6 +1480,12 @@ class EntitlementManager:
                     "WRITE_VOLUME",
                 ),
             )
+            if not schema_ok and "404" not in (schema_err or ""):
+                message = f"app service principal schema grant ({catalog}.{schema}): {schema_err or 'failed'}"
+                self._transition(
+                    principal, "app-service-principals", app_name, "failed", error=message
+                )
+                return [f"app {app_name} ({client_id}): {message}"]
         demo_catalog = config.workshop_demo_catalog().strip()
         if demo_catalog and demo_catalog != catalog:
             _grant_catalog_privileges(
