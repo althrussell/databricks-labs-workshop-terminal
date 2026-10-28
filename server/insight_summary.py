@@ -438,17 +438,6 @@ def _extract_json(text: str) -> dict:
     return parsed
 
 
-def _rejects_temperature(resp) -> bool:
-    """A 400 whose message says the model does not take ``temperature``."""
-    if getattr(resp, "status_code", None) != 400:
-        return False
-    try:
-        text = resp.text or ""
-    except Exception:  # noqa: BLE001
-        return False
-    return "temperature" in text.lower() and "support" in text.lower()
-
-
 def _ask_model(harvest: artifacts.Harvest, signal: dict | None) -> tuple[dict, str]:
     import requests
 
@@ -486,12 +475,6 @@ def _ask_model(harvest: artifacts.Harvest, signal: dict | None) -> tuple[dict, s
     for attempt in range(2):
         try:
             resp = requests.post(url, headers=headers, json=body, timeout=_MODEL_TIMEOUT)
-            if _rejects_temperature(resp):
-                # Claude Opus 5.x through the gateway refuses the parameter outright
-                # ("does not support the temperature parameter"), so every summary
-                # fell back to extraction (live qualification, 25 Oct 2026).
-                body.pop("temperature")
-                resp = requests.post(url, headers=headers, json=body, timeout=_MODEL_TIMEOUT)
         except requests.RequestException as exc:
             raise ModelUnavailable(f"AI Gateway unreachable: {exc}") from exc
         if resp.status_code != 200:

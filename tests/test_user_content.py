@@ -1051,3 +1051,139 @@ def test_topic_detection_opt_out(client, monkeypatch):
     # tests the opt-out rather than the sample happening not to match.
     _observe_output(session, "$ databricks lakebase create-database-instance db1")
     assert user.topics == {}
+
+
+def test_ansi_codes_and_new_products_rank_topical_nuggets_first(client, monkeypatch):
+    from server.content import content_service
+    from server.main import _observe_output
+    from server.sessions import session_manager
+    from server.users import user_manager
+
+    _provisioned_home(client, monkeypatch)
+    session = session_manager.list_for("alice@example.com")[0]
+    user = user_manager.get("alice@example.com")
+    user.topics.clear()
+
+    # ANSI-wrapped SQL using ai_classify and workshop-app-deploy
+    _observe_output(
+        session,
+        "\x1b[32mSELECT ai_classify(description, ARRAY('urgent', 'routine')) FROM tickets;\x1b[0m",
+    )
+    assert "ai-functions" in user.topics
+
+    resp = client.get("/api/nuggets", headers=ALICE).json()
+    # Phase automatically advances from default 'intro' to 'build' when building
+    assert resp["phase"] == "build"
+    assert resp["nuggets"][0]["id"] == "topic-ai-functions"
+    assert resp["nuggets"][0]["matched_topic"] == "ai-functions"
+
+
+def test_long_code_span_and_split_markup_do_not_leak_across_chunks(client, monkeypatch):
+    from server.main import _observe_output
+    from server.sessions import session_manager
+    from server.users import user_manager
+
+    _provisioned_home(client, monkeypatch)
+    session = session_manager.list_for("alice@example.com")[0]
+    user = user_manager.get("alice@example.com")
+    user.topics.clear()
+    user.topic_hits.clear()
+    session._topic_tail = ""
+
+    # >256-char inline code span in one chunk followed by unrelated chunk
+    _observe_output(
+        session,
+        "`" + ("x" * 300) + " databricks lakebase list-instances`",
+    )
+    _observe_output(session, "unrelated terminal output\n")
+    assert "lakebase" not in user.topics
+    assert "lakebase" not in user.topic_hits
+
+    # >256-char inline code span split across multiple chunks
+    _observe_output(session, "Reference: `" + ("y" * 300))
+    _observe_output(session, " databricks genie list-spaces`\n")
+    _observe_output(session, "next line\n")
+    assert "genie" not in user.topics
+
+    # >256-char fenced code block split across multiple chunks
+    _observe_output(session, "```bash\n" + ("# filler\n" * 40))
+    _observe_output(session, "databricks lakebase list-instances\n")
+    _observe_output(session, "```\n")
+    assert "lakebase" not in user.topics
+
+    # Real command split across chunks still registers
+    _observe_output(session, "$ databricks lake")
+    _observe_output(session, "base create-database-instance db1\n")
+    assert "lakebase" in user.topics
+
+
+def test_transcript_topic_scan_beyond_60_tool_targets(client, monkeypatch):
+    import json
+    from server import main
+    from server.users import user_manager
+
+    home = _provisioned_home(client, monkeypatch)
+    user = user_manager.get("alice@example.com")
+    user.topics.clear()
+    user.topic_hits.clear()
+    main._transcript_topic_scan_at.pop("alice@example.com", None)
+
+    claude_dir = os.path.join(home, ".claude", "projects", "demo")
+    os.makedirs(claude_dir, exist_ok=True)
+    transcript = os.path.join(claude_dir, "session.jsonl")
+
+    # Write 65 innocuous Read tool targets first so MAX_TOOL_TARGETS (60) is exceeded
+    with open(transcript, "w", encoding="utf-8") as f:
+        for i in range(65):
+            entry = {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "Read",
+                            "input": {"file_path": f"/tmp/file_{i}.py"},
+                        }
+                    ],
+                },
+            }
+            f.write(json.dumps(entry) + "\n")
+
+    # First poll scans all 65 entries without matching any service topic
+    client.get("/api/nuggets", headers=ALICE)
+    assert user.topics == {}
+
+    # Append a 66th tool call using Lakebase and advance scan timer
+    with open(transcript, "a", encoding="utf-8") as f:
+        entry = {
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Bash",
+                        "input": {
+                            "command": "databricks lakebase create-database-instance workshop-db"
+                        },
+                    }
+                ],
+            },
+        }
+        f.write(json.dumps(entry) + "\n")
+
+    main._transcript_topic_scan_at["alice@example.com"] = 0.0
+    resp = client.get("/api/nuggets", headers=ALICE).json()
+    assert "lakebase" in user.topics
+    assert user.topic_hits.get("lakebase") == 1
+    assert resp["nuggets"][0]["id"] == "topic-lakebase"
+
+    # Polling again with no new transcript lines does not re-count the same line
+    main._transcript_topic_scan_at["alice@example.com"] = 0.0
+    client.get("/api/nuggets", headers=ALICE)
+    assert user.topic_hits.get("lakebase") == 1
+
+
+
+

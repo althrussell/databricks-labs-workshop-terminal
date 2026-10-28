@@ -47,6 +47,7 @@ class Profile:
     explanation_detail: str = ""
     engagement_path: str = ""
     background: str = ""
+    industry: str = ""
     choice_sources: dict = field(default_factory=dict)
 
     def to_json(self) -> dict:
@@ -70,6 +71,8 @@ class Profile:
             "engagement_path": self.engagement_path,
             "background": self.background,
             "background_stated": bool(self.background),
+            "industry": self.industry,
+            "industry_stated": bool(self.industry),
             "technical_vocabulary": self.help_preference == "technical",
             "plain_language": self.help_preference == "guided",
             "sources": sources,
@@ -90,6 +93,17 @@ def path(user: User) -> str:
     return os.path.join(user.home, ".workshop", "profile.json")
 
 
+def _normalize_industry(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("Unknown industry")
+    cleaned = value.strip()[:64]
+    if not cleaned:
+        return ""
+    from . import demo_data
+
+    return demo_data.industry_slug(cleaned)
+
+
 def from_json(raw: dict) -> Profile:
     if (not isinstance(raw, dict) or type(raw.get("schema_version")) is not int or raw["schema_version"] != 1
             or raw.get("help_preference") not in PREFERENCES
@@ -97,10 +111,14 @@ def from_json(raw: dict) -> Profile:
             or raw.get("source", "default") not in {"default", "legacy_persona", "attendee"}
             or raw.get("legacy_persona", "") not in {"", "technical", "business"}
             or any(raw.get(name, "") not in allowed for name, allowed in FIELDS.items())
+            or not isinstance(raw.get("industry", ""), str)
             or not isinstance(raw.get("choice_sources", {}), dict)
             or any(value not in CHOICE_SOURCES for value in raw.get("choice_sources", {}).values())):
         raise ValueError("invalid saved profile")
-    return Profile(**{key: raw[key] for key in Profile.__dataclass_fields__ if key in raw})
+    fields = {key: raw[key] for key in Profile.__dataclass_fields__ if key in raw}
+    if fields.get("industry"):
+        fields["industry"] = _normalize_industry(fields["industry"])
+    return Profile(**fields)
 
 
 def read_local(user: User) -> Profile:
@@ -137,8 +155,13 @@ def save(user: User, preference: str | None = None, *, expected_revision: int | 
     changes = dict(changes or {})
     if preference is not None and preference not in PREFERENCES:
         raise ValueError("Unknown help preference")
+    normalized_changes: dict[str, str] = {}
     for name, value in changes.items():
-        if name not in FIELDS or value not in FIELDS[name]:
+        if name == "industry":
+            normalized_changes[name] = _normalize_industry(value)
+        elif name in FIELDS and value in FIELDS[name]:
+            normalized_changes[name] = value
+        else:
             raise ValueError(f"Unknown {name.replace('_', ' ')}")
     if choice_source not in CHOICE_SOURCES:
         raise ValueError("Unknown preference source")
@@ -150,7 +173,7 @@ def save(user: User, preference: str | None = None, *, expected_revision: int | 
         updated = from_json(current.to_json())
         if preference is not None:
             updated.help_preference, updated.source = preference, "attendee"
-        for name, value in changes.items():
+        for name, value in normalized_changes.items():
             setattr(updated, name, value)
             if value:
                 updated.choice_sources = {**updated.choice_sources, name: choice_source}

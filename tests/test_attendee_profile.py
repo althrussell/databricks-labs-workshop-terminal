@@ -185,3 +185,41 @@ def test_a_profile_saved_before_the_starting_point_existed_still_reads(attendee)
     restored = attendee_profile.from_json(older)
     assert restored.background == "" and restored.effective()["background_stated"] is False
     assert restored.working_approach == "lead"
+
+
+def test_industry_saved_in_preferences_updates_persona_and_demo_data_overlays(attendee, monkeypatch):
+    from server import demo_data
+
+    monkeypatch.setattr(demo_data.config, "workshop_demo_catalog", lambda: "workshop_demo")
+    monkeypatch.setattr(
+        demo_data,
+        "_cache",
+        {
+            "automotive_mobility": {"vehicle360"},
+            "energy_utilities": {"grid_outages"},
+        },
+    )
+    monkeypatch.setattr(demo_data, "_cache_at", 1e12)
+    monkeypatch.setattr(demo_data, "_cache_ok", True)
+
+    initial_persona = user_content._persona_overlay(attendee)
+    assert "- Industry: not known yet (ask when you meet them)." in initial_persona
+
+    saved = attendee_profile.save(
+        attendee,
+        None,
+        expected_revision=0,
+        changes={"working_approach": "co_build", "industry": "Energy & Utilities"},
+        choice_source="chat",
+    )
+    assert saved.industry == "energy_utilities"
+    assert saved.effective()["industry_stated"] is True
+
+    updated_persona = user_content._persona_overlay(attendee)
+    assert "- Industry: **energy utilities**." in updated_persona
+
+    demo_overlay = user_content._demo_data_overlay(attendee)
+    assert "workshop_demo.energy_utilities" in demo_overlay
+    assert "vehicle360" not in demo_overlay
+    demo_data.reset_cache()
+
