@@ -76,38 +76,53 @@
   "topics": {
     "lakebase": [
       "databricks lakebase",
+      "databricks database",
+      "databricks postgres",
       "features lakebase",
       "database-instances",
+      "postgres/projects",
+      "databricks_postgres",
+      "generate_database_credential",
       "psql"
     ],
     "unity-catalog": [
       "databricks catalogs create",
       "databricks schemas create",
+      "databricks tables",
+      "databricks volumes",
       "create catalog",
       "create schema",
+      "create table if not exists",
+      "deep clone",
       "unity-catalog/permissions"
     ],
     "genie": [
       "databricks genie",
       "genie_space_id",
-      "genie/spaces"
+      "genie/spaces",
+      "start_conversation"
     ],
     "pipelines": [
       "databricks pipelines",
       "create streaming table",
       "create materialized view",
       "cloudfiles",
-      "lakeflow declarative"
+      "lakeflow declarative",
+      "dlt.table",
+      "dp.table"
     ],
     "vector-search": [
       "databricks vector-search",
       "vector_search",
-      "create_delta_sync_index"
+      "create_delta_sync_index",
+      "similarity_search"
     ],
     "mlflow": [
       "import mlflow",
       "mlflow.log",
       "mlflow.start_run",
+      "mlflow.trace",
+      "mlflow.genai",
       "databricks mlflow"
     ],
     "serving": [
@@ -115,8 +130,30 @@
       "databricks serving",
       "query_endpoint"
     ],
+    "ai-functions": [
+      "ai_query",
+      "ai_classify",
+      "ai_extract",
+      "ai_summarize",
+      "ai_parse_document",
+      "ai_forecast",
+      "ai_analyze_sentiment"
+    ],
+    "agent-bricks": [
+      "databricks agent-bricks",
+      "knowledge-assistants",
+      "supervisor-agents"
+    ],
+    "dbsql": [
+      "statement_execution",
+      "execute_statement",
+      "databricks sql-warehouses",
+      "create metric view"
+    ],
     "apps": [
       "apps deploy",
+      "workshop-app-deploy",
+      "deploy_databricks_app",
       "bundle deploy",
       "appkit.plugins.json",
       "databricksapps.com"
@@ -124,7 +161,8 @@
     "dashboards": [
       "databricks lakeview",
       "lakeview/dashboards",
-      "create dashboard"
+      "create dashboard",
+      ".lvdash.json"
     ],
     "jobs": [
       "databricks jobs create",
@@ -301,7 +339,7 @@
     {
       "id": "topic-lakebase",
       "title": "You're using Lakebase 🐘",
-      "markdown": "Lakebase is **fully-managed Postgres built into Databricks** — your app gets a real OLTP database with zero infrastructure, branching for dev/test, and synced tables that flow straight into your lakehouse. No separate database vendor, one governance model.",
+      "markdown": "Lakebase is **fully-managed Postgres built into Databricks** with **Autoscaling (scale-to-zero)**, instant **database branching** for dev/test workflows, and **synced tables** that replicate analytical data to OLTP with zero ETL. One OAuth identity and Unity Catalog governance model.",
       "link": {
         "url": "https://www.databricks.com/product/lakebase",
         "label": "Why Lakebase"
@@ -315,6 +353,60 @@
       "weight": 10,
       "cta": "Add Postgres to your build →",
       "prompt": "Add a Lakebase Postgres database to my app and store its state there."
+    },
+    {
+      "id": "topic-ai-functions",
+      "title": "Built-in AI Functions & Unity AI Gateway",
+      "markdown": "Functions like `ai_query`, `ai_classify`, `ai_extract`, `ai_parse_document`, and `ai_forecast` let you call frontier models (`system.ai.*`) directly inside SQL and PySpark — governed and rate-limited through **Unity AI Gateway** with zero infrastructure to manage.",
+      "link": {
+        "url": "https://docs.databricks.com/en/large-language-models/ai-functions.html",
+        "label": "AI Functions docs"
+      },
+      "tags": [
+        "ai-functions"
+      ],
+      "triggers": [
+        "topic:ai-functions"
+      ],
+      "weight": 10,
+      "cta": "Enrich your tables with AI →",
+      "prompt": "Use Databricks AI Functions (ai_classify or ai_extract) over our table to enrich records with structured AI insights."
+    },
+    {
+      "id": "topic-agent-bricks",
+      "title": "Agent Bricks: Knowledge Assistants & Supervisors",
+      "markdown": "**Agent Bricks** turns your governed Unity Catalog documents and tools into production **Knowledge Assistants** (RAG with citations) and **Multi-Agent Supervisors** that route across Genie, Vector Search, and custom UC functions.",
+      "link": {
+        "url": "https://www.databricks.com/blog/ai-agent-systems",
+        "label": "Agent Bricks on Databricks"
+      },
+      "tags": [
+        "agent-bricks"
+      ],
+      "triggers": [
+        "topic:agent-bricks"
+      ],
+      "weight": 10,
+      "cta": "Add a governed agent →",
+      "prompt": "Wire an AI assistant into our app that answers questions grounded in our Unity Catalog tables."
+    },
+    {
+      "id": "topic-dbsql",
+      "title": "Serverless Databricks SQL & Metric Views",
+      "markdown": "Your queries run on **Serverless SQL Warehouses** with instant startup and automatic concurrency scaling. Define reusable KPIs once with **Unity Catalog Metric Views** so every app, AI/BI dashboard, and Genie space shares the exact same business definitions.",
+      "link": {
+        "url": "https://www.databricks.com/product/databricks-sql",
+        "label": "Databricks SQL"
+      },
+      "tags": [
+        "dbsql"
+      ],
+      "triggers": [
+        "topic:dbsql"
+      ],
+      "weight": 9,
+      "cta": "Standardize your KPIs →",
+      "prompt": "Create a governed summary view in my catalog for the key metrics in our app."
     },
     {
       "id": "topic-unity-catalog",

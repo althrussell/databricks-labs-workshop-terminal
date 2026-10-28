@@ -78,6 +78,35 @@ observability.install_logging_redaction()
 logger = logging.getLogger("workshop-terminal")
 
 _STATIC_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "static"))
+_transcript_topic_scan_at: dict[str, float] = {}
+
+_DISCOVERY_PRODUCT_TO_TOPIC = {
+    "lakebase": "lakebase",
+    "postgres": "lakebase",
+    "genie": "genie",
+    "ai-bi": "dashboards",
+    "aibi": "dashboards",
+    "dashboards": "dashboards",
+    "lakeview": "dashboards",
+    "unity-catalog": "unity-catalog",
+    "uc": "unity-catalog",
+    "pipelines": "pipelines",
+    "lakeflow": "pipelines",
+    "dlt": "pipelines",
+    "vector-search": "vector-search",
+    "mlflow": "mlflow",
+    "serving": "serving",
+    "model-serving": "serving",
+    "fmapi": "serving",
+    "ai-functions": "ai-functions",
+    "ai_functions": "ai-functions",
+    "agent-bricks": "agent-bricks",
+    "dbsql": "dbsql",
+    "sql-warehouse": "dbsql",
+    "apps": "apps",
+    "databricks-apps": "apps",
+    "jobs": "jobs",
+}
 
 
 def _observe_output(session, chunk: str) -> None:
@@ -85,15 +114,33 @@ def _observe_output(session, chunk: str) -> None:
     insights. Only topic names are recorded — never the text itself."""
     if not config.topic_detection_enabled():
         return
-    topics = content_service.scan_topics(chunk)
+    from .content import consume_topic_chunk
+
+    prior_tail = getattr(session, "_topic_tail", "") or ""
+    scannable, session._topic_tail = consume_topic_chunk(prior_tail, chunk)
+    topics = content_service.scan_topics(scannable)
     if not topics:
         return
     user = user_manager.peek(session.owner_email)
     if user:
         now = time.time()
+        should_notify = False
         for topic in topics:
+            prev_at = user.topics.get(topic, 0.0)
+            if now - prev_at > 30.0:
+                should_notify = True
             user.topics[topic] = now
             user.topic_hits[topic] = user.topic_hits.get(topic, 0) + 1
+        if content_service.advance_to_build_if_default():
+            try:
+                event_hub.publish({"t": "phase", "phase": "build"})
+            except Exception:  # noqa: BLE001
+                pass
+        if should_notify:
+            try:
+                event_hub.publish({"t": "content_updated"})
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def _start_control_tower_threads(
@@ -680,6 +727,21 @@ def record_app_deploy_event(body: _AppDeployEventBody, request: Request):
     )
     if not captured:
         raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL)
+    if config.topic_detection_enabled():
+        deploy_user = user_manager.peek(principal.name)
+        if deploy_user is not None:
+            now_ts = time.time()
+            deploy_user.topics["apps"] = now_ts
+            deploy_user.topic_hits["apps"] = deploy_user.topic_hits.get("apps", 0) + 1
+            if body.outcome == "succeeded":
+                deploy_user.topics["build-complete"] = now_ts
+                deploy_user.topic_hits["build-complete"] = (
+                    deploy_user.topic_hits.get("build-complete", 0) + 1
+                )
+            try:
+                event_hub.publish({"t": "content_updated"})
+            except Exception:  # noqa: BLE001
+                pass
     if body.outcome == "succeeded":
         def _bg_screenshot(owner_email: str) -> None:
             try:
@@ -826,6 +888,24 @@ def submit_discovery(body: _DiscoveryBody, request: Request):
         # Withdrawn by the attendee, or the per-attendee cap is reached. Both are
         # deliberate refusals, not failures, and neither is the agent's business.
         return {"captured": False, "reason": "not_stored"}
+    if config.topic_detection_enabled() and getattr(stored, "agent", "") != "wizard":
+        user = user_manager.peek(principal.name)
+        if user:
+            now = time.time()
+            should_notify = False
+            for prod in getattr(stored, "databricks_products", ()) or ():
+                slug = str(prod).strip().lower().replace(" ", "-")
+                mapped = _DISCOVERY_PRODUCT_TO_TOPIC.get(slug)
+                if mapped:
+                    if now - user.topics.get(mapped, 0.0) > 30.0:
+                        should_notify = True
+                    user.topics[mapped] = now
+                    user.topic_hits[mapped] = user.topic_hits.get(mapped, 0) + 1
+            if should_notify:
+                try:
+                    event_hub.publish({"t": "content_updated"})
+                except Exception:  # noqa: BLE001
+                    pass
     return {
         "captured": True,
         "record_id": stored.record_id,
@@ -926,6 +1006,7 @@ class _ProfileBody(BaseModel):
     explanation_detail: str | None = None
     engagement_path: str | None = None
     background: str | None = None
+    industry: str | None = None
 
 
 class _AgentProfileBody(_EmailBody):
@@ -958,7 +1039,8 @@ def save_profile(body: _ProfileBody, principal: Principal = Depends(get_current_
     changes = {name: value for name, value in (("working_approach", body.working_approach),
                                                 ("explanation_detail", body.explanation_detail),
                                                 ("engagement_path", body.engagement_path),
-                                                ("background", body.background)) if value is not None}
+                                                ("background", body.background),
+                                                ("industry", body.industry)) if value is not None}
     try:
         profile = attendee_profile.save(user, body.help_preference, expected_revision=body.expected_revision,
                                         changes=changes, choice_source="ui")
@@ -1464,6 +1546,8 @@ def select_project(body: SelectProjectBody, principal: Principal = Depends(get_c
                 raise HTTPException(status_code=409, detail="Close the current agent before switching builds. Its written files stay in place.")
             value = projects.select(user, body.name, goal=body.goal, new=body.new)
             user_content.provision(user)
+            if content_service.advance_to_build_if_default():
+                event_hub.publish({"t": "phase", "phase": "build"})
             return value
     except projects.ProjectError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
@@ -1733,6 +1817,8 @@ def create_session(
         raise HTTPException(status_code=503, detail=str(e)) from e
     user.sessions_launched[agent["id"]] = user.sessions_launched.get(agent["id"], 0) + 1
     user_manager.checkpoint(user)
+    if content_service.advance_to_build_if_default():
+        event_hub.publish({"t": "phase", "phase": "build"})
     telemetry.session_started(principal.name, agent["id"], session.id)
     entitlement_manager.wake("session_start")
     if body.replaces_agent_id and body.replaces_agent_id != agent["id"]:
@@ -1834,6 +1920,7 @@ def report_attendee_error(
 
 @app.get("/api/nuggets")
 def get_nuggets(principal: Principal = Depends(get_current_user)):
+    from . import artifacts
     from .content import TOPIC_TTL_SECONDS
 
     now = time.time()
@@ -1844,10 +1931,34 @@ def get_nuggets(principal: Principal = Depends(get_current_user)):
     user = user_manager.peek(principal.name)
     live_topics: set[str] = set()
     idle_minutes = 0.0
+    has_building_activity = bool(sessions)
     if user:
-        live_topics = {
-            t for t, at in user.topics.items() if now - at < TOPIC_TTL_SECONDS
-        }
+        if config.topic_detection_enabled():
+            # Scan new agent transcript tool targets periodically (covers Claude, Codex, Omnigent)
+            last_scan = _transcript_topic_scan_at.get(principal.name, 0.0)
+            if now - last_scan >= 20.0:
+                try:
+                    _transcript_topic_scan_at[principal.name] = now
+                    cursors = getattr(user, "_transcript_topic_cursors", None)
+                    if cursors is None:
+                        cursors = {}
+                        user._transcript_topic_cursors = cursors
+                    new_targets = artifacts.scan_new_tool_targets(user.home, cursors)
+                    if new_targets:
+                        for topic in content_service.scan_topics(
+                            "\n".join(new_targets)
+                        ):
+                            user.topics[topic] = now
+                            user.topic_hits[topic] = (
+                                user.topic_hits.get(topic, 0) + 1
+                            )
+                except Exception:  # noqa: BLE001
+                    pass
+
+            live_topics = {
+                t for t, at in user.topics.items() if now - at < TOPIC_TTL_SECONDS
+            }
+
         # True idle = no input AND no terminal output. Session activity covers
         # both (the reader thread touches it on output), so an agent working
         # away on the attendee's behalf never counts as idle.
@@ -1856,10 +1967,24 @@ def get_nuggets(principal: Principal = Depends(get_current_user)):
             signals.append(user.last_seen)
         if signals:
             idle_minutes = max(0.0, (now - max(signals)) / 60)
+
+    if has_building_activity and content_service.advance_to_build_if_default():
+        try:
+            event_hub.publish({"t": "phase", "phase": "build"})
+        except Exception:  # noqa: BLE001
+            pass
+    effective_phase = content_service.phase
+
     return {
-        "phase": content_service.phase,
-        "nuggets": content_service.nuggets_for(triggers, live_topics, idle_minutes),
-        "prompts": content_service.prompts_for_phase(),
+        "phase": effective_phase,
+        "nuggets": content_service.nuggets_for(
+            triggers,
+            live_topics,
+            idle_minutes,
+            phase_override=effective_phase,
+            topic_recency=dict(user.topics) if user else None,
+        ),
+        "prompts": content_service.prompts_for_phase(phase_override=effective_phase),
     }
 
 

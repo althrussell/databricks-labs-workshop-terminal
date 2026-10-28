@@ -195,9 +195,11 @@ def test_the_agent_asks_how_they_want_to_work_once_and_never_infers(client, monk
     text = " ".join(_instructions(_provisioned_home(client, monkeypatch)).split())
 
     for choice in ("*Build with me*", "*Teach me as we go*", "*Let me drive*",
-                   "business or domain side, data and SQL, software developer, or just exploring"):
+                   "business or domain side, data and SQL, software developer, or just exploring",
+                   "What industry do you work in?"):
         assert choice in text
     assert "workshop-workflow prefs --approach co_build|learn|lead --background" in text
+    assert "--industry <industry>" in text
     assert "Never ask them again on resume, follow-up or agent switch" in text
 
 
