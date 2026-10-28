@@ -838,6 +838,21 @@ class RemoteHostManager:
                                 email,
                                 now - stale_since,
                             )
+                            try:
+                                from . import friction_scanner
+
+                                friction_scanner.emit_friction(
+                                    email,
+                                    source="wt.omnigent_log",
+                                    category="Omnigent",
+                                    code="omnigent_host_stood_down",
+                                    severity="degraded",
+                                    attendee_visible=True,
+                                    agent="omnigent",
+                                    evidence=f"OBO mirror stale for {int(now - stale_since)}s",
+                                )
+                            except Exception:  # noqa: BLE001
+                                pass
                             self._terminate_group(
                                 process, deadline=now + self._shutdown_timeout
                             )

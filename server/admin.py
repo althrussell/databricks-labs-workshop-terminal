@@ -919,6 +919,8 @@ def _journey(user) -> dict | None:
 
 @router.get("/presence")
 def presence():
+    from . import network_check
+
     now = time.time()
     users = []
     for user in user_manager.all():
@@ -934,6 +936,7 @@ def presence():
                 "workspace_sync": user_content.workspace_sync_status(user),
                 "sessions": [s.to_dict() for s in sessions],
                 "journey": _journey(user),
+                "network_check": network_check.get_for(user.email),
             }
         )
     ranked = sorted(users, key=lambda u: u["email"])

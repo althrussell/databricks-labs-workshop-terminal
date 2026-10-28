@@ -32,6 +32,8 @@ import logging
 import os
 import re
 import threading
+import time
+from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -39,6 +41,24 @@ from . import config
 from .diagnostics import Journal, clip, redact
 
 logger = logging.getLogger(__name__)
+forward_logger = logging.getLogger("workshop-terminal.omnigent_log")
+
+# Lifecycle detector pinned to Omnigent 0.19.1 log patterns (EQL seat 22).
+OMNIGENT_LIFECYCLE_LOCKED_VERSION = "0.19.1"
+_FORWARD_RATE_LIMIT_PER_SEC = 20
+_FIRST_MESSAGE_TIMEOUT_S = 200.0
+_START_STALL_TIMEOUT_S = 120.0
+_EARLY_TERMINAL_EXIT_S = 60.0
+
+_NOISY_SUCCESS_LINE = re.compile(
+    r'HTTP Request: (?:POST [^\s"]+/events "HTTP/1\.[01] 202|'
+    r'GET [^\s"]+/(?:healthz?|readyz) "HTTP/1\.[01] 200|'
+    r'GET [^\s"]+/v1/sessions/[^\s"]+\?include_items=false[^\s"]* "HTTP/1\.[01] 200)'
+)
+_CLI_ARGV = re.compile(r"(CLI start\s+[—-]\s+argv=)\[.*\]")
+_CONV_SESSION = re.compile(r"\b(?:session|conv|conversation)[=: ]+([0-9a-f]{8,32})\b", re.IGNORECASE)
+_HARNESS_NAME = re.compile(r"\bharness=([A-Za-z0-9_.-]+)")
+_FILENAME_SESSION = re.compile(r"runner-(?:runner-)?([0-9a-f]{8,32})-")
 
 # ``LEVEL MM-DD HH:MM:SS.mmm  source  function | message`` — Omnigent's
 # TerminalLogFormatter. Anything that does not match is a continuation of the
@@ -151,9 +171,45 @@ def _fingerprint(record: _Record, code: str) -> str:
     return hashlib.sha1("|".join(parts).encode("utf-8", "replace")).hexdigest()[:12]
 
 
-def _session_of(record: _Record) -> str:
-    match = _SESSION.search(record.message)
-    return match.group(1) if match else ""
+def _session_of(record: _Record, path: Path | None = None) -> str:
+    match = _SESSION.search(record.message) or _CONV_SESSION.search(record.message)
+    if match:
+        return match.group(1)
+    if path is not None:
+        fn_match = _FILENAME_SESSION.search(path.name)
+        if fn_match:
+            return fn_match.group(1)
+    return ""
+
+
+def _parse_log_timestamp(raw: str) -> float | None:
+    if not raw:
+        return None
+    try:
+        dt = datetime.strptime(f"2026-{raw.strip()}", "%Y-%m-%d %H:%M:%S.%f")
+        return dt.timestamp()
+    except ValueError:
+        return None
+
+
+@dataclass
+class _SessionLifecycle:
+    session_id: str
+    attendee: str
+    source: str
+    harness: str = "claude-native"
+    launched_at: float | None = None
+    launched_mono: float = field(default_factory=time.monotonic)
+    interactive_at: float | None = None
+    interactive_mono: float | None = None
+    first_message_at: float | None = None
+    stopped_at: float | None = None
+    ready_emitted: bool = False
+    first_message_emitted: bool = False
+    missing_emitted: bool = False
+    stalled_emitted: bool = False
+    early_exit_emitted: bool = False
+    recent_lines: list[str] = field(default_factory=list)
 
 
 class LogCollector:
@@ -166,12 +222,21 @@ class LogCollector:
         users=None,
         emitter=None,
         interval: float | None = None,
+        first_message_timeout_s: float = _FIRST_MESSAGE_TIMEOUT_S,
+        start_stall_timeout_s: float = _START_STALL_TIMEOUT_S,
+        rate_limit_per_sec: int = _FORWARD_RATE_LIMIT_PER_SEC,
     ) -> None:
         self.journal = journal if journal is not None else _default_journal()
         self._users = users
         self._emitter = emitter
         self.interval = interval if interval is not None else config.log_collector_interval()
+        self.first_message_timeout_s = first_message_timeout_s
+        self.start_stall_timeout_s = start_stall_timeout_s
+        self.rate_limit_per_sec = rate_limit_per_sec
         self._cursors: dict[str, _Cursor] = {}
+        self._sessions: dict[str, _SessionLifecycle] = {}
+        self._rate_window: dict[str, tuple[int, int, int]] = {}
+        self.forwarded_lines: list[dict] = []
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._sweeps = 0
@@ -212,12 +277,14 @@ class LogCollector:
             "running": self._thread is not None and self._thread.is_alive(),
         }
 
-    def sweep(self) -> int:
+    def sweep(self, *, now_mono: float | None = None) -> int:
         """Read what is new in every attendee's logs. Returns entries captured."""
         captured = 0
         for attendee, home in self._homes():
             for path in log_files(home):
                 captured += self._sweep_file(attendee, path)
+            self._flush_rate_dropped(attendee)
+        self._check_lifecycle_timeouts(now_mono=now_mono)
         self._sweeps += 1
         self._captured += captured
         return captured
@@ -269,7 +336,7 @@ class LogCollector:
         if cursor.pending.holds < _MAX_HOLD:
             return 0
         record, cursor.pending = cursor.pending, None
-        return 1 if self._capture(attendee, path, record) else 0
+        return 1 if self._process_record(attendee, path, record) else 0
 
     def _ingest(self, attendee: str, path: Path, cursor: _Cursor, text: str) -> int:
         captured = 0
@@ -280,7 +347,7 @@ class LogCollector:
                 continue
             header = _HEADER.match(line)
             if header:
-                if pending is not None and self._capture(attendee, path, pending):
+                if pending is not None and self._process_record(attendee, path, pending):
                     captured += 1
                 pending = _Record(
                     level=header.group("level"),
@@ -306,11 +373,247 @@ class LogCollector:
                     lines=[line],
                 )
         if pending is not None and pending.looks_complete:
-            if self._capture(attendee, path, pending):
+            if self._process_record(attendee, path, pending):
                 captured += 1
             pending = None
         cursor.pending = pending
         return captured
+
+    def _process_record(self, attendee: str, path: Path, record: _Record) -> bool:
+        self._forward_record(attendee, path, record)
+        self._observe_lifecycle(attendee, path, record)
+        return self._capture(attendee, path, record)
+
+    def _forward_record(self, attendee: str, path: Path, record: _Record) -> None:
+        level = record.level.strip().upper()
+        if level == "DEBUG":
+            return
+        if _NOISY_SUCCESS_LINE.search(record.message):
+            return
+        sanitized_msg = _CLI_ARGV.sub(r"\1[REDACTED_ARGV]", record.message)
+        sanitized_msg = clip(redact(sanitized_msg), 1024)
+        session_id = _session_of(record, path)
+        source = path.parent.name
+        severe = level in _SEVERE or level in {"WARN", "WARNING"}
+        second = int(time.monotonic())
+        sec, count, dropped = self._rate_window.get(attendee, (second, 0, 0))
+        if sec != second:
+            if dropped > 0:
+                self._emit_forwarded_drop_summary(attendee, dropped)
+            sec, count, dropped = second, 0, 0
+        if not severe and count >= self.rate_limit_per_sec:
+            self._rate_window[attendee] = (sec, count, dropped + 1)
+            return
+        self._rate_window[attendee] = (sec, count + 1, dropped)
+        item = {
+            "attendee": attendee,
+            "source": source,
+            "session_id": session_id,
+            "level": level,
+            "logger": record.logger_name.strip(),
+            "message": sanitized_msg,
+        }
+        self.forwarded_lines.append(item)
+        if len(self.forwarded_lines) > 500:
+            del self.forwarded_lines[: len(self.forwarded_lines) - 500]
+        log_fn = (
+            forward_logger.error
+            if level in _SEVERE
+            else forward_logger.warning
+            if level in {"WARN", "WARNING"}
+            else forward_logger.info
+        )
+        log_fn(
+            "omnigent.%s session=%s logger=%s | %s",
+            source,
+            session_id or "-",
+            record.logger_name.strip(),
+            sanitized_msg,
+        )
+
+    def _flush_rate_dropped(self, attendee: str) -> None:
+        sec, count, dropped = self._rate_window.get(attendee, (0, 0, 0))
+        if dropped > 0:
+            self._emit_forwarded_drop_summary(attendee, dropped)
+            self._rate_window[attendee] = (sec, count, 0)
+
+    def _emit_forwarded_drop_summary(self, attendee: str, dropped: int) -> None:
+        summary = f"dropped {dropped} INFO lines (rate limit {self.rate_limit_per_sec}/s)"
+        self.forwarded_lines.append(
+            {
+                "attendee": attendee,
+                "source": "collector",
+                "session_id": "",
+                "level": "WARNING",
+                "logger": "log_collector",
+                "message": summary,
+            }
+        )
+        forward_logger.warning("omnigent.collector | %s", summary)
+
+    def _observe_lifecycle(self, attendee: str, path: Path, record: _Record) -> None:
+        source = path.parent.name
+        session_id = _session_of(record, path) or path.stem
+        key = f"{attendee}:{source}:{session_id}"
+        state = self._sessions.get(key)
+        ts = _parse_log_timestamp(record.timestamp)
+        msg = record.message
+        sanitized = clip(redact(_CLI_ARGV.sub(r"\1[REDACTED_ARGV]", msg)), 240)
+        if state is not None:
+            state.recent_lines.append(sanitized)
+            if len(state.recent_lines) > 6:
+                del state.recent_lines[:-6]
+
+        if (
+            "tmux launch requested" in msg
+            or "harness started for conversation" in msg
+            or "CLI start" in msg
+        ):
+            if state is None:
+                state = _SessionLifecycle(
+                    session_id=session_id,
+                    attendee=attendee,
+                    source=source,
+                )
+                self._sessions[key] = state
+            if state.launched_at is None:
+                state.launched_at = ts
+                state.launched_mono = time.monotonic()
+            harness_match = _HARNESS_NAME.search(msg)
+            if harness_match:
+                state.harness = harness_match.group(1)
+            state.recent_lines.append(sanitized)
+
+        if "Native terminal became interactive" in msg:
+            if state is None:
+                state = _SessionLifecycle(
+                    session_id=session_id,
+                    attendee=attendee,
+                    source=source,
+                )
+                self._sessions[key] = state
+            harness_match = _HARNESS_NAME.search(msg)
+            if harness_match:
+                state.harness = harness_match.group(1)
+            state.interactive_at = ts
+            state.interactive_mono = time.monotonic()
+            if not state.ready_emitted:
+                state.ready_emitted = True
+                launch_ms = (
+                    max(0, int(round((ts - state.launched_at) * 1000)))
+                    if ts is not None and state.launched_at is not None
+                    else 0
+                )
+                self._emit_lifecycle(
+                    "omnigent.session_ready",
+                    attendee,
+                    {
+                        "session_id": session_id,
+                        "harness": state.harness,
+                        "launch_to_interactive_ms": launch_ms,
+                    },
+                )
+
+        if (
+            ("post_session_events" in msg and "type=message" in msg)
+            or "UserPromptSubmit observed" in msg
+        ):
+            if state is None:
+                state = _SessionLifecycle(
+                    session_id=session_id,
+                    attendee=attendee,
+                    source=source,
+                )
+                self._sessions[key] = state
+            state.first_message_at = ts or time.time()
+            if not state.first_message_emitted:
+                state.first_message_emitted = True
+                ready_ms = (
+                    max(0, int(round((ts - state.interactive_at) * 1000)))
+                    if ts is not None and state.interactive_at is not None
+                    else 0
+                )
+                self._emit_lifecycle(
+                    "omnigent.first_message",
+                    attendee,
+                    {
+                        "session_id": session_id,
+                        "harness": state.harness,
+                        "ready_to_first_message_ms": ready_ms,
+                    },
+                )
+
+        if "post_session_events" in msg and "type=stop_session" in msg:
+            if state is not None:
+                state.stopped_at = ts or time.time()
+                if state.launched_at is not None and ts is not None:
+                    duration_s = max(0.0, ts - state.launched_at)
+                    if duration_s < _EARLY_TERMINAL_EXIT_S and not state.early_exit_emitted:
+                        state.early_exit_emitted = True
+                        self._emit_lifecycle(
+                            "omnigent.terminal_exited_early",
+                            attendee,
+                            {
+                                "session_id": session_id,
+                                "harness": state.harness,
+                                "duration_s": round(duration_s, 1),
+                                "evidence": " | ".join(state.recent_lines[-3:])[:300],
+                            },
+                        )
+
+    def _check_lifecycle_timeouts(self, *, now_mono: float | None = None) -> None:
+        now = now_mono if now_mono is not None else time.monotonic()
+        for state in list(self._sessions.values()):
+            if state.source != "runner" or state.stopped_at is not None:
+                continue
+            if (
+                state.interactive_mono is not None
+                and state.first_message_at is None
+                and not state.missing_emitted
+                and (now - state.interactive_mono) >= self.first_message_timeout_s
+            ):
+                state.missing_emitted = True
+                self._emit_lifecycle(
+                    "omnigent.first_message_missing",
+                    state.attendee,
+                    {
+                        "session_id": state.session_id,
+                        "harness": state.harness,
+                        "severity": "degraded",
+                        "evidence": (
+                            f"session {state.session_id} became interactive but received "
+                            f"no first message after {int(self.first_message_timeout_s)}s"
+                        ),
+                    },
+                )
+            elif (
+                state.interactive_mono is None
+                and not state.stalled_emitted
+                and (now - state.launched_mono) >= self.start_stall_timeout_s
+            ):
+                state.stalled_emitted = True
+                self._emit_lifecycle(
+                    "omnigent.session_start_stalled",
+                    state.attendee,
+                    {
+                        "session_id": state.session_id,
+                        "harness": state.harness,
+                        "evidence": (
+                            f"session {state.session_id} did not become interactive "
+                            f"after {int(self.start_stall_timeout_s)}s"
+                        ),
+                    },
+                )
+
+    def _emit_lifecycle(self, event_type: str, attendee: str, payload: dict) -> None:
+        from . import telemetry
+
+        telemetry.emit(event_type, attendee, payload)
+        if self._emitter is not None:
+            try:
+                self._emitter.emit(event_type, attendee, payload)
+            except Exception:  # noqa: BLE001
+                pass
 
     # -- journalling -------------------------------------------------------
 
@@ -319,7 +622,7 @@ class LogCollector:
         if code is None:
             return False
         fingerprint = _fingerprint(record, code)
-        session = _session_of(record)
+        session = _session_of(record, path)
         entry = {
             "attendee": attendee,
             "source": path.parent.name,

@@ -40,6 +40,13 @@ import LaunchBar from "./components/LaunchBar";
 import NuggetsPane from "./components/NuggetsPane";
 import OperatorPanel from "./components/OperatorPanel";
 import SignInNotice from "./components/SignInNotice";
+import { NetworkNotice, NetworkStatusControl } from "./components/NetworkNotice";
+import {
+  RECHECK_COOLDOWN_MS,
+  runNetworkCheck,
+  type NetworkCheckResult,
+  type NetworkStatusKind,
+} from "./networkCheck";
 import RaiseHandButton from "./components/RaiseHandButton";
 import HelpChatPanel from "./components/HelpChatPanel";
 import ToastHost from "./components/ToastHost";
@@ -142,10 +149,14 @@ export default function App() {
   });
   const [savedChecked, setSavedChecked] = useState(false);
   const [keepaliveNonce, setKeepaliveNonce] = useState(0);
+  const [networkStatus, setNetworkStatus] = useState<NetworkStatusKind>("checking");
+  const [networkResult, setNetworkResult] = useState<NetworkCheckResult | null>(null);
   const [wrongIdentityDetail, setWrongIdentityDetail] = useState<string | null>(null);
   const [exportBusy, setExportBusy] = useState(false);
   const [attachBusy, setAttachBusy] = useState(false);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const networkLastRunAt = useRef(0);
+  const networkRunning = useRef(false);
   const savedAutoCheck = useRef(false);
   const helpChatOpenRef = useRef(false);
   const wizardChecked = useRef(false);
@@ -242,6 +253,38 @@ export default function App() {
     }
     document.title = cfg.branding.event_name || `${cfg.branding.brand_name} Workshop`;
   }, []);
+
+  const triggerNetworkCheck = useCallback((force = false) => {
+    if (networkRunning.current) return;
+    const now = Date.now();
+    if (!force && networkLastRunAt.current > 0 && now - networkLastRunAt.current < RECHECK_COOLDOWN_MS) {
+      return;
+    }
+    networkRunning.current = true;
+    networkLastRunAt.current = now;
+    setNetworkStatus("checking");
+    void runNetworkCheck()
+      .then((res) => {
+        setNetworkResult(res);
+        setNetworkStatus(res.verdict);
+      })
+      .finally(() => {
+        networkRunning.current = false;
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!config || inputDisabled) return;
+    triggerNetworkCheck(false);
+    const onOnline = () => triggerNetworkCheck(false);
+    window.addEventListener("online", onOnline);
+    const conn = (navigator as unknown as { connection?: EventTarget }).connection;
+    conn?.addEventListener?.("change", onOnline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      conn?.removeEventListener?.("change", onOnline);
+    };
+  }, [Boolean(config), inputDisabled, triggerNetworkCheck]);
 
   useEffect(() => onWorkshopClosing(() => {
     setWorkshopState((current) => advanceWorkshopState(current, "closing"));
@@ -955,6 +998,11 @@ export default function App() {
           <button className="operator-toggle" disabled={inputDisabled} onClick={() => setPreferencesOpen(true)} aria-label="Agent preferences" title="Agent preferences — change how your agent helps">
             <Settings2 size={16} aria-hidden="true" /><span className="nav-label">Agent preferences</span>
           </button>
+          <NetworkStatusControl
+            status={networkStatus}
+            result={networkResult}
+            onRunAgain={() => triggerNetworkCheck(true)}
+          />
           {Boolean(projectInventory?.active || (projectInventory?.projects && projectInventory.projects.length > 0)) && (
             <button
               className="operator-toggle"
@@ -1017,6 +1065,7 @@ export default function App() {
         obo={config?.obo}
         onReload={() => location.reload()}
       />}
+      {!inputDisabled && <NetworkNotice result={networkResult} />}
       {!inputDisabled && (config?.omnigent_remote.enabled || config?.obo.enabled) && keepaliveNonce > 0 && (
         <iframe
           src={`/api/auth/keepalive?t=${keepaliveNonce}`}

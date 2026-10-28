@@ -1,4 +1,4 @@
-command: ["python", "app.py"]
+command: ["python", "otel_bootstrap.py"]
 
 env:
   # Public deployment registries; laptop transport overrides never ship here.
@@ -53,3 +53,17 @@ env:
     value: ""
   - name: WORKSHOP_APP_URL
     value: ""
+  - name: WORKSHOP_RUN_ID
+    value: ""
+  - name: WORKSHOP_UNIT_ID
+    value: ""
+  - name: EVENT_NAME
+    value: ""
+  - name: WORKSHOP_RELEASE_SHA
+    value: ""
+  - name: OTEL_TRACES_SAMPLER
+    value: "parentbased_traceidratio"
+  - name: OTEL_TRACES_SAMPLER_ARG
+    value: "0.1"
+  - name: OTEL_PYTHON_FASTAPI_EXCLUDED_URLS
+    value: "health,/health,/healthz,/readyz"
