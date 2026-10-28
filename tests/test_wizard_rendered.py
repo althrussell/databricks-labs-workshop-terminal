@@ -185,220 +185,223 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
     try:
         async with browser_api.async_playwright() as engine:
             browser = await engine.chromium.launch(headless=True, executable_path=os.environ.get("WORKSHOP_BROWSER_EXECUTABLE"))
-            context = await browser.new_context(viewport={"width": width, "height": 900}, reduced_motion="reduce")
-            page = await context.new_page()
-            errors = []
-            page.on("pageerror", lambda error: errors.append(str(error)))
-            await page.goto(url)
-            dialog = page.get_by_role("dialog", name="What would you like to build?")
-            if direct_launch:
-                label = {"claude": "Claude Code", "codex": "Codex", "omnigent": "Omnigent"}[direct_launch]
-                if wizard_mode == "skipped":
-                    if skip_during == "load":
-                        await load_entered.wait()
-                    elif skip_during:
-                        await dialog.get_by_role("textbox", name="Your goal", exact=True).fill("Help bakery staff pack today's orders")
-                        if skip_during == "suggestion":
-                            await dialog.get_by_role("button", name="Suggest ideas for my goal").click()
-                            await suggestion_entered.wait()
-                        else:
-                            await dialog.get_by_role("button", name="Continue", exact=True).click()
-                            if skip_during == "save":
-                                await save_entered.wait()
+            try:
+                context = await browser.new_context(viewport={"width": width, "height": 900}, reduced_motion="reduce")
+                page = await context.new_page()
+                page.set_default_timeout(10000)
+                errors = []
+                page.on("pageerror", lambda error: errors.append(str(error)))
+                await page.goto(url)
+                dialog = page.get_by_role("dialog", name="What would you like to build?")
+                if direct_launch:
+                    label = {"claude": "Claude Code", "codex": "Codex", "omnigent": "Omnigent"}[direct_launch]
+                    if wizard_mode == "skipped":
+                        if skip_during == "load":
+                            await load_entered.wait()
+                        elif skip_during:
+                            await dialog.get_by_role("textbox", name="Your goal", exact=True).fill("Help bakery staff pack today's orders")
+                            if skip_during == "suggestion":
+                                await dialog.get_by_role("button", name="Suggest ideas for my goal").click()
+                                await suggestion_entered.wait()
                             else:
-                                dialog = page.get_by_role("dialog", name="Your goal is saved")
-                                await dialog.get_by_role("button", name=label, exact=False).click()
-                                await (launch_entered if skip_during.startswith("launch") else delivery_entered).wait()
-                    assert await dialog.get_by_role("button", name="Skip onboarding", exact=True).is_enabled()
-                    if skip_with_escape:
-                        await page.keyboard.press("Escape")
-                    else:
-                        await dialog.get_by_role("button", name="Skip onboarding", exact=True).click()
-                    await dialog.wait_for(state="hidden")
-                    if skip_pending:
-                        await save_entered.wait()
-                    load_release.set()
-                    suggestion_release.set()
-                    save_release.set()
-                    launch_release.set()
-                    if skip_during in {"launch", "delivery_retry"}:
-                        await page.get_by_role("button", name=f"Close {label}", exact=True).wait_for()
-                        await page.get_by_role("button", name="Home", exact=True).click()
-                    if skip_during:
-                        # Let the delayed response / 800ms prompt retry settle.
-                        # Dismissal must survive either, with no starter sent.
-                        await page.wait_for_timeout(1000)
-                        assert not deliveries
-                        assert await page.get_by_role("dialog").count() == 0
-                        if skip_during in {"launch_failure", "launch_conflict"}:
-                            assert sum(path == "/api/sessions" and method == "POST" for path, method, _ in requests) == 1
-                            assert not any(path == "/api/telemetry/error" for path, _, _ in requests)
-                await page.get_by_role("heading", name="What will you build today?").wait_for()
-                await page.reload()
-                await page.get_by_role("button", name=f"{label} Simulated", exact=False).click()
-                await page.get_by_role("button", name=f"Close {label}", exact=True).wait_for()
-                assert sessions[0]["agent_id"] == direct_launch
-                assert await dialog.count() == 0
-                brief = wizard.read_brief(user)
-                # A write already accepted by the server may finish after Skip.
-                # Preserve it, while ignoring its late onboarding callback.
-                if skip_during not in {"save", "launch", "launch_failure", "launch_conflict", "delivery_retry"}:
-                    assert brief.what_building == "" and brief.selected_idea is None
-                assert not deliveries
-                assert sum(path == "/api/wizard/suggest" for path, _, _ in requests) == int(skip_during == "suggestion")
-                assert not errors, errors
-                await context.close()
-                await browser.close()
-                return
-            await dialog.wait_for()
-            if faults:
-                await dialog.get_by_role("alert").wait_for()
-                await dialog.get_by_role("button", name="Retry loading").click()
-            goal = dialog.get_by_role("textbox", name="Your goal", exact=True)
-            await goal.fill("Help my bakery staff keep track of today's orders")
-            assert await dialog.get_by_role("button", name="Continue", exact=True).is_enabled()
-            for _ in range(14):
-                await page.keyboard.press("Tab")
-                assert await page.evaluate("document.activeElement.closest('dialog') !== null")
-            dimensions = await dialog.evaluate("element => ({left: element.getBoundingClientRect().left,right:element.getBoundingClientRect().right,overflow:element.scrollWidth>element.clientWidth})")
-            assert dimensions["left"] >= 0 and dimensions["right"] <= width and not dimensions["overflow"]
-            assert await page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-            assert await page.evaluate("document.body.style.overflow") == "hidden"
-            await page.screenshot(path=str(tmp_path / f"wizard-{width}.png"), full_page=True)
-            if races:
-                await dialog.get_by_role("button", name="Suggest ideas for my goal").click()
-                await suggestion_entered.wait()
-                await goal.fill("Help staff plan their rota")
-                suggestion_release.set()
-                await page.wait_for_timeout(100)
-                assert await dialog.get_by_role("button", name="Pack bakery orders", exact=False).count() == 0
-                assert await goal.input_value() == "Help staff plan their rota"
-                # Explicit action can request new candidates after the obsolete result.
+                                await dialog.get_by_role("button", name="Continue", exact=True).click()
+                                if skip_during == "save":
+                                    await save_entered.wait()
+                                else:
+                                    dialog = page.get_by_role("dialog", name="Your goal is saved")
+                                    await dialog.get_by_role("button", name=label, exact=False).click()
+                                    await (launch_entered if skip_during.startswith("launch") else delivery_entered).wait()
+                        assert await dialog.get_by_role("button", name="Skip onboarding", exact=True).is_enabled()
+                        if skip_with_escape:
+                            await page.keyboard.press("Escape")
+                        else:
+                            await dialog.get_by_role("button", name="Skip onboarding", exact=True).click()
+                        await dialog.wait_for(state="hidden")
+                        if skip_pending:
+                            await save_entered.wait()
+                        load_release.set()
+                        suggestion_release.set()
+                        save_release.set()
+                        launch_release.set()
+                        if skip_during in {"launch", "delivery_retry"}:
+                            await page.get_by_role("button", name=f"Close {label}", exact=True).wait_for()
+                            await page.get_by_role("button", name="Home", exact=True).click()
+                        if skip_during:
+                            # Let the delayed response / 800ms prompt retry settle.
+                            # Dismissal must survive either, with no starter sent.
+                            await page.wait_for_timeout(1000)
+                            assert not deliveries
+                            assert await page.get_by_role("dialog").count() == 0
+                            if skip_during in {"launch_failure", "launch_conflict"}:
+                                assert sum(path == "/api/sessions" and method == "POST" for path, method, _ in requests) == 1
+                                assert not any(path == "/api/telemetry/error" for path, _, _ in requests)
+                    await page.get_by_role("heading", name="What will you build today?").wait_for()
+                    await page.reload()
+                    if skip_during not in {"launch", "delivery_retry"}:
+                        await page.get_by_role("button", name=f"{label} Simulated", exact=False).click()
+                    await page.get_by_role("button", name=f"Close {label}", exact=True).wait_for()
+                    assert sessions[0]["agent_id"] == direct_launch
+                    assert await dialog.count() == 0
+                    brief = wizard.read_brief(user)
+                    # A write already accepted by the server may finish after Skip.
+                    # Preserve it, while ignoring its late onboarding callback.
+                    if skip_during not in {"save", "launch", "launch_failure", "launch_conflict", "delivery_retry"}:
+                        assert brief.what_building == "" and brief.selected_idea is None
+                    assert not deliveries
+                    assert sum(path == "/api/wizard/suggest" for path, _, _ in requests) == int(skip_during == "suggestion")
+                    assert not errors, errors
+                    await context.close()
+                    return
+                await dialog.wait_for()
+                if faults:
+                    await dialog.get_by_role("alert").wait_for()
+                    await dialog.get_by_role("button", name="Retry loading").click()
+                goal = dialog.get_by_role("textbox", name="Your goal", exact=True)
                 await goal.fill("Help my bakery staff keep track of today's orders")
-            if malformed_draft:
-                await page.evaluate("""() => {
-                    const key = Object.keys(localStorage).find(k => k.startsWith('wt-wizard-draft:'));
-                    const draft = JSON.parse(localStorage.getItem(key));
-                    draft.selected = {id:'broken',label:'Malformed selection',outcome:'Broken',prompt:'Broken',assumptions:{invalid:true}};
-                    localStorage.setItem(key, JSON.stringify(draft));
-                }""")
-            await page.reload()
-            dialog = page.get_by_role("dialog", name="What would you like to build?")
-            await dialog.get_by_role("textbox", name="Your goal", exact=True).wait_for()
-            assert "bakery" in await dialog.get_by_role("textbox", name="Your goal", exact=True).input_value()
-            assert await dialog.get_by_text("Malformed selection", exact=True).count() == 0
-            await dialog.get_by_role("button", name="Suggest ideas for my goal").click()
-            if unavailable_suggestions:
-                await dialog.get_by_text("Generated ideas could not be verified. Continue with your goal or try suggestions again.", exact=True).wait_for()
-                assert await dialog.get_by_role("button", name="Pack bakery orders", exact=False).count() == 0
                 assert await dialog.get_by_role("button", name="Continue", exact=True).is_enabled()
-                await page.screenshot(path=str(tmp_path / f"wizard-fallback-{width}.png"), full_page=True)
-            else:
-                if prepared_suggestions:
-                    await dialog.get_by_role("button", name="Pack bakery orders", exact=False).get_by_text(
-                        "Workshop demo data; your agent will check its source, dates and access", exact=True).wait_for()
-                await dialog.get_by_role("button", name="Pack bakery orders", exact=False).click()
-            assert "bakery" in await dialog.get_by_role("textbox", name="Your goal", exact=True).input_value()
-            if faults:
-                switches["save_errors"] = 1
-                await dialog.get_by_role("button", name="Continue", exact=True).click()
-                await dialog.get_by_role("alert").wait_for()
-                assert await dialog.get_by_role("textbox", name="Your goal", exact=True).is_visible()
-                # Another tab saved a different goal. The UI must recover visibly.
-                wizard.save(user, {"what_building": "A different saved task", "expected_revision": 0})
-                await dialog.get_by_role("button", name="Continue", exact=True).click()
-                await dialog.get_by_role("button", name="Save my draft instead").click()
-            else:
-                await dialog.get_by_role("button", name="Continue", exact=True).click()
-                if save_pending:
-                    await save_entered.wait()
-                    # A save captures a particular goal and selection. Do not
-                    # show later edits while launching the previously saved text.
-                    assert not await dialog.get_by_role("textbox", name="Your goal", exact=True).is_enabled()
-                    assert not await dialog.get_by_role("button", name="Remove idea and keep my words").is_enabled()
-                    assert not await dialog.get_by_role("button", name="Suggest ideas for my goal").is_enabled()
-                    save_release.set()
-            saved_dialog = page.get_by_role("dialog", name="Your goal is saved")
-            await saved_dialog.wait_for()
-            assert not await saved_dialog.get_by_role("button", name="Codex", exact=False).is_enabled()
-            saved = wizard.read_brief(user, strict=True)
-            assert saved.what_building == "Help my bakery staff keep track of today's orders"
-            if unavailable_suggestions:
-                assert saved.selected_idea is None
-            else:
-                assert saved.selected_idea["prompt"] == offered_idea["prompt"]
-            if new_project:
-                previous_id = saved.record_id
-                await saved_dialog.get_by_role("button", name="Edit goal", exact=True).click()
-                dialog = page.get_by_role("dialog", name="What would you like to build?")
-                await dialog.get_by_role("button", name="Optional context", exact=True).click()
-                await dialog.get_by_role("button", name="Start a different project", exact=True).click()
-                assert await dialog.get_by_role("textbox", name="Your goal", exact=True).input_value() == ""
+                for _ in range(14):
+                    await page.keyboard.press("Tab")
+                    assert await page.evaluate("document.activeElement.closest('dialog') !== null")
+                dimensions = await dialog.evaluate("element => ({left: element.getBoundingClientRect().left,right:element.getBoundingClientRect().right,overflow:element.scrollWidth>element.clientWidth})")
+                assert dimensions["left"] >= 0 and dimensions["right"] <= width and not dimensions["overflow"]
+                assert await page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+                assert await page.evaluate("document.body.style.overflow") == "hidden"
+                await page.screenshot(path=str(tmp_path / f"wizard-{width}.png"), full_page=True)
+                if races:
+                    await dialog.get_by_role("button", name="Suggest ideas for my goal").click()
+                    await suggestion_entered.wait()
+                    await goal.fill("Help staff plan their rota")
+                    suggestion_release.set()
+                    await page.wait_for_timeout(100)
+                    assert await dialog.get_by_role("button", name="Pack bakery orders", exact=False).count() == 0
+                    assert await goal.input_value() == "Help staff plan their rota"
+                    # Explicit action can request new candidates after the obsolete result.
+                    await goal.fill("Help my bakery staff keep track of today's orders")
+                if malformed_draft:
+                    await page.evaluate("""() => {
+                        const key = Object.keys(localStorage).find(k => k.startsWith('wt-wizard-draft:'));
+                        const draft = JSON.parse(localStorage.getItem(key));
+                        draft.selected = {id:'broken',label:'Malformed selection',outcome:'Broken',prompt:'Broken',assumptions:{invalid:true}};
+                        localStorage.setItem(key, JSON.stringify(draft));
+                    }""")
                 await page.reload()
-                await page.get_by_role("button", name="Change what I'm building", exact=True).click()
                 dialog = page.get_by_role("dialog", name="What would you like to build?")
-                await dialog.get_by_role("textbox", name="Your goal", exact=True).fill("Help bakery staff plan tomorrow's rota")
-                await dialog.get_by_role("button", name="Continue", exact=True).click()
+                await dialog.get_by_role("textbox", name="Your goal", exact=True).wait_for()
+                assert "bakery" in await dialog.get_by_role("textbox", name="Your goal", exact=True).input_value()
+                assert await dialog.get_by_text("Malformed selection", exact=True).count() == 0
+                await dialog.get_by_role("button", name="Suggest ideas for my goal").click()
+                if unavailable_suggestions:
+                    await dialog.get_by_text("Generated ideas could not be verified. Continue with your goal or try suggestions again.", exact=True).wait_for()
+                    assert await dialog.get_by_role("button", name="Pack bakery orders", exact=False).count() == 0
+                    assert await dialog.get_by_role("button", name="Continue", exact=True).is_enabled()
+                    await page.screenshot(path=str(tmp_path / f"wizard-fallback-{width}.png"), full_page=True)
+                else:
+                    if prepared_suggestions:
+                        await dialog.get_by_role("button", name="Pack bakery orders", exact=False).get_by_text(
+                            "Workshop demo data; your agent will check its source, dates and access", exact=True).wait_for()
+                    await dialog.get_by_role("button", name="Pack bakery orders", exact=False).click()
+                assert "bakery" in await dialog.get_by_role("textbox", name="Your goal", exact=True).input_value()
+                if faults:
+                    switches["save_errors"] = 1
+                    await dialog.get_by_role("button", name="Continue", exact=True).click()
+                    await dialog.get_by_role("alert").wait_for()
+                    assert await dialog.get_by_role("textbox", name="Your goal", exact=True).is_visible()
+                    # Another tab saved a different goal. The UI must recover visibly.
+                    wizard.save(user, {"what_building": "A different saved task", "expected_revision": 0})
+                    await dialog.get_by_role("button", name="Continue", exact=True).click()
+                    await dialog.get_by_role("button", name="Save my draft instead").click()
+                else:
+                    await dialog.get_by_role("button", name="Continue", exact=True).click()
+                    if save_pending:
+                        await save_entered.wait()
+                        # A save captures a particular goal and selection. Do not
+                        # show later edits while launching the previously saved text.
+                        assert not await dialog.get_by_role("textbox", name="Your goal", exact=True).is_enabled()
+                        assert not await dialog.get_by_role("button", name="Remove idea and keep my words").is_enabled()
+                        assert not await dialog.get_by_role("button", name="Suggest ideas for my goal").is_enabled()
+                        save_release.set()
                 saved_dialog = page.get_by_role("dialog", name="Your goal is saved")
                 await saved_dialog.wait_for()
+                assert not await saved_dialog.get_by_role("button", name="Codex", exact=False).is_enabled()
                 saved = wizard.read_brief(user, strict=True)
-                assert saved.record_id != previous_id and saved.selected_idea is None
-                assert "rota" in saved.what_building
-            if faults:
-                switches["launch_errors"] = 1
-                await saved_dialog.get_by_role("button", name="Claude Code", exact=False).click()
-                await saved_dialog.get_by_role("alert").wait_for()
-                assert await saved_dialog.is_visible()
-                switches["delivery_errors"] = 2
-                await saved_dialog.get_by_role("button", name="Claude Code", exact=False).click()
-                await saved_dialog.get_by_role("alert").filter(has_text="delivery failure").wait_for()
-                assert await saved_dialog.is_visible()
-            if interrupted:
-                for _ in range(2):
+                assert saved.what_building == "Help my bakery staff keep track of today's orders"
+                if unavailable_suggestions:
+                    assert saved.selected_idea is None
+                else:
+                    assert saved.selected_idea["prompt"] == offered_idea["prompt"]
+                if new_project:
+                    previous_id = saved.record_id
+                    await saved_dialog.get_by_role("button", name="Edit goal", exact=True).click()
+                    dialog = page.get_by_role("dialog", name="What would you like to build?")
+                    await dialog.get_by_role("button", name="Optional context", exact=True).click()
+                    await dialog.get_by_role("button", name="Start a different project", exact=True).click()
+                    assert await dialog.get_by_role("textbox", name="Your goal", exact=True).input_value() == ""
+                    await page.reload()
+                    await page.get_by_role("button", name="Change what I'm building", exact=True).click()
+                    dialog = page.get_by_role("dialog", name="What would you like to build?")
+                    await dialog.get_by_role("textbox", name="Your goal", exact=True).fill("Help bakery staff plan tomorrow's rota")
+                    await dialog.get_by_role("button", name="Continue", exact=True).click()
+                    saved_dialog = page.get_by_role("dialog", name="Your goal is saved")
+                    await saved_dialog.wait_for()
+                    saved = wizard.read_brief(user, strict=True)
+                    assert saved.record_id != previous_id and saved.selected_idea is None
+                    assert "rota" in saved.what_building
+                if faults:
+                    switches["launch_errors"] = 1
+                    await saved_dialog.get_by_role("button", name="Claude Code", exact=False).click()
+                    await saved_dialog.get_by_role("alert").wait_for()
+                    assert await saved_dialog.is_visible()
+                    switches["delivery_errors"] = 2
+                    await saved_dialog.get_by_role("button", name="Claude Code", exact=False).click()
+                    await saved_dialog.get_by_role("alert").filter(has_text="delivery failure").wait_for()
+                    assert await saved_dialog.is_visible()
+                if interrupted:
+                    for _ in range(2):
+                        await saved_dialog.get_by_role("button", name="Claude Code", exact=False).click()
+                        await saved_dialog.get_by_role("button", name="Open agent", exact=True).wait_for()
+                    assert len(interrupted_ids) == 2 and len(set(interrupted_ids)) == 1
+                    assert not deliveries
+                    await saved_dialog.get_by_role("button", name="Open agent", exact=True).click()
+                    await saved_dialog.wait_for(state="hidden")
+                    # A page reload must not turn the same interrupted delivery into
+                    # a fresh ID and append the task onto partial visible input.
+                    await page.reload()
+                    await page.get_by_role("button", name="Close Claude Code", exact=True).wait_for()
+                    await page.get_by_role("button", name="Home", exact=True).click()
+                    await page.get_by_role("button", name="Change what I'm building", exact=True).click()
+                    dialog = page.get_by_role("dialog", name="What would you like to build?")
+                    await dialog.get_by_role("button", name="Continue", exact=True).click()
+                    saved_dialog = page.get_by_role("dialog", name="Your goal is saved")
                     await saved_dialog.get_by_role("button", name="Claude Code", exact=False).click()
                     await saved_dialog.get_by_role("button", name="Open agent", exact=True).wait_for()
-                assert len(interrupted_ids) == 2 and len(set(interrupted_ids)) == 1
-                assert not deliveries
-                await saved_dialog.get_by_role("button", name="Open agent", exact=True).click()
-                await saved_dialog.wait_for(state="hidden")
-                # A page reload must not turn the same interrupted delivery into
-                # a fresh ID and append the task onto partial visible input.
-                await page.reload()
-                await page.get_by_role("button", name="Home", exact=True).click()
-                await page.get_by_role("button", name="Change what I'm building", exact=True).click()
-                dialog = page.get_by_role("dialog", name="What would you like to build?")
-                await dialog.get_by_role("button", name="Continue", exact=True).click()
-                saved_dialog = page.get_by_role("dialog", name="Your goal is saved")
+                    assert len(interrupted_ids) == 3 and len(set(interrupted_ids)) == 1
+                    assert wizard.read_brief(user).to_json() == saved.to_json()
+                    assert not errors, errors
+                    await context.close()
+                    return
                 await saved_dialog.get_by_role("button", name="Claude Code", exact=False).click()
-                await saved_dialog.get_by_role("button", name="Open agent", exact=True).wait_for()
-                assert len(interrupted_ids) == 3 and len(set(interrupted_ids)) == 1
+                await saved_dialog.wait_for(state="hidden")
+                assert deliveries == [wizard.starter_prompt(saved)]
+                # Preferences remain reachable when onboarding is disabled.
+                switches["enabled"] = False
+                await page.reload()
+                await page.get_by_role("button", name="Agent preferences", exact=True).click()
+                preferences = page.get_by_role("dialog", name="Agent preferences")
+                # Three independent dimensions (W2); changing one leaves the others and the task.
+                await preferences.get_by_label("Explanation detail").select_option("brief")
+                await preferences.get_by_label("How would you like your coding agent to work with you?").select_option("learn")
+                await preferences.get_by_role("button", name="Save preferences", exact=True).click()
+                await preferences.get_by_role("status").wait_for()
+                saved_profile = attendee_profile.read(user)
+                assert saved_profile.explanation_detail == "brief" and saved_profile.working_approach == "learn"
+                assert saved_profile.help_preference == ""
                 assert wizard.read_brief(user).to_json() == saved.to_json()
+                await preferences.get_by_role("button", name="Done", exact=True).click()
+                assert await page.get_by_role("button", name="Agent preferences", exact=True).evaluate("e => e === document.activeElement")
                 assert not errors, errors
                 await context.close()
+            finally:
                 await browser.close()
-                return
-            await saved_dialog.get_by_role("button", name="Claude Code", exact=False).click()
-            await saved_dialog.wait_for(state="hidden")
-            assert deliveries == [wizard.starter_prompt(saved)]
-            # Preferences remain reachable when onboarding is disabled.
-            switches["enabled"] = False
-            await page.reload()
-            await page.get_by_role("button", name="Agent preferences", exact=True).click()
-            preferences = page.get_by_role("dialog", name="Agent preferences")
-            # Three independent dimensions (W2); changing one leaves the others and the task.
-            await preferences.get_by_label("Explanation detail").select_option("brief")
-            await preferences.get_by_label("How would you like your coding agent to work with you?").select_option("learn")
-            await preferences.get_by_role("button", name="Save preferences", exact=True).click()
-            await preferences.get_by_role("status").wait_for()
-            saved_profile = attendee_profile.read(user)
-            assert saved_profile.explanation_detail == "brief" and saved_profile.working_approach == "learn"
-            assert saved_profile.help_preference == ""
-            assert wizard.read_brief(user).to_json() == saved.to_json()
-            await preferences.get_by_role("button", name="Done", exact=True).click()
-            assert await page.get_by_role("button", name="Agent preferences", exact=True).evaluate("e => e === document.activeElement")
-            assert not errors, errors
-            await context.close()
-            await browser.close()
     finally:
         suggestion_release.set()
         save_release.set()
