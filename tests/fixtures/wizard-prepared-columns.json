@@ -225,7 +225,10 @@
     "balance",
     "customer_id",
     "opened_on",
-    "status"
+    "status",
+    "country_code",
+    "currency",
+    "branch_id"
   ],
   "financial_services.arrears": [
     "loan_id",
@@ -235,7 +238,16 @@
     "snapshot_month",
     "days_past_due",
     "arrears_balance",
-    "hardship_flag"
+    "hardship_flag",
+    "country_code",
+    "region_code",
+    "currency",
+    "months_on_book",
+    "outstanding_balance",
+    "interest_rate_pct",
+    "rate_reset",
+    "dpd_bucket",
+    "performance_status"
   ],
   "financial_services.branches": [
     "branch_id",
@@ -243,7 +255,46 @@
     "city",
     "opened_on",
     "staff_count",
-    "state"
+    "state",
+    "country_code",
+    "region_code",
+    "branch_type"
+  ],
+  "financial_services.collateral": [
+    "collateral_id",
+    "loan_id",
+    "country_code",
+    "region_code",
+    "property_type",
+    "valuation_amount",
+    "currency",
+    "valuation_date",
+    "valuation_method"
+  ],
+  "financial_services.countries": [
+    "country_code",
+    "country_name",
+    "currency",
+    "legal_entity",
+    "prudential_regulator",
+    "central_bank",
+    "policy_rate_name",
+    "max_lvr_owner_occupier_pct",
+    "max_lvr_investor_pct",
+    "high_lvr_threshold_owner_occupier_pct",
+    "high_lvr_threshold_investor_pct",
+    "high_lvr_speed_limit_owner_occupier_pct",
+    "high_lvr_speed_limit_investor_pct",
+    "high_dti_threshold_owner_occupier",
+    "high_dti_threshold_investor",
+    "high_dti_speed_limit_pct",
+    "dti_speed_limit_effective_from",
+    "max_dti",
+    "serviceability_buffer_pct",
+    "serviceability_floor_pct",
+    "min_bureau_score",
+    "default_dpd",
+    "unsecured_write_off_dpd"
   ],
   "financial_services.customers": [
     "customer_id",
@@ -252,13 +303,103 @@
     "onboarded_on",
     "risk_rating",
     "segment",
-    "state"
+    "state",
+    "country_code",
+    "region_code",
+    "city",
+    "employment_type",
+    "annual_income",
+    "currency"
+  ],
+  "financial_services.defaults": [
+    "loan_id",
+    "customer_id",
+    "country_code",
+    "region_code",
+    "product",
+    "currency",
+    "default_month",
+    "ead",
+    "collateral_value_at_default",
+    "workout_status",
+    "resolved_month",
+    "recoveries",
+    "write_off_amount",
+    "realised_lgd"
+  ],
+  "financial_services.documents": [
+    "document_id",
+    "doc_type",
+    "title",
+    "volume_path",
+    "country_code",
+    "loan_id",
+    "application_id",
+    "reporting_date",
+    "issued_on"
+  ],
+  "financial_services.ecl_provisions": [
+    "loan_id",
+    "reporting_date",
+    "country_code",
+    "region_code",
+    "product",
+    "currency",
+    "stage",
+    "sicr_reason",
+    "days_past_due",
+    "pd_12m",
+    "pd_lifetime",
+    "lgd",
+    "ead",
+    "ecl",
+    "fx_aud_per_unit",
+    "ead_aud",
+    "ecl_aud"
   ],
   "financial_services.fraud_labels": [
     "transaction_id",
     "is_fraud",
     "label_source",
     "labelled_at"
+  ],
+  "financial_services.fx_rates": [
+    "rate_month",
+    "currency",
+    "aud_per_unit"
+  ],
+  "financial_services.house_price_index": [
+    "region_code",
+    "month",
+    "index_value",
+    "annual_change_pct"
+  ],
+  "financial_services.loan_applications": [
+    "application_id",
+    "customer_id",
+    "country_code",
+    "region_code",
+    "branch_id",
+    "channel",
+    "product",
+    "applied_on",
+    "decided_on",
+    "requested_amount",
+    "currency",
+    "gross_annual_income",
+    "existing_debt",
+    "dti_ratio",
+    "property_value",
+    "lvr_pct",
+    "bureau_score",
+    "product_rate_pct",
+    "assessed_rate_pct",
+    "monthly_surplus",
+    "decision",
+    "decision_reason",
+    "policy_exception",
+    "exception_reason",
+    "loan_id"
   ],
   "financial_services.loans": [
     "loan_id",
@@ -272,14 +413,51 @@
     "interest_rate_pct",
     "term_months",
     "loan_to_value_pct",
-    "status"
+    "status",
+    "application_id",
+    "country_code",
+    "region_code",
+    "currency",
+    "channel",
+    "rate_type",
+    "fixed_term_months",
+    "fixed_rate_expiry_on",
+    "repayment_type",
+    "origination_rate_pct",
+    "origination_pd_12m",
+    "dti_at_origination",
+    "property_value",
+    "sector",
+    "risk_grade",
+    "policy_exception",
+    "closed_on"
+  ],
+  "financial_services.macro_monthly": [
+    "country_code",
+    "month",
+    "policy_rate_pct",
+    "variable_mortgage_rate_pct",
+    "fixed_mortgage_rate_pct",
+    "unemployment_rate_pct",
+    "cpi_annual_change_pct"
   ],
   "financial_services.merchants": [
     "category",
     "country",
     "merchant_id",
     "merchant_name",
-    "risk_score"
+    "risk_score",
+    "region_code"
+  ],
+  "financial_services.regions": [
+    "region_code",
+    "country_code",
+    "region_name",
+    "short_code",
+    "region_type",
+    "main_centre",
+    "latitude",
+    "longitude"
   ],
   "financial_services.transactions": [
     "transaction_id",
@@ -290,7 +468,9 @@
     "occurred_at",
     "amount",
     "channel",
-    "is_international"
+    "is_international",
+    "currency",
+    "merchant_country"
   ],
   "healthcare.claims": [
     "claim_id",

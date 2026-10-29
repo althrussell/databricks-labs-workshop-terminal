@@ -2181,6 +2181,188 @@
         "financial_services.branches"
       ]
     },
+    {
+      "id": "fs-roll-rates",
+      "label": "See which loans are rolling towards default",
+      "outcome": "A dashboard of roll rates and vintage curves by country and region",
+      "prompt": "Build a dashboard over financial_services.arrears and financial_services.loans showing how loans move between arrears buckets month to month: roll rates from current to 30 days, 30 to 60 and 60 to 90+, and 30+ arrears curves by origination vintage. Split it by country and by region using financial_services.regions so New Zealand and Australia can be compared, and mark the months New Zealand fixed-rate loans reset (rate_reset). Drop exit rows, where performance_status is closed or written_off, before computing any rate.",
+      "industries": ["financial_services"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["dashboards", "sql"],
+      "shape": "dashboard",
+      "technical": false,
+      "required_columns": {
+        "financial_services.arrears": [
+          "loan_id",
+          "snapshot_month",
+          "days_past_due",
+          "dpd_bucket",
+          "performance_status",
+          "rate_reset",
+          "outstanding_balance",
+          "country_code",
+          "region_code"
+        ],
+        "financial_services.loans": [
+          "loan_id",
+          "originated_on",
+          "product",
+          "country_code",
+          "rate_type"
+        ],
+        "financial_services.regions": [
+          "region_code",
+          "region_name"
+        ]
+      },
+      "demo_tables": [
+        "financial_services.arrears",
+        "financial_services.loans",
+        "financial_services.regions"
+      ]
+    },
+    {
+      "id": "fs-ifrs9-movement",
+      "label": "Explain the movement in provisions",
+      "outcome": "A view of IFRS 9 stages and expected credit loss, and what moved them",
+      "prompt": "Using financial_services.ecl_provisions, build a dashboard of expected credit loss in AUD by reporting_date, stage, country and product, with a stage migration matrix between consecutive quarter ends and the sicr_reason mix behind stage 2. Then explain in plain words what drove the change in the latest quarter. The staging and ECL method is written up in the group credit policy PDF; financial_services.documents gives its path in the schema's raw volume.",
+      "industries": ["financial_services"],
+      "intents": ["business_problem", "evaluation"],
+      "products": ["dashboards", "sql"],
+      "shape": "dashboard",
+      "technical": false,
+      "required_columns": {
+        "financial_services.ecl_provisions": [
+          "loan_id",
+          "reporting_date",
+          "stage",
+          "sicr_reason",
+          "product",
+          "country_code",
+          "ead_aud",
+          "ecl_aud"
+        ],
+        "financial_services.documents": [
+          "document_id",
+          "doc_type",
+          "volume_path"
+        ]
+      },
+      "demo_tables": [
+        "financial_services.ecl_provisions",
+        "financial_services.documents"
+      ]
+    },
+    {
+      "id": "fs-policy-breaches",
+      "label": "Check approvals against credit policy",
+      "outcome": "Somewhere a credit analyst can ask which approvals broke the bank's own limits",
+      "prompt": "Set up a Genie space over financial_services.loan_applications, financial_services.countries and financial_services.branches so a credit risk analyst can ask in plain English which approvals broke the bank's own limits. Teach it the rules: an approval breaks policy when lvr_pct, dti_ratio or bureau_score is beyond the country's limit in financial_services.countries, or monthly_surplus is negative, and it is a control failure when policy_exception is false. Give it example questions, including which branches have the most unrecorded breaches and whether New Zealand high-LVR lending stays inside its speed limit.",
+      "industries": ["financial_services"],
+      "intents": ["business_problem", "evaluation", "learning"],
+      "products": ["genie", "sql"],
+      "shape": "ai",
+      "technical": false,
+      "required_columns": {
+        "financial_services.loan_applications": [
+          "application_id",
+          "country_code",
+          "branch_id",
+          "channel",
+          "product",
+          "applied_on",
+          "decision",
+          "requested_amount",
+          "lvr_pct",
+          "dti_ratio",
+          "monthly_surplus",
+          "bureau_score",
+          "policy_exception",
+          "loan_id"
+        ],
+        "financial_services.countries": [
+          "country_code",
+          "max_lvr_owner_occupier_pct",
+          "max_lvr_investor_pct",
+          "max_dti",
+          "min_bureau_score",
+          "high_lvr_threshold_owner_occupier_pct",
+          "high_lvr_speed_limit_owner_occupier_pct"
+        ],
+        "financial_services.branches": [
+          "branch_id",
+          "branch_name"
+        ]
+      },
+      "demo_tables": [
+        "financial_services.loan_applications",
+        "financial_services.countries",
+        "financial_services.branches"
+      ]
+    },
+    {
+      "id": "fs-credit-policy-agent",
+      "label": "Ask the credit policy",
+      "outcome": "An assistant that answers credit policy questions from the bank's own PDFs, with citations",
+      "prompt": "Build an agent that answers questions about the bank's credit policy from the PDFs listed in financial_services.documents with doc_type credit_policy or lending_standards; the files are in the schema's raw volume. Parse them with ai_parse_document, index the text for retrieval, and make every answer cite the document and section. Test it with questions such as 'What is the highest LVR for a New Zealand investor?' and 'When does a loan move to stage 2?', and check the limits it quotes against financial_services.countries.",
+      "industries": ["financial_services"],
+      "intents": ["business_problem", "evaluation", "learning"],
+      "products": ["vector-search", "mlflow"],
+      "shape": "ai",
+      "technical": true,
+      "required_columns": {
+        "financial_services.documents": [
+          "document_id",
+          "doc_type",
+          "title",
+          "volume_path",
+          "country_code"
+        ],
+        "financial_services.countries": [
+          "country_code",
+          "max_lvr_owner_occupier_pct",
+          "max_lvr_investor_pct"
+        ]
+      },
+      "demo_tables": [
+        "financial_services.documents",
+        "financial_services.countries"
+      ]
+    },
+    {
+      "id": "fs-memo-extract",
+      "label": "Pull the numbers out of credit memos",
+      "outcome": "Borrower financials extracted from PDF memos and tested against defaults",
+      "prompt": "The credit memos listed in financial_services.documents with doc_type credit_memo hold borrower financials that exist nowhere else: revenue, EBITDA, interest cover and gearing. Extract them from the PDFs with ai_parse_document and ai_extract into a table keyed on loan_id, check a sample against financial_services.loans (principal and rate must match), then join financial_services.defaults to see whether loans approved with low interest cover defaulted more often.",
+      "industries": ["financial_services"],
+      "intents": ["evaluation", "learning"],
+      "products": ["pipelines", "sql"],
+      "shape": "pipeline",
+      "technical": true,
+      "required_columns": {
+        "financial_services.documents": [
+          "document_id",
+          "doc_type",
+          "volume_path",
+          "loan_id"
+        ],
+        "financial_services.loans": [
+          "loan_id",
+          "principal",
+          "origination_rate_pct",
+          "product"
+        ],
+        "financial_services.defaults": [
+          "loan_id",
+          "default_month"
+        ]
+      },
+      "demo_tables": [
+        "financial_services.documents",
+        "financial_services.loans",
+        "financial_services.defaults"
+      ]
+    },
 
     {
       "id": "cross-revenue-dashboard",
