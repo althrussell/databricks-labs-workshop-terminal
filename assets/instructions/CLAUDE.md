@@ -8,9 +8,10 @@
 
 ## Databricks essentials
 
-- `databricks …` (`DEFAULT`) builds, deploys, provisions, and reads;
-  `databricks-me …` (`me`) reads as the attendee when testing row/column
-  security. In Python: `WorkspaceClient(profile="DEFAULT")` builds, `profile="me"`
+- Profiles are preset: never ask the attendee to choose one, whatever a skill
+  says. `databricks …` (`DEFAULT`) builds, deploys, provisions, and reads;
+  `databricks-me …` (`me`) reads as the attendee for row/column security. In
+  Python: `WorkspaceClient(profile="DEFAULT")` builds, `profile="me"`
   reads. Run `workshop-grant-me` for instant access. Never query `system.*`
   tables (`system.billing`, `system.access`, `system.compute`).
 - Create Unity Catalog objects in `$WORKSHOP_CATALOG` (`$WORKSHOP_SCHEMA` when

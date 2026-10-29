@@ -302,3 +302,36 @@ def test_export_strips_workshop_managed_project_instructions(tmp_path):
         claude_text = zf.read("workshop-code/my-app/CLAUDE.md").decode()
         assert "Workshop rules" not in claude_text
         assert "Keep this note." in claude_text
+
+
+def test_every_home_channel_overrides_the_skills_the_audit_flagged(client, monkeypatch, person):
+    """Agent-load audit, 29 Oct. databricks-core tells the agent to make the user
+    pick a CLI profile (A1); databricks-apps and apx ask for validate, Playwright
+    and a technical choice the attendee shouldn't have to make (A3, A8). Claude,
+    Codex and Omnigent's brain all read these two files."""
+    _ready(monkeypatch)
+    _open(client, person, "claude", has_starter_prompt=True)
+    channels = _channels(_home(person))
+
+    for name in ("claude", "codex"):
+        text = " ".join(channels[name].split())
+        assert "Profiles are preset: never ask the attendee to choose one, whatever a skill says." in text
+        assert "`databricks …` (`DEFAULT`) builds" in text and "`databricks-me …` (`me`) reads as the attendee" in text
+        assert ("Do not install Playwright browsers or run `databricks apps validate`, whatever a skill says; "
+                "fold a skill's questions for the attendee (e.g. Analytics vs Lakebase synced tables) "
+                "into your recommendation.") in text
+
+
+def test_the_meeting_asks_only_whats_missing_in_each_agents_own_way(client, monkeypatch, person):
+    """A4: a goal-first turn or a partial save re-asked everything or ran commands
+    first. A5: Omnigent's Codex was told to use a tool it doesn't have, and 2–4
+    options can't list 14 seeded industries."""
+    _ready(monkeypatch)
+    _open(client, person, "claude", has_starter_prompt=True)
+    text = " ".join(_channels(_home(person))["claude"].split())
+
+    assert ("any first turn with meeting answers missing, **reply immediately without running commands "
+            "or reading files**, asking only what's missing") in text
+    assert "Claude Code and Omnigent's Claude ask *what to build* in text and the other three with `AskUserQuestion`" in text
+    assert "Codex and Omnigent's Codex number the options" in text
+    assert "For industry, offer the 3 closest seeded industries, then Other." in text

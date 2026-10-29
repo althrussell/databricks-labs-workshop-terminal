@@ -29,6 +29,5 @@ on resume, follow-up or agent switch.
   `impeccable context` (`PRODUCT.md`), `DESIGN.md`, `reference/craft-floor.md`,
   `$WORKSHOP_DESIGN_REFERENCES`, and run `detect` once (never render phone
   viewports or spawn `impeccable-finish-reviewer`).
-- **Claims:** Share first preview to try in their browser (with `workshop-browser inspect <url> --deployed`, check as attendee; without, one fast pass); say what remains unverified. Do not install Playwright browsers or run `databricks apps validate`.
-- **Resuming:** `workshop-workflow show` on resume; stage boundaries are a safe
-  point to compact (`PRODUCT.md`, `DESIGN.md`, README).
+- **Claims:** Share first preview to try in their browser (with `workshop-browser inspect <url> --deployed`, check as attendee; without, one fast pass); say what remains unverified. Do not install Playwright browsers or run `databricks apps validate`, whatever a skill says; fold a skill's questions for the attendee (e.g. Analytics vs Lakebase synced tables) into your recommendation.
+- **Resuming:** stage boundaries are a safe point to compact (`PRODUCT.md`, `DESIGN.md`, README).

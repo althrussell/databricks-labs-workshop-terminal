@@ -1197,3 +1197,10 @@ def test_an_unmatched_industry_lists_the_schemas_and_the_one_exception(user, see
     assert "Generate the data you need, labelled as synthetic" in overlay
     assert "their industry under another name" in overlay
     assert "workshop-workflow prefs --industry <schema>" in overlay
+
+
+def test_the_demo_data_overlay_only_asks_for_360_tables_where_they_exist(user, seeded):
+    """A11: no persona schema has a 360 table, so a flat "prefer 360" sent agents looking."""
+    wizard.save(user, {"what_building": "x", "industry": "automotive_mobility", "industry_stated": True})
+
+    assert "prefer `*360` tables where the schema has them" in user_content._demo_data_overlay(user)
