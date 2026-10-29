@@ -1141,6 +1141,18 @@ def test_the_longest_phrase_wins_and_the_same_words_always_land_the_same(persona
     assert {demo_data.normalize_industry("retail and telco") for _ in range(20)} == {"retail"}
 
 
+@pytest.mark.parametrize(("said", "schema"), [
+    ("Health insurance", "healthcare"),
+    ("Private health insurance", "healthcare"),
+    ("Health insurer", "healthcare"),
+    ("Health fund", "healthcare"),
+    ("Insurance", "financial_services"),
+])
+def test_a_health_insurer_is_healthcare_and_other_insurance_is_financial_services(persona_catalog, said, schema):
+    """Bugbot on #138: "health insurance" sent payers to the bank's loan book."""
+    assert demo_data.normalize_industry(said) == schema
+
+
 def test_resolution_tells_the_agent_which_schema_or_what_is_seeded(persona_catalog):
     assert demo_data.resolution("Banking") == {
         "catalog": "workshop_demo", "schema": "financial_services", "tables": 2,

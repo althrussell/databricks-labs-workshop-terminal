@@ -107,7 +107,7 @@ _INDUSTRY_SYNONYMS: dict[str, tuple[str, ...]] = {
         "bank", "banks", "banking", "retail banking", "business banking",
         "commercial banking", "lending", "lender", "credit", "credit risk",
         "mortgage", "mortgages", "finance", "financial", "fsi", "fintech",
-        "insurance", "health insurance", "payments", "wealth management",
+        "insurance", "payments", "wealth management",
     ),
     "food_agribusiness": (
         "food", "food beverage", "beverage", "agriculture", "agricultural", "agri",
@@ -118,6 +118,8 @@ _INDUSTRY_SYNONYMS: dict[str, tuple[str, ...]] = {
     "healthcare": (
         "health", "health care", "hospital", "hospitals", "clinical", "medical",
         "pharma", "pharmaceutical", "pharmaceuticals", "life sciences", "aged care",
+        # A health insurer is a payer: claims, members and providers, not a loan book.
+        "health insurance", "health insurer", "health fund",
     ),
     "manufacturing": (
         "manufacturer", "manufacturers", "factory", "factories", "industrial",
