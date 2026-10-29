@@ -32,9 +32,9 @@ chosen, **reply immediately without running shell commands or reading files**:
 
 **Choices:** In Claude Code and Omnigent, use `AskUserQuestion` (2–4 options,
 recommendation first, one per question, "Other" for discussion) — ask *what to
-build* in text and use `AskUserQuestion` for *industry*, *how to work* and
-*where you're coming from*. Without `AskUserQuestion` (Codex), list numbered
-options (`1.`, `2.`, `3.`) with your recommendation first.
+build* in text and use `AskUserQuestion` for *industry* (demo-data schemas),
+*how to work* and *where you're coming from*. Without `AskUserQuestion` (Codex),
+number the options (`1.`, `2.`, `3.`), recommendation first.
 
 Save answers: `workshop-workflow prefs --approach co_build|learn|lead
 --background domain|data|developer|exploring --industry <industry>` and `workshop-workflow fact

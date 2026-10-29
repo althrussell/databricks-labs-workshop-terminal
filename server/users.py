@@ -157,6 +157,11 @@ class User:
         self.errors: int = 0  # P1-14: failed session launches / agent errors
         self.last_seen: float = 0.0
         self.first_seen: float = 0.0
+        # Last thing the attendee did that WT can see outside a terminal:
+        # opening WT, starting an agent, an Omnigent worker's tool call. Idle
+        # cards read this, never ``last_seen``, which keepalive pings refresh
+        # and which stays presence (CT's online and attendance read it).
+        self.last_active: float = 0.0
         self._capture_lock = threading.RLock()
         self._capture_journal = None
         self._capture_recovered = False

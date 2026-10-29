@@ -146,3 +146,135 @@ def test_manual_build_phase_still_auto_advances_to_wrap_once(client, as_admin):
     assert resp.status_code == 200
     assert content_service.phase == "wrap"
 
+
+
+WRAP_PACK = {**PACK, "phases": ["intro", "setup", "build", "wrap"]}
+
+
+def test_an_operators_phase_holds_against_auto_advance(client, as_admin, monkeypatch):
+    """A facilitator's intro lasted about one card fetch on any seat with an
+    open terminal: the flag that should have protected it was never set."""
+    import types
+
+    from server.content import content_service
+    from server.sessions import session_manager
+
+    client.post("/api/admin/content-pack", json=WRAP_PACK, headers=ADMIN)
+    client.post("/api/admin/phase", json={"phase": "intro"}, headers=ADMIN)
+    session = types.SimpleNamespace(agent_id="claude", last_io=0.0, last_activity=0.0)
+    monkeypatch.setattr(session_manager, "list_for", lambda _email: [session])
+
+    assert content_service.phase_explicitly_set is True
+    assert client.get("/api/nuggets", headers=ALICE).json()["phase"] == "intro"
+    assert content_service.advance_to_build_if_default() is False
+    assert content_service.phase == "intro"
+
+
+def test_the_countdown_still_wraps_an_operator_phase(client, as_admin):
+    from server.content import content_service
+
+    client.post("/api/admin/content-pack", json=WRAP_PACK, headers=ADMIN)
+    client.post("/api/admin/phase", json={"phase": "setup"}, headers=ADMIN)
+
+    client.post("/api/admin/broadcast", headers=ADMIN, json={
+        "message": "30 minutes left: the workshop ends at 17:00.", "level": "info", "ttl_s": 60})
+
+    assert content_service.phase == "wrap"
+
+
+def test_the_wrap_up_export_still_wraps_an_operator_phase(client, as_admin, monkeypatch):
+    from server import insight_summary
+    from server.content import content_service
+
+    client.post("/api/admin/content-pack", json=WRAP_PACK, headers=ADMIN)
+    client.post("/api/admin/phase", json={"phase": "intro"}, headers=ADMIN)
+    monkeypatch.setattr(insight_summary, "summarise_in_background", lambda *a, **k: None)
+
+    client.post("/api/admin/export", json={"reason": "wrap_up"}, headers=ADMIN)
+
+    assert content_service.phase == "wrap"
+
+
+def test_auto_advance_runs_until_an_operator_chooses_and_a_fresh_seat_starts_unset(client, as_admin):
+    from server.content import ContentService, content_service
+
+    client.post("/api/admin/content-pack", json=WRAP_PACK, headers=ADMIN)
+    content_service.set_phase("intro")
+
+    assert content_service.phase_explicitly_set is False
+    assert content_service.advance_to_build_if_default() is True
+    assert content_service.phase == "build"
+    assert ContentService().phase_explicitly_set is False
+
+
+IDLE_PACK = {
+    "version": 1,
+    "phases": ["intro", "build", "wrap"],
+    "nuggets": [
+        {"id": "n-idle", "title": "Stuck?", "markdown": "x", "phases": ["build"], "triggers": ["idle_5m"]},
+        {"id": "n-build", "title": "Build", "markdown": "b", "phases": ["build"]},
+    ],
+}
+
+
+def _nugget_ids(client) -> set[str]:
+    return {n["id"] for n in client.get("/api/nuggets", headers=ALICE).json()["nuggets"]}
+
+
+def test_keepalive_pings_do_not_hold_idle_at_zero(client, as_admin, monkeypatch):
+    """The page pings every 20 s and each ping refreshed last-seen, so idle
+    nudges never showed while the tab was open. Presence must not change."""
+    import time
+    import types
+
+    from server import artifacts
+    from server.sessions import session_manager
+    from server.users import user_manager
+
+    client.post("/api/admin/content-pack", json=IDLE_PACK, headers=ADMIN)
+    client.post("/api/admin/phase", json={"phase": "build"}, headers=ADMIN)
+    monkeypatch.setattr(artifacts, "scan_new_tool_targets", lambda *_a: [])
+    now = time.time()
+    user = user_manager.get("alice@example.com")
+    user.first_seen, user.last_active = now - 3600, now - 600
+    user.last_seen = now  # the page's keepalive, just now
+    session = types.SimpleNamespace(agent_id="codex", last_io=now - 600, last_activity=now, to_dict=lambda: {})
+    monkeypatch.setattr(session_manager, "list_for", lambda _email: [session])
+
+    assert "n-idle" in _nugget_ids(client)
+    presence = client.get("/api/admin/presence", headers=ADMIN).json()
+    alice = next(u for u in presence["users"] if u["email"] == "alice@example.com")
+    assert alice["online"] is True and alice["last_seen"] == now
+
+    session.last_io = time.time()  # they typed, or the agent printed
+    assert "n-idle" not in _nugget_ids(client)
+
+
+def test_an_omni_only_seat_moves_to_build_on_its_first_worker_tool_call(client, as_admin, monkeypatch):
+    """Omnigent opens in its own tab and creates no WT session, so its seats
+    stayed in intro until wrap. Its workers' tool calls are already scanned."""
+    import time
+
+    import server.main as main
+    from server import artifacts
+    from server.content import content_service
+    from server.sessions import session_manager
+    from server.users import user_manager
+
+    client.post("/api/admin/content-pack", json=IDLE_PACK, headers=ADMIN)
+    content_service.set_phase("intro")
+    monkeypatch.setattr(session_manager, "list_for", lambda _email: [])
+    user = user_manager.get("alice@example.com")
+    user.last_active = 0.0
+    main._transcript_topic_scan_at.clear()
+    monkeypatch.setattr(artifacts, "scan_new_tool_targets", lambda *_a: [])
+
+    assert client.get("/api/nuggets", headers=ALICE).json()["phase"] == "intro"
+
+    main._transcript_topic_scan_at.clear()
+    monkeypatch.setattr(artifacts, "scan_new_tool_targets", lambda *_a: ["databricks apps deploy outage-board"])
+    before = time.time()
+
+    assert client.get("/api/nuggets", headers=ALICE).json()["phase"] == "build"
+    assert user.last_active >= before
+    main._transcript_topic_scan_at.clear()

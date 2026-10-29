@@ -450,6 +450,18 @@ def _prefs(args: argparse.Namespace) -> int:
         return 1
     print("Saved: " + ", ".join(f"{key}={saved.get(key)}" for key in changes)
           + f" (profile revision {saved.get('revision')}). New agent turns use it.")
+    demo = saved.get("industry_demo") or {}
+    if args.industry and demo.get("catalog"):
+        catalog = demo["catalog"]
+        if demo.get("schema"):
+            print(f"industry → {demo['schema']} ({catalog}.{demo['schema']}, {demo.get('tables', 0)} tables)."
+                  f" Run SHOW TABLES IN {catalog}.{demo['schema']} before you plan.")
+        elif not demo.get("readable"):
+            print(f"{catalog} could not be listed just now; run SHOW SCHEMAS IN {catalog} and use the one"
+                  " that is their industry.")
+        else:
+            print(f"no demo schema for '{args.industry}'; seeded: {', '.join(demo.get('seeded') or [])}"
+                  " — re-run with --industry <schema> if one fits, otherwise generate labelled synthetic data")
     return 0
 
 

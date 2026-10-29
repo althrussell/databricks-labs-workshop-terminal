@@ -1090,7 +1090,17 @@ def agent_profile(body: _AgentProfileBody, request: Request):
         user_content._write_instructions(user)
     except Exception as exc:
         logger.warning("agent profile instruction refresh unavailable (%s)", type(exc).__name__)
-    return profile.to_json()
+    saved = profile.to_json()
+    if "industry" in body.changes:
+        # The running session does not reread its instructions, so the agent
+        # that saved the industry is told here which demo schema it is.
+        from . import demo_data
+
+        try:
+            saved["industry_demo"] = demo_data.resolution(profile.industry)
+        except Exception as exc:  # noqa: BLE001 — the save is already durable
+            logger.warning("industry demo-data resolution unavailable (%s)", type(exc).__name__)
+    return saved
 
 
 class _BrowserStatusBody(_EmailBody):
@@ -1659,7 +1669,7 @@ def create_session(
         )
 
     user = user_manager.get(principal.name)
-    user.last_seen = time.time()
+    user.last_seen = user.last_active = time.time()
     if not user.first_seen:
         user.first_seen = time.time()
     user_manager.checkpoint(user)
@@ -1945,6 +1955,11 @@ def get_nuggets(principal: Principal = Depends(get_current_user)):
                         user._transcript_topic_cursors = cursors
                     new_targets = artifacts.scan_new_tool_targets(user.home, cursors)
                     if new_targets:
+                        # Agent tool calls, Omnigent workers' included. An
+                        # Omni-only seat has no WT session, so without this it
+                        # stayed in intro until wrap.
+                        user.last_active = now
+                        has_building_activity = True
                         for topic in content_service.scan_topics(
                             "\n".join(new_targets)
                         ):
@@ -1959,12 +1974,14 @@ def get_nuggets(principal: Principal = Depends(get_current_user)):
                 t for t, at in user.topics.items() if now - at < TOPIC_TTL_SECONDS
             }
 
-        # True idle = no input AND no terminal output. Session activity covers
-        # both (the reader thread touches it on output), so an agent working
-        # away on the attendee's behalf never counts as idle.
-        signals = [s.last_activity for s in sessions]
-        if user.last_seen:
-            signals.append(user.last_seen)
+        # True idle = no input AND no agent output. ``last_io`` covers both
+        # (the reader thread sets it on output), so an agent working away on the
+        # attendee's behalf never counts as idle. Keepalive pings are not
+        # activity: they refresh ``last_seen`` and ``last_activity`` every 20 s,
+        # which held idle at zero for as long as the tab was open.
+        signals = [s.last_io for s in sessions]
+        signals.append(user.last_active or user.first_seen)
+        signals = [at for at in signals if at]
         if signals:
             idle_minutes = max(0.0, (now - max(signals)) / 60)
 

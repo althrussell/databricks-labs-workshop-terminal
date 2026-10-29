@@ -149,6 +149,10 @@ class Session:
         self.prompt_deliveries: dict[str, dict] = {}
         self.created_at = time.time()
         self.last_activity = time.time()
+        # Terminal input or output only. ``last_activity`` is also refreshed by
+        # the browser's keepalive ping, which keeps an open tab's session from
+        # being reaped but must not count as the attendee doing something.
+        self.last_io = self.created_at
         self.exited = False
         self.exit_code: int | None = None
         self.exit_signal: int | None = None
@@ -204,6 +208,7 @@ class Session:
                     raise OSError("PTY did not accept the complete input")
                 offset += written
         self.touch()
+        self.last_io = time.time()
 
     def deliver_prompt(self, text: str, delivery_id: str) -> dict:
         """Retry a completed unsent delivery without typing it a second time."""
@@ -814,7 +819,7 @@ class SessionManager:
         loop = self._loop
         with session.lock:
             session.scrollback.append(decoded)
-            session.last_activity = time.time()
+            session.last_activity = session.last_io = time.time()
             subscribers = list(session.subscribers)
         if loop is not None:
             self._dispatch(subscribers, {"t": "output", "data": decoded})

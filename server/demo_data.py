@@ -84,6 +84,73 @@ _cache_ok = False
 # one side costs the chips their labels, not their industries.
 _LABEL_PROPERTY = "workshop.industry_label"
 
+# Schemas that are never an industry. Unity Catalog lists ``information_schema``
+# in every catalog, and with it in the inventory the agent was told it was one.
+_SYSTEM_SCHEMAS = frozenset({"information_schema"})
+
+# Words an attendee uses for an industry that are not its schema name. With the
+# wizard off, the agent saves whatever the attendee typed ("Banking", "Energy
+# and utilities"), and a name that matched no schema told the agent this
+# catalog had nothing for them, so it generated data next to the real tables.
+# Phrases only resolve to a schema that is actually seeded, and the longest
+# phrase wins: "retail and business banking" is banking, not retail.
+_INDUSTRY_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "automotive_mobility": (
+        "automotive", "automobile", "auto", "car", "cars", "vehicle", "vehicles",
+        "mobility", "ev", "electric vehicle", "electric vehicles",
+    ),
+    "energy_utilities": (
+        "energy", "utility", "utilities", "power", "electricity", "electric",
+        "gas", "oil", "water", "grid", "renewables", "renewable energy",
+    ),
+    "financial_services": (
+        "bank", "banks", "banking", "retail banking", "business banking",
+        "commercial banking", "lending", "lender", "credit", "credit risk",
+        "mortgage", "mortgages", "finance", "financial", "fsi", "fintech",
+        "insurance", "health insurance", "payments", "wealth management",
+    ),
+    "food_agribusiness": (
+        "food", "food beverage", "beverage", "agriculture", "agricultural", "agri",
+        "agribusiness", "agritech", "agtech", "horticulture", "horticultural",
+        "farming", "farm", "farms", "dairy", "orchard", "orchards",
+        "primary industries",
+    ),
+    "healthcare": (
+        "health", "health care", "hospital", "hospitals", "clinical", "medical",
+        "pharma", "pharmaceutical", "pharmaceuticals", "life sciences", "aged care",
+    ),
+    "manufacturing": (
+        "manufacturer", "manufacturers", "factory", "factories", "industrial",
+        "industrials",
+    ),
+    "media": (
+        "entertainment", "publishing", "broadcast", "broadcasting", "streaming", "news",
+    ),
+    "mining": ("mine", "mines", "minerals", "metals"),
+    "public_sector": (
+        "government", "govt", "public service", "council", "local government",
+    ),
+    "retail": (
+        "retailer", "retailers", "ecommerce", "e commerce", "supermarket",
+        "supermarkets", "grocery", "consumer goods", "cpg", "fmcg",
+    ),
+    "superannuation": ("super fund", "pension", "pensions", "retirement"),
+    "telco": (
+        "telecom", "telecoms", "telecommunication", "telecommunications",
+        "mobile network", "mobile operator", "broadband", "isp",
+    ),
+    "travel": (
+        "tourism", "hospitality", "airline", "airlines", "aviation", "hotel", "hotels",
+    ),
+}
+
+# Joining words that carry no industry: "Energy and utilities" is energy_utilities.
+_FILLER_WORDS = frozenset({"and", "amp", "of", "the"})
+
+
+def _is_system_schema(schema: str) -> bool:
+    return schema.startswith("_") or schema in _SYSTEM_SCHEMAS
+
 
 def _load_seed_manifest() -> tuple[dict[str, frozenset[str]], dict[str, str]]:
     """The shipped contract with Control Tower's seed notebook.
@@ -185,9 +252,10 @@ def _load() -> tuple[dict[str, set[str]], dict[str, str]]:
         if len(parts) != 3:
             continue
         _, schema, table = parts
-        if schema.startswith("_"):
+        if _is_system_schema(schema):
             # _meta holds the seed manifest: provenance for operators, not
-            # something an attendee should be pointed at.
+            # something an attendee should be pointed at. information_schema
+            # is Unity Catalog's own, in every catalog.
             continue
         found.setdefault(schema, set()).add(table)
     return found, _load_labels(client, cat)
@@ -204,7 +272,7 @@ def _load_labels(client: Any, cat: str) -> dict[str, str]:
     try:
         for schema in client.schemas.list(catalog_name=cat):
             name = (getattr(schema, "name", "") or "").strip()
-            if not name or name.startswith("_"):
+            if not name or _is_system_schema(name):
                 continue
             label = ((getattr(schema, "properties", None) or {}).get(
                 _LABEL_PROPERTY
@@ -308,7 +376,64 @@ def normalize_industry(value: str) -> str:
     for schema in inv:
         if schema.replace("_", "") == compact:
             return schema
-    return ""
+    return _match_phrase(raw, inv)
+
+
+def _words(value: str) -> tuple[str, ...]:
+    return tuple(w for w in _SLUG_SEPARATORS.split(value.lower()) if w and w not in _FILLER_WORDS)
+
+
+def _match_phrase(raw: str, inv: dict[str, set[str]]) -> str:
+    """The seeded schema an attendee's own words name, or empty.
+
+    Each seeded schema is known by its name, its label and its synonyms. The
+    longest phrase found in the answer wins, then the earliest, then the schema
+    name, so the same words always land on the same schema.
+    """
+    words = _words(raw)
+    if not words:
+        return ""
+    with _lock:
+        live_labels = dict(_cache_labels)
+    best: tuple[tuple[int, int], str] | None = None
+    for schema in sorted(inv):
+        label = live_labels.get(schema) or _SEED_LABELS.get(schema, "")
+        phrases = {_words(schema.replace("_", " ")), _words(label)}
+        phrases.update(_words(p) for p in _INDUSTRY_SYNONYMS.get(schema, ()))
+        for phrase in phrases:
+            n = len(phrase)
+            if not n:
+                continue
+            for start in range(len(words) - n + 1):
+                if words[start:start + n] == phrase:
+                    key = (n, -start)
+                    if best is None or key > best[0]:
+                        best = (key, schema)
+                    break
+    return best[1] if best else ""
+
+
+def resolution(industry: str) -> dict[str, Any]:
+    """What a saved industry means for demo data, told back to the agent that saved it.
+
+    ``schema`` is empty when nothing seeded matches; ``readable`` is false when
+    the catalog could not be listed just now, which is not the same as empty.
+    """
+    cat = catalog()
+    if not cat:
+        return {"catalog": "", "schema": "", "tables": 0, "seeded": [], "readable": False}
+    # An agent's save, not a page render: worth waiting for a cold catalog.
+    inv = inventory(timeout=3.0)
+    schema = normalize_industry(industry) if industry else ""
+    if schema not in inv:
+        schema = ""
+    return {
+        "catalog": cat,
+        "schema": schema,
+        "tables": len(inv.get(schema, ())),
+        "seeded": sorted(inv),
+        "readable": bool(inv),
+    }
 
 
 def industry_slug(value: str) -> str:

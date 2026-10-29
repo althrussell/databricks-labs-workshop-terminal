@@ -184,7 +184,7 @@ async def session_socket(websocket: WebSocket, session_id: str):
     def attach():
         with _writer("terminal_socket_attach"):
             user = user_manager.get(principal.name)
-            user.last_seen = time.time()
+            user.last_seen = user.last_active = time.time()
             user_manager.checkpoint(user)
         return user
 
@@ -283,7 +283,7 @@ async def events_socket(websocket: WebSocket):
             user = user_manager.get(principal.name)
             if not user.first_seen:
                 user.first_seen = time.time()
-            user.last_seen = time.time()
+            user.last_seen = user.last_active = time.time()
             user_manager.checkpoint(user)
         return user
 
