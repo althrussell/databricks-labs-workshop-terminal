@@ -248,6 +248,10 @@ class ContentService:
         self._lock = threading.Lock()
         self._pack = self._load_initial_pack()
         self._phase = config.workshop_phase_default()
+        # True once an operator chose the phase. Auto-advance to build then
+        # leaves it alone, so a facilitator's "intro" holds while terminals run.
+        # In memory only: a fresh app (a new run's seat) starts unset.
+        self._phase_explicitly_set = False
         self._broadcast: Broadcast | None = None
         self._broadcast_at = 0.0
         self._topic_regex = self._compile_topics(self._pack)
@@ -438,16 +442,19 @@ class ContentService:
         logger.info("content pack replaced (%d nuggets, %d topics)",
                     len(pack.nuggets), len(pack.topics))
 
-    def set_phase(self, phase: str) -> None:
+    def set_phase(self, phase: str, *, explicit: bool = False) -> None:
+        """Set the phase. ``explicit`` is an operator's choice, which auto-advance to build respects."""
         with self._lock:
             self._phase = phase
-        logger.info("workshop phase -> %s", phase)
+            self._phase_explicitly_set = explicit
+        logger.info("workshop phase -> %s%s", phase, " (operator)" if explicit else "")
 
     def advance_to_build_if_default(self) -> bool:
         """Automatically advance from intro/setup to build on first build activity."""
         with self._lock:
             if (
-                self._phase not in {"intro", "setup"}
+                self._phase_explicitly_set
+                or self._phase not in {"intro", "setup"}
                 or "build" not in self._pack.phases
             ):
                 return False

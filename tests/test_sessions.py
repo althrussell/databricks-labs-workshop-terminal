@@ -432,3 +432,58 @@ def test_only_codex_gets_a_short_home_and_cwd_remains_the_attendee_projects(monk
     assert seen[0]["env"]["HOME"] == ("/tmp/owned-short-alias" if agent == "codex" else str(tmp_path))
     assert seen[0]["cwd"] == str(tmp_path / "projects")
     assert "CODEX_HOME" not in seen[0]["env"]
+
+
+def _until(ws, predicate, limit=200):
+    seen = ""
+    for _ in range(limit):
+        message = ws.receive_json()
+        seen += message.get("data", "") if message.get("t") in {"output", "replay"} else ""
+        if predicate(message, seen):
+            return seen
+    raise AssertionError("expected message never arrived")
+
+
+def test_a_terminal_keepalive_is_presence_not_activity(client):
+    """Pings keep the session from being reaped and the attendee online, but
+    only typing or output counts as activity for idle cards."""
+    from server.sessions import session_manager
+    from server.users import user_manager
+
+    session = _create(client, ALICE)
+    live = session_manager.get(session["id"], "alice@example.com")
+    user = user_manager.get("alice@example.com")
+    with client.websocket_connect(f"/ws/sessions/{session['id']}", headers=ALICE) as ws:
+        ws.send_json({"t": "input", "data": "printf 'quiet-%s\\n' now\r"})
+        _until(ws, lambda _m, seen: "quiet-now" in seen)
+        time.sleep(0.3)
+        ws.send_json({"t": "ping"})
+        _until(ws, lambda m, _s: m.get("t") == "pong")
+        live.last_io = live.last_activity = user.last_seen = user.last_active = 1000.0
+
+        ws.send_json({"t": "ping"})
+        _until(ws, lambda m, _s: m.get("t") == "pong")
+
+        assert live.last_activity > 1000.0 and user.last_seen > 1000.0
+        assert live.last_io == 1000.0 and user.last_active == 1000.0
+
+        ws.send_json({"t": "input", "data": "printf 'typed-%s\\n' now\r"})
+        _until(ws, lambda _m, seen: "typed-now" in seen)
+        assert live.last_io > 1000.0
+
+
+def test_an_events_keepalive_is_presence_not_activity(client):
+    from server.users import user_manager
+
+    with client.websocket_connect("/ws/events", headers=ALICE) as ws:
+        ws.send_text('{"t":"ping"}')
+        _until(ws, lambda m, _s: m.get("t") == "pong")
+        user = user_manager.get("alice@example.com")
+        assert user.last_active > 0  # opening WT is the attendee doing something
+        user.last_seen = user.last_active = 1000.0
+
+        ws.send_text('{"t":"ping"}')
+        _until(ws, lambda m, _s: m.get("t") == "pong")
+
+        assert user.last_seen > 1000.0
+        assert user.last_active == 1000.0

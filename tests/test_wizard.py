@@ -1082,3 +1082,125 @@ def test_idea_payload_labels_generate_vs_demo(seeded):
     )
     assert wizard.idea_payload(tagged)["data_mode"] == "demo"
     assert wizard.idea_payload(generic)["data_mode"] == "generate"
+
+
+@pytest.fixture()
+def persona_catalog(monkeypatch):
+    """The labs demo catalog the 29 Oct persona run uses, food's label read live."""
+    monkeypatch.setattr(demo_data.config, "workshop_demo_catalog", lambda: "workshop_demo")
+    inventory = {schema: {"t1", "t2"} for schema in (
+        "automotive_mobility", "energy_utilities", "financial_services",
+        "food_agribusiness", "healthcare", "retail", "telco", "travel",
+    )}
+    monkeypatch.setattr(demo_data, "_cache", inventory)
+    monkeypatch.setattr(demo_data, "_cache_labels", {"food_agribusiness": "Food / agribusiness"})
+    monkeypatch.setattr(demo_data, "_cache_at", time.time())
+    monkeypatch.setattr(demo_data, "_cache_ok", True)
+    yield inventory
+    demo_data.reset_cache()
+
+
+@pytest.mark.parametrize(("said", "schema"), [
+    ("Banking", "financial_services"),
+    ("Retail and business banking", "financial_services"),
+    ("Energy and utilities", "energy_utilities"),
+    ("Food and agribusiness", "food_agribusiness"),
+    ("Healthcare", "healthcare"),
+    ("Retail", "retail"),
+    ("Telco", "telco"),
+    ("Banking / financial services", "financial_services"),
+    ("Energy / utilities", "energy_utilities"),
+    ("Food / agribusiness", "food_agribusiness"),
+    ("Telecommunications", "telco"),
+    ("Electric vehicles", "automotive_mobility"),
+])
+def test_what_an_attendee_says_resolves_to_the_seeded_schema(persona_catalog, said, schema):
+    """With the wizard off, the agent saves the attendee's own words. "Banking"
+    used to match no schema, and the agent was told to generate data instead of
+    reading the bank's loan book."""
+    assert demo_data.normalize_industry(said) == schema
+    assert demo_data.industry_slug(said) == schema
+
+
+def test_an_unseeded_industry_still_keeps_their_words(persona_catalog):
+    """Logistics has no schema. It must not be matched to travel or automotive."""
+    assert demo_data.normalize_industry("Logistics and freight") == ""
+    assert demo_data.industry_slug("Logistics and freight") == "logistics_and_freight"
+    assert demo_data.normalize_industry("Freight") == ""
+
+
+def test_a_synonym_only_names_a_schema_that_is_seeded(seeded):
+    """Telco is not seeded in this catalog, so its synonym resolves to nothing."""
+    assert demo_data.normalize_industry("Telecommunications") == ""
+    assert demo_data.industry_slug("Telecommunications") == "telecommunications"
+
+
+def test_the_longest_phrase_wins_and_the_same_words_always_land_the_same(persona_catalog):
+    assert demo_data.normalize_industry("retail banking") == "financial_services"
+    assert demo_data.normalize_industry("Retail and business banking") == "financial_services"
+    assert {demo_data.normalize_industry("retail and telco") for _ in range(20)} == {"retail"}
+
+
+@pytest.mark.parametrize(("said", "schema"), [
+    ("Health insurance", "healthcare"),
+    ("Private health insurance", "healthcare"),
+    ("Health insurer", "healthcare"),
+    ("Health fund", "healthcare"),
+    ("Insurance", "financial_services"),
+])
+def test_a_health_insurer_is_healthcare_and_other_insurance_is_financial_services(persona_catalog, said, schema):
+    """Bugbot on #138: "health insurance" sent payers to the bank's loan book."""
+    assert demo_data.normalize_industry(said) == schema
+
+
+def test_resolution_tells_the_agent_which_schema_or_what_is_seeded(persona_catalog):
+    assert demo_data.resolution("Banking") == {
+        "catalog": "workshop_demo", "schema": "financial_services", "tables": 2,
+        "seeded": sorted(persona_catalog), "readable": True,
+    }
+    unseeded = demo_data.resolution("logistics_and_freight")
+    assert unseeded["schema"] == "" and unseeded["readable"] is True
+    assert "financial_services" in unseeded["seeded"]
+
+
+def test_system_schemas_are_not_industries(monkeypatch):
+    """Unity Catalog lists information_schema in every catalog; agents were told it was an industry."""
+    monkeypatch.setenv("WORKSHOP_DEMO_CATALOG", "workshop_demo")
+    demo_data.reset_cache()
+    sdk = types.SimpleNamespace(
+        tables=types.SimpleNamespace(list_summaries=lambda **_: [
+            types.SimpleNamespace(full_name="workshop_demo.retail.orders"),
+            types.SimpleNamespace(full_name="workshop_demo.information_schema.columns"),
+            types.SimpleNamespace(full_name="workshop_demo._meta.seed_manifest"),
+        ]),
+        schemas=types.SimpleNamespace(list=lambda **_: [
+            types.SimpleNamespace(name="information_schema", properties={"workshop.industry_label": "x"}),
+        ]),
+    )
+    monkeypatch.setattr(demo_data.credentials, "workspace_client", lambda: sdk)
+    try:
+        assert demo_data.inventory(refresh=True) == {"retail": {"orders"}}
+        assert "information_schema" not in demo_data.manifest("")
+    finally:
+        demo_data.reset_cache()
+
+
+def test_an_unmatched_industry_lists_the_schemas_and_the_one_exception(user, seeded):
+    """Generate is still the default, but a schema that is their industry under
+    another name must be usable, and the overlay names how to save it."""
+    wizard.save(user, {"what_building": "route planning across our depots",
+                       "industry": "logistics", "industry_stated": True})
+
+    overlay = user_content._demo_data_overlay(user)
+
+    assert "`automotive_mobility`" in overlay
+    assert "Generate the data you need, labelled as synthetic" in overlay
+    assert "their industry under another name" in overlay
+    assert "workshop-workflow prefs --industry <schema>" in overlay
+
+
+def test_the_demo_data_overlay_only_asks_for_360_tables_where_they_exist(user, seeded):
+    """A11: no persona schema has a 360 table, so a flat "prefer 360" sent agents looking."""
+    wizard.save(user, {"what_building": "x", "industry": "automotive_mobility", "industry_stated": True})
+
+    assert "prefer `*360` tables where the schema has them" in user_content._demo_data_overlay(user)

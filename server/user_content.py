@@ -508,12 +508,17 @@ def _demo_data_overlay(user: User) -> str:
         # A real industry that nobody seeded here. Saying nothing would leave
         # the agent to pattern-match the attendee's industry onto whichever
         # schema looked closest, and build a logistics demo out of retail.
+        # The schemas are listed above, because the manifest of an industry
+        # that resolves to nothing is the whole-catalog summary.
         text += (
-            f"\n\nTheir industry is **{scoped.replace('_', ' ')}**, and this "
-            "catalog has no schema for it. Generate the data you need rather "
-            "than substituting a different industry's tables — a plausible "
-            "synthetic table in their domain is worth more to them than a real "
-            "one in someone else's.\n"
+            f"\n\nTheir industry is **{scoped.replace('_', ' ')}**, and no schema "
+            "above is named for it. Generate the data you need, labelled as "
+            "synthetic, rather than substituting a different industry's tables — "
+            "a plausible synthetic table in their domain is worth more to them "
+            "than a real one in someone else's. The one exception is a schema "
+            "above that is their industry under another name (a bank's is "
+            "`financial_services`): use it, and save it with "
+            "`workshop-workflow prefs --industry <schema>`.\n"
         )
     return text
 

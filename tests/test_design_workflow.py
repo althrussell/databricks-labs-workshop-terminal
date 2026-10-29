@@ -282,3 +282,98 @@ def test_prefs_sends_a_starting_point_through_the_profile_service(tmp_path, monk
                     {"email": "a@example.com", "expected_revision": 4, "changes": {"background": "data"}}]
     with pytest.raises(SystemExit):
         cli.main(["prefs", "--background", "guru"])
+
+
+def _prefs_cli(tmp_path, monkeypatch, reply_extra):
+    import importlib.machinery
+    import importlib.util
+    import io
+    import urllib.request
+
+    loader = importlib.machinery.SourceFileLoader("workshop_workflow_cli_industry", str(HELPER))
+    cli = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+    loader.exec_module(cli)
+    home = tmp_path / "home"
+    (home / ".config/workshop").mkdir(parents=True)
+    (home / ".config/workshop/callback-capability").write_text("capability")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("WORKSHOP_USER_EMAIL", "a@example.com")
+
+    class Reply(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+    def urlopen(request, timeout=15):
+        body = json.loads(request.data)
+        saved = {"revision": 5, **(body.get("changes") or {}), **reply_extra} if body.get("changes") else {"revision": 4}
+        return Reply(json.dumps(saved).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    return cli
+
+
+def test_prefs_says_which_demo_schema_an_industry_matched(tmp_path, monkeypatch, capsys):
+    """The running session never rereads its instructions, so the save itself
+    has to tell the agent where the attendee's data is."""
+    cli = _prefs_cli(tmp_path, monkeypatch, {"industry": "financial_services", "industry_demo": {
+        "catalog": "workshop_demo", "schema": "financial_services", "tables": 18,
+        "seeded": ["financial_services", "retail"], "readable": True}})
+
+    assert cli.main(["prefs", "--industry", "Banking"]) == 0
+
+    out = capsys.readouterr().out
+    assert "industry → financial_services (workshop_demo.financial_services, 18 tables)" in out
+    assert "SHOW TABLES IN workshop_demo.financial_services" in out
+
+
+def test_prefs_names_the_seeded_schemas_when_nothing_matched(tmp_path, monkeypatch, capsys):
+    cli = _prefs_cli(tmp_path, monkeypatch, {"industry": "logistics_and_freight", "industry_demo": {
+        "catalog": "workshop_demo", "schema": "", "tables": 0,
+        "seeded": ["financial_services", "retail", "travel"], "readable": True}})
+
+    assert cli.main(["prefs", "--industry", "Logistics and freight"]) == 0
+
+    out = capsys.readouterr().out
+    assert ("no demo schema for 'Logistics and freight'; seeded: financial_services, retail, travel"
+            " — re-run with --industry <schema> if one fits, otherwise generate labelled synthetic data") in out
+
+
+def test_prefs_does_not_call_an_unreadable_catalog_empty(tmp_path, monkeypatch, capsys):
+    cli = _prefs_cli(tmp_path, monkeypatch, {"industry": "banking", "industry_demo": {
+        "catalog": "workshop_demo", "schema": "", "tables": 0, "seeded": [], "readable": False}})
+
+    assert cli.main(["prefs", "--industry", "Banking"]) == 0
+
+    out = capsys.readouterr().out
+    assert "could not be listed just now; run SHOW SCHEMAS IN workshop_demo" in out
+    assert "no demo schema" not in out
+
+
+def test_an_industry_saved_in_chat_comes_back_with_its_demo_schema(client, monkeypatch):
+    import time
+
+    from server import demo_data
+    from server.users import user_manager
+
+    monkeypatch.setattr(demo_data.config, "workshop_demo_catalog", lambda: "workshop_demo")
+    monkeypatch.setattr(demo_data, "_cache", {"financial_services": {"loans", "arrears"}, "retail": {"orders"}})
+    monkeypatch.setattr(demo_data, "_cache_at", time.time())
+    monkeypatch.setattr(demo_data, "_cache_ok", True)
+    user = user_manager.get("chat-industry@example.com")
+    user.bootstrap_home()
+    headers = {"X-Workshop-Capability": _capability(user)}
+    try:
+        saved = client.post("/api/agent/profile", headers=headers, json={
+            "email": "chat-industry@example.com", "expected_revision": 0, "changes": {"industry": "Banking"}})
+        assert saved.status_code == 200, saved.text
+        body = saved.json()
+        assert body["industry"] == "financial_services"
+        assert body["industry_demo"] == {"catalog": "workshop_demo", "schema": "financial_services", "tables": 2,
+                                         "seeded": ["financial_services", "retail"], "readable": True}
+        read = client.post("/api/agent/profile", headers=headers, json={"email": "chat-industry@example.com"})
+        assert "industry_demo" not in read.json()
+    finally:
+        demo_data.reset_cache()

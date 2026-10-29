@@ -318,7 +318,7 @@ def set_phase(body: PhaseBody):
             status_code=422,
             detail=f"Unknown phase '{body.phase}' — pack defines {content_service.pack.phases}",
         )
-    content_service.set_phase(body.phase)
+    content_service.set_phase(body.phase, explicit=True)
     event_hub.publish({"t": "phase", "phase": body.phase})
     # C6 phase 4: wrap is no longer the only edge-summary trigger — the harvest
     # rolls one continuously — but it is still the best one, because the app is
