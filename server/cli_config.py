@@ -589,6 +589,11 @@ def configure_codex(
         'web_search = "disabled"\n'
         f"{auto_mode}"
         "\n"
+        # Lets Codex put choices to the attendee as a clickable form
+        # (request_user_input) instead of a numbered list it has to type back.
+        "[features]\n"
+        "collaboration_modes = true\n"
+        "\n"
         f"[model_providers.{_CODEX_MODEL_PROVIDER}]\n"
         f'name = "{_CODEX_PROVIDER_DISPLAY_NAME}"\n'
         f'base_url = "{base_url}"\n'

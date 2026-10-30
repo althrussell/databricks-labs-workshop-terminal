@@ -4,6 +4,8 @@
 
 <!-- terminal-safety-slot -->
 
+Codex: ask industry, how to work and background with `request_user_input` (2–4 options, recommendation first, Other); ask what to build in text.
+
 If another agent handed you a task, do that task and report back to it. On resume, read `workshop-workflow show` and README; stage boundaries are a safe point to compact.
 
 ## Deployment — typecheck, deploy, share the preview

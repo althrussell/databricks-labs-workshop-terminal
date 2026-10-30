@@ -311,6 +311,8 @@ def test_generated_configs_use_only_policy_approved_system_models(
     # F-020: compact well before the window so re-sent context stays under the
     # seat's token-rate limit (Omnigent copies this config into Codex-native).
     assert codex["model_auto_compact_token_limit"] == 120000
+    # Clickable choices for Codex (request_user_input) need collaboration modes.
+    assert codex["features"]["collaboration_modes"] is True
 
 
 def test_policy_replay_refreshes_existing_agent_configs(
