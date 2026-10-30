@@ -593,6 +593,9 @@ def configure_codex(
         # (request_user_input) instead of a numbered list it has to type back.
         "[features]\n"
         "collaboration_modes = true\n"
+        # Without this, request_user_input exists only in Plan mode, which can't
+        # save the answers (prefs/path) the meeting needs.
+        "default_mode_request_user_input = true\n"
         "\n"
         f"[model_providers.{_CODEX_MODEL_PROVIDER}]\n"
         f'name = "{_CODEX_PROVIDER_DISPLAY_NAME}"\n'
