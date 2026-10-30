@@ -238,3 +238,26 @@ def test_native_helper_selection_refreshes_session_context(client, launchable_ag
     refreshed = client.get("/api/sessions", headers=ALICE).json()["sessions"][0]
     assert refreshed["project_name"] == "garden-plan"
     assert projects.project_path(user, "garden-plan").is_dir()
+
+
+def test_attach_image_saves_the_file_and_returns_its_path(client, tmp_path, monkeypatch):
+    # 30 Oct persona rerun (F-048): this endpoint raised NameError ("re" was never imported),
+    # so every Attach image click returned 500 and nothing reached the agent's prompt.
+    import base64
+
+    from server import config
+
+    monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
+    png = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32).decode()
+    response = client.post(
+        "/api/projects/attach-image",
+        json={"filename": "Report layout (draft).png", "data_base64": f"data:image/png;base64,{png}"},
+        headers=ALICE,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    saved = Path(body["path"])
+    assert saved.is_file() and saved.read_bytes().startswith(b"\x89PNG")
+    assert saved.parent.name == "attachments" and saved.name.endswith("-Report-layout-draft-.png")
+    assert " " not in saved.name and "(" not in saved.name
+    assert body["relative_path"].startswith(".workshop/attachments/")
