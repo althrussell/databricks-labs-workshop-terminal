@@ -1090,6 +1090,11 @@ def agent_profile(body: _AgentProfileBody, request: Request):
         user_content._write_instructions(user)
     except Exception as exc:
         logger.warning("agent profile instruction refresh unavailable (%s)", type(exc).__name__)
+    try:
+        # New projects commit this template; keep it on the saved industry (H2, F-007).
+        user_content.write_project_memory_template(user)
+    except Exception as exc:
+        logger.warning("project-memory template refresh unavailable (%s)", type(exc).__name__)
     saved = profile.to_json()
     if "industry" in body.changes:
         # The running session does not reread its instructions, so the agent

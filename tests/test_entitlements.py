@@ -1445,3 +1445,46 @@ def test_hundred_instance_schedule_stays_under_request_budget(monkeypatch):
     assert max(requests_by_minute.values()) <= (
         config.entitlement_fleet_request_budget_per_minute()
     )
+
+
+def test_demo_catalog_read_is_not_granted_when_inherited(monkeypatch, enabled):
+    """F-033: 8 of 8 deploys sent a demo-catalog grant that failed 403, although
+    the app's principal already read it through `account users`."""
+    from server import entitlements
+
+    fake = _fake_with_attendee_app()
+    host = "https://test.cloud.databricks.com"
+    monkeypatch.setattr(entitlements.config, "workshop_demo_catalog", lambda: "workshop_demo")
+    fake.register_get(
+        f"{host}/api/2.1/unity-catalog/effective-permissions/catalog/workshop_demo",
+        {"principal": "app-sp-99"},
+        {"privilege_assignments": [{"principal": "app-sp-99", "privileges": [
+            {"privilege": p, "inherited_from_type": "CATALOG", "inherited_from_name": "account users"}
+            for p in ("USE_CATALOG", "USE_SCHEMA", "SELECT")]}]},
+    )
+    mgr = _scoped_mgr(monkeypatch, fake)
+
+    result = mgr.reconcile("alice@example.com")
+
+    assert result["errors"] == []
+    assert not [c for c in fake.calls if c[0] == "PATCH" and c[1].endswith("/permissions/catalog/workshop_demo")]
+
+
+def test_demo_catalog_grant_is_skipped_when_permissions_cannot_be_read(monkeypatch, enabled):
+    """A seat without MANAGE on the shared catalog can't read its grants; a grant
+    from the same token would only fail too, so none is sent."""
+    from server import entitlements
+
+    fake = _fake_with_attendee_app()
+    host = "https://test.cloud.databricks.com"
+    monkeypatch.setattr(entitlements.config, "workshop_demo_catalog", lambda: "workshop_demo")
+    fake.register_get(
+        f"{host}/api/2.1/unity-catalog/effective-permissions/catalog/workshop_demo",
+        {"principal": "app-sp-99"}, {}, status=403, text="PERMISSION_DENIED",
+    )
+    mgr = _scoped_mgr(monkeypatch, fake)
+
+    result = mgr.reconcile("alice@example.com")
+
+    assert result["errors"] == []
+    assert not [c for c in fake.calls if c[0] == "PATCH" and c[1].endswith("/permissions/catalog/workshop_demo")]

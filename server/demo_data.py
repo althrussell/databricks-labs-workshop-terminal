@@ -433,6 +433,9 @@ def resolution(industry: str) -> dict[str, Any]:
         "catalog": cat,
         "schema": schema,
         "tables": len(inv.get(schema, ())),
+        # The running session never rereads its instructions (H2), so the
+        # agent that saved the industry gets the table names here.
+        "table_names": sorted(inv.get(schema, ()))[:_MANIFEST_TABLE_CAP] if schema else [],
         "seeded": sorted(inv),
         "readable": bool(inv),
     }

@@ -815,3 +815,165 @@ def test_app_deploy_callback_emits_only_bounded_operational_fields(
             },
         )
     ]
+
+
+def test_a_starting_app_compute_is_waited_for_before_submitting(tmp_path):
+    """F-024: P6's first deploy failed UNAVAILABLE while the app's compute was STARTING."""
+    env, project = _env(tmp_path)
+    backend = FakeBackend()
+    reads = [_app(compute_state="STOPPED", app_state="STOPPED"),
+             _app(compute_state="STARTING", app_state="STOPPED"),
+             _app(compute_state="ACTIVE")]
+    started = []
+
+    def get_app(_project, _name):
+        if not backend.submitted:
+            return reads.pop(0) if len(reads) > 1 else reads[0]
+        value = backend.app_states[min(backend.app_reads, len(backend.app_states) - 1)]
+        backend.app_reads += 1
+        return value
+
+    backend.get_app = get_app
+    backend.start_app = lambda _project, name: started.append(name)
+    messages = []
+
+    result = _controller(env, backend).deploy(project_path=str(project), progress=messages.append)
+
+    assert started == ["demo-app"]
+    assert backend.submissions == 1
+    assert any("Starting demo-app's compute before deploying" in m for m in messages)
+    assert result["status"] == "succeeded"
+
+
+def test_an_active_app_compute_is_not_started_again(tmp_path):
+    env, project = _env(tmp_path)
+    backend = FakeBackend()
+    started = []
+    backend.start_app = lambda _project, name: started.append(name)
+
+    _controller(env, backend).deploy(project_path=str(project))
+
+    assert started == []
+    assert backend.submissions == 1
+
+
+def _compute_backend(pre_submit_reads, *, start_errors=0):
+    """A FakeBackend whose pre-submit `apps get` replies come from a list.
+
+    Each entry is an app dict or an exception; the last entry repeats.
+    """
+    backend = FakeBackend()
+    reads = list(pre_submit_reads)
+    started = []
+    errors = {"left": start_errors}
+
+    def get_app(_project, _name):
+        if not backend.submitted:
+            value = reads.pop(0) if len(reads) > 1 else reads[0]
+            if isinstance(value, Exception):
+                raise value
+            return value
+        value = backend.app_states[min(backend.app_reads, len(backend.app_states) - 1)]
+        backend.app_reads += 1
+        return value
+
+    def start_app(_project, name):
+        started.append(name)
+        if errors["left"]:
+            errors["left"] -= 1
+            raise deploy_tool.CliError("apps start: service temporarily unavailable")
+
+    backend.get_app = get_app
+    backend.start_app = start_app
+    return backend, started
+
+
+def test_cancel_while_compute_is_starting_submits_nothing(tmp_path):
+    env, project = _env(tmp_path)
+    cancel = threading.Event()
+    backend, started = _compute_backend([_app(compute_state="STARTING", app_state="STOPPED")])
+    original = backend.get_app
+    polls = {"n": 0}
+
+    def get_app(project_, name):
+        polls["n"] += 1
+        if polls["n"] == 2:
+            cancel.set()  # the attendee cancels while compute is still starting
+        return original(project_, name)
+
+    backend.get_app = get_app
+
+    result = _controller(env, backend).deploy(project_path=str(project), cancel=cancel)
+
+    assert result["status"] == "cancelled"
+    assert result["reason"] == "compute_cancelled"
+    assert result["remote_may_continue"] is False
+    assert backend.submissions == 0
+    assert started == []
+
+
+def test_a_failed_start_keeps_waiting_and_submits_once_active(tmp_path):
+    env, project = _env(tmp_path)
+    backend, started = _compute_backend(
+        [_app(compute_state="STOPPED", app_state="STOPPED"),
+         _app(compute_state="STARTING", app_state="STOPPED"),
+         _app(compute_state="ACTIVE")],
+        start_errors=1,
+    )
+
+    result = _controller(env, backend).deploy(project_path=str(project))
+
+    assert started == ["demo-app"]  # STARTING after the error: no second start needed
+    assert backend.submissions == 1
+    assert result["status"] == "succeeded"
+
+
+def test_a_transient_read_error_is_retried_and_then_submits(tmp_path):
+    env, project = _env(tmp_path)
+    backend, _started = _compute_backend(
+        [_app(compute_state="STARTING", app_state="STOPPED"),
+         deploy_tool.CliError("apps get: 503"),
+         _app(compute_state="ACTIVE")],
+    )
+
+    result = _controller(env, backend).deploy(project_path=str(project))
+
+    assert backend.submissions == 1
+    assert result["status"] == "succeeded"
+
+
+def test_compute_that_never_becomes_active_refuses_the_deploy(tmp_path):
+    env, project = _env(tmp_path)
+    backend, started = _compute_backend(
+        [_app(compute_state="STOPPED", app_state="STOPPED")], start_errors=5,
+    )
+
+    class Advancing:
+        def __init__(self):
+            self.now = 0.0
+
+        def __call__(self):
+            self.now += 90.0
+            return self.now
+
+    with pytest.raises(deploy_tool.DeployError) as excinfo:
+        _controller(env, backend, monotonic=Advancing()).deploy(project_path=str(project))
+
+    message = str(excinfo.value)
+    assert "App compute is still STOPPED after" in message
+    assert "last error: apps start: service temporarily unavailable" in message
+    assert "try the deploy again, or ask a facilitator" in message
+    assert not isinstance(excinfo.value, deploy_tool.CliError)
+    assert backend.submissions == 0
+    assert started == ["demo-app", "demo-app"]  # the first start plus at most one retry
+
+
+def test_first_deployment_without_an_app_still_submits(tmp_path):
+    env, project = _env(tmp_path)
+    backend, started = _compute_backend([deploy_tool.CliError("App does not exist")])
+
+    result = _controller(env, backend).deploy(project_path=str(project))
+
+    assert started == []
+    assert backend.submissions == 1
+    assert result["status"] == "succeeded"

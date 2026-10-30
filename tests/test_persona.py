@@ -194,9 +194,10 @@ def test_the_agent_asks_how_they_want_to_work_once_and_never_infers(client, monk
     wizard when it is skipped: ask once, save, never infer, never ask again."""
     text = " ".join(_instructions(_provisioned_home(client, monkeypatch)).split())
 
-    for choice in ("*Build with me*", "*Teach me as we go*", "*Let me drive*",
-                   "business or domain side, data and SQL, software developer, or just exploring",
-                   "What industry do you work in?"):
+    for choice in ("Build with me (I explain as I go)", "Teach me as we go (you try bits yourself)",
+                   "Let me drive (you decide, I build)",
+                   "Business or domain · Data and SQL · Software developer · Just exploring",
+                   "**Industry:** the 3 seeded industries closest to what they've said"):
         assert choice in text
     assert "workshop-workflow prefs --approach co_build|learn|lead --background" in text
     assert "--industry <industry>" in text

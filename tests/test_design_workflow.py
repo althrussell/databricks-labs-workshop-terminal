@@ -152,7 +152,9 @@ def test_the_helper_is_installed_and_named_in_every_channel(client, monkeypatch)
         assert "workshop-app-deploy" in text and "never `databricks bundle deploy`" in text
         # The blanket bypass is gone: guided ideation may ask and wait.
         assert "This contract overrides upstream workflow ceremony" not in text
-        assert "Shall I build this direction, or refine it further?" in text
+        # F-011: "build this direction" read as permission to build.
+        assert "go-ahead" in text  # a confirmed direction isn't one, in every channel
+        assert "Shall I start, or change anything?" in text
 
 
 def _capability(user) -> str:
@@ -372,8 +374,44 @@ def test_an_industry_saved_in_chat_comes_back_with_its_demo_schema(client, monke
         body = saved.json()
         assert body["industry"] == "financial_services"
         assert body["industry_demo"] == {"catalog": "workshop_demo", "schema": "financial_services", "tables": 2,
+                                         "table_names": ["arrears", "loans"],
                                          "seeded": ["financial_services", "retail"], "readable": True}
+        # H2 / F-007: a project created after the save commits the industry's demo-data section.
+        template = Path(user.home, ".config", "workshop", "project-memory.md").read_text()
+        assert "workshop_demo.financial_services" in template
         read = client.post("/api/agent/profile", headers=headers, json={"email": "chat-industry@example.com"})
         assert "industry_demo" not in read.json()
     finally:
         demo_data.reset_cache()
+
+
+def test_prefs_prints_the_industrys_table_names_for_the_running_session(tmp_path, monkeypatch, capsys):
+    """H2: a running session never rereads its instructions, so the save names the tables."""
+    cli = _prefs_cli(tmp_path, monkeypatch, {"industry": "financial_services", "industry_demo": {
+        "catalog": "workshop_demo", "schema": "financial_services", "tables": 18,
+        "table_names": ["accounts", "arrears", "loans"],
+        "seeded": ["financial_services", "retail"], "readable": True}})
+
+    assert cli.main(["prefs", "--industry", "Banking"]) == 0
+
+    out = capsys.readouterr().out
+    assert "18 tables): accounts, arrears, loans, …" in out
+    assert "This session keeps its instructions; new sessions get the update." in out
+    assert "New agent turns use it" not in out
+
+
+def test_a_confirmed_guided_direction_puts_the_plan_and_waits(tmp_path):
+    """F-011: Codex built 41 s after "Build this direction" because the next step said "build"."""
+    import importlib.machinery
+    import importlib.util
+
+    loader = importlib.machinery.SourceFileLoader("workshop_workflow_cli_plan", str(HELPER))
+    cli = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+    loader.exec_module(cli)
+    agreed = {"path": {"value": "guided"}, "phase": "agree", "requests": [], "questions": [],
+              "direction": {"confirmed_by": "attendee"}}
+    step = cli.next_step(agreed)
+    assert "wait" in step and not step.startswith("build")
+    assert "Shall I start, or change anything?" in step
+    rapid = cli.next_step({"path": {"value": "rapid"}, "phase": "choose_path", "requests": [], "questions": []})
+    assert "wait for their go before building" in rapid

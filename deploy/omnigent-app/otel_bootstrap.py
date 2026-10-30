@@ -94,6 +94,17 @@ def launch_command(env: Mapping[str, str]) -> list[str]:
 def main() -> None:
     prepare_environment(os.environ)
     cmd = launch_command(os.environ)
+    # F-022: no Omni spans reach OTel while metrics do. Record the launch
+    # decision once at startup so the app log shows which side is missing.
+    print(
+        "otel_bootstrap: tracing "
+        + ("on (opentelemetry-instrument)" if cmd[0] == "opentelemetry-instrument" else "off")
+        + f"; endpoint set: {bool(os.environ.get('OTEL_EXPORTER_OTLP_ENDPOINT', '').strip())}"
+        + f"; protocol: {os.environ.get('OTEL_EXPORTER_OTLP_PROTOCOL', '') or 'unset'}"
+        + f"; traces exporter: {os.environ.get('OTEL_TRACES_EXPORTER', '') or 'default'}",
+        file=sys.stderr,
+        flush=True,
+    )
     os.execvp(cmd[0], cmd)
 
 
