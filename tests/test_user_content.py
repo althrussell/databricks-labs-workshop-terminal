@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shlex
 import signal
 import subprocess
@@ -104,7 +105,9 @@ def test_mandate_names_canonical_app_skills_and_no_retired_ones(client, monkeypa
         for skill in CANONICAL_APP_SKILLS:
             assert skill in text, f"{label} does not name {skill}"
         for retired in RETIRED_SKILL_NAMES:
-            assert retired not in text, f"{label} still names retired {retired}"
+            # Whole names only: `databricks-genie-agents` is current, `databricks-genie` is retired.
+            assert not re.search(rf"(?<![\w-]){re.escape(retired)}(?![\w-])", text), (
+                f"{label} still names retired {retired}")
 
 
 _MEMORY_CHANNELS = (
@@ -133,7 +136,7 @@ def test_memory_distinguishes_preview_from_verified_task(client, monkeypatch):
     # carries it; the project worker's memory stays within its word budget.
     for parts in _MEMORY_CHANNELS[:2]:
         text = open(os.path.join(home, *parts)).read()
-        assert "workshop-browser inspect <url> --deployed`, check as attendee" in text
+        assert "Check it as the attendee with `workshop-browser inspect <url> --deployed`" in text
 
 
 def test_every_agent_gets_impeccables_setup_in_order_on_both_paths(client, monkeypatch):

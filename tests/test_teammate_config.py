@@ -171,7 +171,7 @@ def test_the_home_file_puts_who_they_are_before_the_mechanics(client, monkeypatc
     for name in ("claude", "codex"):
         text = _channels(_home(person))[name]
         order = [text.index(marker) for marker in (
-            "<!-- workshop-terminal-safety:v1 -->", "## You are their build partner", "### Meeting them",
+            "<!-- workshop-terminal-safety:v1 -->", "## Who you are", "### Meeting them",
             "### How you work together", "## How to build", "## Databricks essentials")]
         assert order == sorted(order), name
 
@@ -195,9 +195,10 @@ def test_standing_instructions_stay_lean(client, monkeypatch, person):
 
     home = _words(user_content._base_instructions())
     project = _words(user_content._project_memory())
-    # Owner, 30 Oct: raise the limits as far as the desired behaviour needs.
-    assert home <= 1350, home
-    assert project <= 340, project
+    # Owner, 30 Oct: raise the limits as far as the desired voice needs
+    # (instruction review §5 and §7: home 1,700; Claude and Codex 2,000; project 430, template 360).
+    assert home <= 1700, home
+    assert project <= 360, project
 
     # Real event configuration: capture on, discovery on, coach on, demo data on.
     monkeypatch.setenv("LAB_COACH", "true")
@@ -210,8 +211,9 @@ def test_standing_instructions_stay_lean(client, monkeypatch, person):
     _ready(monkeypatch)
     _open(client, person, "claude", has_starter_prompt=True)
     channels = _channels(_home(person))
-    assert _words(channels["claude"]) <= 1650, _words(channels["claude"])
-    assert _words(channels["project"]) <= 340, _words(channels["project"])
+    assert _words(channels["claude"]) <= 2000, _words(channels["claude"])
+    assert _words(channels["codex"]) <= 2000, _words(channels["codex"])
+    assert _words(channels["project"]) <= 430, _words(channels["project"])
     assert "<!-- workshop-workflow-contract:v3 -->" not in channels["project"]
 
 
@@ -229,7 +231,7 @@ def test_domain_expertise_and_the_working_rhythm_reach_every_main_session(client
     _open(client, person, "claude", has_starter_prompt=True)
     for name in ("claude", "codex"):
         text = " ".join(_channels(_home(person))[name].split())
-        assert "**Expert in their field:**" in text
+        assert "**Know their field.**" in text
         assert "Never let five minutes pass in silence." in text
         assert "**Plan out loud.**" in text
 
@@ -331,11 +333,14 @@ def test_the_meeting_asks_only_whats_missing_in_each_agents_own_way(client, monk
     _open(client, person, "claude", has_starter_prompt=True)
     text = " ".join(_channels(_home(person))["claude"].split())
 
-    assert ("any first turn with meeting answers missing, **reply immediately without running commands "
-            "or reading files**, asking only what's missing") in text
-    assert "Claude Code and Omnigent's Claude ask *what to build* in text and the other three with `AskUserQuestion`" in text
-    assert "Codex and Omnigent's Codex ask those three with `request_user_input`" in text
-    assert "For industry, offer the 3 closest seeded industries, then Other." in text
+    assert ("any first turn with meeting answers missing, **reply straight away, without running commands "
+            "or reading files**, and ask only what's missing") in text
+    # F-043: one clickable question set, never the scripted text block.
+    assert "one clickable question set, never a text list" in text
+    assert "Claude Code and Omnigent's Claude: one `AskUserQuestion` call." in text
+    assert "Codex and Omnigent's Codex: one `request_user_input` call." in text
+    assert "the 3 seeded industries closest to what they've said, then Other" in text
+    assert "Four quick things" not in text and "Hi, I'm your build partner" not in text
 
 
 def test_codex_asks_meeting_choices_with_request_user_input(client, monkeypatch, person):
@@ -346,3 +351,12 @@ def test_codex_asks_meeting_choices_with_request_user_input(client, monkeypatch,
     channels = _channels(_home(person))
     assert "request_user_input" in channels["codex"]
     assert "request_user_input" in channels["project"]
+
+
+def test_attach_image_shows_what_was_attached_and_why_it_is_disabled():
+    """F-046: the owner couldn't tell what "Attach image" did; the only sign was a path in the terminal."""
+    app = (ROOT / "frontend" / "src" / "App.tsx").read_text()
+
+    assert "Attached. Now tell the agent what to do with it." in app
+    assert 'className="attach-thumb"' in app
+    assert "Attaching images works while the workshop is open" in app

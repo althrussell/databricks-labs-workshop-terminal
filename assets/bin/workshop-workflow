@@ -296,7 +296,7 @@ def next_step(record: dict) -> str:
     if path == "guided" and phase in {"choose_path", "shape"}:
         open_questions = [q for q in record["questions"] if q.get("answer") is None]
         return ("ask the open design questions" if open_questions
-                else "present the brief and ask: build this direction, or refine it further?")
+                else "present the brief and ask: shall I go with this direction, or refine it further?")
     if path == "guided" and phase == "agree" and not _direction_confirmed(record):
         return "wait for the attendee to confirm the direction"
     build_step = (
@@ -304,8 +304,10 @@ def next_step(record: dict) -> str:
         if _browser_enabled()
         else "run apx dev check and apx build, deploy, and share the live preview URL with the attendee"
     )
-    return {"choose_path": "confirm the MVP scope, Databricks building blocks and build plan with the attendee, then build",
-            "agree": "build the agreed direction",
+    return {"choose_path": "confirm the MVP scope and Databricks building blocks, put the build plan to the attendee, "
+                           "and wait for their go before building",
+            "agree": "put the build plan for the agreed direction to the attendee (first slice, time, assumptions), "
+                     "ask \"Shall I start, or change anything?\" and wait; on their go, run `workshop-workflow phase build`",
             "build": build_step,
             "inspect": "exercise the primary action on desktop and record what you checked",
             "improve": "show what changed and recheck", "feedback": "ask them to do their real task, then record their own account with `workshop-workflow outcome`"}.get(
@@ -449,13 +451,16 @@ def _prefs(args: argparse.Namespace) -> int:
         print("workshop-workflow: could not reach the workshop app; preferences not saved", file=sys.stderr)
         return 1
     print("Saved: " + ", ".join(f"{key}={saved.get(key)}" for key in changes)
-          + f" (profile revision {saved.get('revision')}). New agent turns use it.")
+          + f" (profile revision {saved.get('revision')}). This session keeps its instructions;"
+          " new sessions get the update.")
     demo = saved.get("industry_demo") or {}
     if args.industry and demo.get("catalog"):
         catalog = demo["catalog"]
         if demo.get("schema"):
-            print(f"industry → {demo['schema']} ({catalog}.{demo['schema']}, {demo.get('tables', 0)} tables)."
-                  f" Run SHOW TABLES IN {catalog}.{demo['schema']} before you plan.")
+            names = demo.get("table_names") or []
+            listed = (": " + ", ".join(names) + (", …" if demo.get("tables", 0) > len(names) else "")) if names else ""
+            print(f"industry → {demo['schema']} ({catalog}.{demo['schema']}, {demo.get('tables', 0)} tables){listed}."
+                  f" Run SHOW TABLES IN {catalog}.{demo['schema']} for the full list before you plan.")
         elif not demo.get("readable"):
             print(f"{catalog} could not be listed just now; run SHOW SCHEMAS IN {catalog} and use the one"
                   " that is their industry.")

@@ -295,7 +295,11 @@ def test_the_demo_overlay_is_scoped_to_the_attendees_industry(user, seeded):
     overlay = user_content._demo_data_overlay(user)
 
     assert "vehicle360" in overlay
-    assert "DEEP CLONE" in overlay
+    # Owner, 30 Oct: query demo tables where they are; no copy-paste clone snippet,
+    # because agents take a ready-made snippet as the default path.
+    assert "DEEP CLONE" not in overlay
+    assert "Query them where they are and join them" in overlay
+    assert "never copies made only to read" in overlay
     assert "read-only" in overlay.lower()
 
 
@@ -587,7 +591,8 @@ def test_an_industry_nobody_seeded_is_told_to_generate_not_to_borrow(user, seede
     overlay = user_content._demo_data_overlay(user)
 
     assert "logistics" in overlay
-    assert "Generate the data you need" in overlay
+    assert "generate what you need in their catalog, labelled synthetic" in overlay
+    assert "never present another industry's business records as theirs" in overlay
     assert "do not assume" not in overlay.lower()
 
 
@@ -1154,8 +1159,10 @@ def test_a_health_insurer_is_healthcare_and_other_insurance_is_financial_service
 
 
 def test_resolution_tells_the_agent_which_schema_or_what_is_seeded(persona_catalog):
-    assert demo_data.resolution("Banking") == {
+    banking = demo_data.resolution("Banking")
+    assert banking == {
         "catalog": "workshop_demo", "schema": "financial_services", "tables": 2,
+        "table_names": sorted(persona_catalog["financial_services"]),
         "seeded": sorted(persona_catalog), "readable": True,
     }
     unseeded = demo_data.resolution("logistics_and_freight")
@@ -1194,7 +1201,8 @@ def test_an_unmatched_industry_lists_the_schemas_and_the_one_exception(user, see
     overlay = user_content._demo_data_overlay(user)
 
     assert "`automotive_mobility`" in overlay
-    assert "Generate the data you need, labelled as synthetic" in overlay
+    assert "Use their own data if they upload it" in overlay
+    assert "Supporting tables from another schema" in overlay
     assert "their industry under another name" in overlay
     assert "workshop-workflow prefs --industry <schema>" in overlay
 

@@ -512,13 +512,13 @@ def _demo_data_overlay(user: User) -> str:
         # that resolves to nothing is the whole-catalog summary.
         text += (
             f"\n\nTheir industry is **{scoped.replace('_', ' ')}**, and no schema "
-            "above is named for it. Generate the data you need, labelled as "
-            "synthetic, rather than substituting a different industry's tables — "
-            "a plausible synthetic table in their domain is worth more to them "
-            "than a real one in someone else's. The one exception is a schema "
-            "above that is their industry under another name (a bank's is "
-            "`financial_services`): use it, and save it with "
-            "`workshop-workflow prefs --industry <schema>`.\n"
+            "above is named for it. Use their own data if they upload it; otherwise "
+            "generate what you need in their catalog, labelled synthetic. Supporting "
+            "tables from another schema (weather, regions, calendars) are fine to "
+            "join when they genuinely fit, said plainly; never present another "
+            "industry's business records as theirs. If a schema above is their "
+            "industry under another name (a bank's is `financial_services`), use it "
+            "and save it with `workshop-workflow prefs --industry <schema>`.\n"
         )
     return text
 
@@ -574,6 +574,20 @@ def _project_memory() -> str:
     return _overlay(text, "project_discovery.md", _DISCOVERY_MARKER)
 
 
+def write_project_memory_template(user: User) -> None:
+    """Write the project-memory template that `workshop-init-project` commits.
+
+    Also called when the attendee's profile changes, so a project created after
+    the industry is saved carries that industry's demo-data section (H2, F-007).
+    """
+    template_dst = os.path.join(user.home, ".config", "workshop", "project-memory.md")
+    os.makedirs(os.path.dirname(template_dst), exist_ok=True)
+    # Worktree workers cannot read the home-only demo manifest.
+    _atomic_write(template_dst, "\n\n".join(part for part in (
+        _project_memory(), _demo_data_overlay(user),
+    ) if part.strip()), 0o600)
+
+
 def _install_project_helper(user: User) -> None:
     """Install the project bootstrap helper + its project-memory template.
 
@@ -588,12 +602,7 @@ def _install_project_helper(user: User) -> None:
     in an Omnigent session, which is why the discovery mandate has to be here and
     not only in the home file.
     """
-    template_dst = os.path.join(user.home, ".config", "workshop", "project-memory.md")
-    os.makedirs(os.path.dirname(template_dst), exist_ok=True)
-    # Worktree workers cannot read the home-only demo manifest.
-    _atomic_write(template_dst, "\n\n".join(part for part in (
-        _project_memory(), _demo_data_overlay(user),
-    ) if part.strip()), 0o600)
+    write_project_memory_template(user)
 
     helper_src = os.path.join(_ASSETS, "bin", "workshop-init-project")
     local_bin = os.path.join(user.home, ".local", "bin")

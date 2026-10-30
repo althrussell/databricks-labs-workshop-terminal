@@ -202,7 +202,9 @@ def test_no_retired_skill_name_is_referenced_in_fork_owned_text():
         }:
             continue
         for retired in RETIRED_SKILLS:
-            if retired in text:
+            # Whole names only: the current `databricks-genie-agents` contains
+            # the retired `databricks-genie`.
+            if re.search(rf"(?<![\w-]){re.escape(retired)}(?![\w-])", text):
                 offenders.append(f"{relative}: {retired}")
     assert not offenders, "retired skill names still referenced:\n" + "\n".join(
         offenders
