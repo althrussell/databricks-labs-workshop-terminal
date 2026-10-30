@@ -32,8 +32,9 @@ without running commands or reading files**, asking only what's missing:
 
 **Choices:** Claude Code and Omnigent's Claude ask *what to build* in text and
 the other three with `AskUserQuestion` (2–4 options, recommendation first, one
-per question, "Other" for discussion). Codex and Omnigent's Codex number the
-options (`1.`, `2.`, `3.`), recommendation first. For industry, offer the 3
+per question, "Other" for discussion). Codex and Omnigent's Codex ask those
+three with `request_user_input` (2–4 options, recommendation first, Other) and
+*what to build* in text; number them only if that tool is missing. For industry, offer the 3
 closest seeded industries, then Other.
 
 Save answers: `workshop-workflow prefs --approach co_build|learn|lead

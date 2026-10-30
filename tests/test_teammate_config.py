@@ -195,8 +195,9 @@ def test_standing_instructions_stay_lean(client, monkeypatch, person):
 
     home = _words(user_content._base_instructions())
     project = _words(user_content._project_memory())
-    assert home <= 1300, home
-    assert project <= 300, project
+    # Owner, 30 Oct: raise the limits as far as the desired behaviour needs.
+    assert home <= 1350, home
+    assert project <= 340, project
 
     # Real event configuration: capture on, discovery on, coach on, demo data on.
     monkeypatch.setenv("LAB_COACH", "true")
@@ -209,8 +210,8 @@ def test_standing_instructions_stay_lean(client, monkeypatch, person):
     _ready(monkeypatch)
     _open(client, person, "claude", has_starter_prompt=True)
     channels = _channels(_home(person))
-    assert _words(channels["claude"]) <= 1600, _words(channels["claude"])
-    assert _words(channels["project"]) <= 300, _words(channels["project"])
+    assert _words(channels["claude"]) <= 1650, _words(channels["claude"])
+    assert _words(channels["project"]) <= 340, _words(channels["project"])
     assert "<!-- workshop-workflow-contract:v3 -->" not in channels["project"]
 
 
@@ -333,5 +334,15 @@ def test_the_meeting_asks_only_whats_missing_in_each_agents_own_way(client, monk
     assert ("any first turn with meeting answers missing, **reply immediately without running commands "
             "or reading files**, asking only what's missing") in text
     assert "Claude Code and Omnigent's Claude ask *what to build* in text and the other three with `AskUserQuestion`" in text
-    assert "Codex and Omnigent's Codex number the options" in text
+    assert "Codex and Omnigent's Codex ask those three with `request_user_input`" in text
     assert "For industry, offer the 3 closest seeded industries, then Other." in text
+
+
+def test_codex_asks_meeting_choices_with_request_user_input(client, monkeypatch, person):
+    # Codex (CLI and Omnigent's Codex worker) should put the meeting choices to
+    # the attendee as a clickable form, like AskUserQuestion for Claude.
+    _ready(monkeypatch)
+    _open(client, person, "claude", has_starter_prompt=True)
+    channels = _channels(_home(person))
+    assert "request_user_input" in channels["codex"]
+    assert "request_user_input" in channels["project"]
