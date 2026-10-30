@@ -75,6 +75,15 @@ class LockWaitStopped(RuntimeError):
         self.reason = reason
 
 
+class ComputeWaitStopped(RuntimeError):
+    """The deploy was cancelled while waiting for the app's compute; nothing was submitted."""
+
+    def __init__(self, reason: str, app_name: str):
+        super().__init__(reason)
+        self.reason = reason
+        self.app_name = app_name
+
+
 def _safe_line(value: object) -> str:
     text = str(value).replace("\x00", " ").replace("\r", " ").strip()
     text = TOKEN_RE.sub(lambda match: f"{match.group(1)}[REDACTED]", text)
@@ -628,7 +637,9 @@ class DeployController:
                             cleanup = getattr(self.backend, "cleanup_submission", None)
                             if cleanup is not None:
                                 cleanup(state)
-                        state = self._start(project, target, store, progress, deadline=deadline)
+                        state = self._start(
+                            project, target, store, progress, cancel=cancel, deadline=deadline
+                        )
                     result = self._wait(
                         state,
                         store,
@@ -648,6 +659,16 @@ class DeployController:
                 call_started,
                 remote_may_continue=True,
             )
+        except ComputeWaitStopped as exc:
+            # Stopped before anything was submitted, so no deployment can be running.
+            result = self._result(
+                {"app_name": exc.app_name},
+                exc.reason,
+                f"compute_{exc.reason}",
+                False,
+                call_started,
+                remote_may_continue=False,
+            )
         try:
             self.reporter(result, source)
         except Exception:
@@ -660,35 +681,72 @@ class DeployController:
         app_name: str,
         snapshot: dict[str, str],
         progress: Callable[[str], None],
+        *,
+        cancel: threading.Event,
         deadline: float | None,
     ) -> None:
         """Start the app's compute and wait for ACTIVE before submitting (F-024).
 
-        Bounded and fail-soft: if the compute never reports ACTIVE in time, the
-        deploy is submitted anyway and the normal health checks report it.
+        Nothing is submitted until compute reports ACTIVE. CLI errors inside the
+        window are transient: a failed start may already be in progress, so
+        polling continues, a failed read is retried on the next poll, and the
+        start is retried at most once more while compute is still STOPPED or
+        ERROR. If the window (``COMPUTE_READY_TIMEOUT_SECONDS``, capped by the
+        deploy deadline) ends without ACTIVE, the deploy is refused with a
+        ``DeployError``. A cancel stops the wait without starting or submitting.
         """
-        if not snapshot["compute_state"] or snapshot["compute_state"] == "ACTIVE":
+        compute = snapshot["compute_state"]
+        if not compute or compute == "ACTIVE":
             return
-        start = getattr(self.backend, "start_app", None)
-        if snapshot["compute_state"] in {"STOPPED", "STOPPING", "ERROR"} and start is not None:
-            progress(f"Starting {app_name}'s compute before deploying")
-            try:
-                start(project, app_name)
-            except CliError:
-                return
-        else:
-            progress(f"Waiting for {app_name}'s compute ({snapshot['compute_state']}) before deploying")
-        limit = self.monotonic() + COMPUTE_READY_TIMEOUT_SECONDS
+        started_at = self.monotonic()
+        limit = started_at + COMPUTE_READY_TIMEOUT_SECONDS
         if deadline is not None:
             limit = min(limit, deadline)
-        while self.monotonic() < limit:
+        start = getattr(self.backend, "start_app", None)
+        starts = 0
+        last_error = ""
+
+        def stop_if_cancelled() -> None:
+            if self._stop_reason(cancel, limit) == "cancelled":
+                raise ComputeWaitStopped("cancelled", app_name)
+
+        def try_start() -> None:
+            nonlocal starts, last_error
+            stop_if_cancelled()
+            starts += 1
+            try:
+                start(project, app_name)
+            except CliError as exc:
+                last_error = str(exc)  # transient: the start may already be under way
+
+        stop_if_cancelled()
+        if compute in {"STOPPED", "STOPPING", "ERROR"} and start is not None:
+            progress(f"Starting {app_name}'s compute before deploying")
+            try_start()
+        else:
+            progress(f"Waiting for {app_name}'s compute ({compute}) before deploying")
+        while True:
+            stop_if_cancelled()
+            if self._stop_reason(cancel, limit) == "timed_out":
+                break
+            self._pause(cancel, limit)
+            stop_if_cancelled()
             try:
                 current = _snapshot(self.backend.get_app(project, app_name))
-            except CliError:
+            except CliError as exc:
+                last_error = str(exc)  # transient: read again on the next poll
+                continue
+            compute = current["compute_state"] or compute
+            if compute == "ACTIVE":
                 return
-            if current["compute_state"] == "ACTIVE":
-                return
-            time.sleep(max(0.01, self.poll_seconds))
+            if compute in {"STOPPED", "ERROR"} and start is not None and starts < 2:
+                try_start()
+        minutes = max(1, round((self.monotonic() - started_at) / 60))
+        detail = f" (last error: {_safe_line(last_error)})" if last_error else ""
+        raise DeployError(
+            f"App compute is still {compute} after {minutes} min{detail}; "
+            "try the deploy again, or ask a facilitator"
+        )
 
     def _start(
         self,
@@ -697,6 +755,7 @@ class DeployController:
         store: StateStore,
         progress: Callable[[str], None],
         *,
+        cancel: threading.Event | None = None,
         deadline: float | None = None,
     ) -> dict[str, Any]:
         summary_error: CliError | None = None
@@ -725,6 +784,7 @@ class DeployController:
             )
         app = apps[0]
         baseline: set[str] = set()
+        snapshot: dict[str, str] | None = None
         try:
             snapshot = _snapshot(self.backend.get_app(project, app["name"]))
             baseline.update(
@@ -737,9 +797,15 @@ class DeployController:
             )
             if snapshot["url"]:
                 app["url"] = snapshot["url"]
-            self._ensure_compute_active(project, app["name"], snapshot, progress, deadline)
         except CliError:
             pass  # first deployment: the app may not exist yet
+        if snapshot is not None:
+            # Outside the try: the wait's DeployError must reach the caller,
+            # and its own CLI errors are handled inside it.
+            self._ensure_compute_active(
+                project, app["name"], snapshot, progress,
+                cancel=cancel or threading.Event(), deadline=deadline,
+            )
         state: dict[str, Any] = {
             "schema_version": 1,
             "operation_id": uuid.uuid4().hex,
