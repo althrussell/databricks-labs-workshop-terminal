@@ -464,6 +464,7 @@ OMNIGENT_RENDERER_TOOLS = tuple(
 # The `[model_providers.X]` id in ~/.codex/config.toml. Omnigent's config
 # points at this table by id, so the two files have to agree on the name.
 _CODEX_MODEL_PROVIDER = "databricks"
+_CODEX_AUTO_COMPACT_TOKEN_LIMIT = 120000
 _CODEX_PROVIDER_DISPLAY_NAME = "Databricks Model Serving"
 
 # What `workshop-app-deploy --mcp` reads to report back to the terminal. Claude
@@ -578,6 +579,12 @@ def configure_codex(
         "# Databricks Model Serving configuration (generated — do not edit)\n"
         f'model = "{model}"\n'
         f'model_reasoning_effort = "{config.codex_reasoning_effort()}"\n'
+        # Codex does not know the gateway's model ids, so without an explicit
+        # threshold it compacts only near the model's full window (~247k seen on
+        # 29 Oct). A long Omni-Codex session then re-sent ~200k tokens a request
+        # and hit the seat's token-rate limit for over an hour (F-020). Omnigent
+        # copies this file into each Codex-native session, so this covers both.
+        f"model_auto_compact_token_limit = {_CODEX_AUTO_COMPACT_TOKEN_LIMIT}\n"
         f'model_provider = "{_CODEX_MODEL_PROVIDER}"\n'
         'web_search = "disabled"\n'
         f"{auto_mode}"

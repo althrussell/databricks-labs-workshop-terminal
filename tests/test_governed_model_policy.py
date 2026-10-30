@@ -308,6 +308,9 @@ def test_generated_configs_use_only_policy_approved_system_models(
         "wt_release": "a" * 40,
     }
     assert codex["model_providers"]["databricks"]["request_max_retries"] == 1
+    # F-020: compact well before the window so re-sent context stays under the
+    # seat's token-rate limit (Omnigent copies this config into Codex-native).
+    assert codex["model_auto_compact_token_limit"] == 120000
 
 
 def test_policy_replay_refreshes_existing_agent_configs(
