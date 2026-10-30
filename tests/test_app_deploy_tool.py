@@ -815,3 +815,43 @@ def test_app_deploy_callback_emits_only_bounded_operational_fields(
             },
         )
     ]
+
+
+def test_a_starting_app_compute_is_waited_for_before_submitting(tmp_path):
+    """F-024: P6's first deploy failed UNAVAILABLE while the app's compute was STARTING."""
+    env, project = _env(tmp_path)
+    backend = FakeBackend()
+    reads = [_app(compute_state="STOPPED", app_state="STOPPED"),
+             _app(compute_state="STARTING", app_state="STOPPED"),
+             _app(compute_state="ACTIVE")]
+    started = []
+
+    def get_app(_project, _name):
+        if not backend.submitted:
+            return reads.pop(0) if len(reads) > 1 else reads[0]
+        value = backend.app_states[min(backend.app_reads, len(backend.app_states) - 1)]
+        backend.app_reads += 1
+        return value
+
+    backend.get_app = get_app
+    backend.start_app = lambda _project, name: started.append(name)
+    messages = []
+
+    result = _controller(env, backend).deploy(project_path=str(project), progress=messages.append)
+
+    assert started == ["demo-app"]
+    assert backend.submissions == 1
+    assert any("Starting demo-app's compute before deploying" in m for m in messages)
+    assert result["status"] == "succeeded"
+
+
+def test_an_active_app_compute_is_not_started_again(tmp_path):
+    env, project = _env(tmp_path)
+    backend = FakeBackend()
+    started = []
+    backend.start_app = lambda _project, name: started.append(name)
+
+    _controller(env, backend).deploy(project_path=str(project))
+
+    assert started == []
+    assert backend.submissions == 1

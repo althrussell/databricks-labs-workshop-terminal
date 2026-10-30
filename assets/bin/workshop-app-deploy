@@ -41,6 +41,9 @@ DEFAULT_TIMEOUT_SECONDS = 20 * 60
 MIN_TIMEOUT_SECONDS = 30
 MAX_TIMEOUT_SECONDS = 60 * 60
 DEFAULT_POLL_SECONDS = 2.0
+# A just-created app's compute is often still STARTING; submitting then fails
+# with UNAVAILABLE (29 Oct, P6, F-024). Wait this long for ACTIVE first.
+COMPUTE_READY_TIMEOUT_SECONDS = 10 * 60
 MAX_PROGRESS_CHARS = 320
 MAX_LOG_BYTES = 1024 * 1024
 MISSING_SUBMIT_STATUS_MESSAGE = (
@@ -271,6 +274,9 @@ class CliBackend:
 
     def get_app(self, project: Path, app_name: str) -> dict[str, Any]:
         return self._json(["apps", "get", app_name], project)
+
+    def start_app(self, project: Path, app_name: str) -> dict[str, Any]:
+        return self._json(["apps", "start", app_name, "--no-wait"], project, 60)
 
     def get_deployment(
         self, project: Path, app_name: str, deployment_id: str
@@ -622,7 +628,7 @@ class DeployController:
                             cleanup = getattr(self.backend, "cleanup_submission", None)
                             if cleanup is not None:
                                 cleanup(state)
-                        state = self._start(project, target, store, progress)
+                        state = self._start(project, target, store, progress, deadline=deadline)
                     result = self._wait(
                         state,
                         store,
@@ -648,12 +654,50 @@ class DeployController:
             pass
         return result
 
+    def _ensure_compute_active(
+        self,
+        project: Path,
+        app_name: str,
+        snapshot: dict[str, str],
+        progress: Callable[[str], None],
+        deadline: float | None,
+    ) -> None:
+        """Start the app's compute and wait for ACTIVE before submitting (F-024).
+
+        Bounded and fail-soft: if the compute never reports ACTIVE in time, the
+        deploy is submitted anyway and the normal health checks report it.
+        """
+        if not snapshot["compute_state"] or snapshot["compute_state"] == "ACTIVE":
+            return
+        start = getattr(self.backend, "start_app", None)
+        if snapshot["compute_state"] in {"STOPPED", "STOPPING", "ERROR"} and start is not None:
+            progress(f"Starting {app_name}'s compute before deploying")
+            try:
+                start(project, app_name)
+            except CliError:
+                return
+        else:
+            progress(f"Waiting for {app_name}'s compute ({snapshot['compute_state']}) before deploying")
+        limit = self.monotonic() + COMPUTE_READY_TIMEOUT_SECONDS
+        if deadline is not None:
+            limit = min(limit, deadline)
+        while self.monotonic() < limit:
+            try:
+                current = _snapshot(self.backend.get_app(project, app_name))
+            except CliError:
+                return
+            if current["compute_state"] == "ACTIVE":
+                return
+            time.sleep(max(0.01, self.poll_seconds))
+
     def _start(
         self,
         project: Path,
         target: str,
         store: StateStore,
         progress: Callable[[str], None],
+        *,
+        deadline: float | None = None,
     ) -> dict[str, Any]:
         summary_error: CliError | None = None
         try:
@@ -693,6 +737,7 @@ class DeployController:
             )
             if snapshot["url"]:
                 app["url"] = snapshot["url"]
+            self._ensure_compute_active(project, app["name"], snapshot, progress, deadline)
         except CliError:
             pass  # first deployment: the app may not exist yet
         state: dict[str, Any] = {

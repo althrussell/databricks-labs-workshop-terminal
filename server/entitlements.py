@@ -383,6 +383,36 @@ def _catalog_privileges_for(
     return set(), None
 
 
+_DEMO_READ_PRIVILEGES = ("USE_CATALOG", "USE_SCHEMA", "SELECT")
+
+
+def _effective_catalog_read(
+    host: str, bearer: str, catalog: str, principal: str
+) -> bool | None:
+    """Whether ``principal`` can already read ``catalog``, inherited grants included.
+
+    ``None`` when the permissions cannot be read with this token, which is the
+    normal case on a seat that has read on the shared demo catalog but no
+    MANAGE: a grant from the same token would only fail too (F-033).
+    """
+    payload, error = _get_json(
+        f"{host}/api/2.1/unity-catalog/effective-permissions/catalog/{catalog}",
+        bearer,
+        params={"principal": principal},
+    )
+    if error:
+        return None
+    held: set[str] = set()
+    for assignment in (payload or {}).get("privilege_assignments", []) or []:
+        if not isinstance(assignment, dict):
+            continue
+        for privilege in assignment.get("privileges", []) or []:
+            name = privilege.get("privilege") if isinstance(privilege, dict) else privilege
+            if name:
+                held.add(str(name))
+    return "ALL_PRIVILEGES" in held or set(_DEMO_READ_PRIVILEGES) <= held
+
+
 def _set_catalog_owner(
     host: str, bearer: str, catalog: str, principal: str
 ) -> tuple[bool, EntitlementApiError | None]:
@@ -1488,13 +1518,21 @@ class EntitlementManager:
                 return [f"app {app_name} ({client_id}): {message}"]
         demo_catalog = config.workshop_demo_catalog().strip()
         if demo_catalog and demo_catalog != catalog:
-            _grant_catalog_privileges(
-                host,
-                bearer,
-                demo_catalog,
-                client_id,
-                ("USE_CATALOG", "USE_SCHEMA", "SELECT"),
-            )
+            # The shared demo catalog normally grants read to `account users`,
+            # so an app's principal already reads it. On 29 Oct this grant was
+            # sent anyway with a token that lacks MANAGE there and failed 403 on
+            # 8 of 8 deploys, unchecked (F-033). Grant only when read is proven
+            # missing, and say so if the grant then fails.
+            readable = _effective_catalog_read(host, bearer, demo_catalog, client_id)
+            if readable is False:
+                demo_ok, demo_err = _grant_catalog_privileges(
+                    host, bearer, demo_catalog, client_id, _DEMO_READ_PRIVILEGES
+                )
+                if not demo_ok:
+                    logger.warning(
+                        "app %s cannot be granted read on %s (%s); it reads only what existing grants allow",
+                        app_name, demo_catalog, demo_err or "failed",
+                    )
 
         held, read_error = _catalog_privileges_for(host, bearer, catalog, client_id)
         if read_error:

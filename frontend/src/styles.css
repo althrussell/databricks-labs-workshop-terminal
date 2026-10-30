@@ -748,6 +748,25 @@ body {
   margin-left: 2px;
 }
 
+/* F-046: what was attached, and the next step, after "Attach image". */
+.attach-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.attach-thumb {
+  width: 24px;
+  height: 24px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
 
 /* Pushed to the right so the close button stays at the edge, while the hint
    text keeps the left. */

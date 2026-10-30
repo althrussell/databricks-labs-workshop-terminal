@@ -136,7 +136,7 @@ _CONTINUATIONS = frozenset({
 # Tool inputs that name a target worth recording. Ordered: the first present key
 # wins, so a Bash call reports its command and a Write call reports its path.
 _TARGET_KEYS = (
-    "file_path", "path", "notebook_path", "command", "table", "table_name",
+    "file_path", "path", "notebook_path", "command", "cmd", "table", "table_name",
     "url", "query", "pattern", "name",
 )
 _PLAN_TOOLS = frozenset({
@@ -333,6 +333,25 @@ def _note_driver(entry: dict, session: _Session) -> None:
         session.attendee = False
 
 
+def _omnigent_codex_home_roots() -> list[str]:
+    """Where Omnigent keeps its Codex workers' private per-conversation homes.
+
+    Omnigent stages each Codex conversation's ``CODEX_HOME`` under
+    ``<tmp>/omnigent-codex-homes-<uid>/omnigent-codex-home-*`` (omnigent
+    ``inner/codex_staging.py``), outside ``~/.codex``, so their rollouts were
+    invisible to the activity scan and Omni-Codex seats stayed in intro (F-010).
+    Only this uid's root: another attendee's homes on a shared container are
+    never read.
+    """
+    suffix = f"-{os.getuid()}" if hasattr(os, "getuid") else ""
+    roots = []
+    for base in (tempfile.gettempdir(), "/tmp"):
+        path = os.path.join(base, f"omnigent-codex-homes{suffix}")
+        if path not in roots:
+            roots.append(path)
+    return roots
+
+
 def _omnigent_bridge_roots() -> set[str]:
     """Where Omnigent's runner puts its bridge tree: its temp dir, normally /tmp."""
     return {tempfile.gettempdir(), "/tmp"}
@@ -526,17 +545,23 @@ def _directory(path: str, harvest: Harvest, code: str) -> bool:
         return False
 
 
-def _transcript_files(home: str, harvest: Harvest | None = None) -> list[str]:
+def _transcript_files(home: str, harvest: Harvest | None = None, *,
+                      include_worker_homes: bool = False) -> list[str]:
     """Agent session logs, newest first.
 
     Both harnesses write JSONL under their own dot-directory in HOME. Sorting by
     mtime means a truncated budget keeps today's workshop and drops a stale
-    session from a previous restart.
+    session from a previous restart. ``include_worker_homes`` adds Omnigent's
+    private Codex homes; only the activity and topic scan asks for them, because
+    a worker's transcript records polly's instructions as prompts and insight
+    must never read those as the attendee's.
     """
     found: list[tuple[float, str]] = []
     harvest = harvest if harvest is not None else Harvest()
-    for root_name in (".claude", ".codex", ".omnigent"):
-        root = os.path.join(home, root_name)
+    roots_in_order = [os.path.join(home, name) for name in (".claude", ".codex", ".omnigent")]
+    if include_worker_homes:
+        roots_in_order += _omnigent_codex_home_roots()
+    for root in roots_in_order:
         if not _directory(root, harvest, "transcript_read_failed"):
             continue
         for directory, dirs, files in os.walk(
@@ -556,10 +581,9 @@ def _transcript_files(home: str, harvest: Harvest | None = None) -> list[str]:
     # Each harness's newest transcript is read first, so one harness's many
     # small session files can never push another harness's live session out
     # of the file or byte budget.
-    roots = (".claude", ".codex", ".omnigent")
     newest = []
-    for root_name in roots:
-        prefix = os.path.join(home, root_name) + os.sep
+    for root in roots_in_order:
+        prefix = root + os.sep
         first = next((path for _, path in found if path.startswith(prefix)), None)
         if first is not None:
             newest.append(first)
@@ -862,7 +886,7 @@ def scan_new_tool_targets(
     targets: list[str] = []
     seen: set[str] = set()
     try:
-        for path in _transcript_files(home):
+        for path in _transcript_files(home, include_worker_homes=True):
             if budget <= 0:
                 break
             try:
@@ -902,8 +926,12 @@ def scan_new_tool_targets(
                             if name.lower() in _PLAN_TOOLS:
                                 continue
                             payload = _tool_input(call)
+                            matched = False
                             for key in _TARGET_KEYS:
                                 value = payload.get(key)
+                                # Codex's shell tool passes ``command`` as an argv list.
+                                if isinstance(value, list) and all(isinstance(v, str) for v in value):
+                                    value = " ".join(value)
                                 if not isinstance(value, str) or not value.strip():
                                     continue
                                 target, _ = _first_line(value, MAX_TARGET_CHARS)
@@ -911,7 +939,13 @@ def scan_new_tool_targets(
                                 if entryline and entryline not in seen:
                                     seen.add(entryline)
                                     targets.append(entryline)
+                                matched = True
                                 break
+                            # A tool call with no recognised target is still the
+                            # agent working: it must count as building activity.
+                            if not matched and name and name not in seen:
+                                seen.add(name)
+                                targets.append(name)
                     state[path] = pos
             except OSError as exc:
                 logger.debug("transcript unreadable (%s): %s", path, exc)

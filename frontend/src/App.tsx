@@ -156,7 +156,18 @@ export default function App() {
   const [wrongIdentityDetail, setWrongIdentityDetail] = useState<string | null>(null);
   const [exportBusy, setExportBusy] = useState(false);
   const [attachBusy, setAttachBusy] = useState(false);
+  // F-046: the only sign an attach worked was a file path typed into the
+  // terminal. Show what was attached, and what to do next, for a little while.
+  const [attached, setAttached] = useState<{ name: string; url: string } | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (!attached) return;
+    const timer = window.setTimeout(() => setAttached(null), 20000);
+    return () => {
+      window.clearTimeout(timer);
+      URL.revokeObjectURL(attached.url);
+    };
+  }, [attached]);
   const networkLastRunAt = useRef(0);
   const networkRunning = useRef(false);
   const networkRetryAttempt = useRef(0);
@@ -910,6 +921,7 @@ export default function App() {
       if (session && !session.exited) {
         await api.typeIntoSession(session.id, `${res.path} `);
       }
+      setAttached({ name: file.name || "image", url: URL.createObjectURL(file) });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1205,11 +1217,27 @@ export default function App() {
                         type="button"
                         className="btn btn-ghost"
                         disabled={inputDisabled || attachBusy}
-                        title="Save a screenshot into your project and insert its path into the prompt"
+                        title={inputDisabled
+                          ? "Attaching images works while the workshop is open"
+                          : "Save a screenshot into your project and insert its path into the prompt"}
                         onClick={() => imageInputRef.current?.click()}
                       >
                         <ImagePlus size={14} aria-hidden="true" /> {attachBusy ? "Attaching…" : "Attach image"}
                       </button>
+                      {attached && (
+                        <span className="attach-confirm" role="status" aria-live="polite">
+                          <img src={attached.url} alt="" className="attach-thumb" />
+                          <span>Attached. Now tell the agent what to do with it.</span>
+                          <button
+                            type="button"
+                            className="icon-btn"
+                            aria-label="Dismiss"
+                            onClick={() => setAttached(null)}
+                          >
+                            <X size={12} aria-hidden="true" />
+                          </button>
+                        </span>
+                      )}
                     </>
                   )}
                   <span>{session.label} {session.exited ? "has ended" : "is running"}</span>

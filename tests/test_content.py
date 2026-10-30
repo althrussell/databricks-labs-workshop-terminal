@@ -278,3 +278,37 @@ def test_an_omni_only_seat_moves_to_build_on_its_first_worker_tool_call(client, 
     assert client.get("/api/nuggets", headers=ALICE).json()["phase"] == "build"
     assert user.last_active >= before
     main._transcript_topic_scan_at.clear()
+
+
+def test_omni_codex_worker_rollouts_count_as_building_activity(tmp_path, monkeypatch):
+    """F-010: Omnigent's Codex worker keeps its rollouts in a private
+    per-conversation CODEX_HOME under the temp dir and passes shell commands as
+    an argv list, so the activity scan saw nothing and the seat stayed in intro."""
+    import json as _json
+
+    from server import artifacts
+
+    home = tmp_path / "home"
+    home.mkdir()
+    worker_root = tmp_path / "omnigent-codex-homes-1000"
+    sessions = worker_root / "omnigent-codex-home-abc" / "sessions" / "2026" / "10" / "29"
+    sessions.mkdir(parents=True)
+    rollout = sessions / "rollout-2026-10-29T08-55-00.jsonl"
+    rollout.write_text("\n".join(_json.dumps(line) for line in (
+        {"type": "session_meta", "payload": {"id": "s1"}},
+        {"type": "response_item", "payload": {"type": "function_call", "name": "shell",
+                                              "arguments": _json.dumps({"command": ["bash", "-lc", "databricks tables list workshop_demo food_agribusiness"]})}},
+        {"type": "response_item", "payload": {"type": "function_call", "name": "update_plan",
+                                              "arguments": _json.dumps({"plan": [{"step": "x"}]})}},
+        {"type": "response_item", "payload": {"type": "function_call", "name": "view_image",
+                                              "arguments": _json.dumps({"detail": "high"})}},
+    )) + "\n")
+    monkeypatch.setattr(artifacts, "_omnigent_codex_home_roots", lambda: [str(worker_root)])
+
+    targets = artifacts.scan_new_tool_targets(str(home), {})
+
+    assert "shell bash -lc databricks tables list workshop_demo food_agribusiness" in targets
+    assert "view_image" in targets  # a call with no target still counts
+    assert not any(t.startswith("update_plan") for t in targets)
+    # The insight harvest never reads worker homes (their prompts are polly's).
+    assert not any(str(worker_root) in p for p in artifacts._transcript_files(str(home)))
