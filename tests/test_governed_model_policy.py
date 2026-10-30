@@ -313,6 +313,7 @@ def test_generated_configs_use_only_policy_approved_system_models(
     assert codex["model_auto_compact_token_limit"] == 120000
     # Clickable choices for Codex (request_user_input) need collaboration modes.
     assert codex["features"]["collaboration_modes"] is True
+    assert codex["features"]["default_mode_request_user_input"] is True
 
 
 def test_policy_replay_refreshes_existing_agent_configs(
