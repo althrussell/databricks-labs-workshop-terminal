@@ -126,6 +126,15 @@ def inventory(user) -> dict:
     return {"active": state["active"], "projects": entries}
 
 
+
+def _mark_scaffolded(target: Path) -> None:
+    """Write ``.workshop/scaffold.json`` into a recovered build that lacks it (never overwrite)."""
+    marker = Path(target) / ".workshop" / "scaffold.json"
+    if marker.is_file() or marker.is_symlink() or marker.parent.is_symlink():
+        return
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({"version": 1, "recovered": True}) + "\n")
+
 def select(user, name: str, *, goal: str | None = None, new: bool = False, activate: bool = True) -> dict:
     """Record a build and, unless ``activate`` is false, make it the current one."""
     path = project_path(user, name)
@@ -307,6 +316,10 @@ def _recover(user, name: str, *, activate: bool = True) -> dict:
             except FileExistsError as error:
                 raise ProjectError("Local files appeared during recovery. They were not overwritten; check My builds before continuing.") from error
             previous = read(user)["active"]
+            # A saved build was scaffolded in its earlier life, so it is past the plan gate.
+            # Builds saved before the gate carry no scaffold marker; mark them here so the
+            # helper re-prepares them instead of refusing an unapproved plan.
+            _mark_scaffolded(target)
             env = user.shell_env()
             helper = Path(__file__).resolve().parents[1] / "assets/bin/workshop-init-project"
             prepared = subprocess.run(["bash", str(helper), name, "--json"], env=env,
