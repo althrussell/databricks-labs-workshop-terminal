@@ -564,8 +564,9 @@ def user_snapshot(user: User) -> dict:
 
 def merge_user_snapshot(existing: dict, current: dict, baseline: dict) -> dict:
     """Add each process's new counters once, retaining concurrent committed work."""
-    for raw in (existing, current, baseline):
-        validate_user_snapshot(raw)
+    # Migrate each input: a journal row from before a key existed must read as
+    # the current shape, not only pass the check.
+    existing, current, baseline = (validate_user_snapshot(raw) for raw in (existing, current, baseline))
     merged = copy.deepcopy(existing)
     for name in ("topic_hits", "sessions_launched"):
         for key, value in current[name].items():

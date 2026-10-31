@@ -1803,8 +1803,8 @@ def create_session(
                 launch_agent = agent
                 if agent["id"] == "claude":
                     # A build whose plan is not yet approved opens in Claude Code's
-                    # plan mode; an approved build (or a resumed one) launches in
-                    # full auto, passed as a flag since the user settings carry none.
+                    # plan mode; an approved build launches in full auto, passed as
+                    # a flag since the user settings carry none.
                     from . import build_plan
 
                     approved = build_plan.approved_for_active(

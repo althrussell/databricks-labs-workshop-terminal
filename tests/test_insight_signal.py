@@ -61,6 +61,14 @@ def test_omnigent_conversations_make_an_agent_session(user):
     assert _signal(user, {"commits": 2})["engagement"] == "builder"
 
 
+def test_the_omnigent_card_launch_counts_once(user):
+    """The card launches as sessions_launched["omnigent"] and its first message
+    also lands in omnigent_sessions: one conversation, one agent session."""
+    user.sessions_launched["omnigent"] = 1
+    user.omnigent_sessions["conv_a"] = 1
+    assert stats._agent_session_count(user) == 1
+
+
 def test_commits_make_a_builder(user):
     user.sessions_launched["claude"] = 2
     assert _signal(user, {"commits": 3})["engagement"] == "builder"

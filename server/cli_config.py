@@ -736,8 +736,9 @@ def configure_codex(
         "# Databricks Model Serving configuration (generated — do not edit)\n"
         f'model = "{model}"\n'
         f'model_reasoning_effort = "{config.codex_reasoning_effort()}"\n'
-        # Sweep contract, decision 3 (31 Oct): these lines are verbatim. Only
-        # the effort value comes from config.codex_reasoning_effort().
+        # Sweep contract, decision 3 (31 Oct) set these lines. Only the effort
+        # value comes from config.codex_reasoning_effort(); hide_agent_reasoning
+        # changed to true later (F-009).
         'model_reasoning_summary = "auto"\n'
         # Codex's reasoning summariser paraphrases loosely. On 31 Oct it showed
         # an attendee "I realized I spent $10k too much" when nothing was spent,
@@ -1020,7 +1021,7 @@ def _apply_omnigent_claude_args(document: dict, auto_mode: bool) -> None:
     entry = harness.get("claude-native")
     entry = entry if isinstance(entry, dict) else {}
     current = entry.get("args")
-    args = [arg for arg in current if isinstance(arg, str)] if isinstance(current, list) else []
+    args = list(current) if isinstance(current, list) else []
     args = [arg for arg in args if arg != _CLAUDE_AUTO_FLAG]
     if auto_mode:
         args.append(_CLAUDE_AUTO_FLAG)

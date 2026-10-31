@@ -294,7 +294,10 @@ def _agent_session_count(user: User) -> int:
     terminal_sessions stays terminal-only. Before this, an Omnigent seat that
     built through Omnigent showed 0 agent sessions, and its certificate said so.
     """
-    terminal = sum(n for agent, n in user.sessions_launched.items() if agent != "bash")
+    # The Omnigent card launches through create_session as "omnigent", so its
+    # launches are already in sessions_launched; they count once, as Omnigent
+    # conversations, not again as terminal sessions.
+    terminal = sum(n for agent, n in user.sessions_launched.items() if agent not in ("bash", "omnigent"))
     return terminal + len(user.omnigent_sessions)
 
 

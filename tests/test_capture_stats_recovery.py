@@ -347,12 +347,12 @@ def test_a_restart_that_recounts_a_conversation_does_not_double_it(monkeypatch):
 
 
 def test_a_journal_from_before_omnigent_was_counted_still_reads(monkeypatch):
-    raw = users.validate_user_snapshot({
-        "topics": {}, "topic_hits": {}, "sessions_launched": {"claude": 1},
-        "errors": 0, "first_seen": 1.0, "last_seen": 2.0,
-    })
-    assert raw["omnigent_sessions"] == {}
-    merged = users.merge_user_snapshot(raw, {**raw, "omnigent_sessions": {"conv_a": 1}}, raw)
+    # The row as an earlier release wrote it: no omnigent_sessions key at all.
+    old_row = {"topics": {}, "topic_hits": {}, "sessions_launched": {"claude": 1},
+               "errors": 0, "first_seen": 1.0, "last_seen": 2.0}
+    assert users.validate_user_snapshot(dict(old_row))["omnigent_sessions"] == {}
+    current = users.validate_user_snapshot({**old_row, "omnigent_sessions": {"conv_a": 1}})
+    merged = users.merge_user_snapshot(old_row, current, users.validate_user_snapshot(dict(old_row)))
     assert merged["omnigent_sessions"] == {"conv_a": 1}
 
 

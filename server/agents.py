@@ -234,7 +234,7 @@ def claude_plan_flags(auto_mode: bool) -> tuple[str, ...]:
 
 
 def claude_auto_flags(auto_mode: bool) -> tuple[str, ...]:
-    """Launch flags for a Claude build whose plan is approved, or a resumed one.
+    """Launch flags for a Claude build whose plan is approved.
 
     Full auto is a launch choice. The user settings no longer carry a base mode
     (F-003, 31 Oct): with bypass there, every session began in bypass and Claude
