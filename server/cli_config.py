@@ -736,14 +736,12 @@ def configure_codex(
         "# Databricks Model Serving configuration (generated — do not edit)\n"
         f'model = "{model}"\n'
         f'model_reasoning_effort = "{config.codex_reasoning_effort()}"\n'
-        # Sweep contract, decision 3 (31 Oct) set these lines. Only the effort
-        # value comes from config.codex_reasoning_effort(); hide_agent_reasoning
-        # changed to true later (F-009).
+        # Sweep contract, decision 3 (31 Oct) set these lines verbatim. Only the
+        # effort value comes from config.codex_reasoning_effort(). The owner keeps
+        # reasoning summaries visible (1 Nov, F-009 accepted): hide_agent_reasoning
+        # = true did not hide them in Codex's terminal UI anyway.
         'model_reasoning_summary = "auto"\n'
-        # Codex's reasoning summariser paraphrases loosely. On 31 Oct it showed
-        # an attendee "I realized I spent $10k too much" when nothing was spent,
-        # so the terminal does not show these lines (F-009, 31 Oct).
-        "hide_agent_reasoning = true\n"
+        "hide_agent_reasoning = false\n"
         "show_raw_agent_reasoning = false\n"
         # The contract says this is for a verified model/gateway route
         # (system.ai.gpt-6-1-sol on labs). Written unconditionally as the
