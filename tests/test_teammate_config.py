@@ -27,6 +27,14 @@ def person():
     return {"X-Forwarded-Email": email}
 
 
+def _plan_claude() -> str:
+    """The Claude launch for a build with no approved plan (plan mode, sweep §2)."""
+    from server import agents, config
+
+    flags = agents.claude_plan_flags(config.auto_mode_enabled())
+    return " ".join(["claude", *flags])
+
+
 def _ready(monkeypatch):
     from server import credentials
     import server.main as main
@@ -65,8 +73,9 @@ def test_the_first_agent_opens_with_the_workshop_opener_and_only_once(client, mo
     _open(client, person, "claude")
     _open(client, person, "claude")
 
-    assert launched[0] == f"claude {agents.shlex.quote(agents.WORKSHOP_OPENER)}"
-    assert launched[1] == f"claude {agents.shlex.quote(agents.RETURN_OPENER)}"
+    plan = _plan_claude()
+    assert launched[0] == f"{plan} {agents.shlex.quote(agents.WORKSHOP_OPENER)}"
+    assert launched[1] == f"{plan} {agents.shlex.quote(agents.RETURN_OPENER)}"
 
 
 @pytest.mark.parametrize("agent, expected", [
@@ -89,10 +98,11 @@ def test_no_opener_on_top_of_the_wizard_prompt_or_an_agent_switch(client, monkey
     _open(client, person, "codex", replaces_agent_id="claude")
     _open(client, person, "claude", replaces_agent_id="codex", has_starter_prompt=True)
 
+    plan = _plan_claude()
     assert launched == [
-        "claude",
+        plan,
         f"codex --no-daemon {agents.shlex.quote(agents.switch_opener('Codex'))}",
-        "claude",
+        plan,
     ]
 
 
@@ -104,7 +114,7 @@ def test_no_opener_once_they_have_said_how_they_want_to_work(client, monkeypatch
     assert response.status_code == 200, response.text
     _open(client, person, "claude")
 
-    assert launched == [f"claude {agents.shlex.quote(agents.RETURN_OPENER)}"]
+    assert launched == [f"{_plan_claude()} {agents.shlex.quote(agents.RETURN_OPENER)}"]
 
 
 def test_two_tabs_opening_at_once_claim_the_opener_once(client, monkeypatch, person):
@@ -149,7 +159,7 @@ def test_a_launch_that_fails_gives_the_opener_back(client, monkeypatch, person):
         client.post("/api/sessions", json={"agent_id": "claude"}, headers=person)
     _open(client, person, "claude")
 
-    assert launched[-1].startswith("claude 'Hi!")
+    assert launched[-1].startswith(f"{_plan_claude()} 'Hi!")
 
 
 # --- one lean set of instructions ---------------------------------------------------

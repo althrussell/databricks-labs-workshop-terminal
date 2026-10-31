@@ -10,6 +10,7 @@ import pytest
 
 from server.bootstrap import apx, install
 from server.bootstrap.artifacts import directory_checksum, load_manifest
+from tests.plan_approval import approve_for_env
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -94,6 +95,7 @@ sys.exit(""" + ("1" if failure else "0") + ")\n")
                         "GIT_AUTHOR_NAME": "Fixture", "GIT_AUTHOR_EMAIL": "test@example.com",
                         "GIT_COMMITTER_NAME": "Fixture", "GIT_COMMITTER_EMAIL": "test@example.com"}
     helper = str(ROOT / "assets/bin/workshop-init-project")
+    approve_for_env(env, "repair-desk")
     arguments = ["bash", helper, "repair-desk", "--apx"] + (["--json"] if json_output else [])
     result = subprocess.run(arguments, env=env, text=True, capture_output=True)
     assert result.returncode == int(failure)
@@ -109,12 +111,14 @@ sys.exit(""" + ("1" if failure else "0") + ")\n")
     assert "Scaffold notes to preserve" in (project / "CLAUDE.md").read_text()
     assert "scaffold progress" in result.stderr
     if not failure:
+        approve_for_env(env, "repair-desk")
         rerun = subprocess.run(["bash", helper, "repair-desk", "--apx"], env=env, text=True, capture_output=True)
         assert rerun.returncode == 0
         assert rerun.stdout.strip() == str(project)
     plain = home / "projects/existing-appkit"
     plain.mkdir()
     (plain / "package.json").write_text('{"name":"existing"}')
+    approve_for_env(env, "existing-appkit")
     rejected = subprocess.run(["bash", helper, "existing-appkit", "--apx"], env=env, capture_output=True)
     assert rejected.returncode == 1
     assert (plain / "package.json").read_text() == '{"name":"existing"}'

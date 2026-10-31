@@ -14,6 +14,7 @@ import subprocess
 import pytest
 
 from .conftest import ALICE
+from tests.plan_approval import approve_for_env
 
 _ASSETS = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "assets"))
 HELPER = os.path.join(_ASSETS, "bin", "workshop-discovery")
@@ -190,6 +191,7 @@ def test_the_committed_agents_md_carries_the_mandate(client, monkeypatch, tmp_pa
         "GIT_COMMITTER_NAME": "Workshop",
         "GIT_COMMITTER_EMAIL": "workshop@example.com",
     }
+    approve_for_env(env, "space-invaders")
     out = subprocess.run(
         ["bash", INIT_PROJECT, "space-invaders"],
         env=env, capture_output=True, text=True, timeout=60,

@@ -521,6 +521,12 @@ class SessionManager:
                 from .cli_config import ensure_codex_trusts
 
                 ensure_codex_trusts(user, cwd)
+            elif agent_id == "claude":
+                # A build made since ~/.claude.json was written opens on Claude's
+                # folder-trust prompt otherwise (R-004).
+                from .cli_config import ensure_claude_trusts
+
+                ensure_claude_trusts(user, cwd)
             master_fd, slave_fd = pty.openpty()
             try:
                 process = subprocess.Popen(

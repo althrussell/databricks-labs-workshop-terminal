@@ -9,6 +9,7 @@ import time
 import pytest
 
 from .conftest import ALICE
+from tests.plan_approval import approve_for_env
 
 
 @pytest.fixture
@@ -276,6 +277,7 @@ def test_helper_refreshes_memory_without_committing_attendee_changes(attendee, t
     helper = str(Path(content._ASSETS) / "bin/workshop-init-project")
 
     def run(*args):
+        approve_for_env(env, "my-app")
         return subprocess.run(["bash", helper, "my-app", *args], env=env, capture_output=True, text=True, timeout=30)
 
     assert run().returncode == 0
@@ -311,6 +313,7 @@ def test_helper_reports_scaffold_and_commit_failure_in_json(attendee, monkeypatc
     env = {"HOME": attendee.home, "PATH": f"{shim}:{os.environ['PATH']}",
            "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null",
            "GIT_AUTHOR_NAME": "", "GIT_AUTHOR_EMAIL": "", "GIT_COMMITTER_NAME": "", "GIT_COMMITTER_EMAIL": ""}
+    approve_for_env(env, "incomplete")
     result = subprocess.run(["bash", str(Path(content._ASSETS) / "bin/workshop-init-project"),
                              "incomplete", "--appkit", "--json"], env=env, capture_output=True, text=True, timeout=30)
     assert result.returncode == 1
@@ -333,6 +336,7 @@ def test_appkit_skill_lint_exclusion_preserves_rules_and_attendee_changes(attend
     helper = str(Path(content._ASSETS) / "bin/workshop-init-project")
 
     def run():
+        approve_for_env(env, "lint-app")
         result = subprocess.run(["bash", helper, "lint-app"], env=env,
                                 capture_output=True, text=True, timeout=30)
         assert result.returncode == 0, result.stderr
@@ -379,6 +383,7 @@ def test_appkit_lint_exclusion_preserves_other_configs_and_symlinks(attendee, tm
            "GIT_AUTHOR_NAME": "Attendee", "GIT_AUTHOR_EMAIL": "alice@example.com",
            "GIT_COMMITTER_NAME": "Attendee", "GIT_COMMITTER_EMAIL": "alice@example.com"}
     helper = str(Path(content._ASSETS) / "bin/workshop-init-project")
+    approve_for_env(env, "custom-lint")
     command = ["bash", helper, "custom-lint"]
     result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr
@@ -407,6 +412,7 @@ def test_fresh_scaffold_source_is_committed_for_workers(attendee, tmp_path):
     env = {**os.environ, "HOME": attendee.home, "PATH": f"{shim}:{os.environ['PATH']}",
            "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_AUTHOR_NAME": "Attendee", "GIT_AUTHOR_EMAIL": "alice@example.com",
            "GIT_COMMITTER_NAME": "Attendee", "GIT_COMMITTER_EMAIL": "alice@example.com"}
+    approve_for_env(env, "fresh")
     result = subprocess.run(["bash", str(Path(content._ASSETS) / "bin/workshop-init-project"),
                              "fresh", "--appkit", "--json"], env=env, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr
@@ -427,6 +433,7 @@ def test_helper_migrates_legacy_memory_retaining_notes(attendee):
     for name in ("CLAUDE.md", "AGENTS.md"):
         (project / name).write_text(previous)
     env = {**os.environ, "HOME": attendee.home, "GIT_CONFIG_GLOBAL": str(Path(attendee.home) / ".gitconfig")}
+    approve_for_env(env, "legacy")
     result = subprocess.run(["bash", str(Path(content._ASSETS) / "bin/workshop-init-project"), "legacy"],
                             env=env, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr
@@ -446,6 +453,7 @@ def test_isolated_worktree_receives_actual_skills_and_can_refresh(attendee, tmp_
            "GIT_AUTHOR_NAME": "Attendee", "GIT_AUTHOR_EMAIL": "alice@example.com",
            "GIT_COMMITTER_NAME": "Attendee", "GIT_COMMITTER_EMAIL": "alice@example.com"}
     helper = str(Path(content._ASSETS) / "bin/workshop-init-project")
+    approve_for_env(env, "worker-project")
     result = subprocess.run(["bash", helper, "worker-project"], env=env, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr
     project = Path(attendee.home) / "projects/worker-project"
@@ -470,6 +478,7 @@ def test_isolated_worktree_receives_actual_skills_and_can_refresh(attendee, tmp_
         assert not (worktree / ".agents/skills" / name).exists()
     # A .git file marks a real worktree. Adopting it must not reinitialize Git.
     before = (worktree / ".git").read_text()
+    approve_for_env(env, "worker-copy")
     result = subprocess.run(["bash", helper, "worker-copy", "--json"], env=env, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr
     assert (worktree / ".git").read_text() == before
@@ -483,6 +492,7 @@ def test_project_refresh_retires_managed_ux_copies_and_keeps_notes(attendee):
            "GIT_AUTHOR_NAME": "Attendee", "GIT_AUTHOR_EMAIL": "alice@example.com",
            "GIT_COMMITTER_NAME": "Attendee", "GIT_COMMITTER_EMAIL": "alice@example.com"}
     helper = str(Path(content._ASSETS) / "bin/workshop-init-project")
+    approve_for_env(env, "ux-refresh")
     subprocess.run(["bash", helper, "ux-refresh"], env=env, capture_output=True, check=True, timeout=30)
     project = Path(attendee.home) / "projects/ux-refresh"
     manifest = project / ".agents/workshop-skills.json"
@@ -496,6 +506,7 @@ def test_project_refresh_retires_managed_ux_copies_and_keeps_notes(attendee):
     manifest.write_text(json.dumps(prior))
     with (project / "AGENTS.md").open("a") as handle:
         handle.write("\nAttendee note: use kilograms.\n")
+    approve_for_env(env, "ux-refresh")
     subprocess.run(["bash", helper, "ux-refresh"], env=env, capture_output=True, check=True, timeout=30)
     for name in ("workshop-design-studio", "databricks-app-design", "promote"):
         assert not (project / ".agents/skills" / name).exists()
