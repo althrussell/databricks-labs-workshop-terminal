@@ -1,4 +1,5 @@
 import type { BuildView } from "./build";
+import { retryQuietly } from "./transientRetry";
 import { isWorkshopClosingDetail, notifyWorkshopClosing, type WorkshopStatus } from "./workshopLifecycle";
 
 export interface ShellLink {
@@ -475,6 +476,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return resp.json();
 }
 
+/** A poll that rides out a proxy 502 (NF-01) without surfacing it. */
+function polled<T>(path: string): Promise<T> {
+  return retryQuietly(() => request<T>(path));
+}
+
 export const api = {
   build: () => request<BuildView>("/api/build"),
   buildRequest: (kind: "change" | "explain", text: string) =>
@@ -502,7 +508,7 @@ export const api = {
   retryAgentSetup: (agentId: string) =>
     request<{ retrying: boolean }>(`/api/agents/${encodeURIComponent(agentId)}/retry-setup`, { method: "POST" }),
   config: () => request<AppConfig>("/api/config"),
-  workshopStatus: () => request<WorkshopStatus>("/api/workshop-status"),
+  workshopStatus: () => polled<WorkshopStatus>("/api/workshop-status"),
   setupStatus: () =>
     request<{
       steps: Record<string, { status: string; error: string | null }>;
@@ -510,9 +516,9 @@ export const api = {
       installing: boolean;
     }>("/api/setup-status"),
   agents: () =>
-    request<{ agents: AgentInfo[]; credential: CredentialStatus }>("/api/agents"),
+    polled<{ agents: AgentInfo[]; credential: CredentialStatus }>("/api/agents"),
   sessions: () => request<SessionPayload>("/api/sessions"),
-  projects: () => request<ProjectInventory>("/api/projects"),
+  projects: () => polled<ProjectInventory>("/api/projects"),
   // A read: closeout must never wait on, or fail because of, a saved-copy check.
   savedProjects: () => request<ProjectInventory>("/api/projects/saved"),
   selectProject: (body: ProjectSelection) =>
