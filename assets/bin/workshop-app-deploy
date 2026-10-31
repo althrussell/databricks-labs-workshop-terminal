@@ -63,6 +63,12 @@ LAKEBASE_ENDPOINT_ENV = "LAKEBASE_ENDPOINT"
 APP_CONFIG_FILES = ("app.yml", "app.yaml")
 ENV_NAME_RE = re.compile(r"^(\s*)-\s*name:\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?\s*$")
 ENV_FIELD_RE = re.compile(r"^\s*(value|valueFrom)\s*:\s*(.*?)\s*$")
+ENV_RESOURCE_RE = re.compile(r"^\s*resource\s*:\s*(.*?)\s*$")
+# Code that reads the endpoint, so the app needs the app.yml entry. Other routes (PGHOST and a password) don't.
+CODE_SUFFIXES = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
+SCAN_SKIP_DIRS = frozenset({"node_modules", ".venv", "venv", "__pycache__", ".build", "dist", "build"})
+SCAN_MAX_FILES = 2000
+SCAN_MAX_BYTES = 512 * 1024
 
 
 class DeployError(RuntimeError):
@@ -453,80 +459,128 @@ def _app_candidates(summary: dict[str, Any]) -> list[dict[str, str]]:
     return sorted(unique.values(), key=lambda item: item["name"])
 
 
-def _lakebase_resource_names(app_config: dict[str, Any]) -> list[str]:
-    names = []
+def _lakebase_resource_names(app_config: dict[str, Any]) -> tuple[bool, list[str]]:
+    """Whether the app binds a Lakebase resource, and the names given to those bindings."""
+    bound = False
+    names: list[str] = []
     for item in app_config.get("resources") or []:
         if isinstance(item, dict) and any(key in item for key in LAKEBASE_RESOURCE_KEYS):
-            names.append(str(item.get("name") or "").strip())
-    return [name for name in names if name]
+            bound = True
+            name = str(item.get("name") or "").strip()
+            if name:
+                names.append(name)
+    return bound, names
+
+
+def _strip_comment(line: str) -> str:
+    """A YAML line without its trailing comment (`key: value  # note`)."""
+    return re.sub(r"\s+#.*$", "", line).rstrip()
 
 
 def _env_entry(text: str, name: str) -> dict[str, str] | None:
     """The ``value`` and ``valueFrom`` fields of ``- name: <name>`` in an app.yml env list.
 
-    app.yml is a flat list read line by line, so no YAML parser is needed.
+    app.yml is a flat list read line by line, so no YAML parser is needed. The
+    nested form ``valueFrom:`` then ``resource: <name>`` is read as ``valueFrom``.
     None when the entry is absent.
     """
-    lines = text.splitlines()
+    lines = [_strip_comment(line) for line in text.splitlines()]
     for index, line in enumerate(lines):
         match = ENV_NAME_RE.match(line)
         if not match or match.group(2) != name:
             continue
         indent = len(match.group(1))
         fields: dict[str, str] = {}
+        last_key = ""
         for follower in lines[index + 1:]:
-            if not follower.strip() or follower.lstrip().startswith("#"):
+            if not follower.strip():
                 continue
             if len(follower) - len(follower.lstrip()) <= indent:
                 break
             field = ENV_FIELD_RE.match(follower)
             if field:
                 fields[field.group(1)] = field.group(2).strip("'\"")
+                last_key = field.group(1)
+                continue
+            nested = ENV_RESOURCE_RE.match(follower)
+            if nested and last_key == "valueFrom" and not fields.get("valueFrom"):
+                fields["valueFrom"] = nested.group(1).strip("'\"")
         return fields
     return None
+
+
+def _code_reads_env(source_dir: Path, name: str) -> bool:
+    """True when app code in ``source_dir`` mentions ``name``; True too when the scan is too large to be sure."""
+    scanned = 0
+    for root, dirs, files in os.walk(source_dir):
+        dirs[:] = [d for d in dirs if d not in SCAN_SKIP_DIRS and not d.startswith(".")]
+        for file in files:
+            if not file.endswith(CODE_SUFFIXES):
+                continue
+            scanned += 1
+            if scanned > SCAN_MAX_FILES:
+                return True
+            path = Path(root) / file
+            try:
+                if path.stat().st_size > SCAN_MAX_BYTES:
+                    continue
+                if name in path.read_text(encoding="utf-8", errors="ignore"):
+                    return True
+            except OSError:
+                continue
+    return False
 
 
 def lakebase_problems(bundle: dict[str, Any], project: Path, apps: list[dict[str, str]]) -> list[str]:
     """What would leave a Lakebase-backed app unable to connect, named before the deploy.
 
     databricks.yml binds the Lakebase resource to the app. The platform injects
-    PGHOST, PGDATABASE, PGUSER and PGPORT for it, but not LAKEBASE_ENDPOINT:
-    app.yml must read that from the resource with ``valueFrom``. Without it the
-    app fails at its first database call (31 Oct, F-017: the crew app's Due tab
-    failed on the live app until the agent set the variable by hand).
+    PGHOST, PGDATABASE, PGUSER and PGPORT for it, but not LAKEBASE_ENDPOINT. Code
+    that reads LAKEBASE_ENDPOINT needs app.yml to set it from the resource with
+    ``valueFrom`` (31 Oct, F-017: the crew app's Due tab failed on the live app
+    until the agent set the variable by hand).
     """
     resources = bundle.get("resources") if isinstance(bundle, dict) else None
     app_configs = resources.get("apps") if isinstance(resources, dict) else None
     problems: list[str] = []
     for app in apps:
         config = app_configs.get(app["resource_key"]) if isinstance(app_configs, dict) else None
-        names = _lakebase_resource_names(config) if isinstance(config, dict) else []
-        if not names:
+        bound, names = _lakebase_resource_names(config) if isinstance(config, dict) else (False, [])
+        if not bound:
             continue
         source_dir = Path(str(config.get("source_code_path") or ".").strip()).expanduser()
         if not source_dir.is_absolute():
             source_dir = project / source_dir
+        if not _code_reads_env(source_dir, LAKEBASE_ENDPOINT_ENV):
+            continue  # this app reaches Lakebase another way; nothing to bind
+        if not names:
+            problems.append(
+                f"databricks.yml gives the Lakebase resource of {app['name']} no name. "
+                "Add `name: postgres` to it, so app.yml can read it."
+            )
+            continue
+        resource = names[0]
         # The file the deploy ships: the app's source directory, not a fallback.
         config_file = next(
             (path for path in (source_dir / name for name in APP_CONFIG_FILES) if path.is_file()), None
         )
         if config_file is None:
             problems.append(
-                f"{app['name']} binds the Lakebase resource '{names[0]}' in databricks.yml, but there "
-                f"is no app.yml or app.yaml in {source_dir}."
+                f"The app code reads {LAKEBASE_ENDPOINT_ENV}, but there is no app.yml or app.yaml in "
+                f"{source_dir.name or '.'}. Create one with env entry {LAKEBASE_ENDPOINT_ENV}."
             )
             continue
         entry = _env_entry(config_file.read_text(encoding="utf-8", errors="replace"), LAKEBASE_ENDPOINT_ENV)
         if entry is None:
             problems.append(
-                f"{config_file.name} has no {LAKEBASE_ENDPOINT_ENV} env entry for the Lakebase resource. "
-                f"Add under env: '- name: {LAKEBASE_ENDPOINT_ENV}' and 'valueFrom: {names[0]}'."
+                f"The app code reads {LAKEBASE_ENDPOINT_ENV}, and {config_file.name} has no entry for it. "
+                f"Add under env: `- name: {LAKEBASE_ENDPOINT_ENV}` then `  valueFrom: {resource}`."
             )
         elif "value" not in entry and entry.get("valueFrom") not in names:
             problems.append(
                 f"{config_file.name} reads {LAKEBASE_ENDPOINT_ENV} with valueFrom "
                 f"'{entry.get('valueFrom', '')}', which is not a Lakebase resource in databricks.yml "
-                f"(declared: {', '.join(names)})."
+                f"(declared: {', '.join(names)}). Set valueFrom to one of those names."
             )
     return problems
 
@@ -833,17 +887,26 @@ class DeployController:
         )
 
     def _config_problems(
-        self, project: Path, target: str, apps: list[dict[str, str]]
+        self,
+        project: Path,
+        target: str,
+        apps: list[dict[str, str]],
+        bundle: dict[str, Any] | None = None,
     ) -> list[str]:
         # The resolved local bundle, not the deployed one: a first deploy has
         # no deployed state, and a new Lakebase binding is not deployed yet.
-        validate = getattr(self.backend, "bundle_validate", None)
-        if validate is None:
-            return []
-        try:
-            bundle = validate(project, target)
-        except CliError:
-            return []  # the deploy itself reports a bundle that does not validate
+        if bundle is None:
+            validate = getattr(self.backend, "bundle_validate", None)
+            if validate is None:
+                return []
+            try:
+                bundle = validate(project, target)
+            except CliError as exc:
+                # Fail closed: an unchecked Lakebase binding must not ship without its endpoint.
+                raise DeployError(
+                    f"The Lakebase settings could not be checked ({exc}). Retry the deploy; "
+                    "nothing was deployed."
+                ) from exc
         return lakebase_problems(bundle, project, apps)
 
     def _start(
@@ -857,6 +920,7 @@ class DeployController:
         deadline: float | None = None,
     ) -> dict[str, Any]:
         summary_error: CliError | None = None
+        validated: dict[str, Any] | None = None
         try:
             bundle = self.backend.bundle_summary(project, target)
             apps = _app_candidates(bundle)
@@ -873,6 +937,7 @@ class DeployController:
                     raise summary_error
             else:
                 bundle = validate(project, target)
+                validated = bundle
                 apps = _app_candidates(bundle)
         if len(apps) != 1:
             names = ", ".join(item["name"] for item in apps) or "none"
@@ -881,10 +946,10 @@ class DeployController:
                 f"bundle summary reported {names}"
             )
         app = apps[0]
-        problems = self._config_problems(project, target, apps)
+        problems = self._config_problems(project, target, apps, validated)
         if problems:
             # Refused before anything is written or submitted, so the next call starts clean.
-            raise DeployError(" ".join(problems) + " Fix app.yml, then deploy again; nothing was deployed.")
+            raise DeployError(" ".join(problems) + " Nothing was deployed.")
         baseline: set[str] = set()
         snapshot: dict[str, str] | None = None
         try:
