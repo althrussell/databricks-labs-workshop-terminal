@@ -369,6 +369,67 @@ def test_seat22_lifecycle_fixtures_detect_ready_first_message_missing_and_early_
 
 
 
+class _CountingRoster(_Roster):
+    def __init__(self, *users):
+        super().__init__(*users)
+        self.checkpoints = 0
+
+    def checkpoint(self, user):
+        self.checkpoints += 1
+
+
+def _conversation_log(conv: str) -> str:
+    return (
+        f"INFO  10-27 03:01:40.000 runner.app  _claude_terminal | Claude terminal tmux launch requested: session={conv} command=claude\n"
+        f"INFO  10-27 03:01:42.862 runner.app  _nal_interactive | Native terminal became interactive: session={conv} harness=claude-native terminal_id=terminal_claude_main\n"
+        f"INFO  10-27 03:01:43.861 runner.app  _session_events | post_session_events: conv={conv} type=message active=False buffer_len=0 content_types=['input_text'] model_override=None\n"
+    )
+
+
+def test_each_omnigent_conversation_with_a_first_message_is_counted_once(attendee, tmp_path):
+    """F-006 (31 Oct): Omnigent seats showed 0 agent sessions."""
+    from server.users import User
+
+    user = User(attendee.email)
+    user.home = attendee.home
+    roster = _CountingRoster(user)
+    collector = _collector(attendee, tmp_path)
+    collector._users = roster
+    conv_a, conv_b = "a" * 32, "b" * 32
+    _log(attendee, "runner", f"runner-{conv_a}-20261027.log").write_text(_conversation_log(conv_a))
+    _log(attendee, "runner", f"runner-{conv_b}-20261027.log").write_text(_conversation_log(conv_b))
+
+    collector.sweep()
+    assert user.omnigent_sessions == {conv_a: 1, conv_b: 1}
+    assert roster.checkpoints == 2
+
+    # A restart re-reads every log from the top; the same conversations must not count again.
+    restarted = LogCollector(
+        journal=Journal(tmp_path / "diagnostics.json", capacity=50),
+        users=roster,
+        emitter=_Emitter(),
+        interval=0.01,
+    )
+    restarted.sweep()
+    assert user.omnigent_sessions == {conv_a: 1, conv_b: 1}
+
+
+def test_a_conversation_that_never_got_a_message_is_not_counted(attendee, tmp_path):
+    from server.users import User
+
+    user = User(attendee.email)
+    user.home = attendee.home
+    collector = _collector(attendee, tmp_path)
+    collector._users = _CountingRoster(user)
+    conv = "c" * 32
+    _log(attendee, "runner", f"runner-{conv}-20261027.log").write_text(
+        f"INFO  10-27 03:01:40.000 runner.app  _claude_terminal | Claude terminal tmux launch requested: session={conv} command=claude\n"
+        f"INFO  10-27 03:01:42.862 runner.app  _nal_interactive | Native terminal became interactive: session={conv} harness=claude-native terminal_id=terminal_claude_main\n"
+    )
+    collector.sweep()
+    assert user.omnigent_sessions == {}
+
+
 def test_a_terminal_repl_at_an_idle_prompt_is_ready_not_stalled(attendee, tmp_path):
     # 28 Oct E2E, seat 1: the terminal Omnigent REPL came up in 0.3 s and sat at
     # `polly · ready` with no greeting (by design since WT #132), yet the

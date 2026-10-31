@@ -551,6 +551,7 @@ class LogCollector:
                         "ready_to_first_message_ms": ready_ms,
                     },
                 )
+                self._count_omnigent_session(attendee, session_id)
 
         if "post_session_events" in msg and "type=stop_session" in msg:
             if state is not None:
@@ -569,6 +570,25 @@ class LogCollector:
                                 "evidence": " | ".join(state.recent_lines[-3:])[:300],
                             },
                         )
+
+    def _count_omnigent_session(self, attendee: str, session_id: str) -> None:
+        """Count one Omnigent conversation the attendee started (F-006, 31 Oct).
+
+        Stats read the count from the attendee's user record, which WT's own
+        sessions_launched never reaches for Omnigent seats. Keyed by session id,
+        so a restart that re-reads the logs cannot count a conversation twice.
+        """
+        from .users import user_manager
+
+        users = self._users if self._users is not None else user_manager
+        try:
+            user = next((u for u in users.all() if u.email == attendee), None)
+            if user is None or session_id in user.omnigent_sessions:
+                return
+            user.omnigent_sessions[session_id] = 1
+            users.checkpoint(user)
+        except Exception:  # noqa: BLE001 — a stats counter must never stop the sweep
+            logger.warning("omnigent session count not recorded", exc_info=True)
 
     def _check_lifecycle_timeouts(self, *, now_mono: float | None = None) -> None:
         now = now_mono if now_mono is not None else time.monotonic()

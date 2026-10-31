@@ -53,6 +53,14 @@ def test_agent_session_without_commits_is_an_explorer(user):
     assert _signal(user)["engagement"] == "explorer"
 
 
+def test_omnigent_conversations_make_an_agent_session(user):
+    """F-006 (31 Oct): a seat that builds through Omnigent is an explorer, not an observer."""
+    user.omnigent_sessions["conv_a"] = 1
+    assert stats._agent_session_count(user) == 1
+    assert _signal(user)["engagement"] == "explorer"
+    assert _signal(user, {"commits": 2})["engagement"] == "builder"
+
+
 def test_commits_make_a_builder(user):
     user.sessions_launched["claude"] = 2
     assert _signal(user, {"commits": 3})["engagement"] == "builder"
