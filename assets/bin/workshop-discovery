@@ -83,6 +83,19 @@ else:
     except (OSError, subprocess.TimeoutExpired):
         pass
     project = project or cwd
+    # An Omnigent worker runs in a Git worktree of the build, where the untracked
+    # .workshop/discovery.json is absent; resolve to the build's main checkout so every
+    # worker refines the build's one record (Codex review, 31 Oct).
+    try:
+        common = subprocess.run(["git", "-C", project, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                                capture_output=True, text=True, timeout=10)
+        main_git = common.stdout.strip() if common.returncode == 0 else ""
+        if main_git and os.path.basename(main_git) == ".git":
+            main = os.path.dirname(main_git)
+            if os.path.realpath(main) != os.path.realpath(project) and os.path.isdir(main):
+                project = main
+    except (OSError, subprocess.TimeoutExpired):
+        pass
 
 pending_path = os.path.join(conf, "discovery-pending.json")
 pending = read_json(pending_path)

@@ -90,6 +90,9 @@ def main() -> None:
         assert install._parse_version(run([str(bin_dir / "uv"), "--version"])) == install.UV_VERSION
         rows = []
         for framework in ("langgraph", "openai"):
+            # The plan gate refuses to scaffold an unapproved build; approve it as the attendee would.
+            run(["python3", str(ROOT / "assets/bin/workshop-workflow"), "plan", "--approved",
+                 "--build", f"check-{framework}", "--source", "attendee"])
             command = ["bash", str(ROOT / "assets/bin/workshop-init-project"),
                        f"check-{framework}", "--agentbricks", "--", "--framework", framework]
             project = Path(run(command).strip())

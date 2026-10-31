@@ -411,3 +411,26 @@ def test_a_refused_record_stores_no_id(tmp_path):
     assert result.returncode == 0
     assert '"captured": false' in result.stdout
     assert _state(project) is None
+
+
+def test_an_omnigent_worktree_refines_the_builds_one_record(tmp_path):
+    """Codex review (31 Oct): an Omnigent worker in a Git worktree of the build has no copy of
+    the untracked .workshop/discovery.json, so it must resolve to the build's main checkout."""
+    home = tmp_path / "home"
+    build = home / "projects" / "garden"
+    build.mkdir(parents=True)
+    git = {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com", "PATH": os.environ["PATH"]}
+    subprocess.run(["git", "init", "-q", str(build)], check=True, env=git)
+    subprocess.run(["git", "-C", str(build), "commit", "-q", "--allow-empty", "-m", "start"], check=True, env=git)
+    worktree = tmp_path / "omni-worker"
+    subprocess.run(["git", "-C", str(build), "worktree", "add", "-q", str(worktree)], check=True, env=git)
+    _set_active(home, "garden")
+
+    first, _ = _run(tmp_path, home, build, {"confidence": "high"}, {"captured": True, "record_id": "id-garden"})
+    assert first.returncode == 0, first.stderr
+    second, posted = _run(tmp_path, home, worktree, {"confidence": "high"},
+                          {"captured": True, "record_id": "id-garden"})
+    assert second.returncode == 0, second.stderr
+    assert posted["record_id"] == "id-garden"
+    assert not (worktree / ".workshop" / "discovery.json").exists()

@@ -116,7 +116,7 @@ async def lifecycle_journey(client, source, monkeypatch, tmp_path, width):
                 await new_build.wait_for()
                 await new_build.click()
                 await page.get_by_role("textbox", name="Build name", exact=True).fill("Unsent local build")
-                await page.get_by_role("button", name="Help", exact=True).click()
+                await page.get_by_role("button", name="Ask for help", exact=True).click()
                 chat = page.get_by_role("complementary", name="Help chat with operators")
                 await chat.get_by_role("textbox").fill("Saved local help question")
                 await chat.get_by_role("button", name="Send", exact=True).click()
@@ -134,7 +134,7 @@ async def lifecycle_journey(client, source, monkeypatch, tmp_path, width):
                 await page.clock.fast_forward(10001)
                 await page.get_by_role("status").filter(has_text="This workshop is closing.").wait_for()
                 assert await page.get_by_role("dialog").count() == 0
-                await page.get_by_role("button", name="Help", exact=True).click()
+                await page.get_by_role("button", name="Ask for help", exact=True).click()
                 await assert_disabled_activities(page)
                 assert await chat.get_by_role("textbox").input_value() == "Unsent local help draft"
                 assert await page.get_by_role("textbox", name="Build name", exact=True).input_value() == "Unsent local build"
@@ -154,7 +154,7 @@ async def lifecycle_journey(client, source, monkeypatch, tmp_path, width):
                 replacement = replace_emitter(source, monkeypatch)
                 await page.reload()
                 await page.get_by_role("status").filter(has_text="This workshop is closing.").wait_for()
-                await page.get_by_role("button", name="Help", exact=True).click()
+                await page.get_by_role("button", name="Ask for help", exact=True).click()
                 await assert_disabled_activities(page)
                 ready = True
                 response = client.get("/api/admin/capture-closeout/status", headers=ADMIN,
@@ -167,7 +167,7 @@ async def lifecycle_journey(client, source, monkeypatch, tmp_path, width):
                 await assert_disabled_activities(page)
                 await page.reload()
                 await page.get_by_role("status").filter(has_text="This workshop has ended.").wait_for()
-                await page.get_by_role("button", name="Help", exact=True).click()
+                await page.get_by_role("button", name="Ask for help", exact=True).click()
                 await assert_disabled_activities(page)
                 assert replacement.journal.read()["closeout"]["phase"] == "SEALED"
                 assert sum(path == "/api/help/messages" and method == "POST"

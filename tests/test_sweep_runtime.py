@@ -220,8 +220,16 @@ def test_an_unapproved_build_launches_in_plan_mode(user):
 def test_a_scaffolded_build_counts_as_past_the_gate(user):
     build = Path(user.home) / "projects" / "old-build"
     (build / ".workshop").mkdir(parents=True)
-    (build / ".workshop" / "project.json").write_text("{}")
+    (build / ".workshop" / "scaffold.json").write_text("{}")
     assert build_plan.approved_for_active(user.home, "old-build", Path(user.home) / "projects") is True
+
+
+def test_a_saved_goal_is_not_a_scaffold(user):
+    """project.json is written when a goal is saved, before any scaffold (31 Oct review)."""
+    build = Path(user.home) / "projects" / "new-build"
+    (build / ".workshop").mkdir(parents=True)
+    (build / ".workshop" / "project.json").write_text("{}")
+    assert build_plan.approved_for_active(user.home, "new-build", Path(user.home) / "projects") is False
 
 
 def test_a_new_build_resets_the_plan(user, monkeypatch):
@@ -411,6 +419,29 @@ def test_the_check_is_the_gate_init_calls(tmp_path):
                              capture_output=True, text=True, timeout=30)
     assert checked.returncode == 0, checked.stderr
     assert build_plan.read(tmp_path)["build"] == "gate-build"
+
+
+def test_a_saved_goal_does_not_open_the_gate(tmp_path):
+    """Codex review (31 Oct): attach-image or a saved goal leaves .workshop/project.json in a
+    new build before any scaffold; the gate must still refuse an unapproved build."""
+    context = tmp_path / "projects" / "goal-only" / ".workshop"
+    context.mkdir(parents=True)
+    (context / "project.json").write_text("{}")
+    checked = subprocess.run(["python3", str(WORKFLOW), "plan", "--check", "goal-only"], env=_env(tmp_path),
+                             capture_output=True, text=True, timeout=30)
+    assert checked.returncode == 1
+    assert "no approved plan for build goal-only" in checked.stderr
+
+
+def test_a_scaffold_leaves_the_marker_the_gate_trusts(tmp_path):
+    _pending_approval_from(tmp_path, "plan", "--approved")
+    result = subprocess.run(["bash", str(INIT_PROJECT), "marked"], env=_env(tmp_path),
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "projects" / "marked" / ".workshop" / "scaffold.json").is_file()
+    again = subprocess.run(["python3", str(WORKFLOW), "plan", "--check", "marked"], env=_env(tmp_path),
+                           capture_output=True, text=True, timeout=30)
+    assert again.returncode == 0, again.stderr
 
 
 # -- ~/.claude.json safety (sweep review) ---------------------------------------------

@@ -178,7 +178,9 @@ def plan_check(name: str) -> int:
     so it is consumed by the first build scaffolded after it.
     """
     project = Path.home() / "projects" / name
-    if (project / ".workshop" / "preparation.json").is_file() or (project / ".workshop" / "project.json").is_file():
+    # Only the scaffold's own markers count. project.json is written when a goal is saved, so an
+    # unapproved new build could pass on it alone (31 Oct review).
+    if (project / ".workshop" / "scaffold.json").is_file() or (project / ".workshop" / "preparation.json").is_file():
         return 0
     record = read_plan()
     if record.get("plan_approved_at") and record.get("build") in (name, ""):

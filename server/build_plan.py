@@ -67,12 +67,15 @@ def reset(home: str | os.PathLike, build: str) -> None:
 def is_scaffolded(project_dir: str | os.PathLike) -> bool:
     """A build whose scaffold already ran has passed the gate (or predates it).
 
-    ``preparation.json`` is local status and is not synced; ``project.json`` is
-    committed by the helper, so a build recovered from its Workspace copy keeps
-    the marker after an Apps restart wipes the attendee's home approval file.
+    ``preparation.json`` is local status and is not synced; ``scaffold.json`` is
+    written and committed only by ``workshop-init-project``, so a build recovered
+    from its Workspace copy keeps the marker after an Apps restart wipes the
+    attendee's home approval file.
     """
     workshop = Path(project_dir) / ".workshop"
-    return (workshop / "preparation.json").is_file() or (workshop / "project.json").is_file()
+    # project.json is not a scaffold marker: WT writes it when a goal is saved, before any
+    # scaffold, so an unapproved new build would launch outside plan mode (31 Oct review).
+    return (workshop / "scaffold.json").is_file() or (workshop / "preparation.json").is_file()
 
 
 def is_approved(home: str | os.PathLike, build: str, project_dir: str | os.PathLike | None = None) -> bool:

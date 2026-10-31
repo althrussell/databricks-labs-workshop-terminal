@@ -121,6 +121,19 @@ async def exercise(client, tmp_path, monkeypatch, width):
                 assert session_manager.active() is live
                 await controls.get_by_role("button", name="Stop agent and switch", exact=True).click()
                 await controls.get_by_text("garden-plan is selected", exact=False).wait_for()
+                # N-A7 (31 Oct sweep): the stopped agent starts again in the new build, so the
+                # attendee isn't left with a silent terminal until they relaunch it.
+                deadline = time.monotonic() + 10
+                resumed = session_manager.active()
+                while (resumed is None or resumed is live) and time.monotonic() < deadline:
+                    await asyncio.sleep(.05)
+                    resumed = session_manager.active()
+                assert resumed is not None and resumed is not live
+                assert resumed.agent_id == live.agent_id
+                session_manager.terminate(resumed, "test")
+                deadline = time.monotonic() + 5
+                while session_manager.active() is not None and time.monotonic() < deadline:
+                    await asyncio.sleep(.05)
                 assert session_manager.active() is None
                 b = projects.project_path(user, "garden-plan")
                 assert not b.exists()  # official scaffolder requires an absent target

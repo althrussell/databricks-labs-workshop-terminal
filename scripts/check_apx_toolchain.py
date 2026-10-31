@@ -105,6 +105,10 @@ def qualify(prefix: Path, temporary: Path) -> dict:
         if name.startswith("DATABRICKS_") and name != "DATABRICKS_CONFIG_PROFILE":
             env.pop(name)
     helper = ROOT / "assets/bin/workshop-init-project"
+    # The plan gate refuses to scaffold an unapproved build; approve it as the attendee would.
+    subprocess.run(["python3", str(ROOT / "assets/bin/workshop-workflow"), "plan", "--approved",
+                    "--build", "apx-stack-check", "--source", "attendee"],
+                   env=env, text=True, capture_output=True, timeout=60, check=True)
     result = subprocess.run(["bash", str(helper), "apx-stack-check", "--apx", "--json"],
                             env=env, text=True, capture_output=True, timeout=180)
     if result.returncode:

@@ -659,6 +659,22 @@ for path, value in ((context, {'version': 1, 'name': name, 'goal': goal}), (sele
 PY
 git add -f -- .workshop/project.json
 MEMORY_FILES+=(.workshop/project.json)
+# The scaffold marker the plan gate and Claude's launch trust. project.json is not enough:
+# WT writes it when a goal is saved, and attach-image creates the folder, before any scaffold.
+python3 - <<'PY'
+import json, os, tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+marker = Path('.workshop/scaffold.json')
+if not marker.is_file():
+    fd, temporary = tempfile.mkstemp(dir='.workshop', prefix='.scaffold-')
+    with os.fdopen(fd, 'w') as handle:
+        json.dump({'version': 1, 'scaffolded_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}, handle)
+        handle.write('\n')
+    os.replace(temporary, marker)
+PY
+git add -f -- .workshop/scaffold.json
+MEMORY_FILES+=(.workshop/scaffold.json)
 if [ -f .workshop/design-workflow.json ]; then
   git add -f -- .workshop/design-workflow.json
   MEMORY_FILES+=(.workshop/design-workflow.json)
