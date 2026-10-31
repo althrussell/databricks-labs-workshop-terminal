@@ -380,6 +380,274 @@ def test_first_deployment_falls_back_to_bundle_validate(tmp_path):
     assert result["app_name"] == "demo-app"
 
 
+LAKEBASE_RESOURCE = {
+    "name": "postgres",
+    "postgres": {"branch": "projects/p/branches/b", "database": "projects/p/branches/b/databases/d",
+                 "permission": "CAN_CONNECT_AND_CREATE"},
+}
+ENDPOINT_ENV = "env:\n  - name: LAKEBASE_ENDPOINT\n    valueFrom: postgres\n"
+READS_ENDPOINT = 'import os\nENDPOINT = os.environ["LAKEBASE_ENDPOINT"]\n'
+
+
+def _app_code(directory: Path, text: str = READS_ENDPOINT) -> None:
+    """Application code in ``directory``; the guard applies only when it reads LAKEBASE_ENDPOINT."""
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "app.py").write_text(text)
+
+
+class LakebaseBackend(FakeBackend):
+    """The demo app with a Lakebase resource bound in databricks.yml."""
+
+    def __init__(self, resources=(LAKEBASE_RESOURCE,), **kwargs):
+        super().__init__(**kwargs)
+        self.app_config = {
+            "name": "demo-app",
+            "url": "https://demo.databricksapps.com",
+            "source_code_path": ".",
+            "resources": list(resources),
+        }
+
+    def bundle_validate(self, _project, _target):
+        return {"resources": {"apps": {"demo": self.app_config}}}
+
+
+def test_a_lakebase_app_is_refused_until_app_yml_reads_the_endpoint(tmp_path):
+    env, project = _env(tmp_path)
+    (project / "app.yml").write_text(
+        "command: [uvicorn]\nenv:\n  - name: DATABRICKS_WAREHOUSE_ID\n    valueFrom: sql-warehouse\n"
+    )
+    _app_code(project)
+    backend = LakebaseBackend()
+
+    with pytest.raises(deploy_tool.DeployError) as refused:
+        _controller(env, backend).deploy(project_path=str(project))
+
+    message = str(refused.value)
+    assert "has no entry for it" in message
+    assert "- name: LAKEBASE_ENDPOINT" in message and "valueFrom: postgres" in message
+    assert "Nothing was deployed" in message
+    assert backend.submissions == 0
+
+
+def test_a_lakebase_app_whose_app_yml_reads_the_endpoint_deploys(tmp_path):
+    env, project = _env(tmp_path)
+    (project / "app.yml").write_text("command: [uvicorn]\n" + ENDPOINT_ENV)
+    _app_code(project)
+    backend = LakebaseBackend()
+
+    result = _controller(env, backend).deploy(project_path=str(project))
+
+    assert result["status"] == "succeeded"
+    assert backend.submissions == 1
+
+
+@pytest.mark.parametrize(
+    ("env_block", "expected"),
+    [
+        ("  - name: LAKEBASE_ENDPOINT\n    value: projects/p/branches/b/endpoints/e\n", None),
+        ("  - name: 'LAKEBASE_ENDPOINT'\n    valueFrom: postgres\n  - name: X\n    value: y\n", None),
+        ("  - name: LAKEBASE_ENDPOINT\n    valueFrom: database\n", "not a Lakebase resource"),
+        ("  - name: PGHOST\n    valueFrom: postgres\n", "has no entry for it"),
+    ],
+)
+def test_the_endpoint_entry_must_come_from_the_bound_resource(tmp_path, env_block, expected):
+    env, project = _env(tmp_path)
+    (project / "app.yml").write_text("env:\n" + env_block)
+    _app_code(project)
+    backend = LakebaseBackend()
+
+    if expected is None:
+        assert _controller(env, backend).deploy(project_path=str(project))["status"] == "succeeded"
+    else:
+        with pytest.raises(deploy_tool.DeployError, match=expected):
+            _controller(env, backend).deploy(project_path=str(project))
+        assert backend.submissions == 0
+
+
+def test_a_lakebase_app_with_no_app_config_in_its_source_dir_is_refused(tmp_path):
+    env, project = _env(tmp_path)
+    (project / "app.yml").write_text(ENDPOINT_ENV)  # at the root, but the app ships from .build
+    _app_code(project / ".build")
+    backend = LakebaseBackend()
+    backend.app_config["source_code_path"] = ".build"
+
+    with pytest.raises(deploy_tool.DeployError, match="there is no app.yml or app.yaml in"):
+        _controller(env, backend).deploy(project_path=str(project))
+    assert backend.submissions == 0
+
+
+def test_code_that_reaches_lakebase_another_way_is_not_refused(tmp_path):
+    """The 5-lakebase guide's psycopg route reads PGHOST and a password, not LAKEBASE_ENDPOINT."""
+    env, project = _env(tmp_path)
+    (project / "app.yml").write_text("command: [uvicorn]\n")  # no endpoint entry
+    _app_code(project, 'import os\nHOST = os.environ["PGHOST"]\n')
+    backend = LakebaseBackend()
+
+    assert _controller(env, backend).deploy(project_path=str(project))["status"] == "succeeded"
+    assert backend.submissions == 1
+
+
+def test_inline_comments_and_the_nested_value_from_form_are_read(tmp_path):
+    env, project = _env(tmp_path)
+    (project / "app.yml").write_text(
+        "env:\n"
+        "  - name: LAKEBASE_ENDPOINT  # the endpoint path\n"
+        "    valueFrom:\n"
+        "      resource: postgres  # bound in databricks.yml\n"
+    )
+    _app_code(project)
+    backend = LakebaseBackend()
+
+    assert _controller(env, backend).deploy(project_path=str(project))["status"] == "succeeded"
+    assert backend.submissions == 1
+
+
+@pytest.mark.parametrize(
+    "env_block",
+    [
+        "  - valueFrom: postgres\n    name: LAKEBASE_ENDPOINT\n",
+        "  - {name: LAKEBASE_ENDPOINT, valueFrom: postgres}\n",
+    ],
+)
+def test_env_items_are_read_in_any_key_order_and_either_yaml_style(tmp_path, env_block):
+    """Codex review (PR #143): a valid entry with valueFrom first, or a flow mapping, was refused."""
+    env, project = _env(tmp_path)
+    (project / "app.yml").write_text("env:\n" + env_block)
+    _app_code(project)
+    backend = LakebaseBackend()
+
+    assert _controller(env, backend).deploy(project_path=str(project))["status"] == "succeeded"
+    assert backend.submissions == 1
+
+
+def test_an_appkit_app_using_the_lakebase_plugin_is_refused_without_the_endpoint(tmp_path):
+    """Codex review (PR #143): the AppKit plugin reads LAKEBASE_ENDPOINT; the app code never names it."""
+    env, project = _env(tmp_path)
+    (project / "app.yml").write_text("command: [node]\n")
+    _app_code(project, 'import { createApp, lakebase } from "@databricks/appkit";\n'
+                       "createApp({ plugins: [lakebase()] });\n")
+    backend = LakebaseBackend()
+
+    with pytest.raises(deploy_tool.DeployError, match="has no entry for it"):
+        _controller(env, backend).deploy(project_path=str(project))
+    assert backend.submissions == 0
+
+
+@pytest.mark.parametrize(
+    "env_block",
+    [
+        "  - valueFrom: postgres\n    name: LAKEBASE_ENDPOINT\n",
+        "  - {name: LAKEBASE_ENDPOINT, valueFrom: postgres}\n",
+    ],
+)
+def test_env_items_are_read_in_any_key_order_and_either_yaml_style(tmp_path, env_block):
+    """Codex review (PR #143): a valid entry with valueFrom first, or a flow mapping, was refused."""
+    env, project = _env(tmp_path)
+    (project / "app.yml").write_text("env:\n" + env_block)
+    _app_code(project)
+    backend = LakebaseBackend()
+
+    assert _controller(env, backend).deploy(project_path=str(project))["status"] == "succeeded"
+    assert backend.submissions == 1
+
+
+def test_an_appkit_app_using_the_lakebase_plugin_is_refused_without_the_endpoint(tmp_path):
+    """Codex review (PR #143): the AppKit plugin reads LAKEBASE_ENDPOINT; the app code never names it."""
+    env, project = _env(tmp_path)
+    (project / "app.yml").write_text("command: [node]\n")
+    _app_code(project, 'import { createApp, lakebase } from "@databricks/appkit";\n'
+                       "createApp({ plugins: [lakebase()] });\n")
+    backend = LakebaseBackend()
+
+    with pytest.raises(deploy_tool.DeployError, match="has no entry for it"):
+        _controller(env, backend).deploy(project_path=str(project))
+    assert backend.submissions == 0
+
+
+def test_an_unnamed_lakebase_resource_is_refused_not_skipped(tmp_path):
+    env, project = _env(tmp_path)
+    (project / "app.yml").write_text(ENDPOINT_ENV)
+    _app_code(project)
+    backend = LakebaseBackend(resources=[{"postgres": {"branch": "b", "database": "d"}}])
+
+    with pytest.raises(deploy_tool.DeployError, match="no name"):
+        _controller(env, backend).deploy(project_path=str(project))
+    assert backend.submissions == 0
+
+
+def test_a_failed_validation_fails_closed_before_submitting(tmp_path):
+    env, project = _env(tmp_path)
+    _app_code(project)
+
+    class BrokenValidate(LakebaseBackend):
+        def bundle_validate(self, _project, _target):
+            raise deploy_tool.CliError("bundle validate timed out")
+
+    backend = BrokenValidate()
+
+    with pytest.raises(deploy_tool.DeployError, match="could not be checked"):
+        _controller(env, backend).deploy(project_path=str(project))
+    assert backend.submissions == 0
+
+
+def test_a_failed_validation_does_not_block_a_plain_app(tmp_path):
+    """Deploy is the attendee's main path: a validate error must not stop an app that never reads Lakebase."""
+    env, project = _env(tmp_path)
+    _app_code(project, 'print("hello")\n')
+    calls = []
+
+    class BrokenValidate(FakeBackend):
+        def bundle_validate(self, _project, _target):
+            calls.append(1)
+            raise deploy_tool.CliError("bundle validate timed out")
+
+    backend = BrokenValidate()
+
+    assert _controller(env, backend).deploy(project_path=str(project))["status"] == "succeeded"
+    assert backend.submissions == 1
+    assert calls == []  # the scan found no endpoint reader, so validate was never needed
+
+
+def test_the_bundle_is_validated_once_on_the_first_deployment_path(tmp_path):
+    env, project = _env(tmp_path)
+    calls = []
+
+    class FirstDeployBackend(FakeBackend):
+        def bundle_summary(self, _project, _target):
+            raise deploy_tool.CliError("no deployed bundle state")
+
+        def bundle_validate(self, _project, _target):
+            calls.append(1)
+            return {"resources": {"apps": {"demo": {"name": "demo-app"}}}}
+
+    assert _controller(env, FirstDeployBackend()).deploy(project_path=str(project))["status"] == "succeeded"
+    assert len(calls) == 1
+
+
+def test_an_app_without_a_lakebase_resource_is_not_checked(tmp_path):
+    env, project = _env(tmp_path)  # no app.yml at all
+    backend = LakebaseBackend(resources=[{"name": "warehouse", "sql_warehouse": {"id": "w"}}])
+
+    assert _controller(env, backend).deploy(project_path=str(project))["status"] == "succeeded"
+    assert backend.submissions == 1
+
+
+def test_env_entry_reads_only_its_own_fields():
+    text = (
+        "env:\n"
+        "  - name: LAKEBASE_ENDPOINT\n"
+        "    # the endpoint path\n"
+        "    valueFrom: postgres\n"
+        "  - name: OTHER\n"
+        "    value: nope\n"
+    )
+    assert deploy_tool._env_entry(text, "LAKEBASE_ENDPOINT") == {"valueFrom": "postgres"}
+    assert deploy_tool._env_entry(text, "OTHER") == {"value": "nope"}
+    assert deploy_tool._env_entry(text, "MISSING") is None
+    assert deploy_tool._env_entry("  - name: LAKEBASE_ENDPOINT  # x\n    valueFrom: postgres  # bound\n",
+                                  "LAKEBASE_ENDPOINT") == {"valueFrom": "postgres"}
+
+
 def test_cli_submission_failure_returns_bounded_progress_detail(tmp_path):
     env, project = _env(tmp_path)
     backend = FakeBackend(app_states=[_app()])

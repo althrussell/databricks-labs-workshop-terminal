@@ -76,6 +76,10 @@ Any control that writes (approve, save, assign, submit) disables while its reque
 is in flight and after success, and the server write is an upsert on a natural key,
 so a repeat click cannot duplicate a row (F-018, 31 Oct).
 
+A Lakebase app binds the resource in `databricks.yml`, and its `app.yml` must read
+`LAKEBASE_ENDPOINT` with `valueFrom` set to that resource's name. `workshop-app-deploy`
+refuses to deploy until it does, and names what is missing.
+
 Run `apx dev check` and `apx build` first (otherwise the framework's own
 checks). For AppKit, check signatures with `npx @databricks/appkit docs
 <section>` and never write `as unknown as <T>`. A first deploy takes minutes. A
@@ -105,6 +109,7 @@ browsers, or run `databricks apps validate`.
   the attendee's requests from the Your build panel.
 - `workshop-workflow path rapid|guided --by attendee`, and `workshop-workflow
   direction "…" --confirmed-by attendee` once they confirm a guided direction.
+- `workshop-workflow decide "<choice>" --by attendee` records a build choice the attendee made; `show` lists it as settled for every agent after them. `--by agent` records your own default, which later agents ask about.
 - `workshop-workflow phase build --evidence preview=<url>` records the first preview and moves the stage to build.
 - `workshop-workflow plan --put "<summary>"` records the plan you put to them; `plan --approved --source attendee` records their yes. `workshop-init-project` refuses until the second command has run.
 - `workshop-workflow prefs [--approach co_build|learn|lead] [--detail

@@ -155,6 +155,61 @@ def test_the_helper_is_installed_and_named_in_every_channel(client, monkeypatch)
         # F-011: "build this direction" read as permission to build.
         assert "go-ahead" in text  # a confirmed direction isn't one, in every channel
         assert "Shall I start, or change anything?" in text
+    # F-016 (31 Oct): a build choice recorded in one agent must reach the next.
+    for parts in _MEMORY_CHANNELS[:2]:
+        text = " ".join(Path(home, *parts).read_text().split())
+        assert "workshop-workflow decide" in text
+
+
+def test_a_build_choice_the_attendee_made_reaches_the_next_agent(project, tmp_path):
+    """F-016 (31 Oct): P5's Claude took "Dark wall display" from the attendee; after the switch to
+    Codex, the board layout was asked again (MEET-6). The choice now lives in the shared record."""
+    run(project, "decide", "Visual direction: dark wall display, colour only for amber and red", "--by", "attendee")
+    run(project, "decide", "Snapshot time: frozen 'as at' the data window end", "--by", "attendee")
+    saved = record(project)
+    assert [item["text"] for item in saved["decisions"]] == [
+        "Visual direction: dark wall display, colour only for amber and red",
+        "Snapshot time: frozen 'as at' the data window end",
+    ]
+    assert {item["by"] for item in saved["decisions"]} == {"attendee"}
+    assert json.loads(run(project, "show", "--json").stdout)["decisions"] == saved["decisions"]
+
+    env = {**os.environ, "GIT_AUTHOR_NAME": "a", "GIT_AUTHOR_EMAIL": "a@x", "GIT_COMMITTER_NAME": "a",
+           "GIT_COMMITTER_EMAIL": "a@x"}
+    subprocess.run(["git", "-C", str(project), "add", design_workflow.RECORD], check=True, env=env)
+    subprocess.run(["git", "-C", str(project), "commit", "-qm", "decisions"], check=True, env=env)
+    switched = tmp_path / "codex"
+    subprocess.run(["git", "-C", str(project), "worktree", "add", "-q", "--detach", str(switched)],
+                   check=True, env=env)
+    shown = run(switched, "show")
+    assert "Visual direction: dark wall display" in shown.stdout
+    assert "Decided by the attendee" in shown.stdout
+    assert shown.stdout.index("Decided by the attendee") < shown.stdout.index("Next:")
+
+
+def test_an_agents_own_choice_is_asked_about_not_settled(project):
+    """Review 31 Oct: an agent's default must never be "settled: do not ask again" for the next agent."""
+    run(project, "decide", "Thresholds: 95% is amber", "--by", "agent")
+    run(project, "decide", "Snapshot time: frozen 'as at'", "--by", "attendee")
+    shown = run(project, "show").stdout
+    settled = shown[shown.index("Decided by the attendee"):]
+    assert "frozen 'as at'" in settled.split("\n")[0] and "95% is amber" not in settled.split("\n")[0]
+    assert "Agent's own choices, not the attendee's (ask before relying on them): Thresholds: 95% is amber" in shown
+
+
+def test_a_decision_needs_an_explicit_provenance(project):
+    refused = run(project, "decide", "Thresholds: 95% is amber")
+    assert refused.returncode == 2
+
+
+def test_an_empty_decision_is_refused_and_a_decision_is_not_an_assumption(project):
+    refused = run(project, "decide", "   ", "--by", "attendee")
+    assert refused.returncode == 2 and "the decision is empty" in refused.stderr
+    assert not (project / design_workflow.RECORD).exists()
+    run(project, "decide", "Thresholds: 95% pressure is amber", "--by", "attendee")
+    shown = run(project, "show")
+    assert "Decided by the attendee" in shown.stdout and "95% pressure is amber" in shown.stdout
+    assert record(project)["assumptions"] == []
 
 
 def _capability(user) -> str:
