@@ -95,16 +95,23 @@ def _usable(slug: str) -> bool:
 
 
 def _record(profile: RosterProfileIn, received_at: str) -> dict[str, Any]:
+    """The push as received. ``offered`` records whether it was usable when it arrived.
+
+    The industry is kept even when this deployment did not offer it at that
+    moment (the catalog can be cold, or past its timeout), so a later push of the
+    same revision can correct it. Reads check the offered list again.
+    """
     from . import demo_data
 
-    slug = profile.suggested_industry if _usable(profile.suggested_industry) else ""
+    offered = _usable(profile.suggested_industry)
     return {
         "email": profile.email,
         "full_name": profile.full_name,
         "company": profile.company,
         "job_title": profile.job_title,
-        "suggested_industry": slug,
-        "industry_label": demo_data.industry_label(slug) if slug else "",
+        "suggested_industry": profile.suggested_industry,
+        "offered": offered,
+        "industry_label": demo_data.industry_label(profile.suggested_industry) if offered else "",
         "industry_confidence": profile.industry_confidence,
         "industry_source": profile.industry_source,
         "revision": profile.revision,
@@ -113,9 +120,12 @@ def _record(profile: RosterProfileIn, received_at: str) -> dict[str, Any]:
 
 
 def store(profile: RosterProfileIn) -> tuple[dict[str, Any], bool]:
-    """Keep the push if it is newer than what is stored.
+    """Keep a newer push, or re-evaluate a same-revision push that was not usable.
 
-    Returns the record now held and whether this push changed it.
+    A push older than the stored revision changes nothing. A same-revision push
+    changes nothing either, unless the stored industry was not offered when it
+    arrived and this push's industry is offered now. Returns the record now held
+    and whether this push changed it.
     """
     path = path_for(profile.email)
     with attendee_state.locked(path):
@@ -125,10 +135,18 @@ def store(profile: RosterProfileIn) -> tuple[dict[str, Any], bool]:
             # An unreadable file is ours to replace; the push carries the truth.
             current = None
         if isinstance(current, dict) and current.get("email") == profile.email:
-            if profile.revision <= int(current.get("revision", -1)):
+            stored_revision = int(current.get("revision", -1))
+            if profile.revision < stored_revision:
                 return current, False
+            if profile.revision == stored_revision:
+                same_industry = current.get("suggested_industry") == profile.suggested_industry
+                if current.get("offered") or same_industry and not profile.suggested_industry:
+                    return current, False
         now = datetime.now(timezone.utc).isoformat()
         record = _record(profile, now)
+        if isinstance(current, dict) and current.get("email") == profile.email and record == {
+                **current, "received_at": record["received_at"]}:
+            return current, False
         attendee_state.write_json(path, record)
         return record, True
 
@@ -147,10 +165,17 @@ def read(email: str) -> dict[str, Any] | None:
 
 
 def suggestion(email: str) -> dict[str, Any] | None:
-    """The industry to confirm first, when CT is confident enough, else None."""
+    """The industry to confirm first, when CT is confident enough, else None.
+
+    The offered list is checked now, not at push time: a schema that arrived
+    after the push is offered, and one that has gone is not.
+    """
     record = read(email)
-    if not record or not record.get("suggested_industry"):
+    slug = str((record or {}).get("suggested_industry") or "")
+    if not record or not _usable(slug):
         return None
     if float(record.get("industry_confidence") or 0.0) < CONFIDENCE_FLOOR:
         return None
-    return record
+    from . import demo_data
+
+    return {**record, "offered": True, "industry_label": demo_data.industry_label(slug)}

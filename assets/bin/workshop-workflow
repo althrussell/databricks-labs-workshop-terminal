@@ -333,6 +333,11 @@ def attendee_block(email: str = "") -> dict:
     for key in block:
         if key in raw:
             block[key] = raw[key]
+    # The app marks a suggestion it did not offer when it arrived; show never
+    # presents one. The app re-checks the offered list when it writes the
+    # meeting instructions, so a schema that appears later is still used there.
+    if raw.get("offered") is not True:
+        block["suggested_industry"], block["industry_label"] = "", ""
     return block
 
 

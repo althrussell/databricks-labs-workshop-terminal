@@ -110,15 +110,18 @@ def test_the_attendees_own_answer_is_never_overwritten(client, as_admin, owner):
     assert attendee_profile.read(user).industry == "retail"
 
 
-def test_a_suggestion_this_deployment_does_not_offer_is_dropped(client, as_admin, owner):
+def test_a_suggestion_this_deployment_does_not_offer_is_kept_but_never_suggested(client, as_admin, owner):
     from server import attendee_roster
 
-    # No schema exists for logistics, so CT's "no confident match" is stored as empty.
+    # No schema exists for logistics. The push is kept as received, marked not
+    # offered, and never offered to the attendee.
     client.post(URL, json=_body(owner, suggested_industry="logistics", revision=1))
 
     record = attendee_roster.read(owner)
-    assert record["suggested_industry"] == ""
+    assert record["suggested_industry"] == "logistics"
+    assert record["offered"] is False
     assert record["industry_confidence"] == 0.92
+    assert attendee_roster.suggestion(owner) is None
 
 
 def test_a_pushed_suggestion_reaches_the_next_instructions(client, as_admin, owner):
@@ -132,6 +135,37 @@ def test_a_pushed_suggestion_reaches_the_next_instructions(client, as_admin, own
     client.post(URL, json=_body(owner))
 
     assert "Suggested **Telco**" in open(os.path.join(user.home, ".claude", "CLAUDE.md")).read()
+
+
+def test_a_same_revision_repush_corrects_an_industry_not_offered_at_push_time(client, as_admin, owner, monkeypatch):
+    from server import attendee_roster, demo_data
+
+    real_offered = demo_data.offered_industries
+    monkeypatch.setattr(demo_data, "offered_industries", lambda: [s for s in real_offered() if s != "telco"])
+    client.post(URL, json=_body(owner, revision=3))
+    assert attendee_roster.read(owner)["suggested_industry"] == "telco"
+    assert attendee_roster.read(owner)["offered"] is False
+    assert attendee_roster.suggestion(owner) is None
+
+    monkeypatch.setattr(demo_data, "offered_industries", real_offered)
+    response = client.post(URL, json=_body(owner, revision=3))
+
+    assert response.json() == {"accepted": True, "revision": 3}
+    record = attendee_roster.read(owner)
+    assert record["offered"] is True and record["industry_label"] == "Telco"
+    assert attendee_roster.suggestion(owner)["suggested_industry"] == "telco"
+
+
+def test_an_offered_industry_that_disappears_is_not_suggested(client, as_admin, owner, monkeypatch):
+    from server import attendee_roster, demo_data
+
+    client.post(URL, json=_body(owner, revision=1))
+    assert attendee_roster.suggestion(owner) is not None
+
+    real_offered = demo_data.offered_industries
+    monkeypatch.setattr(demo_data, "offered_industries", lambda: [s for s in real_offered() if s != "telco"])
+
+    assert attendee_roster.suggestion(owner) is None
 
 
 # --- what the meeting says ---------------------------------------------------------
@@ -208,6 +242,22 @@ def test_show_carries_the_attendee_block(client, as_admin, owner, tmp_path):
             "(telco, confidence 0.92, llm).") in as_text.stdout
 
 
+def test_show_never_presents_an_industry_that_was_not_offered(client, as_admin, owner, tmp_path, monkeypatch):
+    from server import demo_data
+    from server.users import user_manager
+
+    real_offered = demo_data.offered_industries
+    monkeypatch.setattr(demo_data, "offered_industries", lambda: [s for s in real_offered() if s != "telco"])
+    client.post(URL, json=_body(owner, revision=1))
+    project = tmp_path / "unoffered-app"
+    project.mkdir()
+
+    block = json.loads(_show(user_manager.get(owner).home, owner, project, "--json").stdout)["attendee"]
+
+    assert block["suggested_industry"] == ""
+    assert block["company"] == "Pacific Test Telco"
+
+
 def test_show_gives_nothing_for_another_attendee(client, as_admin, owner, tmp_path):
     from server.users import user_manager
 
@@ -239,12 +289,12 @@ def _fake_curl(bin_dir: Path, body_file: Path) -> None:
     script.chmod(0o755)
 
 
-def _discover(tmp_path: Path, project: Path, record: dict, reply: dict):
+def _run(tmp_path: Path, home: Path, cwd: Path, record: dict, reply: dict):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     body = tmp_path / "posted.json"
+    body.unlink(missing_ok=True)
     _fake_curl(bin_dir, body)
-    home = tmp_path / "home"
     (home / ".config" / "workshop").mkdir(parents=True, exist_ok=True)
     (home / ".config" / "workshop" / "callback-capability").write_text("capability\n")
     env = {
@@ -253,16 +303,78 @@ def _discover(tmp_path: Path, project: Path, record: dict, reply: dict):
         "WORKSHOP_USER_EMAIL": "labuser+1@example.com",
         "FAKE_REPLY": json.dumps(reply),
     }
-    project.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(["bash", str(DISCOVERY), json.dumps(record)], cwd=project, env=env,
+    cwd.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(["bash", str(DISCOVERY), json.dumps(record)], cwd=cwd, env=env,
                             capture_output=True, text=True, timeout=60)
     posted = json.loads(body.read_text()) if body.exists() else None
     return result, posted
 
 
+def _discover(tmp_path: Path, project: Path, record: dict, reply: dict):
+    return _run(tmp_path, tmp_path / "home", project, record, reply)
+
+
+def _set_active(home: Path, active: str) -> None:
+    conf = home / ".config" / "workshop"
+    conf.mkdir(parents=True, exist_ok=True)
+    (conf / "projects.json").write_text(json.dumps({"active": active}))
+
+
+def _pending(home: Path):
+    path = home / ".config" / "workshop" / "discovery-pending.json"
+    return json.loads(path.read_text()) if path.is_file() else None
+
+
 def _state(project: Path):
     path = project / ".workshop" / "discovery.json"
     return json.loads(path.read_text()) if path.is_file() else None
+
+
+def test_two_builds_before_scaffolding_never_share_an_id(tmp_path):
+    home = tmp_path / "home"
+    _set_active(home, "build-a")
+    first, _ = _run(tmp_path, home, home, {"confidence": "high"}, {"captured": True, "record_id": "id-a"})
+    assert first.returncode == 0, first.stderr
+
+    _set_active(home, "build-b")
+    second, posted_b = _run(tmp_path, home, home, {"confidence": "high"},
+                            {"captured": True, "record_id": "id-b"})
+    assert second.returncode == 0, second.stderr
+    assert posted_b.get("record_id") is None, "build B must not inherit build A's record"
+
+    _set_active(home, "build-a")
+    _, posted_a = _run(tmp_path, home, home, {"confidence": "high"}, {"captured": True, "record_id": "id-a"})
+    assert posted_a["record_id"] == "id-a"
+    assert _pending(home)["builds"] == {"build-a": "id-a", "build-b": "id-b"}
+
+
+def test_pre_scaffold_then_scaffolded_keeps_one_id(tmp_path):
+    home = tmp_path / "home"
+    _set_active(home, "build-a")
+    _run(tmp_path, home, home, {"confidence": "high"}, {"captured": True, "record_id": "id-a1"})
+
+    project = home / "projects" / "build-a"
+    _, posted = _run(tmp_path, home, project, {"record_id": "another-agent"},
+                     {"captured": True, "record_id": "id-a1"})
+
+    assert posted["record_id"] == "id-a1"
+    assert _state(project) == {"record_id": "id-a1"}
+    assert "build-a" not in _pending(home)["builds"]
+
+
+def test_a_first_build_with_no_active_name_binds_on_scaffold(tmp_path):
+    home = tmp_path / "home"
+    _run(tmp_path, home, home, {"confidence": "medium"}, {"captured": True, "record_id": "id-n1"})
+    assert _pending(home)["builds"] == {"": "id-n1"}
+
+    _set_active(home, "first")
+    project = home / "projects" / "first"
+    _, posted = _run(tmp_path, home, project, {"record_id": "unrelated"},
+                     {"captured": True, "record_id": "id-n1"})
+
+    assert posted["record_id"] == "id-n1"
+    assert _state(project) == {"record_id": "id-n1"}
+    assert "" not in _pending(home)["builds"]
 
 
 def test_an_agent_switch_reuses_the_builds_record_id(tmp_path):
