@@ -15,7 +15,7 @@ confirm a direction. An agent's own summary is never an approval.
     workshop-workflow plan --put "<one-line plan summary>" [--build NAME]
     workshop-workflow plan --approved [--source attendee|claude-plan-mode] [--build NAME]
     workshop-workflow fact|assume|ask|criterion "text"
-    workshop-workflow decide "<the choice the attendee made>"
+    workshop-workflow decide "<choice>" --by attendee|agent
     workshop-workflow answer <question-id> "text"
     workshop-workflow direction "summary" [--confirmed-by attendee]
     workshop-workflow check [--json]
@@ -503,10 +503,13 @@ def summary(record: dict) -> str:
     attendee = attendee_line(attendee_block())
     if attendee:
         lines.append(attendee)
-    decisions = record.get("decisions") or []
-    if decisions:
-        lines.append("Decided by the attendee (settled: do not ask again; a later entry replaces an earlier one): "
-                     + "; ".join(item["text"] for item in decisions))
+    settled = [item["text"] for item in record.get("decisions") or [] if item.get("by") == "attendee"]
+    assumed = [item["text"] for item in record.get("decisions") or [] if item.get("by") != "attendee"]
+    if settled:
+        lines.append("Decided by the attendee (settled: do not ask again; where two entries cover one choice, "
+                     "the later one is current): " + "; ".join(settled))
+    if assumed:
+        lines.append("Agent's own choices, not the attendee's (ask before relying on them): " + "; ".join(assumed))
     lines.append("Next: " + next_step(record))
     return "\n".join(lines)
 
@@ -555,7 +558,8 @@ def apply(record: dict, args: argparse.Namespace, *, project: Path | None = None
         # next agent, on a switch or a resume, doesn't ask it again.
         if not args.text.strip():
             raise WorkflowError("the decision is empty")
-        record["decisions"].append({"text": " ".join(args.text.split()), "by": "attendee", "at": now()})
+        # `--by agent` keeps an agent's own default visible but not settled: later agents ask before relying on it.
+        record["decisions"].append({"text": " ".join(args.text.split()), "by": args.by, "at": now()})
         _brief_changed(record)
     elif command == "ask":
         question_id = f"q{len(record['questions']) + 1}"
@@ -674,8 +678,9 @@ def main(argv: list[str] | None = None) -> int:
     plan.add_argument("--source", choices=PLAN_SOURCES, help="who approved (default: attendee)")
     plan.add_argument("--build", help="the build (default: the current build)")
     plan.add_argument("--check", metavar="NAME", help="the scaffolding gate for build NAME (exit 1 until approved)")
-    decide = sub.add_parser("decide", help="a build choice the attendee made; agents don't re-ask it")
+    decide = sub.add_parser("decide", help="a build choice: settled when the attendee made it, else asked about")
     decide.add_argument("text")
+    decide.add_argument("--by", required=True, choices=("attendee", "agent"))
     for name in ("fact", "assume", "ask", "criterion"):
         entry = sub.add_parser(name)
         entry.add_argument("text")

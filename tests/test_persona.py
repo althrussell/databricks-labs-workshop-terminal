@@ -236,7 +236,7 @@ def test_the_plan_names_the_product_mix_and_the_demo_tables_it_reads():
 
     assert "recommend all three in the plan, each with a one-line why" in teammate
     assert "Lakebase (autoscaling) for anything saved, decided or acted on" in teammate
-    assert "Ship the App first; Lakebase and the chat follow as slice 2" in teammate
+    assert "Build the App first; add Lakebase and the chat as slice 2 once they agree" in teammate
     assert "what you'll build first, how long, the assumptions, and the demo tables it reads" in teammate
     assert "The plan names the `workshop_demo` tables it will read" in contract
     assert "Databricks building blocks and plan first" in user_content._APPROACH["co_build"]

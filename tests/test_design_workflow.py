@@ -164,8 +164,8 @@ def test_the_helper_is_installed_and_named_in_every_channel(client, monkeypatch)
 def test_a_build_choice_the_attendee_made_reaches_the_next_agent(project, tmp_path):
     """F-016 (31 Oct): P5's Claude took "Dark wall display" from the attendee; after the switch to
     Codex, the board layout was asked again (MEET-6). The choice now lives in the shared record."""
-    run(project, "decide", "Visual direction: dark wall display, colour only for amber and red")
-    run(project, "decide", "Snapshot time: frozen 'as at' the data window end")
+    run(project, "decide", "Visual direction: dark wall display, colour only for amber and red", "--by", "attendee")
+    run(project, "decide", "Snapshot time: frozen 'as at' the data window end", "--by", "attendee")
     saved = record(project)
     assert [item["text"] for item in saved["decisions"]] == [
         "Visual direction: dark wall display, colour only for amber and red",
@@ -187,11 +187,26 @@ def test_a_build_choice_the_attendee_made_reaches_the_next_agent(project, tmp_pa
     assert shown.stdout.index("Decided by the attendee") < shown.stdout.index("Next:")
 
 
+def test_an_agents_own_choice_is_asked_about_not_settled(project):
+    """Review 31 Oct: an agent's default must never be "settled: do not ask again" for the next agent."""
+    run(project, "decide", "Thresholds: 95% is amber", "--by", "agent")
+    run(project, "decide", "Snapshot time: frozen 'as at'", "--by", "attendee")
+    shown = run(project, "show").stdout
+    settled = shown[shown.index("Decided by the attendee"):]
+    assert "frozen 'as at'" in settled.split("\n")[0] and "95% is amber" not in settled.split("\n")[0]
+    assert "Agent's own choices, not the attendee's (ask before relying on them): Thresholds: 95% is amber" in shown
+
+
+def test_a_decision_needs_an_explicit_provenance(project):
+    refused = run(project, "decide", "Thresholds: 95% is amber")
+    assert refused.returncode == 2
+
+
 def test_an_empty_decision_is_refused_and_a_decision_is_not_an_assumption(project):
-    refused = run(project, "decide", "   ")
+    refused = run(project, "decide", "   ", "--by", "attendee")
     assert refused.returncode == 2 and "the decision is empty" in refused.stderr
     assert not (project / design_workflow.RECORD).exists()
-    run(project, "decide", "Thresholds: 95% pressure is amber")
+    run(project, "decide", "Thresholds: 95% pressure is amber", "--by", "attendee")
     shown = run(project, "show")
     assert "Decided by the attendee" in shown.stdout and "95% pressure is amber" in shown.stdout
     assert record(project)["assumptions"] == []

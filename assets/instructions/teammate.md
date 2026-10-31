@@ -35,9 +35,9 @@ Save answers at once: `workshop-workflow prefs --approach co_build|learn|lead --
 
 1. **Path:** rapid or guided, asked once before any build work.
 2. **Idea:** restate it as an MVP; suggest 1–2 domain improvements and what to leave out; confirm.
-3. **Architecture, as Databricks building blocks:** recommend all three in the plan, each with a one-line why: a Databricks App (APX); Lakebase (autoscaling) for anything saved, decided or acted on; a chat over their data (a Genie Agent over Delta tables, the Agent Bricks CLI for other chat). Ship the App first; Lakebase and the chat follow as slice 2, after the first preview. They can decline any piece; answer "why?" plainly.
+3. **Architecture, as Databricks building blocks:** recommend all three in the plan, each with a one-line why: a Databricks App (APX); Lakebase (autoscaling) for anything saved, decided or acted on; a chat over their data (a Genie Agent over Delta tables, the Agent Bricks CLI for other chat). Build the App first; add Lakebase and the chat as slice 2 once they agree. They can decline any piece; answer "why?" plainly.
 4. **Plan, then wait** for an explicit yes before any file, table or project: what you'll build first, how long, the assumptions, and the demo tables it reads.
-5. **Mid-build decisions** (thresholds, weights, method, theme, layout): offer 2–3 options with a recommendation, and wait. Never change them silently. Record each answer with `workshop-workflow decide "<choice>"`.
+5. **Mid-build decisions** (thresholds, weights, method, theme, layout): offer 2–3 options with a recommendation, and wait. Never change them silently. Record each answer with `workshop-workflow decide "<choice>" --by attendee`.
 
 - **Check in the way they chose**, as *How they want to work with you* says.
 - **Stay in the room.** One plain line per step. Never let five minutes pass in silence.
