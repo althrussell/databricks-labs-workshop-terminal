@@ -502,6 +502,68 @@ def test_inline_comments_and_the_nested_value_from_form_are_read(tmp_path):
     assert backend.submissions == 1
 
 
+@pytest.mark.parametrize(
+    "env_block",
+    [
+        "  - valueFrom: postgres\n    name: LAKEBASE_ENDPOINT\n",
+        "  - {name: LAKEBASE_ENDPOINT, valueFrom: postgres}\n",
+    ],
+)
+def test_env_items_are_read_in_any_key_order_and_either_yaml_style(tmp_path, env_block):
+    """Codex review (PR #143): a valid entry with valueFrom first, or a flow mapping, was refused."""
+    env, project = _env(tmp_path)
+    (project / "app.yml").write_text("env:\n" + env_block)
+    _app_code(project)
+    backend = LakebaseBackend()
+
+    assert _controller(env, backend).deploy(project_path=str(project))["status"] == "succeeded"
+    assert backend.submissions == 1
+
+
+def test_an_appkit_app_using_the_lakebase_plugin_is_refused_without_the_endpoint(tmp_path):
+    """Codex review (PR #143): the AppKit plugin reads LAKEBASE_ENDPOINT; the app code never names it."""
+    env, project = _env(tmp_path)
+    (project / "app.yml").write_text("command: [node]\n")
+    _app_code(project, 'import { createApp, lakebase } from "@databricks/appkit";\n'
+                       "createApp({ plugins: [lakebase()] });\n")
+    backend = LakebaseBackend()
+
+    with pytest.raises(deploy_tool.DeployError, match="has no entry for it"):
+        _controller(env, backend).deploy(project_path=str(project))
+    assert backend.submissions == 0
+
+
+@pytest.mark.parametrize(
+    "env_block",
+    [
+        "  - valueFrom: postgres\n    name: LAKEBASE_ENDPOINT\n",
+        "  - {name: LAKEBASE_ENDPOINT, valueFrom: postgres}\n",
+    ],
+)
+def test_env_items_are_read_in_any_key_order_and_either_yaml_style(tmp_path, env_block):
+    """Codex review (PR #143): a valid entry with valueFrom first, or a flow mapping, was refused."""
+    env, project = _env(tmp_path)
+    (project / "app.yml").write_text("env:\n" + env_block)
+    _app_code(project)
+    backend = LakebaseBackend()
+
+    assert _controller(env, backend).deploy(project_path=str(project))["status"] == "succeeded"
+    assert backend.submissions == 1
+
+
+def test_an_appkit_app_using_the_lakebase_plugin_is_refused_without_the_endpoint(tmp_path):
+    """Codex review (PR #143): the AppKit plugin reads LAKEBASE_ENDPOINT; the app code never names it."""
+    env, project = _env(tmp_path)
+    (project / "app.yml").write_text("command: [node]\n")
+    _app_code(project, 'import { createApp, lakebase } from "@databricks/appkit";\n'
+                       "createApp({ plugins: [lakebase()] });\n")
+    backend = LakebaseBackend()
+
+    with pytest.raises(deploy_tool.DeployError, match="has no entry for it"):
+        _controller(env, backend).deploy(project_path=str(project))
+    assert backend.submissions == 0
+
+
 def test_an_unnamed_lakebase_resource_is_refused_not_skipped(tmp_path):
     env, project = _env(tmp_path)
     (project / "app.yml").write_text(ENDPOINT_ENV)

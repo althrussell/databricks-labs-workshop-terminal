@@ -61,11 +61,12 @@ EMAIL_RE = re.compile(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b")
 LAKEBASE_RESOURCE_KEYS = ("postgres", "database")
 LAKEBASE_ENDPOINT_ENV = "LAKEBASE_ENDPOINT"
 APP_CONFIG_FILES = ("app.yml", "app.yaml")
-ENV_NAME_RE = re.compile(r"^(\s*)-\s*name:\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?\s*$")
-ENV_FIELD_RE = re.compile(r"^\s*(value|valueFrom)\s*:\s*(.*?)\s*$")
-ENV_RESOURCE_RE = re.compile(r"^\s*resource\s*:\s*(.*?)\s*$")
+ENV_ITEM_RE = re.compile(r"^(\s*)-(?:\s+(.*?))?\s*$")
+ENV_KEY_RE = re.compile(r"^\s*(name|value|valueFrom|resource)\s*:\s*(.*?)\s*$")
 # Code that reads the endpoint, so the app needs the app.yml entry. Other routes (PGHOST and a password) don't.
-CODE_SUFFIXES = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
+CODE_SUFFIXES = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json")
+# Code that reads LAKEBASE_ENDPOINT directly, or through AppKit's lakebase() plugin, which reads it for the app.
+LAKEBASE_ENDPOINT_USES = ("LAKEBASE_ENDPOINT", "lakebase()", "@databricks/lakebase", "appkit.lakebase")
 SCAN_SKIP_DIRS = frozenset({"node_modules", ".venv", "venv", "__pycache__", ".build", "dist", "build"})
 SCAN_MAX_FILES = 2000
 SCAN_MAX_BYTES = 512 * 1024
@@ -477,41 +478,74 @@ def _strip_comment(line: str) -> str:
     return re.sub(r"\s+#.*$", "", line).rstrip()
 
 
-def _env_entry(text: str, name: str) -> dict[str, str] | None:
-    """The ``value`` and ``valueFrom`` fields of ``- name: <name>`` in an app.yml env list.
+def _flow_fields(text: str) -> dict[str, str]:
+    """The keys of a flow mapping such as ``{name: X, valueFrom: Y}``."""
+    fields: dict[str, str] = {}
+    for part in text.strip().strip("{}").split(","):
+        key, sep, value = part.partition(":")
+        if sep and key.strip() in ("name", "value", "valueFrom"):
+            fields[key.strip()] = value.strip().strip("'\"")
+    return fields
 
-    app.yml is a flat list read line by line, so no YAML parser is needed. The
-    nested form ``valueFrom:`` then ``resource: <name>`` is read as ``valueFrom``.
-    None when the entry is absent.
-    """
-    lines = [_strip_comment(line) for line in text.splitlines()]
-    for index, line in enumerate(lines):
-        match = ENV_NAME_RE.match(line)
-        if not match or match.group(2) != name:
+
+def _env_items(lines: list[str]) -> list[dict[str, str]]:
+    """Each env list item as its fields, whatever order its keys come in and in either YAML style."""
+    items: list[dict[str, str]] = []
+    index = 0
+    while index < len(lines):
+        item = ENV_ITEM_RE.match(lines[index])
+        if not item:
+            index += 1
             continue
-        indent = len(match.group(1))
+        indent = len(item.group(1))
+        rest = (item.group(2) or "").strip()
         fields: dict[str, str] = {}
-        last_key = ""
-        for follower in lines[index + 1:]:
-            if not follower.strip():
+        if rest.startswith("{"):
+            fields.update(_flow_fields(rest))
+        else:
+            first = ENV_KEY_RE.match(rest) if rest else None
+            if first:
+                fields[first.group(1)] = first.group(2).strip("'\"")
+        last_key = next(iter(fields), "")
+        follower = index + 1
+        while follower < len(lines):
+            line = lines[follower]
+            if not line.strip():
+                follower += 1
                 continue
-            if len(follower) - len(follower.lstrip()) <= indent:
+            if len(line) - len(line.lstrip()) <= indent:
                 break
-            field = ENV_FIELD_RE.match(follower)
-            if field:
-                fields[field.group(1)] = field.group(2).strip("'\"")
-                last_key = field.group(1)
-                continue
-            nested = ENV_RESOURCE_RE.match(follower)
-            if nested and last_key == "valueFrom" and not fields.get("valueFrom"):
-                fields["valueFrom"] = nested.group(1).strip("'\"")
-        return fields
+            key = ENV_KEY_RE.match(line)
+            if key:
+                name_, value = key.group(1), key.group(2).strip("'\"")
+                if name_ == "resource" and last_key == "valueFrom" and not fields.get("valueFrom"):
+                    fields["valueFrom"] = value
+                elif name_ != "resource":
+                    fields[name_] = value
+                    last_key = name_
+            follower += 1
+        items.append(fields)
+        index = follower
+    return items
+
+
+def _env_entry(text: str, name: str) -> dict[str, str] | None:
+    """The ``value`` and ``valueFrom`` fields of the env item named ``name`` in an app.yml.
+
+    app.yml is read without a YAML parser: items may list their keys in any
+    order, may be written as flow mappings, and may use the nested
+    ``valueFrom:`` / ``resource:`` form. None when the entry is absent.
+    """
+    for fields in _env_items([_strip_comment(line) for line in text.splitlines()]):
+        if fields.get("name") == name:
+            return {key: value for key, value in fields.items() if key in ("value", "valueFrom")}
     return None
 
 
 def _code_reads_env(source_dir: Path, name: str) -> bool:
     """True when app code in ``source_dir`` mentions ``name``; True too when the scan is too large to be sure."""
     scanned = 0
+    needles = (name, *LAKEBASE_ENDPOINT_USES)
     for root, dirs, files in os.walk(source_dir):
         dirs[:] = [d for d in dirs if d not in SCAN_SKIP_DIRS and not d.startswith(".")]
         for file in files:
@@ -524,7 +558,8 @@ def _code_reads_env(source_dir: Path, name: str) -> bool:
             try:
                 if path.stat().st_size > SCAN_MAX_BYTES:
                     continue
-                if name in path.read_text(encoding="utf-8", errors="ignore"):
+                text = path.read_text(encoding="utf-8", errors="ignore")
+                if any(needle in text for needle in needles):
                     return True
             except OSError:
                 continue
