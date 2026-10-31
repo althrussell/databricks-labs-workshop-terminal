@@ -116,6 +116,11 @@ def build_host_launch(
     identity = stable_host_identity(user, server_url)
     env["OMNIGENT_HOST_ID"] = identity.host_id
     env["OMNIGENT_HOST_NAME"] = identity.name
+    # R-007 stays OPEN: the Omni host emits OTel logs but no spans. Do not add
+    # OTEL_* here. The host env is inherited by native agent terminals
+    # (OSEnvSpec "caller_process"), so an endpoint or resource attributes set on
+    # this host reach attendee agent shells, which docs/observability.md forbids.
+    # Spans need an export path that the host alone reads.
     # Omnigent's host hands each runner (and so each agent terminal) only its
     # own small allowlist of this environment. Everything else an attendee
     # shell has (WORKSHOP_USER_EMAIL, the catalog and schema hints, the

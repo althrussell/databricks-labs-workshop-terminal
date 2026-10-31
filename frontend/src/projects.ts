@@ -42,6 +42,17 @@ export async function recoverWithConfirmation(
   }
 }
 
+/** After "Stop agent and switch" to a new build, the agent that was stopped starts
+ * again in that build, so the new build's agent is not left silent (N-A7). Null
+ * when nothing was running: the attendee chooses an agent, as before. */
+export function agentToResumeInNewBuild(
+  selection: { new?: boolean; recover?: boolean },
+  stopped: { agent_id: string } | null | undefined,
+): string | null {
+  if (!selection.new || selection.recover || !stopped?.agent_id) return null;
+  return stopped.agent_id;
+}
+
 export function restoreInProgress(restore: BuildRestore | null | undefined): boolean {
   return restore?.state === "checking" || restore?.state === "restoring";
 }

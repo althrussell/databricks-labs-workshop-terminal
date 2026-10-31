@@ -56,7 +56,7 @@ import AgentSwitchDialog from "./components/AgentSwitchDialog";
 import ProjectBar from "./components/ProjectBar";
 import YourBuild from "./components/YourBuild";
 import ResponsiveNav from "./components/ResponsiveNav";
-import { goalChangePrompt, keepSavedCopies, recoverWithConfirmation, restoreInProgress, restoreNotice } from "./projects";
+import { agentToResumeInNewBuild, goalChangePrompt, keepSavedCopies, recoverWithConfirmation, restoreInProgress, restoreNotice } from "./projects";
 import { bindIdentityRefresh, onAppEvent } from "./events";
 import { ideaPromptAction } from "./ideation";
 import { friendlyError, type RecoveryAction } from "./errors";
@@ -618,10 +618,23 @@ export default function App() {
     }
   }
 
+  /** The session with this id from the server's list, or null when unknown or unreadable. */
+  async function sessionById(id: string): Promise<SessionInfo | null> {
+    try {
+      const data = await api.sessions();
+      return data.sessions.find((item) => item.id === id) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   async function selectBuild(selection: ProjectSelection, stopSessionId?: string): Promise<string> {
     projectMutation.current = true;
     ++projectRequest.current;
     try {
+      // The agent to resume is the one this build switch stops, looked up by its
+      // id: this tab's `session` can be a different session by now.
+      const stopped = stopSessionId ? await sessionById(stopSessionId) : null;
       if (stopSessionId) {
         try { await api.closeSession(stopSessionId); }
         catch (caught) { if (!(caught instanceof ApiError) || caught.status !== 404) throw caught; }
@@ -632,6 +645,16 @@ export default function App() {
         ? await recoverWithConfirmation(selection.name, projectInventoryRef.current?.active, api.recoverProject, api.projects)
         : await api.selectProject(selection);
       acceptProjects(value);
+      // N-A7: the agent the attendee stopped to switch starts again in the new
+      // build, rather than the attendee having to relaunch it by hand.
+      const resumeAgent = agentToResumeInNewBuild(selection, stopped);
+      if (resumeAgent) {
+        const started = await launch(resumeAgent, false, "");
+        if (started) {
+          const label = agents.find((item) => item.id === resumeAgent)?.label ?? resumeAgent;
+          return `${selection.name} is selected and ${label} is starting in it.`;
+        }
+      }
       if (!selection.new && !selection.recover && selection.goal !== undefined) {
         const active = await refreshSessions();
         if (active) {
@@ -1073,11 +1096,11 @@ export default function App() {
             type="button"
             className="help-chat-toggle"
             onClick={() => setHelpChatOpen(true)}
-            aria-label="Help"
-            title="Help — ask operators"
+            aria-label="Ask for help"
+            title="Ask for help — chat with operators"
           >
             <MessageSquare size={16} aria-hidden="true" />
-            <span className="nav-label">Help</span>
+            <span className="nav-label">Ask for help</span>
             {helpUnread > 0 ? <span className="help-chat-badge">{helpUnread}</span> : null}
           </button>
           {shellLinks

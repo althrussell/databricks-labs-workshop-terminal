@@ -27,6 +27,14 @@ def person():
     return {"X-Forwarded-Email": email}
 
 
+def _plan_claude() -> str:
+    """The Claude launch for a build with no approved plan (plan mode, sweep §2)."""
+    from server import agents, config
+
+    flags = agents.claude_plan_flags(config.auto_mode_enabled())
+    return " ".join(["claude", *flags])
+
+
 def _ready(monkeypatch):
     from server import credentials
     import server.main as main
@@ -65,8 +73,9 @@ def test_the_first_agent_opens_with_the_workshop_opener_and_only_once(client, mo
     _open(client, person, "claude")
     _open(client, person, "claude")
 
-    assert launched[0] == f"claude {agents.shlex.quote(agents.WORKSHOP_OPENER)}"
-    assert launched[1] == f"claude {agents.shlex.quote(agents.RETURN_OPENER)}"
+    plan = _plan_claude()
+    assert launched[0] == f"{plan} {agents.shlex.quote(agents.WORKSHOP_OPENER)}"
+    assert launched[1] == f"{plan} {agents.shlex.quote(agents.RETURN_OPENER)}"
 
 
 @pytest.mark.parametrize("agent, expected", [
@@ -89,10 +98,11 @@ def test_no_opener_on_top_of_the_wizard_prompt_or_an_agent_switch(client, monkey
     _open(client, person, "codex", replaces_agent_id="claude")
     _open(client, person, "claude", replaces_agent_id="codex", has_starter_prompt=True)
 
+    plan = _plan_claude()
     assert launched == [
-        "claude",
+        plan,
         f"codex --no-daemon {agents.shlex.quote(agents.switch_opener('Codex'))}",
-        "claude",
+        plan,
     ]
 
 
@@ -104,7 +114,7 @@ def test_no_opener_once_they_have_said_how_they_want_to_work(client, monkeypatch
     assert response.status_code == 200, response.text
     _open(client, person, "claude")
 
-    assert launched == [f"claude {agents.shlex.quote(agents.RETURN_OPENER)}"]
+    assert launched == [f"{_plan_claude()} {agents.shlex.quote(agents.RETURN_OPENER)}"]
 
 
 def test_two_tabs_opening_at_once_claim_the_opener_once(client, monkeypatch, person):
@@ -149,7 +159,7 @@ def test_a_launch_that_fails_gives_the_opener_back(client, monkeypatch, person):
         client.post("/api/sessions", json={"agent_id": "claude"}, headers=person)
     _open(client, person, "claude")
 
-    assert launched[-1].startswith("claude 'Hi!")
+    assert launched[-1].startswith(f"{_plan_claude()} 'Hi!")
 
 
 # --- one lean set of instructions ---------------------------------------------------
@@ -233,7 +243,7 @@ def test_domain_expertise_and_the_working_rhythm_reach_every_main_session(client
         text = " ".join(_channels(_home(person))[name].split())
         assert "**Know their field.**" in text
         assert "Never let five minutes pass in silence." in text
-        assert "**Plan out loud.**" in text
+        assert "**Plan, then wait**" in text
 
 
 def test_the_coach_banner_is_gone():
@@ -333,13 +343,13 @@ def test_the_meeting_asks_only_whats_missing_in_each_agents_own_way(client, monk
     _open(client, person, "claude", has_starter_prompt=True)
     text = " ".join(_channels(_home(person))["claude"].split())
 
-    assert ("any first turn with meeting answers missing, **reply straight away, without running commands "
-            "or reading files**, and ask only what's missing") in text
+    assert ("On a first turn with meeting answers missing (the opener, a bare \"hi\", or nothing saved yet), "
+            "**reply straight away, without running commands or reading files**") in text
+    assert "If a form closes unanswered, ask the same question in text" in text
     # F-043: one clickable question set, never the scripted text block.
     assert "one clickable question set, never a text list" in text
-    assert "Claude Code and Omnigent's Claude: one `AskUserQuestion` call." in text
-    assert "Codex and Omnigent's Codex: one `request_user_input` call." in text
-    assert "the 3 seeded industries closest to what they've said, then Other" in text
+    assert "`AskUserQuestion` (Claude Code, Omnigent's Claude) or `request_user_input` (Codex, Omnigent's Codex)" in text
+    assert "every seeded industry there, plus Something else" in text
     assert "Four quick things" not in text and "Hi, I'm your build partner" not in text
 
 

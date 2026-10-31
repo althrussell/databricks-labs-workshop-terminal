@@ -11,6 +11,9 @@ confirm a direction. An agent's own summary is never an approval.
     workshop-workflow show [--json]
     workshop-workflow path rapid|guided --by attendee|wizard|preference
     workshop-workflow phase <stage> [--evidence key=value ...]
+                            # `preview` is accepted as `build`: a shared preview is build evidence
+    workshop-workflow plan --put "<one-line plan summary>" [--build NAME]
+    workshop-workflow plan --approved [--source attendee|claude-plan-mode] [--build NAME]
     workshop-workflow fact|assume|ask|criterion "text"
     workshop-workflow answer <question-id> "text"
     workshop-workflow direction "summary" [--confirmed-by attendee]
@@ -62,6 +65,133 @@ BUILT = {"build", "inspect", "improve", "feedback"}
 APPROACHES = ("co_build", "learn", "lead")
 DETAILS = ("adaptive", "brief", "detailed")
 BACKGROUNDS = ("domain", "data", "developer", "exploring")
+
+
+#: The per-build plan approval record, shared with server/build_plan.py.
+PLAN_FILE = ".config/workshop/build-plan.json"
+PLAN_SCHEMA = 1
+PLAN_SOURCES = ("attendee", "claude-plan-mode")
+PLAN_GUIDANCE = ("Put the plan to the attendee and wait for their yes; then run "
+                 "`workshop-workflow plan --approved`.")
+
+
+def stage_argument(value: str) -> str:
+    """A stage name, with `preview` read as `build`.
+
+    Agents reached for `phase preview` (N-B12): the stage list has no preview,
+    and the preview is evidence for the build stage, so that is what it means.
+    """
+    if value == "preview":
+        return "build"
+    if value not in PHASES:
+        raise argparse.ArgumentTypeError(
+            f"unknown stage {value!r}; stages are {', '.join(PHASES)}. To share a preview, "
+            "use `phase build --evidence preview=<url>`")
+    return value
+
+
+def plan_path() -> Path:
+    return Path.home() / PLAN_FILE
+
+
+def read_plan() -> dict:
+    try:
+        value = json.loads(plan_path().read_text())
+    except (OSError, ValueError):
+        return {}
+    return value if isinstance(value, dict) and value.get("version") == PLAN_SCHEMA else {}
+
+
+def write_plan(value: dict) -> None:
+    path = plan_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".build-plan-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w") as handle:
+            json.dump(value, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def active_build() -> str:
+    try:
+        return json.loads((Path.home() / ".config/workshop/projects.json").read_text()).get("active", "") or ""
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
+def plan_line(build: str) -> str:
+    """What `show` reports about the plan for this build."""
+    record = read_plan()
+    if record.get("build") != build:
+        return f"Plan: not put yet. {PLAN_GUIDANCE}"
+    summary = record.get("plan_summary") or ""
+    if record.get("plan_approved_at"):
+        source = record.get("plan_approved_source") or "attendee"
+        return (f"Plan: approved by the attendee at {record['plan_approved_at']} (source {source})"
+                + (f": {summary}" if summary else "") + ".")
+    if record.get("plan_put_at"):
+        return f"Plan: put {record['plan_put_at']}, awaiting the attendee's yes" + (f": {summary}" if summary else "") + ". " + PLAN_GUIDANCE
+    return f"Plan: not put yet. {PLAN_GUIDANCE}"
+
+
+def plan_command(args: argparse.Namespace) -> int:
+    """Record the plan put to, or approved by, the attendee.
+
+    With no current build (an attendee's first session, before the build exists)
+    the record is *pending*: build "". The first build the gate checks adopts a
+    pending approval (see plan_check), so the approval survives until the build
+    it was given for is created.
+    """
+    if args.check:
+        return plan_check(args.check)
+    build = args.build or active_build()  # "" = pending, for the next build
+    if args.put is None and not args.approved:
+        print(plan_line(build) if build else "Plan: no build is selected yet. " + PLAN_GUIDANCE)
+        return 0
+    record = read_plan()
+    if record.get("build") != build:
+        record = {"version": PLAN_SCHEMA, "build": build}
+    when = now()
+    label = build or "the next build"
+    if args.approved:
+        record.update(plan_approved_at=when, plan_approved_source=args.source or "attendee")
+        print(f"Plan approved for {label} (source {record['plan_approved_source']}). Scaffold the build now.")
+    else:
+        summary = " ".join(args.put.split())
+        if not summary:
+            raise WorkflowError("the plan summary is empty")
+        record.update(plan_put_at=when, plan_summary=summary)
+        print(f"Plan put for {label}. Wait for the attendee's yes, then run `workshop-workflow plan --approved`.")
+    write_plan(record)
+    return 0
+
+
+def plan_check(name: str) -> int:
+    """The scaffolding gate: 0 when build NAME may be scaffolded, 1 with the guidance.
+
+    A build already scaffolded (or recovered from its committed copy) passes. An
+    approval that is pending (no build when it was given) is bound to NAME here,
+    so it is consumed by the first build scaffolded after it.
+    """
+    project = Path.home() / "projects" / name
+    # Only the scaffold's own markers count. project.json is written when a goal is saved, so an
+    # unapproved new build could pass on it alone (31 Oct review).
+    if (project / ".workshop" / "scaffold.json").is_file() or (project / ".workshop" / "preparation.json").is_file():
+        return 0
+    record = read_plan()
+    if record.get("plan_approved_at") and record.get("build") in (name, ""):
+        if record.get("build") != name:
+            write_plan(dict(record, build=name))
+        return 0
+    print(f"workshop-init-project: no approved plan for build {name} yet.", file=sys.stderr)
+    print(PLAN_GUIDANCE, file=sys.stderr)
+    if record.get("build") not in (None, "", name):
+        print(f"  (for this build: workshop-workflow plan --approved --build {name})", file=sys.stderr)
+    return 1
 
 
 class WorkflowError(Exception):
@@ -314,6 +444,44 @@ def next_step(record: dict) -> str:
         phase, "continue")
 
 
+#: What Control Tower's roster knows about this attendee, written by the app (WT
+#: attendee_roster). Read-only here: the attendee's own answer always wins.
+ROSTER_RELATIVE = ".workshop/roster-profile.json"
+
+
+def attendee_block(email: str = "") -> dict:
+    """The ``attendee`` block of ``show``: company, job title and the suggested industry."""
+    block = {"company": "", "job_title": "", "suggested_industry": "", "industry_label": "",
+             "industry_confidence": 0.0, "industry_source": "none"}
+    email = (email or os.environ.get("WORKSHOP_USER_EMAIL", "")).strip().lower()
+    try:
+        raw = json.loads((Path.home() / ROSTER_RELATIVE).read_text())
+    except (OSError, ValueError):
+        return block
+    if not isinstance(raw, dict) or not email or str(raw.get("email", "")).lower() != email:
+        return block
+    for key in block:
+        if key in raw:
+            block[key] = raw[key]
+    # The app marks a suggestion it did not offer when it arrived; show never
+    # presents one. The app re-checks the offered list when it writes the
+    # meeting instructions, so a schema that appears later is still used there.
+    if raw.get("offered") is not True:
+        block["suggested_industry"], block["industry_label"] = "", ""
+    return block
+
+
+def attendee_line(block: dict) -> str:
+    if not (block["company"] or block["job_title"] or block["suggested_industry"]):
+        return ""
+    who = ", ".join(part for part in (block["job_title"], block["company"]) if part) or "roster entry"
+    if not block["suggested_industry"]:
+        return f"Attendee: {who}. Suggested industry: none."
+    label = block["industry_label"] or block["suggested_industry"]
+    return (f"Attendee: {who}. Suggested industry: {label} ({block['suggested_industry']}, "
+            f"confidence {float(block['industry_confidence']):.2f}, {block['industry_source']}).")
+
+
 def summary(record: dict) -> str:
     path = record["path"]
     lines = [f"Workflow record (revision {record['revision']}, brief {record['brief_revision']}): "
@@ -331,6 +499,9 @@ def summary(record: dict) -> str:
     if direction:
         lines.append(f"Direction: {direction['text']} "
                      f"({'confirmed by the attendee' if _direction_confirmed(record) else 'NOT yet confirmed'})")
+    attendee = attendee_line(attendee_block())
+    if attendee:
+        lines.append(attendee)
     lines.append("Next: " + next_step(record))
     return "\n".join(lines)
 
@@ -483,8 +654,14 @@ def main(argv: list[str] | None = None) -> int:
     path.add_argument("--by", required=True, choices=CHOOSERS)
     path.add_argument("--source", choices=("chat", "wizard", "profile"))
     phase = sub.add_parser("phase")
-    phase.add_argument("stage", choices=PHASES)
+    phase.add_argument("stage", type=stage_argument, metavar="stage")
     phase.add_argument("--evidence", action="append", default=[])
+    plan = sub.add_parser("plan", help="the attendee's yes for this build's plan (gates scaffolding)")
+    plan.add_argument("--put", metavar="SUMMARY", help="record the one-line plan put to the attendee")
+    plan.add_argument("--approved", action="store_true", help="record the attendee's yes to the plan")
+    plan.add_argument("--source", choices=PLAN_SOURCES, help="who approved (default: attendee)")
+    plan.add_argument("--build", help="the build (default: the current build)")
+    plan.add_argument("--check", metavar="NAME", help="the scaffolding gate for build NAME (exit 1 until approved)")
     for name in ("fact", "assume", "ask", "criterion"):
         entry = sub.add_parser(name)
         entry.add_argument("text")
@@ -521,11 +698,26 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "prefs":
         return _prefs(args)
+    if args.command == "plan":
+        try:
+            return plan_command(args)
+        except WorkflowError as error:
+            print(f"workshop-workflow: {error}", file=sys.stderr)
+            return error.status
+        except (OSError, ValueError) as error:
+            print(f"workshop-workflow: {error}", file=sys.stderr)
+            return 2
     project = Path(args.project).resolve() if args.project else project_root()
     try:
         record = load(project)
         if args.command == "show":
-            print(json.dumps(record, indent=2, sort_keys=True) if args.json else summary(record))
+            if args.json:
+                plan = read_plan()
+                shown = {**record, "attendee": attendee_block(), "plan": plan if plan.get("build") == project.name else {}}
+                print(json.dumps(shown, indent=2, sort_keys=True))
+            else:
+                print(summary(record))
+                print(plan_line(project.name))
             return 0
         if args.command == "requests":
             waiting = [r for r in record.get("requests", []) if r.get("status") == "open"]

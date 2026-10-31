@@ -87,6 +87,22 @@ DEST="${PROJECTS}/${NAME}"
 TEMPLATE="${HOME}/.config/workshop/project-memory.md"
 APPKIT_VERSION="${APPKIT_VERSION:-0.87.0}"
 
+# Plan gate (sweep contract §2): nothing is scaffolded before the attendee has
+# said yes to this build's plan. The check lives in workshop-workflow, beside
+# the record it reads; a build already scaffolded passes, and a pending approval
+# (given before this build existed) is bound to this name.
+WORKFLOW_HELPER="$(dirname "$0")/workshop-workflow"
+if [ ! -f "$WORKFLOW_HELPER" ]; then
+  WORKFLOW_HELPER="$(command -v workshop-workflow || true)"
+fi
+if [ -z "$WORKFLOW_HELPER" ]; then
+  echo "workshop-init-project: workshop-workflow is missing; the plan cannot be checked" >&2
+  exit 1
+fi
+if ! python3 "$WORKFLOW_HELPER" plan --check "$NAME"; then
+  exit 1
+fi
+
 mkdir -p "$PROJECTS"
 CREATED=0
 if [ ! -e "$DEST" ]; then
@@ -643,6 +659,22 @@ for path, value in ((context, {'version': 1, 'name': name, 'goal': goal}), (sele
 PY
 git add -f -- .workshop/project.json
 MEMORY_FILES+=(.workshop/project.json)
+# The scaffold marker the plan gate and Claude's launch trust. project.json is not enough:
+# WT writes it when a goal is saved, and attach-image creates the folder, before any scaffold.
+python3 - <<'PY'
+import json, os, tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+marker = Path('.workshop/scaffold.json')
+if not marker.is_file():
+    fd, temporary = tempfile.mkstemp(dir='.workshop', prefix='.scaffold-')
+    with os.fdopen(fd, 'w') as handle:
+        json.dump({'version': 1, 'scaffolded_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}, handle)
+        handle.write('\n')
+    os.replace(temporary, marker)
+PY
+git add -f -- .workshop/scaffold.json
+MEMORY_FILES+=(.workshop/scaffold.json)
 if [ -f .workshop/design-workflow.json ]; then
   git add -f -- .workshop/design-workflow.json
   MEMORY_FILES+=(.workshop/design-workflow.json)

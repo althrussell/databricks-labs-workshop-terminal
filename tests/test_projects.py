@@ -9,6 +9,7 @@ import pytest
 
 from server import projects, user_content
 from server.users import User
+from tests.plan_approval import approve_build
 
 ALICE = {"X-Forwarded-Email": "alice@example.com"}
 BOB = {"X-Forwarded-Email": "bob@example.com"}
@@ -231,6 +232,7 @@ def test_native_helper_selection_refreshes_session_context(client, launchable_ag
     assert live.status_code == 200
     # The CLI helper can select a separate build inside the same conversation.
     helper = Path(__file__).resolve().parents[1] / "assets/bin/workshop-init-project"
+    approve_build(user.home, "garden-plan")
     completed = subprocess.run(["bash", str(helper), "garden-plan", "--json"], env=user.shell_env(),
                                text=True, capture_output=True)
     assert completed.returncode == 0, completed.stderr
@@ -238,3 +240,26 @@ def test_native_helper_selection_refreshes_session_context(client, launchable_ag
     refreshed = client.get("/api/sessions", headers=ALICE).json()["sessions"][0]
     assert refreshed["project_name"] == "garden-plan"
     assert projects.project_path(user, "garden-plan").is_dir()
+
+
+def test_attach_image_saves_the_file_and_returns_its_path(client, tmp_path, monkeypatch):
+    # 30 Oct persona rerun (F-048): this endpoint raised NameError ("re" was never imported),
+    # so every Attach image click returned 500 and nothing reached the agent's prompt.
+    import base64
+
+    from server import config
+
+    monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
+    png = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32).decode()
+    response = client.post(
+        "/api/projects/attach-image",
+        json={"filename": "Report layout (draft).png", "data_base64": f"data:image/png;base64,{png}"},
+        headers=ALICE,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    saved = Path(body["path"])
+    assert saved.is_file() and saved.read_bytes().startswith(b"\x89PNG")
+    assert saved.parent.name == "attachments" and saved.name.endswith("-Report-layout-draft-.png")
+    assert " " not in saved.name and "(" not in saved.name
+    assert body["relative_path"].startswith(".workshop/attachments/")

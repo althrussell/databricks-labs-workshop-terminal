@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from .conftest import ALICE
+from tests.plan_approval import approve_for_env
 
 # Canonical default-stack sentence — must appear verbatim in every memory
 # channel an agent/harness can read (home CLAUDE.md + AGENTS.md, and the
@@ -241,6 +242,7 @@ def test_project_helper_commits_default_stack_memory(client, monkeypatch, tmp_pa
         "GIT_COMMITTER_NAME": "Attendee",
         "GIT_COMMITTER_EMAIL": "attendee@example.com",
     }
+    approve_for_env(env, "my-app")
     out = subprocess.run(
         ["bash", helper, "my-app"], env=env, capture_output=True, text=True, timeout=30
     )
@@ -281,6 +283,7 @@ def test_project_helper_always_writes_a_readme(client, monkeypatch, tmp_path):
         "GIT_COMMITTER_NAME": "Attendee",
         "GIT_COMMITTER_EMAIL": "attendee@example.com",
     }
+    approve_for_env(env, "fraud-scoring")
     out = subprocess.run(
         ["bash", helper, "fraud-scoring"],
         env=env, capture_output=True, text=True, timeout=30,
@@ -346,6 +349,7 @@ def test_the_helper_adopts_a_directory_a_scaffold_already_wrote(
     (scaffolded / "CLAUDE.md").write_text("# AppKit\nUse AppKit conventions.\n")
     (scaffolded / "README.md").write_text("# space-invaders\nBuilt with AppKit.\n")
 
+    approve_for_env(env, "space-invaders")
     out = subprocess.run(
         ["bash", helper, "space-invaders"],
         env=env, capture_output=True, text=True, timeout=60,
@@ -376,6 +380,7 @@ def test_seeding_an_adopted_project_twice_does_not_duplicate_it(
     fake_home, env = _attendee_env(home, tmp_path)
 
     for _ in range(2):
+        approve_for_env(env, "twice")
         out = subprocess.run(
             ["bash", helper, "twice"],
             env=env, capture_output=True, text=True, timeout=60,
@@ -405,6 +410,7 @@ def test_a_failed_appkit_scaffold_still_leaves_a_usable_project(
     (shim / "databricks").chmod(0o755)
     env = {**env, "PATH": f"{shim}:{env['PATH']}"}
 
+    approve_for_env(env, "unlucky")
     out = subprocess.run(
         ["bash", helper, "unlucky", "--appkit"],
         env=env, capture_output=True, text=True, timeout=60,
@@ -438,6 +444,7 @@ def test_the_appkit_flag_scaffolds_into_the_project_root(
     (shim / "databricks").chmod(0o755)
     env = {**env, "PATH": f"{shim}:{env['PATH']}"}
 
+    approve_for_env(env, "pinned")
     out = subprocess.run(
         ["bash", helper, "pinned", "--appkit", "--", "--features", "analytics"],
         env=env, capture_output=True, text=True, timeout=60,
@@ -477,6 +484,7 @@ def test_noisy_scaffold_supports_the_documented_cd_command(
     )
     (shim / "databricks").chmod(0o755)
     env = {**env, "PATH": f"{shim}:{env['PATH']}", "WORKSHOP_TEST_HELPER": helper}
+    approve_for_env(env, "bakery-orders")
     out = subprocess.run(
         ["bash", "-c", 'cd "$(bash "$WORKSHOP_TEST_HELPER" bakery-orders --appkit)" && pwd'],
         env=env, capture_output=True, text=True, timeout=60,
@@ -505,6 +513,7 @@ def test_the_readme_survives_a_missing_git_identity(client, monkeypatch, tmp_pat
         "GIT_CONFIG_GLOBAL": "/dev/null",
         "EMAIL": "",
     }
+    approve_for_env(env, "still-works")
     out = subprocess.run(
         ["bash", helper, "still-works"],
         env=env, capture_output=True, text=True, timeout=30,

@@ -23,7 +23,6 @@
   If the demo data only partly fits, extend it: their upload, or labelled
   synthetic rows. If a permission blocks a read, run `workshop-grant-me` and
   say so. Create objects only in `$WORKSHOP_CATALOG`, never a new catalog.
-  Prefer serverless.
 - Official APX (React + FastAPI) is the default (`workshop-init-project <name>
   --apx`, `apx`; AppKit via `databricks-apps`). Use Streamlit only if asked.
   Saved records use `databricks-lakebase` (autoscaling); a Genie Agent uses

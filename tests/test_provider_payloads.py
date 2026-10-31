@@ -18,6 +18,7 @@ import pytest
 
 from server.bootstrap import impeccable
 from server.bootstrap.artifacts import directory_checksum
+from tests.plan_approval import approve_for_env
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -223,6 +224,7 @@ def test_a_project_and_its_worktree_carry_each_providers_bytes(attendee):
            "GIT_AUTHOR_NAME": "Attendee", "GIT_AUTHOR_EMAIL": "alice@example.com",
            "GIT_COMMITTER_NAME": "Attendee", "GIT_COMMITTER_EMAIL": "alice@example.com"}
     helper = str(Path(user_content._ASSETS) / "bin/workshop-init-project")
+    approve_for_env(env, "routed")
     subprocess.run(["bash", helper, "routed"], env=env, capture_output=True, check=True, timeout=60)
     project = Path(attendee.home) / "projects/routed"
     audit = skill_routing.audit(attendee.home, project, tree=str(ROOT / "assets/skills"))
@@ -238,6 +240,7 @@ def test_a_project_and_its_worktree_carry_each_providers_bytes(attendee):
     assert ".claude/agents/impeccable-finish-reviewer.md" in committed
     # Rerunning is idempotent and keeps attendee-owned agents.
     (project / ".claude/agents/my-agent.md").write_text("mine")
+    approve_for_env(env, "routed")
     subprocess.run(["bash", helper, "routed"], env=env, capture_output=True, check=True, timeout=60)
     assert (project / ".claude/agents/my-agent.md").read_text() == "mine"
     assert skill_routing.audit(attendee.home, project, tree=str(ROOT / "assets/skills"))["harnesses"]["codex"]["status"] == "ok"
