@@ -46,37 +46,73 @@ if [ -z "${RECORD//[[:space:]]/}" ]; then
   exit 2
 fi
 
-# The build's record id is kept with the project (the same project resolution
-# workshop-workflow uses), so an agent switch files refinements under the record
-# the first agent opened. A new build is a new project, so it has no id yet.
-STATE_FILE="$(python3 -c '
+# One build, one record. A build's id lives in two places:
+#   - its project folder, <project>/.workshop/discovery.json, once the folder exists;
+#   - before that, ~/.config/workshop/discovery-pending.json, keyed by the active
+#     build name ("" when there is none). A build never inherits another's id.
+# The first capture after the folder appears moves the pending id into the folder.
+read -r -d '' RESOLVE_PY <<'PY' || true
 import json, os, subprocess
-home = os.path.expanduser("~")
-cwd = os.getcwd()
-root = cwd
-if os.path.realpath(cwd) in {os.path.realpath(home), os.path.realpath(os.path.join(home, "projects"))}:
+home = os.path.realpath(os.path.expanduser("~"))
+cwd = os.path.realpath(os.getcwd())
+conf = os.path.join(home, ".config", "workshop")
+
+
+def read_json(path):
     try:
-        with open(os.path.join(home, ".config/workshop/projects.json")) as handle:
-            active = json.load(handle).get("active", "")
-    except (OSError, ValueError, AttributeError):
-        active = ""
-    if active and os.path.isdir(os.path.join(home, "projects", active)):
-        root = os.path.join(home, "projects", active)
-try:
-    top = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"],
-                         capture_output=True, text=True, timeout=10)
-    if root == cwd and top.returncode == 0 and top.stdout.strip():
-        root = top.stdout.strip()
-except (OSError, subprocess.TimeoutExpired):
-    pass
-print(os.path.join(root, ".workshop", "discovery.json"))
-')" || exit 2
+        with open(path) as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return None
+
+
+projects = read_json(os.path.join(conf, "projects.json"))
+active = str(projects.get("active", "") or "") if isinstance(projects, dict) else ""
+active_dir = os.path.join(home, "projects", active) if active else ""
+if not os.path.isdir(active_dir):
+    active_dir = ""
+if cwd in (home, os.path.join(home, "projects")):
+    project = active_dir
+else:
+    project = ""
+    try:
+        top = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"],
+                             capture_output=True, text=True, timeout=10)
+        if top.returncode == 0 and top.stdout.strip():
+            project = top.stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    project = project or cwd
+
+pending_path = os.path.join(conf, "discovery-pending.json")
+pending = read_json(pending_path)
+builds = pending.get("builds", {}) if isinstance(pending, dict) else {}
+builds = {str(k): str(v) for k, v in builds.items()} if isinstance(builds, dict) else {}
+key = active
+state = os.path.join(project, ".workshop", "discovery.json") if project else ""
+adopt = None
+if project:
+    stored_file = read_json(state)
+    stored = str(stored_file.get("record_id") or "") if isinstance(stored_file, dict) else ""
+    if not stored:
+        for candidate in (key, ""):
+            if candidate in builds:
+                adopt = candidate
+                break
+    record_id = stored or (builds[adopt] if adopt is not None else "")
+else:
+    record_id = builds.get(key, "")
+print(json.dumps({"record_id": record_id, "state": state, "adopt": adopt,
+                  "key": key, "pending": pending_path}))
+PY
+
+RESOLVED="$(python3 -c "$RESOLVE_PY")" || exit 2
 
 # Merge the attendee identity in without a JSON parser dependency: the app
 # authenticates the capability against this email, so it must be present and must
-# not be something the agent can choose. The build's stored record_id, when there
-# is one, replaces whatever the agent passed: one build, one record.
-PAYLOAD="$(printf '%s' "$RECORD" | python3 -c '
+# not be something the agent can choose. The build's id replaces whatever the
+# agent passed: one build, one record.
+read -r -d '' PAYLOAD_PY <<'PY' || true
 import json, os, sys
 try:
     record = json.load(sys.stdin)
@@ -86,16 +122,14 @@ except Exception as exc:
 if not isinstance(record, dict):
     print("workshop-discovery: expected a JSON object", file=sys.stderr)
     raise SystemExit(2)
-try:
-    with open(sys.argv[1]) as handle:
-        stored = str(json.load(handle).get("record_id") or "").strip()
-except (OSError, ValueError, AttributeError):
-    stored = ""
-if stored:
-    record["record_id"] = stored
+resolved = json.loads(sys.argv[1])
+if resolved["record_id"]:
+    record["record_id"] = resolved["record_id"]
 record["email"] = os.environ.get("WORKSHOP_USER_EMAIL", "")
 json.dump(record, sys.stdout)
-' "$STATE_FILE")" || exit 2
+PY
+
+PAYLOAD="$(printf '%s' "$RECORD" | python3 -c "$PAYLOAD_PY" "$RESOLVED")" || exit 2
 
 if RESPONSE="$(curl -fsS -X POST "$APP/api/discovery" \
      -H 'Content-Type: application/json' \
@@ -104,9 +138,10 @@ if RESPONSE="$(curl -fsS -X POST "$APP/api/discovery" \
   # Capture may be switched off for this event; that is a normal answer, not a
   # failure, and nothing for the agent to retry or mention to the attendee.
   printf '%s\n' "$RESPONSE"
-  # Keep the id of a captured record for the build's next call, from any agent.
-  printf '%s' "$RESPONSE" | python3 -c '
+  # Keep the id of a captured record for this build, from any agent.
+  read -r -d '' KEEP_PY <<'PY' || true
 import json, os, sys
+resolved = json.loads(sys.argv[1])
 try:
     reply = json.load(sys.stdin)
 except ValueError:
@@ -116,14 +151,41 @@ if not isinstance(reply, dict) or not reply.get("captured"):
 record_id = str(reply.get("record_id") or "").strip()
 if not record_id:
     raise SystemExit(0)
-state = sys.argv[1]
-os.makedirs(os.path.dirname(state), exist_ok=True)
-temporary = state + ".tmp"
-with open(temporary, "w") as handle:
-    json.dump({"record_id": record_id}, handle)
-    handle.write("\n")
-os.replace(temporary, state)
-' "$STATE_FILE" || true
+
+
+def read_json(path):
+    try:
+        with open(path) as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return None
+
+
+def write(path, value):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    temporary = path + ".tmp"
+    with open(temporary, "w") as handle:
+        json.dump(value, handle)
+        handle.write("\n")
+    os.replace(temporary, path)
+
+
+if resolved["state"]:
+    write(resolved["state"], {"record_id": record_id})
+    if resolved["adopt"] is not None:
+        pending = read_json(resolved["pending"])
+        builds = pending.get("builds", {}) if isinstance(pending, dict) else {}
+        if isinstance(builds, dict) and resolved["adopt"] in builds:
+            del builds[resolved["adopt"]]
+            write(resolved["pending"], {"builds": builds})
+else:
+    pending = read_json(resolved["pending"])
+    builds = pending.get("builds", {}) if isinstance(pending, dict) else {}
+    builds = builds if isinstance(builds, dict) else {}
+    builds[resolved["key"]] = record_id
+    write(resolved["pending"], {"builds": builds})
+PY
+  printf '%s' "$RESPONSE" | python3 -c "$KEEP_PY" "$RESOLVED" || true
 else
   echo "workshop-discovery: could not reach the workshop app (capture may be off for this event)." >&2
   exit 1
