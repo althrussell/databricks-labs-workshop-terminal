@@ -6,6 +6,11 @@
 // goes up when the attendee has already granted permission. Nothing requests
 // permission here: a request needs a user gesture this page does not have at
 // the moment a reminder lands.
+//
+// There is one flash for the page, not one per message. The original title is
+// saved once, when the flash starts; a later message updates the label of the
+// running flash. The interval and the visibility listener are shared, so a
+// second reminder cannot save the flashed title as the original.
 
 export interface AttentionSurface {
   /** True while the page is in a background tab or minimised. */
@@ -25,52 +30,87 @@ export interface AttentionOptions {
   cancel?: (handle: unknown) => void;
 }
 
+interface Flash {
+  surface: AttentionSurface;
+  original: string;
+  alternate: string;
+  showingAlternate: boolean;
+  flashes: number;
+  maxFlashes: number;
+  handle: unknown;
+  cancel: (handle: unknown) => void;
+  unsubscribe: () => void;
+}
+
+/** The one running flash for this page, or null. */
+let active: Flash | null = null;
+
 /** The title shown during a flash. Short, so it survives a truncated tab strip. */
 export function flashTitle(message: string): string {
   const label = message.trim().split(/\s+/).slice(0, 4).join(" ");
   return `(!) ${label}`;
 }
 
+/** Stop the running flash, if any, and put the original title back. */
+export function stopFlash(): void {
+  const flash = active;
+  if (!flash) return;
+  active = null;
+  flash.cancel(flash.handle);
+  flash.unsubscribe();
+  flash.surface.setTitle(flash.original);
+}
+
 /**
- * Tell an attendee who is away that a message arrived. Returns a function that
- * stops the flashing early. Nothing happens while the page is visible: the toast
- * already covers that case.
+ * Tell an attendee who is away that a message arrived. Every message notifies;
+ * only the first starts the flash. Returns a function that stops the flash.
+ * Nothing happens while the page is visible: the toast already covers that case.
  */
 export function announceWhileAway(
   surface: AttentionSurface,
   message: string,
   options: AttentionOptions = {},
 ): () => void {
-  if (!surface.hidden || !message.trim()) return () => undefined;
-  const intervalMs = options.intervalMs ?? 1200;
-  const maxFlashes = options.maxFlashes ?? 20;
-  const schedule = options.schedule ?? ((fn, ms) => setInterval(fn, ms));
-  const cancel = options.cancel ?? ((handle) => clearInterval(handle as ReturnType<typeof setInterval>));
-  const original = surface.title;
-  const alternate = flashTitle(message);
-  let flashes = 0;
-  let showingAlternate = false;
-  let stopped = false;
-
+  if (!surface.hidden || !message.trim()) return stopFlash;
   surface.notify?.("Workshop update", message.trim());
 
-  const finish = () => {
-    if (stopped) return;
-    stopped = true;
-    cancel(handle);
-    unsubscribe();
-    surface.setTitle(original);
+  if (active) {
+    // Already flashing: the newest message becomes the label, and the count
+    // starts again so the flash stays up for this reminder too.
+    active.alternate = flashTitle(message);
+    active.flashes = 0;
+    return stopFlash;
+  }
+
+  const schedule = options.schedule ?? ((fn: () => void, ms: number) => setInterval(fn, ms));
+  const cancel = options.cancel ?? ((handle: unknown) => clearInterval(handle as ReturnType<typeof setInterval>));
+  const flash: Flash = {
+    surface,
+    original: surface.title,
+    alternate: flashTitle(message),
+    showingAlternate: false,
+    flashes: 0,
+    maxFlashes: options.maxFlashes ?? 20,
+    handle: undefined,
+    cancel,
+    unsubscribe: () => undefined,
   };
-  const tick = () => {
-    if (stopped) return;
-    flashes += 1;
-    if (flashes > maxFlashes) return finish();
-    showingAlternate = !showingAlternate;
-    surface.setTitle(showingAlternate ? alternate : original);
-  };
-  const unsubscribe = surface.onVisible(finish);
-  const handle = schedule(tick, intervalMs);
-  return finish;
+  active = flash;
+  flash.unsubscribe = surface.onVisible(stopFlash);
+  flash.handle = schedule(() => tick(flash), options.intervalMs ?? 1200);
+  return stopFlash;
+}
+
+function tick(flash: Flash): void {
+  if (active !== flash) return;
+  flash.flashes += 1;
+  if (flash.flashes > flash.maxFlashes) {
+    // A forgotten tab is not flashed forever.
+    stopFlash();
+    return;
+  }
+  flash.showingAlternate = !flash.showingAlternate;
+  flash.surface.setTitle(flash.showingAlternate ? flash.alternate : flash.original);
 }
 
 type BrowserDocument = Pick<Document, "title" | "hidden" | "addEventListener" | "removeEventListener">;

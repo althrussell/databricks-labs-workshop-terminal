@@ -618,17 +618,29 @@ export default function App() {
     }
   }
 
+  /** The session with this id from the server's list, or null when unknown or unreadable. */
+  async function sessionById(id: string): Promise<SessionInfo | null> {
+    try {
+      const data = await api.sessions();
+      return data.sessions.find((item) => item.id === id) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   async function selectBuild(selection: ProjectSelection, stopSessionId?: string): Promise<string> {
     projectMutation.current = true;
     ++projectRequest.current;
     try {
+      // The agent to resume is the one this build switch stops, looked up by its
+      // id: this tab's `session` can be a different session by now.
+      const stopped = stopSessionId ? await sessionById(stopSessionId) : null;
       if (stopSessionId) {
         try { await api.closeSession(stopSessionId); }
         catch (caught) { if (!(caught instanceof ApiError) || caught.status !== 404) throw caught; }
         const active = await refreshSessions();
         if (active) throw new Error("Another agent became active. Confirm that agent before switching builds.");
       }
-      const stopped = stopSessionId ? session : null;
       const value = selection.recover
         ? await recoverWithConfirmation(selection.name, projectInventoryRef.current?.active, api.recoverProject, api.projects)
         : await api.selectProject(selection);
