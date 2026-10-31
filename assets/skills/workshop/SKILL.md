@@ -109,6 +109,7 @@ browsers, or run `databricks apps validate`.
   the attendee's requests from the Your build panel.
 - `workshop-workflow path rapid|guided --by attendee`, and `workshop-workflow
   direction "…" --confirmed-by attendee` once they confirm a guided direction.
+- `workshop-workflow decide "<choice>"` records a build choice the attendee made; `show` lists it as settled for every agent after them.
 - `workshop-workflow phase build --evidence preview=<url>` records the first preview and moves the stage to build.
 - `workshop-workflow plan --put "<summary>"` records the plan you put to them; `plan --approved --source attendee` records their yes. `workshop-init-project` refuses until the second command has run.
 - `workshop-workflow prefs [--approach co_build|learn|lead] [--detail

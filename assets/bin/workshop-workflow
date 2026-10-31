@@ -15,6 +15,7 @@ confirm a direction. An agent's own summary is never an approval.
     workshop-workflow plan --put "<one-line plan summary>" [--build NAME]
     workshop-workflow plan --approved [--source attendee|claude-plan-mode] [--build NAME]
     workshop-workflow fact|assume|ask|criterion "text"
+    workshop-workflow decide "<the choice the attendee made>"
     workshop-workflow answer <question-id> "text"
     workshop-workflow direction "summary" [--confirmed-by attendee]
     workshop-workflow check [--json]
@@ -211,7 +212,7 @@ def new_record(attendee: str = "", project: str = "") -> dict:
         "schema": SCHEMA, "version": VERSION, "workflow_version": WORKFLOW_VERSION,
         "attendee": attendee, "project": project, "revision": 0, "brief_revision": 0,
         "phase": "understand", "path": {"value": None, "chosen_by": None, "source": None, "at": None},
-        "facts": [], "assumptions": [], "questions": [], "direction": None,
+        "facts": [], "assumptions": [], "questions": [], "decisions": [], "direction": None,
         "success_criteria": [], "evidence": {}, "history": [], "requests": [],
         # W6: the attendee's own account of the outcome, given at feedback.
         "outcome": None,
@@ -502,6 +503,10 @@ def summary(record: dict) -> str:
     attendee = attendee_line(attendee_block())
     if attendee:
         lines.append(attendee)
+    decisions = record.get("decisions") or []
+    if decisions:
+        lines.append("Decided by the attendee (settled: do not ask again; a later entry replaces an earlier one): "
+                     + "; ".join(item["text"] for item in decisions))
     lines.append("Next: " + next_step(record))
     return "\n".join(lines)
 
@@ -544,6 +549,13 @@ def apply(record: dict, args: argparse.Namespace, *, project: Path | None = None
             # Something the agent inferred is an assumption until they confirm it.
             key = "assumptions"
         record[key].append(entry)
+        _brief_changed(record)
+    elif command == "decide":
+        # A build choice the attendee made (layout, thresholds, method, theme). Kept so the
+        # next agent, on a switch or a resume, doesn't ask it again.
+        if not args.text.strip():
+            raise WorkflowError("the decision is empty")
+        record["decisions"].append({"text": " ".join(args.text.split()), "by": "attendee", "at": now()})
         _brief_changed(record)
     elif command == "ask":
         question_id = f"q{len(record['questions']) + 1}"
@@ -662,6 +674,8 @@ def main(argv: list[str] | None = None) -> int:
     plan.add_argument("--source", choices=PLAN_SOURCES, help="who approved (default: attendee)")
     plan.add_argument("--build", help="the build (default: the current build)")
     plan.add_argument("--check", metavar="NAME", help="the scaffolding gate for build NAME (exit 1 until approved)")
+    decide = sub.add_parser("decide", help="a build choice the attendee made; agents don't re-ask it")
+    decide.add_argument("text")
     for name in ("fact", "assume", "ask", "criterion"):
         entry = sub.add_parser(name)
         entry.add_argument("text")
