@@ -1,6 +1,7 @@
 """The 31 Oct sweep's runtime changes (sweep contract §2, decisions 3 and 6).
 
-- Codex carries the contract's reasoning lines verbatim.
+- Codex carries the contract's reasoning lines verbatim, with the reasoning
+  summaries hidden from the terminal (F-009).
 - A new build's Claude session starts in plan mode; an approved build keeps the
   full-permission launch. The PostToolUse hook records the approval.
 - Every build folder is pre-trusted for Claude (R-004).
@@ -59,7 +60,7 @@ def _plan_groups(settings: dict) -> list:
 
 CONTRACT_LINES = (
     'model_reasoning_summary = "auto"\n'
-    "hide_agent_reasoning = false\n"
+    "hide_agent_reasoning = true\n"
     "show_raw_agent_reasoning = false\n"
     "model_supports_reasoning_summaries = true\n"
 )
@@ -73,7 +74,8 @@ def test_codex_carries_the_contract_reasoning_lines_verbatim(user, monkeypatch):
     parsed = tomllib.loads(text)
     assert parsed["model_reasoning_effort"] == "high"
     assert parsed["model_reasoning_summary"] == "auto"
-    assert parsed["hide_agent_reasoning"] is False
+    # F-009 (31 Oct): a paraphrased reasoning line ("I spent $10k") reached an attendee.
+    assert parsed["hide_agent_reasoning"] is True
     assert parsed["show_raw_agent_reasoning"] is False
     assert parsed["model_supports_reasoning_summaries"] is True
 
@@ -84,7 +86,7 @@ def test_codex_reasoning_summary_lines_stay_top_level(user, monkeypatch):
     cli_config.configure_codex(user, "tok-1", available=set())
     parsed = tomllib.loads(open(os.path.join(user.home, ".codex", "config.toml")).read())
     assert parsed["model_reasoning_effort"] == "xhigh"
-    assert parsed["hide_agent_reasoning"] is False
+    assert parsed["hide_agent_reasoning"] is True
     assert "model_supports_reasoning_summaries" not in parsed.get("features", {})
 
 

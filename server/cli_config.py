@@ -729,7 +729,10 @@ def configure_codex(
         # Sweep contract, decision 3 (31 Oct): these lines are verbatim. Only
         # the effort value comes from config.codex_reasoning_effort().
         'model_reasoning_summary = "auto"\n'
-        "hide_agent_reasoning = false\n"
+        # Codex's reasoning summariser paraphrases loosely. On 31 Oct it showed
+        # an attendee "I realized I spent $10k too much" when nothing was spent,
+        # so the terminal does not show these lines (F-009, 31 Oct).
+        "hide_agent_reasoning = true\n"
         "show_raw_agent_reasoning = false\n"
         # The contract says this is for a verified model/gateway route
         # (system.ai.gpt-6-1-sol on labs). Written unconditionally as the
