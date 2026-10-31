@@ -25,7 +25,7 @@ def test_seeded_business_persona_does_not_establish_a_preference(attendee):
     profile = attendee_profile.read(attendee)
     assert profile.help_preference == "" and profile.source == "default"
     overlay = user_content._persona_overlay(attendee)
-    assert "(default; they have not chosen one)" in overlay and "adapt explanation detail" in overlay
+    assert "(default, not chosen yet: offer the three ways when you meet them)" in overlay and "adapt explanation detail" in overlay
     assert "plain-language" not in overlay and "technical discussion" not in overlay
 
 
@@ -48,7 +48,7 @@ def test_new_profile_wins_over_old_brief_persona(attendee, monkeypatch):
     assert wizard.read_brief(attendee).to_json() == brief.to_json()
     # Legacy "concise" migrates to brief explanations and proves nothing else.
     overlay = user_content._persona_overlay(attendee)
-    assert "keep explanations brief" in overlay and "(default; they have not chosen one)" in overlay
+    assert "keep explanations brief" in overlay and "(default, not chosen yet: offer the three ways when you meet them)" in overlay
 
 
 def test_stale_preference_conflict_and_explicit_reset(attendee):
@@ -203,7 +203,7 @@ def test_industry_saved_in_preferences_updates_persona_and_demo_data_overlays(at
     monkeypatch.setattr(demo_data, "_cache_ok", True)
 
     initial_persona = user_content._persona_overlay(attendee)
-    assert "- Industry: not known yet (ask when you meet them)." in initial_persona
+    assert "- Industry: not known yet; offer all of these" in initial_persona
 
     saved = attendee_profile.save(
         attendee,

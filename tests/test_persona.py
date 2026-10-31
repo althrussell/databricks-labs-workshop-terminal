@@ -149,7 +149,7 @@ def test_changing_it_after_launching_rewrites_the_instructions(client, monkeypat
     rewrite them — otherwise the agent keeps reading a stale line."""
     home = _provisioned_home(client, monkeypatch)
     assert "technical discussion" not in _persona_block(home)
-    assert "(default; they have not chosen one)" in _persona_block(home)
+    assert "(default, not chosen yet: offer the three ways when you meet them)" in _persona_block(home)
 
     resp = client.post("/api/persona", json={"persona": "technical"}, headers=ALICE)
 
@@ -197,7 +197,7 @@ def test_the_agent_asks_how_they_want_to_work_once_and_never_infers(client, monk
     for choice in ("Build with me (I explain as I go)", "Teach me as we go (you try bits yourself)",
                    "Let me drive (you decide, I build)",
                    "Business or domain · Data and SQL · Software developer · Just exploring",
-                   "**Industry:** the 3 seeded industries closest to what they've said"):
+                   "**Industry:**"):
         assert choice in text
     assert "workshop-workflow prefs --approach co_build|learn|lead --background" in text
     assert "--industry <industry>" in text

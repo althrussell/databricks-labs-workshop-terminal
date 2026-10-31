@@ -243,7 +243,7 @@ def test_domain_expertise_and_the_working_rhythm_reach_every_main_session(client
         text = " ".join(_channels(_home(person))[name].split())
         assert "**Know their field.**" in text
         assert "Never let five minutes pass in silence." in text
-        assert "**Plan out loud.**" in text
+        assert "**Plan, then wait**" in text
 
 
 def test_the_coach_banner_is_gone():
@@ -343,13 +343,13 @@ def test_the_meeting_asks_only_whats_missing_in_each_agents_own_way(client, monk
     _open(client, person, "claude", has_starter_prompt=True)
     text = " ".join(_channels(_home(person))["claude"].split())
 
-    assert ("any first turn with meeting answers missing, **reply straight away, without running commands "
-            "or reading files**, and ask only what's missing") in text
+    assert ("On a first turn with meeting answers missing (the opener, a bare \"hi\", or nothing saved yet), "
+            "**reply straight away, without running commands or reading files**") in text
+    assert "If a form closes unanswered, ask the same question in text" in text
     # F-043: one clickable question set, never the scripted text block.
     assert "one clickable question set, never a text list" in text
-    assert "Claude Code and Omnigent's Claude: one `AskUserQuestion` call." in text
-    assert "Codex and Omnigent's Codex: one `request_user_input` call." in text
-    assert "the 3 seeded industries closest to what they've said, then Other" in text
+    assert "`AskUserQuestion` (Claude Code, Omnigent's Claude) or `request_user_input` (Codex, Omnigent's Codex)" in text
+    assert "every seeded industry there, plus Something else" in text
     assert "Four quick things" not in text and "Hi, I'm your build partner" not in text
 
 

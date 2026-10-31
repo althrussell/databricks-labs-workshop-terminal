@@ -313,12 +313,12 @@ def _compose_workshop_contract(text: str) -> str:
 
 
 _APPROACH = {
-    "co_build": "**Build with me**: co-design the MVP, Databricks building blocks and plan first (stop and wait for their go-ahead), then explain key decisions as you go.",
+    "co_build": "**Build with me**: co-design the MVP and plan first, waiting for their go-ahead; explain key decisions as you go.",
     "learn": "**Teach me while we build**: co-design and confirm the plan first, then offer small, relevant hands-on steps and explain why.",
     "lead": "**Let me drive**: they set constraints and choose what you implement at every step; offer options and wait before acting.",
 }
 _BACKGROUND = {
-    "domain": "**business or domain side**: outcomes first in plain language; explain which Databricks building blocks fit and why without jargon",
+    "domain": "**business or domain side**: outcomes first in plain language; name the building blocks and why",
     "data": "**data and SQL**: keep their queries and data choices visible; explain query to API to app",
     "developer": "**software developer**: real component names, architecture and diffs; they set constraints",
     "exploring": "**just exploring**: concrete examples and prepared data first, then their own idea",
@@ -328,6 +328,30 @@ _DETAIL = {
     "brief": "keep explanations brief: lead with the result",
     "detailed": "explain in detail when it helps them decide or learn",
 }
+
+
+def _industry_line(user: User, stated: str) -> str:
+    """What the meeting does about the industry, for this attendee.
+
+    The attendee's own answer wins. Otherwise a confident roster suggestion is
+    confirmed first; with none, every seeded industry is offered, so the menu
+    never omits one (30 Oct: Telco, food and healthcare were missing).
+    """
+    if stated:
+        return f"**{stated.replace('_', ' ')}**"
+    from . import attendee_roster, demo_data
+
+    suggested = attendee_roster.suggestion(user.email)
+    if suggested:
+        label = suggested.get("industry_label") or suggested["suggested_industry"].replace("_", " ")
+        company = suggested.get("company") or "their company"
+        return (f"not confirmed yet. Suggested **{label}** (roster: {company}, confidence "
+                f"{float(suggested['industry_confidence']):.2f}); the first meeting question confirms it")
+    try:
+        names = [slug.replace("_", " ") for slug in demo_data.offered_industries()]
+    except Exception:  # noqa: BLE001 — a catalog hiccup must not drop the menu
+        names = [slug.replace("_", " ") for slug in demo_data.KNOWN_INDUSTRIES]
+    return "not known yet; offer all of these, plus Something else: " + ", ".join(names)
 
 
 def _persona_overlay(user: User) -> str:
@@ -342,8 +366,7 @@ def _persona_overlay(user: User) -> str:
     effective = profile.effective()
     approach = _APPROACH[effective["working_approach"]]
     if not effective["working_approach_stated"]:
-        approach += (" (default; they have not chosen one). Not chosen yet: offer the three ways of working "
-                     "when you meet them, and save their answer.")
+        approach += " (default, not chosen yet: offer the three ways when you meet them)."
     background = effective.get("background") or ""
     starting = (_BACKGROUND[background] if background in _BACKGROUND and effective.get("background_stated")
                 else "not known yet (ask when you meet them)")
@@ -355,11 +378,7 @@ def _persona_overlay(user: User) -> str:
             stated_industry = wizard.read_brief(user).stated_industry
         except Exception:  # noqa: BLE001
             stated_industry = ""
-    industry = (
-        f"**{stated_industry.replace('_', ' ')}**"
-        if stated_industry
-        else "not known yet (ask when you meet them)"
-    )
+    industry = _industry_line(user, stated_industry)
     lines = [
         _PERSONA_MARKER,
         "## How they want to work with you",
@@ -379,7 +398,7 @@ def _persona_overlay(user: User) -> str:
                      "path wins; still ask if it does not fit this idea).")
     lines += [
         "",
-        f"Profile revision {profile.revision}. Presets they can change any time; in-the-moment requests win.",
+        f"Profile revision {profile.revision}. Presets, changeable any time; in-the-moment requests win.",
     ]
     return "\n".join(lines) + "\n"
 

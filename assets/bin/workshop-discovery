@@ -7,8 +7,10 @@
 #   workshop-discovery < record.json # or on stdin
 #
 # Fields (all optional except that you should set at least one):
-#   record_id            stable id for THIS use case — reuse it to refine the
-#                        same record instead of filing a second one
+#   record_id            stable id for THIS build. The helper keeps the build's id
+#                        in .workshop/discovery.json and reuses it whichever agent
+#                        is running, so one build is one record. Only New build
+#                        starts another.
 #   confidence           low | medium | high — how firmly THEY stated it
 #   session_intent       business_problem | evaluation | learning | fun — why
 #                        they were building. Always set it, including `fun` for
@@ -44,9 +46,36 @@ if [ -z "${RECORD//[[:space:]]/}" ]; then
   exit 2
 fi
 
+# The build's record id is kept with the project (the same project resolution
+# workshop-workflow uses), so an agent switch files refinements under the record
+# the first agent opened. A new build is a new project, so it has no id yet.
+STATE_FILE="$(python3 -c '
+import json, os, subprocess
+home = os.path.expanduser("~")
+cwd = os.getcwd()
+root = cwd
+if os.path.realpath(cwd) in {os.path.realpath(home), os.path.realpath(os.path.join(home, "projects"))}:
+    try:
+        with open(os.path.join(home, ".config/workshop/projects.json")) as handle:
+            active = json.load(handle).get("active", "")
+    except (OSError, ValueError, AttributeError):
+        active = ""
+    if active and os.path.isdir(os.path.join(home, "projects", active)):
+        root = os.path.join(home, "projects", active)
+try:
+    top = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"],
+                         capture_output=True, text=True, timeout=10)
+    if root == cwd and top.returncode == 0 and top.stdout.strip():
+        root = top.stdout.strip()
+except (OSError, subprocess.TimeoutExpired):
+    pass
+print(os.path.join(root, ".workshop", "discovery.json"))
+')" || exit 2
+
 # Merge the attendee identity in without a JSON parser dependency: the app
 # authenticates the capability against this email, so it must be present and must
-# not be something the agent can choose.
+# not be something the agent can choose. The build's stored record_id, when there
+# is one, replaces whatever the agent passed: one build, one record.
 PAYLOAD="$(printf '%s' "$RECORD" | python3 -c '
 import json, os, sys
 try:
@@ -57,9 +86,16 @@ except Exception as exc:
 if not isinstance(record, dict):
     print("workshop-discovery: expected a JSON object", file=sys.stderr)
     raise SystemExit(2)
+try:
+    with open(sys.argv[1]) as handle:
+        stored = str(json.load(handle).get("record_id") or "").strip()
+except (OSError, ValueError, AttributeError):
+    stored = ""
+if stored:
+    record["record_id"] = stored
 record["email"] = os.environ.get("WORKSHOP_USER_EMAIL", "")
 json.dump(record, sys.stdout)
-')" || exit 2
+' "$STATE_FILE")" || exit 2
 
 if RESPONSE="$(curl -fsS -X POST "$APP/api/discovery" \
      -H 'Content-Type: application/json' \
@@ -68,6 +104,26 @@ if RESPONSE="$(curl -fsS -X POST "$APP/api/discovery" \
   # Capture may be switched off for this event; that is a normal answer, not a
   # failure, and nothing for the agent to retry or mention to the attendee.
   printf '%s\n' "$RESPONSE"
+  # Keep the id of a captured record for the build's next call, from any agent.
+  printf '%s' "$RESPONSE" | python3 -c '
+import json, os, sys
+try:
+    reply = json.load(sys.stdin)
+except ValueError:
+    raise SystemExit(0)
+if not isinstance(reply, dict) or not reply.get("captured"):
+    raise SystemExit(0)
+record_id = str(reply.get("record_id") or "").strip()
+if not record_id:
+    raise SystemExit(0)
+state = sys.argv[1]
+os.makedirs(os.path.dirname(state), exist_ok=True)
+temporary = state + ".tmp"
+with open(temporary, "w") as handle:
+    json.dump({"record_id": record_id}, handle)
+    handle.write("\n")
+os.replace(temporary, state)
+' "$STATE_FILE" || true
 else
   echo "workshop-discovery: could not reach the workshop app (capture may be off for this event)." >&2
   exit 1
