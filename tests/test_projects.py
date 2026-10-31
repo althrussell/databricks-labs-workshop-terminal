@@ -9,6 +9,7 @@ import pytest
 
 from server import projects, user_content
 from server.users import User
+from tests.plan_approval import approve_build
 
 ALICE = {"X-Forwarded-Email": "alice@example.com"}
 BOB = {"X-Forwarded-Email": "bob@example.com"}
@@ -231,6 +232,7 @@ def test_native_helper_selection_refreshes_session_context(client, launchable_ag
     assert live.status_code == 200
     # The CLI helper can select a separate build inside the same conversation.
     helper = Path(__file__).resolve().parents[1] / "assets/bin/workshop-init-project"
+    approve_build(user.home, "garden-plan")
     completed = subprocess.run(["bash", str(helper), "garden-plan", "--json"], env=user.shell_env(),
                                text=True, capture_output=True)
     assert completed.returncode == 0, completed.stderr

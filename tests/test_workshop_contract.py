@@ -10,6 +10,7 @@ import pytest
 from server import user_content, wizard
 from server.users import user_manager
 from .test_user_content import _MEMORY_CHANNELS, _provisioned_home
+from tests.plan_approval import approve_for_env
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "assets/instructions/workshop_contract.md"
@@ -115,11 +116,13 @@ def test_project_only_worker_gets_policy_and_preserved_brief(tmp_path, monkeypat
         "GIT_COMMITTER_NAME": "Synthetic attendee", "GIT_COMMITTER_EMAIL": "test@example.com",
     }
     helper = ROOT / "assets/bin/workshop-init-project"
+    approve_for_env(env, "order-queue")
     subprocess.run(["bash", str(helper), "order-queue"], env=env, check=True, capture_output=True)
     readme = (project / "README.md").read_text().replace(
         "(fill from the attendee's words)", "Show late, unpacked orders first",
     )
     (project / "README.md").write_text(readme)
+    approve_for_env(env, "order-queue")
     subprocess.run(["bash", str(helper), "order-queue"], env=env, check=True, capture_output=True)
     assert (project / "README.md").read_text() == readme
     assert attendee_notes in readme

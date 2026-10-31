@@ -9,6 +9,7 @@ import pytest
 
 from server import config
 from server.bootstrap import agentbricks, install
+from tests.plan_approval import approve_build, approve_for_env
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -155,6 +156,7 @@ def test_helper_preserves_both_scaffold_memories_and_inherited_profile(tmp_path)
         "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_AUTHOR_NAME": "Test", "GIT_COMMITTER_NAME": "Test",
         "GIT_AUTHOR_EMAIL": "test@example.invalid", "GIT_COMMITTER_EMAIL": "test@example.invalid",
     }
+    approve_for_env(env, "my-agent")
     command = ["bash", str(ROOT / "assets/bin/workshop-init-project"), "my-agent", "--agentbricks"]
     first = subprocess.run(command, env=env, capture_output=True, text=True, check=True)
     project = Path(first.stdout.strip())
@@ -174,6 +176,7 @@ def test_helper_preserves_both_scaffold_memories_and_inherited_profile(tmp_path)
 
 
 def test_conflicting_scaffolds_fail_before_creating_a_project(tmp_path):
+    approve_build(tmp_path, "test")
     result = subprocess.run(
         ["bash", str(ROOT / "assets/bin/workshop-init-project"), "test", "--appkit", "--agentbricks"],
         env=os.environ | {"HOME": str(tmp_path)}, capture_output=True, text=True,

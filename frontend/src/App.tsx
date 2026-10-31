@@ -56,7 +56,7 @@ import AgentSwitchDialog from "./components/AgentSwitchDialog";
 import ProjectBar from "./components/ProjectBar";
 import YourBuild from "./components/YourBuild";
 import ResponsiveNav from "./components/ResponsiveNav";
-import { goalChangePrompt, keepSavedCopies, recoverWithConfirmation, restoreInProgress, restoreNotice } from "./projects";
+import { agentToResumeInNewBuild, goalChangePrompt, keepSavedCopies, recoverWithConfirmation, restoreInProgress, restoreNotice } from "./projects";
 import { bindIdentityRefresh, onAppEvent } from "./events";
 import { ideaPromptAction } from "./ideation";
 import { friendlyError, type RecoveryAction } from "./errors";
@@ -628,10 +628,21 @@ export default function App() {
         const active = await refreshSessions();
         if (active) throw new Error("Another agent became active. Confirm that agent before switching builds.");
       }
+      const stopped = stopSessionId ? session : null;
       const value = selection.recover
         ? await recoverWithConfirmation(selection.name, projectInventoryRef.current?.active, api.recoverProject, api.projects)
         : await api.selectProject(selection);
       acceptProjects(value);
+      // N-A7: the agent the attendee stopped to switch starts again in the new
+      // build, rather than the attendee having to relaunch it by hand.
+      const resumeAgent = agentToResumeInNewBuild(selection, stopped);
+      if (resumeAgent) {
+        const started = await launch(resumeAgent, false, "");
+        if (started) {
+          const label = agents.find((item) => item.id === resumeAgent)?.label ?? resumeAgent;
+          return `${selection.name} is selected and ${label} is starting in it.`;
+        }
+      }
       if (!selection.new && !selection.recover && selection.goal !== undefined) {
         const active = await refreshSessions();
         if (active) {
@@ -1073,11 +1084,11 @@ export default function App() {
             type="button"
             className="help-chat-toggle"
             onClick={() => setHelpChatOpen(true)}
-            aria-label="Help"
-            title="Help — ask operators"
+            aria-label="Ask for help"
+            title="Ask for help — chat with operators"
           >
             <MessageSquare size={16} aria-hidden="true" />
-            <span className="nav-label">Help</span>
+            <span className="nav-label">Ask for help</span>
             {helpUnread > 0 ? <span className="help-chat-badge">{helpUnread}</span> : null}
           </button>
           {shellLinks

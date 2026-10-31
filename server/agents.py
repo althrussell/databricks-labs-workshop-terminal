@@ -221,6 +221,26 @@ def release_opener(user) -> None:
         pass
 
 
+def claude_plan_flags(auto_mode: bool) -> tuple[str, ...]:
+    """Launch flags for a build whose plan the attendee has not yet approved.
+
+    The session starts in Claude Code's plan mode. ``--allow-dangerously-skip-
+    permissions`` adds bypass to the Shift+Tab cycle without starting in it, so
+    the attendee's approval can switch the session to the full-permission mode
+    (outside auto mode there is no such mode to offer).
+    """
+    flags = ("--permission-mode", "plan")
+    return flags + ("--allow-dangerously-skip-permissions",) if auto_mode else flags
+
+
+def with_launch_flags(agent: dict, flags: tuple[str, ...]) -> dict:
+    """The catalogue agent with extra CLI flags after its command."""
+    cmd = str(agent.get("command") or "").strip()
+    if not flags or not cmd:
+        return agent
+    return {**agent, "command": " ".join((cmd, *(shlex.quote(flag) for flag in flags)))}
+
+
 def with_first_message(agent: dict, first_message: str) -> dict:
     """The catalogue agent, launched so its CLI sends ``first_message`` first.
 

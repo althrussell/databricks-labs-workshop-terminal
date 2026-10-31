@@ -13,6 +13,8 @@ import shutil
 import subprocess
 import tempfile
 
+from . import build_plan
+
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,62}\Z")
 CONTEXT_FILE = Path(".workshop/project.json")
 SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".cache",
@@ -146,6 +148,9 @@ def select(user, name: str, *, goal: str | None = None, new: bool = False, activ
             state["materialized"] = sorted(set(state["materialized"]) | {name})
             _write(path / CONTEXT_FILE, {"version": 1, "name": name, "goal": goal}, within=path)
         _write(selection_path(user), state, within=Path(user.home))
+        if new:
+            # A new build starts with no plan and no approval (sweep contract §2).
+            build_plan.reset(user.home, name)
     return inventory(user)
 
 

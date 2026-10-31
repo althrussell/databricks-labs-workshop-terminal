@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Info, MessageSquare, X } from "lucide-react";
 import { api } from "../api";
+import { announceWhileAway, browserAttentionSurface } from "../attention";
 import { onAppEvent } from "../events";
 import {
   Toast,
@@ -132,6 +133,9 @@ export default function ToastHost({
             // because the default happened to be shorter.
             ttlMs: transientTtlMs(event.ttl_s),
           });
+          // A reminder must also reach an attendee working in another tab, such
+          // as the Omni tab, where this toast is never seen (R-012).
+          announceWhileAway(browserAttentionSurface(), event.message);
         }
       }),
     [push, acknowledge]

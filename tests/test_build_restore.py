@@ -61,6 +61,10 @@ def workspace(attendee, monkeypatch):
         staged.mkdir()
         for file, text in saved[name][0].items():
             (staged / file).write_text(text)
+        # The helper commits .workshop/project.json with the build, so a saved
+        # copy carries it; the plan gate reads it as "already scaffolded".
+        (staged / ".workshop").mkdir(exist_ok=True)
+        (staged / ".workshop" / "project.json").write_text(json.dumps({"version": 1, "name": name, "goal": ""}))
         return subprocess.CompletedProcess(arguments, 0, "", "")
 
     monkeypatch.setattr(projects, "_cli", cli)

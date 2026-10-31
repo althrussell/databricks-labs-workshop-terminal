@@ -22,7 +22,40 @@ from typing import Callable
 from . import attendee as attendee_binding
 from . import cli_config
 from . import config
+from . import otel_bootstrap
 from .users import User, agent_port_env, email_slug
+
+#: OTel settings the Omnigent host process gets, so its spans reach the same
+#: collector under the same resource attributes as WT's own. Deliberately no
+#: headers: a credential has no reason to enter the host's environment.
+_HOST_OTEL_KEYS = (
+    "OTEL_EXPORTER_OTLP_ENDPOINT",
+    "OTEL_EXPORTER_OTLP_PROTOCOL",
+    "OTEL_TRACES_SAMPLER",
+)
+#: Never forwarded to agent runners. docs/observability.md: attendee agents
+#: must not get a write path into the central telemetry tables.
+_RUNNER_EXCLUDED_PREFIXES = ("OMNIGENT_", "OTEL_")
+
+
+def host_telemetry_env(environ) -> dict[str, str]:
+    """The Omni host's span export settings, or nothing when WT is not exporting.
+
+    Enabled exactly when WT's own export is (``instrumentation_enabled``). The
+    resource attributes are the ones WT merges (workshop run, unit, event,
+    release, workspace id, service name), so an Omni span and a WT span from the
+    same seat group together.
+    """
+    if not otel_bootstrap.instrumentation_enabled(environ):
+        return {}
+    env = {key: environ[key].strip() for key in _HOST_OTEL_KEYS if environ.get(key, "").strip()}
+    merged = otel_bootstrap.merged_resource_attributes(environ)
+    env["OTEL_RESOURCE_ATTRIBUTES"] = merged
+    service = otel_bootstrap.parse_resource_attributes(merged).get("service.name", "")
+    if service:
+        # Omnigent names its tracer provider from OTEL_SERVICE_NAME, else "omnigent".
+        env["OTEL_SERVICE_NAME"] = service
+    return env
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +149,9 @@ def build_host_launch(
     identity = stable_host_identity(user, server_url)
     env["OMNIGENT_HOST_ID"] = identity.host_id
     env["OMNIGENT_HOST_NAME"] = identity.name
+    # The host's own spans (R-007). Only the host: the runner passthrough below
+    # leaves OTEL_ keys out, so agent processes never receive the endpoint.
+    env.update(host_telemetry_env(os.environ))
     # Omnigent's host hands each runner (and so each agent terminal) only its
     # own small allowlist of this environment. Everything else an attendee
     # shell has (WORKSHOP_USER_EMAIL, the catalog and schema hints, the
@@ -124,7 +160,7 @@ def build_host_launch(
     # and workshop-export had no catalog. This environment is the attendee
     # shell's, which is secret-free by construction, so all of it forwards.
     env[RUNNER_ENV_PASSTHROUGH] = ",".join(
-        sorted(key for key in env if not key.startswith("OMNIGENT_"))
+        sorted(key for key in env if not key.startswith(_RUNNER_EXCLUDED_PREFIXES))
     )
     argv = [
         os.path.realpath(binary),
@@ -136,7 +172,7 @@ def build_host_launch(
     cwd = os.path.join(user.home, "projects")
     env["WORKSHOP_PROJECTS_ROOT"] = cwd
     env[RUNNER_ENV_PASSTHROUGH] = ",".join(
-        sorted(key for key in env if not key.startswith("OMNIGENT_"))
+        sorted(key for key in env if not key.startswith(_RUNNER_EXCLUDED_PREFIXES))
     )
     return argv, env, cwd
 
