@@ -223,6 +223,25 @@ def test_how_they_are_helped_follows_where_they_start_and_what_they_ask():
     assert "Presets, never limits:" in teammate and "in-the-moment requests win" in teammate
 
 
+def test_the_plan_names_the_product_mix_and_the_demo_tables_it_reads():
+    """F-026 (31 Oct): plans parked Lakebase and named views, not the workshop_demo tables.
+
+    On 30 Oct every plan recommended Apps, Lakebase and a chat with a why each. The 31 Oct
+    rewrite said Lakebase came "after the first preview", which agents read as "park it".
+    """
+    from server import user_content
+
+    teammate = " ".join(TEAMMATE.read_text(encoding="utf-8").split())
+    contract = " ".join((TEAMMATE.parent / "workshop_contract.md").read_text(encoding="utf-8").split())
+
+    assert "recommend all three in the plan, each with a one-line why" in teammate
+    assert "Lakebase (autoscaling) for anything saved, decided or acted on" in teammate
+    assert "Ship the App first; Lakebase and the chat follow as slice 2" in teammate
+    assert "what you'll build first, how long, the assumptions, and the demo tables it reads" in teammate
+    assert "The plan names the `workshop_demo` tables it will read" in contract
+    assert "Databricks building blocks and plan first" in user_content._APPROACH["co_build"]
+
+
 def test_a_change_in_how_they_talk_is_followed_silently():
     teammate = " ".join(TEAMMATE.read_text(encoding="utf-8").split())
 

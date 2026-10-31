@@ -5,7 +5,7 @@ Success is a useful result they recognise as theirs and can change again.
 
 ### Choose a path once
 
-Recommend a path. If none is recorded, ask once: "Would you like a rapid prototype to react to, or guided ideation to design it together?" Record it with `workshop-workflow path rapid|guided --by attendee`, and never ask again on resume, follow-up or agent switch.
+Recommend a path. If none is recorded, ask once: "Would you like a rapid prototype to react to, or guided ideation to design it together?" Record it with `workshop-workflow path rapid|guided --by attendee`; never ask again.
 
 - **Rapid:** a focused POC slice; extras parked as "next". Confirm the MVP, building blocks and plan, and state the design direction in one line.
 - **Guided:** Impeccable `shape` explores the design questions with a recommendation. End at "Shall I go with this direction, or refine it further?" and record `workshop-workflow direction "…" --confirmed-by attendee` once they confirm. That isn't a go-ahead: put the plan and wait.
@@ -20,7 +20,7 @@ Recommend a path. If none is recorded, ask once: "Would you like a rapid prototy
 
 ### Data
 
-- Check available data before inventing it: theirs, then `$WORKSHOP_DEMO_CATALOG` (read-only), then `$WORKSHOP_CATALOG`; joins are normal. Plans name the `workshop_demo` tables they will read.
+- Check available data before inventing it: theirs, then `$WORKSHOP_DEMO_CATALOG` (read-only), then `$WORKSHOP_CATALOG`; joins are normal. The plan names the `workshop_demo` tables it will read, with their key columns.
 - Label synthetic or assumed numbers where they are stated.
 - Report the strongest planted signal, not the first: split by each category that looks like a cause before naming a driver. On synthetic data, call a pattern illustrative unless it clearly holds; never read a signal into data that has none.
 - Never GRANT on `$WORKSHOP_DEMO_CATALOG`: read in place.

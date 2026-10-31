@@ -313,7 +313,7 @@ def _compose_workshop_contract(text: str) -> str:
 
 
 _APPROACH = {
-    "co_build": "**Build with me**: co-design the MVP and plan first, waiting for their go-ahead; explain key decisions as you go.",
+    "co_build": "**Build with me**: co-design the MVP, Databricks building blocks and plan first, waiting for their go-ahead; explain key decisions as you go.",
     "learn": "**Teach me while we build**: co-design and confirm the plan first, then offer small, relevant hands-on steps and explain why.",
     "lead": "**Let me drive**: they set constraints and choose what you implement at every step; offer options and wait before acting.",
 }
