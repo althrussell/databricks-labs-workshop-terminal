@@ -1803,16 +1803,19 @@ def create_session(
                 launch_agent = agent
                 if agent["id"] == "claude":
                     # A build whose plan is not yet approved opens in Claude Code's
-                    # plan mode; an approved build keeps today's full-permission launch.
+                    # plan mode; an approved build (or a resumed one) launches in
+                    # full auto, passed as a flag since the user settings carry none.
                     from . import build_plan
 
                     approved = build_plan.approved_for_active(
                         user.home, projects.read(user)["active"], projects.root(user)
                     )
-                    if not approved:
-                        launch_agent = agents.with_launch_flags(
-                            agent, agents.claude_plan_flags(config.auto_mode_enabled())
-                        )
+                    launch_agent = agents.with_launch_flags(
+                        agent,
+                        agents.claude_plan_flags(config.auto_mode_enabled())
+                        if not approved
+                        else agents.claude_auto_flags(config.auto_mode_enabled()),
+                    )
                 launched = agents.with_first_message(launch_agent, opener)
                 session = session_manager.create(user, agent["id"], agents.launch_command(launched),
                                                  agent["label"])

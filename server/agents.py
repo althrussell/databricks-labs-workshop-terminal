@@ -233,6 +233,16 @@ def claude_plan_flags(auto_mode: bool) -> tuple[str, ...]:
     return flags + ("--allow-dangerously-skip-permissions",) if auto_mode else flags
 
 
+def claude_auto_flags(auto_mode: bool) -> tuple[str, ...]:
+    """Launch flags for a Claude build whose plan is approved, or a resumed one.
+
+    Full auto is a launch choice. The user settings no longer carry a base mode
+    (F-003, 31 Oct): with bypass there, every session began in bypass and Claude
+    Code announced it on the plan launch. Outside auto mode there are no flags.
+    """
+    return ("--dangerously-skip-permissions",) if auto_mode else ()
+
+
 def with_launch_flags(agent: dict, flags: tuple[str, ...]) -> dict:
     """The catalogue agent with extra CLI flags after its command."""
     cmd = str(agent.get("command") or "").strip()

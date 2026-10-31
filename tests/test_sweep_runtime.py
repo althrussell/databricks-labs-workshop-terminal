@@ -90,6 +90,19 @@ def test_codex_reasoning_summary_lines_stay_top_level(user, monkeypatch):
 
 # -- Claude settings: plan approval hook, allow rules, MCP timeout ----------------
 
+def test_claude_user_settings_carry_no_base_mode_even_from_an_earlier_release(user, monkeypatch):
+    """F-003 (31 Oct): a base mode of bypass in user settings is what Claude announced
+    on every plan launch. An earlier release wrote it, so it must be removed."""
+    monkeypatch.setenv("WORKSHOP_AUTO_MODE", "true")
+    os.makedirs(os.path.join(user.home, ".claude"), exist_ok=True)
+    with open(os.path.join(user.home, ".claude", "settings.json"), "w") as handle:
+        json.dump({"permissions": {"defaultMode": "bypassPermissions"}}, handle)
+    cli_config.configure_claude(user, "tok-1", available=set())
+    settings = _claude(user)
+    assert "defaultMode" not in settings["permissions"]
+    assert settings["skipDangerousModePermissionPrompt"] is True
+
+
 def test_claude_settings_record_plan_approval_on_exit_plan_mode(user, monkeypatch):
     monkeypatch.setenv("WORKSHOP_AUTO_MODE", "true")
     cli_config.configure_claude(user, "tok-1", available=set())
@@ -186,6 +199,12 @@ def test_ensure_claude_trusts_does_nothing_before_claude_is_configured(user):
 def test_a_plan_mode_launch_can_move_to_full_permission_on_approval():
     assert agents.claude_plan_flags(True) == ("--permission-mode", "plan", "--allow-dangerously-skip-permissions")
     assert agents.claude_plan_flags(False) == ("--permission-mode", "plan")
+
+
+def test_approved_and_resumed_claude_launches_pass_full_auto_explicitly():
+    # F-003: full auto is a launch flag, not the user settings' base mode.
+    assert agents.claude_auto_flags(True) == ("--dangerously-skip-permissions",)
+    assert agents.claude_auto_flags(False) == ()
 
 
 def test_the_plan_launch_puts_the_flags_before_the_opener():

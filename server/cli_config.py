@@ -447,12 +447,19 @@ def configure_claude(
             denied.append("WebSearch")
     if not denied:
         permissions.pop("deny", None)
+    # No defaultMode here (F-003, 31 Oct). A base mode of bypassPermissions in
+    # user settings made every session start in bypass, plan launches included,
+    # and Claude Code then announced "Session was started with bypass
+    # permissions" on each start. Full auto is now a launch flag: the terminal
+    # passes --dangerously-skip-permissions after plan approval or on resume
+    # (agents.claude_auto_flags), and Omnigent gets the same flag from its own
+    # config (configure_omnigent). Any defaultMode an earlier release wrote is
+    # removed here.
+    permissions.pop("defaultMode", None)
     if config.auto_mode_enabled():
-        permissions["defaultMode"] = "bypassPermissions"
         # One-time "are you sure?" prompt is honored from user-scope settings.
         settings["skipDangerousModePermissionPrompt"] = True
     else:
-        permissions.pop("defaultMode", None)
         settings.pop("skipDangerousModePermissionPrompt", None)
     _write_json(settings_path, settings)
 
@@ -855,11 +862,10 @@ def configure_omnigent(
     surface, which routes bare `omnigent`, `omnigent claude`, and
     `omnigent codex` with no selection and bypasses the first-run wizard.
 
-    Omni-Claude plan approval (sweep contract §2): this file sets no Claude
-    permission mode. Omnigent takes a Claude mode only at launch, from its
-    harness args, which are global rather than per build, so a plan-mode default
-    here would also hit approved builds. Omni-Claude uses the workflow gate
-    (`workshop-workflow plan --put` / `--approved`), as Codex does.
+    Omni-Claude plan approval (sweep contract §2): Omni-Claude never runs native
+    plan mode. It uses the workflow gate (`workshop-workflow plan --put` /
+    `--approved`), as Codex does. Its full-auto mode comes from the claude-native
+    harness args below, not from ~/.claude/settings.json (F-003, 31 Oct).
     """
     if write_token:
         _write_gateway_token(user, token)
@@ -954,6 +960,7 @@ def configure_omnigent(
             runner = document["runner"] = {}
         runner["idle_timeout_s"] = config.omnigent_runner_idle_timeout()
         _apply_host_identity(document, user)
+        _apply_omnigent_claude_args(document, config.auto_mode_enabled())
         providers = document.setdefault("providers", {})
         if not isinstance(providers, dict):
             providers = document["providers"] = {}
@@ -974,6 +981,45 @@ def configure_omnigent(
         except OSError:
             pass
         _atomic_text_write(config_path, config_yaml, 0o600)
+
+
+#: Claude Code's full-permission launch flag, the one Omni-Claude gets in auto mode.
+_CLAUDE_AUTO_FLAG = "--dangerously-skip-permissions"
+
+
+def _apply_omnigent_claude_args(document: dict, auto_mode: bool) -> None:
+    """Give Omni-Claude its full-auto mode as a launch argument (F-003, 31 Oct).
+
+    Omnigent's claude-native terminal merges ``harness.claude-native.args`` from
+    this file into its launch, and its per-session settings sidecar sets no
+    permission mode of its own. So once WT stopped writing
+    ``permissions.defaultMode`` to the user settings, Omni-Claude would prompt
+    for every edit unless the flag is here. Only WT's own flag is added or
+    removed; any other args the attendee or operator set are kept.
+    """
+    harness = document.get("harness")
+    if not isinstance(harness, dict):
+        if not auto_mode:
+            return
+        harness = document["harness"] = {}
+    entry = harness.get("claude-native")
+    entry = entry if isinstance(entry, dict) else {}
+    current = entry.get("args")
+    args = [arg for arg in current if isinstance(arg, str)] if isinstance(current, list) else []
+    args = [arg for arg in args if arg != _CLAUDE_AUTO_FLAG]
+    if auto_mode:
+        args.append(_CLAUDE_AUTO_FLAG)
+    if args:
+        entry["args"] = args
+        harness["claude-native"] = entry
+    else:
+        entry.pop("args", None)
+        if entry:
+            harness["claude-native"] = entry
+        else:
+            harness.pop("claude-native", None)
+    if not harness:
+        document.pop("harness", None)
 
 
 def _apply_host_identity(document: dict, user: User) -> None:
