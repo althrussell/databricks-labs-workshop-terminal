@@ -72,6 +72,10 @@ stopped with no URL.
 Read a deployed app's logs with `databricks apps logs <app>`; the apx MCP logs
 tool cannot authenticate on a seat.
 
+Any control that writes (approve, save, assign, submit) disables while its request
+is in flight and after success, and the server write is an upsert on a natural key,
+so a repeat click cannot duplicate a row (F-018, 31 Oct).
+
 Run `apx dev check` and `apx build` first (otherwise the framework's own
 checks). For AppKit, check signatures with `npx @databricks/appkit docs
 <section>` and never write `as unknown as <T>`. A first deploy takes minutes. A

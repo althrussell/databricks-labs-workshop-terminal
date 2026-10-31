@@ -136,7 +136,6 @@ When the apx MCP server is running, these tools are available:
 - Prefer running apx related commands via MCP server if it's available.
 - Use the apx MCP `search_registry_components` and `add_component` tools to find and add shadcn/ui components.
 - When using the API calls on the frontend, use error boundaries to handle errors.
-- Any control that writes (approve, save, assign, submit) disables while its request is in flight and after success, and the server write is idempotent (an upsert on a natural key), so a repeat click cannot create a duplicate row (F-018, 31 Oct).
 - Run `apx dev check` command (via CLI or MCP) to check for errors in the project code after making changes.
 - If agent has access to native browser tool, use it to verify changes on the frontend. If such tool is not present or is not working, use playwright MCP to automate browser actions.
 
