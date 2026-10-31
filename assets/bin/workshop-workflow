@@ -139,27 +139,57 @@ def plan_line(build: str) -> str:
 
 
 def plan_command(args: argparse.Namespace) -> int:
-    build = args.build or active_build()
-    if not build:
-        raise WorkflowError("no build is selected; start the build in WT before planning it")
+    """Record the plan put to, or approved by, the attendee.
+
+    With no current build (an attendee's first session, before the build exists)
+    the record is *pending*: build "". The first build the gate checks adopts a
+    pending approval (see plan_check), so the approval survives until the build
+    it was given for is created.
+    """
+    if args.check:
+        return plan_check(args.check)
+    build = args.build or active_build()  # "" = pending, for the next build
     if args.put is None and not args.approved:
-        print(plan_line(build))
+        print(plan_line(build) if build else "Plan: no build is selected yet. " + PLAN_GUIDANCE)
         return 0
     record = read_plan()
     if record.get("build") != build:
         record = {"version": PLAN_SCHEMA, "build": build}
     when = now()
+    label = build or "the next build"
     if args.approved:
         record.update(plan_approved_at=when, plan_approved_source=args.source or "attendee")
-        print(f"Plan approved for {build} (source {record['plan_approved_source']}). Scaffold the build now.")
+        print(f"Plan approved for {label} (source {record['plan_approved_source']}). Scaffold the build now.")
     else:
         summary = " ".join(args.put.split())
         if not summary:
             raise WorkflowError("the plan summary is empty")
         record.update(plan_put_at=when, plan_summary=summary)
-        print(f"Plan put for {build}. Wait for the attendee's yes, then run `workshop-workflow plan --approved`.")
+        print(f"Plan put for {label}. Wait for the attendee's yes, then run `workshop-workflow plan --approved`.")
     write_plan(record)
     return 0
+
+
+def plan_check(name: str) -> int:
+    """The scaffolding gate: 0 when build NAME may be scaffolded, 1 with the guidance.
+
+    A build already scaffolded (or recovered from its committed copy) passes. An
+    approval that is pending (no build when it was given) is bound to NAME here,
+    so it is consumed by the first build scaffolded after it.
+    """
+    project = Path.home() / "projects" / name
+    if (project / ".workshop" / "preparation.json").is_file() or (project / ".workshop" / "project.json").is_file():
+        return 0
+    record = read_plan()
+    if record.get("plan_approved_at") and record.get("build") in (name, ""):
+        if record.get("build") != name:
+            write_plan(dict(record, build=name))
+        return 0
+    print(f"workshop-init-project: no approved plan for build {name} yet.", file=sys.stderr)
+    print(PLAN_GUIDANCE, file=sys.stderr)
+    if record.get("build") not in (None, "", name):
+        print(f"  (for this build: workshop-workflow plan --approved --build {name})", file=sys.stderr)
+    return 1
 
 
 class WorkflowError(Exception):
@@ -588,6 +618,7 @@ def main(argv: list[str] | None = None) -> int:
     plan.add_argument("--approved", action="store_true", help="record the attendee's yes to the plan")
     plan.add_argument("--source", choices=PLAN_SOURCES, help="who approved (default: attendee)")
     plan.add_argument("--build", help="the build (default: the current build)")
+    plan.add_argument("--check", metavar="NAME", help="the scaffolding gate for build NAME (exit 1 until approved)")
     for name in ("fact", "assume", "ask", "criterion"):
         entry = sub.add_parser(name)
         entry.add_argument("text")

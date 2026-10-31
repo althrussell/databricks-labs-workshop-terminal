@@ -114,13 +114,26 @@ def test_claude_plan_hook_is_not_duplicated_and_keeps_other_hooks(user, monkeypa
         in settings["hooks"]["PostToolUse"]
 
 
-def test_claude_allows_the_workshop_helpers_during_planning(user, monkeypatch):
+def test_claude_allows_the_planning_helpers_but_never_the_approval(user, monkeypatch):
     cli_config.configure_claude(user, "tok-1", available=set())
     cli_config.configure_claude(user, "tok-1", available=set())
     allowed = _claude(user)["permissions"]["allow"]
-    assert allowed.count("Bash(workshop-workflow *)") == 1
-    assert allowed.count("Bash(workshop-discovery *)") == 1
+    for rule in ("Bash(workshop-workflow show *)", "Bash(workshop-workflow prefs *)",
+                 "Bash(workshop-workflow phase *)", "Bash(workshop-workflow plan --put *)",
+                 "Bash(workshop-workflow plan --check *)", "Bash(workshop-discovery *)"):
+        assert allowed.count(rule) == 1, rule
+    assert not [rule for rule in allowed if "plan --approved" in rule or rule == "Bash(workshop-workflow *)"]
     assert "mcp__workshop__deploy_databricks_app" in allowed
+
+
+def test_a_broad_rule_from_an_earlier_release_is_removed(user):
+    cli_config.configure_claude(user, "tok-1", available=set())
+    settings = _claude(user)
+    settings["permissions"]["allow"].append("Bash(workshop-workflow *)")
+    with open(os.path.join(user.home, ".claude", "settings.json"), "w") as handle:
+        json.dump(settings, handle)
+    cli_config.configure_claude(user, "tok-1", available=set())
+    assert "Bash(workshop-workflow *)" not in _claude(user)["permissions"]["allow"]
 
 
 def test_claude_mcp_tool_timeout_covers_a_deploy(user):
@@ -326,44 +339,123 @@ def test_an_unknown_stage_names_the_real_stages(tmp_path):
     assert "phase build --evidence preview=<url>" in result.stderr
 
 
-# -- Omni host spans (R-007) -------------------------------------------------------
+# -- Omni host spans (R-007, open) ---------------------------------------------------
 
-def test_the_omni_host_gets_span_export_under_wts_resource_attributes(monkeypatch):
-    from server import omnigent_remote
-
-    environ = {
-        "OTEL_EXPORTER_OTLP_ENDPOINT": "https://collector.example.com:4317",
-        "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
-        "OTEL_SERVICE_NAME": "control-tower-wt",
-        "WORKSHOP_RUN_ID": "run-81cc",
-        "WORKSHOP_UNIT_ID": "unit-4",
-        "DATABRICKS_WORKSPACE_ID": "123",
-    }
-    env = omnigent_remote.host_telemetry_env(environ)
-    assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "https://collector.example.com:4317"
-    assert env["OTEL_EXPORTER_OTLP_PROTOCOL"] == "grpc"
-    assert env["OTEL_SERVICE_NAME"] == "control-tower-wt"
-    attributes = dict(item.split("=", 1) for item in env["OTEL_RESOURCE_ATTRIBUTES"].split(","))
-    assert attributes["workshop.run_id"] == "run-81cc"
-    assert attributes["workshop.unit_id"] == "unit-4"
-    assert attributes["databricks.workspace.id"] == "123"
-    assert attributes["service.name"] == "control-tower-wt"
-
-
-def test_no_span_export_without_a_complete_destination():
-    from server import omnigent_remote
-
-    assert omnigent_remote.host_telemetry_env({}) == {}
-    assert omnigent_remote.host_telemetry_env({"OTEL_EXPORTER_OTLP_ENDPOINT": "https://c"}) == {}
-
-
-def test_agent_runners_never_receive_the_otel_endpoint(user, monkeypatch):
+def test_the_omni_host_env_carries_no_otel_settings(user, monkeypatch):
+    """R-007 is open: the host env reaches native agent shells, so no OTEL_* there."""
     from server import omnigent_remote
 
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "https://collector.example.com:4317")
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
-    argv, env, _cwd = omnigent_remote.build_host_launch(user, "/usr/bin/true", "https://app.example.com")
-    assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "https://collector.example.com:4317"
+    _argv, env, _cwd = omnigent_remote.build_host_launch(user, "/usr/bin/true", "https://app.example.com")
+    assert not [key for key in env if key.startswith("OTEL_")]
     passthrough = env[omnigent_remote.RUNNER_ENV_PASSTHROUGH].split(",")
     assert not [name for name in passthrough if name.startswith("OTEL_")]
-    assert "OTEL_EXPORTER_OTLP_ENDPOINT" not in passthrough
+
+
+# -- The first build (pending approval, sweep review) -----------------------------
+
+def _pending_approval_from(home, *args) -> None:
+    result = _workflow(home, *args)
+    assert result.returncode == 0, result.stderr
+
+
+def test_first_build_via_the_claude_hook_passes_the_gate(tmp_path):
+    """No current build: the hook's approval is pending, and the first scaffold adopts it."""
+    _pending_approval_from(tmp_path, "plan", "--approved", "--source", "claude-plan-mode")
+    assert build_plan.read(tmp_path)["build"] == ""
+    result = subprocess.run(["bash", str(INIT_PROJECT), "first-build"], env=_env(tmp_path),
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "projects" / "first-build").is_dir()
+    assert build_plan.read(tmp_path)["build"] == "first-build"
+
+
+def test_first_build_via_codex_passes_the_gate(tmp_path):
+    _pending_approval_from(tmp_path, "plan", "--put", "A pricing dashboard")
+    _pending_approval_from(tmp_path, "plan", "--approved", "--source", "attendee")
+    result = subprocess.run(["bash", str(INIT_PROJECT), "pricing"], env=_env(tmp_path),
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    assert build_plan.read(tmp_path)["plan_approved_source"] == "attendee"
+
+
+def test_a_pending_approval_is_consumed_by_one_build_only(tmp_path):
+    _pending_approval_from(tmp_path, "plan", "--approved")
+    first = subprocess.run(["bash", str(INIT_PROJECT), "first"], env=_env(tmp_path),
+                           capture_output=True, text=True, timeout=60)
+    assert first.returncode == 0, first.stderr
+    second = subprocess.run(["bash", str(INIT_PROJECT), "second"], env=_env(tmp_path),
+                            capture_output=True, text=True, timeout=30)
+    assert second.returncode == 1
+    assert "no approved plan for build second" in second.stderr
+
+
+def test_new_build_path_is_unchanged_and_needs_its_own_approval(tmp_path, monkeypatch):
+    from server.users import User
+    monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
+    attendee = User("alice@example.com")
+    attendee.bootstrap_home()
+    _select_build(attendee.home, "earlier")
+    approve_build(attendee.home, "earlier")
+    projects.select(attendee, "later", goal="Next thing", new=True)
+    assert build_plan.is_approved(attendee.home, "later") is False
+    result = subprocess.run(["bash", str(INIT_PROJECT), "later"], env=_env(attendee.home),
+                            capture_output=True, text=True, timeout=30)
+    assert result.returncode == 1
+
+
+def test_the_check_is_the_gate_init_calls(tmp_path):
+    _pending_approval_from(tmp_path, "plan", "--approved")
+    checked = subprocess.run(["python3", str(WORKFLOW), "plan", "--check", "gate-build"], env=_env(tmp_path),
+                             capture_output=True, text=True, timeout=30)
+    assert checked.returncode == 0, checked.stderr
+    assert build_plan.read(tmp_path)["build"] == "gate-build"
+
+
+# -- ~/.claude.json safety (sweep review) ---------------------------------------------
+
+def test_an_unparseable_claude_json_is_never_overwritten(user):
+    path = os.path.join(user.home, ".claude.json")
+    build = Path(user.home) / "projects" / "half"
+    build.mkdir(parents=True)
+    with open(path, "w") as handle:
+        handle.write('{"projects": {"/keep": {"allowedTools": ["Bash"]')  # truncated write
+    cli_config.ensure_claude_trusts(user, str(build))
+    assert open(path).read() == '{"projects": {"/keep": {"allowedTools": ["Bash"]'
+
+
+def test_an_already_trusted_folder_is_not_rewritten(user, monkeypatch):
+    path = os.path.join(user.home, ".claude.json")
+    build = Path(user.home) / "projects" / "done"
+    build.mkdir(parents=True)
+    trusted = {"projects": {os.path.realpath(build): {"hasTrustDialogAccepted": True}}}
+    with open(path, "w") as handle:
+        json.dump(trusted, handle)
+    writes = []
+    monkeypatch.setattr(cli_config, "_atomic_write_text", lambda *args: writes.append(args))
+    cli_config.ensure_claude_trusts(user, str(build))
+    assert writes == []
+
+
+def test_a_concurrent_claude_save_is_reapplied_not_clobbered(user, monkeypatch):
+    path = os.path.join(user.home, ".claude.json")
+    build = Path(user.home) / "projects" / "race"
+    build.mkdir(parents=True)
+    with open(path, "w") as handle:
+        json.dump({"numStartups": 1}, handle)
+    real = cli_config._read_text_or_none
+    calls = {"n": 0}
+
+    def moved_once(target):
+        calls["n"] += 1
+        if calls["n"] == 2:  # Claude saved between our read and the replace
+            with open(target, "w") as handle:
+                json.dump({"numStartups": 9}, handle)
+        return real(target)
+
+    monkeypatch.setattr(cli_config, "_read_text_or_none", moved_once)
+    cli_config.ensure_claude_trusts(user, str(build))
+    data = _claude_json(user)
+    assert data["numStartups"] == 9
+    assert data["projects"][os.path.realpath(build)]["hasTrustDialogAccepted"] is True
