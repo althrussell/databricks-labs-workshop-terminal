@@ -74,8 +74,10 @@ checks). For AppKit, check signatures with `npx @databricks/appkit docs
 <section>` and never write `as unknown as <T>`. A first deploy takes minutes. A
 timeout on the deploy command is not a failed deploy; the next call resumes it.
 Custom agent backends use `workshop-agent-bricks-cli` and `agentbricks deploy`;
-their UI deploys with the workshop app tool. Test-run apps only on
-`$DATABRICKS_APP_PORT`.
+their UI deploys with the workshop app tool. Test-run a plain app only on
+`$DATABRICKS_APP_PORT`. An apx app runs on the port `apx dev start` prints
+(`Dev server started at http://localhost:<port>`, 9000 for the first app). Do
+not edit `~/.apx/registry.toml` or set `APX_DEV_SERVER_PORT` to move it.
 
 ## Seeing the app (when `workshop-browser` is enabled)
 
