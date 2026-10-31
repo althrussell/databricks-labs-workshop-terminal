@@ -88,30 +88,18 @@ TEMPLATE="${HOME}/.config/workshop/project-memory.md"
 APPKIT_VERSION="${APPKIT_VERSION:-0.87.0}"
 
 # Plan gate (sweep contract §2): nothing is scaffolded before the attendee has
-# said yes to this build's plan. A build that already has its scaffold record
-# passed the gate (or predates it), so re-running this helper on it is allowed.
-if ! python3 - "$NAME" "$DEST" <<'PY'
-import json
-from pathlib import Path
-import sys
-
-name, dest = sys.argv[1], Path(sys.argv[2])
-if (dest / '.workshop' / 'preparation.json').is_file() or (dest / '.workshop' / 'project.json').is_file():
-    raise SystemExit(0)  # scaffolded earlier, or recovered from its committed copy
-try:
-    record = json.loads((Path.home() / '.config/workshop/build-plan.json').read_text())
-except (OSError, ValueError):
-    record = {}
-if isinstance(record, dict) and record.get('version') == 1 and record.get('build') == name \
-        and record.get('plan_approved_at'):
-    raise SystemExit(0)
-print(f"workshop-init-project: no approved plan for build {name} yet.", file=sys.stderr)
-print("Put the plan to the attendee and wait for their yes; then run `workshop-workflow plan --approved`.", file=sys.stderr)
-if record.get('build') not in (None, name) or not name:
-    print(f"  (for this build: workshop-workflow plan --approved --build {name})", file=sys.stderr)
-raise SystemExit(1)
-PY
-then
+# said yes to this build's plan. The check lives in workshop-workflow, beside
+# the record it reads; a build already scaffolded passes, and a pending approval
+# (given before this build existed) is bound to this name.
+WORKFLOW_HELPER="$(dirname "$0")/workshop-workflow"
+if [ ! -f "$WORKFLOW_HELPER" ]; then
+  WORKFLOW_HELPER="$(command -v workshop-workflow || true)"
+fi
+if [ -z "$WORKFLOW_HELPER" ]; then
+  echo "workshop-init-project: workshop-workflow is missing; the plan cannot be checked" >&2
+  exit 1
+fi
+if ! python3 "$WORKFLOW_HELPER" plan --check "$NAME"; then
   exit 1
 fi
 

@@ -1,10 +1,7 @@
-// Polled reads retry a 502 quietly (NF-01, 30 Oct: seven 502s on /api/agents,
-// /api/projects and /api/workshop-status, each recovered on the next poll). The
-// attendee saw an error for a read that succeeded a few hundred milliseconds
-// later. Only a 502 is retried: a 4xx or 5xx from the app is a real answer.
-
-/** Routes the page polls on a timer. Their 502s are a proxy blip, not a fault. */
-export const POLLED_ROUTES = ["/api/agents", "/api/projects", "/api/workshop-status"] as const;
+// Polled reads (api.ts `polled`) retry a 502 quietly (NF-01, 30 Oct: seven 502s
+// on /api/agents, /api/projects and /api/workshop-status, each recovered on the
+// next poll, so the attendee saw an error for a read that worked moments later).
+// Only a 502 is retried: a 4xx or 5xx from the app is a real answer.
 
 export interface RetryOptions {
   /** Total tries, including the first. */

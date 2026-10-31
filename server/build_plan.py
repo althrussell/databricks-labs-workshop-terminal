@@ -12,6 +12,8 @@ with the same schema; keep the two in step.
 
 A new build (WT's New build, or a new project) rewrites the file for that build
 with no plan and no approval, so nothing carries over from the build before.
+An approval given with no current build is pending: ``build`` is "", and the
+first build the gate checks (``workshop-workflow plan --check NAME``) adopts it.
 """
 
 from __future__ import annotations
@@ -25,14 +27,7 @@ import tempfile
 #: command. It records the attendee's approval when Claude leaves plan mode.
 PLAN_APPROVAL_COMMAND = "workshop-workflow plan --approved --source claude-plan-mode"
 
-#: The refusal every scaffolding command gives before approval (sweep contract §2).
-PLAN_GUIDANCE = (
-    "Put the plan to the attendee and wait for their yes; then run "
-    "`workshop-workflow plan --approved`."
-)
-
 SCHEMA_VERSION = 1
-PLAN_SOURCES = ("attendee", "claude-plan-mode")
 
 
 def state_path(home: str | os.PathLike) -> Path:
@@ -98,23 +93,3 @@ def approved_for_active(home: str | os.PathLike, active: str, projects_root: str
     if not active:
         return False
     return is_approved(home, active, Path(projects_root) / active)
-
-
-def put(home: str | os.PathLike, build: str, summary: str, when: str) -> dict:
-    record = read(home)
-    if record.get("build") != build:
-        record = {"version": SCHEMA_VERSION, "build": build}
-    record.update(plan_put_at=when, plan_summary=summary)
-    _write(home, record)
-    return record
-
-
-def approve(home: str | os.PathLike, build: str, source: str, when: str) -> dict:
-    if source not in PLAN_SOURCES:
-        raise ValueError(f"source must be one of {', '.join(PLAN_SOURCES)}")
-    record = read(home)
-    if record.get("build") != build:
-        record = {"version": SCHEMA_VERSION, "build": build}
-    record.update(plan_approved_at=when, plan_approved_source=source)
-    _write(home, record)
-    return record

@@ -421,7 +421,11 @@ def configure_claude(
     if deploy_permission not in allowed:
         allowed.append(deploy_permission)
     # Plan mode (a new build, before the attendee's yes) still has to run the
-    # workshop helpers without a prompt: show/prefs/plan and discovery.
+    # workshop helpers without a prompt. Only the planning subcommands are
+    # pre-allowed: `plan --approved` is never, so the attendee's yes is not
+    # something an agent can grant itself. A broad rule from an earlier release
+    # is removed, or it would keep that door open.
+    allowed[:] = [rule for rule in allowed if rule not in _RETIRED_ALLOW_RULES]
     for rule in PLAN_MODE_ALLOW_RULES:
         if rule not in allowed:
             allowed.append(rule)
@@ -455,11 +459,6 @@ def configure_claude(
     claude_json_path = os.path.join(user.home, ".claude.json")
     claude_json = _read_json(claude_json_path)
     claude_json["hasCompletedOnboarding"] = True
-    # Pre-trust every build folder, whichever agent created it (R-004): a
-    # Codex-made build otherwise opens Claude on its folder-trust prompt, where
-    # "No, exit" is the highlighted default.
-    for folder in codex_trusted_folders(user):
-        _trust_claude_folder(claude_json, folder)
     if config.auto_mode_enabled():
         # Claude Code 2.1.30x asks "Make auto mode your default permission
         # mode?" on first launch when the default mode is not auto, which stops
@@ -467,6 +466,10 @@ def configure_claude(
         # keeps bypass permissions; pre-answer it the same way.
         claude_json["hasSeenAutoDefaultNudge"] = True
     _write_json(claude_json_path, claude_json)
+    # Pre-trust every build folder, whichever agent created it (R-004): a
+    # Codex-made build otherwise opens Claude on its folder-trust prompt, where
+    # "No, exit" is the highlighted default.
+    _update_claude_json_trust(claude_json_path, codex_trusted_folders(user))
 
 
 #: Claude Code's MCP tool-call ceiling, in milliseconds (one hour).
@@ -476,9 +479,18 @@ MCP_TOOL_TIMEOUT_MS = 3600000
 #: the attendee's yes. Plan mode prompts for shell commands outside its read-only
 #: set, so without these a planning turn stops on every `workshop-workflow show`.
 PLAN_MODE_ALLOW_RULES = (
-    "Bash(workshop-workflow *)",
+    "Bash(workshop-workflow show)",
+    "Bash(workshop-workflow show *)",
+    "Bash(workshop-workflow prefs)",
+    "Bash(workshop-workflow prefs *)",
+    "Bash(workshop-workflow phase *)",
+    "Bash(workshop-workflow plan --put *)",
+    "Bash(workshop-workflow plan --check *)",
     "Bash(workshop-discovery *)",
 )
+
+#: Rules an earlier release wrote that pre-approved the whole helper, approval included.
+_RETIRED_ALLOW_RULES = ("Bash(workshop-workflow *)",)
 
 
 def _is_plan_approval_group(group: object) -> bool:
@@ -520,20 +532,66 @@ def _trust_claude_folder(claude_json: dict, folder: str) -> None:
     entry["hasTrustDialogAccepted"] = True
 
 
+def _claude_folder_trusted(claude_json: dict, folder: str) -> bool:
+    projects = claude_json.get("projects")
+    entry = projects.get(folder) if isinstance(projects, dict) else None
+    return isinstance(entry, dict) and entry.get("hasTrustDialogAccepted") is True
+
+
+def _read_text_or_none(path: str) -> str | None:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return handle.read()
+    except FileNotFoundError:
+        return None
+
+
+def _update_claude_json_trust(path: str, folders: list[str]) -> bool:
+    """Trust ``folders`` in ~/.claude.json, safely against Claude's own saves.
+
+    Claude rewrites this file too. So: nothing is written when every folder is
+    already trusted; a file that does not parse is never written (that would
+    erase the attendee's settings); and the file is re-read just before the
+    atomic replace, re-applying the change if it moved in between. Returns False
+    when it could not be done safely.
+    """
+    for _ in range(3):
+        try:
+            before = _read_text_or_none(path)
+        except OSError:
+            return False
+        if before is None:
+            data: dict = {}
+        else:
+            try:
+                data = json.loads(before)
+            except ValueError:
+                return False
+            if not isinstance(data, dict):
+                return False
+        missing = [folder for folder in folders if not _claude_folder_trusted(data, folder)]
+        if not missing:
+            return True
+        for folder in missing:
+            _trust_claude_folder(data, folder)
+        try:
+            current = _read_text_or_none(path)
+        except OSError:
+            return False
+        if current != before:
+            continue  # Claude saved in the meantime; apply the change to its version
+        _atomic_write_text(path, json.dumps(data, indent=2) + "\n")
+        return True
+    return False
+
+
 def ensure_claude_trusts(user: User, folder: str) -> None:
     """Trust a launch folder for Claude before it opens there (a build made since
-    the config was written). Writes only the trust flag, keeping every other key."""
+    the config was written). Only the trust flag changes; every other key stays."""
     path = os.path.join(user.home, ".claude.json")
     if not os.path.isfile(path):
         return  # not configured yet; configure_claude writes the file and trusts then
-    folder = os.path.realpath(folder)
-    claude_json = _read_json(path)
-    projects = claude_json.get("projects")
-    if isinstance(projects, dict) and isinstance(projects.get(folder), dict) \
-            and projects[folder].get("hasTrustDialogAccepted") is True:
-        return
-    _trust_claude_folder(claude_json, folder)
-    _write_json(path, claude_json)
+    _update_claude_json_trust(path, [os.path.realpath(folder)])
 
 
 #: Omnigent 0.15's embedded-browser tools, as Claude sees them through
