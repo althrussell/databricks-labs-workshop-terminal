@@ -442,6 +442,12 @@ def configure_claude(
             denied.append(tool)
         elif not config.omnigent_offered() and tool in denied:
             denied.remove(tool)
+    # F-012 (31 Oct): the apx MCP's logs tool shells out to `databricks auth
+    # token`, which a seat's OAuth cache never satisfies, so every call failed.
+    # Agents read a deployed app's logs with `databricks apps logs` instead.
+    for tool in APX_UNUSABLE_TOOLS:
+        if tool not in denied:
+            denied.append(tool)
     if gateway:
         if "WebSearch" not in denied:
             denied.append("WebSearch")
@@ -600,6 +606,10 @@ def ensure_claude_trusts(user: User, folder: str) -> None:
         return  # not configured yet; configure_claude writes the file and trusts then
     _update_claude_json_trust(path, [os.path.realpath(folder)])
 
+
+#: apx MCP tools that cannot work on a seat (F-012, 31 Oct). Codex's apx server
+#: is an allowlist (`enabled_tools` in configure_codex) and leaves this out.
+APX_UNUSABLE_TOOLS = ("mcp__apx__databricks_apps_logs",)
 
 #: Omnigent 0.15's embedded-browser tools, as Claude sees them through
 #: Omnigent's MCP server. They need the Omnigent desktop app as a renderer.
@@ -783,9 +793,11 @@ def configure_codex(
         "\n[mcp_servers.apx]\n"
         f"command = {json.dumps(os.path.join(config.shared_prefix(), 'bin', 'apx'))}\n"
         'args = ["mcp"]\n'
+        # No databricks_apps_logs: it fails on every seat (F-012, 31 Oct).
+        # `databricks apps logs <app>` reads the same logs.
         'enabled_tools = ["start", "stop", "restart", "logs", "check", "routes", '
         '"get_route_info", "refresh_openapi", "docs", "search_registry_components", '
-        '"add_component", "list_registry_components", "databricks_apps_logs"]\n'
+        '"add_component", "list_registry_components"]\n'
         "startup_timeout_sec = 20\n"
         + codex_trust_toml(codex_trusted_folders(user))
     )

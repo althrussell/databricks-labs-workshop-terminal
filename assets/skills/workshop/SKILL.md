@@ -69,6 +69,9 @@ the target in `databricks.yml`. It runs `databricks apps deploy`, polls
 `--source-code-path` or a bare `databricks bundle deploy`: that leaves the app
 stopped with no URL.
 
+Read a deployed app's logs with `databricks apps logs <app>`; the apx MCP logs
+tool cannot authenticate on a seat.
+
 Run `apx dev check` and `apx build` first (otherwise the framework's own
 checks). For AppKit, check signatures with `npx @databricks/appkit docs
 <section>` and never write `as unknown as <T>`. A first deploy takes minutes. A
