@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from . import agents
 from . import attendee as attendee_binding
+from . import attendee_roster
 from . import (
     config,
     event_deadline,
@@ -334,6 +335,27 @@ def set_phase(body: PhaseBody):
             user_manager.all(), phase=body.phase, force=True
         )
     return {"status": "ok", "phase": body.phase}
+
+
+@router.post("/attendee-profile")
+def push_attendee_profile(body: attendee_roster.RosterProfileIn):
+    """Control Tower's industry handover: what the roster knows about a seat's owner.
+
+    Idempotent and revision-checked. A push no newer than the stored revision
+    changes nothing, and ``revision`` in the reply is the one WT now holds. The
+    attendee's own saved answers are never written here.
+    """
+    stored, changed = attendee_roster.store(body)
+    if changed:
+        # Rewrite the instructions so a session started from now on carries the
+        # suggestion. A session already running keeps the instructions it has.
+        user = user_manager.peek(stored["email"])
+        if user is not None:
+            try:
+                user_content._write_instructions(user)
+            except Exception as error:  # noqa: BLE001 — the push is stored either way
+                logger.warning("attendee instructions not refreshed after roster push (%s)", type(error).__name__)
+    return {"accepted": True, "revision": int(stored["revision"])}
 
 
 @router.post("/broadcast")

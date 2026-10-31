@@ -314,6 +314,39 @@ def next_step(record: dict) -> str:
         phase, "continue")
 
 
+#: What Control Tower's roster knows about this attendee, written by the app (WT
+#: attendee_roster). Read-only here: the attendee's own answer always wins.
+ROSTER_RELATIVE = ".workshop/roster-profile.json"
+
+
+def attendee_block(email: str = "") -> dict:
+    """The ``attendee`` block of ``show``: company, job title and the suggested industry."""
+    block = {"company": "", "job_title": "", "suggested_industry": "", "industry_label": "",
+             "industry_confidence": 0.0, "industry_source": "none"}
+    email = (email or os.environ.get("WORKSHOP_USER_EMAIL", "")).strip().lower()
+    try:
+        raw = json.loads((Path.home() / ROSTER_RELATIVE).read_text())
+    except (OSError, ValueError):
+        return block
+    if not isinstance(raw, dict) or not email or str(raw.get("email", "")).lower() != email:
+        return block
+    for key in block:
+        if key in raw:
+            block[key] = raw[key]
+    return block
+
+
+def attendee_line(block: dict) -> str:
+    if not (block["company"] or block["job_title"] or block["suggested_industry"]):
+        return ""
+    who = ", ".join(part for part in (block["job_title"], block["company"]) if part) or "roster entry"
+    if not block["suggested_industry"]:
+        return f"Attendee: {who}. Suggested industry: none."
+    label = block["industry_label"] or block["suggested_industry"]
+    return (f"Attendee: {who}. Suggested industry: {label} ({block['suggested_industry']}, "
+            f"confidence {float(block['industry_confidence']):.2f}, {block['industry_source']}).")
+
+
 def summary(record: dict) -> str:
     path = record["path"]
     lines = [f"Workflow record (revision {record['revision']}, brief {record['brief_revision']}): "
@@ -331,6 +364,9 @@ def summary(record: dict) -> str:
     if direction:
         lines.append(f"Direction: {direction['text']} "
                      f"({'confirmed by the attendee' if _direction_confirmed(record) else 'NOT yet confirmed'})")
+    attendee = attendee_line(attendee_block())
+    if attendee:
+        lines.append(attendee)
     lines.append("Next: " + next_step(record))
     return "\n".join(lines)
 
@@ -525,7 +561,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         record = load(project)
         if args.command == "show":
-            print(json.dumps(record, indent=2, sort_keys=True) if args.json else summary(record))
+            if args.json:
+                print(json.dumps({**record, "attendee": attendee_block()}, indent=2, sort_keys=True))
+            else:
+                print(summary(record))
             return 0
         if args.command == "requests":
             waiting = [r for r in record.get("requests", []) if r.get("status") == "open"]

@@ -220,6 +220,19 @@ active session. Repeating the same state is idempotent. `GET` returns the switch
 state, audit reason, and launch activity; it never labels launch count as token,
 dollar, or remaining budget.
 
+### `POST /api/admin/attendee-profile`
+Control Tower's industry handover: what its roster knows about a seat's owner.
+```json
+{ "email": "labuser+17@example.com", "full_name": "Tama Rewi", "company": "Pacific Test Telco",
+  "job_title": "Customer Experience Lead", "suggested_industry": "telco",
+  "industry_confidence": 0.92, "industry_source": "llm", "revision": 3 }
+```
+- `suggested_industry`: a seeded `workshop_demo` schema name, or `""` when there is no confident match. A name the deployment does not offer is stored as `""`.
+- `industry_source`: `llm`, `operator` or `none`. `industry_confidence`: 0–1.
+- `revision`: monotonic per roster entry. A push no newer than the stored revision changes nothing.
+
+`200 {"accepted": true, "revision": n}`, where `n` is the revision WT now holds (so a stale push sees the higher number). It is idempotent. `422` on a malformed body. Older WT builds answer `404`, which CT records as `unsupported`. Stored in the owner's home (`.workshop/roster-profile.json`). The attendee's own saved industry always wins, and `workshop-workflow show` prints the result as its `attendee` block.
+
 ### `POST /api/admin/broadcast`
 ```json
 { "message": "Labs close in 10 minutes — commit your work!", "level": "warning", "ttl_s": 600 }
