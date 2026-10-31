@@ -154,6 +154,10 @@ class User:
         # counter is what lets a brief say which one they actually went deep on.
         self.topic_hits: dict[str, int] = {}
         self.sessions_launched: dict[str, int] = {}  # agent id -> lifetime count
+        # Omnigent conversation id -> 1, for each one the attendee's first message
+        # reached (F-006, 31 Oct). Keyed, not a count: the log sweep re-reads every
+        # log from the start after a restart, and a key cannot be counted twice.
+        self.omnigent_sessions: dict[str, int] = {}
         self.errors: int = 0  # P1-14: failed session launches / agent errors
         self.last_seen: float = 0.0
         self.first_seen: float = 0.0
@@ -521,8 +525,8 @@ class User:
 
 
 def _empty_user_snapshot() -> dict:
-    return {"topics": {}, "topic_hits": {}, "sessions_launched": {}, "errors": 0,
-            "first_seen": 0.0, "last_seen": 0.0}
+    return {"topics": {}, "topic_hits": {}, "sessions_launched": {}, "omnigent_sessions": {},
+            "errors": 0, "first_seen": 0.0, "last_seen": 0.0}
 
 
 def _finite_nonnegative(value) -> bool:
@@ -531,12 +535,15 @@ def _finite_nonnegative(value) -> bool:
 
 
 def validate_user_snapshot(raw) -> dict:
+    # Journals written before Omnigent sessions were counted have no such map.
+    if isinstance(raw, dict) and "omnigent_sessions" not in raw:
+        raw = {**raw, "omnigent_sessions": {}}
     if (not isinstance(raw, dict) or set(raw) != set(_empty_user_snapshot())
             or type(raw.get("errors")) is not int or raw["errors"] < 0
             or not _finite_nonnegative(raw.get("first_seen"))
             or not _finite_nonnegative(raw.get("last_seen"))):
         raise CaptureHeldError("retained attendee counters are invalid")
-    for name in ("topics", "topic_hits", "sessions_launched"):
+    for name in ("topics", "topic_hits", "sessions_launched", "omnigent_sessions"):
         if not isinstance(raw.get(name), dict):
             raise CaptureHeldError("retained attendee counter map is invalid")
         for key, value in raw[name].items():
@@ -550,19 +557,23 @@ def validate_user_snapshot(raw) -> dict:
 def user_snapshot(user: User) -> dict:
     return validate_user_snapshot({"topics": dict(user.topics), "topic_hits": dict(user.topic_hits),
                                   "sessions_launched": dict(user.sessions_launched),
+                                  "omnigent_sessions": dict(user.omnigent_sessions),
                                   "errors": user.errors, "first_seen": user.first_seen,
                                   "last_seen": user.last_seen})
 
 
 def merge_user_snapshot(existing: dict, current: dict, baseline: dict) -> dict:
     """Add each process's new counters once, retaining concurrent committed work."""
-    for raw in (existing, current, baseline):
-        validate_user_snapshot(raw)
+    # Migrate each input: a journal row from before a key existed must read as
+    # the current shape, not only pass the check.
+    existing, current, baseline = (validate_user_snapshot(raw) for raw in (existing, current, baseline))
     merged = copy.deepcopy(existing)
     for name in ("topic_hits", "sessions_launched"):
         for key, value in current[name].items():
             merged[name][key] = existing[name].get(key, 0) + max(0, value - baseline[name].get(key, 0))
     merged["errors"] += max(0, current["errors"] - baseline["errors"])
+    for key in current["omnigent_sessions"]:
+        merged["omnigent_sessions"][key] = 1
     for topic, timestamp in current["topics"].items():
         merged["topics"][topic] = max(merged["topics"].get(topic, 0), timestamp)
     starts = [value for value in (existing["first_seen"], current["first_seen"]) if value]

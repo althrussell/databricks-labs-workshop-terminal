@@ -61,6 +61,39 @@ def test_gateway_urls_and_auth_command(user, monkeypatch):
     assert os.path.isabs(_token_path(user))
 
 
+def test_omni_claude_gets_full_auto_as_a_claude_native_launch_arg(user, monkeypatch):
+    """F-003 (31 Oct): Omnigent's claude-native terminal merges this arg into its
+    launch. WT no longer writes a bypass base mode to ~/.claude/settings.json, so
+    without it Omni-Claude would prompt for every edit."""
+    monkeypatch.setenv("WORKSHOP_AUTO_MODE", "true")
+    cli_config.configure_omnigent(user, "tok-1")
+    document = yaml.safe_load(open(_config_path(user)))
+    assert document["harness"]["claude-native"]["args"] == ["--dangerously-skip-permissions"]
+
+
+def test_omni_claude_keeps_the_args_an_operator_set(user, monkeypatch):
+    monkeypatch.setenv("WORKSHOP_AUTO_MODE", "true")
+    path = _config_path(user)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as handle:
+        yaml.safe_dump({"harness": {"claude-native": {"command": "claude-x", "args": ["--verbose", "--dangerously-skip-permissions"]}}}, handle)
+    cli_config.configure_omnigent(user, "tok-1")
+    entry = yaml.safe_load(open(path))["harness"]["claude-native"]
+    assert entry["command"] == "claude-x"
+    assert entry["args"] == ["--verbose", "--dangerously-skip-permissions"]
+
+
+def test_omni_claude_drops_its_full_auto_arg_when_auto_mode_is_off(user, monkeypatch):
+    if os.path.exists(_config_path(user)):
+        os.remove(_config_path(user))  # the home is shared across tests in this module
+    monkeypatch.setenv("WORKSHOP_AUTO_MODE", "true")
+    cli_config.configure_omnigent(user, "tok-1")
+    monkeypatch.setenv("WORKSHOP_AUTO_MODE", "false")
+    cli_config.configure_omnigent(user, "tok-1")
+    document = yaml.safe_load(open(_config_path(user)))
+    assert "harness" not in document
+
+
 def test_codex_resolves_through_a_databricks_aware_provider(user, monkeypatch):
     """Omnigent must see a Databricks AI Gateway, not an anonymous proxy.
 

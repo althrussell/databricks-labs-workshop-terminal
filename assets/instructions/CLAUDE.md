@@ -35,6 +35,8 @@ Run `apx dev check` and `apx build`, then deploy only with
 `workshop-app-deploy` (`deploy_databricks_app` MCP), never `databricks bundle
 deploy`. Share the URL as a preview. A deploy timeout resumes when rerun.
 
+apx preview: URL from `apx dev start`, not `$DATABRICKS_APP_PORT`.
+
 <!-- discovery-anchor -->
 
 If something breaks, read the error and fix what it names. Never print credentials.

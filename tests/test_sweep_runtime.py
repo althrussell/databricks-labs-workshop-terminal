@@ -1,6 +1,7 @@
 """The 31 Oct sweep's runtime changes (sweep contract §2, decisions 3 and 6).
 
-- Codex carries the contract's reasoning lines verbatim.
+- Codex carries the contract's reasoning lines verbatim, with the reasoning
+  summaries hidden from the terminal (F-009).
 - A new build's Claude session starts in plan mode; an approved build keeps the
   full-permission launch. The PostToolUse hook records the approval.
 - Every build folder is pre-trusted for Claude (R-004).
@@ -59,7 +60,7 @@ def _plan_groups(settings: dict) -> list:
 
 CONTRACT_LINES = (
     'model_reasoning_summary = "auto"\n'
-    "hide_agent_reasoning = false\n"
+    "hide_agent_reasoning = true\n"
     "show_raw_agent_reasoning = false\n"
     "model_supports_reasoning_summaries = true\n"
 )
@@ -73,7 +74,8 @@ def test_codex_carries_the_contract_reasoning_lines_verbatim(user, monkeypatch):
     parsed = tomllib.loads(text)
     assert parsed["model_reasoning_effort"] == "high"
     assert parsed["model_reasoning_summary"] == "auto"
-    assert parsed["hide_agent_reasoning"] is False
+    # F-009 (31 Oct): a paraphrased reasoning line ("I spent $10k") reached an attendee.
+    assert parsed["hide_agent_reasoning"] is True
     assert parsed["show_raw_agent_reasoning"] is False
     assert parsed["model_supports_reasoning_summaries"] is True
 
@@ -84,11 +86,24 @@ def test_codex_reasoning_summary_lines_stay_top_level(user, monkeypatch):
     cli_config.configure_codex(user, "tok-1", available=set())
     parsed = tomllib.loads(open(os.path.join(user.home, ".codex", "config.toml")).read())
     assert parsed["model_reasoning_effort"] == "xhigh"
-    assert parsed["hide_agent_reasoning"] is False
+    assert parsed["hide_agent_reasoning"] is True
     assert "model_supports_reasoning_summaries" not in parsed.get("features", {})
 
 
 # -- Claude settings: plan approval hook, allow rules, MCP timeout ----------------
+
+def test_claude_user_settings_carry_no_base_mode_even_from_an_earlier_release(user, monkeypatch):
+    """F-003 (31 Oct): a base mode of bypass in user settings is what Claude announced
+    on every plan launch. An earlier release wrote it, so it must be removed."""
+    monkeypatch.setenv("WORKSHOP_AUTO_MODE", "true")
+    os.makedirs(os.path.join(user.home, ".claude"), exist_ok=True)
+    with open(os.path.join(user.home, ".claude", "settings.json"), "w") as handle:
+        json.dump({"permissions": {"defaultMode": "bypassPermissions"}}, handle)
+    cli_config.configure_claude(user, "tok-1", available=set())
+    settings = _claude(user)
+    assert "defaultMode" not in settings["permissions"]
+    assert settings["skipDangerousModePermissionPrompt"] is True
+
 
 def test_claude_settings_record_plan_approval_on_exit_plan_mode(user, monkeypatch):
     monkeypatch.setenv("WORKSHOP_AUTO_MODE", "true")
@@ -186,6 +201,12 @@ def test_ensure_claude_trusts_does_nothing_before_claude_is_configured(user):
 def test_a_plan_mode_launch_can_move_to_full_permission_on_approval():
     assert agents.claude_plan_flags(True) == ("--permission-mode", "plan", "--allow-dangerously-skip-permissions")
     assert agents.claude_plan_flags(False) == ("--permission-mode", "plan")
+
+
+def test_approved_and_resumed_claude_launches_pass_full_auto_explicitly():
+    # F-003: full auto is a launch flag, not the user settings' base mode.
+    assert agents.claude_auto_flags(True) == ("--dangerously-skip-permissions",)
+    assert agents.claude_auto_flags(False) == ()
 
 
 def test_the_plan_launch_puts_the_flags_before_the_opener():

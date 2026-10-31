@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 import tomllib
 
 import pytest
@@ -79,7 +80,30 @@ def test_the_deny_is_idempotent_keeps_an_attendees_rules_and_leaves_with_omnigen
 
     monkeypatch.setenv("OMNIGENT_ENABLED", "false")
     cli_config.configure_claude(user, "tok-1", available=set())
-    assert _claude(user)["permissions"]["deny"] == ["Bash(rm -rf:*)"]
+    # The apx logs denial is unconditional (F-012), so it stays with Omnigent off.
+    assert _claude(user)["permissions"]["deny"] == [*cli_config.APX_UNUSABLE_TOOLS, "Bash(rm -rf:*)"]
+
+
+def test_the_apx_logs_tool_is_denied_on_claude_and_left_off_codex(user, monkeypatch):
+    """F-012 (31 Oct): apx's databricks_apps_logs fails on every seat (no OAuth cache)."""
+    monkeypatch.setenv("OMNIGENT_ENABLED", "false")
+    cli_config.configure_claude(user, "tok-1", available=set())
+    cli_config.configure_codex(user, "tok-1", available=set())
+    assert "mcp__apx__databricks_apps_logs" in _claude(user)["permissions"]["deny"]
+    enabled = _codex(user)["mcp_servers"]["apx"]["enabled_tools"]
+    assert "databricks_apps_logs" not in enabled
+    assert "check" in enabled and "docs" in enabled
+
+
+def test_agents_get_one_apx_preview_rule_and_the_logs_command():
+    """F-010 and F-012 (31 Oct): the port an apx dev server uses, and where logs come from."""
+    root = Path(__file__).resolve().parents[1] / "assets"
+    claude_md = (root / "instructions" / "CLAUDE.md").read_text()
+    workshop = (root / "skills" / "workshop" / "SKILL.md").read_text()
+    assert "URL from `apx dev start`, not `$DATABRICKS_APP_PORT`" in claude_md
+    assert "Dev server started at http://localhost:<port>" in workshop
+    assert "APX_DEV_SERVER_PORT" in workshop and "registry.toml" in workshop
+    assert "databricks apps logs <app>" in workshop
 
 
 def test_omnigents_claude_default_is_claude_codes_driver(user, monkeypatch):

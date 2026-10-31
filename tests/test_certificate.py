@@ -46,6 +46,23 @@ def test_certificate_downloads_pdf_with_stats(client, monkeypatch, launchable_ag
     assert len(resp.content) > 1500
 
 
+def test_certificate_counts_omnigent_conversations_as_ai_agent_sessions(monkeypatch):
+    """F-006 (31 Oct): an Omnigent-only attendee's certificate said 0 AI agent sessions."""
+    from server import certificate, stats
+    from server.users import User
+
+    shown = []
+    real_value = certificate._stat_value
+    monkeypatch.setattr(certificate, "_stat_value", lambda value: shown.append(value) or real_value(value))
+    user = User("omni-cert@example.com")
+    user.omnigent_sessions = {"conv_a": 1, "conv_b": 1}
+    gathered = stats.gather_user(user, fresh=False)
+    assert gathered["agent_sessions"] == 2
+    assert gathered["terminal_sessions"] == 0
+    certificate.build_pdf("Ada Lovelace", gathered)
+    assert shown[0] == 2  # the first stat cell is "AI agent sessions"
+
+
 def test_certificate_requires_name(client):
     resp = client.get("/api/certificate", params={"name": "   "}, headers=ALICE)
     assert resp.status_code == 422

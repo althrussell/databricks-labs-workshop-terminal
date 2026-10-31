@@ -288,6 +288,19 @@ _NON_PRODUCT_TOPICS = frozenset({
 })
 
 
+def _agent_session_count(user: User) -> int:
+    """Agent sessions the attendee started, in WT's terminal or in Omnigent (F-006).
+
+    terminal_sessions stays terminal-only. Before this, an Omnigent seat that
+    built through Omnigent showed 0 agent sessions, and its certificate said so.
+    """
+    # The Omnigent card launches through create_session as "omnigent", so its
+    # launches are already in sessions_launched; they count once, as Omnigent
+    # conversations, not again as terminal sessions.
+    terminal = sum(n for agent, n in user.sessions_launched.items() if agent not in ("bash", "omnigent"))
+    return terminal + len(user.omnigent_sessions)
+
+
 def _signal(user: User, code: dict, resources: dict | None) -> dict:
     """The sales-legible reduction of one attendee's behaviour (contract C6).
 
@@ -298,9 +311,7 @@ def _signal(user: User, code: dict, resources: dict | None) -> dict:
     """
     hits = {topic: count for topic, count in user.topic_hits.items() if count > 0}
     shipped = bool(code.get("commits"))
-    agent_sessions = sum(
-        n for agent, n in user.sessions_launched.items() if agent != "bash"
-    )
+    agent_sessions = _agent_session_count(user)
     if shipped:
         engagement = "builder"
     elif agent_sessions:
@@ -512,9 +523,7 @@ def gather_user(
     # latest activity. ``now - first_seen`` made every seat in a room report
     # the same elapsed time (87 minutes for all three seats in test1025).
     minutes = int(max(0.0, (user.last_seen or user.first_seen) - user.first_seen) / 60) if user.first_seen else 0
-    agent_sessions = sum(
-        n for agent, n in user.sessions_launched.items() if agent != "bash"
-    )
+    agent_sessions = _agent_session_count(user)
     # Abandonment signal: building time accrued but no recent activity.
     idle_seconds = int(now - user.last_seen) if user.last_seen else None
     saved = _saved_stats(user)

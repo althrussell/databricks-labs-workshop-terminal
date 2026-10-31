@@ -69,13 +69,22 @@ the target in `databricks.yml`. It runs `databricks apps deploy`, polls
 `--source-code-path` or a bare `databricks bundle deploy`: that leaves the app
 stopped with no URL.
 
+Read a deployed app's logs with `databricks apps logs <app>`; the apx MCP logs
+tool cannot authenticate on a seat.
+
+Any control that writes (approve, save, assign, submit) disables while its request
+is in flight and after success, and the server write is an upsert on a natural key,
+so a repeat click cannot duplicate a row (F-018, 31 Oct).
+
 Run `apx dev check` and `apx build` first (otherwise the framework's own
 checks). For AppKit, check signatures with `npx @databricks/appkit docs
 <section>` and never write `as unknown as <T>`. A first deploy takes minutes. A
 timeout on the deploy command is not a failed deploy; the next call resumes it.
 Custom agent backends use `workshop-agent-bricks-cli` and `agentbricks deploy`;
-their UI deploys with the workshop app tool. Test-run apps only on
-`$DATABRICKS_APP_PORT`.
+their UI deploys with the workshop app tool. Test-run a plain app only on
+`$DATABRICKS_APP_PORT`. An apx app runs on the port `apx dev start` prints
+(`Dev server started at http://localhost:<port>`, 9000 for the first app). Do
+not edit `~/.apx/registry.toml` or set `APX_DEV_SERVER_PORT` to move it.
 
 ## Seeing the app (when `workshop-browser` is enabled)
 

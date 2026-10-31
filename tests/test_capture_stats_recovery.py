@@ -321,6 +321,41 @@ def test_checkpoint_verification_failure_does_not_reapply_committed_counter_delt
     assert emitter.journal.read()["users"][user.email] == saved
 
 
+def test_omnigent_conversations_survive_a_restart_and_count_as_agent_sessions(monkeypatch):
+    """F-006 (31 Oct): an Omnigent seat showed 0 agent sessions while it built."""
+    manager, first, emitter = _setup(monkeypatch)
+    first.omnigent_sessions["conv_a"] = 1
+    first.omnigent_sessions["conv_b"] = 1
+    manager.checkpoint(first)
+    restarted = users.UserManager()
+    restarted.configure_capture(CaptureJournal(emitter.journal.storage, BINDING, {}), BINDING["owner"])
+    second = restarted.peek(BINDING["owner"])
+    assert second.omnigent_sessions == {"conv_a": 1, "conv_b": 1}
+    monkeypatch.setattr(stats, "_workspace_resources", lambda: stats._Census())
+    row = stats.gather_all([second])["users"][0]
+    assert row["agent_sessions"] == 2
+    assert row["terminal_sessions"] == 0
+
+
+def test_a_restart_that_recounts_a_conversation_does_not_double_it(monkeypatch):
+    manager, first, emitter = _setup(monkeypatch)
+    first.omnigent_sessions["conv_a"] = 1
+    manager.checkpoint(first)
+    first.omnigent_sessions["conv_a"] = 1  # the log sweep sees the same conversation again
+    manager.checkpoint(first)
+    assert emitter.journal.read()["users"][first.email]["omnigent_sessions"] == {"conv_a": 1}
+
+
+def test_a_journal_from_before_omnigent_was_counted_still_reads(monkeypatch):
+    # The row as an earlier release wrote it: no omnigent_sessions key at all.
+    old_row = {"topics": {}, "topic_hits": {}, "sessions_launched": {"claude": 1},
+               "errors": 0, "first_seen": 1.0, "last_seen": 2.0}
+    assert users.validate_user_snapshot(dict(old_row))["omnigent_sessions"] == {}
+    current = users.validate_user_snapshot({**old_row, "omnigent_sessions": {"conv_a": 1}})
+    merged = users.merge_user_snapshot(old_row, current, users.validate_user_snapshot(dict(old_row)))
+    assert merged["omnigent_sessions"] == {"conv_a": 1}
+
+
 def test_stale_container_harvest_reconciles_before_deriving_signal(monkeypatch):
     manager, first, emitter = _setup(monkeypatch)
     second_manager = users.UserManager()
