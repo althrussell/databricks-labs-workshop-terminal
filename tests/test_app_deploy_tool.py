@@ -577,6 +577,7 @@ def test_an_unnamed_lakebase_resource_is_refused_not_skipped(tmp_path):
 
 def test_a_failed_validation_fails_closed_before_submitting(tmp_path):
     env, project = _env(tmp_path)
+    _app_code(project)
 
     class BrokenValidate(LakebaseBackend):
         def bundle_validate(self, _project, _target):
@@ -587,6 +588,24 @@ def test_a_failed_validation_fails_closed_before_submitting(tmp_path):
     with pytest.raises(deploy_tool.DeployError, match="could not be checked"):
         _controller(env, backend).deploy(project_path=str(project))
     assert backend.submissions == 0
+
+
+def test_a_failed_validation_does_not_block_a_plain_app(tmp_path):
+    """Deploy is the attendee's main path: a validate error must not stop an app that never reads Lakebase."""
+    env, project = _env(tmp_path)
+    _app_code(project, 'print("hello")\n')
+    calls = []
+
+    class BrokenValidate(FakeBackend):
+        def bundle_validate(self, _project, _target):
+            calls.append(1)
+            raise deploy_tool.CliError("bundle validate timed out")
+
+    backend = BrokenValidate()
+
+    assert _controller(env, backend).deploy(project_path=str(project))["status"] == "succeeded"
+    assert backend.submissions == 1
+    assert calls == []  # the scan found no endpoint reader, so validate was never needed
 
 
 def test_the_bundle_is_validated_once_on_the_first_deployment_path(tmp_path):

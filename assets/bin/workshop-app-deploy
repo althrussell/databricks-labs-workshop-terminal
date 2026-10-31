@@ -67,7 +67,9 @@ ENV_KEY_RE = re.compile(r"^\s*(name|value|valueFrom|resource)\s*:\s*(.*?)\s*$")
 CODE_SUFFIXES = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json")
 # Code that reads LAKEBASE_ENDPOINT directly, or through AppKit's lakebase() plugin, which reads it for the app.
 LAKEBASE_ENDPOINT_USES = ("LAKEBASE_ENDPOINT", "lakebase()", "@databricks/lakebase", "appkit.lakebase")
-SCAN_SKIP_DIRS = frozenset({"node_modules", ".venv", "venv", "__pycache__", ".build", "dist", "build"})
+SCAN_SKIP_DIRS = frozenset({"node_modules", ".venv", "venv", "__pycache__", "dist", "build"})
+# The deploy ships from .build when a project builds into it, so the scan reads it.
+SCAN_KEPT_DOTDIRS = frozenset({".build"})
 SCAN_MAX_FILES = 2000
 SCAN_MAX_BYTES = 512 * 1024
 
@@ -547,7 +549,7 @@ def _code_reads_env(source_dir: Path, name: str) -> bool:
     scanned = 0
     needles = (name, *LAKEBASE_ENDPOINT_USES)
     for root, dirs, files in os.walk(source_dir):
-        dirs[:] = [d for d in dirs if d not in SCAN_SKIP_DIRS and not d.startswith(".")]
+        dirs[:] = [d for d in dirs if d not in SCAN_SKIP_DIRS and (d in SCAN_KEPT_DOTDIRS or not d.startswith("."))]
         for file in files:
             if not file.endswith(CODE_SUFFIXES):
                 continue
@@ -928,6 +930,11 @@ class DeployController:
         apps: list[dict[str, str]],
         bundle: dict[str, Any] | None = None,
     ) -> list[str]:
+        # Only an app whose code reads the endpoint can be broken by a missing entry, so
+        # the cheap scan decides first. A plain app never pays for validate, and a validate
+        # error can't block it.
+        if bundle is None and not _code_reads_env(project, LAKEBASE_ENDPOINT_ENV):
+            return []
         # The resolved local bundle, not the deployed one: a first deploy has
         # no deployed state, and a new Lakebase binding is not deployed yet.
         if bundle is None:
