@@ -57,6 +57,12 @@ TOKEN_RE = re.compile(
 DATABRICKS_TOKEN_RE = re.compile(r"\b(?:dapi|dkea)[A-Za-z0-9._-]{8,}\b")
 JWT_RE = re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")
 EMAIL_RE = re.compile(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b")
+# Lakebase (Autoscaling) is ``postgres``; the provisioned instance is ``database``.
+LAKEBASE_RESOURCE_KEYS = ("postgres", "database")
+LAKEBASE_ENDPOINT_ENV = "LAKEBASE_ENDPOINT"
+APP_CONFIG_FILES = ("app.yml", "app.yaml")
+ENV_NAME_RE = re.compile(r"^(\s*)-\s*name:\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?\s*$")
+ENV_FIELD_RE = re.compile(r"^\s*(value|valueFrom)\s*:\s*(.*?)\s*$")
 
 
 class DeployError(RuntimeError):
@@ -447,6 +453,84 @@ def _app_candidates(summary: dict[str, Any]) -> list[dict[str, str]]:
     return sorted(unique.values(), key=lambda item: item["name"])
 
 
+def _lakebase_resource_names(app_config: dict[str, Any]) -> list[str]:
+    names = []
+    for item in app_config.get("resources") or []:
+        if isinstance(item, dict) and any(key in item for key in LAKEBASE_RESOURCE_KEYS):
+            names.append(str(item.get("name") or "").strip())
+    return [name for name in names if name]
+
+
+def _env_entry(text: str, name: str) -> dict[str, str] | None:
+    """The ``value`` and ``valueFrom`` fields of ``- name: <name>`` in an app.yml env list.
+
+    app.yml is a flat list read line by line, so no YAML parser is needed.
+    None when the entry is absent.
+    """
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        match = ENV_NAME_RE.match(line)
+        if not match or match.group(2) != name:
+            continue
+        indent = len(match.group(1))
+        fields: dict[str, str] = {}
+        for follower in lines[index + 1:]:
+            if not follower.strip() or follower.lstrip().startswith("#"):
+                continue
+            if len(follower) - len(follower.lstrip()) <= indent:
+                break
+            field = ENV_FIELD_RE.match(follower)
+            if field:
+                fields[field.group(1)] = field.group(2).strip("'\"")
+        return fields
+    return None
+
+
+def lakebase_problems(bundle: dict[str, Any], project: Path, apps: list[dict[str, str]]) -> list[str]:
+    """What would leave a Lakebase-backed app unable to connect, named before the deploy.
+
+    databricks.yml binds the Lakebase resource to the app. The platform injects
+    PGHOST, PGDATABASE, PGUSER and PGPORT for it, but not LAKEBASE_ENDPOINT:
+    app.yml must read that from the resource with ``valueFrom``. Without it the
+    app fails at its first database call (31 Oct, F-017: the crew app's Due tab
+    failed on the live app until the agent set the variable by hand).
+    """
+    resources = bundle.get("resources") if isinstance(bundle, dict) else None
+    app_configs = resources.get("apps") if isinstance(resources, dict) else None
+    problems: list[str] = []
+    for app in apps:
+        config = app_configs.get(app["resource_key"]) if isinstance(app_configs, dict) else None
+        names = _lakebase_resource_names(config) if isinstance(config, dict) else []
+        if not names:
+            continue
+        source_dir = Path(str(config.get("source_code_path") or ".").strip()).expanduser()
+        if not source_dir.is_absolute():
+            source_dir = project / source_dir
+        # The file the deploy ships: the app's source directory, not a fallback.
+        config_file = next(
+            (path for path in (source_dir / name for name in APP_CONFIG_FILES) if path.is_file()), None
+        )
+        if config_file is None:
+            problems.append(
+                f"{app['name']} binds the Lakebase resource '{names[0]}' in databricks.yml, but there "
+                f"is no app.yml or app.yaml in {source_dir}."
+            )
+            continue
+        entry = _env_entry(config_file.read_text(encoding="utf-8", errors="replace"), LAKEBASE_ENDPOINT_ENV)
+        if entry is None:
+            problems.append(
+                f"{config_file.name} has no {LAKEBASE_ENDPOINT_ENV} env entry for the Lakebase resource. "
+                f"Add under env: '- name: {LAKEBASE_ENDPOINT_ENV}' and 'valueFrom: {names[0]}'."
+            )
+        elif "value" not in entry and entry.get("valueFrom") not in names:
+            problems.append(
+                f"{config_file.name} reads {LAKEBASE_ENDPOINT_ENV} with valueFrom "
+                f"'{entry.get('valueFrom', '')}', which is not a Lakebase resource in databricks.yml "
+                f"(declared: {', '.join(names)})."
+            )
+    return problems
+
+
 def _deployment_id(value: object) -> str:
     return str(value or "").strip()
 
@@ -748,6 +832,20 @@ class DeployController:
             "try the deploy again, or ask a facilitator"
         )
 
+    def _config_problems(
+        self, project: Path, target: str, apps: list[dict[str, str]]
+    ) -> list[str]:
+        # The resolved local bundle, not the deployed one: a first deploy has
+        # no deployed state, and a new Lakebase binding is not deployed yet.
+        validate = getattr(self.backend, "bundle_validate", None)
+        if validate is None:
+            return []
+        try:
+            bundle = validate(project, target)
+        except CliError:
+            return []  # the deploy itself reports a bundle that does not validate
+        return lakebase_problems(bundle, project, apps)
+
     def _start(
         self,
         project: Path,
@@ -783,6 +881,10 @@ class DeployController:
                 f"bundle summary reported {names}"
             )
         app = apps[0]
+        problems = self._config_problems(project, target, apps)
+        if problems:
+            # Refused before anything is written or submitted, so the next call starts clean.
+            raise DeployError(" ".join(problems) + " Fix app.yml, then deploy again; nothing was deployed.")
         baseline: set[str] = set()
         snapshot: dict[str, str] | None = None
         try:

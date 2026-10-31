@@ -76,6 +76,10 @@ Any control that writes (approve, save, assign, submit) disables while its reque
 is in flight and after success, and the server write is an upsert on a natural key,
 so a repeat click cannot duplicate a row (F-018, 31 Oct).
 
+A Lakebase app binds the resource in `databricks.yml`, and its `app.yml` must read
+`LAKEBASE_ENDPOINT` with `valueFrom` set to that resource's name. `workshop-app-deploy`
+refuses to deploy until it does, and names what is missing.
+
 Run `apx dev check` and `apx build` first (otherwise the framework's own
 checks). For AppKit, check signatures with `npx @databricks/appkit docs
 <section>` and never write `as unknown as <T>`. A first deploy takes minutes. A
