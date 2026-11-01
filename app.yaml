@@ -349,6 +349,13 @@ env:
   # reap the runner (default; the container lifecycle bounds it instead).
   - name: OMNIGENT_RUNNER_IDLE_TIMEOUT_S
     value: "0"
+  # Seconds a running Omnigent host may sit on a stale attendee sign-in before
+  # WT stands it down (killing its runner and any in-flight work). The sign-in
+  # only renews while the attendee's tab is awake, so this must comfortably
+  # outlast a closed-lid lunch; 7200 does. Lower it only for a shared-desk
+  # format where a stale host must be reclaimed quickly.
+  - name: OMNIGENT_STALE_GRACE_S
+    value: "7200"
   # A host that stays alive this long is considered stable and resets its
   # supervisor crash-backoff history.
   - name: OMNIGENT_HOST_STABLE_RUNTIME_S
