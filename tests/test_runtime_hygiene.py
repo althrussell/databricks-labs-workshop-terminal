@@ -168,3 +168,16 @@ def test_a_helper_that_lost_its_email_is_identified_by_its_capability(client):
     wrong = client.post("/api/entitlements/reconcile", json={"email": ""},
                         headers={"X-Workshop-Capability": "forged"})
     assert wrong.status_code == 422
+
+
+def test_claude_cannot_file_public_github_issues_through_apx(user, monkeypatch):
+    """apx's feedback tools create public issues; an autonomous agent in
+    bypassPermissions mode must not be able to post attendee project details."""
+    monkeypatch.setenv("OMNIGENT_ENABLED", "false")
+    cli_config.configure_claude(user, "tok-1", available=set())
+    cli_config.configure_codex(user, "tok-1", available=set())
+    denied = _claude(user)["permissions"]["deny"]
+    assert "mcp__apx__feedback_prepare" in denied
+    assert "mcp__apx__feedback_submit" in denied
+    enabled = _codex(user)["mcp_servers"]["apx"]["enabled_tools"]
+    assert not any(tool.startswith("feedback") for tool in enabled)

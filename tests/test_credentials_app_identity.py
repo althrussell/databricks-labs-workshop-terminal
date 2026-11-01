@@ -616,3 +616,302 @@ def test_rotating_state_turns_unhealthy_when_oauth_validation_is_stale(monkeypat
     status = manager.status()
     assert status["state"] == "unhealthy"
     assert status["healthy"] is False
+
+
+# --- event hardening: expiry-aware probing, forced mint, keep-last-good ---
+
+
+def _ok_get(*args, **kwargs):
+    return _IdentityResponse()
+
+
+def _manager_with_token(monkeypatch, now, bearer, *, fanout=None):
+    manager = cred.CredentialManager(
+        lambda: 1, now_fn=lambda: now[0], sleep_fn=lambda s: None
+    )
+    monkeypatch.delenv("WORKSHOP_PAT", raising=False)
+    monkeypatch.setattr(cred.config, "databricks_host", lambda: "https://x.test")
+    monkeypatch.setattr(cred.requests, "get", _ok_get)
+    monkeypatch.setattr(manager, "_fanout", fanout if fanout is not None else (lambda t: None))
+    monkeypatch.setattr(cred, "app_identity_bearer", lambda: bearer)
+    manager._self_probe(adopt=True)
+    assert manager.status()["state"] == "rotating"
+    return manager
+
+
+def test_transient_identity_failure_keeps_last_validated_bearer(monkeypatch):
+    now = [100.0]
+    bearer = _jwt(4000)
+    manager = _manager_with_token(monkeypatch, now, bearer)
+    alerts = []
+    monkeypatch.setattr(manager, "_emit_health_alert", lambda s, e: alerts.append(s))
+
+    def flaky(url, **kwargs):
+        raise cred.requests.RequestException("timeout")
+
+    monkeypatch.setattr(cred.requests, "get", flaky)
+    now[0] = 400.0
+    manager._tick()
+
+    status = manager.status()
+    assert manager._token == bearer, "a timeout must not wipe the held bearer"
+    assert status["state"] == "rotating"
+    assert "endpoints_unavailable" in (status["last_error"] or "")
+    assert alerts == [], "no Control Tower alert for a single transient failure"
+
+
+@pytest.mark.parametrize("code", [429, 503, 408])
+def test_transient_status_codes_are_retried_then_kept(monkeypatch, code):
+    now = [100.0]
+    bearer = _jwt(4000)
+    manager = _manager_with_token(monkeypatch, now, bearer)
+    calls = []
+
+    def get(url, **kwargs):
+        calls.append(url)
+        return _IdentityResponse(status_code=code, payload={})
+
+    monkeypatch.setattr(cred.requests, "get", get)
+    now[0] = 400.0
+    manager._tick()
+
+    # 1 + _BACKGROUND_VALIDATION_RETRIES attempts, each hitting both endpoints.
+    assert len(calls) == 2 * (1 + cred._BACKGROUND_VALIDATION_RETRIES)
+    assert manager._token == bearer
+    assert manager.status()["state"] == "rotating"
+
+
+def test_transient_then_recovered_validation_adopts_normally(monkeypatch):
+    now = [100.0]
+    bearer = _jwt(4000)
+    manager = _manager_with_token(monkeypatch, now, bearer)
+    responses = iter([503, 503, 200, 200])
+
+    def get(url, **kwargs):
+        code = next(responses)
+        return _IdentityResponse(status_code=code, payload={} if code != 200 else None)
+
+    monkeypatch.setattr(cred.requests, "get", get)
+    now[0] = 400.0
+    manager._tick()
+    status = manager.status()
+    assert status["state"] == "rotating"
+    assert status["last_error"] is None
+    assert status["last_successful_at"] == 400.0
+
+
+def test_definitive_rejection_still_clears_the_bearer(monkeypatch):
+    now = [100.0]
+    bearer = _jwt(4000)
+    manager = _manager_with_token(monkeypatch, now, bearer)
+    monkeypatch.setattr(
+        cred.requests, "get", lambda *a, **k: _IdentityResponse(status_code=401, payload={})
+    )
+    now[0] = 400.0
+    manager._tick()
+    assert manager._token is None
+    assert manager.status()["state"] == "unhealthy"
+
+
+def test_request_path_does_not_sleep_on_transient_failure(monkeypatch):
+    now = [100.0]
+    bearer = _jwt(4000)
+    manager = _manager_with_token(monkeypatch, now, bearer)
+    slept = []
+    manager._sleep = slept.append
+    calls = []
+
+    def get(url, **kwargs):
+        calls.append(url)
+        raise cred.requests.RequestException("timeout")
+
+    monkeypatch.setattr(cred.requests, "get", get)
+    now[0] += cred.OAUTH_VALIDATION_MAX_AGE + 1  # not fresh → token() probes inline
+    assert manager.token() == bearer  # keep-last-good serves the held bearer
+    assert slept == []
+    assert len(calls) == 2  # one attempt, both endpoints
+
+
+def test_tick_probes_every_heartbeat_once_expiry_is_near(monkeypatch):
+    now = [100.0]
+    bearer = _jwt(100 + cred.EXPIRY_PROBE_WINDOW + 30)
+    manager = _manager_with_token(monkeypatch, now, bearer)
+    probes = []
+    monkeypatch.setattr(
+        manager, "_self_probe", lambda **kw: probes.append(now[0])
+    )
+
+    now[0] = 130.0  # 30 s later, 600 s left: inside the window → probe
+    manager._tick()
+    now[0] = 160.0  # another heartbeat, still inside → probe again
+    manager._tick()
+    assert probes == [130.0, 160.0]
+
+
+def test_tick_stays_on_slow_cadence_when_expiry_is_far(monkeypatch):
+    now = [100.0]
+    manager = _manager_with_token(monkeypatch, now, _jwt(100 + 3600))
+    probes = []
+    monkeypatch.setattr(manager, "_self_probe", lambda **kw: probes.append(now[0]))
+    manager._last_probe = 100.0
+    now[0] = 130.0
+    manager._tick()
+    now[0] = 100.0 + cred.PROBE_INTERVAL
+    manager._tick()
+    assert probes == [100.0 + cred.PROBE_INTERVAL]
+
+
+def test_near_expiry_bearer_is_not_wiped(monkeypatch):
+    now = [100.0]
+    bearer = _jwt(4000)
+    fanned = []
+    manager = _manager_with_token(monkeypatch, now, bearer, fanout=fanned.append)
+    monkeypatch.setattr(cred, "force_app_identity_refresh", lambda: None)
+
+    now[0] = 4000 - 45  # 45 s left: SDK (blocking mode) has not refreshed yet
+    manager._tick()
+
+    assert manager._token == bearer, "attendee files must keep the still-valid bearer"
+    assert "too close to expiry" in (manager.status()["last_error"] or "")
+    assert manager.status()["state"] == "unhealthy"  # honest about freshness
+    assert fanned == [bearer]  # nothing new fanned out, nothing wiped
+
+
+def test_same_bearer_inside_force_window_triggers_a_forced_mint(monkeypatch):
+    now = [100.0]
+    old = _jwt(4000, "old")
+    new = _jwt(4000 + 3600, "new")
+    fanned = []
+    manager = _manager_with_token(monkeypatch, now, old, fanout=fanned.append)
+    forced = []
+
+    def force():
+        forced.append(now[0])
+        monkeypatch.setattr(cred, "app_identity_bearer", lambda: new)
+        return new
+
+    monkeypatch.setattr(cred, "force_app_identity_refresh", force)
+
+    now[0] = 4000 - 290  # inside EXPIRY_FORCE_WINDOW, SDK still returns `old`
+    manager._tick()
+
+    assert forced == [now[0]]
+    assert manager._token == new
+    assert fanned == [old, new]
+    assert manager.status()["state"] == "rotating"
+
+
+def test_forced_mint_respects_cooldown(monkeypatch):
+    now = [100.0]
+    old = _jwt(4000, "old")
+    manager = _manager_with_token(monkeypatch, now, old)
+    forced = []
+    monkeypatch.setattr(
+        cred, "force_app_identity_refresh", lambda: forced.append(now[0]) or None
+    )
+    now[0] = 4000 - 290
+    manager._tick()
+    now[0] += cred.HEARTBEAT
+    manager._tick()
+    now[0] += cred.FORCE_REFRESH_COOLDOWN
+    manager._tick()
+    assert forced == [4000 - 290, 4000 - 290 + cred.HEARTBEAT + cred.FORCE_REFRESH_COOLDOWN]
+
+
+def test_forced_mint_is_skipped_when_sdk_already_rotated(monkeypatch):
+    now = [100.0]
+    old = _jwt(4000, "old")
+    manager = _manager_with_token(monkeypatch, now, old)
+    forced = []
+    monkeypatch.setattr(cred, "force_app_identity_refresh", lambda: forced.append(1))
+    # SDK hands back a *different* bearer that happens to be short-lived.
+    monkeypatch.setattr(cred, "app_identity_bearer", lambda: _jwt(4000 + 200, "rotated"))
+    now[0] = 4000 - 290
+    manager._tick()
+    assert forced == []
+    assert manager._token == _jwt(4000 + 200, "rotated")
+
+
+def test_attendee_files_never_hold_an_expired_bearer_over_three_hours(monkeypatch):
+    """Worst-case SDK: blocking refresh only when ≤40 s remain, 1 h bearers.
+
+    Walk the maintenance loop heartbeat by heartbeat for three hours and assert
+    the most recently fanned-out bearer is never past its ``exp``.
+    """
+    now = [0.0]
+    minted = []
+
+    class FakeSDK:
+        def __init__(self):
+            self.current = None
+            self.mint()
+
+        def mint(self):
+            self.current = _jwt(int(now[0]) + 3600, f"t{len(minted)}")
+            minted.append(self.current)
+
+        def bearer(self):
+            if cred._jwt_expiry(self.current) - now[0] <= 40:
+                self.mint()
+            return self.current
+
+    sdk = FakeSDK()
+    fanned = []
+    manager = _manager_with_token(monkeypatch, now, sdk.bearer(), fanout=fanned.append)
+    monkeypatch.setattr(cred, "app_identity_bearer", sdk.bearer)
+
+    def force():
+        sdk.mint()
+        return sdk.current
+
+    monkeypatch.setattr(cred, "force_app_identity_refresh", force)
+
+    while now[0] < 3 * 3600:
+        now[0] += cred.HEARTBEAT
+        manager._tick()
+        on_disk = fanned[-1]
+        assert cred._jwt_expiry(on_disk) > now[0], f"expired bearer on disk at t={now[0]}"
+        # A replacement must land at least EXPIRY_FORCE_WINDOW - HEARTBEAT early.
+        assert cred._jwt_expiry(on_disk) - now[0] > cred.EXPIRY_FORCE_WINDOW - 2 * cred.HEARTBEAT
+
+    assert len(minted) >= 3
+    assert manager.status()["state"] == "rotating"
+
+
+def test_sustained_outage_emits_one_unhealthy_transition_and_then_recovery(monkeypatch):
+    """Keeping the bearer must not hide a long outage from Control Tower."""
+    now = [100.0]
+    bearer = _jwt(100 + 7200)
+    manager = _manager_with_token(monkeypatch, now, bearer)
+    events = []
+    monkeypatch.setattr(manager, "_emit_health_alert", lambda s, e: events.append(s))
+
+    def down(url, **kwargs):
+        raise cred.requests.RequestException("timeout")
+
+    monkeypatch.setattr(cred.requests, "get", down)
+    # Inside the validation window: quiet.
+    now[0] = 100 + cred.PROBE_INTERVAL
+    manager._tick()
+    assert events == []
+    assert manager._token == bearer
+    # Past it: one unhealthy transition, bearer still held and still served.
+    now[0] = 100 + cred.OAUTH_VALIDATION_MAX_AGE + 1
+    manager._last_probe = 0
+    manager._tick()
+    assert events == ["unhealthy"]
+    assert manager._token == bearer
+    assert manager.status()["state"] == "unhealthy"
+    assert manager.token() == bearer
+    # Still down: no duplicate event inside the re-emit interval.
+    now[0] += cred.PROBE_INTERVAL
+    manager._last_probe = 0
+    manager._tick()
+    assert events == ["unhealthy"]
+    # Endpoints return: recovery transition is emitted.
+    monkeypatch.setattr(cred.requests, "get", _ok_get)
+    now[0] += cred.PROBE_INTERVAL
+    manager._last_probe = 0
+    manager._tick()
+    assert events == ["unhealthy", "rotating"]
+    assert manager.status()["state"] == "rotating"

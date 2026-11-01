@@ -23,6 +23,7 @@ import json
 import logging
 import os
 import platform
+import random
 import re
 import threading
 import time
@@ -50,6 +51,20 @@ OAUTH_VALIDATION_MAX_AGE = 600
 OAUTH_EXPIRY_MARGIN = 60
 HEARTBEAT = 30                # loop wake interval
 ALERT_REEMIT_INTERVAL = 1800  # re-emit an unhealthy/degraded alert at most every 30 min
+# Once the held bearer has this long left, the loop probes every HEARTBEAT
+# instead of every PROBE_INTERVAL so a replacement lands well before expiry.
+EXPIRY_PROBE_WINDOW = 600
+# If the SDK is still handing back the *same* bearer with this long left, force
+# it to mint a new one rather than trusting its own refresh schedule. The SDK
+# normally refreshes asynchronously ~20 min out; this is the backstop for a
+# refresh that failed or an SDK configured for blocking (≤40 s) refresh.
+EXPIRY_FORCE_WINDOW = 300
+FORCE_REFRESH_COOLDOWN = 60   # never hammer the OIDC token endpoint
+# Identity-endpoint outcomes that say nothing about the bearer itself. A probe
+# that sees only these keeps the last validated bearer instead of wiping it.
+_TRANSIENT_STATUSES = frozenset({"request_error", 408, 429})
+_BACKGROUND_VALIDATION_RETRIES = 2      # extra attempts from the maintenance loop
+_VALIDATION_RETRY_BASE_DELAY = 1.0      # seconds; doubled per attempt, plus jitter
 
 # Credential health states surfaced through status()["state"].
 STATE_UNKNOWN = "unknown"      # not yet probed
@@ -200,6 +215,25 @@ def app_identity_bearer() -> str | None:
     return None
 
 
+def force_app_identity_refresh() -> str | None:
+    """Make the SDK mint a new app-SP bearer now, bypassing its refresh schedule.
+
+    ``Config.init_auth()`` rebuilds the credentials provider from the client id
+    and secret still held on the ``Config`` object (only the *environment* was
+    scrubbed), so the next ``authenticate()`` performs a fresh client-credentials
+    grant. Returns the new bearer, or ``None`` when the mint failed — callers
+    keep serving whatever they already hold.
+    """
+    if config.local_dev() or _workspace_client is None:
+        return None
+    try:
+        _workspace_client.config.init_auth()
+    except Exception as e:  # noqa: BLE001 — a failed mint must not take the loop down
+        logger.warning("app-identity forced refresh failed: %s", e)
+        return None
+    return app_identity_bearer()
+
+
 def _bootstrap_auth() -> str | None:
     """Current app OAuth bearer, or the explicit emergency PAT fallback."""
     return app_identity_bearer() or (vended_pat() or None)
@@ -269,9 +303,11 @@ class CredentialManager:
     degraded fallback and is never used to mint another credential.
     """
 
-    def __init__(self, session_count_fn, *, now_fn=time.time):
+    def __init__(self, session_count_fn, *, now_fn=time.time, sleep_fn=time.sleep):
         self._session_count_fn = session_count_fn
         self._now = now_fn
+        self._sleep = sleep_fn
+        self._last_forced_refresh = 0.0
         self._token: str | None = None
         self._expires_at: float | None = None
         self._rotating = False
@@ -308,6 +344,22 @@ class CredentialManager:
             fresh = self._oauth_fresh_locked()
         if token and fresh:
             return token
+        # Validation could not be renewed (identity endpoints down) but the
+        # bearer we hold has not expired. Serving it beats refusing the attendee:
+        # if the gateway also rejects it the CLI sees the same 401 it would have
+        # seen anyway, and health keeps reporting unhealthy until a probe passes.
+        with self._lock:
+            held, expires_at, source = self._token, self._expires_at, self._source
+        if (
+            held
+            and source == "app_identity_oauth"
+            and (expires_at is None or expires_at > self._now() + OAUTH_EXPIRY_MARGIN)
+        ):
+            logger.warning(
+                "credential: serving held bearer with stale validation (%s)",
+                self.last_error,
+            )
+            return held
         emergency = vended_pat()
         if emergency and self._validate_emergency_pat(emergency):
             return emergency
@@ -396,28 +448,46 @@ class CredentialManager:
                 logger.error("credential maintenance failed unexpectedly: %s", e)
 
     def _tick(self) -> None:
+        """Probe on the slow cadence, or every heartbeat once expiry is near.
+
+        The SDK refreshes on its own schedule; aligning our probe to the held
+        bearer's ``exp`` means a replacement is validated and fanned out well
+        before attendee CLIs could read an expired file.
+        """
         now = self._now()
-        if now - self._last_probe < PROBE_INTERVAL:
+        with self._lock:
+            expires_at = self._expires_at
+        due = now - self._last_probe >= PROBE_INTERVAL
+        near_expiry = (
+            expires_at is not None and expires_at - now <= EXPIRY_PROBE_WINDOW
+        )
+        if not (due or near_expiry):
             return
         self._last_probe = now
-        self._self_probe(adopt=True)
+        self._self_probe(adopt=True, retries=_BACKGROUND_VALIDATION_RETRIES)
 
     def _rotate_once(self) -> None:
         with self._refresh_lock:
             with self._lock:
                 if self._oauth_fresh_locked():
                     return
-            self._probe_unlocked(adopt=True)
+            # Request path: no retry sleeps here — an attendee is waiting.
+            self._probe_unlocked(adopt=True, retries=0)
 
-    def _self_probe(self, *, adopt: bool) -> None:
+    def _self_probe(self, *, adopt: bool, retries: int = 0) -> None:
         """Acquire app OAuth, validate it read-only, and adopt changed bearers."""
         with self._refresh_lock:
-            self._probe_unlocked(adopt=adopt)
+            self._probe_unlocked(adopt=adopt, retries=retries)
 
-    def _probe_unlocked(self, *, adopt: bool) -> None:
+    def _probe_unlocked(self, *, adopt: bool, retries: int = 0) -> None:
         oauth = app_identity_bearer()
         if oauth:
-            if not self._validate(oauth):
+            oauth, expires_at = self._refresh_if_near_expiry(oauth)
+            verdict = self._validate_with_retry(oauth, retries=retries)
+            if verdict == "transient":
+                self._keep_last_good()
+                return
+            if verdict == "rejected":
                 self._set_health(
                     STATE_UNHEALTHY,
                     self.last_error
@@ -425,13 +495,20 @@ class CredentialManager:
                     clear=True,
                 )
                 return
-            expires_at = _jwt_expiry(oauth)
             if expires_at is not None and expires_at <= self._now() + OAUTH_EXPIRY_MARGIN:
-                self._set_health(
-                    STATE_UNHEALTHY,
-                    "app-identity OAuth bearer is too close to expiry",
-                    clear=True,
+                # The SDK would not (or could not) mint early and this bearer is
+                # about to lapse. Do NOT wipe what attendees already hold: a
+                # bearer with seconds left still beats no bearer, and the next
+                # heartbeat retries the forced mint. Health reads unhealthy via
+                # _effective_state_locked until a replacement lands.
+                with self._lock:
+                    self.last_error = "app-identity OAuth bearer is too close to expiry"
+                logger.warning(
+                    "credential: bearer within %ss of expiry and no replacement yet",
+                    OAUTH_EXPIRY_MARGIN,
                 )
+                if self._token is None:
+                    self._adopt_oauth(oauth, expires_at, fanout=adopt)
                 return
             self._adopt_oauth(oauth, expires_at, fanout=adopt)
             return
@@ -445,6 +522,109 @@ class CredentialManager:
                 "app-identity OAuth unavailable and no emergency WORKSHOP_PAT configured",
                 clear=True,
             )
+
+    def _refresh_if_near_expiry(self, oauth: str) -> tuple[str, float | None]:
+        """Force a new mint when the SDK keeps returning a soon-to-expire bearer.
+
+        Returns the bearer to validate (new one when the mint succeeded and is
+        longer-lived, otherwise the original) with its ``exp``.
+        """
+        expires_at = _jwt_expiry(oauth)
+        now = self._now()
+        if expires_at is None or expires_at - now > EXPIRY_FORCE_WINDOW:
+            return oauth, expires_at
+        with self._lock:
+            same_as_held = oauth == self._token
+        if not same_as_held and self._token is not None:
+            # The SDK already rotated; this is the replacement. Nothing to force.
+            return oauth, expires_at
+        if now - self._last_forced_refresh < FORCE_REFRESH_COOLDOWN:
+            return oauth, expires_at
+        self._last_forced_refresh = now
+        logger.info(
+            "credential: bearer has %ds left and the SDK has not rotated; forcing a mint",
+            int(expires_at - now),
+        )
+        minted = force_app_identity_refresh()
+        if not minted or minted == oauth:
+            return oauth, expires_at
+        minted_expiry = _jwt_expiry(minted)
+        if minted_expiry is not None and minted_expiry <= expires_at:
+            return oauth, expires_at
+        return minted, minted_expiry
+
+    def _validate_with_retry(self, token: str, *, retries: int) -> str:
+        """``"ok"`` | ``"rejected"`` | ``"transient"``.
+
+        Only outcomes that are definitively about the bearer (401/403/404,
+        identity mismatch, misconfiguration) count as rejection. Request errors,
+        408, 429 and 5xx are the workspace being slow, not the bearer being bad;
+        those are retried (with jitter) and finally reported as transient.
+        """
+        attempt = 0
+        while True:
+            if self._validate(token):
+                return "ok"
+            if not self._validation_was_transient():
+                return "rejected"
+            if attempt >= retries:
+                return "transient"
+            delay = _VALIDATION_RETRY_BASE_DELAY * (2 ** attempt)
+            self._sleep(delay + random.uniform(0, delay))
+            attempt += 1
+
+    def _validation_was_transient(self) -> bool:
+        diagnostic = self._validation_diagnostic or {}
+        if diagnostic.get("result") != "endpoints_unavailable":
+            return False
+        endpoints = diagnostic.get("endpoints") or []
+        if not endpoints:
+            return False
+        for entry in endpoints:
+            status = entry.get("status")
+            if status in _TRANSIENT_STATUSES:
+                continue
+            if isinstance(status, int) and status >= 500:
+                continue
+            return False
+        return True
+
+    def _keep_last_good(self) -> None:
+        """Identity endpoints were unreachable: keep serving the held bearer.
+
+        ``_oauth_fresh_locked`` already ages out a bearer whose validation is
+        older than ``OAUTH_VALIDATION_MAX_AGE``, so a real outage degrades to
+        unhealthy on its own after ten minutes — without the hourly flap, the
+        wiped token files and the Control Tower alert a single timeout caused.
+        """
+        with self._lock:
+            held = self._token
+            expires_at = self._expires_at
+            validated_at = self._last_successful_at
+        now = self._now()
+        if held and (expires_at is None or expires_at > now):
+            if now - validated_at > OAUTH_VALIDATION_MAX_AGE:
+                # The outage has outlived the validation window: status()
+                # already reads unhealthy, but Control Tower learns about it
+                # only through the health transition — so record it, without
+                # clearing the bearer. The next passing probe emits recovery.
+                self._set_health(
+                    STATE_UNHEALTHY,
+                    f"workspace identity endpoints unavailable for over "
+                    f"{OAUTH_VALIDATION_MAX_AGE}s; serving last validated bearer "
+                    f"({self.last_error})",
+                )
+                return
+            logger.warning(
+                "credential: identity endpoints unavailable (%s); keeping last validated bearer",
+                self.last_error,
+            )
+            return
+        self._set_health(
+            STATE_UNHEALTHY,
+            self.last_error or "workspace identity endpoints unavailable",
+            clear=True,
+        )
 
     @timing_stage("identity.validation")
     def _validate(self, token: str, *, require_app_identity: bool = True) -> bool:
