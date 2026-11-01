@@ -339,6 +339,128 @@ def test_staged_download_lands_on_a_name_npm_accepts(tmp_path, monkeypatch):
     assert os.path.isfile(staged)
 
 
+def _scripted_urlopen(responses, calls):
+    """``urlopen`` that answers each call with the next response, raising errors."""
+
+    def fake_urlopen(source, **_kwargs):
+        calls.append(source)
+        response = responses.pop(0)
+        if isinstance(response, BaseException):
+            raise response
+        return response
+
+    return fake_urlopen
+
+
+def test_a_dropped_download_is_retried_rather_than_failing_the_seat(
+    tmp_path, monkeypatch
+):
+    """One network blip at boot used to fail the step and, with it, admission:
+    nothing retries a failed step before an attendee arrives."""
+    import io
+    from urllib.error import URLError
+
+    from server.bootstrap import artifacts
+
+    calls, sleeps = [], []
+    monkeypatch.setattr(
+        artifacts,
+        "urlopen",
+        _scripted_urlopen(
+            [URLError("connection reset by peer"), io.BytesIO(b"artifact bytes")],
+            calls,
+        ),
+    )
+    destination = tmp_path / "artifact"
+
+    assert artifacts._download_https(
+        "https://example.invalid/artifact", str(destination), sleep=sleeps.append
+    ) is True
+    assert destination.read_bytes() == b"artifact bytes"
+    assert len(calls) == 2
+    assert sleeps == [2.0]
+
+
+def test_a_download_gives_up_after_three_server_errors(tmp_path, monkeypatch):
+    from urllib.error import HTTPError
+
+    from server.bootstrap import artifacts
+
+    source = "https://example.invalid/artifact"
+    calls, sleeps = [], []
+    monkeypatch.setattr(
+        artifacts,
+        "urlopen",
+        _scripted_urlopen(
+            [HTTPError(source, 503, "Service Unavailable", {}, None) for _ in range(3)],
+            calls,
+        ),
+    )
+
+    with pytest.raises(HTTPError):
+        artifacts._download_https(
+            source, str(tmp_path / "artifact"), sleep=sleeps.append
+        )
+    assert len(calls) == 3
+    assert sleeps == [2.0, 4.0]
+
+
+def test_a_missing_download_is_not_retried(tmp_path, monkeypatch):
+    """A 404 is a wrong pin or URL, not a blip; retrying only delays the failure."""
+    from urllib.error import HTTPError
+
+    from server.bootstrap import artifacts
+
+    source = "https://example.invalid/artifact"
+    calls, sleeps = [], []
+    monkeypatch.setattr(
+        artifacts,
+        "urlopen",
+        _scripted_urlopen([HTTPError(source, 404, "Not Found", {}, None)], calls),
+    )
+
+    with pytest.raises(HTTPError):
+        artifacts._download_https(
+            source, str(tmp_path / "artifact"), sleep=sleeps.append
+        )
+    assert len(calls) == 1
+    assert sleeps == []
+
+
+def test_a_retried_download_keeps_no_bytes_from_the_failed_attempt(
+    tmp_path, monkeypatch
+):
+    import http.client
+    import io
+
+    from server.bootstrap import artifacts
+
+    class Truncated(io.BytesIO):
+        """Delivers part of the body, then the connection drops."""
+
+        def read(self, size=-1):
+            if self.tell():
+                raise http.client.IncompleteRead(b"")
+            return super().read(size)
+
+    calls, sleeps = [], []
+    monkeypatch.setattr(
+        artifacts,
+        "urlopen",
+        _scripted_urlopen(
+            [Truncated(b"partial bytes from the first attempt"), io.BytesIO(b"complete")],
+            calls,
+        ),
+    )
+    destination = tmp_path / "artifact"
+
+    assert artifacts._download_https(
+        "https://example.invalid/artifact", str(destination), sleep=sleeps.append
+    ) is True
+    assert destination.read_bytes() == b"complete"
+    assert sleeps == [2.0]
+
+
 def test_bootstrap_never_pipes_unverified_network_content_to_an_interpreter():
     from server.bootstrap import install
 
