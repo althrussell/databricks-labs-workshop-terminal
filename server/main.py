@@ -562,6 +562,29 @@ def help_thread(_: Principal = Depends(get_current_user)):
     return help_module.thread_snapshot()
 
 
+class HelpFeedbackBody(BaseModel):
+    value: str
+
+
+@app.post("/api/help/messages/{message_id}/feedback")
+def help_feedback(
+    message_id: str, body: HelpFeedbackBody, _: Principal = Depends(get_current_user)
+):
+    """Rate a Workshop Assistant answer: once, and only an assistant's."""
+    try:
+        return help_module.record_feedback(message_id, body.value)
+    except help_module.HelpMessageNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/help/handoff")
+def help_handoff(_: Principal = Depends(get_current_user)):
+    """Ask for a member of the workshop team instead of the Workshop Assistant."""
+    return help_module.request_person()
+
+
 class HelpAckBody(BaseModel):
     message_id: str
 

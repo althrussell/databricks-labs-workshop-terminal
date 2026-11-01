@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, Info, MessageSquare, X } from "lucide-reac
 import { api } from "../api";
 import { announceWhileAway, browserAttentionSurface } from "../attention";
 import { onAppEvent } from "../events";
+import { isAssistantRole, replyToastTitle } from "../helpChat";
 import {
   Toast,
   ToastLevel,
@@ -110,10 +111,11 @@ export default function ToastHost({
             id: `help:${event.message_id}`,
             level: "info",
             durability: event.durability ?? "sticky",
-            title: event.sender ? `${event.sender} replied` : "Operator replied",
+            title: replyToastTitle(event.sender_role, event.sender),
             body: event.body,
             ackMessageId: plan.acknowledge ? event.message_id : undefined,
             openHelp: true,
+            ai: isAssistantRole(event.sender_role),
           });
           return;
         }
@@ -198,7 +200,10 @@ function ToastCard({
     >
       <Icon size={16} className="toast-icon" />
       <div className="toast-content">
-        <div className="toast-title">{toast.title}</div>
+        <div className="toast-title">
+          {toast.title}
+          {toast.ai ? <span className="ai-badge" title="Answered by AI">AI</span> : null}
+        </div>
         <div className="toast-body">{toast.body}</div>
         {toast.openHelp && onOpenHelp ? (
           <button type="button" className="toast-action" onClick={onOpenHelp}>
