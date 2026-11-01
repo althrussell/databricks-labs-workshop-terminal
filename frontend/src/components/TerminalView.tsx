@@ -57,11 +57,13 @@ export default function TerminalView({ sessionId, active, readOnly = false, onEx
     term.attachCustomKeyEventHandler((event) => {
       const decision = decideTerminalKey(event, term.hasSelection());
       if (decision === "copy") {
-        const text = term.getSelection();
-        navigator.clipboard?.writeText(text).catch(() => {
-          /* Clipboard denied: the selection is still there to copy by menu. */
-        });
-        term.clearSelection();
+        // Clear the selection only once the copy has landed. If the clipboard
+        // API is unavailable (insecure context) or denied, the selection stays
+        // so the attendee can still copy it from the context menu — and the
+        // agent still never sees the interrupt.
+        navigator.clipboard
+          ?.writeText(term.getSelection())
+          .then(() => term.clearSelection(), () => undefined);
         return false;
       }
       return decision === "terminal";
