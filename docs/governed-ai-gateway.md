@@ -88,7 +88,9 @@ control does not replace the Gateway budget or Unity Catalog permissions.
 
 Gateway 403/429 responses distinguish temporary rate limits from exhausted
 budget allowance. Generated Claude, Codex, and Omnigent configuration limits
-automatic retries so clients do not fight an enforced Gateway boundary. Direct
-Claude sessions make no automatic retry; WT also recognises the denial in the
-local terminal stream and shows the attendee a clear allowance-exhausted banner.
+automatic retries so clients do not fight an enforced Gateway boundary: Claude
+sessions retry at most three times (enough to ride out a room-wide 429 burst,
+short enough that a budget denial is not hidden behind minutes of backoff);
+WT also recognises the denial in the local terminal stream and shows the
+attendee a clear allowance-exhausted banner.
 Terminal contents are neither persisted nor sent to the server by this check.
