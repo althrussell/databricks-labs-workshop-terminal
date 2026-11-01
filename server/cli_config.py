@@ -610,9 +610,19 @@ def ensure_claude_trusts(user: User, folder: str) -> None:
     _update_claude_json_trust(path, [os.path.realpath(folder)])
 
 
-#: apx MCP tools that cannot work on a seat (F-012, 31 Oct). Codex's apx server
-#: is an allowlist (`enabled_tools` in configure_codex) and leaves this out.
-APX_UNUSABLE_TOOLS = ("mcp__apx__databricks_apps_logs",)
+#: apx MCP tools Claude must not reach on a seat. Codex's apx server is an
+#: allowlist (`enabled_tools` in configure_codex) and leaves all of these out.
+#: - databricks_apps_logs cannot work (F-012, 31 Oct): it shells out to
+#:   `databricks auth token`, which a seat's OAuth cache never satisfies.
+#: - feedback_prepare/feedback_submit file *public GitHub issues* on the apx
+#:   repository as whoever holds the token. An autonomous agent in
+#:   bypassPermissions mode must never be able to post an attendee's project
+#:   details to a public tracker on their behalf.
+APX_UNUSABLE_TOOLS = (
+    "mcp__apx__databricks_apps_logs",
+    "mcp__apx__feedback_prepare",
+    "mcp__apx__feedback_submit",
+)
 
 #: Omnigent 0.15's embedded-browser tools, as Claude sees them through
 #: Omnigent's MCP server. They need the Omnigent desktop app as a renderer.
