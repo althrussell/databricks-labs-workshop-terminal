@@ -600,7 +600,21 @@ class CredentialManager:
         with self._lock:
             held = self._token
             expires_at = self._expires_at
-        if held and (expires_at is None or expires_at > self._now()):
+            validated_at = self._last_successful_at
+        now = self._now()
+        if held and (expires_at is None or expires_at > now):
+            if now - validated_at > OAUTH_VALIDATION_MAX_AGE:
+                # The outage has outlived the validation window: status()
+                # already reads unhealthy, but Control Tower learns about it
+                # only through the health transition — so record it, without
+                # clearing the bearer. The next passing probe emits recovery.
+                self._set_health(
+                    STATE_UNHEALTHY,
+                    f"workspace identity endpoints unavailable for over "
+                    f"{OAUTH_VALIDATION_MAX_AGE}s; serving last validated bearer "
+                    f"({self.last_error})",
+                )
+                return
             logger.warning(
                 "credential: identity endpoints unavailable (%s); keeping last validated bearer",
                 self.last_error,

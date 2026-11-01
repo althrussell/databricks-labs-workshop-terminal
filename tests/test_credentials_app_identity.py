@@ -876,3 +876,42 @@ def test_attendee_files_never_hold_an_expired_bearer_over_three_hours(monkeypatc
 
     assert len(minted) >= 3
     assert manager.status()["state"] == "rotating"
+
+
+def test_sustained_outage_emits_one_unhealthy_transition_and_then_recovery(monkeypatch):
+    """Keeping the bearer must not hide a long outage from Control Tower."""
+    now = [100.0]
+    bearer = _jwt(100 + 7200)
+    manager = _manager_with_token(monkeypatch, now, bearer)
+    events = []
+    monkeypatch.setattr(manager, "_emit_health_alert", lambda s, e: events.append(s))
+
+    def down(url, **kwargs):
+        raise cred.requests.RequestException("timeout")
+
+    monkeypatch.setattr(cred.requests, "get", down)
+    # Inside the validation window: quiet.
+    now[0] = 100 + cred.PROBE_INTERVAL
+    manager._tick()
+    assert events == []
+    assert manager._token == bearer
+    # Past it: one unhealthy transition, bearer still held and still served.
+    now[0] = 100 + cred.OAUTH_VALIDATION_MAX_AGE + 1
+    manager._last_probe = 0
+    manager._tick()
+    assert events == ["unhealthy"]
+    assert manager._token == bearer
+    assert manager.status()["state"] == "unhealthy"
+    assert manager.token() == bearer
+    # Still down: no duplicate event inside the re-emit interval.
+    now[0] += cred.PROBE_INTERVAL
+    manager._last_probe = 0
+    manager._tick()
+    assert events == ["unhealthy"]
+    # Endpoints return: recovery transition is emitted.
+    monkeypatch.setattr(cred.requests, "get", _ok_get)
+    now[0] += cred.PROBE_INTERVAL
+    manager._last_probe = 0
+    manager._tick()
+    assert events == ["unhealthy", "rotating"]
+    assert manager.status()["state"] == "rotating"

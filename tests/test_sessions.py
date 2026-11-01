@@ -508,8 +508,12 @@ def test_natural_exit_leaves_no_background_servers_behind(tmp_path):
         home=str(tmp_path),
         shell_env=lambda: os.environ.copy(),
     )
-    # The shell starts a long sleeper (same process group), records its pid, exits 0.
-    script = f"sleep 300 & echo $! > {marker}; exit 0"
+    # The shell starts a long sleeper in the same process group, records its pid
+    # and exits 0. The sleeper does not hold the PTY — like a dev server started
+    # by an agent's tool, which gets pipes — so the session sees EOF and ends.
+    # (A descendant that keeps the slave open deliberately keeps the session
+    # alive instead; see _read_pty.)
+    script = f"sleep 300 </dev/null >/dev/null 2>&1 & echo $! > {marker}; exit 0"
     manager.create(user, "claude", ["/bin/sh", "-c", script], "Claude")
 
     deadline = time.time() + 5
