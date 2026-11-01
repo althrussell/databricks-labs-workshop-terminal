@@ -321,7 +321,7 @@ def test_agent_crash_reports_its_process_exit_code(monkeypatch, tmp_path):
     assert observed
     assert observed[0][0][2] == "process_error"
     assert observed[0][1]["exit_code"] == 17
-    assert delivered == [{"t": "exit", "reason": "process_error", "exit_code": 17, "exit_signal": None}]
+    assert delivered == [{"t": "exit", "reason": "process_error", "exit_code": 17, "exit_signal": None, "agent": "codex"}]
 
 
 def test_pty_eof_before_waitable_exit_retains_the_real_exit_status(monkeypatch):
@@ -350,7 +350,11 @@ def test_pty_eof_before_waitable_exit_retains_the_real_exit_status(monkeypatch):
     manager._read_pty(session)
     assert observed[0][0][2] == "process_error"
     assert observed[0][1]["exit_code"] == 17
-    assert signals == []
+    # The leader is reaped, but anything it left running in its process group
+    # (dev servers, watchers) is still swept — the pgid cannot have been reused
+    # while those members live.
+    assert signals[0] == (session.pid, sessions.signal.SIGHUP)
+    assert signals[-1] == (session.pid, sessions.signal.SIGKILL)
     assert waits and 0 < waits[0] <= 0.25
 
 
@@ -487,3 +491,49 @@ def test_an_events_keepalive_is_presence_not_activity(client):
 
         assert user.last_seen > 1000.0
         assert user.last_active == 1000.0
+
+
+def test_natural_exit_leaves_no_background_servers_behind(tmp_path):
+    """An agent that exits cleanly after starting a dev server used to leave it
+    running for the rest of the day; the whole process group is now reaped."""
+    import signal as _signal
+    import subprocess
+
+    from server.sessions import SessionManager
+
+    marker = tmp_path / "orphan.pid"
+    manager = SessionManager()
+    user = SimpleNamespace(
+        email="alice@example.com",
+        home=str(tmp_path),
+        shell_env=lambda: os.environ.copy(),
+    )
+    # The shell starts a long sleeper (same process group), records its pid, exits 0.
+    script = f"sleep 300 & echo $! > {marker}; exit 0"
+    manager.create(user, "claude", ["/bin/sh", "-c", script], "Claude")
+
+    deadline = time.time() + 5
+    while (manager.count_all() or not marker.exists()) and time.time() < deadline:
+        time.sleep(0.02)
+    assert manager.count_all() == 0
+    orphan = int(marker.read_text().strip())
+
+    def alive(pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        # A zombie still answers kill(0); check its state via ps.
+        state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+        return bool(state) and not state.startswith("Z")
+
+    deadline = time.time() + 5
+    while alive(orphan) and time.time() < deadline:
+        time.sleep(0.05)
+    try:
+        assert not alive(orphan), "background sleeper survived the session"
+    finally:
+        try:
+            os.kill(orphan, _signal.SIGKILL)
+        except ProcessLookupError:
+            pass
