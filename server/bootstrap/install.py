@@ -1835,13 +1835,18 @@ def _install_skills() -> None:
         # Pinned-ref clone: --branch accepts a tag or branch; for a full-SHA
         # pin we clone then checkout. Invalid or tampered persistent content is
         # discarded and rebuilt from the reviewed ref.
-        shutil.rmtree(clone_dir, ignore_errors=True)
-        with timing_stage("install.skills_git"):
-            result = subprocess.run(
-                ["git", "clone", "--depth", "1", "--branch", SKILLS_REF,
-                 artifact["source"], clone_dir],
-                capture_output=True, text=True, timeout=300, env=_install_env(),
-            )
+        for attempt in range(1, 4):
+            shutil.rmtree(clone_dir, ignore_errors=True)
+            with timing_stage("install.skills_git"):
+                result = subprocess.run(
+                    ["git", "clone", "--depth", "1", "--branch", SKILLS_REF,
+                     artifact["source"], clone_dir],
+                    capture_output=True, text=True, timeout=300, env=_install_env(),
+                )
+            if result.returncode == 0:
+                break
+            if attempt < 3:
+                time.sleep(2 ** attempt)
         if result.returncode != 0:
             # --branch rejects raw commit SHAs; fall back to clone + checkout.
             shutil.rmtree(clone_dir, ignore_errors=True)

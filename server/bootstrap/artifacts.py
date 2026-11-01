@@ -14,11 +14,14 @@ hostile override cannot silently downgrade an attendee's toolchain.
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import re
 import tempfile
+import time
 from typing import NamedTuple
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import urlopen
 
@@ -349,12 +352,29 @@ class ArtifactManifest:
                 os.unlink(temp)
 
 
+_DOWNLOAD_ATTEMPTS = 3
+_DOWNLOAD_BACKOFF = 2.0  # seconds before attempt 2, doubled before attempt 3
+
+
 @timing_stage("artifact.download")
-def _download_https(source: str, destination: str) -> bool:
-    with open(destination, "wb") as output, urlopen(source, timeout=60) as response:
-        for chunk in iter(lambda: response.read(1024 * 1024), b""):
-            output.write(chunk)
-    return True
+def _download_https(source: str, destination: str, *, sleep=time.sleep) -> bool:
+    delay = _DOWNLOAD_BACKOFF
+    for attempt in range(1, _DOWNLOAD_ATTEMPTS + 1):
+        try:
+            with open(destination, "wb") as output, urlopen(source, timeout=60) as response:
+                for chunk in iter(lambda: response.read(1024 * 1024), b""):
+                    output.write(chunk)
+            return True
+        except HTTPError as error:
+            transient = error.code == 429 or error.code >= 500
+            if not transient or attempt == _DOWNLOAD_ATTEMPTS:
+                raise
+        except (URLError, TimeoutError, ConnectionError, http.client.IncompleteRead):
+            if attempt == _DOWNLOAD_ATTEMPTS:
+                raise
+        sleep(delay)
+        delay *= 2
+    return False
 
 
 def _staged_suffix(url_path: str) -> str:
