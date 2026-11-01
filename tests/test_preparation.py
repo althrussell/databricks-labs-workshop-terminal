@@ -524,3 +524,107 @@ def test_helper_rejects_invalid_names(tmp_path, name):
     assert result.returncode == 2
     assert result.stdout == ""
     assert not (tmp_path / "projects").exists()
+
+
+def test_retry_repairs_degraded_skills_and_python_tools(monkeypatch, tmp_path):
+    """Readiness gates on skills and apx/bun/uv for every harness, so a harness
+    retry must be able to repair them — they used to be unreachable from
+    retry_failed and kept /readyz red for the life of the process."""
+    from server.bootstrap import install
+
+    monkeypatch.setattr(install.config, "shared_prefix", lambda: str(tmp_path / "shared"))
+    state = {name: {"status": "complete"} for name in ("node", "databricks", "claude")}
+    state["skills"] = {"status": "degraded", "error": "vendored fallback: clone timed out"}
+    state["bun"] = {"status": "error", "error": "HTTP 403"}
+    state["apx"] = {"status": "error", "error": "HTTP 403"}
+    state["uv"] = {"status": "error", "error": "HTTP 403"}
+    monkeypatch.setattr(install, "_state", state)
+    repaired = []
+    done = threading.Event()
+
+    def fix_skills():
+        install._set("skills", "complete")
+        repaired.append("skills")
+
+    def fix_apx():
+        for name in ("apx", "bun", "uv"):
+            install._set(name, "complete")
+        repaired.append("apx")
+        done.set()
+
+    monkeypatch.setattr(install, "_install_skills", fix_skills)
+    monkeypatch.setattr(install, "_install_apx", fix_apx)
+    assert install.retry_failed(["claude"]) is True
+    assert done.wait(3)
+    assert repaired == ["skills", "apx"]
+    assert install._failed_steps() == set()
+
+
+def test_skills_retry_waits_for_node(monkeypatch, tmp_path):
+    from server.bootstrap import install
+
+    monkeypatch.setattr(install.config, "shared_prefix", lambda: str(tmp_path / "shared"))
+    state = {
+        "node": {"status": "error", "error": "download failed"},
+        "skills": {"status": "degraded", "error": "x"},
+    }
+    monkeypatch.setattr(install, "_state", state)
+    order = []
+    done = threading.Event()
+
+    def fix_node():
+        install._set("node", "complete")
+        order.append("node")
+
+    def fix_skills():
+        order.append("skills")
+        install._set("skills", "complete")
+        done.set()
+
+    monkeypatch.setattr(install, "_install_node", fix_node)
+    monkeypatch.setattr(install, "_install_skills", fix_skills)
+    assert install.retry_failed(["claude"]) is True
+    assert done.wait(3)
+    assert order == ["node", "skills"]
+
+
+def test_self_retry_loop_keeps_trying_until_steps_heal(monkeypatch):
+    from server.bootstrap import install
+
+    state = {"skills": {"status": "degraded"}}
+    monkeypatch.setattr(install, "_state", state)
+    sleeps, retries = [], []
+
+    def fake_retry(requires):
+        retries.append(tuple(requires))
+        if len(retries) == 2:
+            state["skills"] = {"status": "complete"}
+        return True
+
+    monkeypatch.setattr(install, "retry_failed", fake_retry)
+    monkeypatch.setattr(install, "_retry_active", False)
+    install._self_retry_loop(sleep=sleeps.append, jitter=lambda d: 0.0)
+
+    assert len(retries) == 2
+    assert all("skills" in r and "apx" in r for r in retries)
+    assert sleeps == [install.SELF_RETRY_INTERVAL, install.SELF_RETRY_INTERVAL]
+
+
+def test_self_retry_loop_is_bounded(monkeypatch):
+    from server.bootstrap import install
+
+    monkeypatch.setattr(install, "_state", {"bun": {"status": "error"}})
+    monkeypatch.setattr(install, "retry_failed", lambda requires: True)
+    monkeypatch.setattr(install, "_retry_active", False)
+    sleeps = []
+    install._self_retry_loop(sleep=sleeps.append, jitter=lambda d: 0.0)
+    assert len(sleeps) == install.SELF_RETRY_ROUNDS
+
+
+def test_self_retry_loop_exits_immediately_when_nothing_failed(monkeypatch):
+    from server.bootstrap import install
+
+    monkeypatch.setattr(install, "_state", {"node": {"status": "complete"}})
+    sleeps = []
+    install._self_retry_loop(sleep=sleeps.append)
+    assert sleeps == []

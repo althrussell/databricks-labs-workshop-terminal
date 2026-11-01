@@ -17,6 +17,7 @@ import hashlib
 import http.client
 import json
 import os
+import random
 import re
 import tempfile
 import time
@@ -352,28 +353,61 @@ class ArtifactManifest:
                 os.unlink(temp)
 
 
-_DOWNLOAD_ATTEMPTS = 3
-_DOWNLOAD_BACKOFF = 2.0  # seconds before attempt 2, doubled before attempt 3
+_DOWNLOAD_ATTEMPTS = 5
+_DOWNLOAD_BACKOFF = 2.0   # seconds before attempt 2, doubled per attempt
+_DOWNLOAD_BACKOFF_CAP = 30.0
+_RETRY_AFTER_CAP = 60.0
+# 403 is on this list deliberately: GitHub answers anonymous abuse/secondary
+# rate limits with 403, and a room of instances booting from a handful of
+# egress IPs will see it. A wrong URL or pin is a 404 and still fails fast.
+_TRANSIENT_HTTP = frozenset({403, 408, 425, 429})
+
+
+def _retry_after_seconds(error: HTTPError) -> float | None:
+    """Honour a numeric ``Retry-After`` (seconds); ignore HTTP-date forms."""
+    try:
+        value = error.headers.get("Retry-After") if error.headers else None
+    except AttributeError:
+        return None
+    if value is None:
+        return None
+    try:
+        seconds = float(str(value).strip())
+    except ValueError:
+        return None
+    if seconds < 0:
+        return None
+    return min(seconds, _RETRY_AFTER_CAP)
+
+
+def _backoff_jitter(delay: float) -> float:
+    """Full jitter so 150 instances that fail together do not retry together."""
+    return random.uniform(0, delay)
 
 
 @timing_stage("artifact.download")
-def _download_https(source: str, destination: str, *, sleep=time.sleep) -> bool:
+def _download_https(
+    source: str, destination: str, *, sleep=time.sleep, jitter=_backoff_jitter
+) -> bool:
     delay = _DOWNLOAD_BACKOFF
     for attempt in range(1, _DOWNLOAD_ATTEMPTS + 1):
+        retry_after = None
         try:
             with open(destination, "wb") as output, urlopen(source, timeout=60) as response:
                 for chunk in iter(lambda: response.read(1024 * 1024), b""):
                     output.write(chunk)
             return True
         except HTTPError as error:
-            transient = error.code == 429 or error.code >= 500
+            transient = error.code in _TRANSIENT_HTTP or error.code >= 500
             if not transient or attempt == _DOWNLOAD_ATTEMPTS:
                 raise
+            retry_after = _retry_after_seconds(error)
         except (URLError, TimeoutError, ConnectionError, http.client.IncompleteRead):
             if attempt == _DOWNLOAD_ATTEMPTS:
                 raise
-        sleep(delay)
-        delay *= 2
+        wait = delay if retry_after is None else max(delay, retry_after)
+        sleep(wait + jitter(wait))
+        delay = min(delay * 2, _DOWNLOAD_BACKOFF_CAP)
     return False
 
 

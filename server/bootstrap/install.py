@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import platform
+import random
 import re
 import shutil
 import subprocess
@@ -362,6 +363,9 @@ def _set(
         )
         if status in ("error", "degraded"):
             telemetry.install_step_failed(step, status, error or "", code=reason_code or "")
+            # Telemetry only reaches operators once a destination is configured;
+            # the Databricks Apps log pane is the one place they can always look.
+            logger.error("bootstrap step %s %s: %s", step, status, (error or "")[-500:])
 
 
 def _release_specs() -> dict[str, tuple[bool, str]]:
@@ -907,7 +911,18 @@ def _install_env() -> dict:
     # Installers must not see app SP credentials.
     env.pop("DATABRICKS_CLIENT_ID", None)
     env.pop("DATABRICKS_CLIENT_SECRET", None)
+    # git: never block on a credential prompt, and abort a transfer that
+    # trickles below 1 KB/s for 30 s rather than sitting on it until the
+    # subprocess timeout — a throttled clone then gets its retry.
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env.setdefault("GIT_HTTP_LOW_SPEED_LIMIT", "1000")
+    env.setdefault("GIT_HTTP_LOW_SPEED_TIME", "30")
     return env
+
+
+def _backoff_jitter(delay: float) -> float:
+    """Full jitter so a fleet that fails together does not retry together."""
+    return random.uniform(0, delay)
 
 
 def _install_node() -> None:
@@ -1529,23 +1544,37 @@ def _install_omnigent() -> None:
                 "offline Omnigent venv creation failed: "
                 + (result.stderr or result.stdout)[-500:]
             )
-        with timing_stage("install.dependencies"):
-            result = subprocess.run(
-                [
-                    paths["uv_binary"],
-                    "pip",
-                    "install",
-                    "--default-index",
-                    PUBLIC_PYPI,
-                    "--python",
-                    os.path.join(venv, "bin", "python"),
-                    "--require-hashes",
-                    "-r",
-                    paths["omnigent_lock"],
-                ],
-                capture_output=True, text=True, timeout=900, env=env,
-            )
+        # 163 wheels per instance through a shared egress NAT: uv's default of
+        # 50 parallel downloads multiplied by a room of instances is what makes
+        # the index throttle. Fewer, longer-lived connections finish sooner.
+        env.setdefault("UV_CONCURRENT_DOWNLOADS", "8")
+        env.setdefault("UV_HTTP_TIMEOUT", "60")
         installed_bin = os.path.join(venv, "bin", "omnigent")
+        for attempt in range(1, _UV_INSTALL_ATTEMPTS + 1):
+            with timing_stage("install.dependencies"):
+                result = subprocess.run(
+                    [
+                        paths["uv_binary"],
+                        "pip",
+                        "install",
+                        "--default-index",
+                        PUBLIC_PYPI,
+                        "--python",
+                        os.path.join(venv, "bin", "python"),
+                        "--require-hashes",
+                        "-r",
+                        paths["omnigent_lock"],
+                    ],
+                    capture_output=True, text=True, timeout=900, env=env,
+                )
+            if result.returncode == 0 and os.path.exists(installed_bin):
+                break
+            if attempt < _UV_INSTALL_ATTEMPTS:
+                logger.warning(
+                    "omnigent: dependency install attempt %d failed; retrying", attempt
+                )
+                delay = 5.0 * attempt
+                time.sleep(delay + _backoff_jitter(delay))
         if result.returncode != 0 or not os.path.exists(installed_bin):
             raise RuntimeError((result.stderr or result.stdout)[-500:])
         if os.path.lexists(omnigent_bin):
@@ -1837,16 +1866,24 @@ def _install_skills() -> None:
         # discarded and rebuilt from the reviewed ref.
         for attempt in range(1, 4):
             shutil.rmtree(clone_dir, ignore_errors=True)
-            with timing_stage("install.skills_git"):
-                result = subprocess.run(
-                    ["git", "clone", "--depth", "1", "--branch", SKILLS_REF,
-                     artifact["source"], clone_dir],
-                    capture_output=True, text=True, timeout=300, env=_install_env(),
+            try:
+                with timing_stage("install.skills_git"):
+                    result = subprocess.run(
+                        ["git", "clone", "--depth", "1", "--branch", SKILLS_REF,
+                         artifact["source"], clone_dir],
+                        capture_output=True, text=True, timeout=300, env=_install_env(),
+                    )
+            except subprocess.TimeoutExpired as timeout:
+                # A stalled transfer is what throttling looks like; it earns
+                # the same retry a refused one does.
+                result = subprocess.CompletedProcess(
+                    timeout.cmd, 124, stdout="", stderr="git clone timed out"
                 )
             if result.returncode == 0:
                 break
             if attempt < 3:
-                time.sleep(2 ** attempt)
+                delay = 2 ** attempt
+                time.sleep(delay + _backoff_jitter(delay))
         if result.returncode != 0:
             # --branch rejects raw commit SHAs; fall back to clone + checkout.
             shutil.rmtree(clone_dir, ignore_errors=True)
@@ -2070,6 +2107,9 @@ _install_agentbricks = _guard_installer(
 )
 
 
+_UV_INSTALL_ATTEMPTS = 3
+
+
 def _install_apx() -> None:
     from .apx import install_cli
 
@@ -2091,6 +2131,10 @@ def retry_failed(requires) -> bool:
     """
     global _retry_active
     names = {name for binary in requires or () for name in STEPS_BY_BINARY.get(binary, (binary,))}
+    # Readiness gates on these for every harness, so a harness retry always
+    # gets to repair them too — otherwise a throttled skills clone or a bun
+    # download that met a 403 kept /readyz red for the life of the process.
+    names |= set(READINESS_SHARED_STEPS)
     with _retry_lock:
         if _retry_active:
             return False
@@ -2107,13 +2151,18 @@ def retry_failed(requires) -> bool:
                 for name, operation in (
                     ("node", _install_node), ("databricks", _install_databricks_cli),
                     ("claude", _install_claude), ("codex", _install_codex),
+                    ("skills", _install_skills),
                     ("tmux", _install_tmux), ("omnigent", _install_omnigent),
                     ("apx", _install_apx),
                 ):
                     with _state_lock:
-                        still_failed = _state.get(name, {}).get("status") in {"error", "degraded"}
+                        still_failed = any(
+                            _state.get(step, {}).get("status") in {"error", "degraded"}
+                            for step in _RETRY_GROUPS.get(name, (name,))
+                        )
                         node_ready = _state.get("node", {}).get("status") == "complete"
-                    if name in failed and still_failed and (name != "codex" or node_ready):
+                    wanted = any(step in failed for step in _RETRY_GROUPS.get(name, (name,)))
+                    if wanted and still_failed and (name not in _NODE_GATED or node_ready):
                         operation()
         finally:
             with _retry_lock:
@@ -2121,6 +2170,43 @@ def retry_failed(requires) -> bool:
 
     threading.Thread(target=run, daemon=True, name="bootstrap-retry").start()
     return True
+
+
+# Steps /readyz requires regardless of which harness the attendee picked.
+READINESS_SHARED_STEPS = ("skills", "apx", "bun", "uv")
+# One installer repairs several recorded steps.
+_RETRY_GROUPS = {"apx": ("apx", "bun", "uv")}
+_NODE_GATED = frozenset({"codex", "skills"})
+ALL_RETRYABLE = ("claude", "codex", "omnigent") + READINESS_SHARED_STEPS
+
+# Unattended repair: a boot that met a throttled registry should heal itself
+# before an operator notices, not wait for an attendee to click a card.
+SELF_RETRY_INTERVAL = 180.0
+SELF_RETRY_ROUNDS = 10
+
+
+def _failed_steps() -> set[str]:
+    with _state_lock:
+        return {
+            name for name, entry in _state.items()
+            if entry.get("status") in {"error", "degraded"}
+        }
+
+
+def _self_retry_loop(*, sleep=time.sleep, jitter=None) -> None:
+    jitter = jitter or _backoff_jitter
+    for _ in range(SELF_RETRY_ROUNDS):
+        failed = _failed_steps()
+        if not failed:
+            return
+        sleep(SELF_RETRY_INTERVAL + jitter(SELF_RETRY_INTERVAL / 2))
+        if not _failed_steps():
+            return
+        logger.info("bootstrap: retrying failed steps %s", sorted(_failed_steps()))
+        retry_failed(ALL_RETRYABLE)
+        # Let the repair thread finish before judging the next round.
+        while _retry_active:
+            sleep(5)
 
 
 def _run_parallel_installers(tasks, *, max_workers: int) -> None:
@@ -2228,5 +2314,9 @@ def run_in_background() -> None:
     def orchestrate():
         with _install_file_lock(exclusive=True):
             orchestrate_locked()
+        if _failed_steps():
+            threading.Thread(
+                target=_self_retry_loop, daemon=True, name="bootstrap-self-retry"
+            ).start()
 
     threading.Thread(target=orchestrate, daemon=True, name="bootstrap").start()
