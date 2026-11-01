@@ -373,17 +373,22 @@ export interface HelpState {
 export interface HelpMessage {
   message_id: string;
   help_request_id?: string | null;
-  sender_role: "attendee" | "operator" | string;
+  sender_role: "attendee" | "operator" | "assistant" | string;
   sender?: string;
   body: string;
   created_at: string;
 }
+
+/** An attendee's rating of a Workshop Assistant answer. */
+export type HelpVote = "up" | "down";
 
 export interface HelpThread {
   raised: boolean;
   note?: string | null;
   help_request_id?: string | null;
   messages: HelpMessage[];
+  /** Votes already cast, by assistant message id. Absent from older servers. */
+  feedback?: Record<string, HelpVote>;
 }
 
 export interface PresenceUser {
@@ -637,5 +642,17 @@ export const api = {
     request<{ acked: boolean }>("/api/help/ack", {
       method: "POST",
       body: JSON.stringify({ message_id: messageId }),
+    }),
+  /** Rate a Workshop Assistant answer. One vote per answer; a repeat returns the first. */
+  rateHelpMessage: (messageId: string, value: HelpVote) =>
+    request<{ recorded: boolean; value: HelpVote }>(
+      `/api/help/messages/${encodeURIComponent(messageId)}/feedback`,
+      { method: "POST", body: JSON.stringify({ value }) },
+    ),
+  /** Ask for a member of the workshop team instead of the assistant. Raises the hand. */
+  requestPerson: () =>
+    request<{ raised: boolean; handoff_id: string }>("/api/help/handoff", {
+      method: "POST",
+      body: "{}",
     }),
 };

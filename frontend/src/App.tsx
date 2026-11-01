@@ -58,6 +58,7 @@ import YourBuild from "./components/YourBuild";
 import ResponsiveNav from "./components/ResponsiveNav";
 import { agentToResumeInNewBuild, goalChangePrompt, keepSavedCopies, recoverWithConfirmation, restoreInProgress, restoreNotice } from "./projects";
 import { bindIdentityRefresh, onAppEvent } from "./events";
+import { isReplyRole } from "./helpChat";
 import { ideaPromptAction } from "./ideation";
 import { friendlyError, type RecoveryAction } from "./errors";
 import { codeFromMessage, postAttendeeError, reportAttendeeError } from "./telemetry";
@@ -485,7 +486,7 @@ export default function App() {
         }
         if (event.t === "reconnected") setConnectionLost(false);
         if (event.t === "help_state") setHelpRaised(event.raised);
-        if (event.t === "help_message" && event.sender_role === "operator") {
+        if (event.t === "help_message" && isReplyRole(event.sender_role)) {
           // The toast does the noticing; this keeps the durable inbox honest so
           // a dismissed or missed toast is still recoverable from the panel.
           if (!helpChatOpenRef.current) setHelpUnread((n) => n + 1);

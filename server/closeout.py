@@ -9,10 +9,12 @@ from __future__ import annotations
 import copy
 import hashlib
 import math
+import re
 import threading
 import time
 import uuid
 from collections import defaultdict
+from datetime import datetime
 
 from . import config
 from .capture_journal import CaptureHeldError, canonical_json
@@ -43,6 +45,12 @@ SUPPORTED_EVENTS = frozenset({
 })
 REQUIRED_CATEGORIES = ("workshop.signal", "insight.summary", "discovery.record",
                        "attendee.identity", "identity.resolved", "help")
+# Help assistant v1 entries are retained with exactly these fields.
+ASSISTANT_HELP_FIELDS = {
+    "feedback": frozenset({"seq", "kind", "message_id", "value", "created_at"}),
+    "handoff": frozenset({"seq", "kind", "handoff_id", "help_request_id", "created_at"}),
+}
+_UTC_SECOND = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
 
 
 class CloseoutConflict(ValueError):
@@ -51,6 +59,35 @@ class CloseoutConflict(ValueError):
 
 def digest(value) -> str:
     return hashlib.sha256(canonical_json(value)).hexdigest()
+
+
+def _utc_timestamp(value) -> bool:
+    if not isinstance(value, str) or not _UTC_SECOND.fullmatch(value):
+        return False
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
+
+
+def _canonical_uuid(value) -> bool:
+    try:
+        return isinstance(value, str) and str(uuid.UUID(value)) == value
+    except ValueError:
+        return False
+
+
+def _malformed_assistant_help(entry: dict) -> bool:
+    kind = entry["kind"]
+    if set(entry) != ASSISTANT_HELP_FIELDS[kind] or not _utc_timestamp(entry["created_at"]):
+        return True
+    if kind == "feedback":
+        return (not isinstance(entry["message_id"], str) or not entry["message_id"]
+                or entry["value"] not in ("up", "down"))
+    request_id = entry["help_request_id"]
+    return (not _canonical_uuid(entry["handoff_id"])
+            or (request_id is not None and not isinstance(request_id, str)))
 
 
 def inventory(entries: list[dict]) -> dict:
@@ -119,8 +156,12 @@ def manifest_for(state: dict, binding: dict, *, completed_at: float) -> dict:
         issues.add("help_history_incomplete")
     for entry in help_entries:
         kind = entry.get("kind")
-        if not isinstance(kind, str) or kind not in {"message", "seen"}:
+        if not isinstance(kind, str) or kind not in {"message", "seen", *ASSISTANT_HELP_FIELDS}:
             issues.add("unsupported_required_output")
+            continue
+        if kind in ASSISTANT_HELP_FIELDS:
+            if _malformed_assistant_help(entry):
+                issues.add("malformed_required_help_output")
             continue
         required = ("message_id",) if kind == "seen" else (
             "message_id", "body", "created_at", "sender_role")

@@ -341,6 +341,28 @@ test("valid server frame clears auth reload guard for a later auth failure", asy
   connection.stop();
 });
 
+test("assistant answers and their votes reach listeners; a malformed vote does not", async () => {
+  const events = await import("./events.ts");
+  const socket = new FakeSocket();
+  const published: AppEvent[] = [];
+  const connection = events.createAppEventConnection({
+    socketFactory: () => socket,
+    schedule: () => 0,
+    publish: (event) => published.push(event),
+  });
+  connection.start();
+  const answer = {
+    t: "help_message", message_id: "a1", sender_role: "assistant",
+    sender: "Workshop Assistant", body: "Restart the warehouse", created_at: "2026-11-01T02:00:00Z",
+  };
+  socket.onmessage?.({ data: JSON.stringify(answer) });
+  socket.onmessage?.({ data: JSON.stringify({ t: "help_feedback", message_id: "a1", value: "up" }) });
+  socket.onmessage?.({ data: JSON.stringify({ t: "help_feedback", message_id: "a1", value: "meh" }) });
+  socket.onmessage?.({ data: JSON.stringify({ t: "help_feedback", value: "down" }) });
+  assert.deepEqual(published, [answer, { t: "help_feedback", message_id: "a1", value: "up" }]);
+  connection.stop();
+});
+
 test("a ping is only sent, and reported sent, once the socket is open", async () => {
   // 28 Oct E2E: a network check right after a reload pinged a socket that was
   // still connecting; the ping went nowhere and the seat was reported slow.
