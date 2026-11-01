@@ -148,6 +148,22 @@ test("clearing a stack with no replies changes nothing", () => {
   assert.equal(kept.length, 2);
 });
 
+test("an assistant answer toasts and is receipted like an operator reply", () => {
+  assert.deepEqual(helpMessageSurface({ senderRole: "assistant", helpOpen: false }), {
+    toast: true,
+    acknowledge: true,
+  });
+  assert.deepEqual(helpMessageSurface({ senderRole: "assistant", helpOpen: true }), {
+    toast: false,
+    acknowledge: true,
+  });
+});
+
+test("an assistant answer is cleared from the stack like any reply", () => {
+  const stack = [{ ...toast("help:a1", "sticky"), ackMessageId: "a1", ai: true }];
+  assert.deepEqual(clearHelpReplies(stack), { receipts: ["a1"], kept: [] });
+});
+
 test("Control Tower can waive the receipt", () => {
   assert.equal(
     helpMessageSurface({ senderRole: "operator", helpOpen: true, requestAck: false })

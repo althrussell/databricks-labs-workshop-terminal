@@ -20,15 +20,23 @@ _log = logging.getLogger(__name__)
 _lock = threading.RLock()
 _MAX_MESSAGES = 200
 _OUTBOX_PAGE = 20
+_VOTES = ("up", "down")
+# Control Tower sends ``sender_role: "assistant"`` only to terminals listing
+# ``assistant_v1``; older ones get the answer as an operator's, signed as AI.
+HELP_CAPABILITIES = ("assistant_v1",)
 _capture_journal = None
 _require_ready = None
 _push_rejection = {"logged": False}
 
 
+class HelpMessageNotFound(LookupError):
+    """No message with that id is in this attendee's help thread."""
+
+
 def _empty_state() -> dict[str, Any]:
     return {"raised": False, "note": "", "raised_at": 0.0, "messages": [],
             "help_request_id": None, "outbox": [], "seq": 0, "acked_through": 0,
-            "history": {}, "history_floor": 0}
+            "history": {}, "history_floor": 0, "feedback": {}}
 
 
 _state = _empty_state()
@@ -61,6 +69,14 @@ def _validate_state(state: Any) -> dict[str, Any]:
                        or entry["seq"] != int(seq) for seq, entry in history.items())
                 or any(history.get(str(entry["seq"])) != entry for entry in state["outbox"])):
             raise CaptureHeldError("retained help inventory is inconsistent")
+    # Releases before help assistant v1 retained no votes. Loading never adds
+    # the key: a closing capture refuses any write that is not an ACK.
+    if "feedback" in state:
+        feedback = state["feedback"]
+        if (not isinstance(feedback, dict)
+                or any(not isinstance(message_id, str) or not message_id or vote not in _VOTES
+                       for message_id, vote in feedback.items())):
+            raise CaptureHeldError("retained help feedback is invalid; capture requires recovery")
     return state
 
 
@@ -151,7 +167,8 @@ def presence_fields() -> dict[str, Any]:
                 "help_open": state["raised"],
                 "help_outbox": copy.deepcopy(state["outbox"][:_OUTBOX_PAGE]),
                 "help_pending": len(state["outbox"]),
-                "help_acked_through": state["acked_through"]}
+                "help_acked_through": state["acked_through"],
+                "help_capabilities": list(HELP_CAPABILITIES)}
 
 
 def _enqueue(state: dict[str, Any], kind: str, **fields: Any) -> None:
@@ -192,7 +209,8 @@ def thread_snapshot() -> dict[str, Any]:
         state = _read_locked()
         return {"raised": state["raised"], "note": state["note"] or None,
                 "help_request_id": state["help_request_id"],
-                "messages": copy.deepcopy(state["messages"])}
+                "messages": copy.deepcopy(state["messages"]),
+                "feedback": copy.deepcopy(state.get("feedback", {}))}
 
 
 def _append_local(state: dict[str, Any], message: dict[str, Any]) -> None:
@@ -281,6 +299,11 @@ def post_attendee_message(body: str, *, sender: str = "") -> dict[str, Any]:
 
 
 def ingest_operator_message(payload: dict[str, Any]) -> dict[str, Any]:
+    """Keep a reply from Control Tower: an operator's or the Workshop Assistant's.
+
+    ``sender_role`` is stored as sent. Replies are never enqueued; Control
+    Tower wrote them and already has them.
+    """
     body = (payload.get("body") or "").strip()
     if not body:
         raise ValueError("body required")
@@ -322,6 +345,56 @@ def acknowledge_message(message_id: str) -> bool:
         return False
     return _ct_post(f"{base.rstrip('/')}/api/help/messages/{mid}/seen",
                     {"run_id": run_id, "unit_id": unit_id})
+
+
+def record_feedback(message_id: str, value: str) -> dict[str, Any]:
+    """The attendee's one vote on a Workshop Assistant answer."""
+    if value not in _VOTES:
+        raise ValueError("feedback must be 'up' or 'down'")
+    if not isinstance(message_id, str) or not message_id:
+        raise HelpMessageNotFound("help message not found")
+    _ensure_ready()
+    created_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    with _lock:
+        def apply(state):
+            message = next((m for m in state["messages"] if m.get("message_id") == message_id), None)
+            if message is None:
+                raise HelpMessageNotFound("help message not found")
+            if message.get("sender_role") != "assistant":
+                raise ValueError("only Workshop Assistant answers can be rated")
+            existing = state.get("feedback", {}).get(message_id)
+            if existing is not None:
+                return {"recorded": False, "value": existing}
+            state.setdefault("feedback", {})[message_id] = value
+            _enqueue(state, "feedback", message_id=message_id, value=value, created_at=created_at)
+            return {"recorded": True, "value": value}
+        result = _mutate_locked(apply)
+    if result["recorded"]:
+        event_hub.publish({"t": "help_feedback", "message_id": message_id, "value": value})
+    return result
+
+
+def request_person() -> dict[str, Any]:
+    """The attendee asked for a member of the workshop team, not the assistant."""
+    _ensure_ready()
+    now = time.time()
+    created_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    handoff_id = str(uuid4())
+    with _lock:
+        def apply(state):
+            if not state["raised"]:
+                state.update(raised=True, note="", raised_at=now)
+            # However often it is pressed, Control Tower needs one handoff per
+            # collection; a press after the ACK is a new request.
+            pending = next((e for e in state["outbox"] if e.get("kind") == "handoff"), None)
+            if pending is not None:
+                return pending["handoff_id"]
+            _enqueue(state, "handoff", handoff_id=handoff_id,
+                     help_request_id=state["help_request_id"], created_at=created_at)
+            return handoff_id
+        handoff = _mutate_locked(apply)
+    event_hub.publish({"t": "help_state", "raised": True})
+    return {"raised": True, "handoff_id": handoff}
 
 
 def replace_thread_from_ct(messages: list[dict[str, Any]], *, help_request_id: str | None) -> None:

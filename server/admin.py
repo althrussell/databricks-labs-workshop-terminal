@@ -389,7 +389,12 @@ def broadcast(body: Broadcast):
 class HelpMessageIn(BaseModel):
     message_id: str | None = None
     help_request_id: str | None = None
+    # ``operator`` (a person) or ``assistant`` (the Workshop Assistant), stored
+    # as sent. ``assistant`` reaches only terminals advertising assistant_v1.
     sender_role: str = "operator"
+    # ``assistant`` or ``operator``: who wrote it, whatever role was sent.
+    # Display follows sender_role.
+    sender_kind: str | None = None
     sender: str = ""
     body: str
     created_at: str | None = None

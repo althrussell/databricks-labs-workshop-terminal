@@ -257,14 +257,33 @@ buffer and push it over `/ws/events` as `help_message`.
   "sender": "operator@example.com",
   "body": "Try restarting the warehouse",
   "created_at": "2026-08-04T01:02:03Z",
-  "show_banner": true
+  "surface": "toast",
+  "durability": "sticky",
+  "request_ack": true
 }
 ```
 
-When `show_banner` is true (default) and `sender_role` is `operator`, the server
-also emits a `broadcast` with `source: "help"` so attendees with the Help panel
-closed see a toast. The attendee UI suppresses that banner while the panel is
-open.
+With `surface: "toast"` (the default) the attendee UI toasts a reply while the
+Help panel is closed; the panel shows it either way. `request_ack` (default
+`true`) asks for the `seen` receipt described under
+[`help_outbox`](#help_outbox--the-delivery-path-for-what-the-attendee-writes).
+
+`sender_role` is stored exactly as given:
+
+| `sender_role` | Who | Shown as |
+|---|---|---|
+| `operator` | A person in the control room | `sender`, or "Operator" |
+| `assistant` | Control Tower's Workshop Assistant, an AI (Bot Mode) | "Workshop Assistant" with an **AI** badge, thumbs up/down under the answer, and **Talk to a person** while it has the last word |
+
+Control Tower sends `assistant` only to terminals whose presence lists
+`assistant_v1` in [`help_capabilities`](#get-apiadminpresence). An older
+terminal gets the same answer as `operator` with the sender
+`Workshop Assistant (AI)`, so it still reads as AI there. The optional
+`sender_kind` (`assistant` or `operator`) names the true author whatever role
+was sent; the terminal accepts it and renders by `sender_role`.
+
+Operator and assistant messages are stored in the local thread only. They are
+never added to the outbox: Control Tower sent them and already has them.
 
 ### Attendee help (`POST /api/help/raise` · `POST /api/help/lower` · `POST /api/help/messages` · `GET /api/help/thread`)
 
@@ -290,6 +309,23 @@ attendee's sentence would appear twice in the operator's thread.
 `{raised, note, raised_at, message_count, help_request_id}` for the header
 control.
 
+Two more attendee routes answer the Workshop Assistant. Like the routes above
+they act on the attendee's own seat and reach Control Tower through the outbox:
+
+- `POST /api/help/messages/{message_id}/feedback` with `{"value": "up"}` or
+  `{"value": "down"}` rates one assistant answer, and returns
+  `{"recorded": true, "value": "up"}`. One vote per answer: a repeat returns
+  `{"recorded": false, "value": <the first vote>}` and enqueues nothing. `404`
+  for an unknown message; `422` for any other value, or for a message that is
+  not the assistant's.
+- `POST /api/help/handoff` (empty body) asks for a person instead. It raises the
+  hand if it is down, without a note, enqueues a `handoff` and returns
+  `{"raised": true, "handoff_id": "uuid"}`. While that handoff is still waiting
+  to be collected, asking again returns it rather than enqueuing another.
+
+`GET /api/help/thread` also carries `feedback`: the votes cast so far, as
+`{message_id: "up" | "down"}`.
+
 ### `GET /api/admin/presence`
 Per-attendee status: online (active in the last 60 s), first/last seen,
 credential health, open sessions (agent, created, last activity), and per
@@ -303,7 +339,8 @@ presence reconcile:
 | `help_open` | bool | Alias of `help_raised` |
 | `help_note` | string \| null | Optional note (≤280 chars) |
 | `help_raised_at` | number \| null | Unix timestamp when raised |
-| `help_outbox` | array | Attendee messages and read receipts waiting to be collected (see below) |
+| `help_outbox` | array | Attendee messages, read receipts, votes and handoffs waiting to be collected (see below) |
+| `help_capabilities` | array of string | Help features this terminal understands. `assistant_v1`: it renders `sender_role: "assistant"` as the Workshop Assistant and may enqueue `feedback` and `handoff` |
 
 #### `help_outbox` — the delivery path for what the attendee writes
 
@@ -320,12 +357,38 @@ Each entry carries a monotonic `seq` and a `kind`:
 {"seq": 4, "kind": "message", "message_id": "uuid", "body": "still stuck",
  "sender_role": "attendee", "created_at": "2026-08-12T08:36:03Z"}
 {"seq": 5, "kind": "seen", "message_id": "uuid"}
+{"seq": 6, "kind": "feedback", "message_id": "uuid", "value": "up",
+ "created_at": "2026-08-12T08:37:10Z"}
+{"seq": 7, "kind": "handoff", "handoff_id": "uuid", "help_request_id": "uuid",
+ "created_at": "2026-08-12T08:38:02Z"}
 ```
 
-`message_id` is assigned here and is the same id Control Tower stores, so a
-round that is collected but not acknowledged is applied exactly once. Raised
-and lowered hands are **not** in the outbox — `help_raised` already carries
-that state and Control Tower already reconciles it.
+| `kind` | Meaning |
+|---|---|
+| `message` | The attendee wrote to the help desk |
+| `seen` | An operator or assistant reply was shown to the attendee |
+| `feedback` | The attendee rated an assistant answer: `message_id` is that answer's, `value` is `up` or `down` |
+| `handoff` | The attendee pressed **Talk to a person**: `handoff_id` is a uuid4, `help_request_id` is the thread's or `null` |
+
+A `message` entry's `message_id` is assigned here and is the same id Control
+Tower stores, so a round that is collected but not acknowledged is applied
+exactly once. Raised and lowered hands are **not** in the outbox —
+`help_raised` already carries that state and Control Tower already reconciles
+it.
+
+`feedback` and `handoff` come only from terminals advertising `assistant_v1`,
+and carry exactly the fields shown. `created_at` is UTC ISO 8601 with a `Z`, as
+on messages. A `feedback` is enqueued once per answer. A `handoff` is not
+enqueued again while an earlier one is still waiting for its ACK, so a repeated
+press reaches Control Tower once; after the ACK, a new press is a new handoff.
+The hand a handoff raises arrives through `help_raised`, like any other.
+
+Every entry is also kept in the retained capture journal, and appears
+unchanged in the sealed closeout `help` stream. Its manifest accepts these four
+kinds and no others (`unsupported_required_output`). A `feedback` or `handoff`
+must carry exactly its fields with valid values, as must the required fields of
+a `message` or `seen`; otherwise the closeout is incomplete with
+`malformed_required_help_output`.
 
 At most 20 entries are offered per response and 50 are retained; a backlog only
 grows while nothing is collecting, which is also when nobody is reading it.

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import re
+import uuid
 from unittest.mock import MagicMock
 
 import pytest
 
 from server import config, help as help_module
+from server.capture_journal import CaptureHeldError, CaptureJournal, MemoryCaptureStorage
 
 
 @pytest.fixture(autouse=True)
@@ -439,3 +442,206 @@ def test_a_refused_push_is_not_retried_for_the_rest_of_the_process(monkeypatch):
     assert help_module._ct_post("https://ct.example/api/help/raise", {}) is False
     assert help_module._ct_post("https://ct.example/api/help/messages/m1/seen", {}) is False
     assert calls == ["https://ct.example/api/help/raise"]
+
+
+# --- help assistant v1: the Workshop Assistant answers, attendees rate and hand off ---
+
+HDRS = {"X-Forwarded-Email": "alice@example.com"}
+ASSISTANT = {
+    "message_id": "asst-1",
+    "help_request_id": "hr-1",
+    "sender_role": "assistant",
+    "sender_kind": "assistant",
+    "sender": "Workshop Assistant",
+    "body": "Restart the warehouse from the SQL Warehouses page.",
+}
+UTC_STAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
+BINDING = {"run_id": "help-run", "unit_id": "help-unit", "workspace_id": "123",
+           "owner": "alice@example.com"}
+
+
+def _published(monkeypatch) -> list[dict]:
+    from server.events import event_hub
+
+    events: list[dict] = []
+    monkeypatch.setattr(event_hub, "publish", events.append)
+    return events
+
+
+def test_presence_advertises_the_assistant_capability(client, as_admin):
+    """Control Tower sends assistant answers only to terminals that say they can show them."""
+    presence = client.get("/api/admin/presence").json()
+    assert presence["help_capabilities"] == ["assistant_v1"]
+
+
+def test_an_assistant_answer_keeps_its_role_and_is_not_enqueued(client, as_admin, monkeypatch):
+    """Control Tower wrote it, so collecting it back would only file it twice."""
+    published = _published(monkeypatch)
+
+    resp = client.post("/api/admin/help/message", json=ASSISTANT)
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["message"]["sender_role"] == "assistant"
+    messages = client.get("/api/help/thread", headers=HDRS).json()["messages"]
+    assert [(m["message_id"], m["sender_role"]) for m in messages] == [("asst-1", "assistant")]
+    presence = client.get("/api/admin/presence").json()
+    assert presence["help_outbox"] == [] and presence["help_pending"] == 0
+    [event] = [e for e in published if e.get("t") == "help_message"]
+    assert event["sender_role"] == "assistant" and event["surface"] == "toast"
+
+
+def test_the_role_is_stored_as_sent_whatever_the_sender_kind(client, as_admin):
+    """An operator-styled copy stays an operator message; nothing is inferred."""
+    client.post("/api/admin/help/message", json={
+        **ASSISTANT, "sender_role": "operator", "sender": "Workshop Assistant (AI)"})
+
+    [message] = client.get("/api/help/thread", headers=HDRS).json()["messages"]
+    assert message["sender_role"] == "operator"
+    assert message["sender"] == "Workshop Assistant (AI)"
+
+
+def test_a_vote_on_an_assistant_answer_is_enqueued_exactly_once(client, as_admin, monkeypatch):
+    client.post("/api/admin/help/message", json=ASSISTANT)
+    published = _published(monkeypatch)
+
+    first = client.post("/api/help/messages/asst-1/feedback", json={"value": "up"}, headers=HDRS)
+    again = client.post("/api/help/messages/asst-1/feedback", json={"value": "down"}, headers=HDRS)
+
+    assert first.status_code == 200 and first.json() == {"recorded": True, "value": "up"}
+    assert again.status_code == 200 and again.json() == {"recorded": False, "value": "up"}
+    [entry] = client.get("/api/admin/presence").json()["help_outbox"]
+    assert set(entry) == {"seq", "kind", "message_id", "value", "created_at"}
+    assert (entry["kind"], entry["message_id"], entry["value"]) == ("feedback", "asst-1", "up")
+    assert UTC_STAMP.fullmatch(entry["created_at"])
+    assert [e for e in published if e.get("t") == "help_feedback"] == [
+        {"t": "help_feedback", "message_id": "asst-1", "value": "up"}]
+
+
+def test_only_a_known_assistant_answer_can_be_rated_and_only_up_or_down(client, as_admin):
+    client.post("/api/admin/help/message", json=ASSISTANT)
+    client.post("/api/admin/help/message", json={
+        "message_id": "op-1", "sender_role": "operator", "body": "I am on my way."})
+    mine = client.post("/api/help/messages", json={"body": "still stuck"}, headers=HDRS).json()
+    before = client.get("/api/admin/presence").json()["help_outbox"]
+
+    def rate(message_id, body):
+        return client.post(f"/api/help/messages/{message_id}/feedback", json=body,
+                           headers=HDRS).status_code
+
+    assert rate("no-such-answer", {"value": "up"}) == 404
+    assert rate("op-1", {"value": "up"}) == 422
+    assert rate(mine["message"]["message_id"], {"value": "down"}) == 422
+    for body in ({"value": "sideways"}, {"value": "UP"}, {"value": 1}, {}):
+        assert rate("asst-1", body) == 422
+    assert client.get("/api/admin/presence").json()["help_outbox"] == before
+    assert client.get("/api/help/thread", headers=HDRS).json()["feedback"] == {}
+
+
+def test_an_unknown_answer_and_a_non_assistant_message_fail_differently():
+    help_module.ingest_operator_message({"message_id": "op-1", "sender_role": "operator",
+                                         "body": "I am on my way."})
+
+    with pytest.raises(help_module.HelpMessageNotFound) as unknown:
+        help_module.record_feedback("missing", "up")
+    assert isinstance(unknown.value, LookupError)
+    with pytest.raises(ValueError):
+        help_module.record_feedback("op-1", "up")
+    with pytest.raises(ValueError):
+        help_module.record_feedback("op-1", "meh")
+    assert help_module.outbox_snapshot() == []
+
+
+def test_the_thread_carries_the_votes_cast(client, as_admin):
+    assert client.get("/api/help/thread", headers=HDRS).json()["feedback"] == {}
+    client.post("/api/admin/help/message", json=ASSISTANT)
+    client.post("/api/help/messages/asst-1/feedback", json={"value": "down"}, headers=HDRS)
+
+    assert client.get("/api/help/thread", headers=HDRS).json()["feedback"] == {"asst-1": "down"}
+
+
+def test_talk_to_a_person_raises_the_hand_and_enqueues_a_handoff(client, as_admin, monkeypatch):
+    client.post("/api/admin/help/message", json=ASSISTANT)
+    published = _published(monkeypatch)
+
+    resp = client.post("/api/help/handoff", headers=HDRS)
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["raised"] is True and uuid.UUID(body["handoff_id"]).version == 4
+    presence = client.get("/api/admin/presence").json()
+    assert presence["help_raised"] is True and presence["help_note"] is None
+    [entry] = presence["help_outbox"]
+    assert set(entry) == {"seq", "kind", "handoff_id", "help_request_id", "created_at"}
+    assert (entry["kind"], entry["handoff_id"], entry["help_request_id"]) == (
+        "handoff", body["handoff_id"], "hr-1")
+    assert UTC_STAMP.fullmatch(entry["created_at"])
+    assert {"t": "help_state", "raised": True} in published
+
+
+def test_repeated_presses_are_one_handoff_until_control_tower_collects_it(client, as_admin):
+    first = client.post("/api/help/handoff", headers=HDRS).json()
+    again = client.post("/api/help/handoff", headers=HDRS).json()
+
+    assert again == first
+    [pending] = client.get("/api/admin/presence").json()["help_outbox"]
+    assert pending["kind"] == "handoff" and pending["help_request_id"] is None
+
+    client.post("/api/admin/help/ack", json={"through_seq": pending["seq"]})
+    later = client.post("/api/help/handoff", headers=HDRS).json()
+    assert later["handoff_id"] != first["handoff_id"]
+    assert [e["handoff_id"] for e in client.get("/api/admin/presence").json()["help_outbox"]] == [
+        later["handoff_id"]]
+
+
+def test_a_handoff_keeps_a_hand_that_is_already_up(client):
+    client.post("/api/help/raise", json={"note": "stuck on UC"}, headers=HDRS)
+    raised_at = help_module.snapshot()["raised_at"]
+
+    client.post("/api/help/handoff", headers=HDRS)
+
+    state = help_module.snapshot()
+    assert (state["raised"], state["note"], state["raised_at"]) == (True, "stuck on UC", raised_at)
+
+
+def test_a_handoff_raises_a_lowered_hand_without_a_second_entry(client):
+    first = client.post("/api/help/handoff", headers=HDRS).json()
+    client.post("/api/help/lower", headers=HDRS)
+
+    again = client.post("/api/help/handoff", headers=HDRS).json()
+
+    assert again["handoff_id"] == first["handoff_id"]
+    assert help_module.snapshot()["raised"] is True
+    assert [e["kind"] for e in help_module.outbox_snapshot()] == ["handoff"]
+
+
+def test_help_retained_by_an_older_release_loads_without_feedback():
+    journal = CaptureJournal(MemoryCaptureStorage(), BINDING, {})
+    reply = {"message_id": "op-1", "help_request_id": "hr-1", "sender_role": "operator",
+             "sender": "Sam", "body": "Try this.", "created_at": "2026-11-01T02:00:00Z"}
+    legacy = {"raised": False, "note": "", "raised_at": 0.0, "messages": [reply],
+              "help_request_id": "hr-1", "outbox": [], "seq": 0, "acked_through": 0,
+              "history": {}, "history_floor": 0}
+    journal.transaction(lambda state: state.update(help=legacy))
+
+    help_module.configure_capture(journal)
+
+    # Loading leaves the retained bytes alone (a closing capture refuses any
+    # rewrite); the first vote adds the map.
+    assert "feedback" not in journal.read()["help"]
+    assert help_module.thread_snapshot()["feedback"] == {}
+    help_module.ingest_operator_message(ASSISTANT)
+    assert help_module.record_feedback("asst-1", "up") == {"recorded": True, "value": "up"}
+    assert journal.read()["help"]["feedback"] == {"asst-1": "up"}
+    assert [entry["kind"] for entry in help_module.outbox_snapshot()] == ["feedback"]
+
+
+@pytest.mark.parametrize("feedback", [[], None, {"asst-1": "sideways"}, {"": "up"}, {"asst-1": ["up"]}])
+def test_malformed_retained_feedback_holds_capture(feedback):
+    journal = CaptureJournal(MemoryCaptureStorage(), BINDING, {})
+    help_module.configure_capture(journal)
+    journal.transaction(lambda state: state["help"].update(feedback=feedback))
+    help_module.reset_for_tests()
+
+    with pytest.raises(CaptureHeldError, match="feedback"):
+        help_module.configure_capture(journal)
+    assert journal.health()["held"] is True
