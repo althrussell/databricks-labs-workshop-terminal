@@ -5,6 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { terminalGatewayLimit } from "../gatewayLimit";
 import { terminalExitNotice } from "../terminalExit";
+import { decideTerminalKey } from "../terminalKeys";
 import type { AttendeeErrorCode } from "../telemetry";
 import { notifyWorkshopClosing, workshopNotice } from "../workshopLifecycle";
 
@@ -51,6 +52,20 @@ export default function TerminalView({ sessionId, active, readOnly = false, onEx
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.loadAddon(new WebLinksAddon());
+    // Ctrl+C with a selection copies; without one it interrupts, as usual.
+    // Returning false stops xterm from turning the chord into a control byte.
+    term.attachCustomKeyEventHandler((event) => {
+      const decision = decideTerminalKey(event, term.hasSelection());
+      if (decision === "copy") {
+        const text = term.getSelection();
+        navigator.clipboard?.writeText(text).catch(() => {
+          /* Clipboard denied: the selection is still there to copy by menu. */
+        });
+        term.clearSelection();
+        return false;
+      }
+      return decision === "terminal";
+    });
     term.open(container);
     fit.fit();
     termRef.current = term;
