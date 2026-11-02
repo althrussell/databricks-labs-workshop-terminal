@@ -499,16 +499,21 @@ class CredentialManager:
                 # The SDK would not (or could not) mint early and this bearer is
                 # about to lapse. Do NOT wipe what attendees already hold: a
                 # bearer with seconds left still beats no bearer, and the next
-                # heartbeat retries the forced mint. Health reads unhealthy via
-                # _effective_state_locked until a replacement lands.
-                with self._lock:
-                    self.last_error = "app-identity OAuth bearer is too close to expiry"
+                # heartbeat retries the forced mint. Record the transition
+                # (without clearing) so Control Tower hears about the stall and
+                # about the recovery when a replacement lands; _adopt_oauth
+                # must run first or it would flip health straight back.
+                if self._token is None:
+                    self._adopt_oauth(oauth, expires_at, fanout=adopt)
                 logger.warning(
                     "credential: bearer within %ss of expiry and no replacement yet",
                     OAUTH_EXPIRY_MARGIN,
                 )
-                if self._token is None:
-                    self._adopt_oauth(oauth, expires_at, fanout=adopt)
+                self._set_health(
+                    STATE_UNHEALTHY,
+                    f"app-identity OAuth bearer is within {OAUTH_EXPIRY_MARGIN}s of "
+                    "expiry and no replacement has been minted; serving held bearer",
+                )
                 return
             self._adopt_oauth(oauth, expires_at, fanout=adopt)
             return

@@ -772,7 +772,7 @@ def test_near_expiry_bearer_is_not_wiped(monkeypatch):
     manager._tick()
 
     assert manager._token == bearer, "attendee files must keep the still-valid bearer"
-    assert "too close to expiry" in (manager.status()["last_error"] or "")
+    assert "of expiry" in (manager.status()["last_error"] or "")
     assert manager.status()["state"] == "unhealthy"  # honest about freshness
     assert fanned == [bearer]  # nothing new fanned out, nothing wiped
 
@@ -915,3 +915,45 @@ def test_sustained_outage_emits_one_unhealthy_transition_and_then_recovery(monke
     manager._tick()
     assert events == ["unhealthy", "rotating"]
     assert manager.status()["state"] == "rotating"
+
+
+def test_stalled_refresh_near_expiry_emits_one_unhealthy_transition_and_then_recovery(
+    monkeypatch,
+):
+    """A bearer about to lapse with a failed forced mint must reach Control Tower.
+
+    Distinct from the validation-outage path: validation *passes* here, so the
+    transition has to be recorded by the near-expiry branch itself.
+    """
+    now = [100.0]
+    old = _jwt(4000, "old")
+    new = _jwt(4000 + 3600, "new")
+    fanned = []
+    manager = _manager_with_token(monkeypatch, now, old, fanout=fanned.append)
+    events = []
+    monkeypatch.setattr(manager, "_emit_health_alert", lambda s, e: events.append(s))
+    monkeypatch.setattr(cred, "force_app_identity_refresh", lambda: None)
+
+    # Inside the expiry margin, SDK still returns `old`, forced mint fails:
+    # one unhealthy transition, bearer held, nothing wiped.
+    now[0] = 4000 - 45
+    manager._tick()
+    assert events == ["unhealthy"]
+    assert manager._token == old
+    assert manager.status()["state"] == "unhealthy"
+    assert fanned == [old]
+
+    # Still stalled on the next heartbeat: no duplicate inside the re-emit interval.
+    now[0] += cred.HEARTBEAT
+    manager._tick()
+    assert events == ["unhealthy"]
+    assert manager._token == old
+
+    # Replacement lands: recovery transition is emitted and fanned out.
+    monkeypatch.setattr(cred, "app_identity_bearer", lambda: new)
+    now[0] += cred.HEARTBEAT
+    manager._tick()
+    assert events == ["unhealthy", "rotating"]
+    assert manager._token == new
+    assert manager.status()["state"] == "rotating"
+    assert fanned == [old, new]
