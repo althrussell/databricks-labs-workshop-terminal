@@ -438,8 +438,15 @@ def omnigent_stale_grace() -> int:
 
     Past this it is stood down into ``waiting_for_token`` — visibly gated and
     recoverable — rather than left running and failing every session with an
-    auth error the attendee cannot act on."""
-    return max(5, _env_int("OMNIGENT_STALE_GRACE_S", 300))
+    auth error the attendee cannot act on.
+
+    The default is two hours, not minutes: the OBO token only renews while the
+    attendee's tab is running, so a closed lid over lunch takes it stale, and
+    standing the host down kills the runner and any in-flight Omnigent work
+    with it. A host running on a stale token merely fails new sessions with an
+    auth error until the attendee returns — which the launch gate already
+    reports — so the long grace costs nothing the short one did not."""
+    return max(5, _env_int("OMNIGENT_STALE_GRACE_S", 7200))
 
 
 def obo_renew_lead() -> int:

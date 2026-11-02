@@ -965,6 +965,7 @@ def test_skills_clone_is_retried_after_a_one_off_failure(
     monkeypatch.setattr(install, "SKILLS_REF", "v1.2.3")
     monkeypatch.setattr(install.subprocess, "run", fake_run)
     monkeypatch.setattr(install.time, "sleep", sleeps.append)
+    monkeypatch.setattr(install, "_backoff_jitter", lambda d: 0.0)
 
     install._install_skills()
 
@@ -995,6 +996,7 @@ def test_skills_clone_gives_up_after_three_attempts_and_keeps_the_fallback(
     monkeypatch.setattr(install, "SKILLS_REF", "v1.2.3")
     monkeypatch.setattr(install.subprocess, "run", fake_run)
     monkeypatch.setattr(install.time, "sleep", sleeps.append)
+    monkeypatch.setattr(install, "_backoff_jitter", lambda d: 0.0)
 
     install._install_skills()
 
@@ -1002,6 +1004,54 @@ def test_skills_clone_gives_up_after_three_attempts_and_keeps_the_fallback(
     assert ["--depth" in argv for argv in clones] == [True, True, True, False]
     assert sleeps == [2, 4]
     assert install.status()["steps"]["skills"]["status"] == "degraded"
+
+
+def test_a_stalled_skills_clone_is_retried_like_a_refused_one(
+    monkeypatch, tmp_path, restore_installer_state
+):
+    """A throttled transfer stalls rather than failing; it must earn the same retry."""
+    prefix = tmp_path / "prefix"
+    vendored = tmp_path / "vendored"
+    (vendored / "fallback-skill").mkdir(parents=True)
+    commit = "0" * 40
+    clones, sleeps = [], []
+
+    class Result:
+        def __init__(self, returncode=0, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_run(argv, **kwargs):
+        if argv[:2] == ["git", "clone"]:
+            clones.append(argv)
+            assert kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
+            assert kwargs["env"]["GIT_HTTP_LOW_SPEED_LIMIT"] == "1000"
+            if len(clones) == 1:
+                raise install.subprocess.TimeoutExpired(argv, 300)
+            clone_dir = prefix / install.SKILLS_CLONE_DIR
+            (clone_dir / install.SKILLS_UPSTREAM_DIR / "fetched-skill").mkdir(parents=True)
+            restore_installer_state.databricks_agent_skills["commit"] = commit
+            restore_installer_state.databricks_agent_skills["content_sha256"] = (
+                install._directory_checksum(clone_dir / install.SKILLS_UPSTREAM_DIR)
+            )
+            return Result()
+        if "rev-parse" in argv:
+            return Result(stdout=f"{commit}\n")
+        return Result()
+
+    monkeypatch.setattr(install.config, "shared_prefix", lambda: str(prefix))
+    monkeypatch.setattr(install, "_ASSETS_SKILLS", str(vendored))
+    monkeypatch.setattr(install, "SKILLS_REF", "v1.2.3")
+    monkeypatch.setattr(install.subprocess, "run", fake_run)
+    monkeypatch.setattr(install.time, "sleep", sleeps.append)
+    monkeypatch.setattr(install, "_backoff_jitter", lambda d: 0.0)
+
+    install._install_skills()
+
+    assert install.status()["steps"]["skills"]["status"] == "complete"
+    assert len(clones) == 2
+    assert sleeps == [2]
 
 
 def test_an_empty_upstream_skills_directory_is_an_error_not_a_fallback(

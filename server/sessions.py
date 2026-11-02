@@ -253,6 +253,9 @@ class Session:
                 "reason": self.exit_reason or "exited",
                 "exit_code": self.exit_code,
                 "exit_signal": self.exit_signal,
+                # Lets the notice name the CLI's own resume command, so a crash
+                # or an OOM kill does not cost the attendee their conversation.
+                "agent": self.agent_id,
             }
 
     def metadata(self) -> dict:
@@ -578,10 +581,19 @@ class SessionManager:
             session.exit_reason = reason
         self._fanout(session, session.exit_message())
         try:
-            # A captured wait status means the reader already reaped the agent;
-            # signalling that PID again risks hitting a rapidly reused PID.
-            if session.exit_code is None and session.exit_signal is None:
+            # Signal the whole process group, not just the leader. The agent is
+            # spawned with setsid, so its pgid is its pid, and a pgid is never
+            # reused while any member is alive — which makes this safe even
+            # after the reader reaped the leader. That is the case that matters:
+            # an agent that exited cleanly leaves behind the dev servers it
+            # started (apx dev, vite, uvicorn --reload) and nothing else would
+            # ever stop them. ESRCH means the group is already empty.
+            try:
                 os.killpg(session.pid, signal.SIGHUP)
+                group_alive = True
+            except ProcessLookupError:
+                group_alive = False
+            if group_alive:
                 wait = GRACEFUL_SHUTDOWN_WAIT
                 if deadline is not None:
                     wait = min(wait, max(0.0, (deadline - time.monotonic()) / 2))

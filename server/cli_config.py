@@ -391,11 +391,14 @@ def configure_claude(
             # omnigent harness refresh window). A 401 also forces an
             # immediate re-run, so a mid-flight rotation self-heals either way.
             "CLAUDE_CODE_API_KEY_HELPER_TTL_MS": "240000",
-            # A blocked AI Gateway budget is definitive for this attendee until
-            # an operator changes policy. Claude Code otherwise retries the same
-            # denied request ten times, wasting workshop time while implying the
-            # failure may clear on its own. Return the first denial immediately.
-            "CLAUDE_CODE_MAX_RETRIES": "0",
+            # With a whole room on one regional model pool, 429/529 and the odd
+            # 5xx are normal; Claude Code's default (10 retries) would hide a
+            # blocked AI Gateway budget behind minutes of backoff, while 0 ended
+            # the attendee's turn on the first blip. Three retries ride out a
+            # burst in seconds and a budget 403 (which costs no tokens to retry)
+            # still surfaces fast — the terminal stream scanner shows the
+            # allowance-exhausted banner the moment it appears.
+            "CLAUDE_CODE_MAX_RETRIES": "3",
             **CLAUDE_QUIET_ENV,
         }
     )
@@ -607,9 +610,19 @@ def ensure_claude_trusts(user: User, folder: str) -> None:
     _update_claude_json_trust(path, [os.path.realpath(folder)])
 
 
-#: apx MCP tools that cannot work on a seat (F-012, 31 Oct). Codex's apx server
-#: is an allowlist (`enabled_tools` in configure_codex) and leaves this out.
-APX_UNUSABLE_TOOLS = ("mcp__apx__databricks_apps_logs",)
+#: apx MCP tools Claude must not reach on a seat. Codex's apx server is an
+#: allowlist (`enabled_tools` in configure_codex) and leaves all of these out.
+#: - databricks_apps_logs cannot work (F-012, 31 Oct): it shells out to
+#:   `databricks auth token`, which a seat's OAuth cache never satisfies.
+#: - feedback_prepare/feedback_submit file *public GitHub issues* on the apx
+#:   repository as whoever holds the token. An autonomous agent in
+#:   bypassPermissions mode must never be able to post an attendee's project
+#:   details to a public tracker on their behalf.
+APX_UNUSABLE_TOOLS = (
+    "mcp__apx__databricks_apps_logs",
+    "mcp__apx__feedback_prepare",
+    "mcp__apx__feedback_submit",
+)
 
 #: Omnigent 0.15's embedded-browser tools, as Claude sees them through
 #: Omnigent's MCP server. They need the Omnigent desktop app as a renderer.

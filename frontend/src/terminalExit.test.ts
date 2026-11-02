@@ -28,3 +28,15 @@ test("clean and older exit frames still offer relaunch without a failure claim",
 test("unexpected server prose is never printed into the terminal notice", () => {
   assert.equal(terminalExitNotice({ reason: "\u001b[2Juntrusted output" }), "Session ended. Select Relaunch to start again.");
 });
+
+test("a crash names the CLI's own resume command so the conversation is not lost", () => {
+  assert.match(terminalExitNotice({ exit_signal: 9, agent: "claude" }), /type \/resume/);
+  assert.match(terminalExitNotice({ reason: "process_error", exit_code: 1, agent: "codex" }), /codex resume/);
+  assert.match(terminalExitNotice({ reason: "idle_reaped", agent: "claude" }), /\/resume/);
+});
+
+test("unknown agents and clean exits carry no resume hint", () => {
+  assert.doesNotMatch(terminalExitNotice({ exit_signal: 9, agent: "omnigent" }), /resume/);
+  assert.doesNotMatch(terminalExitNotice({ exit_signal: 9, agent: "\u001b[2Jevil" }), /evil/);
+  assert.equal(terminalExitNotice({ exit_code: 0, agent: "claude" }), "Session ended. Select Relaunch to start again.");
+});

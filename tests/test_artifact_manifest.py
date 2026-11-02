@@ -374,14 +374,15 @@ def test_a_dropped_download_is_retried_rather_than_failing_the_seat(
     destination = tmp_path / "artifact"
 
     assert artifacts._download_https(
-        "https://example.invalid/artifact", str(destination), sleep=sleeps.append
+        "https://example.invalid/artifact", str(destination), sleep=sleeps.append,
+        jitter=lambda d: 0.0,
     ) is True
     assert destination.read_bytes() == b"artifact bytes"
     assert len(calls) == 2
     assert sleeps == [2.0]
 
 
-def test_a_download_gives_up_after_three_server_errors(tmp_path, monkeypatch):
+def test_a_download_gives_up_after_five_server_errors(tmp_path, monkeypatch):
     from urllib.error import HTTPError
 
     from server.bootstrap import artifacts
@@ -392,17 +393,92 @@ def test_a_download_gives_up_after_three_server_errors(tmp_path, monkeypatch):
         artifacts,
         "urlopen",
         _scripted_urlopen(
-            [HTTPError(source, 503, "Service Unavailable", {}, None) for _ in range(3)],
+            [HTTPError(source, 503, "Service Unavailable", {}, None) for _ in range(5)],
             calls,
         ),
     )
 
     with pytest.raises(HTTPError):
         artifacts._download_https(
-            source, str(tmp_path / "artifact"), sleep=sleeps.append
+            source, str(tmp_path / "artifact"), sleep=sleeps.append, jitter=lambda d: 0.0
         )
-    assert len(calls) == 3
-    assert sleeps == [2.0, 4.0]
+    assert len(calls) == 5
+    assert sleeps == [2.0, 4.0, 8.0, 16.0]
+
+
+def test_a_github_403_is_treated_as_throttling_and_retried(tmp_path, monkeypatch):
+    """GitHub answers anonymous abuse limits with 403, not 429; a room booting
+    from a few egress IPs sees exactly that."""
+    import io
+    from urllib.error import HTTPError
+
+    from server.bootstrap import artifacts
+
+    source = "https://github.com/x/y/releases/download/v1/artifact"
+    calls, sleeps = [], []
+    monkeypatch.setattr(
+        artifacts,
+        "urlopen",
+        _scripted_urlopen(
+            [HTTPError(source, 403, "Forbidden", {}, None), io.BytesIO(b"ok")], calls
+        ),
+    )
+    destination = tmp_path / "artifact"
+    assert artifacts._download_https(
+        source, str(destination), sleep=sleeps.append, jitter=lambda d: 0.0
+    ) is True
+    assert destination.read_bytes() == b"ok"
+    assert sleeps == [2.0]
+
+
+def test_retry_after_is_honoured_and_capped(tmp_path, monkeypatch):
+    import io
+    from email.message import Message
+    from urllib.error import HTTPError
+
+    from server.bootstrap import artifacts
+
+    source = "https://example.invalid/artifact"
+    short = Message()
+    short["Retry-After"] = "7"
+    long = Message()
+    long["Retry-After"] = "600"
+    calls, sleeps = [], []
+    monkeypatch.setattr(
+        artifacts,
+        "urlopen",
+        _scripted_urlopen(
+            [
+                HTTPError(source, 429, "Too Many Requests", short, None),
+                HTTPError(source, 429, "Too Many Requests", long, None),
+                io.BytesIO(b"ok"),
+            ],
+            calls,
+        ),
+    )
+    assert artifacts._download_https(
+        source, str(tmp_path / "artifact"), sleep=sleeps.append, jitter=lambda d: 0.0
+    ) is True
+    assert sleeps == [7.0, artifacts._RETRY_AFTER_CAP]
+
+
+def test_download_backoff_adds_jitter(tmp_path, monkeypatch):
+    import io
+    from urllib.error import URLError
+
+    from server.bootstrap import artifacts
+
+    calls, sleeps = [], []
+    monkeypatch.setattr(
+        artifacts,
+        "urlopen",
+        _scripted_urlopen([URLError("reset"), io.BytesIO(b"ok")], calls),
+    )
+    artifacts._download_https(
+        "https://example.invalid/artifact", str(tmp_path / "a"),
+        sleep=sleeps.append, jitter=lambda d: d / 2,
+    )
+    assert sleeps == [3.0]
 
 
 def test_a_missing_download_is_not_retried(tmp_path, monkeypatch):
@@ -455,7 +531,8 @@ def test_a_retried_download_keeps_no_bytes_from_the_failed_attempt(
     destination = tmp_path / "artifact"
 
     assert artifacts._download_https(
-        "https://example.invalid/artifact", str(destination), sleep=sleeps.append
+        "https://example.invalid/artifact", str(destination), sleep=sleeps.append,
+        jitter=lambda d: 0.0,
     ) is True
     assert destination.read_bytes() == b"complete"
     assert sleeps == [2.0]
