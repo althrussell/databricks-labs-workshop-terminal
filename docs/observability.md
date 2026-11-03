@@ -147,7 +147,8 @@ Guards inside the terminal, independent of the environment:
 
 - `observability.quiet_exporter_logging()` sets the `opentelemetry.exporter`
   and `opentelemetry.sdk` loggers to `ERROR` and rate-limits them to one
-  record per message template per minute. Exporter retry warnings otherwise go
+  record per logging call site per minute (the call site is the message
+  template; the rendered text varies per endpoint and error detail). Exporter retry warnings otherwise go
   to stdout (which Apps exports) and to the OTel logging handler (which exports
   them through the failing exporter), a self-amplifying loop under ingestion
   backpressure.

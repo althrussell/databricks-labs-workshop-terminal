@@ -1,5 +1,6 @@
 import json
 import logging
+import sys
 import threading
 import time
 
@@ -366,26 +367,29 @@ def test_safe_event_attributes_are_allowlisted():
     assert attrs == {"agent.id": "codex", "event.reason_code": "turn_failed"}
 
 
-def test_rate_limit_filter_passes_one_record_per_template_per_interval():
+def _exporter_record(msg: str, *args, line: int = 1, level: int = logging.ERROR) -> logging.LogRecord:
+    return logging.LogRecord("opentelemetry.exporter.x", level, "/x/exporter.py", line, msg, args, None)
+
+
+def test_rate_limit_filter_passes_one_record_per_call_site_per_interval():
     now = [100.0]
     rate_limit = observability.RateLimitFilter(interval_seconds=60.0, clock=lambda: now[0])
 
-    def record(msg: str, *args, level: int = logging.ERROR) -> logging.LogRecord:
-        return logging.LogRecord("opentelemetry.exporter.x", level, __file__, 1, msg, args, None)
-
-    assert rate_limit.filter(record("Failed to export %s to %s", "traces", "a"))
-    # Same template, different arguments: still the same failure mode.
-    assert not rate_limit.filter(record("Failed to export %s to %s", "logs", "b"))
-    assert not rate_limit.filter(record("Failed to export %s to %s", "metrics", "c"))
-    # A different template or level is a different signal.
-    assert rate_limit.filter(record("Shutdown in progress, aborting retry."))
-    assert rate_limit.filter(record("Failed to export %s to %s", "traces", "a", level=logging.WARNING))
+    assert rate_limit.filter(_exporter_record("Failed to export %s to %s", "traces", "a", line=467))
+    # Same call site, different arguments: still the same failure mode.
+    assert not rate_limit.filter(_exporter_record("Failed to export %s to %s", "logs", "b", line=467))
+    assert not rate_limit.filter(_exporter_record("Failed to export %s to %s", "metrics", "c", line=467))
+    # A different call site or level is a different signal.
+    assert rate_limit.filter(_exporter_record("Shutdown in progress, aborting retry.", line=488))
+    assert rate_limit.filter(
+        _exporter_record("Failed to export %s to %s", "traces", "a", line=467, level=logging.WARNING)
+    )
     assert rate_limit.suppressed == 2
 
     # The same record offered by several handlers is one decision, not several:
     # otherwise the first handler "emits" and the rest drop it.
     shared = observability.RateLimitFilter(clock=lambda: now[0])
-    once = record("Exception while exporting %s.", "logs")
+    once = _exporter_record("Exception while exporting %s.", "logs")
     assert shared.filter(once) and shared.filter(once) and shared.filter(once)
     assert shared.suppressed == 0
 
@@ -395,9 +399,45 @@ def test_rate_limit_filter_passes_one_record_per_template_per_interval():
     assert scoped.suppressed == 0
 
     now[0] += 59.0
-    assert not rate_limit.filter(record("Failed to export %s to %s", "traces", "a"))
+    assert not rate_limit.filter(_exporter_record("Failed to export %s to %s", "traces", "a", line=467))
     now[0] += 1.0
-    assert rate_limit.filter(record("Failed to export %s to %s", "traces", "a"))
+    assert rate_limit.filter(_exporter_record("Failed to export %s to %s", "traces", "a", line=467))
+
+
+def test_rate_limit_filter_holds_with_redaction_installed_and_varying_details():
+    # The redaction record factory renders msg with its args and exception text
+    # at record creation. A key on the rendered text would see every endpoint
+    # or error detail as a new message and never limit anything.
+    observability.install_logging_redaction()
+    now = [100.0]
+    rate_limit = observability.RateLimitFilter(interval_seconds=60.0, clock=lambda: now[0])
+    passed = 0
+    for i in range(20):
+        try:
+            raise RuntimeError(f"UNAVAILABLE attempt {i} at endpoint-{i}")
+        except RuntimeError:
+            record = logging.getLogger("opentelemetry.exporter.otlp.proto.grpc.exporter").makeRecord(
+                "opentelemetry.exporter.otlp.proto.grpc.exporter", logging.ERROR, "/x/exporter.py", 467,
+                "Failed to export %s to %s, error code: %s, error details: %s",
+                ("traces", f"https://collector-{i}", "UNAVAILABLE", f"detail {i}"), sys.exc_info(),
+            )
+        assert record.args == () and f"detail {i}" in record.msg and "RuntimeError" in record.msg
+        passed += rate_limit.filter(record)
+    assert passed == 1
+    assert rate_limit.suppressed == 19
+    assert len(rate_limit._last_emitted) == 1
+
+
+def test_rate_limit_filter_table_is_bounded():
+    now = [0.0]
+    rate_limit = observability.RateLimitFilter(interval_seconds=60.0, clock=lambda: now[0], max_entries=8)
+    for line in range(50):
+        now[0] += 1.0
+        assert rate_limit.filter(_exporter_record("m", line=line))
+    assert len(rate_limit._last_emitted) <= 8
+    # The most recent call sites are the ones still limited.
+    assert not rate_limit.filter(_exporter_record("m", line=49))
+    assert rate_limit.filter(_exporter_record("m", line=0))
 
 
 def test_quiet_exporter_logging_drops_retry_warnings_and_caps_errors():

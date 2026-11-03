@@ -195,10 +195,17 @@ _RATE_LIMIT_DECISION = "_wt_rate_limit_allowed"
 
 
 class RateLimitFilter(logging.Filter):
-    """Pass one record per message template per interval; count the rest.
+    """Pass one record per logging call site per interval; count the rest.
+
+    The key is ``(logger, level, file, line)`` rather than the message text:
+    the redaction record factory has already rendered ``record.msg`` with its
+    arguments and any exception text by the time a handler filter runs, so a
+    text key would treat every distinct endpoint or error detail as a new
+    message and never limit anything. A call site is the message template.
 
     Scoped to ``name_prefixes`` when given; other records pass untouched, so
-    the filter can sit on a handler that serves the whole process.
+    the filter can sit on a handler that serves the whole process. The table
+    of recent call sites is bounded.
     """
 
     def __init__(
@@ -206,13 +213,15 @@ class RateLimitFilter(logging.Filter):
         interval_seconds: float = EXPORTER_LOG_INTERVAL_SECONDS,
         clock: Callable[[], float] = time.monotonic,
         name_prefixes: tuple[str, ...] = (),
+        max_entries: int = 256,
     ) -> None:
         super().__init__()
         self._interval = interval_seconds
         self._clock = clock
         self._prefixes = name_prefixes
+        self._max_entries = max(1, max_entries)
         self._lock = threading.Lock()
-        self._last_emitted: dict[tuple[str, int, str], float] = {}
+        self._last_emitted: dict[tuple[str, int, str, int], float] = {}
         self.suppressed = 0
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -223,7 +232,7 @@ class RateLimitFilter(logging.Filter):
         decided = record.__dict__.get(_RATE_LIMIT_DECISION)
         if decided is not None:
             return decided
-        key = (record.name, record.levelno, str(record.msg))
+        key = (record.name, record.levelno, record.filename, record.lineno)
         now = self._clock()
         with self._lock:
             last = self._last_emitted.get(key)
@@ -233,8 +242,18 @@ class RateLimitFilter(logging.Filter):
             else:
                 self._last_emitted[key] = now
                 allowed = True
+                if len(self._last_emitted) > self._max_entries:
+                    self._evict(now)
         record.__dict__[_RATE_LIMIT_DECISION] = allowed
         return allowed
+
+    def _evict(self, now: float) -> None:
+        expired = [k for k, t in self._last_emitted.items() if now - t >= self._interval]
+        for k in expired:
+            del self._last_emitted[k]
+        while len(self._last_emitted) > self._max_entries:
+            oldest = min(self._last_emitted, key=self._last_emitted.__getitem__)
+            del self._last_emitted[oldest]
 
 
 _exporter_rate_limit = RateLimitFilter(name_prefixes=_EXPORTER_LOGGER_NAMES)
@@ -248,7 +267,7 @@ def quiet_exporter_logging() -> None:
     same telemetry destination, and to the OTel logging handler, which tries
     to export them through the failing exporter. Under ingestion backpressure
     that is a self-amplifying loop. Warnings are dropped outright (a retry is
-    not actionable) and errors are capped at one per message per minute.
+    not actionable) and errors are capped at one per call site per minute.
 
     The level is set on the package loggers, which child loggers inherit. The
     rate limit goes on the root handlers because a logger's own filters only
