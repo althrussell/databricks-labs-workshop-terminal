@@ -29,6 +29,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol, TypeVar
 
+from . import config
 from .runtime_timing import stage as timing_stage
 from .capture_io import storage_failure
 

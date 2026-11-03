@@ -7,6 +7,8 @@ shutdown flush first, so nothing published outside the process can be lost.
 """
 from __future__ import annotations
 
+import fcntl
+import os
 import time
 
 import pytest
@@ -175,3 +177,42 @@ def test_a_single_oversized_change_is_still_refused_to_its_producer():
     with pytest.raises(CaptureCapacityError):
         live.transaction(lambda state: state.update(blob="x" * 4096))
     assert live.read() == {}
+
+
+def test_flush_holds_the_process_file_lock(tmp_path, monkeypatch):
+    # Since #132 _process_file_lock referenced ``config`` without importing it;
+    # the NameError was swallowed by its fail-open except and the lock was never
+    # taken. Assert the lock file exists and is held exclusively during flush.
+    monkeypatch.setenv("DATA_ROOT", str(tmp_path))
+    lock_path = tmp_path / ".capture.lock"
+    observed: dict[str, object] = {}
+
+    class LockProbingStorage(MemoryCaptureStorage):
+        def create(self, name, content):
+            observed["lock_exists"] = lock_path.exists()
+            fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                observed["held_during_flush"] = True
+            else:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+                observed["held_during_flush"] = False
+            finally:
+                os.close(fd)
+            return super().create(name, content)
+
+    storage = LockProbingStorage()
+    live = journal(storage)
+    live.read()
+    live.transaction(lambda state: state.update(k="v"))
+    live.flush()
+
+    assert observed == {"lock_exists": True, "held_during_flush": True}
+    # Released after flush: the probe acquires it without contention.
+    fd = os.open(lock_path, os.O_RDWR)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
