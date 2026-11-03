@@ -319,6 +319,37 @@ def test_info_forwarder_drops_debug_and_noisy_202_and_caps_rate(attendee, tmp_pa
     assert any("dropped" in m for m in messages)
 
 
+def test_severe_forwarder_is_capped_separately_so_a_crash_loop_cannot_flood(attendee, tmp_path):
+    # 2026-11-04: severe lines bypassed the INFO cap entirely. A host that
+    # crash-loops emits ERROR continuously, and every forwarded line is a row
+    # in the shared telemetry destination.
+    collector = LogCollector(
+        journal=Journal(tmp_path / "diagnostics.json", capacity=200),
+        users=_Roster(attendee),
+        emitter=_Emitter(),
+        interval=0.01,
+        rate_limit_per_sec=20,
+        severe_rate_limit_per_sec=3,
+    )
+    lines = "".join(
+        f"ERROR 10-27 02:44:49.{i:03d} runner.app  boom | failure number {i}\n" for i in range(12)
+    )
+    lines += "INFO  10-27 02:44:50.000 runner.app  step | an ordinary line\n"
+    _log(attendee, "runner", "runner-8c0251b5-20261027.log").write_text(lines)
+
+    collector.sweep()
+    collector._flush_rate_dropped(attendee.email)
+
+    forwarded = [item for item in collector.forwarded_lines if item["source"] != "collector"]
+    severe = [item for item in forwarded if item["level"] == "ERROR"]
+    assert len(severe) == 3
+    assert [item["message"] for item in severe] == [f"failure number {i}" for i in range(3)]
+    # The INFO budget is separate; a severe burst does not starve ordinary lines.
+    assert any(item["message"] == "an ordinary line" for item in forwarded)
+    summaries = [item["message"] for item in collector.forwarded_lines if item["source"] == "collector"]
+    assert summaries == ["dropped 9 WARNING+ lines (rate limit 3/s)"]
+
+
 def test_seat22_lifecycle_fixtures_detect_ready_first_message_missing_and_early_exit(
     attendee, tmp_path
 ):

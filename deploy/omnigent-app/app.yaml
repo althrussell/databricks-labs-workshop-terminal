@@ -61,9 +61,13 @@ env:
     value: ""
   - name: WORKSHOP_RELEASE_SHA
     value: ""
+  # Volume floor for an App Control Tower has opted into export (it is not an
+  # exporter by default). Same contract as the terminal's app.yaml.
   - name: OTEL_TRACES_SAMPLER
     value: "parentbased_traceidratio"
   - name: OTEL_TRACES_SAMPLER_ARG
-    value: "0.1"
+    value: "0.05"
   - name: OTEL_PYTHON_FASTAPI_EXCLUDED_URLS
-    value: "health,/health,/healthz,/readyz"
+    value: "health,/health,/healthz,/readyz,/assets/.*,/static/.*,/favicon.*"
+  - name: OTEL_METRIC_EXPORT_INTERVAL
+    value: "300000"

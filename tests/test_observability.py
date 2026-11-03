@@ -364,3 +364,78 @@ def test_safe_event_attributes_are_allowlisted():
     )
 
     assert attrs == {"agent.id": "codex", "event.reason_code": "turn_failed"}
+
+
+def test_rate_limit_filter_passes_one_record_per_template_per_interval():
+    now = [100.0]
+    rate_limit = observability.RateLimitFilter(interval_seconds=60.0, clock=lambda: now[0])
+
+    def record(msg: str, *args, level: int = logging.ERROR) -> logging.LogRecord:
+        return logging.LogRecord("opentelemetry.exporter.x", level, __file__, 1, msg, args, None)
+
+    assert rate_limit.filter(record("Failed to export %s to %s", "traces", "a"))
+    # Same template, different arguments: still the same failure mode.
+    assert not rate_limit.filter(record("Failed to export %s to %s", "logs", "b"))
+    assert not rate_limit.filter(record("Failed to export %s to %s", "metrics", "c"))
+    # A different template or level is a different signal.
+    assert rate_limit.filter(record("Shutdown in progress, aborting retry."))
+    assert rate_limit.filter(record("Failed to export %s to %s", "traces", "a", level=logging.WARNING))
+    assert rate_limit.suppressed == 2
+
+    # The same record offered by several handlers is one decision, not several:
+    # otherwise the first handler "emits" and the rest drop it.
+    shared = observability.RateLimitFilter(clock=lambda: now[0])
+    once = record("Exception while exporting %s.", "logs")
+    assert shared.filter(once) and shared.filter(once) and shared.filter(once)
+    assert shared.suppressed == 0
+
+    scoped = observability.RateLimitFilter(name_prefixes=("opentelemetry.exporter",), clock=lambda: now[0])
+    other = logging.LogRecord("workshop-terminal.x", logging.ERROR, __file__, 1, "same", (), None)
+    assert all(scoped.filter(other) for _ in range(3))
+    assert scoped.suppressed == 0
+
+    now[0] += 59.0
+    assert not rate_limit.filter(record("Failed to export %s to %s", "traces", "a"))
+    now[0] += 1.0
+    assert rate_limit.filter(record("Failed to export %s to %s", "traces", "a"))
+
+
+def test_quiet_exporter_logging_drops_retry_warnings_and_caps_errors():
+    # 2026-11-04: exporter retry warnings went to stdout (exported by Apps) and
+    # to the OTel logging handler (exported through the failing exporter).
+    # Under ingestion backpressure that loop amplified itself.
+    captured: list[logging.LogRecord] = []
+
+    class _Sink(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            captured.append(record)
+
+    sink = _Sink()
+    root = logging.getLogger()
+    root.addHandler(sink)
+    exporter_logger = logging.getLogger("opentelemetry.exporter.otlp.proto.grpc.exporter")
+    sdk_logger = logging.getLogger("opentelemetry.sdk._logs._internal.export")
+    try:
+        observability.quiet_exporter_logging()
+        observability.quiet_exporter_logging()  # idempotent: one filter, not two
+        assert sink.filters.count(observability._exporter_rate_limit) == 1
+        # Unrelated loggers are not touched by the handler-level filter.
+        for _ in range(3):
+            logging.getLogger("workshop-terminal.other").error("same %s", "thing")
+        assert len(captured) == 3
+        captured.clear()
+
+        for _ in range(5):
+            exporter_logger.warning("Transient error %s encountered while exporting %s to %s, retrying in %.2fs.",
+                                    "UNAVAILABLE", "traces", "endpoint", 1.0)
+        assert captured == []
+
+        for _ in range(5):
+            exporter_logger.error("Failed to export %s to %s, error code: %s, error details: %s",
+                                  "traces", "endpoint", "UNAVAILABLE", "")
+        sdk_logger.error("Exception while exporting logs.")
+        assert [record.levelno for record in captured] == [logging.ERROR, logging.ERROR]
+        assert captured[0].name == exporter_logger.name
+        assert captured[1].name == sdk_logger.name
+    finally:
+        root.removeHandler(sink)

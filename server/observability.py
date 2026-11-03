@@ -189,6 +189,80 @@ def install_logging_redaction() -> None:
             handler.addFilter(_redaction_filter)
 
 
+EXPORTER_LOG_INTERVAL_SECONDS = 60.0
+_EXPORTER_LOGGER_NAMES = ("opentelemetry.exporter", "opentelemetry.sdk")
+_RATE_LIMIT_DECISION = "_wt_rate_limit_allowed"
+
+
+class RateLimitFilter(logging.Filter):
+    """Pass one record per message template per interval; count the rest.
+
+    Scoped to ``name_prefixes`` when given; other records pass untouched, so
+    the filter can sit on a handler that serves the whole process.
+    """
+
+    def __init__(
+        self,
+        interval_seconds: float = EXPORTER_LOG_INTERVAL_SECONDS,
+        clock: Callable[[], float] = time.monotonic,
+        name_prefixes: tuple[str, ...] = (),
+    ) -> None:
+        super().__init__()
+        self._interval = interval_seconds
+        self._clock = clock
+        self._prefixes = name_prefixes
+        self._lock = threading.Lock()
+        self._last_emitted: dict[tuple[str, int, str], float] = {}
+        self.suppressed = 0
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if self._prefixes and not record.name.startswith(self._prefixes):
+            return True
+        # One filter instance serves every root handler, and each handler asks
+        # about the same record. Decide once per record, not once per handler.
+        decided = record.__dict__.get(_RATE_LIMIT_DECISION)
+        if decided is not None:
+            return decided
+        key = (record.name, record.levelno, str(record.msg))
+        now = self._clock()
+        with self._lock:
+            last = self._last_emitted.get(key)
+            if last is not None and now - last < self._interval:
+                self.suppressed += 1
+                allowed = False
+            else:
+                self._last_emitted[key] = now
+                allowed = True
+        record.__dict__[_RATE_LIMIT_DECISION] = allowed
+        return allowed
+
+
+_exporter_rate_limit = RateLimitFilter(name_prefixes=_EXPORTER_LOGGER_NAMES)
+
+
+def quiet_exporter_logging() -> None:
+    """Keep OTLP export failures from feeding themselves back into the export.
+
+    The exporter logs a warning for every retry and an error for every final
+    failure, per signal. Those lines go to stdout, which Apps forwards to the
+    same telemetry destination, and to the OTel logging handler, which tries
+    to export them through the failing exporter. Under ingestion backpressure
+    that is a self-amplifying loop. Warnings are dropped outright (a retry is
+    not actionable) and errors are capped at one per message per minute.
+
+    The level is set on the package loggers, which child loggers inherit. The
+    rate limit goes on the root handlers because a logger's own filters only
+    see records logged directly to it, never those propagating from children;
+    in an auto-instrumented process the root handlers are OTel's logging
+    handler and the stdout stream, which are the two paths that matter.
+    """
+    for name in _EXPORTER_LOGGER_NAMES:
+        logging.getLogger(name).setLevel(logging.ERROR)
+    for handler in logging.getLogger().handlers:
+        if _exporter_rate_limit not in handler.filters:
+            handler.addFilter(_exporter_rate_limit)
+
+
 def _active_sessions() -> int:
     from .sessions import session_manager
 
@@ -496,11 +570,13 @@ def install_asyncio_exception_handler(
 
 
 __all__ = [
+    "RateLimitFilter",
     "RedactionFilter",
     "WorkshopTelemetry",
     "health",
     "install_asyncio_exception_handler",
     "install_logging_redaction",
+    "quiet_exporter_logging",
     "record",
     "record_readiness",
     "redact_text",

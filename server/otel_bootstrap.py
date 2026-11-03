@@ -80,6 +80,33 @@ def serving_port(env: Mapping[str, str]) -> str:
     return env.get("DATABRICKS_APP_PORT", "").strip() or "8000"
 
 
+_LOG_LEVELS = frozenset({"critical", "error", "warning", "info", "debug"})
+_TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+
+
+def log_level(env: Mapping[str, str], default: str = "info") -> str:
+    """``WORKSHOP_LOG_LEVEL``, lower-cased and bounded to levels uvicorn knows.
+
+    Shared with ``server.main``'s root logger so a deployment cannot end up
+    with uvicorn at one level and the application at another.
+    """
+    raw = env.get("WORKSHOP_LOG_LEVEL", "").strip().lower()
+    if raw == "warn":
+        raw = "warning"
+    return raw if raw in _LOG_LEVELS else default
+
+
+def access_log_enabled(env: Mapping[str, str]) -> bool:
+    """Off unless ``WORKSHOP_ACCESS_LOG`` opts in.
+
+    Apps ships the process's stdout to the configured telemetry destination
+    alongside the OTLP export. One access line per request is a row nobody
+    acts on, and in a 330-app fleet it was a material share of the 2026-11-04
+    ingestion flood. Request timing stays available as sampled server spans.
+    """
+    return env.get("WORKSHOP_ACCESS_LOG", "").strip().lower() in _TRUE_VALUES
+
+
 def uvicorn_command(env: Mapping[str, str]) -> list[str]:
     """Resolve the runtime port before passing argv to uvicorn."""
     port = serving_port(env)
@@ -97,7 +124,11 @@ def uvicorn_command(env: Mapping[str, str]) -> list[str]:
         # for a websocket/request before lifespan shutdown even starts.
         "--timeout-graceful-shutdown",
         "2",
+        "--log-level",
+        log_level(env),
     ]
+    if not access_log_enabled(env):
+        command.append("--no-access-log")
     if instrumentation_enabled(env):
         # PEX-generated console scripts run Python with ``-E``. OpenTelemetry
         # injects its auto-instrumentation into the child through PYTHONPATH,

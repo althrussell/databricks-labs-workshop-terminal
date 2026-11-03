@@ -37,6 +37,7 @@ from . import (
     obo,
     observability,
     operational,
+    otel_bootstrap,
     readiness,
     selfheal,
     spend,
@@ -72,10 +73,15 @@ from .sessions import SessionConfigurationError, SessionConflictError, session_m
 from .users import user_manager
 from .ws import router as ws_router
 
+# INFO locally; deployments set WORKSHOP_LOG_LEVEL=WARNING because stdout is
+# exported to the telemetry destination and the operational events Control
+# Tower acts on travel as structured OTel records, not log lines.
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s"
+    level=otel_bootstrap.log_level(os.environ).upper(),
+    format="%(asctime)s %(name)s %(levelname)s %(message)s",
 )
 observability.install_logging_redaction()
+observability.quiet_exporter_logging()
 logger = logging.getLogger("workshop-terminal")
 
 _STATIC_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "static"))

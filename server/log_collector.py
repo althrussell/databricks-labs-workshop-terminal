@@ -46,6 +46,11 @@ forward_logger = logging.getLogger("workshop-terminal.omnigent_log")
 # Lifecycle detector pinned to Omnigent 0.19.1 log patterns (EQL seat 22).
 OMNIGENT_LIFECYCLE_LOCKED_VERSION = "0.19.1"
 _FORWARD_RATE_LIMIT_PER_SEC = 20
+# Severe lines bypass the INFO cap but not this one: a crash-looping host must
+# not stream unbounded ERROR lines into the telemetry destination. The first
+# lines of each second always reach the operator; the drop summary says what
+# was elided. The journal and lifecycle detector still see every record.
+_FORWARD_SEVERE_RATE_LIMIT_PER_SEC = 5
 _FIRST_MESSAGE_TIMEOUT_S = 200.0
 _START_STALL_TIMEOUT_S = 120.0
 _EARLY_TERMINAL_EXIT_S = 60.0
@@ -227,6 +232,7 @@ class LogCollector:
         first_message_timeout_s: float = _FIRST_MESSAGE_TIMEOUT_S,
         start_stall_timeout_s: float = _START_STALL_TIMEOUT_S,
         rate_limit_per_sec: int = _FORWARD_RATE_LIMIT_PER_SEC,
+        severe_rate_limit_per_sec: int = _FORWARD_SEVERE_RATE_LIMIT_PER_SEC,
     ) -> None:
         self.journal = journal if journal is not None else _default_journal()
         self._users = users
@@ -235,9 +241,11 @@ class LogCollector:
         self.first_message_timeout_s = first_message_timeout_s
         self.start_stall_timeout_s = start_stall_timeout_s
         self.rate_limit_per_sec = rate_limit_per_sec
+        self.severe_rate_limit_per_sec = severe_rate_limit_per_sec
         self._cursors: dict[str, _Cursor] = {}
         self._sessions: dict[str, _SessionLifecycle] = {}
-        self._rate_window: dict[str, tuple[int, int, int]] = {}
+        # attendee -> (second, info_count, info_dropped, severe_count, severe_dropped)
+        self._rate_window: dict[str, tuple[int, int, int, int, int]] = {}
         self.forwarded_lines: list[dict] = []
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -398,15 +406,24 @@ class LogCollector:
         source = path.parent.name
         severe = level in _SEVERE or level in {"WARN", "WARNING"}
         second = int(time.monotonic())
-        sec, count, dropped = self._rate_window.get(attendee, (second, 0, 0))
+        sec, count, dropped, severe_count, severe_dropped = self._rate_window.get(
+            attendee, (second, 0, 0, 0, 0)
+        )
         if sec != second:
-            if dropped > 0:
-                self._emit_forwarded_drop_summary(attendee, dropped)
-            sec, count, dropped = second, 0, 0
-        if not severe and count >= self.rate_limit_per_sec:
-            self._rate_window[attendee] = (sec, count, dropped + 1)
-            return
-        self._rate_window[attendee] = (sec, count + 1, dropped)
+            if dropped > 0 or severe_dropped > 0:
+                self._emit_forwarded_drop_summary(attendee, dropped, severe_dropped)
+            sec, count, dropped, severe_count, severe_dropped = second, 0, 0, 0, 0
+        if severe:
+            if severe_count >= self.severe_rate_limit_per_sec:
+                self._rate_window[attendee] = (sec, count, dropped, severe_count, severe_dropped + 1)
+                return
+            severe_count += 1
+        else:
+            if count >= self.rate_limit_per_sec:
+                self._rate_window[attendee] = (sec, count, dropped + 1, severe_count, severe_dropped)
+                return
+            count += 1
+        self._rate_window[attendee] = (sec, count, dropped, severe_count, severe_dropped)
         item = {
             "attendee": attendee,
             "source": source,
@@ -434,13 +451,25 @@ class LogCollector:
         )
 
     def _flush_rate_dropped(self, attendee: str) -> None:
-        sec, count, dropped = self._rate_window.get(attendee, (0, 0, 0))
-        if dropped > 0:
-            self._emit_forwarded_drop_summary(attendee, dropped)
-            self._rate_window[attendee] = (sec, count, 0)
+        sec, count, dropped, severe_count, severe_dropped = self._rate_window.get(
+            attendee, (0, 0, 0, 0, 0)
+        )
+        if dropped > 0 or severe_dropped > 0:
+            self._emit_forwarded_drop_summary(attendee, dropped, severe_dropped)
+            self._rate_window[attendee] = (sec, count, 0, severe_count, 0)
 
-    def _emit_forwarded_drop_summary(self, attendee: str, dropped: int) -> None:
-        summary = f"dropped {dropped} INFO lines (rate limit {self.rate_limit_per_sec}/s)"
+    def _emit_forwarded_drop_summary(
+        self, attendee: str, dropped: int, severe_dropped: int = 0
+    ) -> None:
+        parts = []
+        if dropped > 0:
+            parts.append(f"dropped {dropped} INFO lines (rate limit {self.rate_limit_per_sec}/s)")
+        if severe_dropped > 0:
+            parts.append(
+                f"dropped {severe_dropped} WARNING+ lines "
+                f"(rate limit {self.severe_rate_limit_per_sec}/s)"
+            )
+        summary = "; ".join(parts)
         self.forwarded_lines.append(
             {
                 "attendee": attendee,

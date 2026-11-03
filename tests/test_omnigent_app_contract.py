@@ -143,6 +143,7 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
         "OTEL_TRACES_SAMPLER",
         "OTEL_TRACES_SAMPLER_ARG",
         "OTEL_PYTHON_FASTAPI_EXCLUDED_URLS",
+        "OTEL_METRIC_EXPORT_INTERVAL",
     }
     required = {
         "AP_LAKEBASE_ENDPOINT",
@@ -171,8 +172,12 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
         "OTEL_TRACES_SAMPLER",
         "OTEL_TRACES_SAMPLER_ARG",
         "OTEL_PYTHON_FASTAPI_EXCLUDED_URLS",
+        "OTEL_METRIC_EXPORT_INTERVAL",
     }:
         assert env[name].get("value", "") == "", f"{name} must ship empty"
+    # Volume floor (docs/observability.md): same contract as the terminal.
+    assert env["OTEL_TRACES_SAMPLER_ARG"]["value"] == "0.05"
+    assert env["OTEL_METRIC_EXPORT_INTERVAL"]["value"] == "300000"
     assert not {
         "DATABRICKS_TOKEN",
         "DATABRICKS_CLIENT_SECRET",
@@ -206,7 +211,11 @@ def test_wrapper_retains_upstream_control_plane_topology():
     assert "_register_polly_variants" not in source
     assert "polly_variants" not in source
     assert 'os.environ["OMNIGENT_AUTH_PROVIDER"] = "header"' in source
-    assert 'uvicorn.run(app, host="0.0.0.0", port=PORT, **uvicorn_tunnel_kwargs())' in source
+    assert "uvicorn.run(" in source and "**uvicorn_tunnel_kwargs()," in source
+    # 2026-11-04: Apps exports this process's stderr; one access line per
+    # request and tunnel frame is not data anyone acts on.
+    assert "access_log=False," in source
+    assert 'logging.basicConfig(level=_LOG_LEVEL, stream=sys.stderr, force=True)' in source
     assert "OMNIGENT_REMOTE_HOST_ENABLED" not in source
     assert "OMNIGENT_FEATURES" not in source
     assert "feature_flags=" not in source
