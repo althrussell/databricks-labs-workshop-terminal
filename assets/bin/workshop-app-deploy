@@ -1149,6 +1149,9 @@ class DeployController:
             try:
                 app = self.backend.get_app(project, state["app_name"])
                 snapshot = _snapshot(app)
+                # The App's service principal can appear only after submission
+                # ends, or enrolment can fail transiently: keep retrying here.
+                self._enrol_attendee_group(state, project, app)
                 if snapshot["url"]:
                     state["app_url"] = snapshot["url"]
                 if not state.get("deployment_id"):
