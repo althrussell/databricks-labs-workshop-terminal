@@ -42,6 +42,7 @@ import OperatorPanel from "./components/OperatorPanel";
 import SignInNotice from "./components/SignInNotice";
 import { NetworkNotice, NetworkStatusControl } from "./components/NetworkNotice";
 import {
+  DISTURBED_RETRY_DELAY_MS,
   RECHECK_COOLDOWN_MS,
   nextRetryDelayMs,
   runNetworkCheck,
@@ -171,6 +172,7 @@ export default function App() {
   const networkLastRunAt = useRef(0);
   const networkRunning = useRef(false);
   const networkRetryAttempt = useRef(0);
+  const networkDisturbedTimer = useRef<number | undefined>(undefined);
   const savedAutoCheck = useRef(false);
   const helpChatOpenRef = useRef(false);
   const wizardChecked = useRef(false);
@@ -279,6 +281,20 @@ export default function App() {
     setNetworkStatus("checking");
     void runNetworkCheck()
       .then((res) => {
+        if (res === null) {
+          // Disturbed probe (tab hidden, page frozen, offline): nothing was
+          // reported, so the last shown result stays. Check again soon, without
+          // the cooldown, and not while hidden: returning to the tab rechecks.
+          networkLastRunAt.current = 0;
+          window.clearTimeout(networkDisturbedTimer.current);
+          if (document.visibilityState === "visible") {
+            networkDisturbedTimer.current = window.setTimeout(
+              () => triggerNetworkCheck(true),
+              DISTURBED_RETRY_DELAY_MS
+            );
+          }
+          return;
+        }
         setNetworkResult(res);
         setNetworkStatus(res.verdict);
       })

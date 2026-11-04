@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  confirmVerdict,
   evaluateSamples,
   formatNetworkSummary,
   isOutageShaped,
   nextRetryDelayMs,
+  probeWasDisturbed,
   type NetworkCheckResult,
 } from "./networkCheck";
 
@@ -134,3 +136,85 @@ test("a not-ok verdict is re-checked after 30 s, then 2 min, then every 5 min", 
   assert.deepEqual([0, 1, 2, 3, 9].map(nextRetryDelayMs), [30_000, 120_000, 300_000, 300_000, 300_000]);
   assert.equal(nextRetryDelayMs(-1), 30_000);
 });
+
+const CLEAN_PROBE = {
+  visibility: "visible",
+  online: true,
+  hiddenDuringProbe: false,
+  offlineDuringProbe: false,
+  maxTickGapMs: 500,
+};
+
+test("a probe is disturbed by a hidden tab, going offline, or a frozen page", () => {
+  assert.equal(probeWasDisturbed(CLEAN_PROBE), false);
+  assert.equal(probeWasDisturbed({ ...CLEAN_PROBE, hiddenDuringProbe: true }), true);
+  assert.equal(probeWasDisturbed({ ...CLEAN_PROBE, offlineDuringProbe: true }), true);
+  assert.equal(probeWasDisturbed({ ...CLEAN_PROBE, online: false }), true);
+  assert.equal(probeWasDisturbed({ ...CLEAN_PROBE, visibility: "hidden" }), true);
+  // A lid closed mid-probe shows up as a watchdog tick that arrived very late.
+  assert.equal(probeWasDisturbed({ ...CLEAN_PROBE, maxTickGapMs: 40_000 }), true);
+});
+
+test("a stream bunched into one burst is the buffered sub-cause", () => {
+  const samples = [0, 1000, 2000, 3000, 5000, 8000, 12000, 17000, 23000, 30000].map((ms, seq) => ({
+    seq,
+    server_elapsed_ms: ms,
+    client_elapsed_ms: 30100 + seq * 5,
+    flush: false,
+  }));
+  const result = evaluateSamples(samples, 11, 60, 40);
+  assert.equal(result.verdict, "blocked");
+  assert.equal(result.sub_cause, "buffered");
+});
+
+test("a fast first event followed by a long mid-stream gap is the stall sub-cause", () => {
+  const samples = [0, 1000, 2000, 3000, 5000, 8000, 12000, 17000, 23000, 30000].map((ms, seq) => ({
+    seq,
+    server_elapsed_ms: ms,
+    client_elapsed_ms: ms + (seq === 4 ? 16_000 : 120),
+    flush: false,
+  }));
+  const result = evaluateSamples(samples, 11, 60, 40);
+  assert.equal(result.verdict, "blocked");
+  assert.equal(result.clumped, false);
+  assert.equal(result.first_event_ms, 120);
+  assert.equal(result.sub_cause, "stall");
+});
+
+test("zero events is the no_connection sub-cause, and ok results have none", () => {
+  assert.equal(evaluateSamples([], 11, null, null).sub_cause, "no_connection");
+  const clean = [0, 1000, 2000, 3000, 5000, 8000, 12000, 17000, 23000, 30000].map((ms, seq) => ({
+    seq,
+    server_elapsed_ms: ms,
+    client_elapsed_ms: ms + 100,
+    flush: false,
+  }));
+  assert.equal(evaluateSamples(clean, 11, 50, 30).sub_cause, null);
+});
+
+test("one buffered probe is reported as slow; a second consecutive one is blocked", () => {
+  const first = confirmVerdict({ verdict: "blocked", sub_cause: "buffered" }, 0);
+  assert.deepEqual(first, { verdict: "slow", blockedRuns: 1 });
+  const second = confirmVerdict({ verdict: "blocked", sub_cause: "buffered" }, first.blockedRuns);
+  assert.deepEqual(second, { verdict: "blocked", blockedRuns: 2 });
+});
+
+test("no_connection and stall are never reported as blocked, however often they repeat", () => {
+  let runs = 0;
+  for (const sub_cause of ["no_connection", "stall", "stall"] as const) {
+    const step = confirmVerdict({ verdict: "blocked", sub_cause }, runs);
+    runs = step.blockedRuns;
+    assert.equal(step.verdict, "slow");
+  }
+  assert.equal(runs, 3);
+});
+
+test("an ok or slow probe resets the blocked run, so a single bad probe later is only slow", () => {
+  assert.deepEqual(confirmVerdict({ verdict: "ok", sub_cause: null }, 1), { verdict: "ok", blockedRuns: 0 });
+  assert.deepEqual(confirmVerdict({ verdict: "slow", sub_cause: null }, 1), { verdict: "slow", blockedRuns: 0 });
+  assert.deepEqual(confirmVerdict({ verdict: "blocked", sub_cause: "buffered" }, 0), {
+    verdict: "slow",
+    blockedRuns: 1,
+  });
+});
+

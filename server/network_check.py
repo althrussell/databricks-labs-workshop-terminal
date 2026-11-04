@@ -118,6 +118,8 @@ class NetworkCheckResultIn(BaseModel):
     ws_rtt_ms: int | None = Field(default=None, ge=0, le=600_000)
     http_rtt_ms: int | None = Field(default=None, ge=0, le=600_000)
     browser_family: str = Field(default="", max_length=64)
+    # Why a bad probe was bad; absent on builds that predate the field.
+    sub_cause: Literal["buffered", "no_connection", "stall"] | None = None
 
 
 def classify_verdict(
@@ -232,6 +234,7 @@ def record_result(
         "ws_rtt_ms": body.ws_rtt_ms,
         "http_rtt_ms": body.http_rtt_ms,
         "browser_family": body.browser_family.strip()[:64],
+        "sub_cause": body.sub_cause,
         "network_label": label,
         "outage": is_outage_shaped(
             received_count=body.received_count,

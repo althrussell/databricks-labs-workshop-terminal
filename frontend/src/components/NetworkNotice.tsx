@@ -24,7 +24,10 @@ export function NetworkNotice({ result }: { result: NetworkCheckResult | null })
     }
   }, [verdict]);
 
-  if (verdict !== "blocked" || (checkedAt !== null && dismissedCheckedAt === checkedAt)) {
+  // A dropped connection is reported as degraded, not blocked, but the attendee
+  // still needs to know their connection is gone, so the outage notice stays.
+  const shown = verdict === "blocked" || (result !== null && isOutageShaped(result));
+  if (!shown || (checkedAt !== null && dismissedCheckedAt === checkedAt)) {
     return null;
   }
 

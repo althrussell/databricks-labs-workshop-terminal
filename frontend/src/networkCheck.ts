@@ -8,6 +8,11 @@ import { pingAppSocket } from "./events";
 
 export type NetworkVerdict = "ok" | "slow" | "blocked";
 export type NetworkStatusKind = "checking" | NetworkVerdict;
+/**
+ * Why a bad probe was bad, sent as `sub_cause` so Control Tower can tell the
+ * proxy-buffering signature apart from a dropped connection or a mid-stream stall.
+ */
+export type NetworkSubCause = "buffered" | "no_connection" | "stall";
 
 export interface NetworkSample {
   seq: number;
@@ -27,6 +32,7 @@ export interface NetworkCheckResult {
   ws_rtt_ms: number | null;
   http_rtt_ms: number | null;
   browser_family: string;
+  sub_cause: NetworkSubCause | null;
   network_label?: string;
 }
 
@@ -34,6 +40,11 @@ export const EXPECTED_EVENT_COUNT = 11;
 export const RECHECK_COOLDOWN_MS = 10 * 60 * 1000;
 /** Re-check delays while the verdict is not ok: 30 s, 2 min, then every 5 min. */
 export const NOT_OK_RETRY_DELAYS_MS = [30_000, 120_000, 300_000];
+/** A probe that could not run to the end (tab hidden, page frozen, offline) is retried after this. */
+export const DISTURBED_RETRY_DELAY_MS = 30_000;
+/** The probe's watchdog ticks this often; a tick that arrives later than FREEZE_GAP_MS means the page froze. */
+export const PROBE_TICK_MS = 500;
+export const FREEZE_GAP_MS = 3_000;
 
 export function nextRetryDelayMs(attempt: number): number {
   const index = Math.min(Math.max(0, Math.floor(attempt)), NOT_OK_RETRY_DELAYS_MS.length - 1);
@@ -98,6 +109,7 @@ export function evaluateSamples(
   }
 
   let verdict: NetworkVerdict = "ok";
+  let subCause: NetworkSubCause | null = null;
   if (
     receivedCount === 0 ||
     clumped ||
@@ -106,6 +118,12 @@ export function evaluateSamples(
     maxGapMs > 45000
   ) {
     verdict = "blocked";
+    // Nothing arrived, or the events arrived in one bunch (the proxy holding
+    // them back), or the first event was late; otherwise the stream started
+    // fine and then stopped for a while mid-way.
+    if (receivedCount === 0) subCause = "no_connection";
+    else if (clumped || (firstEventMs !== null && firstEventMs > 15000)) subCause = "buffered";
+    else subCause = "stall";
   } else if (
     // The verdict grades live updates (the stream). A WebSocket RTT that is
     // unknown, often only because the socket was still connecting at page
@@ -126,7 +144,50 @@ export function evaluateSamples(
     ws_rtt_ms: wsRttMs,
     http_rtt_ms: httpRttMs,
     browser_family: detectBrowserFamily(),
+    sub_cause: subCause,
   };
+}
+
+/**
+ * Whether a probe must be thrown away: the attendee left the tab, the page
+ * froze (the watchdog tick arrived late), or the browser went offline while
+ * the probe ran. Such a probe measures the laptop, not the network.
+ */
+export function probeWasDisturbed(state: {
+  visibility: string;
+  online: boolean;
+  hiddenDuringProbe: boolean;
+  offlineDuringProbe: boolean;
+  maxTickGapMs: number;
+}): boolean {
+  return (
+    state.hiddenDuringProbe ||
+    state.offlineDuringProbe ||
+    state.visibility !== "visible" ||
+    !state.online ||
+    state.maxTickGapMs > FREEZE_GAP_MS
+  );
+}
+
+/**
+ * Turns one probe's raw blocked/ok/slow into the verdict that is reported.
+ * A blocked verdict is reported only when the probe is the proxy-buffering
+ * signature (`buffered`) and the previous probe was blocked too. Other
+ * blocked sub-causes (no connection, a mid-stream stall) are reported as slow,
+ * which CT records as degraded and never attendee-visible.
+ */
+export function confirmVerdict(
+  probe: Pick<NetworkCheckResult, "verdict" | "sub_cause">,
+  priorBlockedRuns: number
+): { verdict: NetworkVerdict; blockedRuns: number } {
+  if (probe.verdict !== "blocked") {
+    return { verdict: probe.verdict, blockedRuns: 0 };
+  }
+  const blockedRuns = priorBlockedRuns + 1;
+  if (probe.sub_cause !== "buffered") {
+    return { verdict: "slow", blockedRuns };
+  }
+  return { verdict: blockedRuns >= 2 ? "blocked" : "slow", blockedRuns };
 }
 
 export function formatNetworkSummary(result: NetworkCheckResult | null): {
@@ -167,8 +228,42 @@ export function formatNetworkSummary(result: NetworkCheckResult | null): {
   return { liveUpdates, terminalConnection, checkedTime };
 }
 
-export async function runNetworkCheck(options?: { fast?: boolean }): Promise<NetworkCheckResult> {
+/**
+ * Consecutive blocked probes on this page. Module state on purpose: the
+ * second-probe confirmation must survive the retry timers in App.
+ */
+let priorBlockedRuns = 0;
+
+/**
+ * Runs one probe. Resolves to `null` when the probe was disturbed (see
+ * probeWasDisturbed): nothing is reported and the caller should retry later.
+ */
+export async function runNetworkCheck(options?: { fast?: boolean }): Promise<NetworkCheckResult | null> {
   const nowMs = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+
+  // Watch the probe window for the attendee leaving, the browser going offline,
+  // or the page freezing (lid closed): a tick that arrives late means no JS ran.
+  const disturbance = { hiddenDuringProbe: false, offlineDuringProbe: false, maxTickGapMs: 0 };
+  const onVisibility = () => {
+    if (document.visibilityState !== "visible") disturbance.hiddenDuringProbe = true;
+  };
+  const onOffline = () => {
+    disturbance.offlineDuringProbe = true;
+  };
+  document.addEventListener("visibilitychange", onVisibility);
+  window.addEventListener("offline", onOffline);
+  let lastTickMs = nowMs();
+  const watchdog = setInterval(() => {
+    const tickMs = nowMs();
+    disturbance.maxTickGapMs = Math.max(disturbance.maxTickGapMs, tickMs - lastTickMs);
+    lastTickMs = tickMs;
+  }, PROBE_TICK_MS);
+  const stopWatching = () => {
+    clearInterval(watchdog);
+    document.removeEventListener("visibilitychange", onVisibility);
+    window.removeEventListener("offline", onOffline);
+    disturbance.maxTickGapMs = Math.max(disturbance.maxTickGapMs, nowMs() - lastTickMs);
+  };
 
   // 1. HTTP ping RTT
   let httpRttMs: number | null = null;
@@ -237,9 +332,20 @@ export async function runNetworkCheck(options?: { fast?: boolean }): Promise<Net
   }
 
   const wsRttMs = await wsPromise;
+  stopWatching();
+  const disturbed = probeWasDisturbed({
+    visibility: document.visibilityState,
+    online: navigator.onLine,
+    ...disturbance,
+  });
+  if (disturbed) return null;
+
   const evaluated = evaluateSamples(samples, EXPECTED_EVENT_COUNT, wsRttMs, httpRttMs);
+  const confirmed = confirmVerdict(evaluated, priorBlockedRuns);
+  priorBlockedRuns = confirmed.blockedRuns;
+  const reported = { ...evaluated, verdict: confirmed.verdict };
   const fallback: NetworkCheckResult = {
-    ...evaluated,
+    ...reported,
     checked_at: new Date().toISOString(),
   };
 
@@ -247,7 +353,7 @@ export async function runNetworkCheck(options?: { fast?: boolean }): Promise<Net
     const saved = await fetch("/api/network-check/result", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(evaluated),
+      body: JSON.stringify(reported),
     });
     if (saved.ok) {
       return (await saved.json()) as NetworkCheckResult;
