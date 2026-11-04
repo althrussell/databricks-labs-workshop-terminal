@@ -170,6 +170,23 @@ export function probeWasDisturbed(state: {
 }
 
 /**
+ * The disturbance flags a probe starts with. The listeners only record
+ * transitions, so a probe that starts hidden or offline must be seeded as
+ * disturbed, or it is judged clean when the attendee is back before it ends.
+ */
+export function startingDisturbance(state: { visibility: string; online: boolean }): {
+  hiddenDuringProbe: boolean;
+  offlineDuringProbe: boolean;
+  maxTickGapMs: number;
+} {
+  return {
+    hiddenDuringProbe: state.visibility !== "visible",
+    offlineDuringProbe: !state.online,
+    maxTickGapMs: 0,
+  };
+}
+
+/**
  * Turns one probe's raw blocked/ok/slow into the verdict that is reported.
  * A blocked verdict is reported only when the probe is the proxy-buffering
  * signature (`buffered`) and the previous probe was blocked too. Other
@@ -241,9 +258,16 @@ let priorBlockedRuns = 0;
 export async function runNetworkCheck(options?: { fast?: boolean }): Promise<NetworkCheckResult | null> {
   const nowMs = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
 
+  // A probe that starts hidden or offline measures nothing useful: send no
+  // requests and let the caller retry when the attendee is back.
+  if (document.visibilityState !== "visible" || !navigator.onLine) return null;
+
   // Watch the probe window for the attendee leaving, the browser going offline,
   // or the page freezing (lid closed): a tick that arrives late means no JS ran.
-  const disturbance = { hiddenDuringProbe: false, offlineDuringProbe: false, maxTickGapMs: 0 };
+  const disturbance = startingDisturbance({
+    visibility: document.visibilityState,
+    online: navigator.onLine,
+  });
   const onVisibility = () => {
     if (document.visibilityState !== "visible") disturbance.hiddenDuringProbe = true;
   };

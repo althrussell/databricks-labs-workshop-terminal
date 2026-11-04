@@ -7,6 +7,7 @@ import {
   isOutageShaped,
   nextRetryDelayMs,
   probeWasDisturbed,
+  startingDisturbance,
   type NetworkCheckResult,
 } from "./networkCheck";
 
@@ -218,3 +219,22 @@ test("an ok or slow probe resets the blocked run, so a single bad probe later is
   });
 });
 
+
+test("a probe that starts hidden stays disturbed when the attendee is back before it ends", () => {
+  // Codex P2: the listeners only record transitions, so the starting state must count.
+  const start = startingDisturbance({ visibility: "hidden", online: true });
+  assert.equal(start.hiddenDuringProbe, true);
+  assert.equal(probeWasDisturbed({ ...CLEAN_PROBE, ...start }), true);
+});
+
+test("a probe that starts offline stays disturbed when the browser is back online before it ends", () => {
+  const start = startingDisturbance({ visibility: "visible", online: false });
+  assert.equal(start.offlineDuringProbe, true);
+  assert.equal(probeWasDisturbed({ ...CLEAN_PROBE, ...start }), true);
+});
+
+test("a probe that starts visible and online is not disturbed by its starting state", () => {
+  const start = startingDisturbance({ visibility: "visible", online: true });
+  assert.deepEqual(start, { hiddenDuringProbe: false, offlineDuringProbe: false, maxTickGapMs: 0 });
+  assert.equal(probeWasDisturbed({ ...CLEAN_PROBE, ...start }), false);
+});
