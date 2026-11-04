@@ -112,6 +112,61 @@ app's collector endpoint would give them a write path into the central
 telemetry tables, and their logs include tool parameters. WT derives the same
 counts from the transcripts it already reads.
 
+## Volume contract
+
+The telemetry destination is a shared ingestion path (Zerobus), not a private
+sink. On 2026-11-04 a 165-seat event (330 Apps) brought up with always-on
+tracing, a span per WebSocket frame, uvicorn access logs, exporter retry
+warnings written back to stdout, and 60 s cumulative metrics produced 5k-75k
+rows per App per hour and flooded it. The incident record is kept in the
+Control Tower repository. The rule since then: export only data someone acts
+on.
+
+Control Tower writes the contract into every terminal's `app.yaml` when it
+deploys (package mode generates the file; source mode replaces the entries),
+so a CT configuration change is enough to retune a fleet. The committed
+`app.yaml` carries the same values as the floor for a deployment that bypasses
+CT.
+
+| Setting | Value | Effect |
+|---|---|---|
+| `OTEL_TRACES_SAMPLER` / `_ARG` | `parentbased_traceidratio` / `0.05` | Head-samples request spans. |
+| `OTEL_PYTHON_FASTAPI_EXCLUDED_URLS` | `/ws/.*`, `/healthz`, `/readyz`, polled `/api/*` routes, `/api/admin/.*`, `/assets/.*` | No server span at all. The ASGI instrumentor applies the list before it branches on scope type, so `/ws/.*` also removes the per-frame WebSocket spans. |
+| `OTEL_METRIC_EXPORT_INTERVAL` | `300000` | Cumulative instruments re-export every interval whether or not they changed, so this is the metrics row rate per App. |
+| `WORKSHOP_LOG_LEVEL` | `WARNING` (deployed), `info` (default) | Root logger level in `server/main.py` and uvicorn's `--log-level`. Invalid values fall back to the default. |
+| `WORKSHOP_ACCESS_LOG` | unset (off) | uvicorn access log. `true` opts back in. Request timing stays available as sampled server spans. |
+
+None of these touch the structured operational records: `observability.record`
+hands them to the OTel logger provider directly, not through Python logging,
+so `session.exited`, `entitlement.reconcile`, `mirror.fetch`,
+`attendee.error_seen`, `asyncio.task_failed` and the rest reach the destination
+regardless of the sampler or the log-level floor. Control Tower's canary and
+operator queries read exactly those records.
+
+Guards inside the terminal, independent of the environment:
+
+- `observability.quiet_exporter_logging()` sets the `opentelemetry.exporter`
+  and `opentelemetry.sdk` loggers to `ERROR` and rate-limits them to one
+  record per logging call site per minute (the call site is the message
+  template; the rendered text varies per endpoint and error detail). Exporter retry warnings otherwise go
+  to stdout (which Apps exports) and to the OTel logging handler (which exports
+  them through the failing exporter), a self-amplifying loop under ingestion
+  backpressure.
+- The Omnigent host log forwarder caps `WARNING+` lines at 5 per attendee per
+  second in addition to the existing 20/s cap on `INFO`. A crash-looping host
+  cannot stream unbounded error lines; the drop summary says how many of each
+  were elided, and the local journal and lifecycle detector still see every
+  record.
+
+The paired Omnigent App is not an exporter unless Control Tower is explicitly
+told to make it one. Every Omnigent signal CT acts on is emitted by the
+terminal watching its host. `deploy/omnigent-app` carries the same sampler,
+excluded-URL and metric-interval floor for an opted-in App, runs with the
+access log off and a `WARNING` root logger.
+
+Expected steady state per terminal under this contract is a few hundred rows an
+hour, startup burst aside.
+
 ## Privacy and failure behavior
 
 A process-wide logging filter removes email addresses, authorization headers,

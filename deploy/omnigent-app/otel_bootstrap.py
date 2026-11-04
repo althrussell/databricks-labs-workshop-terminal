@@ -67,12 +67,17 @@ def prepare_environment(env: MutableMapping[str, str]) -> None:
     merged = merged_resource_attributes(env)
     if merged:
         env["OTEL_RESOURCE_ATTRIBUTES"] = merged
+    # Volume floor, matching Workshop Terminal's contract (docs/observability.md).
+    # Control Tower does not attach a telemetry destination to this App unless
+    # CONTROL_TOWER_WORKSHOP_TELEMETRY_OMNIGENT_EXPORT=true; when it does, these
+    # keep an opted-in App from exporting more than its terminal.
     env.setdefault("OTEL_TRACES_SAMPLER", "parentbased_traceidratio")
-    env.setdefault("OTEL_TRACES_SAMPLER_ARG", "0.1")
+    env.setdefault("OTEL_TRACES_SAMPLER_ARG", "0.05")
     env.setdefault(
         "OTEL_PYTHON_FASTAPI_EXCLUDED_URLS",
-        "health,/health,/healthz,/readyz",
+        "health,/health,/healthz,/readyz,/assets/.*,/static/.*,/favicon.*",
     )
+    env.setdefault("OTEL_METRIC_EXPORT_INTERVAL", "300000")
 
 
 def instrumentation_enabled(env: Mapping[str, str]) -> bool:

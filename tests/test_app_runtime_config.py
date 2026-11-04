@@ -53,7 +53,17 @@ def test_app_yaml_declares_the_cross_repo_telemetry_identity_contract():
     config = yaml.safe_load((ROOT / "app.yaml").read_text())
     env = {item["name"]: item.get("value", "") for item in config["env"]}
 
-    assert env["OTEL_TRACES_SAMPLER"] == "always_on"
+    # Volume contract (docs/observability.md), identical to what Control Tower
+    # writes on deploy. always_on with per-frame websocket spans was the
+    # largest single contributor to the 2026-11-04 ingestion flood.
+    assert env["OTEL_TRACES_SAMPLER"] == "parentbased_traceidratio"
+    assert env["OTEL_TRACES_SAMPLER_ARG"] == "0.05"
+    excluded = env["OTEL_PYTHON_FASTAPI_EXCLUDED_URLS"].split(",")
+    assert "/ws/.*" in excluded
+    assert {"/healthz", "/readyz", "/api/workshop-status", "/api/admin/.*"} <= set(excluded)
+    assert env["OTEL_METRIC_EXPORT_INTERVAL"] == "300000"
+    assert env["WORKSHOP_LOG_LEVEL"] == "WARNING"
+    assert env["WORKSHOP_ACCESS_LOG"] == "false"
     assert "authorization" in env[
         "OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SANITIZE_FIELDS"
     ]

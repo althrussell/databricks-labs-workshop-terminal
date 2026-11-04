@@ -61,7 +61,33 @@ def test_disabled_preview_starts_plain_uvicorn_without_inventing_a_collector():
         "1",
         "--timeout-graceful-shutdown",
         "2",
+        "--log-level",
+        "info",
+        "--no-access-log",
     ]
+
+
+def test_log_level_is_bounded_to_levels_uvicorn_knows():
+    assert otel_bootstrap.log_level({}) == "info"
+    assert otel_bootstrap.log_level({"WORKSHOP_LOG_LEVEL": "WARNING"}) == "warning"
+    assert otel_bootstrap.log_level({"WORKSHOP_LOG_LEVEL": " warn "}) == "warning"
+    assert otel_bootstrap.log_level({"WORKSHOP_LOG_LEVEL": "verbose"}) == "info"
+    assert otel_bootstrap.log_level({"WORKSHOP_LOG_LEVEL": ""}) == "info"
+
+
+def test_access_log_is_off_unless_opted_in():
+    # 2026-11-04: one access line per request across 330 apps was a material
+    # share of the ingestion flood. Only an explicit truthy value turns it on.
+    assert not otel_bootstrap.access_log_enabled({})
+    assert not otel_bootstrap.access_log_enabled({"WORKSHOP_ACCESS_LOG": "false"})
+    assert not otel_bootstrap.access_log_enabled({"WORKSHOP_ACCESS_LOG": "0"})
+    assert otel_bootstrap.access_log_enabled({"WORKSHOP_ACCESS_LOG": "true"})
+    assert otel_bootstrap.access_log_enabled({"WORKSHOP_ACCESS_LOG": "1"})
+
+    quiet = otel_bootstrap.uvicorn_command({"WORKSHOP_LOG_LEVEL": "WARNING"})
+    assert quiet[-3:] == ["--log-level", "warning", "--no-access-log"]
+    loud = otel_bootstrap.uvicorn_command({"WORKSHOP_ACCESS_LOG": "true"})
+    assert "--no-access-log" not in loud
 
 
 def test_databricks_collector_environment_enables_documented_instrumentation():

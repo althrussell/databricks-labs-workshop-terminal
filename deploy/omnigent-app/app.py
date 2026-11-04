@@ -27,7 +27,13 @@ from pathlib import Path
 from smart_routing import build_runtime_caps
 from volume_probe import probe_artifact_volume
 
-logging.basicConfig(level=logging.INFO, stream=sys.stderr, force=True)
+# WARNING by default: Apps forwards this process's stderr to any telemetry
+# destination attached to the App, and the upstream runtime is chatty at INFO.
+# Startup failures below log at ERROR and still reach the Apps log.
+_LOG_LEVEL = os.environ.get("WORKSHOP_LOG_LEVEL", "").strip().upper() or "WARNING"
+if _LOG_LEVEL not in {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}:
+    _LOG_LEVEL = "WARNING"
+logging.basicConfig(level=_LOG_LEVEL, stream=sys.stderr, force=True)
 logger = logging.getLogger("omnigent-workshop-app")
 
 if sys.version_info < (3, 12):
@@ -271,7 +277,16 @@ try:
             "Starting Omnigent control plane on 0.0.0.0:%d",
             PORT,
         )
-        uvicorn.run(app, host="0.0.0.0", port=PORT, **uvicorn_tunnel_kwargs())
+        # No access log: one line per request and per tunnel frame is not data
+        # anyone acts on, and Apps ships it to the telemetry destination.
+        uvicorn.run(
+            app,
+            host="0.0.0.0",
+            port=PORT,
+            access_log=False,
+            log_level=_LOG_LEVEL.lower(),
+            **uvicorn_tunnel_kwargs(),
+        )
 
 except Exception:  # noqa: BLE001 - startup failures must reach Apps logs
     logger.error("FATAL: Omnigent failed to start:\n%s", traceback.format_exc())
