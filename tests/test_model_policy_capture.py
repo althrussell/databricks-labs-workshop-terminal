@@ -50,7 +50,11 @@ def test_full_policy_survives_empty_replacement_home_and_process(tmp_path, monke
     monkeypatch.setenv("DATA_ROOT", str(tmp_path / "empty-replacement"))
     model_policy.store.reset_for_tests()
     replacement = attach(files)
-    assert not Path(config.data_root()).exists()
+    # Nothing local is consulted or written except the flush lock, which is
+    # not a cache: the policy must come back from the workspace journal.
+    local = Path(config.data_root())
+    assert not local.exists() or {p.name for p in local.iterdir()} <= {".capture.lock"}
+    assert not (local / "model-policy-v1.json").exists()
     assert model_policy.store.snapshot() == accepted
     assert replacement.stream_id == epoch
     assert replacement.journal.read()["model_policy"] == before
