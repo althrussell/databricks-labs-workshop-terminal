@@ -137,4 +137,11 @@ def test_sub_cause_is_recorded_and_an_older_body_without_it_still_posts(client, 
     )
     assert bad.status_code == 422
     assert "sub_cause" in observability._SAFE_FIELD_MAP
+    ok_with_cause = client.post(
+        "/api/network-check/result",
+        headers=ALICE,
+        json={"verdict": "ok", "received_count": 11, "expected_count": 11, "sub_cause": "stall"},
+    )
+    assert ok_with_cause.status_code == 200, ok_with_cause.text
+    assert ok_with_cause.json()["sub_cause"] is None
 

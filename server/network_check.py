@@ -234,7 +234,8 @@ def record_result(
         "ws_rtt_ms": body.ws_rtt_ms,
         "http_rtt_ms": body.http_rtt_ms,
         "browser_family": body.browser_family.strip()[:64],
-        "sub_cause": body.sub_cause,
+        # sub_cause only explains a bad check; an ok check never carries one.
+        "sub_cause": body.sub_cause if body.verdict != "ok" else None,
         "network_label": label,
         "outage": is_outage_shaped(
             received_count=body.received_count,

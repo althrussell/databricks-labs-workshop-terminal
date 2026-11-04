@@ -64,15 +64,16 @@ export function NetworkStatusControl({
       : status === "Blocked".toLowerCase()
         ? "dot-error"
         : "dot-warn";
+  const outage = isOutageShaped(result);
   const label =
     status === "checking"
       ? "Checking network…"
       : status === "ok"
         ? "Network: OK"
-        : status === "slow"
-          ? "Network: slow"
-          : isOutageShaped(result)
-            ? "Network: connection lost"
+        : outage
+          ? "Network: connection lost"
+          : status === "slow"
+            ? "Network: slow"
             : "Network: live updates held back";
 
   return (

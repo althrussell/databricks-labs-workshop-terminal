@@ -173,6 +173,8 @@ export default function App() {
   const networkRunning = useRef(false);
   const networkRetryAttempt = useRef(0);
   const networkDisturbedTimer = useRef<number | undefined>(undefined);
+  // The last verdict shown, so a disturbed probe can restore it instead of "checking" forever.
+  const networkShownVerdict = useRef<NetworkStatusKind>("checking");
   const savedAutoCheck = useRef(false);
   const helpChatOpenRef = useRef(false);
   const wizardChecked = useRef(false);
@@ -286,6 +288,7 @@ export default function App() {
           // reported, so the last shown result stays. Check again soon, without
           // the cooldown, and not while hidden: returning to the tab rechecks.
           networkLastRunAt.current = 0;
+          setNetworkStatus(networkShownVerdict.current);
           window.clearTimeout(networkDisturbedTimer.current);
           if (document.visibilityState === "visible") {
             networkDisturbedTimer.current = window.setTimeout(
@@ -295,6 +298,8 @@ export default function App() {
           }
           return;
         }
+        window.clearTimeout(networkDisturbedTimer.current);
+        networkShownVerdict.current = res.verdict;
         setNetworkResult(res);
         setNetworkStatus(res.verdict);
       })

@@ -252,9 +252,10 @@ export async function runNetworkCheck(options?: { fast?: boolean }): Promise<Net
   };
   document.addEventListener("visibilitychange", onVisibility);
   window.addEventListener("offline", onOffline);
-  let lastTickMs = nowMs();
+  // Date.now(), not performance.now(): a lid closed mid-probe must show up as a gap.
+  let lastTickMs = Date.now();
   const watchdog = setInterval(() => {
-    const tickMs = nowMs();
+    const tickMs = Date.now();
     disturbance.maxTickGapMs = Math.max(disturbance.maxTickGapMs, tickMs - lastTickMs);
     lastTickMs = tickMs;
   }, PROBE_TICK_MS);
@@ -262,7 +263,7 @@ export async function runNetworkCheck(options?: { fast?: boolean }): Promise<Net
     clearInterval(watchdog);
     document.removeEventListener("visibilitychange", onVisibility);
     window.removeEventListener("offline", onOffline);
-    disturbance.maxTickGapMs = Math.max(disturbance.maxTickGapMs, nowMs() - lastTickMs);
+    disturbance.maxTickGapMs = Math.max(disturbance.maxTickGapMs, Date.now() - lastTickMs);
   };
 
   // 1. HTTP ping RTT
