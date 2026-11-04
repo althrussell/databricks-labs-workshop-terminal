@@ -144,3 +144,34 @@ def test_the_omnigent_host_gets_a_different_port_from_the_terminal(monkeypatch, 
 
     assert host["DATABRICKS_APP_PORT"] == host["WORKSHOP_TEST_PORT"]
     assert host["DATABRICKS_APP_PORT"] != terminal["DATABRICKS_APP_PORT"]
+
+
+def test_seat_group_id_reaches_the_attendee_shell_and_the_omnigent_host(monkeypatch, tmp_path):
+    """The deploy helper enrols new Apps from the attendee shell, so the seat's
+    account-group id must reach both the PTY and the Omnigent host."""
+    from server.omnigent_remote import build_host_launch
+
+    monkeypatch.setenv("WORKSHOP_ATTENDEE_APP_GROUP_ID", "1234567890")
+    user = User("alice@example.com")
+    monkeypatch.setattr(user, "home", str(tmp_path / "alice"))
+    user.bootstrap_home()
+
+    assert user.shell_env()["WORKSHOP_ATTENDEE_APP_GROUP_ID"] == "1234567890"
+    _, host, _ = build_host_launch(user, "/opt/bin/omnigent", "https://omnigent.example")
+    assert host["WORKSHOP_ATTENDEE_APP_GROUP_ID"] == "1234567890"
+
+
+def test_the_seat_group_id_is_the_only_variable_newly_forwarded(monkeypatch):
+    """Forwarding the group id must not open the door to any secret beside it."""
+    for key in _FORBIDDEN:
+        monkeypatch.setenv(key, "leak-me")
+    monkeypatch.delenv("WORKSHOP_ATTENDEE_APP_GROUP_ID", raising=False)
+    without = User("alice@example.com").shell_env()
+    assert "WORKSHOP_ATTENDEE_APP_GROUP_ID" not in without
+
+    monkeypatch.setenv("WORKSHOP_ATTENDEE_APP_GROUP_ID", "1234567890")
+    with_group = User("alice@example.com").shell_env()
+
+    assert set(with_group) - set(without) == {"WORKSHOP_ATTENDEE_APP_GROUP_ID"}
+    for key in _FORBIDDEN:
+        assert key not in with_group, f"{key} leaked into the attendee shell env"
