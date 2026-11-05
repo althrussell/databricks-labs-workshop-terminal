@@ -200,14 +200,24 @@ test("one buffered probe is reported as slow; a second consecutive one is blocke
   assert.deepEqual(second, { verdict: "blocked", blockedRuns: 2 });
 });
 
-test("no_connection and stall are never reported as blocked, however often they repeat", () => {
+test("no_connection and stall are never reported as blocked, however often they repeat, and do not prime buffered confirmation", () => {
   let runs = 0;
   for (const sub_cause of ["no_connection", "stall", "stall"] as const) {
     const step = confirmVerdict({ verdict: "blocked", sub_cause }, runs);
     runs = step.blockedRuns;
     assert.equal(step.verdict, "slow");
   }
-  assert.equal(runs, 3);
+  assert.equal(runs, 0);
+  // A single buffered probe after a stall or outage is still the first buffered
+  // probe, so it must be reported as slow rather than immediately blocked.
+  const firstBufferedAfterStall = confirmVerdict({ verdict: "blocked", sub_cause: "buffered" }, runs);
+  assert.deepEqual(firstBufferedAfterStall, { verdict: "slow", blockedRuns: 1 });
+  // And an intervening stall between two buffered probes resets the streak.
+  const afterInterveningStall = confirmVerdict(
+    { verdict: "blocked", sub_cause: "stall" },
+    firstBufferedAfterStall.blockedRuns
+  );
+  assert.deepEqual(afterInterveningStall, { verdict: "slow", blockedRuns: 0 });
 });
 
 test("an ok or slow probe resets the blocked run, so a single bad probe later is only slow", () => {

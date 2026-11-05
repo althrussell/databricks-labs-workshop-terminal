@@ -278,6 +278,7 @@ export default function App() {
     if (!force && networkLastRunAt.current > 0 && now - networkLastRunAt.current < RECHECK_COOLDOWN_MS) {
       return;
     }
+    window.clearTimeout(networkDisturbedTimer.current);
     networkRunning.current = true;
     networkLastRunAt.current = now;
     setNetworkStatus("checking");
@@ -306,6 +307,10 @@ export default function App() {
       .finally(() => {
         networkRunning.current = false;
       });
+  }, []);
+
+  useEffect(() => {
+    return () => window.clearTimeout(networkDisturbedTimer.current);
   }, []);
 
   const networkNotOk = networkResult !== null && networkResult.verdict !== "ok";
@@ -375,6 +380,7 @@ export default function App() {
 
   useEffect(() => {
     if (!inputDisabled) return;
+    window.clearTimeout(networkDisturbedTimer.current);
     setWizardOpen(false);
     setPreferencesOpen(false);
     setCertOpen(false);

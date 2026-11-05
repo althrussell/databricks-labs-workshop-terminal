@@ -189,9 +189,10 @@ export function startingDisturbance(state: { visibility: string; online: boolean
 /**
  * Turns one probe's raw blocked/ok/slow into the verdict that is reported.
  * A blocked verdict is reported only when the probe is the proxy-buffering
- * signature (`buffered`) and the previous probe was blocked too. Other
- * blocked sub-causes (no connection, a mid-stream stall) are reported as slow,
- * which CT records as degraded and never attendee-visible.
+ * signature (`buffered`) and the previous probe was buffered too. Other
+ * blocked sub-causes (no connection, a mid-stream stall) are reported as slow
+ * and reset the buffered streak, so CT records them as degraded and a single
+ * buffered probe after a stall or outage is not reported as blocked.
  */
 export function confirmVerdict(
   probe: Pick<NetworkCheckResult, "verdict" | "sub_cause">,
@@ -200,10 +201,10 @@ export function confirmVerdict(
   if (probe.verdict !== "blocked") {
     return { verdict: probe.verdict, blockedRuns: 0 };
   }
-  const blockedRuns = priorBlockedRuns + 1;
   if (probe.sub_cause !== "buffered") {
-    return { verdict: "slow", blockedRuns };
+    return { verdict: "slow", blockedRuns: 0 };
   }
+  const blockedRuns = priorBlockedRuns + 1;
   return { verdict: blockedRuns >= 2 ? "blocked" : "slow", blockedRuns };
 }
 
@@ -290,74 +291,78 @@ export async function runNetworkCheck(options?: { fast?: boolean }): Promise<Net
     disturbance.maxTickGapMs = Math.max(disturbance.maxTickGapMs, Date.now() - lastTickMs);
   };
 
-  // 1. HTTP ping RTT
   let httpRttMs: number | null = null;
-  try {
-    const t0 = nowMs();
-    const pingResp = await fetch("/api/network-check/ping", { cache: "no-store" });
-    if (pingResp.ok) {
-      httpRttMs = Math.max(0, Math.round(nowMs() - t0));
-    }
-  } catch {
-    httpRttMs = null;
-  }
-
-  // 2. WebSocket ping RTT (in parallel with stream)
-  const wsPromise = pingAppSocket(10000);
-
-  // 3. SSE stream via fetch + ReadableStream reader
+  let wsRttMs: number | null = null;
   const samples: NetworkSample[] = [];
-  const streamUrl = options?.fast ? "/api/network-check/stream?fast=true" : "/api/network-check/stream";
-  const streamStarted = nowMs();
   try {
-    const response = await fetch(streamUrl, {
-      headers: { Accept: "text/event-stream" },
-      cache: "no-store",
-    });
-    if (response.ok && response.body) {
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        const arrivedAt = nowMs() - streamStarted;
-        buffer += decoder.decode(value, { stream: true });
-        let boundary = buffer.indexOf("\n\n");
-        while (boundary !== -1) {
-          const frame = buffer.slice(0, boundary);
-          buffer = buffer.slice(boundary + 2);
-          for (const line of frame.split("\n")) {
-            if (line.startsWith("data:")) {
-              try {
-                const parsed = JSON.parse(line.slice(5).trim()) as {
-                  seq?: number;
-                  server_elapsed_ms?: number;
-                  flush?: boolean;
-                };
-                if (typeof parsed.seq === "number" && typeof parsed.server_elapsed_ms === "number") {
-                  samples.push({
-                    seq: parsed.seq,
-                    server_elapsed_ms: parsed.server_elapsed_ms,
-                    client_elapsed_ms: arrivedAt,
-                    flush: Boolean(parsed.flush),
-                  });
+    // 1. HTTP ping RTT
+    try {
+      const t0 = nowMs();
+      const pingResp = await fetch("/api/network-check/ping", { cache: "no-store" });
+      if (pingResp.ok) {
+        httpRttMs = Math.max(0, Math.round(nowMs() - t0));
+      }
+    } catch {
+      httpRttMs = null;
+    }
+
+    // 2. WebSocket ping RTT (in parallel with stream)
+    const wsPromise = pingAppSocket(10000);
+
+    // 3. SSE stream via fetch + ReadableStream reader
+    const streamUrl = options?.fast ? "/api/network-check/stream?fast=true" : "/api/network-check/stream";
+    const streamStarted = nowMs();
+    try {
+      const response = await fetch(streamUrl, {
+        headers: { Accept: "text/event-stream" },
+        cache: "no-store",
+      });
+      if (response.ok && response.body) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          const arrivedAt = nowMs() - streamStarted;
+          buffer += decoder.decode(value, { stream: true });
+          let boundary = buffer.indexOf("\n\n");
+          while (boundary !== -1) {
+            const frame = buffer.slice(0, boundary);
+            buffer = buffer.slice(boundary + 2);
+            for (const line of frame.split("\n")) {
+              if (line.startsWith("data:")) {
+                try {
+                  const parsed = JSON.parse(line.slice(5).trim()) as {
+                    seq?: number;
+                    server_elapsed_ms?: number;
+                    flush?: boolean;
+                  };
+                  if (typeof parsed.seq === "number" && typeof parsed.server_elapsed_ms === "number") {
+                    samples.push({
+                      seq: parsed.seq,
+                      server_elapsed_ms: parsed.server_elapsed_ms,
+                      client_elapsed_ms: arrivedAt,
+                      flush: Boolean(parsed.flush),
+                    });
+                  }
+                } catch {
+                  /* ignore malformed SSE frame */
                 }
-              } catch {
-                /* ignore malformed SSE frame */
               }
             }
+            boundary = buffer.indexOf("\n\n");
           }
-          boundary = buffer.indexOf("\n\n");
         }
       }
+    } catch {
+      /* network stream failed — evaluated below */
     }
-  } catch {
-    /* network stream failed — evaluated below */
-  }
 
-  const wsRttMs = await wsPromise;
-  stopWatching();
+    wsRttMs = await wsPromise;
+  } finally {
+    stopWatching();
+  }
   const disturbed = probeWasDisturbed({
     visibility: document.visibilityState,
     online: navigator.onLine,

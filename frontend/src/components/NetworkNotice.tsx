@@ -58,13 +58,13 @@ export function NetworkStatusControl({
 }) {
   const [open, setOpen] = useState(false);
   const summary = formatNetworkSummary(result);
+  const outage = isOutageShaped(result);
   const dotClass =
     status === "ok"
       ? "dot-online"
-      : status === "Blocked".toLowerCase()
+      : status === "blocked" || (status !== "checking" && outage)
         ? "dot-error"
         : "dot-warn";
-  const outage = isOutageShaped(result);
   const label =
     status === "checking"
       ? "Checking network…"
@@ -86,7 +86,7 @@ export function NetworkStatusControl({
         title={label}
         onClick={() => setOpen((v) => !v)}
       >
-        {status === "blocked" ? (
+        {status === "blocked" || (status !== "checking" && outage) ? (
           <WifiOff size={15} aria-hidden="true" />
         ) : (
           <Wifi size={15} aria-hidden="true" />
