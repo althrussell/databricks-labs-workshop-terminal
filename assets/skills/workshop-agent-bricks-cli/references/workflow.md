@@ -24,8 +24,9 @@ agentbricks --profile "${DATABRICKS_CONFIG_PROFILE:-DEFAULT}" tracing list
 agentbricks --profile "${DATABRICKS_CONFIG_PROFILE:-DEFAULT}" tracing bind --experiment-id <owned-experiment-id>
 
 # Inspect your agent's deployment. Lists can contain other attendees' resources.
-agentbricks --profile "${DATABRICKS_CONFIG_PROFILE:-DEFAULT}" deployments get agent-bricks-my-agent
-agentbricks --profile "${DATABRICKS_CONFIG_PROFILE:-DEFAULT}" deployments logs agent-bricks-my-agent
+# The app is agent-bricks-<deployment_name>, from this project's agent.toml.
+agentbricks --profile "${DATABRICKS_CONFIG_PROFILE:-DEFAULT}" deployments get agent-bricks-<deployment_name>
+agentbricks --profile "${DATABRICKS_CONFIG_PROFILE:-DEFAULT}" deployments logs agent-bricks-<deployment_name>
 agentbricks --profile "${DATABRICKS_CONFIG_PROFILE:-DEFAULT}" endpoint invoke --help
 ```
 
@@ -38,9 +39,11 @@ its subcommand help. Use the assigned workshop catalog/schema. Don't invent a
 tool/source schema. In 0.8.0 `tools add sandbox` has no scope: sandbox code can
 read and write all Unity Catalog data the selected identity can reach, and it
 receives that identity's Databricks token by default. Prefer a UC function or a
-managed MCP tool for data access. If the attendee needs a sandbox, keep
-`--auth user` and add `--no-databricks-access-token-included` unless the code
-must call Databricks APIs.
+managed MCP tool for data access. Add a sandbox only when the attendee needs code
+execution, and tell them first what it can reach: with `--auth user` it acts with
+the full access of whoever uses the agent; `--auth app` limits it to the app
+service principal's grants, which is narrower but applies to every user. Add
+`--no-databricks-access-token-included` unless the code must call Databricks APIs.
 
 `deployments delete` retains memory/session stores, tracing and source files;
 `--delete-source` also removes the uploaded source folder.

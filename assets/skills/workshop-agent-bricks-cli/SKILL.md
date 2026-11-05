@@ -84,7 +84,7 @@ For the **agent backend**, deploy from the project directory with:
 
 ```bash
 agentbricks --profile "${DATABRICKS_CONFIG_PROFILE:-DEFAULT}" deploy --no-wait --source "$PWD" --pip-index-url https://pypi.org/simple/
-agentbricks --profile "${DATABRICKS_CONFIG_PROFILE:-DEFAULT}" deployments wait   # exit 75 = still deploying: run it again
+agentbricks --profile "${DATABRICKS_CONFIG_PROFILE:-DEFAULT}" deployments wait --source "$PWD"   # exit 75 = still deploying: run it again
 agentbricks --profile "${DATABRICKS_CONFIG_PROFILE:-DEFAULT}" deployments get agent-bricks-<deployment_name>
 workshop-grant-me
 ```
@@ -92,8 +92,11 @@ workshop-grant-me
 The deploy NAME is capped at **17 characters**: apps are named
 `agent-bricks-<name>` and app names stop at 30. `init` records a fitting
 `deployment_name` in `agent.toml`, shortening long project names with a random
-suffix. Omit NAME to use it, and read the app name from that field. Pass NAME
-only to choose a different unique name of 17 characters or fewer. A first deploy
+suffix. Omit NAME to use it, and read the app name from that field. A project
+from an older CLI or `init --existing` may have no `deployment_name`: then
+`agentbricks doctor .` fails its `deployment_name` check and suggests a name. Pass
+that NAME (or another unique one of 17 characters or fewer) on the first deploy,
+which records it. A first deploy
 takes a few minutes, which outlasts a coding agent's command timeout, so start it
 with `--no-wait` and follow it with `deployments wait`, not a polling loop. If a
 deploy stops partway, run the same `deploy` again to resume.
