@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  BLOCKED_STREAK_TTL_MS,
+  confirmVerdict,
   evaluateSamples,
   formatNetworkSummary,
   isOutageShaped,
   nextRetryDelayMs,
+  probeWasDisturbed,
+  startingDisturbance,
   type NetworkCheckResult,
 } from "./networkCheck";
 
@@ -133,4 +137,132 @@ test("a held-back stream with working round trips is not an outage", () => {
 test("a not-ok verdict is re-checked after 30 s, then 2 min, then every 5 min", () => {
   assert.deepEqual([0, 1, 2, 3, 9].map(nextRetryDelayMs), [30_000, 120_000, 300_000, 300_000, 300_000]);
   assert.equal(nextRetryDelayMs(-1), 30_000);
+});
+
+const CLEAN_PROBE = {
+  visibility: "visible",
+  online: true,
+  hiddenDuringProbe: false,
+  offlineDuringProbe: false,
+  maxTickGapMs: 500,
+};
+
+test("a probe is disturbed by a hidden tab, going offline, or a frozen page", () => {
+  assert.equal(probeWasDisturbed(CLEAN_PROBE), false);
+  assert.equal(probeWasDisturbed({ ...CLEAN_PROBE, hiddenDuringProbe: true }), true);
+  assert.equal(probeWasDisturbed({ ...CLEAN_PROBE, offlineDuringProbe: true }), true);
+  assert.equal(probeWasDisturbed({ ...CLEAN_PROBE, online: false }), true);
+  assert.equal(probeWasDisturbed({ ...CLEAN_PROBE, visibility: "hidden" }), true);
+  // A lid closed mid-probe shows up as a watchdog tick that arrived very late.
+  assert.equal(probeWasDisturbed({ ...CLEAN_PROBE, maxTickGapMs: 40_000 }), true);
+});
+
+test("a stream bunched into one burst is the buffered sub-cause", () => {
+  const samples = [0, 1000, 2000, 3000, 5000, 8000, 12000, 17000, 23000, 30000].map((ms, seq) => ({
+    seq,
+    server_elapsed_ms: ms,
+    client_elapsed_ms: 30100 + seq * 5,
+    flush: false,
+  }));
+  const result = evaluateSamples(samples, 11, 60, 40);
+  assert.equal(result.verdict, "blocked");
+  assert.equal(result.sub_cause, "buffered");
+});
+
+test("a fast first event followed by a long mid-stream gap is the stall sub-cause", () => {
+  const samples = [0, 1000, 2000, 3000, 5000, 8000, 12000, 17000, 23000, 30000].map((ms, seq) => ({
+    seq,
+    server_elapsed_ms: ms,
+    client_elapsed_ms: ms + (seq === 4 ? 16_000 : 120),
+    flush: false,
+  }));
+  const result = evaluateSamples(samples, 11, 60, 40);
+  assert.equal(result.verdict, "blocked");
+  assert.equal(result.clumped, false);
+  assert.equal(result.first_event_ms, 120);
+  assert.equal(result.sub_cause, "stall");
+});
+
+test("zero events is the no_connection sub-cause, and ok results have none", () => {
+  assert.equal(evaluateSamples([], 11, null, null).sub_cause, "no_connection");
+  const clean = [0, 1000, 2000, 3000, 5000, 8000, 12000, 17000, 23000, 30000].map((ms, seq) => ({
+    seq,
+    server_elapsed_ms: ms,
+    client_elapsed_ms: ms + 100,
+    flush: false,
+  }));
+  assert.equal(evaluateSamples(clean, 11, 50, 30).sub_cause, null);
+});
+
+test("one buffered probe is reported as slow; a second consecutive one is blocked", () => {
+  const first = confirmVerdict({ verdict: "blocked", sub_cause: "buffered" }, 0);
+  assert.deepEqual(first, { verdict: "slow", blockedRuns: 1 });
+  const second = confirmVerdict({ verdict: "blocked", sub_cause: "buffered" }, first.blockedRuns);
+  assert.deepEqual(second, { verdict: "blocked", blockedRuns: 2 });
+});
+
+test("a buffered streak older than 15 minutes is forgotten so two probes hours apart do not report blocked", () => {
+  const first = confirmVerdict({ verdict: "blocked", sub_cause: "buffered" }, 0);
+  assert.deepEqual(first, { verdict: "slow", blockedRuns: 1 });
+  const withinWindow = confirmVerdict(
+    { verdict: "blocked", sub_cause: "buffered" },
+    first.blockedRuns,
+    BLOCKED_STREAK_TTL_MS
+  );
+  assert.deepEqual(withinWindow, { verdict: "blocked", blockedRuns: 2 });
+  const afterWindow = confirmVerdict(
+    { verdict: "blocked", sub_cause: "buffered" },
+    first.blockedRuns,
+    BLOCKED_STREAK_TTL_MS + 1
+  );
+  assert.deepEqual(afterWindow, { verdict: "slow", blockedRuns: 1 });
+});
+
+test("no_connection and stall are never reported as blocked, however often they repeat, and do not prime buffered confirmation", () => {
+  let runs = 0;
+  for (const sub_cause of ["no_connection", "stall", "stall"] as const) {
+    const step = confirmVerdict({ verdict: "blocked", sub_cause }, runs);
+    runs = step.blockedRuns;
+    assert.equal(step.verdict, "slow");
+  }
+  assert.equal(runs, 0);
+  // A single buffered probe after a stall or outage is still the first buffered
+  // probe, so it must be reported as slow rather than immediately blocked.
+  const firstBufferedAfterStall = confirmVerdict({ verdict: "blocked", sub_cause: "buffered" }, runs);
+  assert.deepEqual(firstBufferedAfterStall, { verdict: "slow", blockedRuns: 1 });
+  // And an intervening stall between two buffered probes resets the streak.
+  const afterInterveningStall = confirmVerdict(
+    { verdict: "blocked", sub_cause: "stall" },
+    firstBufferedAfterStall.blockedRuns
+  );
+  assert.deepEqual(afterInterveningStall, { verdict: "slow", blockedRuns: 0 });
+});
+
+test("an ok or slow probe resets the blocked run, so a single bad probe later is only slow", () => {
+  assert.deepEqual(confirmVerdict({ verdict: "ok", sub_cause: null }, 1), { verdict: "ok", blockedRuns: 0 });
+  assert.deepEqual(confirmVerdict({ verdict: "slow", sub_cause: null }, 1), { verdict: "slow", blockedRuns: 0 });
+  assert.deepEqual(confirmVerdict({ verdict: "blocked", sub_cause: "buffered" }, 0), {
+    verdict: "slow",
+    blockedRuns: 1,
+  });
+});
+
+
+test("a probe that starts hidden stays disturbed when the attendee is back before it ends", () => {
+  // Codex P2: the listeners only record transitions, so the starting state must count.
+  const start = startingDisturbance({ visibility: "hidden", online: true });
+  assert.equal(start.hiddenDuringProbe, true);
+  assert.equal(probeWasDisturbed({ ...CLEAN_PROBE, ...start }), true);
+});
+
+test("a probe that starts offline stays disturbed when the browser is back online before it ends", () => {
+  const start = startingDisturbance({ visibility: "visible", online: false });
+  assert.equal(start.offlineDuringProbe, true);
+  assert.equal(probeWasDisturbed({ ...CLEAN_PROBE, ...start }), true);
+});
+
+test("a probe that starts visible and online is not disturbed by its starting state", () => {
+  const start = startingDisturbance({ visibility: "visible", online: true });
+  assert.deepEqual(start, { hiddenDuringProbe: false, offlineDuringProbe: false, maxTickGapMs: 0 });
+  assert.equal(probeWasDisturbed({ ...CLEAN_PROBE, ...start }), false);
 });

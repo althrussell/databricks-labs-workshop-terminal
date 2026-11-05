@@ -109,3 +109,39 @@ def test_a_check_where_nothing_came_back_is_recorded_as_an_outage(client, monkey
     assert resp.json()["outage"] is True
     assert network_check.is_outage_shaped(received_count=0, http_rtt_ms=40, ws_rtt_ms=None) is False
     assert "outage" in observability._SAFE_FIELD_MAP
+
+
+def test_sub_cause_is_recorded_and_an_older_body_without_it_still_posts(client, monkeypatch, tmp_path):
+    """The sub-cause tells CT buffering from a dropped connection or a stall. Builds
+    that predate the field keep posting without it."""
+    from server import config, observability
+    from server.users import user_manager
+
+    network_check.reset_for_tests()
+    monkeypatch.setattr(config, "data_root", lambda: str(tmp_path))
+    user_manager.get(ALICE["X-Forwarded-Email"])
+
+    base = {"verdict": "slow", "received_count": 11, "expected_count": 11, "max_lag_ms": 16000}
+    resp = client.post(
+        "/api/network-check/result", headers=ALICE, json={**base, "sub_cause": "stall"}
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["sub_cause"] == "stall"
+
+    old = client.post("/api/network-check/result", headers=ALICE, json=base)
+    assert old.status_code == 200, old.text
+    assert old.json()["sub_cause"] is None
+
+    bad = client.post(
+        "/api/network-check/result", headers=ALICE, json={**base, "sub_cause": "bunched"}
+    )
+    assert bad.status_code == 422
+    assert "sub_cause" in observability._SAFE_FIELD_MAP
+    ok_with_cause = client.post(
+        "/api/network-check/result",
+        headers=ALICE,
+        json={"verdict": "ok", "received_count": 11, "expected_count": 11, "sub_cause": "stall"},
+    )
+    assert ok_with_cause.status_code == 200, ok_with_cause.text
+    assert ok_with_cause.json()["sub_cause"] is None
+

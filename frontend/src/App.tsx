@@ -42,6 +42,7 @@ import OperatorPanel from "./components/OperatorPanel";
 import SignInNotice from "./components/SignInNotice";
 import { NetworkNotice, NetworkStatusControl } from "./components/NetworkNotice";
 import {
+  DISTURBED_RETRY_DELAY_MS,
   RECHECK_COOLDOWN_MS,
   nextRetryDelayMs,
   runNetworkCheck,
@@ -171,6 +172,9 @@ export default function App() {
   const networkLastRunAt = useRef(0);
   const networkRunning = useRef(false);
   const networkRetryAttempt = useRef(0);
+  const networkDisturbedTimer = useRef<number | undefined>(undefined);
+  // The last verdict shown, so a disturbed probe can restore it instead of "checking" forever.
+  const networkShownVerdict = useRef<NetworkStatusKind>("checking");
   const savedAutoCheck = useRef(false);
   const helpChatOpenRef = useRef(false);
   const wizardChecked = useRef(false);
@@ -274,17 +278,39 @@ export default function App() {
     if (!force && networkLastRunAt.current > 0 && now - networkLastRunAt.current < RECHECK_COOLDOWN_MS) {
       return;
     }
+    window.clearTimeout(networkDisturbedTimer.current);
     networkRunning.current = true;
     networkLastRunAt.current = now;
     setNetworkStatus("checking");
     void runNetworkCheck()
       .then((res) => {
+        if (res === null) {
+          // Disturbed probe (tab hidden, page frozen, offline): nothing was
+          // reported, so the last shown result stays. Check again soon, without
+          // the cooldown, and not while hidden: returning to the tab rechecks.
+          networkLastRunAt.current = 0;
+          setNetworkStatus(networkShownVerdict.current);
+          window.clearTimeout(networkDisturbedTimer.current);
+          if (document.visibilityState === "visible") {
+            networkDisturbedTimer.current = window.setTimeout(
+              () => triggerNetworkCheck(true),
+              DISTURBED_RETRY_DELAY_MS
+            );
+          }
+          return;
+        }
+        window.clearTimeout(networkDisturbedTimer.current);
+        networkShownVerdict.current = res.verdict;
         setNetworkResult(res);
         setNetworkStatus(res.verdict);
       })
       .finally(() => {
         networkRunning.current = false;
       });
+  }, []);
+
+  useEffect(() => {
+    return () => window.clearTimeout(networkDisturbedTimer.current);
   }, []);
 
   const networkNotOk = networkResult !== null && networkResult.verdict !== "ok";
@@ -354,6 +380,7 @@ export default function App() {
 
   useEffect(() => {
     if (!inputDisabled) return;
+    window.clearTimeout(networkDisturbedTimer.current);
     setWizardOpen(false);
     setPreferencesOpen(false);
     setCertOpen(false);

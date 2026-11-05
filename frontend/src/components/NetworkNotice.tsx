@@ -24,7 +24,10 @@ export function NetworkNotice({ result }: { result: NetworkCheckResult | null })
     }
   }, [verdict]);
 
-  if (verdict !== "blocked" || (checkedAt !== null && dismissedCheckedAt === checkedAt)) {
+  // A dropped connection is reported as degraded, not blocked, but the attendee
+  // still needs to know their connection is gone, so the outage notice stays.
+  const shown = verdict === "blocked" || (result !== null && isOutageShaped(result));
+  if (!shown || (checkedAt !== null && dismissedCheckedAt === checkedAt)) {
     return null;
   }
 
@@ -55,10 +58,11 @@ export function NetworkStatusControl({
 }) {
   const [open, setOpen] = useState(false);
   const summary = formatNetworkSummary(result);
+  const outage = isOutageShaped(result);
   const dotClass =
     status === "ok"
       ? "dot-online"
-      : status === "Blocked".toLowerCase()
+      : status === "blocked" || (status !== "checking" && outage)
         ? "dot-error"
         : "dot-warn";
   const label =
@@ -66,10 +70,10 @@ export function NetworkStatusControl({
       ? "Checking network…"
       : status === "ok"
         ? "Network: OK"
-        : status === "slow"
-          ? "Network: slow"
-          : isOutageShaped(result)
-            ? "Network: connection lost"
+        : outage
+          ? "Network: connection lost"
+          : status === "slow"
+            ? "Network: slow"
             : "Network: live updates held back";
 
   return (
@@ -82,7 +86,7 @@ export function NetworkStatusControl({
         title={label}
         onClick={() => setOpen((v) => !v)}
       >
-        {status === "blocked" ? (
+        {status === "blocked" || (status !== "checking" && outage) ? (
           <WifiOff size={15} aria-hidden="true" />
         ) : (
           <Wifi size={15} aria-hidden="true" />
