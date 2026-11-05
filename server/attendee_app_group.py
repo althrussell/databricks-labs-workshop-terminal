@@ -17,10 +17,11 @@ not its application id.
 
 from __future__ import annotations
 
+import math
 import os
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote, urlsplit
@@ -81,16 +82,27 @@ def is_control_tower_managed(
     own_client_id: str = "",
     own_app_name: str = "",
     omnigent_url: str = "",
+    own_identities: Collection[str] = (),
 ) -> bool:
     """WT itself and Omnigent are CT-managed and never join an attendee group."""
-    client_id = str(app.get("service_principal_client_id") or "")
-    if own_client_id and client_id == own_client_id:
+    client_id = str(app.get("service_principal_client_id") or "").strip()
+    own_client = str(own_client_id or "").strip()
+    if own_client and client_id == own_client:
         return True
-    name = str(app.get("name") or app.get("app_name") or "")
-    if own_app_name and name == own_app_name:
+    name = str(app.get("name") or app.get("app_name") or "").strip()
+    own_name = str(own_app_name or "").strip()
+    if own_name and name == own_name:
         return True
-    url = str(app.get("url") or "")
-    if omnigent_url and url and urlsplit(url).netloc == urlsplit(omnigent_url).netloc:
+    if own_identities:
+        known = {str(ident).strip().lower() for ident in own_identities if str(ident).strip()}
+        sp_scim_id = str(app.get("service_principal_id") or "").strip().lower()
+        if (client_id and client_id.lower() in known) or (sp_scim_id and sp_scim_id in known):
+            return True
+    url = str(app.get("url") or "").strip()
+    omni = str(omnigent_url or "").strip()
+    omni_host = urlsplit(omni).netloc.lower() if omni else ""
+    url_host = urlsplit(url).netloc.lower() if url else ""
+    if omni_host and url_host == omni_host:
         return True
     return False
 
@@ -99,6 +111,8 @@ def _retry_after(response: Any) -> float:
     try:
         value = float(response.headers.get("Retry-After", 0) or 0)
     except (AttributeError, TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(value):
         return 0.0
     return min(max(value, 0.0), RETRY_AFTER_CAP_SECONDS)
 
@@ -113,6 +127,8 @@ def enrol(
     patch: Callable[..., Any] = requests.patch,
 ) -> Enrolment:
     """Add one App SP to the group. Bounded retry on throttling and 5xx; never raises."""
+    group_id = str(group_id or "").strip()
+    member_scim_id = str(member_scim_id or "").strip()
     if not group_id:
         return Enrolment(ok=False, attempts=0, status=None, skipped="unset")
     if not member_scim_id:
@@ -158,7 +174,9 @@ def enrol_once(
     patch: Callable[..., Any] = requests.patch,
 ) -> Enrolment:
     """``enrol`` with a success memo (re-proven after a TTL) and a failure cooldown."""
-    key = (group_id, str(member_scim_id))
+    group_id = str(group_id or "").strip()
+    member_scim_id = str(member_scim_id or "").strip()
+    key = (group_id, member_scim_id)
     now = time.monotonic()
     with _enrolled_lock:
         if _enrolled.get(key, 0.0) > now:
@@ -167,15 +185,19 @@ def enrol_once(
             return Enrolment(ok=False, attempts=0, status=None, skipped="cooling_down")
     result = enrol(host=host, bearer=bearer, group_id=group_id, member_scim_id=member_scim_id,
                    sleep=sleep, patch=patch)
+    finished_at = time.monotonic()
     with _enrolled_lock:
-        _status["enabled"] = True
+        if result.skipped != "unset":
+            _status["enabled"] = True
         if result.ok:
             if not result.skipped:
                 _status["enrolled"] = int(_status["enrolled"]) + 1
-            _enrolled[key] = now + ENROLLED_TTL_SECONDS
+            _enrolled[key] = finished_at + ENROLLED_TTL_SECONDS
             _failed_until.pop(key, None)
+            if not _failed_until:
+                _status["last_error"] = ""
         elif result.skipped != "unset":
-            _failed_until[key] = now + FAILED_COOLDOWN_SECONDS
+            _failed_until[key] = finished_at + FAILED_COOLDOWN_SECONDS
             _status["failed"] = int(_status["failed"]) + 1
             _status["last_error"] = f"{app_name or member_scim_id}: {result.error or result.skipped}"[:300]
     return result
@@ -183,7 +205,10 @@ def enrol_once(
 
 def status() -> dict[str, Any]:
     with _enrolled_lock:
-        return dict(_status)
+        snapshot = dict(_status)
+    if group_id_from_env():
+        snapshot["enabled"] = True
+    return snapshot
 
 
 def reset_for_tests() -> None:

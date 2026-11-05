@@ -1333,11 +1333,6 @@ class EntitlementManager:
                     continue
                 resource_id = str(raw_id)
 
-                if spec.label == "apps":
-                    # Every App in this seat joins the seat's group, including
-                    # the ones attendees create by hand. Never raises.
-                    self._enrol_attendee_app(host, bearer, item)
-
                 if spec.label == "apps" and catalog:
                     # Before the handoff logic, and outside its already-done
                     # short circuit: an app whose CAN_MANAGE handoff succeeded
@@ -1348,6 +1343,13 @@ class EntitlementManager:
                             host, bearer, catalog, principal, item, sp_identities
                         )
                     )
+
+                if spec.label == "apps":
+                    # Every App in this seat joins the seat's group, including
+                    # the ones attendees create by hand. Runs after catalog
+                    # grants so a slow SCIM endpoint never delays UC access.
+                    # Never raises.
+                    self._enrol_attendee_app(host, bearer, item, sp_identities)
 
                 previous_level = self._handed_off_level(
                     principal, spec.label, resource_id
@@ -1574,7 +1576,13 @@ class EntitlementManager:
         )
         return []
 
-    def _enrol_attendee_app(self, host: str, bearer: str, item: dict) -> None:
+    def _enrol_attendee_app(
+        self,
+        host: str,
+        bearer: str,
+        item: dict,
+        sp_identities: set[str] | None = None,
+    ) -> None:
         """Join an attendee App's service principal to the seat group (option 2).
 
         A no-op unless WORKSHOP_ATTENDEE_APP_GROUP_ID is set. Failures are
@@ -1591,6 +1599,7 @@ class EntitlementManager:
                 own_client_id=os.environ.get("DATABRICKS_CLIENT_ID", ""),
                 own_app_name=os.environ.get("DATABRICKS_APP_NAME", ""),
                 omnigent_url=os.environ.get("OMNIGENT_APP_URL", ""),
+                own_identities=sp_identities or (),
             ):
                 return
             member = str(item.get("service_principal_id") or "").strip()
@@ -2099,7 +2108,14 @@ class EntitlementManager:
             "baseline_ready": baseline_ready,
             "baseline_retry_pending": baseline_retry_pending,
             "handoff": handoff,
+            "attendee_app_group": self._attendee_app_group_status(),
         }
+
+    @staticmethod
+    def _attendee_app_group_status() -> dict:
+        from . import attendee_app_group
+
+        return attendee_app_group.status()
 
 
 entitlement_manager = EntitlementManager()

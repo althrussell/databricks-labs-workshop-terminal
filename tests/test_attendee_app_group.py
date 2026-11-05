@@ -299,6 +299,97 @@ def test_cli_already_member_conflict_counts_as_enrolled(monkeypatch):
     assert backend.enrol_app_group(Path("/tmp"), GROUP_ID, "555") == {"already_member": True}
 
 
+def test_cli_backend_enrol_app_group_accepts_null_and_empty_scim_204_output(monkeypatch):
+    """Databricks SCIM PATCH returns 204 No Content, which `databricks api patch --output json`
+    prints as `null\\n`. That must succeed rather than raising CliError."""
+    backend = deploy_tool.CliBackend({"HOME": "/tmp"})
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        stdout = "null\n" if len(calls) == 1 else ""
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(deploy_tool.subprocess, "run", fake_run)
+    assert backend.enrol_app_group(Path("/tmp"), GROUP_ID, "555") == {}
+    assert backend.enrol_app_group(Path("/tmp"), GROUP_ID, "555") == {}
+    assert len(calls) == 2
+    assert calls[0][0][:4] == [
+        "databricks",
+        "api",
+        "patch",
+        f"/api/2.0/account/scim/v2/Groups/{GROUP_ID}",
+    ]
+
+
+def test_schemeless_urls_do_not_falsely_match_empty_netloc_as_ct_managed():
+    assert not group.is_control_tower_managed(
+        {"name": "notes", "url": "notes-without-scheme"},
+        omnigent_url="omnigent-without-scheme",
+    )
+    assert not deploy_tool._control_tower_managed(
+        {"name": "notes", "url": "notes-without-scheme"},
+        {"OMNIGENT_APP_URL": "omnigent-without-scheme"},
+    )
+
+
+def test_reconciler_excludes_own_sp_from_sp_identities_when_client_id_env_unset(monkeypatch):
+    monkeypatch.setenv(group.GROUP_ENV, GROUP_ID)
+    monkeypatch.delenv("DATABRICKS_CLIENT_ID", raising=False)
+    monkeypatch.delenv("DATABRICKS_APP_NAME", raising=False)
+    seen = []
+    monkeypatch.setattr(group, "enrol_once", lambda **kw: seen.append(kw))
+    method = _reconciler_method()
+    manager = SimpleNamespace()
+
+    method(
+        manager,
+        HOST,
+        "t",
+        {"name": "wt-custom", "service_principal_id": "101", "service_principal_client_id": "wt-sp-uuid"},
+        {"101", "wt-sp-uuid"},
+    )
+    method(
+        manager,
+        HOST,
+        "t",
+        {"name": "attendee-app", "service_principal_id": "202", "service_principal_client_id": "att-sp-uuid"},
+        {"101", "wt-sp-uuid"},
+    )
+    assert [(call["member_scim_id"], call["app_name"]) for call in seen] == [("202", "attendee-app")]
+
+
+def test_enrol_once_uses_post_attempt_monotonic_time_for_ttl_and_cooldown(monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(group.time, "monotonic", lambda: clock[0])
+
+    def slow_sleep(seconds: float) -> None:
+        clock[0] += seconds
+
+    # 3 failed attempts + 1 success takes 1.0 + 2.0 = 3.0s of sleep
+    patch = _patcher(503, 503, 200)
+    res = group.enrol_once(
+        host=HOST,
+        bearer="t",
+        group_id=GROUP_ID,
+        member_scim_id="42",
+        patch=patch,
+        sleep=slow_sleep,
+    )
+    assert res.ok
+    # At 1000 + ENROLLED_TTL_SECONDS + 1 (1901.0), 3s after 1003.0 has NOT elapsed ENROLLED_TTL_SECONDS yet!
+    clock[0] = 1000.0 + group.ENROLLED_TTL_SECONDS + 1.0
+    still_cached = group.enrol_once(
+        host=HOST,
+        bearer="t",
+        group_id=GROUP_ID,
+        member_scim_id="42",
+        patch=_patcher(200),
+        sleep=slow_sleep,
+    )
+    assert still_cached.skipped == "already_enrolled"
+
+
 def test_helper_excludes_the_omnigent_and_own_app_by_name_and_url(monkeypatch):
     backend = EnrolBackend()
     env = {"HOME": "/tmp", "WORKSHOP_ATTENDEE_APP_GROUP_ID": GROUP_ID, "DATABRICKS_CLIENT_ID": "wt-sp",

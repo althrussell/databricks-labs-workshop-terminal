@@ -1037,9 +1037,15 @@ def test_claude_and_codex_register_and_allow_the_same_tool(client, monkeypatch):
     ]
     assert codex["mcp_servers"]["workshop"]["tool_timeout_sec"] == 3600
     # Codex gives stdio MCP servers only a default allowlist; the helper's
-    # callbacks need the terminal URL and attendee forwarded by name.
+    # callbacks and seat-group enrolment need these forwarded by name.
     forwarded = codex["mcp_servers"]["workshop"]["env_vars"]
-    assert {"WORKSHOP_APP_URL", "WORKSHOP_USER_EMAIL", "WORKSHOP_PROJECTS_ROOT"} <= set(forwarded)
+    assert {
+        "WORKSHOP_APP_URL",
+        "WORKSHOP_USER_EMAIL",
+        "WORKSHOP_PROJECTS_ROOT",
+        "WORKSHOP_ATTENDEE_APP_GROUP_ID",
+        "OMNIGENT_APP_URL",
+    } <= set(forwarded)
 
 
 def test_app_deploy_callback_emits_only_bounded_operational_fields(
@@ -1285,11 +1291,27 @@ def test_seat_group_enrolment_happens_on_a_poll_after_submission(tmp_path):
             _with_sp(_app(active="new")),
         ],
     )
+    reconcile_calls = []
 
-    result = _controller(env, backend).deploy(project_path=str(project))
+    class PollReporter:
+        def _post(self, path, payload):
+            reconcile_calls.append((path, payload))
+            return {}
+
+        def __call__(self, result, source):
+            pass
+
+    controller = deploy_tool.DeployController(
+        env,
+        backend=backend,
+        reporter=PollReporter(),
+        poll_seconds=0,
+    )
+    result = controller.deploy(project_path=str(project))
 
     assert result["status"] == "succeeded"
     assert backend.enrolled == [(SEAT_GROUP, "555")]
+    assert reconcile_calls == [("/api/entitlements/reconcile", {"resource_type": "apps"})]
 
 
 def test_a_transient_seat_group_failure_is_retried_on_a_later_poll(tmp_path):

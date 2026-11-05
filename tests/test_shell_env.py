@@ -62,7 +62,10 @@ def test_only_allowlisted_and_explicit_keys_present(monkeypatch):
         # Conditional (only when configured): WORKSHOP_CATALOG, WORKSHOP_SCHEMA,
         # OBO_PROFILE_NAME — covered in test_obo.py.
     }
-    allowed_exact = {"LANG", "LANGUAGE", "TZ", "SHELL", "COLORTERM"}
+    allowed_exact = {
+        "LANG", "LANGUAGE", "TZ", "SHELL", "COLORTERM",
+        "WORKSHOP_ATTENDEE_APP_GROUP_ID",
+    }
     for key in env:
         assert (
             key in explicit or key in allowed_exact or key.startswith("LC_")
