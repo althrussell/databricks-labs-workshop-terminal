@@ -9,10 +9,13 @@ metadata:
 
 Use the installed **`agentbricks`** command from `databricks-agentbricks`, not
 invented `databricks agentbricks` commands. This workshop integration is reviewed
-against CLI **0.6.0**. Check `agentbricks --version`, `uv --version`, and the
+against CLI **0.8.0**. Check `agentbricks --version`, `uv --version`, and the
 relevant `--help` before relying on a flag. A missing binary means the optional
 installer is disabled, pending or failed: ask the facilitator to check setup
 status; do not upgrade the shared toolchain mid-workshop.
+The CLI prints a pointer to its bundled `agent-bricks-workflow` skill when a
+coding agent runs it. That skill is compatible; where they differ, this skill's
+profile, naming and workshop rules apply.
 
 Choose this path when the attendee needs custom agent code. The separate
 `databricks-agent-bricks` skill covers managed Knowledge Assistants and
@@ -77,15 +80,23 @@ turn with `agentbricks --profile "${DATABRICKS_CONFIG_PROFILE:-DEFAULT}" dev --a
 server after testing; do not collide with the Workshop Terminal's listening port.
 Choose an unused port and check `dev --help` before running.
 
-For the **agent backend**, deploy with:
+For the **agent backend**, deploy from the project directory with:
 
 ```bash
-agentbricks --profile "${DATABRICKS_CONFIG_PROFILE:-DEFAULT}" deploy my-agent --source "$PWD" --pip-index-url https://pypi.org/simple/
-agentbricks --profile "${DATABRICKS_CONFIG_PROFILE:-DEFAULT}" deployments get agent-bricks-my-agent
+agentbricks --profile "${DATABRICKS_CONFIG_PROFILE:-DEFAULT}" deploy --no-wait --source "$PWD" --pip-index-url https://pypi.org/simple/
+agentbricks --profile "${DATABRICKS_CONFIG_PROFILE:-DEFAULT}" deployments wait   # exit 75 = still deploying: run it again
+agentbricks --profile "${DATABRICKS_CONFIG_PROFILE:-DEFAULT}" deployments get agent-bricks-<deployment_name>
 workshop-grant-me
 ```
 
-Use a unique name within the Apps 30-character limit (including `agent-bricks-`).
+The deploy NAME is capped at **17 characters**: apps are named
+`agent-bricks-<name>` and app names stop at 30. `init` records a fitting
+`deployment_name` in `agent.toml`, shortening long project names with a random
+suffix. Omit NAME to use it, and read the app name from that field. Pass NAME
+only to choose a different unique name of 17 characters or fewer. A first deploy
+takes a few minutes, which outlasts a coding agent's command timeout, so start it
+with `--no-wait` and follow it with `deployments wait`, not a polling loop. If a
+deploy stops partway, run the same `deploy` again to resume.
 This CLI provisions resources from `agent.toml`; do not substitute the AppKit
 deployment helper for an Agent Bricks backend. Use that helper for its separate
 AppKit UI. Runtime/deploy dependencies resolve from **public PyPI**; a

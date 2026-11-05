@@ -97,7 +97,11 @@ def main() -> None:
                        f"check-{framework}", "--agentbricks", "--", "--framework", framework]
             project = Path(run(command).strip())
             manifest = tomllib.loads((project / "agent.toml").read_text())
-            assert manifest["agent"] == {"framework": framework, "server": "agentbricks"}
+            agent = manifest["agent"]
+            assert (agent["framework"], agent["server"]) == (framework, "agentbricks")
+            # 0.8.0 records the deploy name the skill relies on: apps are
+            # agent-bricks-<name>, so it must fit in 17 of the 30 characters.
+            assert agent["deployment_name"] == project.name and len(project.name) <= 17
             assert not (project / project.name).exists(), "Scaffold was nested"
             doctor = run([str(bin_dir / "agentbricks"), "--output", "json", "doctor", "."], cwd=project)
             report = json.loads(doctor)

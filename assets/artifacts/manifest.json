@@ -2,10 +2,10 @@
   "//": "GENERATED FILE. Run `python3 scripts/build_artifact_manifest.py --write` to regenerate. See docs/artifact-manifest.md.",
   "artifacts": {
     "agentbricks_lock": {
-      "lock_sha256": "7db3a7bfb990922cbb30afd15531c46729ed431ecc5036eeb876787c8f7fc1cc",
-      "sha256": "7db3a7bfb990922cbb30afd15531c46729ed431ecc5036eeb876787c8f7fc1cc",
-      "source": "agentbricks-0.6.0.lock",
-      "version": "0.6.0"
+      "lock_sha256": "a59fc3406cdd30fbff81627340d2de10d7c71edde43a6c55596ff98839432117",
+      "sha256": "a59fc3406cdd30fbff81627340d2de10d7c71edde43a6c55596ff98839432117",
+      "source": "agentbricks-0.8.0.lock",
+      "version": "0.8.0"
     },
     "apx_wheel_linux_x64": {
       "executable_sha256": "855384a9dd12faaf3f92390e1b91f2837ec76fe0e3908b697fc5239f1ca3c5e4",

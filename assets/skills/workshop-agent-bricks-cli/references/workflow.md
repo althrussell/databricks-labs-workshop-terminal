@@ -1,4 +1,4 @@
-# CLI 0.6.0 command pointers
+# CLI 0.8.0 command pointers
 
 Global `--profile` and `--output` precede the command. `DEFAULT` is the WT build
 profile, not the attendee's optional `me` OBO profile. Check the installed command
@@ -34,10 +34,16 @@ memory is long-term information, sessions are conversation history, and tracing
 is diagnostic evidence: add what the small first version needs.
 
 For sandbox or UC-function bindings, inspect `agentbricks tools add --help` and
-its subcommand help. Use the assigned workshop catalog/schema and restrict the
-sandbox to the required data. Don't invent a tool/source schema.
+its subcommand help. Use the assigned workshop catalog/schema. Don't invent a
+tool/source schema. In 0.8.0 `tools add sandbox` has no scope: sandbox code can
+read and write all Unity Catalog data the selected identity can reach, and it
+receives that identity's Databricks token by default. Prefer a UC function or a
+managed MCP tool for data access. If the attendee needs a sandbox, keep
+`--auth user` and add `--no-databricks-access-token-included` unless the code
+must call Databricks APIs.
 
-`deployments delete` retains memory/session stores, tracing and source files.
+`deployments delete` retains memory/session stores, tracing and source files;
+`--delete-source` also removes the uploaded source folder.
 Clean up only resources owned by this disposable project after checking their
 identifiers and references; never use broad workspace list results as a deletion
 list. Follow the workshop's normal isolated-run cleanup process.
