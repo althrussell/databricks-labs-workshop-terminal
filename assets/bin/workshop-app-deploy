@@ -27,6 +27,7 @@ import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from dataclasses import dataclass
@@ -248,8 +249,10 @@ def _cli_env(env: dict[str, str]) -> dict[str, str]:
     return clean
 
 
-def _json_from_output(output: str) -> dict[str, Any]:
+def _json_from_output(output: str, *, allow_empty: bool = False) -> dict[str, Any]:
     text = output.strip()
+    if allow_empty and text in ("", "null"):
+        return {}
     candidates = [text]
     if "{" in text:
         candidates.append(text[text.find("{") :])
@@ -269,7 +272,14 @@ class CliBackend:
     def __init__(self, env: dict[str, str]):
         self.env = env
 
-    def _json(self, args: list[str], cwd: Path, timeout: int = 30) -> dict[str, Any]:
+    def _json(
+        self,
+        args: list[str],
+        cwd: Path,
+        timeout: int = 30,
+        *,
+        allow_empty: bool = False,
+    ) -> dict[str, Any]:
         try:
             completed = subprocess.run(
                 ["databricks", *args, "--output", "json"],
@@ -288,7 +298,7 @@ class CliBackend:
         if completed.returncode:
             detail = _safe_line(completed.stderr or completed.stdout or "CLI failed")
             raise CliError(detail, returncode=completed.returncode)
-        return _json_from_output(completed.stdout)
+        return _json_from_output(completed.stdout, allow_empty=allow_empty)
 
     def bundle_summary(self, project: Path, target: str) -> dict[str, Any]:
         return self._json(["bundle", "summary", "--target", target], project, 60)
@@ -298,6 +308,36 @@ class CliBackend:
 
     def get_app(self, project: Path, app_name: str) -> dict[str, Any]:
         return self._json(["apps", "get", app_name], project)
+
+    def enrol_app_group(
+        self, project: Path, group_id: str, member_scim_id: str
+    ) -> dict[str, Any]:
+        """Add one App service principal to the seat's account group.
+
+        Uses the workspace-hosted account SCIM endpoint with the [DEFAULT]
+        profile (the WT service principal, which holds Manage on the group).
+        """
+        group_id = str(group_id or "").strip()
+        member_scim_id = str(member_scim_id or "").strip()
+        body = {
+            "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+            "Operations": [
+                {"op": "add", "path": "members", "value": [{"value": member_scim_id}]}
+            ],
+        }
+        path = f"/api/2.0/account/scim/v2/Groups/{urllib.parse.quote(group_id, safe='')}"
+        try:
+            return self._json(
+                ["api", "patch", path, "--json", json.dumps(body)],
+                project,
+                20,
+                allow_empty=True,
+            )
+        except CliError as exc:
+            # The member is already in the group; SCIM reports that as a conflict.
+            if "409" in str(exc) or "already" in str(exc).lower():
+                return {"already_member": True}
+            raise
 
     def start_app(self, project: Path, app_name: str) -> dict[str, Any]:
         return self._json(["apps", "start", app_name, "--no-wait"], project, 60)
@@ -654,6 +694,27 @@ def _new_deployment_id(snapshot: dict[str, str], baseline: set[str]) -> str:
 
 def _healthy(snapshot: dict[str, str]) -> bool:
     return snapshot["app_state"] == "RUNNING" and snapshot["compute_state"] == "ACTIVE"
+
+
+def _control_tower_managed(app: dict[str, Any], env: dict[str, str]) -> bool:
+    """WT itself and Omnigent are CT-managed; they never join an attendee group.
+
+    Mirrors server/attendee_app_group.is_control_tower_managed.
+    """
+    from urllib.parse import urlsplit
+
+    own_client_id = str(env.get("DATABRICKS_CLIENT_ID") or "").strip()
+    client_id = str(app.get("service_principal_client_id") or "").strip()
+    if own_client_id and client_id == own_client_id:
+        return True
+    own_name = str(env.get("DATABRICKS_APP_NAME") or "").strip()
+    if own_name and str(app.get("name") or app.get("app_name") or "").strip() == own_name:
+        return True
+    omnigent = str(env.get("OMNIGENT_APP_URL") or "").strip()
+    url = str(app.get("url") or "").strip()
+    omni_host = urlsplit(omnigent).netloc.lower() if omnigent else ""
+    url_host = urlsplit(url).netloc.lower() if url else ""
+    return bool(omni_host and url_host == omni_host)
 
 
 @dataclass
@@ -1106,6 +1167,9 @@ class DeployController:
             try:
                 app = self.backend.get_app(project, state["app_name"])
                 snapshot = _snapshot(app)
+                # The App's service principal can appear only after submission
+                # ends, or enrolment can fail transiently: keep retrying here.
+                self._observe_app_sp(state, project, app)
                 if snapshot["url"]:
                     state["app_url"] = snapshot["url"]
                 if not state.get("deployment_id"):
@@ -1209,18 +1273,53 @@ class DeployController:
             state["deployment_id"] = _new_deployment_id(
                 snapshot, set(state.get("baseline_deployment_ids") or [])
             )
+        self._observe_app_sp(state, project, app_payload)
+
+    def _observe_app_sp(
+        self, state: dict[str, Any], project: Path, app_payload: dict[str, Any]
+    ) -> None:
         sp_id = (
             app_payload.get("service_principal_client_id")
             or app_payload.get("service_principal_id")
         )
-        if sp_id and not state.get("early_entitlement_reconciled"):
+        if not sp_id:
+            return
+        self._enrol_attendee_group(state, project, app_payload)
+        if not state.get("early_entitlement_reconciled"):
             post = getattr(self.reporter, "_post", None)
             if callable(post):
                 try:
-                    post("/api/entitlements/reconcile", {"resource_type": "apps"})
-                    state["early_entitlement_reconciled"] = True
+                    if post("/api/entitlements/reconcile", {"resource_type": "apps"}) is not None:
+                        state["early_entitlement_reconciled"] = True
                 except Exception:
                     pass
+
+    def _enrol_attendee_group(
+        self, state: dict[str, Any], project: Path, app_payload: dict[str, Any]
+    ) -> None:
+        """Put the new App's service principal in the seat group (Control Tower option 2).
+
+        One attempt per poll, so the deploy loop never waits on enrolment. The
+        record in the operation state counts attempts across polls and stops at
+        twelve; the entitlement reconciler keeps retrying after that. Never raised.
+        """
+        group_id = str(self.env.get("WORKSHOP_ATTENDEE_APP_GROUP_ID") or "").strip()
+        enrol = getattr(self.backend, "enrol_app_group", None)
+        if not group_id or not callable(enrol):
+            return
+        record = state.get("attendee_app_group") or {}
+        if record.get("ok") or int(record.get("attempts") or 0) >= 12:
+            return
+        member = str(app_payload.get("service_principal_id") or "").strip()
+        if not member or _control_tower_managed(app_payload, self.env):
+            return
+        attempts = int(record.get("attempts") or 0) + 1
+        try:
+            enrol(project, group_id, member)
+            record = {"ok": True, "attempts": attempts, "error": ""}
+        except Exception as exc:  # noqa: BLE001 — enrolment never fails the deploy
+            record = {"ok": False, "attempts": attempts, "error": _safe_line(exc)[:200]}
+        state["attendee_app_group"] = record
 
     def _pause(self, cancel: threading.Event, deadline: float) -> None:
         remaining = max(0.0, deadline - self.monotonic())

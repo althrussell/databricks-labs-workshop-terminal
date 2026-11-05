@@ -1037,9 +1037,15 @@ def test_claude_and_codex_register_and_allow_the_same_tool(client, monkeypatch):
     ]
     assert codex["mcp_servers"]["workshop"]["tool_timeout_sec"] == 3600
     # Codex gives stdio MCP servers only a default allowlist; the helper's
-    # callbacks need the terminal URL and attendee forwarded by name.
+    # callbacks and seat-group enrolment need these forwarded by name.
     forwarded = codex["mcp_servers"]["workshop"]["env_vars"]
-    assert {"WORKSHOP_APP_URL", "WORKSHOP_USER_EMAIL", "WORKSHOP_PROJECTS_ROOT"} <= set(forwarded)
+    assert {
+        "WORKSHOP_APP_URL",
+        "WORKSHOP_USER_EMAIL",
+        "WORKSHOP_PROJECTS_ROOT",
+        "WORKSHOP_ATTENDEE_APP_GROUP_ID",
+        "OMNIGENT_APP_URL",
+    } <= set(forwarded)
 
 
 def test_app_deploy_callback_emits_only_bounded_operational_fields(
@@ -1245,3 +1251,80 @@ def test_first_deployment_without_an_app_still_submits(tmp_path):
     assert started == []
     assert backend.submissions == 1
     assert result["status"] == "succeeded"
+
+
+SEAT_GROUP = "1234567890"
+
+
+def _with_sp(app: dict) -> dict:
+    return {**app, "service_principal_id": "555", "service_principal_client_id": "attendee-sp"}
+
+
+class SeatGroupBackend(FakeBackend):
+    """Records seat-group enrolment; `enrol_errors` are raised in order, then it succeeds."""
+
+    def __init__(self, *, enrol_errors=(), **kwargs):
+        super().__init__(**kwargs)
+        self.enrol_errors = list(enrol_errors)
+        self.enrolled = []
+
+    def enrol_app_group(self, _project, group_id, member):
+        self.enrolled.append((group_id, member))
+        if self.enrol_errors:
+            raise self.enrol_errors.pop(0)
+        return {}
+
+
+def _seat_env(tmp_path: Path) -> tuple[dict[str, str], Path]:
+    env, project = _env(tmp_path)
+    env["WORKSHOP_ATTENDEE_APP_GROUP_ID"] = SEAT_GROUP
+    env["DATABRICKS_CLIENT_ID"] = "wt-sp"
+    return env, project
+
+
+def test_seat_group_enrolment_happens_on_a_poll_after_submission(tmp_path):
+    """The App's service principal can appear only after submission has ended."""
+    env, project = _seat_env(tmp_path)
+    backend = SeatGroupBackend(
+        app_states=[
+            _app(pending="new", app_state="DEPLOYING", compute_state="STARTING"),  # no SP yet
+            _with_sp(_app(active="new")),
+        ],
+    )
+    reconcile_calls = []
+
+    class PollReporter:
+        def _post(self, path, payload):
+            reconcile_calls.append((path, payload))
+            return {}
+
+        def __call__(self, result, source):
+            pass
+
+    controller = deploy_tool.DeployController(
+        env,
+        backend=backend,
+        reporter=PollReporter(),
+        poll_seconds=0,
+    )
+    result = controller.deploy(project_path=str(project))
+
+    assert result["status"] == "succeeded"
+    assert backend.enrolled == [(SEAT_GROUP, "555")]
+    assert reconcile_calls == [("/api/entitlements/reconcile", {"resource_type": "apps"})]
+
+
+def test_a_transient_seat_group_failure_is_retried_on_a_later_poll(tmp_path):
+    env, project = _seat_env(tmp_path)
+    backend = SeatGroupBackend(
+        enrol_errors=[deploy_tool.CliError("apps scim: 503")],
+        app_states=[
+            _with_sp(_app(pending="new", app_state="DEPLOYING", compute_state="STARTING")),
+            _with_sp(_app(active="new")),
+        ],
+    )
+
+    result = _controller(env, backend).deploy(project_path=str(project))
+
+    assert result["status"] == "succeeded"
+    assert backend.enrolled == [(SEAT_GROUP, "555"), (SEAT_GROUP, "555")]

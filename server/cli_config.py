@@ -649,6 +649,8 @@ _WORKSHOP_MCP_ENV_VARS = (
     "WORKSHOP_PROJECTS_ROOT",
     "WORKSHOP_APP_DEPLOY_STATE_DIR",
     "WORKSHOP_APP_DEPLOY_POLL_SECONDS",
+    "WORKSHOP_ATTENDEE_APP_GROUP_ID",
+    "OMNIGENT_APP_URL",
 )
 
 # Codex once carried a second provider on the plain chat-completions surface so

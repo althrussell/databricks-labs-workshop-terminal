@@ -1344,6 +1344,13 @@ class EntitlementManager:
                         )
                     )
 
+                if spec.label == "apps":
+                    # Every App in this seat joins the seat's group, including
+                    # the ones attendees create by hand. Runs after catalog
+                    # grants so a slow SCIM endpoint never delays UC access.
+                    # Never raises.
+                    self._enrol_attendee_app(host, bearer, item, sp_identities)
+
                 previous_level = self._handed_off_level(
                     principal, spec.label, resource_id
                 )
@@ -1568,6 +1575,50 @@ class EntitlementManager:
             permission_level=",".join(APP_SP_CATALOG_PRIVILEGES),
         )
         return []
+
+    def _enrol_attendee_app(
+        self,
+        host: str,
+        bearer: str,
+        item: dict,
+        sp_identities: set[str] | None = None,
+    ) -> None:
+        """Join an attendee App's service principal to the seat group (option 2).
+
+        A no-op unless WORKSHOP_ATTENDEE_APP_GROUP_ID is set. Failures are
+        recorded in attendee_app_group.status() and never fail the reconcile.
+        """
+        from . import attendee_app_group
+
+        group_id = attendee_app_group.group_id_from_env()
+        if not group_id:
+            return
+        try:
+            if attendee_app_group.is_control_tower_managed(
+                item,
+                own_client_id=os.environ.get("DATABRICKS_CLIENT_ID", ""),
+                own_app_name=os.environ.get("DATABRICKS_APP_NAME", ""),
+                omnigent_url=os.environ.get("OMNIGENT_APP_URL", ""),
+                own_identities=sp_identities or (),
+            ):
+                return
+            member = str(item.get("service_principal_id") or "").strip()
+            if not member:
+                return  # the app has no service principal yet; the next pass sees it
+            result = attendee_app_group.enrol_once(
+                host=host,
+                bearer=bearer,
+                group_id=group_id,
+                member_scim_id=member,
+                app_name=str(item.get("name") or ""),
+            )
+            if not result.ok and not result.skipped:
+                logger.warning(
+                    "attendee app group enrolment failed app=%s: %s",
+                    str(item.get("name") or ""), result.error or result.status,
+                )
+        except Exception as exc:  # noqa: BLE001 — enrolment must not fail the reconcile
+            logger.warning("attendee app group enrolment failed: %s", str(exc)[:200])
 
     def _handed_off_level(
         self, principal: str, resource_type: str, resource_id: str
@@ -2057,7 +2108,14 @@ class EntitlementManager:
             "baseline_ready": baseline_ready,
             "baseline_retry_pending": baseline_retry_pending,
             "handoff": handoff,
+            "attendee_app_group": self._attendee_app_group_status(),
         }
+
+    @staticmethod
+    def _attendee_app_group_status() -> dict:
+        from . import attendee_app_group
+
+        return attendee_app_group.status()
 
 
 entitlement_manager = EntitlementManager()

@@ -30,6 +30,9 @@ from .otel_bootstrap import serving_port
 # internals) is dropped by construction — it is never added here.
 _SHELL_ENV_ALLOWLIST = frozenset({
     "LANG", "LANGUAGE", "TZ", "SHELL", "COLORTERM",
+    # Seat account-group id (Control Tower option 2). Not a secret: the deploy
+    # helper and the terminal's Omnigent host need it to enrol new Apps.
+    "WORKSHOP_ATTENDEE_APP_GROUP_ID",
 })
 _SHELL_ENV_ALLOWLIST_PREFIXES = ("LC_",)
 
