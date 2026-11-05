@@ -42,6 +42,8 @@ export const RECHECK_COOLDOWN_MS = 10 * 60 * 1000;
 export const NOT_OK_RETRY_DELAYS_MS = [30_000, 120_000, 300_000];
 /** A probe that could not run to the end (tab hidden, page frozen, offline) is retried after this. */
 export const DISTURBED_RETRY_DELAY_MS = 30_000;
+/** Two buffered probes confirm `blocked` only when they land within this window; older streaks are forgotten. */
+export const BLOCKED_STREAK_TTL_MS = 15 * 60 * 1000;
 /** The probe's watchdog ticks this often; a tick that arrives later than FREEZE_GAP_MS means the page froze. */
 export const PROBE_TICK_MS = 500;
 export const FREEZE_GAP_MS = 3_000;
@@ -196,7 +198,8 @@ export function startingDisturbance(state: { visibility: string; online: boolean
  */
 export function confirmVerdict(
   probe: Pick<NetworkCheckResult, "verdict" | "sub_cause">,
-  priorBlockedRuns: number
+  priorBlockedRuns: number,
+  elapsedMs = 0
 ): { verdict: NetworkVerdict; blockedRuns: number } {
   if (probe.verdict !== "blocked") {
     return { verdict: probe.verdict, blockedRuns: 0 };
@@ -204,7 +207,8 @@ export function confirmVerdict(
   if (probe.sub_cause !== "buffered") {
     return { verdict: "slow", blockedRuns: 0 };
   }
-  const blockedRuns = priorBlockedRuns + 1;
+  const activePrior = elapsedMs > BLOCKED_STREAK_TTL_MS ? 0 : priorBlockedRuns;
+  const blockedRuns = activePrior + 1;
   return { verdict: blockedRuns >= 2 ? "blocked" : "slow", blockedRuns };
 }
 
@@ -251,6 +255,7 @@ export function formatNetworkSummary(result: NetworkCheckResult | null): {
  * second-probe confirmation must survive the retry timers in App.
  */
 let priorBlockedRuns = 0;
+let priorBlockedAtMs = 0;
 
 /**
  * Runs one probe. Resolves to `null` when the probe was disturbed (see
@@ -371,8 +376,12 @@ export async function runNetworkCheck(options?: { fast?: boolean }): Promise<Net
   if (disturbed) return null;
 
   const evaluated = evaluateSamples(samples, EXPECTED_EVENT_COUNT, wsRttMs, httpRttMs);
-  const confirmed = confirmVerdict(evaluated, priorBlockedRuns);
+  const nowWallMs = Date.now();
+  const elapsedSincePriorBlockedMs =
+    priorBlockedAtMs > 0 ? Math.max(0, nowWallMs - priorBlockedAtMs) : 0;
+  const confirmed = confirmVerdict(evaluated, priorBlockedRuns, elapsedSincePriorBlockedMs);
   priorBlockedRuns = confirmed.blockedRuns;
+  priorBlockedAtMs = confirmed.blockedRuns > 0 ? nowWallMs : 0;
   const reported = { ...evaluated, verdict: confirmed.verdict };
   const fallback: NetworkCheckResult = {
     ...reported,

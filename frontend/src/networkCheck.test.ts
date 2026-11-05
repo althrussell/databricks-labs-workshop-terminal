@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  BLOCKED_STREAK_TTL_MS,
   confirmVerdict,
   evaluateSamples,
   formatNetworkSummary,
@@ -198,6 +199,23 @@ test("one buffered probe is reported as slow; a second consecutive one is blocke
   assert.deepEqual(first, { verdict: "slow", blockedRuns: 1 });
   const second = confirmVerdict({ verdict: "blocked", sub_cause: "buffered" }, first.blockedRuns);
   assert.deepEqual(second, { verdict: "blocked", blockedRuns: 2 });
+});
+
+test("a buffered streak older than 15 minutes is forgotten so two probes hours apart do not report blocked", () => {
+  const first = confirmVerdict({ verdict: "blocked", sub_cause: "buffered" }, 0);
+  assert.deepEqual(first, { verdict: "slow", blockedRuns: 1 });
+  const withinWindow = confirmVerdict(
+    { verdict: "blocked", sub_cause: "buffered" },
+    first.blockedRuns,
+    BLOCKED_STREAK_TTL_MS
+  );
+  assert.deepEqual(withinWindow, { verdict: "blocked", blockedRuns: 2 });
+  const afterWindow = confirmVerdict(
+    { verdict: "blocked", sub_cause: "buffered" },
+    first.blockedRuns,
+    BLOCKED_STREAK_TTL_MS + 1
+  );
+  assert.deepEqual(afterWindow, { verdict: "slow", blockedRuns: 1 });
 });
 
 test("no_connection and stall are never reported as blocked, however often they repeat, and do not prime buffered confirmation", () => {
