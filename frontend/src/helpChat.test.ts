@@ -24,7 +24,7 @@ test("an assistant answer is labelled as the assistant, whatever it signed with"
   // The legacy signature carries "(AI)" for terminals that cannot badge it;
   // here the badge does that job, so the label stays the plain name.
   assert.equal(senderLabel(message("a", "assistant", "Workshop Assistant (AI)")), ASSISTANT_LABEL);
-  assert.equal(senderLabel(message("a", "assistant")), "Workshop Assistant");
+  assert.equal(senderLabel(message("a", "assistant")), "Workshop Assistant (beta)");
 });
 
 test("operator and attendee labels are unchanged", () => {
@@ -50,7 +50,7 @@ test("assistant answers count as replies, the attendee's own words do not", () =
 });
 
 test("a reply toast names the assistant plainly and keeps the operator wording", () => {
-  assert.equal(replyToastTitle("assistant", "Workshop Assistant (AI)"), "Workshop Assistant");
+  assert.equal(replyToastTitle("assistant", "Workshop Assistant (AI)"), "Workshop Assistant (beta)");
   assert.equal(replyToastTitle("operator", "Sam"), "Sam replied");
   assert.equal(replyToastTitle("operator", ""), "Operator replied");
 });
@@ -83,6 +83,11 @@ test("asking for a person replaces the button with the confirmation until someon
   assert.equal(handoffView([question, answer, person], asked), "hidden");
   // A newer assistant answer is a new chance to ask.
   assert.equal(handoffView([question, answer, message("a2", "assistant")], asked), "offer");
+  // Resolving or lowering the hand without a new message re-offers "Talk to a person".
+  assert.equal(
+    handoffView([question, answer], { readOnly: false, requestedAfter: answer.message_id, raised: false }),
+    "offer",
+  );
 });
 
 test("an answer can be rated until a vote is cast, then shows the vote", () => {

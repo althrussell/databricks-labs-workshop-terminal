@@ -26,6 +26,7 @@ export default function HelpChatPanel({
   const [voting, setVoting] = useState<ReadonlySet<string>>(new Set());
   const [handoffAfter, setHandoffAfter] = useState<string | null>(null);
   const [handoffBusy, setHandoffBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -77,6 +78,12 @@ export default function HelpChatPanel({
   }, [onRaisedChange]);
 
   useEffect(() => {
+    if (!raised) {
+      setHandoffAfter(null);
+    }
+  }, [raised]);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, open]);
 
@@ -101,12 +108,13 @@ export default function HelpChatPanel({
 
   const rate = async (messageId: string, value: HelpVote) => {
     if (voteView(feedback, messageId, { pending: voting.has(messageId), readOnly }).disabled) return;
+    setActionError(null);
     setVoting((prev) => new Set(prev).add(messageId));
     try {
       const result = await api.rateHelpMessage(messageId, value);
       setFeedback((prev) => ({ ...prev, [messageId]: result.value }));
     } catch {
-      /* fail-soft: the buttons unlock and the attendee can try again */
+      setActionError("Could not save your rating. Please try again.");
     } finally {
       setVoting((prev) => {
         const next = new Set(prev);
@@ -119,13 +127,14 @@ export default function HelpChatPanel({
   const askForPerson = async () => {
     const reply = latestReply(messages);
     if (!reply || handoffBusy || readOnly) return;
+    setActionError(null);
     setHandoffBusy(true);
     try {
       const result = await api.requestPerson();
       setHandoffAfter(reply.message_id);
       onRaisedChange(result.raised);
     } catch {
-      /* fail-soft: the button stays so the attendee can ask again */
+      setActionError("Could not reach the workshop team. Please try again.");
     } finally {
       setHandoffBusy(false);
     }
@@ -133,7 +142,7 @@ export default function HelpChatPanel({
 
   if (!open) return null;
 
-  const handoff = handoffView(messages, { readOnly, requestedAfter: handoffAfter });
+  const handoff = handoffView(messages, { readOnly, requestedAfter: handoffAfter, raised });
 
   return (
     <aside className="help-chat-panel" aria-label="Help chat with operators">
@@ -148,6 +157,9 @@ export default function HelpChatPanel({
           <X size={16} />
         </button>
       </div>
+      <p className="help-chat-beta-note">
+        Workshop Assistant (beta) may suggest a first answer — click <strong>Talk to a person</strong> anytime for the workshop team.
+      </p>
       <div className="help-chat-messages">
         {messages.length === 0 ? (
           <p className="help-chat-empty">
@@ -194,6 +206,11 @@ export default function HelpChatPanel({
         {handoff === "requested" ? (
           <p className="help-chat-handoff help-chat-handoff-sent" role="status">
             A member of the workshop team has been asked to help.
+          </p>
+        ) : null}
+        {actionError ? (
+          <p className="help-chat-error" role="alert">
+            {actionError}
           </p>
         ) : null}
         <div ref={bottomRef} />

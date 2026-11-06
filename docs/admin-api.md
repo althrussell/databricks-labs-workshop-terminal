@@ -273,12 +273,12 @@ Help panel is closed; the panel shows it either way. `request_ack` (default
 | `sender_role` | Who | Shown as |
 |---|---|---|
 | `operator` | A person in the control room | `sender`, or "Operator" |
-| `assistant` | Control Tower's Workshop Assistant, an AI (Bot Mode) | "Workshop Assistant" with an **AI** badge, thumbs up/down under the answer, and **Talk to a person** while it has the last word |
+| `assistant` | Control Tower's Workshop Assistant, an AI (Bot Mode) | "Workshop Assistant (beta)" with an **AI** badge, thumbs up/down under the answer, and **Talk to a person** while it has the last word |
 
 Control Tower sends `assistant` only to terminals whose presence lists
 `assistant_v1` in [`help_capabilities`](#get-apiadminpresence). An older
 terminal gets the same answer as `operator` with the sender
-`Workshop Assistant (AI)`, so it still reads as AI there. The optional
+`Workshop Assistant (AI, beta)`, so it still reads as AI there. The optional
 `sender_kind` (`assistant` or `operator`) names the true author whatever role
 was sent; the terminal accepts it and renders by `sender_role`.
 

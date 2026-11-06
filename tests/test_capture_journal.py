@@ -576,3 +576,49 @@ def test_delta_preserves_json_scalar_types_in_nested_containers(before, after):
     replacement = journal(retained.storage)
     assert canonical_json(replacement.read()["value"]) == canonical_json(after)
     assert replacement.health()["revision"] == 2
+
+
+def test_partial_split_flush_commits_each_entry_once():
+    class FailBeforeRevision3(MemoryCaptureStorage):
+        armed = False
+        failed = False
+
+        def create(self, name: str, content: bytes) -> bool:
+            if self.armed and not self.failed and name == f"{3:020d}.json":
+                self.failed = True
+                raise OSError("injected failure before revision 3")
+            return super().create(name, content)
+
+    storage = FailBeforeRevision3()
+    live = CaptureJournal(
+        storage,
+        BINDING,
+        {"events": []},
+        write_behind=True,
+        max_record_bytes=4096,
+        flush_interval=3600,
+    )
+    live.read()
+    for n in range(5):
+        live.transaction(
+            lambda state, n=n: state["events"].append({"n": n, "data": "x" * 900})
+        )
+    assert live.health()["pending_operations"] == 5
+
+    storage.armed = True
+    with pytest.raises(CaptureStorageError):
+        live.flush()
+    assert storage.failed is True
+    assert live.health()["pending_operations"] == 3
+    partial = CaptureJournal(
+        storage, BINDING, {"events": []}, write_behind=False, max_record_bytes=4096
+    ).read()
+    assert [item["n"] for item in partial["events"]] == [0, 1]
+
+    live.flush()
+    assert live.health()["pending_operations"] == 0
+    recovered = CaptureJournal(
+        storage, BINDING, {"events": []}, write_behind=False, max_record_bytes=4096
+    ).read()
+    assert [item["n"] for item in recovered["events"]] == [0, 1, 2, 3, 4]
+    live.close()

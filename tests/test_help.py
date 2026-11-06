@@ -645,3 +645,18 @@ def test_malformed_retained_feedback_holds_capture(feedback):
     with pytest.raises(CaptureHeldError, match="feedback"):
         help_module.configure_capture(journal)
     assert journal.health()["held"] is True
+
+
+def test_clear_hand_drops_request_id_so_request_person_mints_new(client, as_admin):
+    client.post("/api/admin/help/message", json=ASSISTANT)
+    assert help_module.snapshot()["help_request_id"] == "hr-1"
+
+    resolved = client.post("/api/admin/help/clear")
+    assert resolved.status_code == 200
+    assert help_module.snapshot()["help_request_id"] is None
+
+    handoff = client.post("/api/help/handoff", headers=HDRS)
+    assert handoff.status_code == 200
+    [entry] = client.get("/api/admin/presence").json()["help_outbox"]
+    assert entry["kind"] == "handoff"
+    assert entry["help_request_id"] is None

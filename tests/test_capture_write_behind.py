@@ -216,3 +216,70 @@ def test_flush_holds_the_process_file_lock(tmp_path, monkeypatch):
         fcntl.flock(fd, fcntl.LOCK_UN)
     finally:
         os.close(fd)
+
+
+def test_help_routes_flush_before_return(monkeypatch):
+    from server import help as help_module
+
+    help_module.reset_for_tests()
+    monkeypatch.setattr(help_module, "_push_control_tower_message", lambda *a, **k: False)
+    monkeypatch.setattr(help_module, "_push_control_tower", lambda *a, **k: False)
+
+    storage = CountingStorage()
+    live = journal(storage, flush_interval=3600)
+    help_module.configure_capture(live)
+
+    accepted = help_module.post_attendee_message("crash-window-help")
+    assert live.health()["pending_operations"] == 0
+    # Model a sudden container crash without calling close() or flush().
+    live._closed = True
+    live._flush_wake.set()
+
+    help_module.reset_for_tests()
+    successor = journal(storage, flush_interval=3600)
+    help_module.configure_capture(successor)
+    offered = help_module.presence_fields()["help_outbox"]
+    assert [e["message_id"] for e in offered if e["kind"] == "message"] == [
+        accepted["message"]["message_id"]
+    ]
+
+    ack_res = help_module.ack_outbox(offered[-1]["seq"])
+    assert ack_res["pending"] == 0
+    assert successor.health()["pending_operations"] == 0
+    successor._closed = True
+    successor._flush_wake.set()
+
+    help_module.reset_for_tests()
+    after_ack = journal(storage, flush_interval=3600)
+    help_module.configure_capture(after_ack)
+    assert help_module.presence_fields()["help_outbox"] == []
+    after_ack.close()
+
+
+def test_flush_barrier_is_bounded_and_fails_open(monkeypatch):
+    from server import help as help_module
+
+    help_module.reset_for_tests()
+    monkeypatch.setattr(help_module, "_push_control_tower_message", lambda *a, **k: False)
+    monkeypatch.setattr(help_module, "_push_control_tower", lambda *a, **k: False)
+
+    storage = CountingStorage()
+    live = journal(storage, flush_interval=3600)
+    help_module.configure_capture(live)
+
+    storage.fail = True
+    accepted = help_module.post_attendee_message("degraded-storage-help")
+    assert accepted["raised"] is True
+    assert help_module.flush_help_persistence(timeout=0.05) is False
+
+    storage.fail = False
+    storage.delay = 0.25
+    live.transaction(lambda state: state["help"].update(note="slow-storage-help"))
+    started = time.monotonic()
+    assert help_module.flush_help_persistence(timeout=0.02) is False
+    assert (time.monotonic() - started) < 0.15
+
+    storage.delay = 0.0
+    assert help_module.flush_help_persistence(timeout=1.0) is True
+    assert live.health()["pending_operations"] == 0
+    live.close()

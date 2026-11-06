@@ -9,7 +9,7 @@
 import type { HelpMessage, HelpVote } from "./api";
 
 /** The name the assistant answers under. The AI badge travels with it. */
-export const ASSISTANT_LABEL = "Workshop Assistant";
+export const ASSISTANT_LABEL = "Workshop Assistant (beta)";
 
 export type HelpBubble = "attendee" | "operator" | "assistant";
 
@@ -61,11 +61,15 @@ export type HandoffView = "offer" | "requested" | "hidden";
  */
 export function handoffView(
   messages: HelpMessage[],
-  { readOnly, requestedAfter }: { readOnly: boolean; requestedAfter: string | null },
+  {
+    readOnly,
+    requestedAfter,
+    raised = true,
+  }: { readOnly: boolean; requestedAfter: string | null; raised?: boolean },
 ): HandoffView {
   const reply = latestReply(messages);
   if (!reply) return "hidden";
-  if (requestedAfter !== null && reply.message_id === requestedAfter) return "requested";
+  if (raised && requestedAfter !== null && reply.message_id === requestedAfter) return "requested";
   if (readOnly || reply.sender_role !== "assistant") return "hidden";
   return "offer";
 }
