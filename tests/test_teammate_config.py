@@ -364,9 +364,15 @@ def test_codex_asks_meeting_choices_with_request_user_input(client, monkeypatch,
 
 
 def test_attach_image_shows_what_was_attached_and_why_it_is_disabled():
-    """F-046: the owner couldn't tell what "Attach image" did; the only sign was a path in the terminal."""
+    """F-046: the owner couldn't tell what "Attach image" did; the only sign was a path in the terminal.
+
+    A thumbnail is the confirmation. The sentence that sat beside it crowded the
+    agent bar and was dropped in the 6 Nov review; the image keeps a label for
+    screen readers.
+    """
     app = (ROOT / "frontend" / "src" / "App.tsx").read_text()
 
-    assert "Attached. Now tell the agent what to do with it." in app
     assert 'className="attach-thumb"' in app
+    assert 'alt="Image attached"' in app
+    assert "Now tell the agent what to do with it." not in app
     assert "Attaching images works while the workshop is open" in app

@@ -452,6 +452,28 @@ def test_host_identity_overrides_are_not_in_attendee_pty(monkeypatch, tmp_path):
     assert "OMNIGENT_HOST_TOKEN" not in env
 
 
+def test_remote_host_bounds_idle_native_panes(monkeypatch, tmp_path):
+    """The runner idle watchdog stays off (0), but from Omnigent 0.21 the pane
+    reaper would inherit that 0 and never close an idle pane. The host gets an
+    explicit pane window; upstream forwards OMNIGENT_* knobs host->runner itself,
+    so it is not (and need not be) in the WT passthrough list."""
+    from server.omnigent_remote import RUNNER_ENV_PASSTHROUGH, build_host_launch
+    from server.users import User
+
+    monkeypatch.delenv("OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_S", raising=False)
+    user = User("alice@example.com")
+    monkeypatch.setattr(user, "home", str(tmp_path / "alice"))
+    user.bootstrap_home()
+
+    _, env, _ = build_host_launch(user, "/opt/bin/omnigent", REMOTE_URL)
+    assert env["OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_S"] == "7200"
+    assert "OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_S" not in env[RUNNER_ENV_PASSTHROUGH].split(",")
+
+    monkeypatch.setenv("OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_S", "3600")
+    _, env, _ = build_host_launch(user, "/opt/bin/omnigent", REMOTE_URL)
+    assert env["OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_S"] == "3600"
+
+
 def test_remote_launch_cannot_see_populated_attendee_default(monkeypatch, tmp_path):
     from server.omnigent_remote import build_host_launch
     from server.users import User
@@ -1473,7 +1495,7 @@ def test_app_yaml_defaults_remote_off_and_pins_omnigent_070():
     env = {item["name"]: item["value"] for item in app_yaml["env"]}
     assert env["OMNIGENT_APP_URL"] == ""
     assert env["WORKSHOP_ATTENDEE_EMAIL"] == ""
-    assert env["OMNIGENT_VERSION"] == "0.19.1"
+    assert env["OMNIGENT_VERSION"] == "0.21.0"
 
 
 def test_remote_start_rejects_disabled_or_incompatible_omnigent(monkeypatch):
@@ -1487,7 +1509,7 @@ def test_remote_start_rejects_disabled_or_incompatible_omnigent(monkeypatch):
 
     monkeypatch.setenv("OMNIGENT_ENABLED", "true")
     monkeypatch.setattr(install, "OMNIGENT_VERSION", "0.6.0")
-    with pytest.raises(ValueError, match="0.19.1"):
+    with pytest.raises(ValueError, match="0.21.0"):
         RemoteHostManager().start()
 
 

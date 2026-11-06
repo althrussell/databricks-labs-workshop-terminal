@@ -47,8 +47,8 @@ CODEX_VERSION = os.environ.get("CODEX_CLI_VERSION", "0.164.0").strip()
 DATABRICKS_CLI_VERSION = os.environ.get("DATABRICKS_CLI_VERSION", "1.22.1").strip()
 AGENTBRICKS_VERSION = os.environ.get("AGENTBRICKS_VERSION", "0.8.0").strip()
 UV_VERSION = "0.13.5"
-OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "0.19.1").strip()
-OMNIGENT_PROTOCOL_VERSION = "0.19.1"
+OMNIGENT_VERSION = os.environ.get("OMNIGENT_VERSION", "0.21.0").strip()
+OMNIGENT_PROTOCOL_VERSION = "0.21.0"
 # Node 24 is the active LTS line; Node 22 is maintenance-only.
 NODE_VERSION = os.environ.get("NODE_VERSION", "24.22.1").strip()
 CLAUDE_INSTALLER_URL = os.environ.get(
@@ -1544,7 +1544,7 @@ def _install_omnigent() -> None:
                 "offline Omnigent venv creation failed: "
                 + (result.stderr or result.stdout)[-500:]
             )
-        # 163 wheels per instance through a shared egress NAT: uv's default of
+        # 164 wheels per instance through a shared egress NAT: uv's default of
         # 50 parallel downloads multiplied by a room of instances is what makes
         # the index throttle. Fewer, longer-lived connections finish sooner.
         env.setdefault("UV_CONCURRENT_DOWNLOADS", "8")

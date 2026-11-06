@@ -860,29 +860,110 @@ body {
   background: var(--bg-panel);
   border: 1px solid var(--border);
   white-space: nowrap;
+  /* Each control stays on one line, but the bar wraps between them and never
+     grows past the screen: with Attach, Copy and Paste it no longer fits a
+     phone-width viewport on one row. */
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .active-agent .icon-btn {
   margin-left: 2px;
 }
 
+/* Attach, Copy and Paste sit in a compact bar; the page-level button padding
+   spaced them out until they read as loose words rather than controls. */
+.active-agent .btn {
+  padding: 6px 10px;
+}
+
+.active-agent .btn-ghost:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+/* "Attach image" doubles as a drop zone: the dashed edge says files can land
+   here, and it lights up while one is dragged over the page. `.btn.` outranks
+   `.btn-ghost`, which would otherwise hide the border. */
+.btn.image-drop {
+  border: 1px dashed var(--border);
+  transition: border-color 0.15s, background-color 0.15s, color 0.15s;
+}
+
+.btn.image-drop:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--brand-primary) 55%, var(--border));
+  color: var(--text);
+}
+
+.btn.image-drop-active {
+  border-color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 14%, transparent);
+  color: var(--text);
+}
+
 /* F-046: what was attached, and the next step, after "Attach image". */
 .attach-confirm {
   display: inline-flex;
   align-items: center;
+}
+
+.attach-thumb {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+/* What Copy or Paste just did, so a refused clipboard is never silent. Wraps,
+   unlike the rest of the agent bar: the "blocked" hint is a full sentence. */
+.clipboard-notice {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
+  max-width: min(420px, 100%);
   padding: 2px 6px;
   border-radius: 6px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
   font-size: 12px;
+  line-height: 1.35;
+  white-space: normal;
 }
 
-.attach-thumb {
-  width: 24px;
-  height: 24px;
-  object-fit: cover;
-  border-radius: 4px;
+.clipboard-notice-success {
+  border-color: color-mix(in srgb, var(--success) 45%, var(--border));
+}
+
+.clipboard-notice-warning {
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
+  background: color-mix(in srgb, var(--warning) 10%, var(--bg-panel));
+}
+
+.paste-box-dialog {
+  width: min(560px, calc(100vw - 32px));
+  white-space: normal;
+}
+
+.paste-box-input {
+  display: block;
+  width: 100%;
+  min-height: 160px;
+  resize: vertical;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.paste-box-input:focus-visible,
+.paste-box-dialog button:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
 }
 
 

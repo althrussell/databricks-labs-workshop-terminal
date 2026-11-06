@@ -354,7 +354,7 @@ env:
     value: "false"
 
   # --- Omnigent (agent meta-harness) ---
-  # Feature flag, default ON: installs the reviewed Omnigent 0.19.1 artifact
+  # Feature flag, default ON: installs the reviewed Omnigent 0.21.0 artifact
   # set (including transitive siblings) plus tmux, then leads the catalog with
   # the Omnigent session. Set to "false" to opt out.
   - name: OMNIGENT_ENABLED
@@ -364,7 +364,7 @@ env:
   # TMUX_STATIC_URL/SHA256 are pinned in code; the env overrides below exist
   # for emergencies (e.g. GitHub release unreachable).
   - name: OMNIGENT_VERSION
-    value: "0.19.1"
+    value: "0.21.0"
   # Dedicated Omnigent App URL. Empty preserves the existing local-server
   # behavior. Control Tower sets the attendee-specific HTTPS URL when remote
   # host/TUI integration is enabled.
@@ -377,6 +377,13 @@ env:
   # reap the runner (default; the container lifecycle bounds it instead).
   - name: OMNIGENT_RUNNER_IDLE_TIMEOUT_S
     value: "0"
+  # Seconds an idle native Claude/Codex pane lives before Omnigent closes it.
+  # From Omnigent 0.21 the pane reaper otherwise follows the runner setting
+  # above (0 = never), so every pane a seat opened would keep its CLI and MCP
+  # servers in memory until the container stops. 7200 outlasts lunch; a closed
+  # pane comes back with its context on the next message. 0 = never close.
+  - name: OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_S
+    value: "7200"
   # Seconds a running Omnigent host may sit on a stale attendee sign-in before
   # WT stands it down (killing its runner and any in-flight work). The sign-in
   # only renews while the attendee's tab is awake, so this must comfortably

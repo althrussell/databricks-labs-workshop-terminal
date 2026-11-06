@@ -43,8 +43,9 @@ from .diagnostics import Journal, clip, redact
 logger = logging.getLogger(__name__)
 forward_logger = logging.getLogger("workshop-terminal.omnigent_log")
 
-# Lifecycle detector pinned to Omnigent 0.19.1 log patterns (EQL seat 22).
-OMNIGENT_LIFECYCLE_LOCKED_VERSION = "0.19.1"
+# Lifecycle detector pinned to Omnigent log patterns (EQL seat 22); every
+# pattern re-checked in the 0.21.0 wheel source.
+OMNIGENT_LIFECYCLE_LOCKED_VERSION = "0.21.0"
 _FORWARD_RATE_LIMIT_PER_SEC = 20
 # Severe lines bypass the INFO cap but not this one: a crash-looping host must
 # not stream unbounded ERROR lines into the telemetry destination. The first

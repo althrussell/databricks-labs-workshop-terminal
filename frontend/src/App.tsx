@@ -5,7 +5,6 @@ import {
   Download,
   GraduationCap,
   House,
-  ImagePlus,
   Link as LinkIcon,
   MessageSquare,
   Rocket,
@@ -52,7 +51,11 @@ import {
 import RaiseHandButton from "./components/RaiseHandButton";
 import HelpChatPanel from "./components/HelpChatPanel";
 import ToastHost from "./components/ToastHost";
-import TerminalView from "./components/TerminalView";
+import TerminalView, { type TerminalHandle } from "./components/TerminalView";
+import TerminalClipboard from "./components/TerminalClipboard";
+import ImageDropZone from "./components/ImageDropZone";
+import { rejectedMessage, splitAttachable } from "./imageDrop";
+import type { ClipboardNotice } from "./terminalClipboard";
 import AgentSwitchDialog from "./components/AgentSwitchDialog";
 import ProjectBar from "./components/ProjectBar";
 import YourBuild from "./components/YourBuild";
@@ -161,7 +164,8 @@ export default function App() {
   // F-046: the only sign an attach worked was a file path typed into the
   // terminal. Show what was attached, and what to do next, for a little while.
   const [attached, setAttached] = useState<{ name: string; url: string } | null>(null);
-  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const terminalRef = useRef<TerminalHandle | null>(null);
+  const [clipboardNotice, setClipboardNotice] = useState<ClipboardNotice | null>(null);
   useEffect(() => {
     if (!attached) return;
     const timer = window.setTimeout(() => setAttached(null), 20000);
@@ -970,7 +974,9 @@ export default function App() {
         project_name: projectInventory?.active || undefined,
       });
       if (session && !session.exited) {
-        await api.typeIntoSession(session.id, `${res.path} `);
+        // Relative to the agent's folder when it can be: a short path, not the
+        // whole home directory and the attendee's original file name.
+        await api.typeIntoSession(session.id, `${res.prompt_path || res.path} `);
       }
       setAttached({ name: file.name || "image", url: URL.createObjectURL(file) });
     } catch (e) {
@@ -978,6 +984,15 @@ export default function App() {
     } finally {
       setAttachBusy(false);
     }
+  }
+
+  /** Dropped or chosen files: attach the images in order, say why any others weren't. */
+  async function attachImageFiles(files: File[]) {
+    if (inputDisabled || attachBusy) return;
+    const { images, rejected } = splitAttachable(files);
+    for (const image of images) await attachImageFile(image);
+    const refusal = rejectedMessage(images.length, rejected);
+    if (refusal) setError(refusal);
   }
 
   if (wrongIdentityDetail) {
@@ -1253,44 +1268,28 @@ export default function App() {
                 <div className="active-agent">
                   {!session.exited && (
                     <>
-                      <input
-                        ref={imageInputRef}
-                        type="file"
-                        accept="image/*"
-                        style={{ display: "none" }}
-                        onChange={(ev) => {
-                          const file = ev.target.files?.[0];
-                          ev.target.value = "";
-                          if (file) void attachImageFile(file);
-                        }}
-                      />
-                      <button
-                        type="button"
-                        className="btn btn-ghost"
-                        disabled={inputDisabled || attachBusy}
+                      <ImageDropZone
+                        busy={attachBusy}
+                        disabled={inputDisabled}
                         title={inputDisabled
                           ? "Attaching images works while the workshop is open"
-                          : "Save a screenshot into your project and insert its path into the prompt"}
-                        onClick={() => imageInputRef.current?.click()}
-                      >
-                        <ImagePlus size={14} aria-hidden="true" /> {attachBusy ? "Attaching…" : "Attach image"}
-                      </button>
+                          : "Drop a screenshot here, or click to choose one. It's saved in your project and its path goes into the prompt."}
+                        onFiles={(files) => void attachImageFiles(files)}
+                      />
                       {attached && (
+                        // The thumbnail alone confirms the attach; it clears itself.
                         <span className="attach-confirm" role="status" aria-live="polite">
-                          <img src={attached.url} alt="" className="attach-thumb" />
-                          <span>Attached. Now tell the agent what to do with it.</span>
-                          <button
-                            type="button"
-                            className="icon-btn"
-                            aria-label="Dismiss"
-                            onClick={() => setAttached(null)}
-                          >
-                            <X size={12} aria-hidden="true" />
-                          </button>
+                          <img src={attached.url} alt="Image attached" title="Image attached" className="attach-thumb" />
                         </span>
                       )}
                     </>
                   )}
+                  <TerminalClipboard
+                    terminal={terminalRef}
+                    notice={clipboardNotice}
+                    onNotice={setClipboardNotice}
+                    canPaste={!session.exited && !inputDisabled}
+                  />
                   <span>{session.label} {session.exited ? "has ended" : "is running"}</span>
                   {session.exited && (
                     <button
@@ -1357,11 +1356,13 @@ export default function App() {
               {session && (
                 <TerminalView
                   key={session.id}
+                  ref={terminalRef}
                   sessionId={session.id}
                   active={view === "agent"}
                   readOnly={inputDisabled}
                   onExit={finishSession}
                   onGatewayLimit={handleGatewayLimit}
+                  onClipboard={setClipboardNotice}
                 />
               )}
             </div>

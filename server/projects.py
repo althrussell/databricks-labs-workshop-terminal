@@ -163,6 +163,51 @@ def select(user, name: str, *, goal: str | None = None, new: bool = False, activ
     return inventory(user)
 
 
+ATTACHMENT_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+
+
+def save_attachment(project_dir: Path, filename: str, data: bytes) -> Path:
+    """Store an attached image as ``.workshop/attachments/image-<n>.<ext>``.
+
+    The path is typed into the agent's prompt, where the attendee's own file
+    name ("Screenshot 2026-11-06 at 10.31.22 AM.png") is only noise. Exclusive
+    create picks the next free number even if two attaches race.
+    """
+    folder = project_dir / ".workshop" / "attachments"
+    folder.mkdir(parents=True, exist_ok=True)
+    suffix = os.path.splitext(os.path.basename(filename or ""))[1].lower()
+    if suffix not in ATTACHMENT_SUFFIXES:
+        suffix = ".png"
+    number = 1
+    while True:
+        dest = folder / f"image-{number}{suffix}"
+        # One number per image whatever its type: "image-1" names one picture.
+        if not any(folder.glob(f"image-{number}.*")):
+            try:
+                with open(dest, "xb") as handle:
+                    handle.write(data)
+                return dest
+            except FileExistsError:
+                pass
+        number += 1
+
+
+def prompt_path(path: Path, cwd: str | None) -> str:
+    """How to name ``path`` in the agent's prompt.
+
+    Relative to the directory the agent runs in when the file is inside it, so
+    the prompt shows ``.workshop/attachments/image-1.png`` rather than the whole
+    home path. Absolute otherwise: a session started before the build existed
+    runs in the projects root, and a relative path would point elsewhere.
+    """
+    if cwd:
+        try:
+            return Path(path).resolve().relative_to(Path(cwd).resolve()).as_posix()
+        except ValueError:
+            pass
+    return str(path)
+
+
 def launch_directory(user) -> str:
     state = read(user)
     name = state["active"]
