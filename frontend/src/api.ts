@@ -501,7 +501,7 @@ export const api = {
     return { blob: await resp.blob(), filename, volumePath: resp.headers.get("X-Workshop-Export-Path") ?? "" };
   },
   attachImage: (body: { filename: string; data_base64: string; project_name?: string }) =>
-    request<{ path: string; relative_path: string; bytes: number; project: string }>(
+    request<{ path: string; relative_path: string; prompt_path?: string; bytes: number; project: string }>(
       "/api/projects/attach-image",
       { method: "POST", body: JSON.stringify(body) }
     ),

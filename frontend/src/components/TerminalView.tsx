@@ -1,15 +1,35 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useImperativeHandle, useRef, type Ref } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { terminalGatewayLimit } from "../gatewayLimit";
 import { terminalExitNotice } from "../terminalExit";
+import {
+  browserClipboardEnv,
+  copyNotice,
+  copyText,
+  IS_MAC,
+  pasteIsImageOnly,
+  pasteNotice,
+  type ClipboardNotice,
+} from "../terminalClipboard";
 import { decideTerminalKey } from "../terminalKeys";
 import type { AttendeeErrorCode } from "../telemetry";
 import { notifyWorkshopClosing, workshopNotice } from "../workshopLifecycle";
 
+/** What the toolbar's Copy and Paste buttons can ask of the live terminal. */
+export interface TerminalHandle {
+  /** Copy the selection; the outcome arrives through `onClipboard`. */
+  copySelection: () => void;
+  /** Type text as a paste. False when the terminal can't take input. */
+  paste: (text: string) => boolean;
+  /** Return the keyboard to the prompt once a button or dialog is done. */
+  focus: () => void;
+}
+
 interface Props {
+  ref?: Ref<TerminalHandle>;
   sessionId: string;
   active: boolean;
   readOnly?: boolean;
@@ -17,13 +37,15 @@ interface Props {
   onGatewayLimit?: (
     code: Extract<AttendeeErrorCode, "gateway_allowance_exhausted" | "gateway_rate_limited">
   ) => void;
+  /** Every copy and paste outcome, so none of them is silent. */
+  onClipboard?: (notice: ClipboardNotice) => void;
 }
 
 // One xterm + one websocket per session, kept alive across tab switches
 // (the component stays mounted; `active` only toggles visibility). The
 // server holds the PTY and scrollback, so a dropped socket reconnects and
 // replays seamlessly.
-export default function TerminalView({ sessionId, active, readOnly = false, onExit, onGatewayLimit }: Props) {
+export default function TerminalView({ ref, sessionId, active, readOnly = false, onExit, onGatewayLimit, onClipboard }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -31,6 +53,40 @@ export default function TerminalView({ sessionId, active, readOnly = false, onEx
   const closedRef = useRef(false);
   const readOnlyRef = useRef(readOnly);
   readOnlyRef.current = readOnly;
+  const onClipboardRef = useRef(onClipboard);
+  onClipboardRef.current = onClipboard;
+
+  function inputOpen() {
+    return !readOnlyRef.current && !closedRef.current && socketRef.current?.readyState === WebSocket.OPEN;
+  }
+
+  function copySelection(term: Terminal) {
+    const text = term.hasSelection() ? term.getSelection() : "";
+    void copyText(text, browserClipboardEnv()).then((outcome) => {
+      // Clear the selection only once the copy has landed. If every clipboard
+      // path was refused the selection stays, so the attendee can still copy
+      // it from the context menu — and the agent never sees an interrupt.
+      if (outcome === "copied") term.clearSelection();
+      onClipboardRef.current?.(copyNotice(outcome, IS_MAC));
+    });
+  }
+
+  useImperativeHandle(ref, () => ({
+    copySelection: () => {
+      if (termRef.current) copySelection(termRef.current);
+    },
+    paste: (text: string) => {
+      const term = termRef.current;
+      if (!term || !inputOpen()) return false;
+      // xterm's paste normalises newlines to CR and wraps the text in
+      // bracketed-paste markers when the agent asked for them, so a multiline
+      // prompt arrives as one block. No Enter is added: sending is the
+      // attendee's call.
+      term.paste(text);
+      return true;
+    },
+    focus: () => termRef.current?.focus(),
+  }), []);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -48,26 +104,39 @@ export default function TerminalView({ sessionId, active, readOnly = false, onEx
       },
       scrollback: 5000,
       disableStdin: readOnlyRef.current,
+      // Agents that capture the mouse disable drag-to-select. Shift+drag
+      // forces a selection elsewhere; on macOS xterm needs this for ⌥+drag.
+      macOptionClickForcesSelection: true,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.loadAddon(new WebLinksAddon());
-    // Ctrl+C with a selection copies; without one it interrupts, as usual.
-    // Returning false stops xterm from turning the chord into a control byte.
+    // Returning false stops xterm from turning a chord into a control byte.
+    // "browser" then leaves the browser's default in place — its native paste
+    // event, which xterm handles itself and which needs no permission.
     term.attachCustomKeyEventHandler((event) => {
-      const decision = decideTerminalKey(event, term.hasSelection());
+      const decision = decideTerminalKey(event, term.hasSelection(), IS_MAC);
       if (decision === "copy") {
-        // Clear the selection only once the copy has landed. If the clipboard
-        // API is unavailable (insecure context) or denied, the selection stays
-        // so the attendee can still copy it from the context menu — and the
-        // agent still never sees the interrupt.
-        navigator.clipboard
-          ?.writeText(term.getSelection())
-          .then(() => term.clearSelection(), () => undefined);
+        // Ctrl+Shift+C would otherwise open the browser's element inspector.
+        event.preventDefault();
+        copySelection(term);
         return false;
       }
       return decision === "terminal";
     });
+    // Native copies (Cmd+C, the right-click menu) are written by xterm's own
+    // handler, which cancels the event once it has set the selection. Confirm
+    // them like the Ctrl+C path so every copy looks the same.
+    const onNativeCopy = (event: ClipboardEvent) => {
+      if (event.defaultPrevented && term.hasSelection()) onClipboardRef.current?.(copyNotice("copied", IS_MAC));
+    };
+    // Captured before xterm's textarea listener, which stops propagation. A
+    // screenshot pasted with Ctrl+V types nothing, so say where it should go.
+    const onNativePaste = (event: ClipboardEvent) => {
+      if (pasteIsImageOnly(event.clipboardData)) onClipboardRef.current?.(pasteNotice("image"));
+    };
+    container.addEventListener("copy", onNativeCopy);
+    container.addEventListener("paste", onNativePaste, true);
     term.open(container);
     fit.fit();
     termRef.current = term;
@@ -163,10 +232,7 @@ export default function TerminalView({ sessionId, active, readOnly = false, onEx
     }
 
     const inputDisposable = term.onData((data) => {
-      const socket = socketRef.current;
-      if (!readOnlyRef.current && !closedRef.current && socket?.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ t: "input", data }));
-      }
+      if (inputOpen()) socketRef.current?.send(JSON.stringify({ t: "input", data }));
     });
 
     const resizeObserver = new ResizeObserver(() => {
@@ -188,6 +254,8 @@ export default function TerminalView({ sessionId, active, readOnly = false, onEx
       disposed = true;
       clearInterval(heartbeat);
       resizeObserver.disconnect();
+      container.removeEventListener("copy", onNativeCopy);
+      container.removeEventListener("paste", onNativePaste, true);
       inputDisposable.dispose();
       socketRef.current?.close();
       term.dispose();

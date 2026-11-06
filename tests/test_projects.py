@@ -260,6 +260,30 @@ def test_attach_image_saves_the_file_and_returns_its_path(client, tmp_path, monk
     body = response.json()
     saved = Path(body["path"])
     assert saved.is_file() and saved.read_bytes().startswith(b"\x89PNG")
-    assert saved.parent.name == "attachments" and saved.name.endswith("-Report-layout-draft-.png")
-    assert " " not in saved.name and "(" not in saved.name
-    assert body["relative_path"].startswith(".workshop/attachments/")
+    # The prompt shows this name, so it is short and drops the attendee's own.
+    assert saved.parent.name == "attachments" and saved.name == "image-1.png"
+    assert body["relative_path"] == ".workshop/attachments/image-1.png"
+    # No agent is running, so there is no directory to be relative to.
+    assert body["prompt_path"] == body["path"]
+
+    names = []
+    for filename in ("Screenshot 2026-11-06 at 10.31.22 AM.JPG", "diagram.heic"):
+        again = client.post(
+            "/api/projects/attach-image",
+            json={"filename": filename, "data_base64": png},
+            headers=ALICE,
+        )
+        assert again.status_code == 200, again.text
+        names.append(Path(again.json()["path"]).name)
+    assert names == ["image-2.jpg", "image-3.png"]
+
+
+def test_attachment_prompt_path_is_relative_only_inside_the_agent_directory(tmp_path):
+    build = tmp_path / "projects" / "bakery"
+    image = projects.save_attachment(build, "Screenshot.png", b"\x89PNG")
+    assert image == build / ".workshop" / "attachments" / "image-1.png"
+
+    assert projects.prompt_path(image, str(build)) == ".workshop/attachments/image-1.png"
+    # A session opened before the build existed runs in the projects root.
+    assert projects.prompt_path(image, str(tmp_path / "elsewhere")) == str(image)
+    assert projects.prompt_path(image, None) == str(image)
