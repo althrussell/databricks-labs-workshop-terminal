@@ -1,10 +1,24 @@
 /** Keyboard conventions attendees bring from their desktop terminals.
  *
- * xterm.js forwards every key to the PTY. On Windows and Linux the natural
- * "select a URL, press Ctrl+C" therefore sends SIGINT and cancels the agent's
- * turn (twice in a row exits the CLI). This module decides, from the key event
- * and the selection state alone, whether a key should be handled by the browser
- * (copy) instead of reaching the terminal. macOS Cmd+C already copies natively.
+ * xterm.js turns Ctrl+<letter> into a control byte and cancels the browser's
+ * default action. That is right for Ctrl+D or Ctrl+R and wrong for the two
+ * chords every Windows and Linux user reaches for first:
+ *
+ * - Ctrl+C on a selection would send SIGINT and cancel the agent's turn (twice
+ *   in a row exits the CLI). With a selection it copies; without one it still
+ *   interrupts, as every terminal does.
+ * - Ctrl+V would send ^V, which Claude Code and Codex read as "paste an image
+ *   from the clipboard" — the container's clipboard, not the laptop's, so
+ *   nothing arrives. It goes back to the browser instead, whose native paste
+ *   event xterm already turns into bracketed input.
+ *
+ * Ctrl+Shift+C and Ctrl+Shift+V are the Linux terminal chords. xterm sends no
+ * byte for either, but the browser's own Ctrl+Shift+C opens Chrome's element
+ * inspector rather than copying, so it is claimed as a copy. Ctrl+Shift+V is
+ * already the browser's plain-text paste and is left to it.
+ *
+ * macOS is untouched: Cmd+C and Cmd+V copy and paste natively, and Ctrl+V there
+ * stays the control byte a Mac terminal sends.
  */
 
 export interface KeyLike {
@@ -16,20 +30,25 @@ export interface KeyLike {
   shiftKey: boolean;
 }
 
+/**
+ * - `copy`: the caller copies the selection and cancels the browser default.
+ * - `browser`: xterm must not see the key; the browser's default (paste) runs.
+ * - `terminal`: xterm handles the key as usual.
+ */
 export type KeyDecision = "copy" | "browser" | "terminal";
 
-export function decideTerminalKey(event: KeyLike, hasSelection: boolean): KeyDecision {
+export function decideTerminalKey(event: KeyLike, hasSelection: boolean, isMac = false): KeyDecision {
   if (event.type !== "keydown") return "terminal";
+  if (!event.ctrlKey || event.metaKey || event.altKey) return "terminal";
   const key = event.key.toLowerCase();
-  const ctrlOnly = event.ctrlKey && !event.metaKey && !event.altKey;
-  if (ctrlOnly && !event.shiftKey && key === "c" && hasSelection) {
-    // Copy the selection; the agent never sees a stray interrupt.
-    return "copy";
+  if (key === "c") {
+    // Ctrl+Shift+C always copies, so it can never open the inspector.
+    if (event.shiftKey) return "copy";
+    return hasSelection ? "copy" : "terminal";
   }
-  if (ctrlOnly && event.shiftKey && (key === "c" || key === "v")) {
-    // Ctrl+Shift+C / Ctrl+Shift+V are the Linux terminal copy/paste chords.
-    // Let the browser handle them rather than sending control bytes.
-    return "browser";
+  if (key === "v") {
+    if (event.shiftKey) return "browser";
+    return isMac ? "terminal" : "browser";
   }
   return "terminal";
 }

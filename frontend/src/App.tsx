@@ -52,7 +52,9 @@ import {
 import RaiseHandButton from "./components/RaiseHandButton";
 import HelpChatPanel from "./components/HelpChatPanel";
 import ToastHost from "./components/ToastHost";
-import TerminalView from "./components/TerminalView";
+import TerminalView, { type TerminalHandle } from "./components/TerminalView";
+import TerminalClipboard from "./components/TerminalClipboard";
+import type { ClipboardNotice } from "./terminalClipboard";
 import AgentSwitchDialog from "./components/AgentSwitchDialog";
 import ProjectBar from "./components/ProjectBar";
 import YourBuild from "./components/YourBuild";
@@ -161,6 +163,8 @@ export default function App() {
   // terminal. Show what was attached, and what to do next, for a little while.
   const [attached, setAttached] = useState<{ name: string; url: string } | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const terminalRef = useRef<TerminalHandle | null>(null);
+  const [clipboardNotice, setClipboardNotice] = useState<ClipboardNotice | null>(null);
   useEffect(() => {
     if (!attached) return;
     const timer = window.setTimeout(() => setAttached(null), 20000);
@@ -1290,6 +1294,12 @@ export default function App() {
                       )}
                     </>
                   )}
+                  <TerminalClipboard
+                    terminal={terminalRef}
+                    notice={clipboardNotice}
+                    onNotice={setClipboardNotice}
+                    canPaste={!session.exited && !inputDisabled}
+                  />
                   <span>{session.label} {session.exited ? "has ended" : "is running"}</span>
                   {session.exited && (
                     <button
@@ -1356,11 +1366,13 @@ export default function App() {
               {session && (
                 <TerminalView
                   key={session.id}
+                  ref={terminalRef}
                   sessionId={session.id}
                   active={view === "agent"}
                   readOnly={inputDisabled}
                   onExit={finishSession}
                   onGatewayLimit={handleGatewayLimit}
+                  onClipboard={setClipboardNotice}
                 />
               )}
             </div>
