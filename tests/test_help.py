@@ -683,3 +683,31 @@ def test_presence_retains_pending_help_before_publishing_but_journey_does_not(cl
     assert presence["help_raised"] is True and presence["help_note"] == "pending-only"
     assert live.health()["pending_operations"] == 0
     live.close()
+
+
+def test_seen_reuse_scoped_by_id_and_source(client, as_admin):
+    """WT-4: replace_thread_from_ct reuses previous seen_at only when (id, source) match."""
+    client.post(
+        "/api/admin/help/message",
+        json={**ASSISTANT, "message_id": "m-shared", "help_request_id": "hr-1"},
+    )
+    client.post("/api/help/ack", json={"message_id": "m-shared"}, headers=HDRS)
+    initial = help_module.thread_snapshot()["messages"]
+    assert len(initial) == 1 and initial[0].get("seen_at")
+
+    # Same message_id and same source (help_request_id="hr-1") preserves seen_at.
+    help_module.replace_thread_from_ct(
+        [{"message_id": "m-shared", "help_request_id": "hr-1", "sender_role": "assistant", "body": "Hi"}],
+        help_request_id="hr-1",
+    )
+    same_source = help_module.thread_snapshot()["messages"]
+    assert same_source[0].get("seen_at") == initial[0]["seen_at"]
+
+    # Same message_id under a different source / request must not inherit seen_at.
+    help_module.replace_thread_from_ct(
+        [{"message_id": "m-shared", "help_request_id": "hr-2", "sender_role": "assistant", "body": "Hi"}],
+        help_request_id="hr-2",
+    )
+    different_source = help_module.thread_snapshot()["messages"]
+    assert different_source[0].get("seen_at") is None
+

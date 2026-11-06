@@ -376,13 +376,31 @@ def ingest_operator_message(payload: dict[str, Any]) -> dict[str, Any]:
     return local
 
 
+def _seen_scope_key(msg: dict[str, Any], default_request_id: str | None = None) -> tuple[str, str]:
+    mid = str(msg.get("message_id") or msg.get("id") or "")
+    source = str(
+        msg.get("source")
+        or msg.get("help_request_id")
+        or default_request_id
+        or msg.get("sender_role")
+        or ""
+    )
+    return (mid, source)
+
+
 def acknowledge_message(message_id: str) -> bool:
     mid = (message_id or "").strip()
     if not mid:
         return False
     _ensure_ready()
+    seen_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     with _lock:
-        _mutate_locked(lambda state: _enqueue(state, "seen", message_id=mid))
+        def apply(state):
+            for msg in state["messages"]:
+                if (msg.get("message_id") == mid or msg.get("id") == mid) and not msg.get("seen_at"):
+                    msg["seen_at"] = seen_at
+            _enqueue(state, "seen", message_id=mid)
+        _mutate_locked(apply)
     flush_help_persistence()
     base = config.control_tower_url()
     run_id = config.workshop_run_id()
@@ -457,8 +475,20 @@ def replace_thread_from_ct(messages: list[dict[str, Any]], *, help_request_id: s
     _ensure_ready()
     with _lock:
         def apply(state):
+            previous_request_id = state.get("help_request_id")
+            previous_seen = {
+                _seen_scope_key(m, previous_request_id): m["seen_at"]
+                for m in state["messages"]
+                if isinstance(m, dict) and m.get("seen_at")
+            }
+            next_messages = copy.deepcopy(messages[-_MAX_MESSAGES:])
+            for msg in next_messages:
+                if isinstance(msg, dict) and not msg.get("seen_at"):
+                    key = _seen_scope_key(msg, help_request_id)
+                    if key[0] and key in previous_seen:
+                        msg["seen_at"] = previous_seen[key]
             state["help_request_id"] = help_request_id
-            state["messages"] = copy.deepcopy(messages[-_MAX_MESSAGES:])
+            state["messages"] = next_messages
         _mutate_locked(apply)
     flush_help_persistence()
 
