@@ -144,7 +144,9 @@ export default function ToastHost({
   );
 
   return (
-    <div className="toast-host" role="region" aria-label="Notifications">
+    // data-help-open moves the stack clear of the help panel's message box (styles.css; F-13,
+    // 7 Nov persona run 3: a "29 minutes left" update sat on it).
+    <div className="toast-host" data-help-open={helpOpen ? "true" : undefined} role="region" aria-label="Notifications">
       {toasts.map((toast) => (
         <ToastCard
           key={toast.id}

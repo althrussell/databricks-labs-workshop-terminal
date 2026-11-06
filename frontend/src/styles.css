@@ -1,5 +1,7 @@
 :root {
   --brand-primary: #ff3621;
+  /* The help panel's width; the toast host keeps clear of it (F-13). */
+  --help-panel-width: min(380px, 100vw);
   --bg: #0b0e13;
   --bg-raised: #12161d;
   --bg-panel: #161b24;
@@ -342,7 +344,7 @@ body {
   position: fixed;
   top: 0;
   right: 0;
-  width: min(380px, 100vw);
+  width: var(--help-panel-width);
   height: 100vh;
   z-index: 40;
   display: flex;
@@ -667,6 +669,21 @@ body {
   max-height: min(70vh, 640px);
   overflow-y: auto;
   scrollbar-width: thin;
+}
+
+/* With the help panel open, toasts sit beside it, clear of its message box, where there is room
+   for them (panel + toast + margins). On a narrower screen they stack just above the panel's
+   composer instead, so the box stays usable. --help-panel-width is the panel's own width. */
+.toast-host[data-help-open="true"] {
+  right: calc(var(--help-panel-width) + 20px);
+}
+
+@media (max-width: 820px) {
+  .toast-host[data-help-open="true"] {
+    right: 20px;
+    bottom: 96px;
+    max-height: calc(100vh - 200px);
+  }
 }
 
 .toast {
