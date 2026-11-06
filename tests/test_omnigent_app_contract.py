@@ -113,10 +113,14 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
     assert env["AP_LAKEBASE_ENDPOINT"]["valueFrom"] == "postgres"
     assert env["AP_ARTIFACT_VOLUME_PATH"]["valueFrom"] == "artifact_volume"
     assert env["OMNIGENT_AUTH_PROVIDER"]["value"] == "header"
-    assert env["OMNIGENT_BUILD_VERSION"]["value"] == "0.19.1"
+    assert env["OMNIGENT_BUILD_VERSION"]["value"] == "0.21.0"
     assert (
-        env["OMNIGENT_BUILD_SHA"]["value"] == "fbad2c7aaa990e2ff173383ca8dd42d983be7858"
+        env["OMNIGENT_BUILD_SHA"]["value"] == "2f636330cc6e28bfe1d22f741eda6db34a192d39"
     )
+    # Exactly one release-flag override: 0.21.0's default-on session_orchestration
+    # is off. Anything more would also have to keep usage_page and
+    # harness_install off, and an unknown name stops the App from starting.
+    assert env["OMNIGENT_FEATURES"]["value"] == "-session_orchestration"
     # The App's env surface is an allowlist so that widening it is a deliberate,
     # reviewed act. Public registry selection and smart-routing knobs are
     # permitted; package transport credentials are never deployed.
@@ -151,6 +155,7 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
         "OMNIGENT_AUTH_PROVIDER",
         "OMNIGENT_BUILD_VERSION",
         "OMNIGENT_BUILD_SHA",
+        "OMNIGENT_FEATURES",
     }
     assert required <= set(env)
     unexpected = sorted(name for name in set(env) - required if name not in allowed)
@@ -194,10 +199,10 @@ def test_wrapper_retains_upstream_control_plane_topology():
     tree = ast.parse(source)
 
     assert lock == {
-        "package": "omnigent[databricks]==0.19.1",
-        "release_commit": "fbad2c7aaa990e2ff173383ca8dd42d983be7858",
-        "verified_main_commit": "fbad2c7aaa990e2ff173383ca8dd42d983be7858",
-        "wheel_sha256": "e62d57f41dd34bc7bef6a7679197086e70d399a74c1a6136a7f27c344413e70d",
+        "package": "omnigent[databricks]==0.21.0",
+        "release_commit": "2f636330cc6e28bfe1d22f741eda6db34a192d39",
+        "verified_main_commit": "2f636330cc6e28bfe1d22f741eda6db34a192d39",
+        "wheel_sha256": "c97f54d90f34e8738379f68c7ad34a3c2a4dbbb3f86641e245db536ad51cab39",
     }
     assert "sys.version_info < (3, 12)" in source
     assert "host_store = HostStore(DB_URI)" in source
@@ -368,7 +373,7 @@ def test_uv_project_pins_python_and_omnigent_release():
     assert not (APP_DIR / "requirements.in").exists()
     assert project["project"]["requires-python"] == ">=3.12,<3.13"
     assert project["project"]["dependencies"] == [
-        "omnigent[databricks]==0.19.1",
+        "omnigent[databricks]==0.21.0",
         "opentelemetry-exporter-otlp-proto-grpc==1.44.0",
         "opentelemetry-instrumentation-fastapi==0.65b0",
     ]
@@ -383,15 +388,15 @@ def test_uv_project_pins_python_and_omnigent_release():
     lock_hosts = set(re.findall(r'https://([^/"\s]+)', lock_text))
     assert lock_hosts == {"files.pythonhosted.org", "pypi.org"}
     packages = {(entry["name"], entry["version"]) for entry in locked["package"]}
-    assert ("omnigent", "0.19.1") in packages
-    assert ("omnigent-client", "0.19.1") in packages
-    assert ("omnigent-ui-sdk", "0.19.1") in packages
+    assert ("omnigent", "0.21.0") in packages
+    assert ("omnigent-client", "0.21.0") in packages
+    assert ("omnigent-ui-sdk", "0.21.0") in packages
     omnigent = next(entry for entry in locked["package"] if entry["name"] == "omnigent")
     assert len(omnigent["wheels"]) == 1
     wheel = omnigent["wheels"][0]
-    assert wheel["url"].endswith("/omnigent-0.19.1-py3-none-any.whl")
+    assert wheel["url"].endswith("/omnigent-0.21.0-py3-none-any.whl")
     assert wheel["hash"] == (
-        "sha256:e62d57f41dd34bc7bef6a7679197086e70d399a74c1a6136a7f27c344413e70d"
+        "sha256:c97f54d90f34e8738379f68c7ad34a3c2a4dbbb3f86641e245db536ad51cab39"
     )
 
 

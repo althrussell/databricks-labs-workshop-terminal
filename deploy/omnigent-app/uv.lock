@@ -432,17 +432,24 @@ wheels = [
 
 [[package]]
 name = "databricks-sdk"
-version = "0.136.0"
+version = "0.162.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "certifi" },
     { name = "google-auth" },
     { name = "protobuf" },
     { name = "requests" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/cb/74/c769ee662b9b50d16f31780e208fb6866bb4aa012549c7231ce8a8c7975e/databricks_sdk-0.136.0.tar.gz", hash = "sha256:e8d3fafedae9dc59ea72228d3aa846948511b4114a1bfb13720251c5d60e183f", size = 1094650, upload-time = "2026-09-07T04:34:31.956Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f0/cc/d66b74ec5747e9b9ef55b81f93dcf4ecc27852cfb877c857d915cb0a55eb/databricks_sdk-0.162.0.tar.gz", hash = "sha256:be85cca187d2181f989a821fa95bd7978bfa9618c8da9a4421c04394152085a2", size = 1237247, upload-time = "2026-11-05T04:25:42.116Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/86/db/b0c32e2d84f687bb1a5dafd15d829a454092553268380a1dc4188d34f0f1/databricks_sdk-0.136.0-py3-none-any.whl", hash = "sha256:4e014a61f7fbccf5dbf726a4bf575665039e2cbe7dd4bc52a9d247d6c3042a02", size = 1039204, upload-time = "2026-09-07T04:34:30.182Z" },
+    { url = "https://files.pythonhosted.org/packages/7b/d3/c022627449f88b024be185d2c5a16e8d62f51c9f491abf63921cbe44571a/databricks_sdk-0.162.0-py3-none-any.whl", hash = "sha256:eae6fa5a76c21ca2a53530088a216dfad681138234173112c81833cbd41e98cd", size = 1178966, upload-time = "2026-11-05T04:25:40.074Z" },
+]
+
+[package.optional-dependencies]
+sandbox = [
+    { name = "grpcio" },
+    { name = "protobuf" },
 ]
 
 [[package]]
@@ -1287,7 +1294,7 @@ wheels = [
 
 [[package]]
 name = "omnigent"
-version = "0.19.1"
+version = "0.21.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "alembic" },
@@ -1331,16 +1338,16 @@ dependencies = [
     { name = "websockets" },
     { name = "zstandard" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b6/37/3563468c0b14b167393bcd5e2fa696f9a2544184d52cf855b77eef42d2cb/omnigent-0.19.1.tar.gz", hash = "sha256:49456db48d115b17eaa5d6ff643740031fe4cd8fa9bc1110456b60e5cff908bc", size = 13823084, upload-time = "2026-10-21T23:44:40.679Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c6/a0/a579e3381f411f1db4c097e5f700690eead8faa9f62f2ac7880984918156/omnigent-0.21.0.tar.gz", hash = "sha256:b444ec3d3d313f5563ea8019fb39a7db2f695859453e8c4e41431f38e4c99c99", size = 14525877, upload-time = "2026-11-05T04:28:21.859Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/23/6f/e9aaeef5665416dd2788476edc5c54a8e2a57b44a8b1ead73ac0a115181e/omnigent-0.19.1-py3-none-any.whl", hash = "sha256:e62d57f41dd34bc7bef6a7679197086e70d399a74c1a6136a7f27c344413e70d", size = 14128665, upload-time = "2026-10-21T23:44:37.872Z" },
+    { url = "https://files.pythonhosted.org/packages/9a/e3/0cc833cf682d5a58d0138afca69b053f20434a0f1a82fbf1ebc4e61b07d9/omnigent-0.21.0-py3-none-any.whl", hash = "sha256:c97f54d90f34e8738379f68c7ad34a3c2a4dbbb3f86641e245db536ad51cab39", size = 14809281, upload-time = "2026-11-05T04:28:18.447Z" },
 ]
 
 [package.optional-dependencies]
 databricks = [
     { name = "databricks-ai-bridge" },
     { name = "databricks-mcp" },
-    { name = "databricks-sdk" },
+    { name = "databricks-sdk", extra = ["sandbox"] },
     { name = "opentelemetry-distro" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pymysql" },
@@ -1348,21 +1355,21 @@ databricks = [
 
 [[package]]
 name = "omnigent-client"
-version = "0.19.1"
+version = "0.21.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "omnigent" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9c/71/86c506cd9e1bc25a38f38359c27b2630728b38d9efc310ef45552b83188b/omnigent_client-0.19.1.tar.gz", hash = "sha256:bfa8006e0865c08fb0a82ac002415be30379970f4538b03b25ffaae1795496d6", size = 102109, upload-time = "2026-10-21T23:43:57.152Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/01/f0/a3de58cd2207d30f7d5c9fd94ca9170748068e9435c21995ee405e4f2ea5/omnigent_client-0.21.0.tar.gz", hash = "sha256:9c6c292544d0d3c590941b4712367b7128b5ccba902d76a09ee5e4e2ee2d8a13", size = 104192, upload-time = "2026-11-05T04:29:38.871Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7e/75/ea38ccf3892ea056ccc0b41df7c4430ea60fee03c9c8eb7b3d12ffb0d754/omnigent_client-0.19.1-py3-none-any.whl", hash = "sha256:fec8f9df7b495f9d07c67b00c10a46ae48a5e012181f20690b36c217af3eb5aa", size = 117189, upload-time = "2026-10-21T23:43:55.923Z" },
+    { url = "https://files.pythonhosted.org/packages/d2/45/e00db9a8a9dd0b407f1b60aac37cf447a50a0c26b677f7ebe2859cf2ec2f/omnigent_client-0.21.0-py3-none-any.whl", hash = "sha256:9ee80441859862c998ca79f675f89995abc214c8e146400f66747582aac2f9f6", size = 119669, upload-time = "2026-11-05T04:29:37.768Z" },
 ]
 
 [[package]]
 name = "omnigent-ui-sdk"
-version = "0.19.1"
+version = "0.21.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "omnigent-client" },
@@ -1370,9 +1377,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "rich" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/48/11/05e94c93d0a653bcd21f99768e6a4ffe159f76e00c9939cc889ef80c0d19/omnigent_ui_sdk-0.19.1.tar.gz", hash = "sha256:b926bc86155dd89934b0df15b0855092e334b33a4c424e45eb15348e068ac395", size = 86103, upload-time = "2026-10-21T23:44:16.133Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/cb/f9/e44e26a9c3f36a680b4c516683c4fb1ce312be8a572b29d1ef4b4a7150a5/omnigent_ui_sdk-0.21.0.tar.gz", hash = "sha256:48e58b6cdcf3ea13e43bd1dd3f3170fa7d543d3c88839ed429511ad77de298a8", size = 86140, upload-time = "2026-11-05T04:28:14.226Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c2/0c/cf3b52c4882f4e3ed2adcefa3bf1758be677cb8b49f32d560c6ef5f353aa/omnigent_ui_sdk-0.19.1-py3-none-any.whl", hash = "sha256:739a3ac5b26e1fe62833c1364e7d0e857e2f0f127315880b64de992dc5a4a37f", size = 89948, upload-time = "2026-10-21T23:44:14.93Z" },
+    { url = "https://files.pythonhosted.org/packages/47/fa/3f48ccd132ace0e9655c8884702f0157c0d8b7122eeca88256366eee8548/omnigent_ui_sdk-0.21.0-py3-none-any.whl", hash = "sha256:290568d0fb865ab3fefbb9bb664438cf0091bbd991342b480b3a4fb8ea31122b", size = 89951, upload-time = "2026-11-05T04:28:13.134Z" },
 ]
 
 [[package]]
@@ -2479,7 +2486,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "omnigent", extras = ["databricks"], specifier = "==0.19.1" },
+    { name = "omnigent", extras = ["databricks"], specifier = "==0.21.0" },
     { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = "==1.44.0" },
     { name = "opentelemetry-instrumentation-fastapi", specifier = "==0.65b0" },
 ]

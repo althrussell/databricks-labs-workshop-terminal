@@ -1,7 +1,7 @@
 """Dedicated Omnigent control plane for Databricks Apps.
 
 This is a thin adaptation of upstream ``deploy/databricks/src/app.py`` from
-Omnigent v0.19.1. It serves the published upstream UI and durable stores only;
+Omnigent v0.21.0. It serves the published upstream UI and durable stores only;
 native harnesses, PTYs, and working directories belong on an external host.
 
 Auto · smart routing is wired through ``smart_routing.build_runtime_caps`` when
@@ -37,7 +37,7 @@ logging.basicConfig(level=_LOG_LEVEL, stream=sys.stderr, force=True)
 logger = logging.getLogger("omnigent-workshop-app")
 
 if sys.version_info < (3, 12):
-    raise RuntimeError("Omnigent 0.19.1 requires Python 3.12 or newer")
+    raise RuntimeError("Omnigent 0.21.0 requires Python 3.12 or newer")
 
 # Fallback lifetime when the credential response carries no usable expiry.
 _TOKEN_TTL_SECONDS = 50 * 60
@@ -195,7 +195,7 @@ try:
     # Safe only behind the Databricks Apps proxy, which strips client-supplied
     # identity headers and injects the authenticated workspace identity.
     os.environ["OMNIGENT_AUTH_PROVIDER"] = "header"
-    # Harmless under header auth behind the Apps proxy; matches upstream 0.19.1.
+    # Harmless under header auth behind the Apps proxy; matches upstream 0.21.0.
     _exposure = warn_if_single_user_exposed("0.0.0.0")
     if _exposure:
         logger.warning("%s", _exposure)

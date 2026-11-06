@@ -240,10 +240,10 @@
       "version": "24.22.1"
     },
     "omnigent_lock": {
-      "lock_sha256": "7ec73db00ca7faf96ac3e9460cb3ef2000e695fe6e8bc2d76149a68a652c98ef",
-      "sha256": "7ec73db00ca7faf96ac3e9460cb3ef2000e695fe6e8bc2d76149a68a652c98ef",
-      "source": "omnigent-0.19.1.lock",
-      "version": "0.19.1"
+      "lock_sha256": "ba0b52f0d6063db7416c1a5de13b26bc9fb1360ad6431da0a881322d653bc506",
+      "sha256": "ba0b52f0d6063db7416c1a5de13b26bc9fb1360ad6431da0a881322d653bc506",
+      "source": "omnigent-0.21.0.lock",
+      "version": "0.21.0"
     },
     "python_3_12_runtime": {
       "executable_relative_path": "python/bin/python3.12",
