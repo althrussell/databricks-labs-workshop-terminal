@@ -8,6 +8,10 @@ from fastapi.testclient import TestClient
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "write_behind: run capture on the production write-behind journal")
+    config.addinivalue_line(
+        "markers",
+        "host_process: exercises real host processes or signals; run serially without xdist workers",
+    )
 
 
 ALICE = {"X-Forwarded-Email": "alice@example.com"}
@@ -260,15 +264,18 @@ def as_non_admin(monkeypatch):
 
 
 @pytest.fixture()
-def launchable_agents(monkeypatch):
+def launchable_agents(monkeypatch, tmp_path):
     """Run supported agent IDs on a harmless shell for endpoint tests.
 
     Production still executes the real CLIs. Tests that are about session
     ownership, presence, or metering should not need those binaries or a live
-    workspace credential merely to keep a PTY open.
+    workspace credential merely to keep a PTY open. A fresh HOME root also
+    keeps another test's retained active build out of the launch path.
     """
+    from server import config
     import server.main as main
 
+    monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
     monkeypatch.setattr(
         main.install,
         "ready",

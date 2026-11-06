@@ -50,30 +50,66 @@ p{font-family:serif;font-size:22px}</style></head><body>
 
 def stage(work: Path) -> None:
     import hashlib
+    import tempfile
     import urllib.request
 
     from server.bootstrap import browser_runtime, install
     from server.bootstrap.artifacts import ArtifactManifest
 
+    work.mkdir(parents=True, exist_ok=True)
     contract = ArtifactManifest.from_path("")
     staging = work / "data" / "shared" / "artifacts"
     total = 0
     for name in [install.BROWSER_ARTIFACT, *browser_runtime.artifact_names()]:
-        total += os.path.getsize(contract.fetch(name, staging_dir=str(staging)).path)
+        print(f"browser artifact fetch started: name={name}", flush=True)
+        fetched = contract.fetch(name, staging_dir=str(staging))
+        size = os.path.getsize(fetched.path)
+        total += size
+        print(f"browser artifact fetch complete: name={name} bytes={size} source={fetched.source}", flush=True)
     print(f"staged {total} bytes of browser artifacts into {staging}")
 
     url, expected = PYTHON_311
-    archive = work / "python.tar.gz"
-    with urllib.request.urlopen(url, timeout=300) as response, open(archive, "wb") as handle:
-        shutil.copyfileobj(response, handle)
-    if hashlib.sha256(archive.read_bytes()).hexdigest() != expected:
-        raise SystemExit(f"{url} does not match its pinned sha256")
+    archive = work / f"python-3.11-{expected}.tar.gz"
+
+    def sha256(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    if archive.is_file() and sha256(archive) == expected:
+        print(f"standalone Python cache hit: name={archive.name} bytes={archive.stat().st_size} "
+              f"source=cached sha256={expected}", flush=True)
+    else:
+        reason = "checksum-mismatch" if archive.exists() else "missing"
+        print(f"standalone Python download started: name={archive.name} cache={reason} url={url}", flush=True)
+        descriptor, temporary = tempfile.mkstemp(prefix=f".{archive.name}.", suffix=".download", dir=work)
+        os.close(descriptor)
+        temporary_path = Path(temporary)
+        try:
+            with urllib.request.urlopen(url, timeout=300) as response, temporary_path.open("wb") as handle:
+                shutil.copyfileobj(response, handle)
+            if sha256(temporary_path) != expected:
+                raise SystemExit(f"{url} does not match its pinned sha256")
+            os.replace(temporary_path, archive)
+        finally:
+            temporary_path.unlink(missing_ok=True)
+        print(f"standalone Python download complete: name={archive.name} bytes={archive.stat().st_size} "
+              f"source=network sha256={expected}", flush=True)
+
+    # A restored extraction is only a cache of derived files. Rebuild it from
+    # the verified archive, removing stale files rather than trusting the tree.
+    extracted = work / "python"
+    if extracted.is_symlink() or extracted.is_file():
+        extracted.unlink()
+    elif extracted.exists():
+        shutil.rmtree(extracted)
     with tarfile.open(archive) as bundle:
         # share/ is terminfo and manuals, whose case-only name clashes loop on
         # a case-insensitive (macOS) disk.
         bundle.extractall(work, members=[m for m in bundle if not m.name.startswith("python/share/")],
                           filter="tar")
-    archive.unlink()
 
 
 def _missing(binary: str, env: dict) -> list[str]:

@@ -6,6 +6,7 @@ on:
       - "v*"
 
 permissions:
+  actions: read
   contents: write
 
 env:
@@ -34,7 +35,7 @@ jobs:
 
   release:
     needs: public-sources
-    name: build-test-publish
+    name: build-publish
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -44,11 +45,44 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24.22.1"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+      - name: Require successful main CI for the tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method GET \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
+            -f head_sha="${GITHUB_SHA}" \
+            -f event=push \
+            -f branch=main \
+            -f status=completed \
+            -f per_page=100 > "${RUNNER_TEMP}/main-ci-runs.json"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          response = json.loads(
+              Path(os.environ["RUNNER_TEMP"], "main-ci-runs.json").read_text()
+          )
+          sha = os.environ["GITHUB_SHA"]
+          runs = response.get("workflow_runs", [])
+          matched = any(
+              run.get("path") == ".github/workflows/ci.yml"
+              and run.get("head_sha") == sha
+              and run.get("event") == "push"
+              and run.get("head_branch") == "main"
+              and run.get("status") == "completed"
+              and run.get("conclusion") == "success"
+              for run in runs
+          )
+          if not matched:
+              raise SystemExit(
+                  f"Release blocked: no successful completed CI (ci.yml) push run "
+                  f"on main exists for tagged commit {sha}. Push the commit to main, "
+                  "wait for its full CI workflow to pass, then create and push the tag. "
+                  "This check does not poll; rerun the tag workflow after green same-SHA CI."
+              )
+          PY
       - uses: astral-sh/setup-uv@v6
         with:
           version: "0.13.5"
@@ -60,21 +94,6 @@ jobs:
           uv export --frozen --no-dev --no-group release --no-hashes --no-emit-project --output-file requirements.txt
           uv export --frozen --no-group release --no-hashes --no-emit-project --output-file requirements-dev.txt
           git diff --exit-code -- pyproject.toml uv.lock requirements.txt requirements-dev.txt
-      - name: Install backend test dependencies
-        run: uv sync --frozen --no-group release
-      - name: Run backend tests
-        run: uv run --frozen --no-group release python -m pytest tests/ -q
-      - name: Verify committed frontend
-        working-directory: frontend
-        env:
-          npm_config_registry: "https://registry.npmjs.org/"
-          npm_config_replace_registry_host: "always"
-          npm_config_fetch_timeout: "60000"
-        run: |
-          npm ci --no-audit --no-fund
-          npm test
-          npm run build
-          git -C .. diff --exit-code -- static
       - name: Materialize the uv-locked build environment
         run: uv sync --frozen --no-group dev --group release
       - name: Build immutable release assets

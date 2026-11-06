@@ -236,9 +236,11 @@ def test_the_attendee_is_never_switched_away_from_their_own_choice_or_a_running_
     assert projects.project_path(attendee, "repair-desk").is_dir()
 
 
-def test_the_build_list_carries_restore_status_without_waiting_for_it(client, monkeypatch):
+def test_the_build_list_carries_restore_status_without_waiting_for_it(client, monkeypatch, tmp_path):
+    from server import config
     import server.main as main
 
+    monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
     seen = []
 
     def observe(user, inventory, *, prepare, busy, accepting):

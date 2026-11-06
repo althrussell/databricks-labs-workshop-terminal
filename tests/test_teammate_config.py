@@ -136,7 +136,8 @@ def test_two_tabs_opening_at_once_claim_the_opener_once(client, monkeypatch, per
     for thread in threads:
         thread.start()
     for thread in threads:
-        thread.join()
+        thread.join(timeout=5)
+    assert all(not thread.is_alive() for thread in threads)
 
     assert claims.count(agents.WORKSHOP_OPENER) == 1
 

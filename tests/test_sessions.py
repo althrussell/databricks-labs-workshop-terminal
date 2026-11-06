@@ -227,6 +227,56 @@ def test_reaper_terminates_idle_sessions(client, monkeypatch):
     assert session_manager.list_for("alice@example.com") == []
 
 
+def test_terminate_skips_the_graceful_sleep_when_the_group_has_exited(monkeypatch):
+    from server import sessions, telemetry
+
+    manager = sessions.SessionManager()
+    session = sessions.Session("alice@example.com", "codex", "Codex", -1, 999999)
+    manager._sessions[session.id] = session
+    signals = []
+    monkeypatch.setattr(sessions.os, "killpg", lambda *args: signals.append(args))
+    monkeypatch.setattr(manager, "_group_alive", lambda _session: False)
+    monkeypatch.setattr(
+        sessions.time,
+        "sleep",
+        lambda delay: pytest.fail(f"unexpected shutdown sleep: {delay}"),
+    )
+    monkeypatch.setattr(telemetry, "session_exited", lambda *_args, **_kwargs: True)
+
+    manager.terminate(session)
+
+    assert signals == [(session.pid, sessions.signal.SIGHUP)]
+
+
+def test_terminate_still_kills_a_stubborn_group_after_the_graceful_wait(monkeypatch):
+    from server import sessions, telemetry
+
+    manager = sessions.SessionManager()
+    session = sessions.Session("alice@example.com", "codex", "Codex", -1, 999999)
+    session._reader_done.set()
+    manager._sessions[session.id] = session
+    signals = []
+    sleeps = []
+    real_sleep = sessions.time.sleep
+    monkeypatch.setattr(sessions, "GRACEFUL_SHUTDOWN_WAIT", 0.01)
+    monkeypatch.setattr(sessions.os, "killpg", lambda *args: signals.append(args))
+    monkeypatch.setattr(manager, "_group_alive", lambda _session: True)
+    monkeypatch.setattr(
+        sessions.time,
+        "sleep",
+        lambda delay: sleeps.append(delay) or real_sleep(delay),
+    )
+    monkeypatch.setattr(telemetry, "session_exited", lambda *_args, **_kwargs: True)
+
+    manager.terminate(session)
+
+    assert signals == [
+        (session.pid, sessions.signal.SIGHUP),
+        (session.pid, sessions.signal.SIGKILL),
+    ]
+    assert len(sleeps) == 1
+
+
 def test_concurrent_creates_spawn_exactly_one_child(monkeypatch, tmp_path):
     from server import sessions as sessions_module
     from server.sessions import SessionConflictError, SessionManager
@@ -343,6 +393,8 @@ def test_pty_eof_before_waitable_exit_retains_the_real_exit_status(monkeypatch):
     monkeypatch.setattr(sessions.os, "read", lambda *_args: b"")
     monkeypatch.setattr(sessions.os, "waitpid", lambda *_args: (0, 0))
     monkeypatch.setattr(sessions.os, "killpg", lambda *args: signals.append(args))
+    monkeypatch.setattr(sessions, "GRACEFUL_SHUTDOWN_WAIT", 0)
+    monkeypatch.setattr(manager, "_group_alive", lambda _session: True)
     monkeypatch.setattr(sessions.time, "sleep", lambda *_args: None)
     monkeypatch.setattr(telemetry, "session_exited",
                         lambda *args, **kwargs: observed.append((args, kwargs)))
@@ -372,6 +424,7 @@ def test_pty_eof_from_a_still_running_leader_keeps_a_bounded_reap(monkeypatch):
         raise sessions.subprocess.TimeoutExpired("test-child", timeout)
 
     session._process = SimpleNamespace(wait=pending)
+    monkeypatch.setattr(manager, "_group_alive", lambda _session: False)
     monkeypatch.setattr(sessions.select, "select", lambda *_args: ([-1], [], []))
     monkeypatch.setattr(sessions.os, "read", lambda *_args: b"")
     monkeypatch.setattr(sessions.os, "waitpid", lambda *_args: (0, 0))

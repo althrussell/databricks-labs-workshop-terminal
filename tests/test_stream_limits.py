@@ -113,20 +113,22 @@ def test_atomic_replay_registration_delivers_concurrent_output_exactly_once():
         attached = {}
 
         def attach():
-            barrier.wait()
+            barrier.wait(timeout=5)
             replay, queue, exited = manager.attach_with_replay(session)
             attached.update(replay=replay, queue=queue, exited=exited)
 
         def publish():
-            barrier.wait()
+            barrier.wait(timeout=5)
             manager.publish_output(session, "during")
 
         attach_thread = threading.Thread(target=attach)
         publish_thread = threading.Thread(target=publish)
         attach_thread.start()
         publish_thread.start()
-        attach_thread.join()
-        publish_thread.join()
+        attach_thread.join(timeout=5)
+        publish_thread.join(timeout=5)
+        assert not attach_thread.is_alive()
+        assert not publish_thread.is_alive()
 
         queued = ""
         while not attached["queue"].empty():

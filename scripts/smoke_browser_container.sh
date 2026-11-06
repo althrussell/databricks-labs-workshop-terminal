@@ -20,8 +20,11 @@ mkdir -p "${OUT}"
 OUT="$(cd "${OUT}" && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
+STAGE="${WT_BROWSER_SMOKE_STAGE:-${WORK}/staged}"
+mkdir -p "${STAGE}"
+STAGE="$(cd "${STAGE}" && pwd)"
 
-python3 "${ROOT}/scripts/smoke_browser.py" stage "${WORK}/staged"
+python3 "${ROOT}/scripts/smoke_browser.py" stage "${STAGE}"
 
 pull() {
   local candidate
@@ -41,7 +44,7 @@ smoke() {
   local image
   image="$(pull "$@")"
   rm -rf "${WORK}/${label}"
-  cp -R "${WORK}/staged" "${WORK}/${label}"
+  cp -R "${STAGE}" "${WORK}/${label}"
   # As the invoking user, like the Apps runtime (not root), so everything the
   # container writes stays removable and readable here.
   docker run --rm --pull never --platform linux/amd64 --network none \

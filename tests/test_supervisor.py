@@ -21,6 +21,7 @@ import pytest
 from server import otel_bootstrap, supervisor
 
 ROOT = Path(__file__).resolve().parents[1]
+pytestmark = pytest.mark.host_process
 linux_only = pytest.mark.skipif(
     not supervisor.enabled({}), reason="the kill guard needs Linux sigtimedwait"
 )
@@ -397,4 +398,4 @@ def test_the_real_terminal_comes_back_after_its_server_is_killed(tmp_path):
     finally:
         if process.poll() is None:
             process.kill()
-            process.wait()
+            process.wait(timeout=5)

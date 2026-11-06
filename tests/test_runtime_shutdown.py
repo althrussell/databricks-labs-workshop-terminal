@@ -19,6 +19,8 @@ from server.capture_journal import (
 )
 from server.event_emitter import EventEmitter
 
+pytestmark = pytest.mark.host_process
+
 BINDING = {"run_id": "restart-run", "unit_id": "restart-unit",
            "workspace_id": "123", "owner": "alice@example.com"}
 

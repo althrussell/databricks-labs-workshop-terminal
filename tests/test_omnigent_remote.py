@@ -139,7 +139,7 @@ def test_only_configured_attendee_admitted_under_concurrency(
     lock = threading.Lock()
 
     def attempt(email: str) -> None:
-        barrier.wait()
+        barrier.wait(timeout=5)
         code = client.get(
             "/api/config", headers={"X-Forwarded-Email": email}
         ).status_code
@@ -153,7 +153,8 @@ def test_only_configured_attendee_admitted_under_concurrency(
     for thread in threads:
         thread.start()
     for thread in threads:
-        thread.join()
+        thread.join(timeout=5)
+    assert all(not thread.is_alive() for thread in threads)
 
     admitted = [email for email, code in outcomes if code == 200]
     assert admitted == ["attendee-7@example.com"]
@@ -327,7 +328,8 @@ def test_concurrent_out_of_order_capture_keeps_newest_iat(
     for thread in threads:
         thread.start()
     for thread in threads:
-        thread.join()
+        thread.join(timeout=5)
+    assert all(not thread.is_alive() for thread in threads)
 
     path = (
         Path(manager.get("alice@example.com").home) / ".omnigent" / "auth_tokens.json"
@@ -629,7 +631,8 @@ def test_one_host_process_per_attendee_under_concurrent_notifications(
     for thread in threads:
         thread.start()
     for thread in threads:
-        thread.join()
+        thread.join(timeout=5)
+    assert all(not thread.is_alive() for thread in threads)
     _wait_for(lambda: hosts.status("alice@example.com")["status"] == "running")
 
     assert len(calls) == 1
@@ -1203,7 +1206,8 @@ def test_concurrent_first_requests_bootstrap_home_once(monkeypatch, tmp_path):
     for thread in threads:
         thread.start()
     for thread in threads:
-        thread.join()
+        thread.join(timeout=5)
+    assert all(not thread.is_alive() for thread in threads)
 
     assert calls == ["alice@example.com"]
     helper = (

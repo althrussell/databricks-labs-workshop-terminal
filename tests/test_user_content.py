@@ -71,8 +71,60 @@ def _provisioned_home(client, monkeypatch):
     return user_manager.get("alice@example.com").home
 
 
-def test_instructions_written_with_coach(client, monkeypatch):
-    home = _provisioned_home(client, monkeypatch)
+@pytest.fixture(scope="module")
+def _default_home_snapshot(tmp_path_factory, _test_env):
+    """Provision the default HOME once, then expose a read-only private copy.
+
+    The copy matters: later isolated cases reprovision Alice's real HOME with
+    different environment and must not rewrite this snapshot. The TestClient
+    and its PTY are both closed during setup rather than held for the module.
+    """
+    import shutil
+    from types import SimpleNamespace
+
+    from fastapi.testclient import TestClient
+
+    from server import build_restore, network_check
+    from server.content import content_service
+    from server.sessions import session_manager
+    from server.users import user_manager
+    import server.main as main
+
+    pack, phase = content_service.pack, content_service.phase
+    try:
+        # Module fixtures cannot use the function-scoped monkeypatch/client
+        # fixtures. Own both here, including the usual background-work guards.
+        with pytest.MonkeyPatch.context() as monkeypatch:
+            monkeypatch.setattr(
+                build_restore,
+                "restorer",
+                SimpleNamespace(observe=lambda *args, **kwargs: None),
+            )
+            monkeypatch.setattr(
+                network_check,
+                "SCHEDULE_SECONDS",
+                tuple(t * 0.01 for t in network_check.SCHEDULE_SECONDS),
+            )
+            monkeypatch.setattr(main.identity, "observe", lambda _user: None)
+            with TestClient(main.app) as client:
+                home = _provisioned_home(client, monkeypatch)
+
+        snapshot = tmp_path_factory.mktemp("default-provisioned-home") / "home"
+        shutil.copytree(home, snapshot, symlinks=True)
+    finally:
+        for session in session_manager.snapshot():
+            session_manager.terminate(session)
+        user_manager.reset_for_tests()
+        # Session creation advances the phase; do not leak that into the first
+        # test's function-scoped content-state snapshot.
+        content_service.set_pack(pack)
+        content_service.set_phase(phase)
+
+    yield str(snapshot)
+
+
+def test_instructions_written_with_coach(_default_home_snapshot):
+    home = _default_home_snapshot
     claude_md = open(os.path.join(home, ".claude", "CLAUDE.md")).read()
     assert "Workshop Edition" in claude_md
     assert "workshop-lab-coach" in claude_md  # coach appended by default
@@ -82,18 +134,18 @@ def test_instructions_written_with_coach(client, monkeypatch):
     assert "workshop-lab-coach" in agents_md
 
 
-def test_apx_default_in_home_memory(client, monkeypatch):
+def test_apx_default_in_home_memory(_default_home_snapshot):
     # The mandate must reach Claude (CLAUDE.md) and Codex (AGENTS.md) at the
     # home/global scope.
-    home = _provisioned_home(client, monkeypatch)
+    home = _default_home_snapshot
     claude_md = open(os.path.join(home, ".claude", "CLAUDE.md")).read()
     agents_md = open(os.path.join(home, ".codex", "AGENTS.md")).read()
     assert APX_DEFAULT in claude_md
     assert APX_DEFAULT in agents_md
 
 
-def test_mandate_names_canonical_app_skills_and_no_retired_ones(client, monkeypatch):
-    home = _provisioned_home(client, monkeypatch)
+def test_mandate_names_canonical_app_skills_and_no_retired_ones(_default_home_snapshot):
+    home = _default_home_snapshot
     channels = {
         "home CLAUDE.md": os.path.join(home, ".claude", "CLAUDE.md"),
         "home AGENTS.md": os.path.join(home, ".codex", "AGENTS.md"),
@@ -118,13 +170,13 @@ _MEMORY_CHANNELS = (
 )
 
 
-def test_memory_distinguishes_preview_from_verified_task(client, monkeypatch):
+def test_memory_distinguishes_preview_from_verified_task(_default_home_snapshot):
     """Every agent receives practical checks and truthful completion language.
 
     This checks instruction delivery, not whether an LLM follows the policy.
     Behavior probes and generated-app E2E provide separate evidence.
     """
-    home = _provisioned_home(client, monkeypatch)
+    home = _default_home_snapshot
     for parts in _MEMORY_CHANNELS:
         text = open(os.path.join(home, *parts)).read()
         assert "apx dev check" in text
@@ -140,11 +192,11 @@ def test_memory_distinguishes_preview_from_verified_task(client, monkeypatch):
         assert "Check it as the attendee with `workshop-browser inspect <url> --deployed`" in text
 
 
-def test_every_agent_gets_impeccables_setup_in_order_on_both_paths(client, monkeypatch):
+def test_every_agent_gets_impeccables_setup_in_order_on_both_paths(_default_home_snapshot):
     """Live run 2: Claude read "rapid" as licence to skip Impeccable's setup and
     built a plain table; Codex loaded the craft floor. The order is explicit so
     every harness does the same design work before UI code."""
-    home = _provisioned_home(client, monkeypatch)
+    home = _default_home_snapshot
     for parts in _MEMORY_CHANNELS:
         text = " ".join(open(os.path.join(home, *parts)).read().split())
         assert "Rapid means no interview" not in text
@@ -154,12 +206,12 @@ def test_every_agent_gets_impeccables_setup_in_order_on_both_paths(client, monke
         assert order == sorted(order)
 
 
-def test_no_memory_channel_puts_playwright_on_the_critical_path(client, monkeypatch):
+def test_no_memory_channel_puts_playwright_on_the_critical_path(_default_home_snapshot):
     """Agents follow the written gate literally — the Space Invaders run put
     "update smoke test selectors" and "run validate + design gate" on its todo
     list because the instructions said to. Every channel has to carry the
     override, or the one that does not silently restores the old behaviour."""
-    home = _provisioned_home(client, monkeypatch)
+    home = _default_home_snapshot
     for parts in _MEMORY_CHANNELS:
         text = open(os.path.join(home, *parts)).read()
         assert "Do not install Playwright browsers" in text and "databricks apps validate" in text, (
@@ -169,22 +221,22 @@ def test_no_memory_channel_puts_playwright_on_the_critical_path(client, monkeypa
         assert "playwright.visual.spec.ts" not in text
 
 
-def test_no_design_gate_helper_is_installed(client, monkeypatch):
+def test_no_design_gate_helper_is_installed(_default_home_snapshot):
     """The blocking visual gate is gone, helper included. Leaving the binary on
     PATH would let an agent rediscover it and reintroduce the block."""
-    home = _provisioned_home(client, monkeypatch)
+    home = _default_home_snapshot
 
     assert not os.path.exists(
         os.path.join(home, ".local", "bin", "workshop-design-gate")
     )
 
 
-def test_no_tdd_subagents_are_installed(client, monkeypatch):
+def test_no_tdd_subagents_are_installed(_default_home_snapshot):
     """The PRD -> failing-tests -> implement -> review chain turned "build me an
     app" into an interview plus a test suite. The directory is still created and
     emptied, because a HOME can outlive a deploy and a stale definition would
     keep the old behaviour running."""
-    home = _provisioned_home(client, monkeypatch)
+    home = _default_home_snapshot
     agents = os.path.join(home, ".claude", "agents")
 
     assert os.path.isdir(agents)
@@ -197,8 +249,8 @@ def test_no_tdd_subagents_are_installed(client, monkeypatch):
         assert name not in installed
 
 
-def test_project_helper_installed(client, monkeypatch):
-    home = _provisioned_home(client, monkeypatch)
+def test_project_helper_installed(_default_home_snapshot):
+    home = _default_home_snapshot
 
     helper = os.path.join(home, ".local", "bin", "workshop-init-project")
     assert os.path.isfile(helper)
@@ -217,11 +269,11 @@ def test_custom_agent_skill_is_available_to_both_harnesses_when_enabled(client, 
         assert skill.is_file() is enabled
 
 
-def test_project_helper_commits_default_stack_memory(client, monkeypatch, tmp_path):
+def test_project_helper_commits_default_stack_memory(_default_home_snapshot, tmp_path):
     """Running the helper must produce a project whose CLAUDE.md and AGENTS.md
     are committed (so they propagate into Omnigent's git worktrees) and carry
     the mandate."""
-    home = _provisioned_home(client, monkeypatch)
+    home = _default_home_snapshot
     helper = os.path.join(home, ".local", "bin", "workshop-init-project")
 
     # Isolated HOME so we exercise the helper without the provisioned home's
@@ -260,7 +312,7 @@ def test_project_helper_commits_default_stack_memory(client, monkeypatch, tmp_pa
     assert "CLAUDE.md" in tracked and "AGENTS.md" in tracked
 
 
-def test_project_helper_always_writes_a_readme(client, monkeypatch, tmp_path):
+def test_project_helper_always_writes_a_readme(_default_home_snapshot, tmp_path):
     """The lead-quality backstop for a workshop that no longer auto-generates
     documents. `artifacts` classifies any README as a `readme`-kind artifact, so
     writing one at init means every session contributes a titled artifact and a
@@ -269,7 +321,7 @@ def test_project_helper_always_writes_a_readme(client, monkeypatch, tmp_path):
     Near-zero cost, and it doubles as the attendee's take-home reminder once the
     workspace is torn down.
     """
-    home = _provisioned_home(client, monkeypatch)
+    home = _default_home_snapshot
     helper = os.path.join(home, ".local", "bin", "workshop-init-project")
 
     fake_home = tmp_path / "attendee"
@@ -326,7 +378,7 @@ def _attendee_env(home, tmp_path, with_template=True):
 
 
 def test_the_helper_adopts_a_directory_a_scaffold_already_wrote(
-    client, monkeypatch, tmp_path
+    _default_home_snapshot, tmp_path
 ):
     """The failure this exists to prevent, reproduced.
 
@@ -339,7 +391,7 @@ def test_the_helper_adopts_a_directory_a_scaffold_already_wrote(
 
     Adopting an existing directory removes the reason to ever run that `mv`.
     """
-    home = _provisioned_home(client, monkeypatch)
+    home = _default_home_snapshot
     helper = os.path.join(home, ".local", "bin", "workshop-init-project")
     fake_home, env = _attendee_env(home, tmp_path)
 
@@ -372,10 +424,10 @@ def test_the_helper_adopts_a_directory_a_scaffold_already_wrote(
 
 
 def test_seeding_an_adopted_project_twice_does_not_duplicate_it(
-    client, monkeypatch, tmp_path
+    _default_home_snapshot, tmp_path
 ):
     """Adoption has to be idempotent or a retry silently doubles the memory file."""
-    home = _provisioned_home(client, monkeypatch)
+    home = _default_home_snapshot
     helper = os.path.join(home, ".local", "bin", "workshop-init-project")
     fake_home, env = _attendee_env(home, tmp_path)
 
@@ -393,12 +445,12 @@ def test_seeding_an_adopted_project_twice_does_not_duplicate_it(
 
 
 def test_a_failed_appkit_scaffold_still_leaves_a_usable_project(
-    client, monkeypatch, tmp_path
+    _default_home_snapshot, tmp_path
 ):
     """Same stance as the missing-git-identity case: creating the project matters
     more than the step that failed. A network or npm failure during scaffolding
     must not leave the attendee with nothing to build in."""
-    home = _provisioned_home(client, monkeypatch)
+    home = _default_home_snapshot
     helper = os.path.join(home, ".local", "bin", "workshop-init-project")
     fake_home, env = _attendee_env(home, tmp_path)
 
@@ -424,14 +476,14 @@ def test_a_failed_appkit_scaffold_still_leaves_a_usable_project(
 
 
 def test_the_appkit_flag_scaffolds_into_the_project_root(
-    client, monkeypatch, tmp_path
+    _default_home_snapshot, tmp_path
 ):
     """`--output-dir` is the parent, not the target.
 
     Getting that backwards is precisely what produced `<name>/<name>` live, so
     pin the invocation rather than trusting the flag name to keep its meaning.
     """
-    home = _provisioned_home(client, monkeypatch)
+    home = _default_home_snapshot
     helper = os.path.join(home, ".local", "bin", "workshop-init-project")
     fake_home, env = _attendee_env(home, tmp_path)
 
@@ -468,9 +520,9 @@ def test_the_appkit_flag_scaffolds_into_the_project_root(
 
 @pytest.mark.parametrize("warnings_only", [False, True])
 def test_noisy_scaffold_supports_the_documented_cd_command(
-    client, monkeypatch, tmp_path, warnings_only,
+    _default_home_snapshot, tmp_path, warnings_only,
 ):
-    home = _provisioned_home(client, monkeypatch)
+    home = _default_home_snapshot
     helper = os.path.join(home, ".local", "bin", "workshop-init-project")
     fake_home, env = _attendee_env(home, tmp_path)
     shim = tmp_path / "shim"
@@ -498,11 +550,11 @@ def test_noisy_scaffold_supports_the_documented_cd_command(
         assert "Installing dependencies" in out.stderr
 
 
-def test_the_readme_survives_a_missing_git_identity(client, monkeypatch, tmp_path):
+def test_the_readme_survives_a_missing_git_identity(_default_home_snapshot, tmp_path):
     """Creating the project matters more than committing it. If git cannot
     resolve an identity the helper must still leave the attendee with a usable
     project rather than aborting under `set -e`."""
-    home = _provisioned_home(client, monkeypatch)
+    home = _default_home_snapshot
     helper = os.path.join(home, ".local", "bin", "workshop-init-project")
 
     fake_home = tmp_path / "attendee"
@@ -530,8 +582,8 @@ def test_coach_disabled_by_env(client, monkeypatch):
     assert "workshop-lab-coach" not in claude_md
 
 
-def test_skills_installed(client, monkeypatch):
-    home = _provisioned_home(client, monkeypatch)
+def test_skills_installed(_default_home_snapshot):
+    home = _default_home_snapshot
 
     # Every harness reads its own directory: Claude ~/.claude/skills, Codex (and
     # Omnigent's Codex worker, which shares CODEX_HOME) ~/.agents/skills. This is
@@ -634,8 +686,8 @@ def test_a_harness_owned_skills_directory_still_receives_the_skills(
     assert os.path.islink(home / ".claude" / "skills" / "databricks-docs")
 
 
-def test_git_identity_and_sync_hook(client, monkeypatch):
-    home = _provisioned_home(client, monkeypatch)
+def test_git_identity_and_sync_hook(_default_home_snapshot):
+    home = _default_home_snapshot
     gitconfig = open(os.path.join(home, ".gitconfig")).read()
     assert "email = alice@example.com" in gitconfig
 

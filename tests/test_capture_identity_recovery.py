@@ -29,8 +29,11 @@ BINDING = {
 
 
 @pytest.fixture(autouse=True)
-def isolate(monkeypatch):
+def isolate(monkeypatch, tmp_path):
     monkeypatch.setenv("WORKSHOP_INSIGHT_CAPTURE", "true")
+    # Recovery also runs in a subprocess, so isolate the inherited DATA_ROOT
+    # rather than patching this process's config.users_root function.
+    monkeypatch.setenv("DATA_ROOT", str(tmp_path / "data"))
     identity.reset_for_tests()
     attendee_names.reset_for_tests()
     yield

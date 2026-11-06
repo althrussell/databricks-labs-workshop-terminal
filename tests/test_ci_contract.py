@@ -1,4 +1,5 @@
 from pathlib import Path
+import tomllib
 
 import yaml
 
@@ -28,7 +29,7 @@ def test_frontend_ci_is_blocking_and_deterministic():
     assert "git status --porcelain -- static" in commands
 
 
-def test_backend_ci_runs_full_suite_from_the_uv_lock():
+def test_backend_ci_runs_complementary_parallel_and_serial_layers():
     workflow = _workflow()
     job = workflow["jobs"]["backend"]
     commands = "\n".join(
@@ -36,16 +37,33 @@ def test_backend_ci_runs_full_suite_from_the_uv_lock():
         for step in job["steps"]
         if isinstance(step, dict)
     )
+    test_commands = [
+        line.strip()
+        for line in commands.splitlines()
+        if "python -m pytest" in line
+    ]
 
-    assert "uv run --frozen --no-group release python -m pytest tests/ -q" in commands
+    assert job["timeout-minutes"] == 15
+    assert test_commands == [
+        'uv run --frozen --no-group release python -m pytest tests/ -q -m "not host_process" -n 2 --dist loadfile --timeout=120 --durations=50 --durations-min=0.05 --junitxml=test-results/parallel.xml',
+        "uv run --frozen --no-group release python -m pytest tests/ -q -m host_process --timeout=300 --durations=50 --durations-min=0.05 --junitxml=test-results/host-process.xml",
+    ]
     assert "uv lock --check" in commands
     assert "uv export --frozen" in commands
     assert "git diff --exit-code -- pyproject.toml uv.lock" in commands
     assert "uv sync --frozen --no-group release" in commands
     assert "pip install" not in commands
-    assert workflow["jobs"]["backend"]["strategy"]["matrix"]["python-version"] == [
-        "3.11",
-    ]
+    assert job["strategy"]["matrix"]["python-version"] == ["3.11"]
+
+    results = next(
+        step
+        for step in job["steps"]
+        if step.get("name") == "Publish backend test results"
+    )
+    assert results["if"] == "always()"
+    assert results["uses"] == "actions/upload-artifact@v4"
+    assert results["with"]["path"] == "test-results/*.xml"
+    assert results["with"]["retention-days"] == 14
 
 
 def test_packaged_ci_is_linux_cp311_reproducible_and_offline_smoked():
@@ -67,11 +85,50 @@ def test_packaged_ci_is_linux_cp311_reproducible_and_offline_smoked():
     assert "cmp dist/workshop-terminal.pex dist-repro/workshop-terminal.pex" in commands
     assert "scripts/smoke_release_container.sh dist" in commands
     # The prepared browser (W3) must install and render in clean Linux too.
-    assert "scripts/smoke_browser_container.sh dist" in commands
+    browser = next(
+        step
+        for step in job["steps"]
+        if "scripts/smoke_browser_container.sh" in step.get("run", "")
+    )
+    assert browser["timeout-minutes"] == 6
+    assert browser["env"]["WT_BROWSER_SMOKE_STAGE"] == (
+        "${{ github.workspace }}/dist/browser-stage"
+    )
+    cache = next(
+        step
+        for step in job["steps"]
+        if step.get("uses") == "actions/cache@v4"
+    )
+    assert cache["with"]["path"] == "dist/browser-stage"
+    for source in (
+        "assets/artifacts/manifest.json",
+        "scripts/smoke_browser.py",
+        "server/bootstrap/browser_runtime.py",
+        "server/bootstrap/install.py",
+    ):
+        assert source in cache["with"]["key"]
     assert "pip install" not in commands
 
 
-def test_tag_release_publishes_only_a_tested_pex_and_manifest():
+def test_ci_triggers_and_rendered_browser_coverage_match_the_release_gate():
+    workflow = _workflow()
+    triggers = workflow.get("on", workflow.get(True))
+    assert triggers["push"]["branches"] == ["main"]
+    assert "pull_request" in triggers
+
+    browser = next(
+        step
+        for step in workflow["jobs"]["wizard-browser"]["steps"]
+        if "python -m pytest" in step.get("run", "")
+    )
+    assert "tests/test_generated_app_browser_rendered.py" in browser["run"]
+
+    makefile = (ROOT / "Makefile").read_text()
+    assert '-m "not host_process" -n 2 --dist loadfile --timeout=120' in makefile
+    assert "-m host_process --timeout=300" in makefile
+
+
+def test_tag_release_requires_green_same_sha_ci_and_only_rebuilds_release():
     workflow = yaml.safe_load(
         (ROOT / ".github" / "workflows" / "release.yml").read_text()
     )
@@ -79,15 +136,14 @@ def test_tag_release_publishes_only_a_tested_pex_and_manifest():
     commands = "\n".join(
         step.get("run", "") for step in steps if isinstance(step, dict)
     )
+    gate = next(
+        step for step in steps if step.get("name") == "Require successful main CI for the tagged commit"
+    )
+    gate_command = gate["run"]
     publish = next(
         step for step in steps if step.get("uses", "").startswith("softprops/action-gh-release@")
     )
-    backend_test_command = "uv run --frozen --no-group release python -m pytest tests/ -q"
-    backend_test_index = next(
-        index
-        for index, step in enumerate(steps)
-        if backend_test_command in step.get("run", "")
-    )
+    gate_index = steps.index(gate)
     build_index = next(
         index
         for index, step in enumerate(steps)
@@ -95,14 +151,39 @@ def test_tag_release_publishes_only_a_tested_pex_and_manifest():
     )
     publish_index = steps.index(publish)
 
+    assert workflow["permissions"]["actions"] == "read"
+    assert gate["env"]["GH_TOKEN"] == "${{ github.token }}"
+    assert "gh api --method GET" in gate_command
+    assert "/actions/workflows/ci.yml/runs" in gate_command
+    for required in (
+        'head_sha="${GITHUB_SHA}"',
+        "event=push",
+        "branch=main",
+        "status=completed",
+        'run.get("head_sha") == sha',
+        'run.get("event") == "push"',
+        'run.get("head_branch") == "main"',
+        'run.get("status") == "completed"',
+        'run.get("conclusion") == "success"',
+        "wait for its full CI workflow to pass",
+    ):
+        assert required in gate_command
+    assert "sleep " not in gate_command
+    assert gate_index < build_index < publish_index
+
+    assert 'git rev-list -n 1 "${GITHUB_REF_NAME}"' in commands
     assert "uv lock --check" in commands
     assert "uv export --frozen" in commands
     assert "git diff --exit-code -- pyproject.toml uv.lock requirements.txt requirements-dev.txt" in commands
-    assert "uv sync --frozen --no-group release" in commands
-    assert backend_test_command in commands
-    assert backend_test_index < build_index < publish_index
+    assert "uv sync --frozen --no-group release" not in commands
+    assert commands.count("python scripts/build_release.py") == 2
     assert "scripts/smoke_release_container.sh dist" in commands
     assert "cmp dist/workshop-terminal.pex dist-repro/workshop-terminal.pex" in commands
+    assert "python -m pytest" not in commands
+    assert "npm ci" not in commands
+    assert "npm test" not in commands
+    assert "npm run build" not in commands
+    assert not any(step.get("uses", "").startswith("actions/setup-node@") for step in steps)
     assert "dist/workshop-terminal.pex" in publish["with"]["files"]
     assert "dist/release-manifest.json" in publish["with"]["files"]
     assert "latest" not in commands.lower()
@@ -155,8 +236,14 @@ def test_development_requirements_are_fully_pinned():
         and not line.startswith((" ", "--"))
     ]
 
-    assert any(line.startswith("pytest==") for line in direct)
-    assert any(line.startswith("httpx==") for line in direct)
+    required = {"httpx", "pytest", "pytest-asyncio", "pytest-timeout", "pytest-xdist"}
+    direct_names = {line.split("==", 1)[0] for line in direct}
+    lock_names = {line.split("==", 1)[0] for line in lock}
+    dev_group = tomllib.loads((ROOT / "pyproject.toml").read_text())["dependency-groups"]["dev"]
+
+    assert required <= direct_names
+    assert required <= lock_names
+    assert direct == set(dev_group)
     assert all("==" in line for line in direct)
     assert len(lock) > len(direct)
     assert all("==" in line for line in lock)

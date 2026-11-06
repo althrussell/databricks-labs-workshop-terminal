@@ -600,12 +600,28 @@ class SessionManager:
                 wait = GRACEFUL_SHUTDOWN_WAIT
                 if deadline is not None:
                     wait = min(wait, max(0.0, (deadline - time.monotonic()) / 2))
-                time.sleep(wait)
-                try:
-                    os.killpg(session.pid, 0)
-                    os.killpg(session.pid, signal.SIGKILL)
-                except OSError:
-                    pass
+                graceful_deadline = time.monotonic() + wait
+                while group_alive:
+                    try:
+                        group_alive = self._group_alive(session)
+                    except OSError:
+                        # An uncertain group must still reach the kill path.
+                        group_alive = True
+                    remaining = graceful_deadline - time.monotonic()
+                    if not group_alive or remaining <= 0:
+                        break
+                    interval = min(0.05, remaining)
+                    if session._reader_done.is_set():
+                        # Event.wait() returns immediately once set; descendants
+                        # can still hold the group open after the PTY reaches EOF.
+                        time.sleep(interval)
+                    else:
+                        session._reader_done.wait(interval)
+                if group_alive:
+                    try:
+                        os.killpg(session.pid, signal.SIGKILL)
+                    except OSError:
+                        pass
             # Removing the public session must not stop its already-admitted
             # reader before the process's final output is observed.
             reader = session._reader_thread

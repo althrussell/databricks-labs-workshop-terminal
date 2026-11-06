@@ -181,9 +181,11 @@ def test_the_browser_install_is_optional_and_says_why_it_cannot_run(monkeypatch,
     assert "browser" not in readiness.__dict__.get("REQUIRED_STEPS", ()), "readiness never waits on the browser"
 
 
-def test_the_helper_is_installed_only_when_workshop_browser_enabled(client, monkeypatch):
-    from server import user_content
+def test_the_helper_is_installed_only_when_workshop_browser_enabled(client, monkeypatch, tmp_path):
+    from server import config, user_content
     from server.users import user_manager
+
+    monkeypatch.setattr(config, "users_root", lambda: str(tmp_path / "users"))
     from tests.test_user_content import _provisioned_home
 
     helper = Path(__file__).resolve().parents[1] / "assets" / "bin" / "workshop-browser"

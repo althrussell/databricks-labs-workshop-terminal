@@ -81,7 +81,8 @@ versioned cross-repository parser contract.
 Every pull request:
 
 1. validates the uv lock and source-deployment requirements exports;
-2. runs the full source suite on Python 3.11 and 3.12;
+2. runs the full source suite on Python 3.11, with host-process-marked tests
+   kept serial and all other tests distributed across two workers;
 3. builds the PEX twice and compares both artifacts and manifests byte-for-byte;
 4. starts the real packaged entry point in a clean Python 3.11 container with
    networking disabled;
@@ -91,9 +92,14 @@ Every pull request:
    and runs the retained Omnigent lifecycle;
 8. records cold startup and artifact size in `release-benchmark.json`.
 
-A `v*` tag repeats those gates before publishing the PEX and manifest as GitHub
-release assets. Control Tower must verify the pinned manifest digest, artifact
-size, artifact SHA-256, ABI/platform, and minimum contract version before
-staging. Source deployment remains the rollback path for one release window.
+A `v*` tag requires a successful, completed `ci.yml` push run on `main` for the
+exact tagged commit. Tag only after that full main CI run is green. The tag
+workflow checks this gate without polling, then reruns only the tagged release
+build, byte-for-byte reproducibility comparison, and offline packaged smoke
+check before publishing the PEX and manifest as GitHub release assets; it does
+not repeat the source or frontend test/build suites. Control Tower must verify
+the pinned manifest digest, artifact size, artifact SHA-256, ABI/platform, and
+minimum contract version before staging. Source deployment remains the rollback
+path for one release window.
 
 Reference: [Databricks workspace file limits](https://docs.databricks.com/aws/en/files/workspace#file-size-limit).

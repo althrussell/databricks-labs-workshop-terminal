@@ -78,7 +78,8 @@ async def main():
     wt_url='http://127.0.0.1:'+str(site._server.sockets[0].getsockname()[1])
     try:
         async with async_playwright() as p:
-            browser=await p.chromium.launch(headless=True)
+            browser=await p.chromium.launch(headless=True,
+                executable_path=os.environ.get('WORKSHOP_BROWSER_EXECUTABLE'))
             try:
                 for arm in ['gate','compatible','disabled','skip','returning']:
                     context=await browser.new_context();wt_state['enabled']=arm!='disabled';wt_state['seen']=arm=='returning';entry_events.clear()

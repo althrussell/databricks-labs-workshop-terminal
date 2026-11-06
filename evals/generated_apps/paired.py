@@ -21,6 +21,7 @@ product makes regardless of which model answers:
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
@@ -128,16 +129,26 @@ def smoke(scenario: dict, harness: str, path: str, project: Path) -> dict:
             "path": path, "checks": checks, "passed": all(checks.values())}
 
 
-def run_smoke(selected: list[str] | None = None) -> list[dict]:
-    results = []
-    for scenario in scenarios():
-        if selected and scenario["scenario_id"] not in selected:
-            continue
-        for harness in HARNESSES:
-            for path in PATHS:
-                with tempfile.TemporaryDirectory(prefix="wt-paired-") as temporary:
-                    results.append(smoke(scenario, harness, path, Path(temporary)))
-    return results
+def run_smoke(selected: list[str] | None = None, workers: int = 2) -> list[dict]:
+    if workers < 1:
+        raise ValueError("workers must be at least 1")
+    journeys = [(scenario, harness, path)
+                for scenario in scenarios() if not selected or scenario["scenario_id"] in selected
+                for harness in HARNESSES for path in PATHS]
+
+    def run(journey: tuple[dict, str, str]) -> dict:
+        scenario, harness, path = journey
+        try:
+            with tempfile.TemporaryDirectory(prefix="wt-paired-") as temporary:
+                return smoke(scenario, harness, path, Path(temporary))
+        except Exception as error:
+            error.add_note(f"Paired journey: scenario={scenario['scenario_id']}, harness={harness}, path={path}")
+            raise
+
+    if workers == 1:
+        return [run(journey) for journey in journeys]
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(run, journeys))
 
 
 if __name__ == "__main__":

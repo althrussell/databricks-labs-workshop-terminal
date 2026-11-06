@@ -11,22 +11,84 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import pytest_asyncio
 
 from server import attendee_profile, config, demo_data, wizard, wizard_selections
 from .test_wizard_recommendations import idea
 
-pytestmark = pytest.mark.skipif(os.environ.get("WORKSHOP_E2E_BROWSER_TESTS") != "1",
-                              reason="opt-in actual WT browser/localhost test")
+pytestmark = [
+    pytest.mark.skipif(os.environ.get("WORKSHOP_E2E_BROWSER_TESTS") != "1",
+                       reason="opt-in actual WT browser/localhost test"),
+    pytest.mark.asyncio(loop_scope="module"),
+]
 ROOT = Path(__file__).resolve().parents[1]
 
 
-async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=False,
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
+async def rendered_browser():
+    """Share one Chromium on the same module-scoped event loop as every case."""
+    browser_api = pytest.importorskip("playwright.async_api")
+    async with browser_api.async_playwright() as engine:
+        browser = await engine.chromium.launch(
+            headless=True, executable_path=os.environ.get("WORKSHOP_BROWSER_EXECUTABLE"))
+        try:
+            yield browser
+        finally:
+            await browser.close()
+
+
+_API_TRACKER = r"""
+(() => {
+    const nativeFetch = window.fetch.bind(window);
+    const tracker = window.__wtRenderedApi = {inFlight: 0, completed: 0};
+    window.fetch = async (input, init) => {
+        const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+        const tracked = url.pathname.startsWith('/api/wizard')
+            || url.pathname === '/api/sessions'
+            || /^\/api\/sessions\/[^/]+\/type$/.test(url.pathname);
+        if (url.origin !== location.origin || !tracked) {
+            return nativeFetch(input, init);
+        }
+        tracker.inFlight += 1;
+        let finished = false;
+        const finish = () => {
+            if (finished) return;
+            finished = true;
+            tracker.inFlight -= 1;
+            tracker.completed += 1;
+        };
+        try {
+            const response = await nativeFetch(input, init);
+            const json = response.json.bind(response);
+            response.json = async (...args) => {
+                try { return await json(...args); }
+                finally { finish(); }
+            };
+            return response;
+        } catch (error) {
+            finish();
+            throw error;
+        }
+    };
+})();
+"""
+
+
+async def settle_local_api(page):
+    """Wait for response bodies, then flush the promise continuations using them."""
+    await page.wait_for_function("() => window.__wtRenderedApi?.inFlight === 0")
+    await page.evaluate("""async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+    }""")
+
+
+async def exercise(tmp_path, monkeypatch, browser, *, width=1440, faults=False, races=False,
                    interrupted=False, malformed_draft=False, new_project=False,
                    unavailable_suggestions=False, prepared_suggestions=False,
                    save_pending=False, direct_launch=None, wizard_mode="skipped", skip_failure=False,
                    skip_pending=False, skip_during=None, skip_with_escape=False):
     web = pytest.importorskip("aiohttp.web")
-    browser_api = pytest.importorskip("playwright.async_api")
     monkeypatch.setattr(config, "discovery_enabled", lambda: False)
     monkeypatch.setattr(config, "onboarding_wizard_enabled", lambda: True)
     monkeypatch.setattr(config, "llm_wizard_enabled", lambda: True)
@@ -183,14 +245,15 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
     await site.start()
     url = "http://127.0.0.1:" + str(site._server.sockets[0].getsockname()[1])
     try:
-        async with browser_api.async_playwright() as engine:
-            browser = await engine.chromium.launch(headless=True, executable_path=os.environ.get("WORKSHOP_BROWSER_EXECUTABLE"))
+        async with await browser.new_context(
+                viewport={"width": width, "height": 900}, reduced_motion="reduce") as context:
             try:
-                context = await browser.new_context(viewport={"width": width, "height": 900}, reduced_motion="reduce")
                 page = await context.new_page()
                 page.set_default_timeout(10000)
                 errors = []
                 page.on("pageerror", lambda error: errors.append(str(error)))
+                await page.add_init_script(_API_TRACKER)
+                await page.clock.install()
                 await page.goto(url)
                 dialog = page.get_by_role("dialog", name="What would you like to build?")
                 if direct_launch:
@@ -211,6 +274,9 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
                                     dialog = page.get_by_role("dialog", name="Your goal is saved")
                                     await dialog.get_by_role("button", name=label, exact=False).click()
                                     await (launch_entered if skip_during.startswith("launch") else delivery_entered).wait()
+                                    if skip_during == "delivery_retry":
+                                        # Consume the first 503 so its 800ms retry is scheduled before Skip.
+                                        await settle_local_api(page)
                         assert await dialog.get_by_role("button", name="Skip onboarding", exact=True).is_enabled()
                         if skip_with_escape:
                             await page.keyboard.press("Escape")
@@ -226,10 +292,16 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
                         if skip_during in {"launch", "delivery_retry"}:
                             await page.get_by_role("button", name=f"Close {label}", exact=True).wait_for()
                             await page.get_by_role("button", name="Home", exact=True).click()
+                        if skip_pending or skip_during:
+                            # A released response must be consumed before checking its late effects.
+                            await settle_local_api(page)
                         if skip_during:
-                            # Let the delayed response / 800ms prompt retry settle.
-                            # Dismissal must survive either, with no starter sent.
-                            await page.wait_for_timeout(1000)
+                            if skip_during == "delivery_retry":
+                                # Run the virtual 800ms retry after dismissal; it must not send a starter.
+                                attempts = sum(path.endswith("/type") for path, _, _ in requests)
+                                await page.clock.fast_forward(1000)
+                                await settle_local_api(page)
+                                assert sum(path.endswith("/type") for path, _, _ in requests) == attempts
                             assert not deliveries
                             assert await page.get_by_role("dialog").count() == 0
                             if skip_during in {"launch_failure", "launch_conflict"}:
@@ -250,7 +322,7 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
                     assert not deliveries
                     assert sum(path == "/api/wizard/suggest" for path, _, _ in requests) == int(skip_during == "suggestion")
                     assert not errors, errors
-                    await context.close()
+                    # The context manager closes this case's fresh context.
                     return
                 await dialog.wait_for()
                 if faults:
@@ -272,7 +344,8 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
                     await suggestion_entered.wait()
                     await goal.fill("Help staff plan their rota")
                     suggestion_release.set()
-                    await page.wait_for_timeout(100)
+                    # The obsolete response has finished; its continuation must not publish cards.
+                    await settle_local_api(page)
                     assert await dialog.get_by_role("button", name="Pack bakery orders", exact=False).count() == 0
                     assert await goal.input_value() == "Help staff plan their rota"
                     # Explicit action can request new candidates after the obsolete result.
@@ -377,7 +450,7 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
                     assert len(interrupted_ids) == 3 and len(set(interrupted_ids)) == 1
                     assert wizard.read_brief(user).to_json() == saved.to_json()
                     assert not errors, errors
-                    await context.close()
+                    # The context manager closes this case's fresh context.
                     return
                 await saved_dialog.get_by_role("button", name="Claude Code", exact=False).click()
                 await saved_dialog.wait_for(state="hidden")
@@ -399,78 +472,93 @@ async def exercise(tmp_path, monkeypatch, *, width=1440, faults=False, races=Fal
                 await preferences.get_by_role("button", name="Done", exact=True).click()
                 assert await page.get_by_role("button", name="Agent preferences", exact=True).evaluate("e => e === document.activeElement")
                 assert not errors, errors
-                await context.close()
             finally:
-                await browser.close()
+                # Release delayed handlers before the context and API fixture close.
+                suggestion_release.set()
+                save_release.set()
+                launch_release.set()
+                load_release.set()
     finally:
-        suggestion_release.set()
-        save_release.set()
-        launch_release.set()
-        load_release.set()
         await runner.cleanup()
 
 
 @pytest.mark.parametrize("width", [390, 768, 1440])
-def test_rendered_goal_selection_reload_keyboard_launch_and_preferences(tmp_path, monkeypatch, width):
-    asyncio.run(exercise(tmp_path, monkeypatch, width=width))
+async def test_rendered_goal_selection_reload_keyboard_launch_and_preferences(
+        tmp_path, monkeypatch, width, rendered_browser):
+    await exercise(tmp_path, monkeypatch, rendered_browser, width=width)
 
 
-def test_rendered_load_save_conflict_launch_and_delivery_recovery(tmp_path, monkeypatch):
-    asyncio.run(exercise(tmp_path, monkeypatch, faults=True))
+async def test_rendered_load_save_conflict_launch_and_delivery_recovery(
+        tmp_path, monkeypatch, rendered_browser):
+    await exercise(tmp_path, monkeypatch, rendered_browser, faults=True)
 
 
-def test_rendered_partial_delivery_requires_opening_agent_without_retyping(tmp_path, monkeypatch):
-    asyncio.run(exercise(tmp_path, monkeypatch, interrupted=True))
+async def test_rendered_partial_delivery_requires_opening_agent_without_retyping(
+        tmp_path, monkeypatch, rendered_browser):
+    await exercise(tmp_path, monkeypatch, rendered_browser, interrupted=True)
 
 
-def test_rendered_malformed_draft_preserves_words_and_recovers_selection(tmp_path, monkeypatch):
-    asyncio.run(exercise(tmp_path, monkeypatch, malformed_draft=True))
+async def test_rendered_malformed_draft_preserves_words_and_recovers_selection(
+        tmp_path, monkeypatch, rendered_browser):
+    await exercise(tmp_path, monkeypatch, rendered_browser, malformed_draft=True)
 
 
-def test_rendered_new_project_draft_survives_reload_with_a_new_identity(tmp_path, monkeypatch):
-    asyncio.run(exercise(tmp_path, monkeypatch, new_project=True))
+async def test_rendered_new_project_draft_survives_reload_with_a_new_identity(
+        tmp_path, monkeypatch, rendered_browser):
+    await exercise(tmp_path, monkeypatch, rendered_browser, new_project=True)
 
 
-def test_rendered_obsolete_suggestion_cannot_replace_new_words(tmp_path, monkeypatch):
-    asyncio.run(exercise(tmp_path, monkeypatch, races=True))
+async def test_rendered_obsolete_suggestion_cannot_replace_new_words(
+        tmp_path, monkeypatch, rendered_browser):
+    await exercise(tmp_path, monkeypatch, rendered_browser, races=True)
 
 
 @pytest.mark.parametrize("width", [390, 1440])
-def test_rendered_rejected_suggestions_preserve_and_deliver_original_goal(tmp_path, monkeypatch, width):
-    asyncio.run(exercise(tmp_path, monkeypatch, width=width, unavailable_suggestions=True))
+async def test_rendered_rejected_suggestions_preserve_and_deliver_original_goal(
+        tmp_path, monkeypatch, width, rendered_browser):
+    await exercise(tmp_path, monkeypatch, rendered_browser, width=width, unavailable_suggestions=True)
 
 
-def test_rendered_prepared_card_discloses_demo_source_and_date_checks(tmp_path, monkeypatch):
-    asyncio.run(exercise(tmp_path, monkeypatch, width=390, prepared_suggestions=True))
+async def test_rendered_prepared_card_discloses_demo_source_and_date_checks(
+        tmp_path, monkeypatch, rendered_browser):
+    await exercise(tmp_path, monkeypatch, rendered_browser, width=390, prepared_suggestions=True)
 
 
-def test_rendered_pending_save_preserves_the_displayed_and_delivered_task(tmp_path, monkeypatch):
-    asyncio.run(exercise(tmp_path, monkeypatch, save_pending=True))
+async def test_rendered_pending_save_preserves_the_displayed_and_delivered_task(
+        tmp_path, monkeypatch, rendered_browser):
+    await exercise(tmp_path, monkeypatch, rendered_browser, save_pending=True)
 
 
 @pytest.mark.parametrize("wizard_mode", ["skipped", "disabled"])
 @pytest.mark.parametrize("agent_id", ["claude", "codex", "omnigent"])
-def test_rendered_direct_harness_launch_without_onboarding(tmp_path, monkeypatch, wizard_mode, agent_id):
-    asyncio.run(exercise(tmp_path, monkeypatch, direct_launch=agent_id, wizard_mode=wizard_mode))
+async def test_rendered_direct_harness_launch_without_onboarding(
+        tmp_path, monkeypatch, wizard_mode, agent_id, rendered_browser):
+    await exercise(tmp_path, monkeypatch, rendered_browser,
+                   direct_launch=agent_id, wizard_mode=wizard_mode)
 
 
 @pytest.mark.parametrize("agent_id", ["claude", "codex", "omnigent"])
-def test_rendered_wizard_service_failure_cannot_block_skip_or_harness_launch(tmp_path, monkeypatch, agent_id):
-    asyncio.run(exercise(tmp_path, monkeypatch, direct_launch=agent_id, skip_failure=True))
+async def test_rendered_wizard_service_failure_cannot_block_skip_or_harness_launch(
+        tmp_path, monkeypatch, agent_id, rendered_browser):
+    await exercise(tmp_path, monkeypatch, rendered_browser, direct_launch=agent_id, skip_failure=True)
 
 
-def test_rendered_pending_skip_write_cannot_block_direct_launch_or_reload(tmp_path, monkeypatch):
-    asyncio.run(exercise(tmp_path, monkeypatch, direct_launch="claude", skip_pending=True))
+async def test_rendered_pending_skip_write_cannot_block_direct_launch_or_reload(
+        tmp_path, monkeypatch, rendered_browser):
+    await exercise(tmp_path, monkeypatch, rendered_browser, direct_launch="claude", skip_pending=True)
 
 
 @pytest.mark.parametrize("skip_during", ["save", "launch"])
 @pytest.mark.parametrize("skip_with_escape", [False, True])
 @pytest.mark.parametrize("agent_id", ["claude", "codex", "omnigent"])
-def test_rendered_skip_remains_available_during_save_or_launch(tmp_path, monkeypatch, skip_during, skip_with_escape, agent_id):
-    asyncio.run(exercise(tmp_path, monkeypatch, direct_launch=agent_id,
-                        skip_during=skip_during, skip_with_escape=skip_with_escape))
+async def test_rendered_skip_remains_available_during_save_or_launch(
+        tmp_path, monkeypatch, skip_during, skip_with_escape, agent_id, rendered_browser):
+    await exercise(tmp_path, monkeypatch, rendered_browser, direct_launch=agent_id,
+                   skip_during=skip_during, skip_with_escape=skip_with_escape)
 
 
 @pytest.mark.parametrize("skip_during", ["load", "suggestion", "delivery_retry", "launch_failure", "launch_conflict"])
-def test_rendered_skip_cancels_late_onboarding_results_and_prompt_retry(tmp_path, monkeypatch, skip_during):
-    asyncio.run(exercise(tmp_path, monkeypatch, direct_launch="claude", skip_during=skip_during))
+async def test_rendered_skip_cancels_late_onboarding_results_and_prompt_retry(
+        tmp_path, monkeypatch, skip_during, rendered_browser):
+    await exercise(tmp_path, monkeypatch, rendered_browser,
+                   direct_launch="claude", skip_during=skip_during)

@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main, "codex/**"]
+    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -37,6 +37,7 @@ jobs:
     needs: public-sources
     name: pytest
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       matrix:
         python-version: ["3.11"]
@@ -56,8 +57,18 @@ jobs:
           git diff --exit-code -- pyproject.toml uv.lock requirements.txt requirements-dev.txt
       - name: Install dependencies
         run: uv sync --frozen --no-group release
-      - name: Run tests
-        run: uv run --frozen --no-group release python -m pytest tests/ -q
+      - name: Run non-host-process tests in parallel
+        run: uv run --frozen --no-group release python -m pytest tests/ -q -m "not host_process" -n 2 --dist loadfile --timeout=120 --durations=50 --durations-min=0.05 --junitxml=test-results/parallel.xml
+      - name: Run host-process tests serially
+        run: uv run --frozen --no-group release python -m pytest tests/ -q -m host_process --timeout=300 --durations=50 --durations-min=0.05 --junitxml=test-results/host-process.xml
+      - name: Publish backend test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-results-${{ github.sha }}
+          path: test-results/*.xml
+          if-no-files-found: warn
+          retention-days: 14
 
   quality-toolchain:
     needs: public-sources
@@ -183,7 +194,15 @@ jobs:
           cmp dist/release-manifest.json dist-repro/release-manifest.json
       - name: Smoke in clean Linux without a network
         run: scripts/smoke_release_container.sh dist
+      - name: Cache the prepared browser stage
+        uses: actions/cache@v4
+        with:
+          path: dist/browser-stage
+          key: wt-browser-smoke-${{ runner.os }}-${{ hashFiles('assets/artifacts/manifest.json', 'scripts/smoke_browser.py', 'server/bootstrap/browser_runtime.py', 'server/bootstrap/install.py') }}
       - name: Install the prepared browser and screenshot a page in clean Linux
+        timeout-minutes: 6
+        env:
+          WT_BROWSER_SMOKE_STAGE: ${{ github.workspace }}/dist/browser-stage
         run: scripts/smoke_browser_container.sh dist dist/browser-smoke
       - name: Publish the browser screenshots
         if: always()
@@ -225,4 +244,4 @@ jobs:
         env:
           WORKSHOP_E2E_BROWSER_TESTS: "1"
           WORKSHOP_BROWSER_EXECUTABLE: "/usr/bin/google-chrome"
-        run: .venv/bin/python -m pytest tests/test_wizard_rendered.py tests/test_projects_rendered.py tests/test_workshop_lifecycle_rendered.py -q
+        run: .venv/bin/python -m pytest tests/test_wizard_rendered.py tests/test_projects_rendered.py tests/test_workshop_lifecycle_rendered.py tests/test_generated_app_browser_rendered.py -q

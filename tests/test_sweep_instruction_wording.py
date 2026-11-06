@@ -18,15 +18,41 @@ HOME_CHANNELS = ("claude", "codex")
 ALL_CHANNELS = ("claude", "codex", "project")
 
 
-@pytest.fixture()
-def rendered(client, monkeypatch):
-    """The three channels for a fresh attendee, lower-cased and whitespace-normalised."""
-    monkeypatch.setenv("WORKSHOP_INSIGHT_CAPTURE", "true")
-    monkeypatch.setenv("DISCOVERY_ENABLED", "true")
-    person = {"X-Forwarded-Email": f"wording-{uuid.uuid4().hex[:8]}@example.com"}
-    _ready(monkeypatch)
-    _open(client, person, "claude", has_starter_prompt=True)
-    return {name: " ".join(text.split()).lower() for name, text in _channels(_home(person)).items()}
+@pytest.fixture(scope="module")
+def rendered():
+    """Provision one fresh attendee; every assertion reads the same immutable text."""
+    from types import SimpleNamespace
+
+    from fastapi.testclient import TestClient
+
+    from server import build_restore
+    from server.sessions import session_manager
+
+    monkeypatch = pytest.MonkeyPatch()
+    try:
+        # The usual function-scoped autouse fixture is not active during module
+        # setup, so suppress restore work before entering the app lifespan.
+        monkeypatch.setattr(
+            build_restore,
+            "restorer",
+            SimpleNamespace(observe=lambda *args, **kwargs: None),
+        )
+        monkeypatch.setenv("WORKSHOP_INSIGHT_CAPTURE", "true")
+        monkeypatch.setenv("DISCOVERY_ENABLED", "true")
+        person = {"X-Forwarded-Email": f"wording-{uuid.uuid4().hex[:8]}@example.com"}
+        _ready(monkeypatch)
+        from server.main import app
+
+        with TestClient(app) as client:
+            _open(client, person, "claude", has_starter_prompt=True)
+            return {
+                name: " ".join(text.split()).lower()
+                for name, text in _channels(_home(person)).items()
+            }
+    finally:
+        for session in session_manager.snapshot():
+            session_manager.terminate(session)
+        monkeypatch.undo()
 
 
 def _has(rendered, channels, *phrases):

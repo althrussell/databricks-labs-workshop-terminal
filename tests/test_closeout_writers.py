@@ -11,6 +11,8 @@ from types import SimpleNamespace
 
 import pytest
 
+pytestmark = pytest.mark.host_process
+
 
 def _closing(journal):
     from server.closeout_guard import control_transaction, initial_state
