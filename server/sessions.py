@@ -140,6 +140,8 @@ class Session:
         self.agent_id = agent_id
         self.label = label
         self.project_name = ""
+        # Where the agent runs; attachments are named relative to it.
+        self.cwd = ""
         self.master_fd = master_fd
         self.pid = pid
         self.scrollback = ByteScrollback()
@@ -547,6 +549,7 @@ class SessionManager:
             session._capture_ticket = capture_ticket
             session._process = process
             session.project_name = project_name
+            session.cwd = cwd
             self._sessions[session.id] = session
             self._writers[session.id] = session
 

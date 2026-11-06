@@ -748,6 +748,35 @@ body {
   margin-left: 2px;
 }
 
+/* Attach, Copy and Paste sit in a compact bar; the page-level button padding
+   spaced them out until they read as loose words rather than controls. */
+.active-agent .btn {
+  padding: 6px 10px;
+}
+
+.active-agent .btn-ghost:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+/* "Attach image" doubles as a drop zone: the dashed edge says files can land
+   here, and it lights up while one is dragged over the page. `.btn.` outranks
+   `.btn-ghost`, which would otherwise hide the border. */
+.btn.image-drop {
+  border: 1px dashed var(--border);
+  transition: border-color 0.15s, background-color 0.15s, color 0.15s;
+}
+
+.btn.image-drop:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--brand-primary) 55%, var(--border));
+  color: var(--text);
+}
+
+.btn.image-drop-active {
+  border-color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 14%, transparent);
+  color: var(--text);
+}
+
 /* F-046: what was attached, and the next step, after "Attach image". */
 .attach-confirm {
   display: inline-flex;

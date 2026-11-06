@@ -1281,8 +1281,6 @@ def attach_project_image(
             pass
     project_dir = projects.project_path(user, target_name)
     project_dir.mkdir(parents=True, exist_ok=True)
-    attachments_dir = project_dir / ".workshop" / "attachments"
-    attachments_dir.mkdir(parents=True, exist_ok=True)
 
     raw_b64 = body.data_base64.strip()
     if "," in raw_b64 and raw_b64.lower().startswith("data:"):
@@ -1294,15 +1292,13 @@ def attach_project_image(
     if not decoded or len(decoded) > 10 * 1024 * 1024:
         raise HTTPException(status_code=422, detail="Image must be under 10 MB")
 
-    safe_stem = re.sub(r"[^A-Za-z0-9_.-]+", "-", os.path.basename(body.filename or "screenshot.png")).strip("-.") or "screenshot.png"
-    if not any(safe_stem.lower().endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".webp", ".gif")):
-        safe_stem += ".png"
-    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-    dest = attachments_dir / f"{stamp}-{safe_stem}"
-    dest.write_bytes(decoded)
+    dest = projects.save_attachment(project_dir, body.filename, decoded)
+    session = _active_session_for(user)
     return {
         "path": str(dest),
         "relative_path": str(dest.relative_to(project_dir)),
+        # What the terminal types: short when the agent runs in this build.
+        "prompt_path": projects.prompt_path(dest, session.cwd if session is not None else None),
         "bytes": len(decoded),
         "project": target_name,
     }
