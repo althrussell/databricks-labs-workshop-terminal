@@ -158,6 +158,7 @@ RETURN_OPENER = "Hi! I'm back at the workshop. Let's pick up where we left off."
 #: ``codex [PROMPT]``. Omnigent's ``-p`` flag is intentionally omitted: passing
 #: ``-p`` skips ``workshop-omnigent``'s resume/continue probe and causes the
 #: 0.19.1 REPL to stop its session after the greeting turn (EQL, 27 Oct 2026).
+#: The one-shot path that stops it is unchanged in 0.21.0.
 _FIRST_MESSAGE_FLAGS = {"claude": (), "codex": ()}
 
 

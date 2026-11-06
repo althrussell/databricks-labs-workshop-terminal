@@ -17,9 +17,9 @@ env:
   - name: OMNIGENT_AUTH_PROVIDER
     value: header
   - name: OMNIGENT_BUILD_VERSION
-    value: "0.19.1"
+    value: "0.21.0"
   - name: OMNIGENT_BUILD_SHA
-    value: "fbad2c7aaa990e2ff173383ca8dd42d983be7858"
+    value: "2f636330cc6e28bfe1d22f741eda6db34a192d39"
   # Auto · smart routing. Two backends: the AI Gateway routes:select router when
   # the account has it, and the built-in judge otherwise. Labs has no routing
   # API, so the external client latches off after one call and the judge serves

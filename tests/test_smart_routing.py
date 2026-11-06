@@ -45,7 +45,7 @@ def _client(host: str = "https://x.cloud.databricks.com", token: str = "tok"):
 
 
 # --- Fake Omnigent surface -------------------------------------------------
-# Mirrors the 0.19.1 signatures (identical to 0.15.0's) this module binds to. If upstream changes one,
+# Mirrors the 0.21.0 signatures (identical to 0.15.0's and 0.19.1's) this module binds to. If upstream changes one,
 # these fakes go stale silently — which is why the live App build is also
 # exercised against the real wheel before release.
 
@@ -136,7 +136,7 @@ def _fake_harness_bars_model(harness, model, **_kwargs):
 
 
 def test_smart_routing_enabled_by_default():
-    # 0.19.1 (like 0.15.0) falls back to the built-in judge when the account has no routing
+    # 0.21.0 (like 0.15.0 and 0.19.1) falls back to the built-in judge when the account has no routing
     # API, so Auto no longer depends on a flag we cannot turn on.
     assert smart_routing.smart_routing_enabled({}) is True
 
