@@ -9,6 +9,7 @@ import {
   latestReply,
   replyToastTitle,
   senderLabel,
+  showsBetaNote,
   voteView,
 } from "./helpChat.ts";
 
@@ -107,4 +108,15 @@ test("an id that names an object property is not mistaken for a vote", () => {
   const idle = { pending: false, readOnly: false };
   assert.deepEqual(voteView({}, "constructor", idle), { chosen: null, disabled: false });
   assert.deepEqual(voteView({}, "__proto__", idle), { chosen: null, disabled: false });
+});
+
+test("the beta note waits for an assistant answer, then stays", () => {
+  // The terminal is not told whether this run has the assistant on. A run
+  // without it must not promise an AI answer; a run with it explains the
+  // beta even after a person has taken over.
+  assert.equal(showsBetaNote([]), false);
+  assert.equal(showsBetaNote([question]), false);
+  assert.equal(showsBetaNote([question, person]), false);
+  assert.equal(showsBetaNote([question, answer]), true);
+  assert.equal(showsBetaNote([question, answer, person]), true);
 });

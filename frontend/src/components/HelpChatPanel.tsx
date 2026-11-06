@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { MessageSquare, Send, ThumbsDown, ThumbsUp, UserRound, X } from "lucide-react";
 import { api, HelpMessage, HelpVote } from "../api";
 import { onAppEvent } from "../events";
-import { bubbleFor, handoffView, latestReply, senderLabel, voteView, type VoteView } from "../helpChat";
+import { bubbleFor, handoffView, latestReply, senderLabel, showsBetaNote, voteView, type VoteView } from "../helpChat";
 
 export default function HelpChatPanel({
   open,
@@ -157,9 +157,11 @@ export default function HelpChatPanel({
           <X size={16} />
         </button>
       </div>
-      <p className="help-chat-beta-note">
-        Workshop Assistant (beta) may suggest a first answer — click <strong>Talk to a person</strong> anytime for the workshop team.
-      </p>
+      {showsBetaNote(messages) ? (
+        <p className="help-chat-beta-note">
+          Workshop Assistant (beta) may suggest a first answer — click <strong>Talk to a person</strong> anytime for the workshop team.
+        </p>
+      ) : null}
       <div className="help-chat-messages">
         {messages.length === 0 ? (
           <p className="help-chat-empty">

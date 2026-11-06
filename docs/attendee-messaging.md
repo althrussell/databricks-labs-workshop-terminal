@@ -93,7 +93,10 @@ reply does. Three things set them apart:
 
 - **Labelled as AI.** Each answer has its own bubble, signed "Workshop
   Assistant (beta)" with an **AI** badge; the toast carries the badge too.
-  Operator replies look exactly as they always have.
+  Operator replies look exactly as they always have. Once an assistant answer
+  is in the thread, a one-line note above it explains the beta and points to
+  **Talk to a person**. The terminal is not told whether a run has Bot Mode on,
+  so the note waits for that first answer rather than promising one.
 - **Rated once.** A thumbs up ("Helpful") and a thumbs down ("Not helpful") sit
   under each answer. One vote per answer: after it, both buttons lock and the
   chosen one stays highlighted. The vote reaches Control Tower with the rest of

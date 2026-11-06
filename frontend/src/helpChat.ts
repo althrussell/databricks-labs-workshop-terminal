@@ -50,6 +50,16 @@ export function latestReply(messages: HelpMessage[]): HelpMessage | undefined {
   return undefined;
 }
 
+/** Whether to explain the assistant's beta status above the thread.
+ *
+ * The terminal is not told whether this run has the assistant on, so the
+ * note waits for proof: it appears once an assistant answer is in the thread
+ * and stays, rather than promising an AI answer in a run with none.
+ */
+export function showsBetaNote(messages: Pick<HelpMessage, "sender_role">[]): boolean {
+  return messages.some((m) => m.sender_role === "assistant");
+}
+
 export type HandoffView = "offer" | "requested" | "hidden";
 
 /** Whether the conversation offers "Talk to a person", or says one is coming.

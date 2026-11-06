@@ -194,8 +194,9 @@ def snapshot() -> dict[str, Any]:
 
 
 def presence_fields() -> dict[str, Any]:
+    """The help thread as presence reports it. Read-only: the publishing route
+    runs ``flush_help_persistence`` first, so journey's reads never pay for it."""
     _ensure_ready()
-    flush_help_persistence()
     with _lock:
         state = _read_locked()
         return {"help_raised": state["raised"], "help_note": state["note"] or None,

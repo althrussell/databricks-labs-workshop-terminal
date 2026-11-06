@@ -660,3 +660,26 @@ def test_clear_hand_drops_request_id_so_request_person_mints_new(client, as_admi
     [entry] = client.get("/api/admin/presence").json()["help_outbox"]
     assert entry["kind"] == "handoff"
     assert entry["help_request_id"] is None
+
+
+def test_presence_retains_pending_help_before_publishing_but_journey_does_not(client, as_admin, monkeypatch):
+    """The outbox leaves this process through /presence, so that route flushes first.
+    journey reads help_raised on every status computation and must not pay for a flush."""
+    from server import journey
+
+    monkeypatch.setattr(help_module, "_push_control_tower_message", lambda *a, **k: False)
+    monkeypatch.setattr(help_module, "_push_control_tower", lambda *a, **k: False)
+    live = CaptureJournal(MemoryCaptureStorage(), BINDING, {}, write_behind=True, flush_interval=3600)
+    help_module.configure_capture(live)
+
+    live.transaction(lambda state: state["help"].update(raised=True, note="pending-only"))
+    pending = live.health()["pending_operations"]
+    assert pending > 0
+
+    assert journey._help_raised() is True
+    assert live.health()["pending_operations"] == pending
+
+    presence = client.get("/api/admin/presence").json()
+    assert presence["help_raised"] is True and presence["help_note"] == "pending-only"
+    assert live.health()["pending_operations"] == 0
+    live.close()

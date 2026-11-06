@@ -967,6 +967,10 @@ def _journey(user) -> dict | None:
 def presence():
     from . import network_check
 
+    # Presence publishes the help outbox to Control Tower: retain accepted help
+    # changes first so nothing offered outside this process can be lost to a
+    # crash. Once here, not inside presence_fields(), which journey also reads.
+    help_module.flush_help_persistence()
     now = time.time()
     users = []
     for user in user_manager.all():
