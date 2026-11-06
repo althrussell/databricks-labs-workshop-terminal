@@ -97,7 +97,11 @@ def main() -> None:
                        f"check-{framework}", "--agentbricks", "--", "--framework", framework]
             project = Path(run(command).strip())
             manifest = tomllib.loads((project / "agent.toml").read_text())
-            assert manifest["agent"] == {"framework": framework, "server": "agentbricks"}
+            agent = manifest["agent"]
+            assert (agent.get("framework"), agent.get("server")) == (framework, "agentbricks"), agent
+            # 0.8.0 records the deploy name the skill relies on: apps are
+            # agent-bricks-<name>, so it must fit in 17 of the 30 characters.
+            assert agent.get("deployment_name") == project.name, f"deployment_name {agent.get('deployment_name')!r}"
             assert not (project / project.name).exists(), "Scaffold was nested"
             doctor = run([str(bin_dir / "agentbricks"), "--output", "json", "doctor", "."], cwd=project)
             report = json.loads(doctor)
@@ -125,6 +129,12 @@ def main() -> None:
             rows.append({"framework": framework, "scaffold": "pass", "doctor": report,
                          "memory_committed": True, "no_nested_project": True,
                          "rerun_preserved_commit": True, "migration_preserved_source": True})
+        # A long attendee name: init must shorten the recorded deploy name to fit.
+        long_name = "customer-churn-agent"
+        run([str(bin_dir / "agentbricks"), "init", long_name, "--framework", "langgraph",
+             "--disable-chat-app"], cwd=root)
+        shortened = tomllib.loads((root / long_name / "agent.toml").read_text())["agent"].get("deployment_name", "")
+        assert 0 < len(shortened) <= 17, f"init recorded deployment_name {shortened!r} for {long_name!r}"
         if args.bootstrap:
             from server.bootstrap.agentbricks import prewarm_status
 
@@ -133,7 +143,8 @@ def main() -> None:
             assert not prewarm_status()["agentbricks"]["reusable"]
         print(json.dumps({"cli": install.AGENTBRICKS_VERSION, "uv": install.UV_VERSION,
                           "platform": platform.system(), "bootstrap_proof": bootstrap_proof,
-                          "checks": rows, "offline_network_guard": True,
+                          "checks": rows, "long_name_deployment": {long_name: shortened},
+                          "offline_network_guard": True,
                           "workspace_requests": 0, "deployment_mutations": 0}, indent=2))
 
 

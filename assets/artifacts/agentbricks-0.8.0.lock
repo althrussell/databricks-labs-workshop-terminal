@@ -1,4 +1,4 @@
-# Agent Bricks CLI 0.6.0; Linux x86_64, CPython 3.12.
+# Agent Bricks CLI 0.8.0; Linux x86_64, CPython 3.12.
 # Runtime resolves these reviewed hashes from public PyPI.
 # Source requirements: agentbricks.in; laptop resolves through its configured proxy.
 annotated-doc==0.0.5 \
@@ -356,9 +356,9 @@ cryptography==50.0.2 \
     --hash=sha256:f9f6143a8c75945eb960d9eb98905a441394abfa24afaae239d514ffb2586480 \
     --hash=sha256:fa8f5efb344d6908a1ce62f4a24e2e5780f825d6f53f5f50ec5ffacac72936cb \
     --hash=sha256:fdd28f912fccfec1846a94e2e1e8f9b0012f557f0c46fe4f3eb0d7a87afcf90b
-databricks-agentbricks==0.6.0 \
-    --hash=sha256:37600b48891d0c7f12d29b1f151b510b94934fed4623634f79ffaee1b0cd2190 \
-    --hash=sha256:a91813ef5bd68d6b604199a37861e43090fbd86c0cbfa07842533f698774f28e
+databricks-agentbricks==0.8.0 \
+    --hash=sha256:dfcac330afb727a814eace7b56a0cffaa34267c9124f123c3ae8682f787474a5 \
+    --hash=sha256:f2d1d7617ac9143125e1be45f5f37dceba0d2cda8933a099737ecbbe45844891
 databricks-ai-bridge==0.22.0 \
     --hash=sha256:01459ffb543ce9f33dff2da7a5539aae1f9a0f054f81218a2a1c9384ea921f91 \
     --hash=sha256:68bf3ccfad144eab772f50ccf2e4035f4227589bf515d650fab13ac028225aa0
