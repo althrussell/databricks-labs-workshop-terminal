@@ -104,8 +104,10 @@ reply does. Three things set them apart:
 - **A person on request.** While the assistant has the last word, a **Talk to
   a person** button sits under the conversation. Pressing it raises the
   attendee's hand and replaces the button with "A member of the workshop team
-  has been asked to help." The button returns if the assistant answers again,
-  if the hand is lowered/resolved, and goes once a person replies.
+  has been asked to help." The confirmation is the server's to keep, so it
+  survives a reload and shows in every open tab. The button returns if the
+  assistant answers again, if the hand is lowered/resolved, and goes once a
+  person replies.
 
 Implemented in `frontend/src/components/HelpChatPanel.tsx`, with the rules in
 `frontend/src/helpChat.ts`. The wire contract is `assistant_v1` in

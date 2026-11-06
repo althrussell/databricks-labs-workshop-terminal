@@ -283,3 +283,58 @@ def test_flush_barrier_is_bounded_and_fails_open(monkeypatch):
     assert help_module.flush_help_persistence(timeout=1.0) is True
     assert live.health()["pending_operations"] == 0
     live.close()
+
+
+def test_callers_share_one_flush_while_storage_is_slow():
+    """Presence polls and help actions during a brownout must not each start a
+    thread that only queues behind the stalled flush."""
+    import threading
+
+    from server import help as help_module
+
+    help_module.reset_for_tests()
+    storage = CountingStorage()
+    live = journal(storage, flush_interval=3600)
+    help_module.configure_capture(live)
+    live.transaction(lambda state: state["help"].update(note="slow"))
+    storage.delay = 0.3
+
+    def flushers() -> int:
+        return sum(1 for t in threading.enumerate() if t.name == "help-capture-flush")
+
+    before = flushers()
+    results = []
+    callers = [threading.Thread(target=lambda: results.append(help_module.flush_help_persistence(timeout=0.02)))
+               for _ in range(6)]
+    for caller in callers:
+        caller.start()
+    for caller in callers:
+        caller.join()
+
+    assert results == [False] * 6
+    assert flushers() - before == 1
+    # The one flush lands, and a later caller joins it rather than starting another.
+    assert help_module.flush_help_persistence(timeout=2.0) is True
+    assert live.health()["pending_operations"] == 0
+    assert flushers() == before
+    live.close()
+
+
+def test_barrier_yields_to_the_flusher_while_it_backs_off_from_a_failing_store():
+    from server import help as help_module
+
+    help_module.reset_for_tests()
+    storage = CountingStorage()
+    live = journal(storage, flush_interval=3600)
+    help_module.configure_capture(live)
+    live.transaction(lambda state: state["help"].update(note="pending"))
+
+    live._flush_error = "workspace storage unavailable"  # as _flush_loop records a failure
+    storage.calls = 0
+    assert help_module.flush_help_persistence(timeout=1.0) is False
+    assert storage.calls == 0
+
+    live._flush_error = None
+    assert help_module.flush_help_persistence(timeout=1.0) is True
+    assert live.health()["pending_operations"] == 0
+    live.close()

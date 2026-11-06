@@ -37,6 +37,9 @@ export default function HelpChatPanel({
       setMessages(thread.messages ?? []);
       // Merged: votes are final, and a snapshot older than a vote just cast must not hide it.
       setFeedback((prev) => ({ ...prev, ...(thread.feedback ?? {}) }));
+      // The server keeps the standing request for a person, so a reload or a
+      // second tab shows the confirmation rather than offering the button again.
+      if (thread.handoff !== undefined) setHandoffAfter(thread.handoff?.after_message_id ?? null);
       onRaisedChange(thread.raised);
     } catch {
       /* fail-soft */
@@ -70,6 +73,9 @@ export default function HelpChatPanel({
       }
       if (event.t === "help_feedback") {
         setFeedback((prev) => ({ ...prev, [event.message_id]: event.value }));
+      }
+      if (event.t === "help_handoff") {
+        setHandoffAfter(event.after_message_id);
       }
       if (event.t === "help_state") {
         onRaisedChange(event.raised);
@@ -131,7 +137,7 @@ export default function HelpChatPanel({
     setHandoffBusy(true);
     try {
       const result = await api.requestPerson();
-      setHandoffAfter(reply.message_id);
+      setHandoffAfter(result.after_message_id ?? reply.message_id);
       onRaisedChange(result.raised);
     } catch {
       setActionError("Could not reach the workshop team. Please try again.");
@@ -159,7 +165,7 @@ export default function HelpChatPanel({
       </div>
       {showsBetaNote(messages) ? (
         <p className="help-chat-beta-note">
-          Workshop Assistant (beta) may suggest a first answer — click <strong>Talk to a person</strong> anytime for the workshop team.
+          Workshop Assistant (beta) may answer first. If its answer doesn't help, choose <strong>Talk to a person</strong> to reach the workshop team.
         </p>
       ) : null}
       <div className="help-chat-messages">

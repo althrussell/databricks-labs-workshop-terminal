@@ -363,6 +363,26 @@ test("assistant answers and their votes reach listeners; a malformed vote does n
   connection.stop();
 });
 
+test("a request for a person reaches every tab; one without an id does not", async () => {
+  const events = await import("./events.ts");
+  const socket = new FakeSocket();
+  const published: AppEvent[] = [];
+  const connection = events.createAppEventConnection({
+    socketFactory: () => socket,
+    schedule: () => 0,
+    publish: (event) => published.push(event),
+  });
+  connection.start();
+  const afterAnswer = { t: "help_handoff", handoff_id: "h-1", after_message_id: "a1" };
+  const beforeAnyReply = { t: "help_handoff", handoff_id: "h-2", after_message_id: null };
+  socket.onmessage?.({ data: JSON.stringify(afterAnswer) });
+  socket.onmessage?.({ data: JSON.stringify(beforeAnyReply) });
+  socket.onmessage?.({ data: JSON.stringify({ t: "help_handoff", after_message_id: "a1" }) });
+  socket.onmessage?.({ data: JSON.stringify({ t: "help_handoff", handoff_id: "h-3" }) });
+  assert.deepEqual(published, [afterAnswer, beforeAnyReply]);
+  connection.stop();
+});
+
 test("a ping is only sent, and reported sent, once the socket is open", async () => {
   // 28 Oct E2E: a network check right after a reload pinged a socket that was
   // still connecting; the ping went nowhere and the seat was reported slow.

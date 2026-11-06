@@ -967,9 +967,13 @@ def _journey(user) -> dict | None:
 def presence():
     from . import network_check
 
-    # Presence publishes the help outbox to Control Tower: retain accepted help
-    # changes first so nothing offered outside this process can be lost to a
-    # crash. Once here, not inside presence_fields(), which journey also reads.
+    # Presence publishes the help outbox to Control Tower, so give accepted help
+    # changes a bounded chance to be retained first. Best effort: when the store
+    # is slow the outbox goes out anyway. A waiting attendee outranks a gap in
+    # the retained history, and Control Tower files messages by id and
+    # re-collects what it could not acknowledge, so a seq that falls behind
+    # after a crash neither loses nor duplicates a message there. Once here,
+    # not inside presence_fields(), which journey also reads.
     help_module.flush_help_persistence()
     now = time.time()
     users = []

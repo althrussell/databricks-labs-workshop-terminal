@@ -685,29 +685,60 @@ def test_presence_retains_pending_help_before_publishing_but_journey_does_not(cl
     live.close()
 
 
-def test_seen_reuse_scoped_by_id_and_source(client, as_admin):
-    """WT-4: replace_thread_from_ct reuses previous seen_at only when (id, source) match."""
-    client.post(
-        "/api/admin/help/message",
-        json={**ASSISTANT, "message_id": "m-shared", "help_request_id": "hr-1"},
-    )
-    client.post("/api/help/ack", json={"message_id": "m-shared"}, headers=HDRS)
-    initial = help_module.thread_snapshot()["messages"]
-    assert len(initial) == 1 and initial[0].get("seen_at")
+def test_the_thread_keeps_the_request_for_a_person_until_the_hand_goes_down(client, as_admin, monkeypatch):
+    """A reload or a second tab must show the confirmation, not offer the button again."""
+    assert client.get("/api/help/thread", headers=HDRS).json()["handoff"] is None
+    client.post("/api/admin/help/message", json=ASSISTANT)
+    published = _published(monkeypatch)
 
-    # Same message_id and same source (help_request_id="hr-1") preserves seen_at.
-    help_module.replace_thread_from_ct(
-        [{"message_id": "m-shared", "help_request_id": "hr-1", "sender_role": "assistant", "body": "Hi"}],
-        help_request_id="hr-1",
-    )
-    same_source = help_module.thread_snapshot()["messages"]
-    assert same_source[0].get("seen_at") == initial[0]["seen_at"]
+    pressed = client.post("/api/help/handoff", headers=HDRS).json()
 
-    # Same message_id under a different source / request must not inherit seen_at.
-    help_module.replace_thread_from_ct(
-        [{"message_id": "m-shared", "help_request_id": "hr-2", "sender_role": "assistant", "body": "Hi"}],
-        help_request_id="hr-2",
-    )
-    different_source = help_module.thread_snapshot()["messages"]
-    assert different_source[0].get("seen_at") is None
+    assert pressed["after_message_id"] == "asst-1"
+    standing = client.get("/api/help/thread", headers=HDRS).json()["handoff"]
+    assert set(standing) == {"handoff_id", "help_request_id", "after_message_id", "created_at"}
+    assert (standing["handoff_id"], standing["help_request_id"], standing["after_message_id"]) == (
+        pressed["handoff_id"], "hr-1", "asst-1")
+    assert UTC_STAMP.fullmatch(standing["created_at"])
+    assert {"t": "help_handoff", "handoff_id": pressed["handoff_id"],
+            "after_message_id": "asst-1"} in published
+
+    # The confirmation belongs to the raised hand: resolving clears it, as does lowering.
+    client.post("/api/admin/help/clear")
+    assert client.get("/api/help/thread", headers=HDRS).json()["handoff"] is None
+    client.post("/api/help/handoff", headers=HDRS)
+    client.post("/api/help/lower", headers=HDRS)
+    assert client.get("/api/help/thread", headers=HDRS).json()["handoff"] is None
+
+
+def test_a_press_before_any_reply_records_no_reply(client):
+    pressed = client.post("/api/help/handoff", headers=HDRS).json()
+
+    assert pressed["after_message_id"] is None
+    assert client.get("/api/help/thread", headers=HDRS).json()["handoff"]["after_message_id"] is None
+
+
+def test_a_repeat_press_after_a_newer_answer_moves_the_marker_but_enqueues_nothing(client, as_admin):
+    client.post("/api/admin/help/message", json=ASSISTANT)
+    first = client.post("/api/help/handoff", headers=HDRS).json()
+    assert first["after_message_id"] == "asst-1"
+
+    client.post("/api/admin/help/message", json={**ASSISTANT, "message_id": "asst-2"})
+    again = client.post("/api/help/handoff", headers=HDRS).json()
+
+    assert again["handoff_id"] == first["handoff_id"] and again["after_message_id"] == "asst-2"
+    assert client.get("/api/help/thread", headers=HDRS).json()["handoff"]["after_message_id"] == "asst-2"
+    assert [e["kind"] for e in help_module.outbox_snapshot()] == ["handoff"]
+
+
+def test_help_retained_by_an_older_release_loads_without_a_handoff():
+    journal = CaptureJournal(MemoryCaptureStorage(), BINDING, {})
+    legacy = {"raised": True, "note": "", "raised_at": 1.0, "messages": [],
+              "help_request_id": "hr-1", "outbox": [], "seq": 0, "acked_through": 0,
+              "history": {}, "history_floor": 0}
+    journal.transaction(lambda state: state.update(help=legacy))
+
+    help_module.configure_capture(journal)
+
+    assert "handoff" not in journal.read()["help"]
+    assert help_module.thread_snapshot()["handoff"] is None
 

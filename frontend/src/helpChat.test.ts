@@ -62,6 +62,14 @@ test("the latest reply skips what the attendee wrote since", () => {
   assert.equal(latestReply([]), undefined);
 });
 
+test("a role nobody recognises draws as the attendee's and is not a reply either", () => {
+  // Otherwise it would look like the attendee's own words yet hide "Talk to a person".
+  const stranger = message("x1", "someone-new");
+  assert.equal(latestReply([question, answer, stranger]), answer);
+  assert.equal(latestReply([question, stranger]), undefined);
+  assert.equal(handoffView([question, answer, stranger], { readOnly: false, requestedAfter: null }), "offer");
+});
+
 test("a person is offered only while the assistant has the last word", () => {
   const open = { readOnly: false, requestedAfter: null };
   assert.equal(handoffView([], open), "hidden");

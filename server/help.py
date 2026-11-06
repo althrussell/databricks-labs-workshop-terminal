@@ -30,38 +30,78 @@ _require_ready = None
 _push_rejection = {"logged": False}
 
 
-def flush_help_persistence(timeout: float = _FLUSH_TIMEOUT_SECONDS) -> bool:
-    """Bounded, fail-open durability barrier for write-behind help capture."""
-    journal = _capture_journal
-    if journal is None or not getattr(journal, "write_behind", False):
-        return True
-    try:
-        if not journal.health().get("pending_operations", 0):
-            return True
-    except Exception:  # noqa: BLE001
-        pass
-    if timeout <= 0:
-        return False
-    done = threading.Event()
-    errors: list[BaseException] = []
+class _FlushBarrier:
+    """One flush of the journal, shared by every caller waiting while it runs."""
 
-    def _run() -> None:
+    def __init__(self, journal) -> None:
+        self.done = threading.Event()
+        self.error: BaseException | None = None
+        self._timeout_reported = False
+        threading.Thread(target=self._run, args=(journal,), name="help-capture-flush",
+                         daemon=True).start()
+
+    def _run(self, journal) -> None:
         try:
             journal.flush()
         except BaseException as exc:  # noqa: BLE001
-            errors.append(exc)
+            self.error = exc
         finally:
-            done.set()
+            self.done.set()
 
-    worker = threading.Thread(target=_run, name="help-capture-flush", daemon=True)
-    worker.start()
-    if not done.wait(timeout=timeout):
+    def report_timeout(self, timeout: float) -> None:
+        if self._timeout_reported:
+            return
+        self._timeout_reported = True
         _log.warning("help.capture_flush_timeout timeout_s=%.3f", timeout)
-        return False
-    if errors:
-        _log.warning("help.capture_flush_degraded: %s", errors[0])
-        return False
-    return True
+
+
+_barrier_guard = threading.Lock()
+_barrier: _FlushBarrier | None = None
+
+
+def _join_or_start_barrier(journal) -> _FlushBarrier:
+    global _barrier
+    with _barrier_guard:
+        if _barrier is None or _barrier.done.is_set():
+            _barrier = _FlushBarrier(journal)
+        return _barrier
+
+
+def flush_help_persistence(timeout: float = _FLUSH_TIMEOUT_SECONDS) -> bool:
+    """Bounded, fail-open durability barrier for write-behind help capture.
+
+    ``CaptureJournal.flush`` serialises on one lock and a Workspace write can
+    block for tens of seconds, so callers share a single in-flight flush
+    rather than each starting a thread that would only queue behind it. While
+    the journal's own flusher is backing off from a failing store
+    (``flush_error``) the barrier does not retry at all: that would defeat
+    the backoff, and the flusher clears the error once a write lands again.
+    """
+    journal = _capture_journal
+    if journal is None or not getattr(journal, "write_behind", False):
+        return True
+    deadline = time.monotonic() + max(timeout, 0.0)
+    while True:
+        try:
+            health = journal.health()
+        except Exception:  # noqa: BLE001
+            health = {}
+        if not health.get("pending_operations", 0):
+            return True
+        if health.get("flush_error"):
+            return False
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        barrier = _join_or_start_barrier(journal)
+        if not barrier.done.wait(timeout=remaining):
+            barrier.report_timeout(timeout)
+            return False
+        if barrier.error is not None:
+            _log.warning("help.capture_flush_degraded: %s", barrier.error)
+            return False
+        # The flush drained what was pending when it looked; anything accepted
+        # since needs another pass, within what is left of the timeout.
 
 
 class HelpMessageNotFound(LookupError):
@@ -246,10 +286,12 @@ def thread_snapshot() -> dict[str, Any]:
     _ensure_ready()
     with _lock:
         state = _read_locked()
+        handoff = state.get("handoff")
         return {"raised": state["raised"], "note": state["note"] or None,
                 "help_request_id": state["help_request_id"],
                 "messages": copy.deepcopy(state["messages"]),
-                "feedback": copy.deepcopy(state.get("feedback", {}))}
+                "feedback": copy.deepcopy(state.get("feedback", {})),
+                "handoff": copy.deepcopy(handoff) if isinstance(handoff, dict) else None}
 
 
 def _append_local(state: dict[str, Any], message: dict[str, Any]) -> None:
@@ -282,6 +324,8 @@ def raise_hand(note: str | None = None) -> dict[str, Any]:
 def _lower_state(state):
     had_open = state["raised"]
     state.update(raised=False, note="", raised_at=0.0, help_request_id=None)
+    # The confirmation that a person is coming belongs to the raised hand.
+    state.pop("handoff", None)
     return had_open
 
 
@@ -305,12 +349,14 @@ def clear_hand() -> None:
 
 
 def reset_for_tests() -> None:
-    global _state, _capture_journal, _require_ready
+    global _state, _capture_journal, _require_ready, _barrier
     with _lock:
         _capture_journal = None
         _require_ready = None
         _state = _empty_state()
         _push_rejection["logged"] = False
+    with _barrier_guard:
+        _barrier = None
 
 
 def post_attendee_message(body: str, *, sender: str = "") -> dict[str, Any]:
@@ -376,31 +422,13 @@ def ingest_operator_message(payload: dict[str, Any]) -> dict[str, Any]:
     return local
 
 
-def _seen_scope_key(msg: dict[str, Any], default_request_id: str | None = None) -> tuple[str, str]:
-    mid = str(msg.get("message_id") or msg.get("id") or "")
-    source = str(
-        msg.get("source")
-        or msg.get("help_request_id")
-        or default_request_id
-        or msg.get("sender_role")
-        or ""
-    )
-    return (mid, source)
-
-
 def acknowledge_message(message_id: str) -> bool:
     mid = (message_id or "").strip()
     if not mid:
         return False
     _ensure_ready()
-    seen_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     with _lock:
-        def apply(state):
-            for msg in state["messages"]:
-                if (msg.get("message_id") == mid or msg.get("id") == mid) and not msg.get("seen_at"):
-                    msg["seen_at"] = seen_at
-            _enqueue(state, "seen", message_id=mid)
-        _mutate_locked(apply)
+        _mutate_locked(lambda state: _enqueue(state, "seen", message_id=mid))
     flush_help_persistence()
     base = config.control_tower_url()
     run_id = config.workshop_run_id()
@@ -439,8 +467,21 @@ def record_feedback(message_id: str, value: str) -> dict[str, Any]:
     return result
 
 
+def _latest_reply_id(messages: list[dict[str, Any]]) -> str | None:
+    """The newest message the attendee did not write, as the panel reckons it."""
+    for message in reversed(messages):
+        if message.get("sender_role") in ("operator", "assistant"):
+            return str(message.get("message_id") or "") or None
+    return None
+
+
 def request_person() -> dict[str, Any]:
-    """The attendee asked for a member of the workshop team, not the assistant."""
+    """The attendee asked for a member of the workshop team, not the assistant.
+
+    Besides the outbox entry for Control Tower, the state keeps which reply the
+    attendee asked after, so every tab of the panel, and a reload, shows the
+    confirmation instead of offering the button again.
+    """
     _ensure_ready()
     now = time.time()
     created_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -460,37 +501,31 @@ def request_person() -> dict[str, Any]:
                 ),
                 None,
             )
-            if pending is not None:
-                return pending["handoff_id"]
-            _enqueue(state, "handoff", handoff_id=handoff_id,
-                     help_request_id=state["help_request_id"], created_at=created_at)
-            return handoff_id
+            current = pending["handoff_id"] if pending is not None else handoff_id
+            if pending is None:
+                _enqueue(state, "handoff", handoff_id=handoff_id,
+                         help_request_id=state["help_request_id"], created_at=created_at)
+            state["handoff"] = {"handoff_id": current,
+                                "help_request_id": state["help_request_id"],
+                                "after_message_id": _latest_reply_id(state["messages"]),
+                                "created_at": created_at}
+            return copy.deepcopy(state["handoff"])
         handoff = _mutate_locked(apply)
     flush_help_persistence()
     event_hub.publish({"t": "help_state", "raised": True})
-    return {"raised": True, "handoff_id": handoff}
+    event_hub.publish({"t": "help_handoff", "handoff_id": handoff["handoff_id"],
+                       "after_message_id": handoff["after_message_id"]})
+    return {"raised": True, "handoff_id": handoff["handoff_id"],
+            "after_message_id": handoff["after_message_id"]}
 
 
 def replace_thread_from_ct(messages: list[dict[str, Any]], *, help_request_id: str | None) -> None:
     _ensure_ready()
     with _lock:
         def apply(state):
-            previous_request_id = state.get("help_request_id")
-            previous_seen = {
-                _seen_scope_key(m, previous_request_id): m["seen_at"]
-                for m in state["messages"]
-                if isinstance(m, dict) and m.get("seen_at")
-            }
-            next_messages = copy.deepcopy(messages[-_MAX_MESSAGES:])
-            for msg in next_messages:
-                if isinstance(msg, dict) and not msg.get("seen_at"):
-                    key = _seen_scope_key(msg, help_request_id)
-                    if key[0] and key in previous_seen:
-                        msg["seen_at"] = previous_seen[key]
             state["help_request_id"] = help_request_id
-            state["messages"] = next_messages
+            state["messages"] = copy.deepcopy(messages[-_MAX_MESSAGES:])
         _mutate_locked(apply)
-    flush_help_persistence()
 
 
 def _push_control_tower(

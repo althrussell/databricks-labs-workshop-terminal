@@ -42,10 +42,11 @@ export function replyToastTitle(role: string | undefined, sender: string | undef
   return sender ? `${sender} replied` : "Operator replied";
 }
 
-/** The newest message the attendee did not write. */
+/** The newest answer in the thread. A role nobody recognises draws as the
+ * attendee's own words, so it is not an answer here either. */
 export function latestReply(messages: HelpMessage[]): HelpMessage | undefined {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (messages[i].sender_role !== "attendee") return messages[i];
+    if (isReplyRole(messages[i].sender_role)) return messages[i];
   }
   return undefined;
 }

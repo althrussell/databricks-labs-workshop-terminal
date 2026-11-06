@@ -382,6 +382,15 @@ export interface HelpMessage {
 /** An attendee's rating of a Workshop Assistant answer. */
 export type HelpVote = "up" | "down";
 
+/** The attendee's standing request for a person, kept while the hand is raised. */
+export interface HelpHandoff {
+  handoff_id: string;
+  help_request_id?: string | null;
+  /** The reply the attendee asked a person about; null when there was none yet. */
+  after_message_id: string | null;
+  created_at: string;
+}
+
 export interface HelpThread {
   raised: boolean;
   note?: string | null;
@@ -389,6 +398,8 @@ export interface HelpThread {
   messages: HelpMessage[];
   /** Votes already cast, by assistant message id. Absent from older servers. */
   feedback?: Record<string, HelpVote>;
+  /** The request for a person still standing, if any. Absent from older servers. */
+  handoff?: HelpHandoff | null;
 }
 
 export interface PresenceUser {
@@ -651,8 +662,8 @@ export const api = {
     ),
   /** Ask for a member of the workshop team instead of the assistant. Raises the hand. */
   requestPerson: () =>
-    request<{ raised: boolean; handoff_id: string }>("/api/help/handoff", {
-      method: "POST",
-      body: "{}",
-    }),
+    request<{ raised: boolean; handoff_id: string; after_message_id?: string | null }>(
+      "/api/help/handoff",
+      { method: "POST", body: "{}" },
+    ),
 };

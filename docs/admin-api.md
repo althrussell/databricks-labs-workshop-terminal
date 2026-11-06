@@ -320,11 +320,16 @@ they act on the attendee's own seat and reach Control Tower through the outbox:
   not the assistant's.
 - `POST /api/help/handoff` (empty body) asks for a person instead. It raises the
   hand if it is down, without a note, enqueues a `handoff` and returns
-  `{"raised": true, "handoff_id": "uuid"}`. While that handoff is still waiting
-  to be collected, asking again returns it rather than enqueuing another.
+  `{"raised": true, "handoff_id": "uuid", "after_message_id": <id | null>}`,
+  where `after_message_id` is the reply the attendee asked after. While that
+  handoff is still waiting to be collected, asking again returns it rather than
+  enqueuing another.
 
 `GET /api/help/thread` also carries `feedback`: the votes cast so far, as
-`{message_id: "up" | "down"}`.
+`{message_id: "up" | "down"}`; and `handoff`: the request for a person still
+standing, as `{handoff_id, help_request_id, after_message_id, created_at}`, or
+`null`. It is kept while the hand is raised and cleared when the hand goes
+down, so a reload or another tab shows the confirmation instead of the button.
 
 ### `GET /api/admin/presence`
 Per-attendee status: online (active in the last 60 s), first/last seen,
