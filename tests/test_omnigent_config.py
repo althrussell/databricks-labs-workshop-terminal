@@ -380,6 +380,22 @@ def test_runner_idle_timeout_written(user, monkeypatch):
     assert "idle_timeout_s: 0" in text
 
 
+def test_native_pane_idle_timeout_defaults_to_two_hours(monkeypatch):
+    """Omnigent 0.21 pane reaping falls back to runner.idle_timeout_s (0 = never),
+    so WT bounds idle Claude/Codex panes on its own."""
+    from server import config
+
+    monkeypatch.delenv("OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_S", raising=False)
+    assert config.omnigent_native_pane_idle_timeout() == 7200
+    monkeypatch.setenv("OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_S", "0")
+    assert config.omnigent_native_pane_idle_timeout() == 0
+    monkeypatch.setenv("OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_S", "1800")
+    assert config.omnigent_native_pane_idle_timeout() == 1800
+    for bad in ("-5", "two hours"):
+        monkeypatch.setenv("OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_S", bad)
+        assert config.omnigent_native_pane_idle_timeout() == 7200
+
+
 def test_configure_restart_preserves_upstream_host_identity_and_unrelated_keys(
     user, monkeypatch
 ):

@@ -452,6 +452,28 @@ def test_host_identity_overrides_are_not_in_attendee_pty(monkeypatch, tmp_path):
     assert "OMNIGENT_HOST_TOKEN" not in env
 
 
+def test_remote_host_bounds_idle_native_panes(monkeypatch, tmp_path):
+    """The runner idle watchdog stays off (0), but from Omnigent 0.21 the pane
+    reaper would inherit that 0 and never close an idle pane. The host gets an
+    explicit pane window; upstream forwards OMNIGENT_* knobs host->runner itself,
+    so it is not (and need not be) in the WT passthrough list."""
+    from server.omnigent_remote import RUNNER_ENV_PASSTHROUGH, build_host_launch
+    from server.users import User
+
+    monkeypatch.delenv("OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_S", raising=False)
+    user = User("alice@example.com")
+    monkeypatch.setattr(user, "home", str(tmp_path / "alice"))
+    user.bootstrap_home()
+
+    _, env, _ = build_host_launch(user, "/opt/bin/omnigent", REMOTE_URL)
+    assert env["OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_S"] == "7200"
+    assert "OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_S" not in env[RUNNER_ENV_PASSTHROUGH].split(",")
+
+    monkeypatch.setenv("OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_S", "3600")
+    _, env, _ = build_host_launch(user, "/opt/bin/omnigent", REMOTE_URL)
+    assert env["OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_S"] == "3600"
+
+
 def test_remote_launch_cannot_see_populated_attendee_default(monkeypatch, tmp_path):
     from server.omnigent_remote import build_host_launch
     from server.users import User

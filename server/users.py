@@ -490,6 +490,11 @@ class User:
             # The omnigent install is shared across attendees — never
             # self-update (mirrors DISABLE_AUTOUPDATER for claude).
             "OMNIGENT_NO_UPDATE_CHECK": "1",
+            # Bound idle native Claude/Codex panes (Omnigent 0.21+). The host
+            # forwards this to its runners; see config.omnigent_native_pane_idle_timeout.
+            "OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_S": str(
+                config.omnigent_native_pane_idle_timeout()
+            ),
             # Impeccable 4.6+ reports anonymous usage unless told not to. An
             # attendee session never does: the engine honours both switches.
             "DO_NOT_TRACK": "1",

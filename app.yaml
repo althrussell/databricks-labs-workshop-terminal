@@ -377,6 +377,13 @@ env:
   # reap the runner (default; the container lifecycle bounds it instead).
   - name: OMNIGENT_RUNNER_IDLE_TIMEOUT_S
     value: "0"
+  # Seconds an idle native Claude/Codex pane lives before Omnigent closes it.
+  # From Omnigent 0.21 the pane reaper otherwise follows the runner setting
+  # above (0 = never), so every pane a seat opened would keep its CLI and MCP
+  # servers in memory until the container stops. 7200 outlasts lunch; a closed
+  # pane comes back with its context on the next message. 0 = never close.
+  - name: OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_S
+    value: "7200"
   # Seconds a running Omnigent host may sit on a stale attendee sign-in before
   # WT stands it down (killing its runner and any in-flight work). The sign-in
   # only renews while the attendee's tab is awake, so this must comfortably

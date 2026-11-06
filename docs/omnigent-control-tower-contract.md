@@ -24,15 +24,27 @@ The following are source-confirmed for 0.21.0:
 - Upstream's Databricks wrapper still constructs the same stores and
   `create_app(...)` kwargs. 0.21.0 adds nine optional kwargs (none required)
   and still takes an optional `feature_flags` argument; when omitted,
-  `create_app` reads `OMNIGENT_FEATURES`. We leave that unset so attendees do
-  not get a cost page or web-driven harness installer (`usage_page` and
-  `harness_install` still default off). 0.21.0 adds two flags that default
-  on: `codex_plan_at_launch` (only refuses a Plan-mode Codex start on a host
-  too old for it) and `session_orchestration` (an agent may message its
-  owner's other private sessions and start independent workers; owner-only and
-  bound-runner-gated). Both are left at upstream defaults;
-  `OMNIGENT_FEATURES=-session_orchestration` in the App's `app.yaml` turns the
-  second off. We track the release wrapper deliberately, not main.
+  `create_app` reads `OMNIGENT_FEATURES`. The App's `app.yaml` sets it to
+  exactly `-session_orchestration`; every other flag keeps its upstream
+  default, so attendees still get no cost page or web-driven harness installer
+  (`usage_page` and `harness_install` default off). 0.21.0 adds two flags that
+  default on. `codex_plan_at_launch` stays on: it only refuses a Plan-mode
+  Codex start on a host too old for it. `session_orchestration` is off: it
+  would let an attendee's agent message their other private sessions and
+  start `same_host`/`managed` workers, which put more CLI processes on the
+  seat and more spend behind the attendee's back. Child sub-agents (the
+  default `sys_session_create` placement, as in 0.19.1) do not send the
+  orchestration header and are unaffected. Omnigent refuses to start on an
+  unknown flag name, so every upgrade must confirm `session_orchestration`
+  still exists (upstream reviews it in 0.22.0). We track the release wrapper
+  deliberately, not main.
+- From 0.21.0 the runner's native-pane reaper falls back to
+  `runner.idle_timeout_s`, which WT sets to 0 so the runner never
+  self-terminates. WT therefore exports
+  `OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_S=7200` (`app.yaml`, overridable per run)
+  in every attendee shell and the host env; upstream forwards it host→runner.
+  An idle pane closes after 2h with no turn, no autonomous CLI work and no
+  recent input, and resumes with `--resume` on the next message.
 - 0.21.0 adds five database migrations (head `d0a1f879a01d`). A 0.19.1 App
   refuses to boot against a database at an unknown revision, so rolling the
   App back means restoring the dedicated Lakebase from before the upgrade, not

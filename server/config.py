@@ -424,8 +424,35 @@ def omnigent_runner_idle_timeout() -> int:
     still there. ``0`` disables the watchdog entirely; the default here (0)
     keeps the runner alive for the life of the container, matching the "surviving
     the PTY is a feature" policy. Operators can set a finite value if runner
-    memory on long idle instances becomes a concern."""
+    memory on long idle instances becomes a concern.
+
+    From Omnigent 0.21.0 the native-pane reaper falls back to this same value,
+    so WT bounds panes separately (:func:`omnigent_native_pane_idle_timeout`)."""
     return _env_int("OMNIGENT_RUNNER_IDLE_TIMEOUT_S", 0)
+
+
+#: Two hours: outlasts a lunch break, and a closed pane resumes on the next message.
+OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_DEFAULT = 7200
+
+
+def omnigent_native_pane_idle_timeout() -> int:
+    """Seconds an idle native Claude/Codex pane lives before Omnigent closes it.
+
+    Exported to the Omnigent host and runner as
+    ``OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_S``. Omnigent 0.21.0's pane reaper
+    otherwise falls back to ``runner.idle_timeout_s``, which WT sets to 0 to
+    keep the runner alive, and that would keep every pane a seat ever opened
+    (its CLI plus its MCP servers) in the container's memory until the
+    container stops. A pane counts as idle only with no turn in flight, its
+    CLI not working on its own, and no recent keypress or web input. Closing
+    is pane-scoped: the transcript stays on the server, and the next message
+    re-creates the pane and the CLI resumes with ``--resume``. ``0`` never
+    closes panes; a negative or unparseable value keeps the default.
+    """
+    value = _env_int(
+        "OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_S", OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_DEFAULT
+    )
+    return value if value >= 0 else OMNIGENT_NATIVE_PANE_IDLE_TIMEOUT_DEFAULT
 
 
 def omnigent_host_stable_runtime() -> int:

@@ -117,6 +117,10 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
     assert (
         env["OMNIGENT_BUILD_SHA"]["value"] == "2f636330cc6e28bfe1d22f741eda6db34a192d39"
     )
+    # Exactly one release-flag override: 0.21.0's default-on session_orchestration
+    # is off. Anything more would also have to keep usage_page and
+    # harness_install off, and an unknown name stops the App from starting.
+    assert env["OMNIGENT_FEATURES"]["value"] == "-session_orchestration"
     # The App's env surface is an allowlist so that widening it is a deliberate,
     # reviewed act. Public registry selection and smart-routing knobs are
     # permitted; package transport credentials are never deployed.
@@ -151,6 +155,7 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
         "OMNIGENT_AUTH_PROVIDER",
         "OMNIGENT_BUILD_VERSION",
         "OMNIGENT_BUILD_SHA",
+        "OMNIGENT_FEATURES",
     }
     assert required <= set(env)
     unexpected = sorted(name for name in set(env) - required if name not in allowed)
