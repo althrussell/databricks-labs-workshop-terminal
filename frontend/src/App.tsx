@@ -1276,17 +1276,9 @@ export default function App() {
                         onFiles={(files) => void attachImageFiles(files)}
                       />
                       {attached && (
+                        // The thumbnail alone confirms the attach; it clears itself.
                         <span className="attach-confirm" role="status" aria-live="polite">
-                          <img src={attached.url} alt="" className="attach-thumb" />
-                          <span>Attached. Now tell the agent what to do with it.</span>
-                          <button
-                            type="button"
-                            className="icon-btn"
-                            aria-label="Dismiss"
-                            onClick={() => setAttached(null)}
-                          >
-                            <X size={12} aria-hidden="true" />
-                          </button>
+                          <img src={attached.url} alt="Image attached" title="Image attached" className="attach-thumb" />
                         </span>
                       )}
                     </>

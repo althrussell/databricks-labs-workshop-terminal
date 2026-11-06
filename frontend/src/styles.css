@@ -781,19 +781,14 @@ body {
 .attach-confirm {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  font-size: 12px;
 }
 
 .attach-thumb {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
 }
 
 /* What Copy or Paste just did, so a refused clipboard is never silent. Wraps,
