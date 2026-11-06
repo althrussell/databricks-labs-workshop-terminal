@@ -259,6 +259,30 @@ test("withdrawal names the record so the attendee revokes exactly one statement"
   assert.equal(result.redacted, true);
 });
 
+test("a vote names the answer it rates and carries nothing but the vote", async () => {
+  const { result, input, init } = await captureRequest(
+    () => apiModule.api.rateHelpMessage("answer/7", "down"),
+    { recorded: true, value: "down" }
+  );
+
+  assert.equal(input, "/api/help/messages/answer%2F7/feedback");
+  assert.equal(init?.method, "POST");
+  assert.deepEqual(JSON.parse(String(init?.body)), { value: "down" });
+  assert.deepEqual(result, { recorded: true, value: "down" });
+});
+
+test("asking for a person posts an empty body and returns the handoff", async () => {
+  const { result, input, init } = await captureRequest(
+    () => apiModule.api.requestPerson(),
+    { raised: true, handoff_id: "11111111-1111-4111-8111-111111111111" }
+  );
+
+  assert.equal(input, "/api/help/handoff");
+  assert.equal(init?.method, "POST");
+  assert.deepEqual(JSON.parse(String(init?.body)), {});
+  assert.equal(result.raised, true);
+});
+
 test("a failed withdrawal rejects rather than reporting success", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () =>

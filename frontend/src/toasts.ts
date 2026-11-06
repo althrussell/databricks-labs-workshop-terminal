@@ -7,6 +7,7 @@
  */
 
 import type { NotificationDurability } from "./events";
+import { isReplyRole } from "./helpChat";
 
 export type ToastLevel = "info" | "success" | "warning" | "error";
 
@@ -20,8 +21,10 @@ export interface Toast {
   ttlMs?: number;
   /** Set when Control Tower asked for a read receipt. */
   ackMessageId?: string;
-  /** Operator replies deep-link into the conversation. */
+  /** Operator and assistant replies deep-link into the conversation. */
   openHelp?: boolean;
+  /** Written by the Workshop Assistant, so it carries the AI badge here too. */
+  ai?: boolean;
 }
 
 /** How many *transient* toasts may stack before the oldest is dropped. */
@@ -79,14 +82,15 @@ export function helpMessageSurface({
   /** Control Tower may waive the receipt (e.g. the attendee's own echo). */
   requestAck?: boolean;
 }): { toast: boolean; acknowledge: boolean } {
-  // An attendee does not need to be notified of what they just typed.
-  if (senderRole !== "operator") return { toast: false, acknowledge: false };
+  // An attendee does not need to be notified of what they just typed. An
+  // assistant answer is a reply like an operator's, receipt included.
+  if (!isReplyRole(senderRole)) return { toast: false, acknowledge: false };
   const acknowledge = requestAck !== false;
   if (surface && surface !== "toast") return { toast: false, acknowledge };
   return { toast: !helpOpen, acknowledge };
 }
 
-/** Prefix marking a toast as an operator reply, which the conversation also holds. */
+/** Prefix marking a toast as a help reply, which the conversation also holds. */
 const HELP_PREFIX = "help:";
 
 /** Drop the replies the open conversation now displays, keeping their receipts.

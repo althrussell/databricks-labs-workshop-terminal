@@ -84,6 +84,37 @@ moment, and covering the screen would take away the one thing that does.
 
 ---
 
+## Answers from the Workshop Assistant
+
+When an event runs Bot Mode, Control Tower's Workshop Assistant, an AI, can
+answer a help message before a person does. Its answers arrive in the help
+panel, and as a toast while the panel is closed, the same way an operator's
+reply does. Three things set them apart:
+
+- **Labelled as AI.** Each answer has its own bubble, signed "Workshop
+  Assistant (beta)" with an **AI** badge; the toast carries the badge too.
+  Operator replies look exactly as they always have. Once an assistant answer
+  is in the thread, a one-line note above it explains the beta and points to
+  **Talk to a person**. The terminal is not told whether a run has Bot Mode on,
+  so the note waits for that first answer rather than promising one.
+- **Rated once.** A thumbs up ("Helpful") and a thumbs down ("Not helpful") sit
+  under each answer. One vote per answer: after it, both buttons lock and the
+  chosen one stays highlighted. The vote reaches Control Tower with the rest of
+  the attendee's help traffic.
+- **A person on request.** While the assistant has the last word, a **Talk to
+  a person** button sits under the conversation. Pressing it raises the
+  attendee's hand and replaces the button with "A member of the workshop team
+  has been asked to help." The confirmation is the server's to keep, so it
+  survives a reload and shows in every open tab. The button returns if the
+  assistant answers again, if the hand is lowered/resolved, and goes once a
+  person replies.
+
+Implemented in `frontend/src/components/HelpChatPanel.tsx`, with the rules in
+`frontend/src/helpChat.ts`. The wire contract is `assistant_v1` in
+[`admin-api.md`](./admin-api.md#post-apiadminhelpmessage).
+
+---
+
 ## What attendees should never be shown
 
 - A harness code as a message (`spec_resolver_failed` and friends).

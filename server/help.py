@@ -20,15 +20,98 @@ _log = logging.getLogger(__name__)
 _lock = threading.RLock()
 _MAX_MESSAGES = 200
 _OUTBOX_PAGE = 20
+_VOTES = ("up", "down")
+# Control Tower sends ``sender_role: "assistant"`` only to terminals listing
+# ``assistant_v1``; older ones get the answer as an operator's, signed as AI.
+HELP_CAPABILITIES = ("assistant_v1",)
+_FLUSH_TIMEOUT_SECONDS = 0.5
 _capture_journal = None
 _require_ready = None
 _push_rejection = {"logged": False}
 
 
+class _FlushBarrier:
+    """One flush of the journal, shared by every caller waiting while it runs."""
+
+    def __init__(self, journal) -> None:
+        self.done = threading.Event()
+        self.error: BaseException | None = None
+        self._timeout_reported = False
+        threading.Thread(target=self._run, args=(journal,), name="help-capture-flush",
+                         daemon=True).start()
+
+    def _run(self, journal) -> None:
+        try:
+            journal.flush()
+        except BaseException as exc:  # noqa: BLE001
+            self.error = exc
+        finally:
+            self.done.set()
+
+    def report_timeout(self, timeout: float) -> None:
+        if self._timeout_reported:
+            return
+        self._timeout_reported = True
+        _log.warning("help.capture_flush_timeout timeout_s=%.3f", timeout)
+
+
+_barrier_guard = threading.Lock()
+_barrier: _FlushBarrier | None = None
+
+
+def _join_or_start_barrier(journal) -> _FlushBarrier:
+    global _barrier
+    with _barrier_guard:
+        if _barrier is None or _barrier.done.is_set():
+            _barrier = _FlushBarrier(journal)
+        return _barrier
+
+
+def flush_help_persistence(timeout: float = _FLUSH_TIMEOUT_SECONDS) -> bool:
+    """Bounded, fail-open durability barrier for write-behind help capture.
+
+    ``CaptureJournal.flush`` serialises on one lock and a Workspace write can
+    block for tens of seconds, so callers share a single in-flight flush
+    rather than each starting a thread that would only queue behind it. While
+    the journal's own flusher is backing off from a failing store
+    (``flush_error``) the barrier does not retry at all: that would defeat
+    the backoff, and the flusher clears the error once a write lands again.
+    """
+    journal = _capture_journal
+    if journal is None or not getattr(journal, "write_behind", False):
+        return True
+    deadline = time.monotonic() + max(timeout, 0.0)
+    while True:
+        try:
+            health = journal.health()
+        except Exception:  # noqa: BLE001
+            health = {}
+        if not health.get("pending_operations", 0):
+            return True
+        if health.get("flush_error"):
+            return False
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        barrier = _join_or_start_barrier(journal)
+        if not barrier.done.wait(timeout=remaining):
+            barrier.report_timeout(timeout)
+            return False
+        if barrier.error is not None:
+            _log.warning("help.capture_flush_degraded: %s", barrier.error)
+            return False
+        # The flush drained what was pending when it looked; anything accepted
+        # since needs another pass, within what is left of the timeout.
+
+
+class HelpMessageNotFound(LookupError):
+    """No message with that id is in this attendee's help thread."""
+
+
 def _empty_state() -> dict[str, Any]:
     return {"raised": False, "note": "", "raised_at": 0.0, "messages": [],
             "help_request_id": None, "outbox": [], "seq": 0, "acked_through": 0,
-            "history": {}, "history_floor": 0}
+            "history": {}, "history_floor": 0, "feedback": {}}
 
 
 _state = _empty_state()
@@ -61,6 +144,14 @@ def _validate_state(state: Any) -> dict[str, Any]:
                        or entry["seq"] != int(seq) for seq, entry in history.items())
                 or any(history.get(str(entry["seq"])) != entry for entry in state["outbox"])):
             raise CaptureHeldError("retained help inventory is inconsistent")
+    # Releases before help assistant v1 retained no votes. Loading never adds
+    # the key: a closing capture refuses any write that is not an ACK.
+    if "feedback" in state:
+        feedback = state["feedback"]
+        if (not isinstance(feedback, dict)
+                or any(not isinstance(message_id, str) or not message_id or vote not in _VOTES
+                       for message_id, vote in feedback.items())):
+            raise CaptureHeldError("retained help feedback is invalid; capture requires recovery")
     return state
 
 
@@ -143,6 +234,8 @@ def snapshot() -> dict[str, Any]:
 
 
 def presence_fields() -> dict[str, Any]:
+    """The help thread as presence reports it. Read-only: the publishing route
+    runs ``flush_help_persistence`` first, so journey's reads never pay for it."""
     _ensure_ready()
     with _lock:
         state = _read_locked()
@@ -151,7 +244,8 @@ def presence_fields() -> dict[str, Any]:
                 "help_open": state["raised"],
                 "help_outbox": copy.deepcopy(state["outbox"][:_OUTBOX_PAGE]),
                 "help_pending": len(state["outbox"]),
-                "help_acked_through": state["acked_through"]}
+                "help_acked_through": state["acked_through"],
+                "help_capabilities": list(HELP_CAPABILITIES)}
 
 
 def _enqueue(state: dict[str, Any], kind: str, **fields: Any) -> None:
@@ -177,7 +271,9 @@ def ack_outbox(through_seq: int) -> dict[str, Any]:
             state["acked_through"] = max(state["acked_through"], through_seq)
             state["outbox"] = [e for e in state["outbox"] if e["seq"] > state["acked_through"]]
             return {"acked_through": state["acked_through"], "pending": len(state["outbox"])}
-        return _mutate_locked(apply)
+        result = _mutate_locked(apply)
+    flush_help_persistence()
+    return result
 
 
 def outbox_snapshot() -> list[dict[str, Any]]:
@@ -190,9 +286,12 @@ def thread_snapshot() -> dict[str, Any]:
     _ensure_ready()
     with _lock:
         state = _read_locked()
+        handoff = state.get("handoff")
         return {"raised": state["raised"], "note": state["note"] or None,
                 "help_request_id": state["help_request_id"],
-                "messages": copy.deepcopy(state["messages"])}
+                "messages": copy.deepcopy(state["messages"]),
+                "feedback": copy.deepcopy(state.get("feedback", {})),
+                "handoff": copy.deepcopy(handoff) if isinstance(handoff, dict) else None}
 
 
 def _append_local(state: dict[str, Any], message: dict[str, Any]) -> None:
@@ -216,6 +315,7 @@ def raise_hand(note: str | None = None) -> dict[str, Any]:
                 _append_local(state, local)
                 _enqueue(state, "message", **local)
         _mutate_locked(apply)
+    flush_help_persistence()
     pushed = _push_control_tower("raise", note_clean, message_id=note_id)
     event_hub.publish({"t": "help_state", "raised": True, "note": note_clean})
     return {"raised": True, "pushed": pushed, "note": note_clean}
@@ -223,7 +323,9 @@ def raise_hand(note: str | None = None) -> dict[str, Any]:
 
 def _lower_state(state):
     had_open = state["raised"]
-    state.update(raised=False, note="", raised_at=0.0)
+    state.update(raised=False, note="", raised_at=0.0, help_request_id=None)
+    # The confirmation that a person is coming belongs to the raised hand.
+    state.pop("handoff", None)
     return had_open
 
 
@@ -231,6 +333,7 @@ def lower_hand() -> dict[str, Any]:
     _ensure_ready()
     with _lock:
         had_open = _mutate_locked(_lower_state)
+    flush_help_persistence()
     pushed = _push_control_tower("lower", None) if had_open else False
     event_hub.publish({"t": "help_state", "raised": False})
     return {"raised": False, "pushed": pushed}
@@ -241,16 +344,19 @@ def clear_hand() -> None:
     _ensure_ready()
     with _lock:
         _mutate_locked(_lower_state)
+    flush_help_persistence()
     event_hub.publish({"t": "help_state", "raised": False})
 
 
 def reset_for_tests() -> None:
-    global _state, _capture_journal, _require_ready
+    global _state, _capture_journal, _require_ready, _barrier
     with _lock:
         _capture_journal = None
         _require_ready = None
         _state = _empty_state()
         _push_rejection["logged"] = False
+    with _barrier_guard:
+        _barrier = None
 
 
 def post_attendee_message(body: str, *, sender: str = "") -> dict[str, Any]:
@@ -272,6 +378,7 @@ def post_attendee_message(body: str, *, sender: str = "") -> dict[str, Any]:
             _enqueue(state, "message", **local)
             return local
         local = _mutate_locked(apply)
+    flush_help_persistence()
     pushed = _push_control_tower_message(text, message_id=local["message_id"])
     if not pushed and not _push_rejection["logged"]:
         _push_control_tower("raise", text[:280], message_id=local["message_id"])
@@ -281,6 +388,11 @@ def post_attendee_message(body: str, *, sender: str = "") -> dict[str, Any]:
 
 
 def ingest_operator_message(payload: dict[str, Any]) -> dict[str, Any]:
+    """Keep a reply from Control Tower: an operator's or the Workshop Assistant's.
+
+    ``sender_role`` is stored as sent. Replies are never enqueued; Control
+    Tower wrote them and already has them.
+    """
     body = (payload.get("body") or "").strip()
     if not body:
         raise ValueError("body required")
@@ -300,6 +412,8 @@ def ingest_operator_message(payload: dict[str, Any]) -> dict[str, Any]:
             _append_local(state, local)
             return True
         added = _mutate_locked(apply)
+    if added or local["help_request_id"]:
+        flush_help_persistence()
     if added:
         event_hub.publish({"t": "help_message", **local,
                            "surface": payload.get("surface") or "toast",
@@ -315,6 +429,7 @@ def acknowledge_message(message_id: str) -> bool:
     _ensure_ready()
     with _lock:
         _mutate_locked(lambda state: _enqueue(state, "seen", message_id=mid))
+    flush_help_persistence()
     base = config.control_tower_url()
     run_id = config.workshop_run_id()
     unit_id = config.workshop_unit_id()
@@ -322,6 +437,86 @@ def acknowledge_message(message_id: str) -> bool:
         return False
     return _ct_post(f"{base.rstrip('/')}/api/help/messages/{mid}/seen",
                     {"run_id": run_id, "unit_id": unit_id})
+
+
+def record_feedback(message_id: str, value: str) -> dict[str, Any]:
+    """The attendee's one vote on a Workshop Assistant answer."""
+    if value not in _VOTES:
+        raise ValueError("feedback must be 'up' or 'down'")
+    if not isinstance(message_id, str) or not message_id:
+        raise HelpMessageNotFound("help message not found")
+    _ensure_ready()
+    created_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    with _lock:
+        def apply(state):
+            message = next((m for m in state["messages"] if m.get("message_id") == message_id), None)
+            if message is None:
+                raise HelpMessageNotFound("help message not found")
+            if message.get("sender_role") != "assistant":
+                raise ValueError("only Workshop Assistant answers can be rated")
+            existing = state.get("feedback", {}).get(message_id)
+            if existing is not None:
+                return {"recorded": False, "value": existing}
+            state.setdefault("feedback", {})[message_id] = value
+            _enqueue(state, "feedback", message_id=message_id, value=value, created_at=created_at)
+            return {"recorded": True, "value": value}
+        result = _mutate_locked(apply)
+    if result["recorded"]:
+        flush_help_persistence()
+        event_hub.publish({"t": "help_feedback", "message_id": message_id, "value": value})
+    return result
+
+
+def _latest_reply_id(messages: list[dict[str, Any]]) -> str | None:
+    """The newest message the attendee did not write, as the panel reckons it."""
+    for message in reversed(messages):
+        if message.get("sender_role") in ("operator", "assistant"):
+            return str(message.get("message_id") or "") or None
+    return None
+
+
+def request_person() -> dict[str, Any]:
+    """The attendee asked for a member of the workshop team, not the assistant.
+
+    Besides the outbox entry for Control Tower, the state keeps which reply the
+    attendee asked after, so every tab of the panel, and a reload, shows the
+    confirmation instead of offering the button again.
+    """
+    _ensure_ready()
+    now = time.time()
+    created_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    handoff_id = str(uuid4())
+    with _lock:
+        def apply(state):
+            if not state["raised"]:
+                state.update(raised=True, note="", raised_at=now)
+            # However often it is pressed, Control Tower needs one handoff per
+            # collection; a press after the ACK is a new request.
+            pending = next(
+                (
+                    e
+                    for e in state["outbox"]
+                    if e.get("kind") == "handoff"
+                    and e.get("help_request_id") == state["help_request_id"]
+                ),
+                None,
+            )
+            current = pending["handoff_id"] if pending is not None else handoff_id
+            if pending is None:
+                _enqueue(state, "handoff", handoff_id=handoff_id,
+                         help_request_id=state["help_request_id"], created_at=created_at)
+            state["handoff"] = {"handoff_id": current,
+                                "help_request_id": state["help_request_id"],
+                                "after_message_id": _latest_reply_id(state["messages"]),
+                                "created_at": created_at}
+            return copy.deepcopy(state["handoff"])
+        handoff = _mutate_locked(apply)
+    flush_help_persistence()
+    event_hub.publish({"t": "help_state", "raised": True})
+    event_hub.publish({"t": "help_handoff", "handoff_id": handoff["handoff_id"],
+                       "after_message_id": handoff["after_message_id"]})
+    return {"raised": True, "handoff_id": handoff["handoff_id"],
+            "after_message_id": handoff["after_message_id"]}
 
 
 def replace_thread_from_ct(messages: list[dict[str, Any]], *, help_request_id: str | None) -> None:
@@ -433,4 +628,5 @@ def _ct_post(url: str, payload: dict[str, str]) -> bool:
         request_id = str(hid)
         with _lock:
             _mutate_locked(lambda state: state.update(help_request_id=request_id))
+        flush_help_persistence()
     return True

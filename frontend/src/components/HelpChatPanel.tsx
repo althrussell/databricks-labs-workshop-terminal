@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { MessageSquare, Send, X } from "lucide-react";
-import { api, HelpMessage } from "../api";
+import { MessageSquare, Send, ThumbsDown, ThumbsUp, UserRound, X } from "lucide-react";
+import { api, HelpMessage, HelpVote } from "../api";
 import { onAppEvent } from "../events";
+import { bubbleFor, handoffView, latestReply, senderLabel, showsBetaNote, voteView, type VoteView } from "../helpChat";
 
 export default function HelpChatPanel({
   open,
@@ -21,6 +22,11 @@ export default function HelpChatPanel({
   readOnly?: boolean;
 }) {
   const [messages, setMessages] = useState<HelpMessage[]>([]);
+  const [feedback, setFeedback] = useState<Record<string, HelpVote>>({});
+  const [voting, setVoting] = useState<ReadonlySet<string>>(new Set());
+  const [handoffAfter, setHandoffAfter] = useState<string | null>(null);
+  const [handoffBusy, setHandoffBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -29,6 +35,11 @@ export default function HelpChatPanel({
     try {
       const thread = await api.helpThread();
       setMessages(thread.messages ?? []);
+      // Merged: votes are final, and a snapshot older than a vote just cast must not hide it.
+      setFeedback((prev) => ({ ...prev, ...(thread.feedback ?? {}) }));
+      // The server keeps the standing request for a person, so a reload or a
+      // second tab shows the confirmation rather than offering the button again.
+      if (thread.handoff !== undefined) setHandoffAfter(thread.handoff?.after_message_id ?? null);
       onRaisedChange(thread.raised);
     } catch {
       /* fail-soft */
@@ -60,11 +71,23 @@ export default function HelpChatPanel({
           ];
         });
       }
+      if (event.t === "help_feedback") {
+        setFeedback((prev) => ({ ...prev, [event.message_id]: event.value }));
+      }
+      if (event.t === "help_handoff") {
+        setHandoffAfter(event.after_message_id);
+      }
       if (event.t === "help_state") {
         onRaisedChange(event.raised);
       }
     });
   }, [onRaisedChange]);
+
+  useEffect(() => {
+    if (!raised) {
+      setHandoffAfter(null);
+    }
+  }, [raised]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -89,7 +112,43 @@ export default function HelpChatPanel({
     }
   };
 
+  const rate = async (messageId: string, value: HelpVote) => {
+    if (voteView(feedback, messageId, { pending: voting.has(messageId), readOnly }).disabled) return;
+    setActionError(null);
+    setVoting((prev) => new Set(prev).add(messageId));
+    try {
+      const result = await api.rateHelpMessage(messageId, value);
+      setFeedback((prev) => ({ ...prev, [messageId]: result.value }));
+    } catch {
+      setActionError("Could not save your rating. Please try again.");
+    } finally {
+      setVoting((prev) => {
+        const next = new Set(prev);
+        next.delete(messageId);
+        return next;
+      });
+    }
+  };
+
+  const askForPerson = async () => {
+    const reply = latestReply(messages);
+    if (!reply || handoffBusy || readOnly) return;
+    setActionError(null);
+    setHandoffBusy(true);
+    try {
+      const result = await api.requestPerson();
+      setHandoffAfter(result.after_message_id ?? reply.message_id);
+      onRaisedChange(result.raised);
+    } catch {
+      setActionError("Could not reach the workshop team. Please try again.");
+    } finally {
+      setHandoffBusy(false);
+    }
+  };
+
   if (!open) return null;
+
+  const handoff = handoffView(messages, { readOnly, requestedAfter: handoffAfter, raised });
 
   return (
     <aside className="help-chat-panel" aria-label="Help chat with operators">
@@ -104,24 +163,64 @@ export default function HelpChatPanel({
           <X size={16} />
         </button>
       </div>
+      {showsBetaNote(messages) ? (
+        <p className="help-chat-beta-note">
+          Workshop Assistant (beta) may answer first. If its answer doesn't help, choose <strong>Talk to a person</strong> to reach the workshop team.
+        </p>
+      ) : null}
       <div className="help-chat-messages">
         {messages.length === 0 ? (
           <p className="help-chat-empty">
             Ask a question or raise your hand. Operators will reply here.
           </p>
         ) : (
-          messages.map((m) => (
-            <div
-              key={m.message_id}
-              className={`help-chat-bubble help-chat-${m.sender_role === "operator" ? "operator" : "attendee"}`}
-            >
-              <div className="help-chat-meta">
-                {m.sender_role === "operator" ? m.sender || "Operator" : "You"}
+          messages.map((m) => {
+            const bubble = bubbleFor(m.sender_role);
+            return (
+              <div key={m.message_id} className={`help-chat-bubble help-chat-${bubble}`}>
+                <div className="help-chat-meta">
+                  {senderLabel(m)}
+                  {bubble === "assistant" ? (
+                    <span className="ai-badge" title="Answered by AI">AI</span>
+                  ) : null}
+                </div>
+                <div className="help-chat-body">{m.body}</div>
+                {bubble === "assistant" ? (
+                  <AnswerRating
+                    vote={voteView(feedback, m.message_id, {
+                      pending: voting.has(m.message_id),
+                      readOnly,
+                    })}
+                    onRate={(value) => void rate(m.message_id, value)}
+                  />
+                ) : null}
               </div>
-              <div className="help-chat-body">{m.body}</div>
-            </div>
-          ))
+            );
+          })
         )}
+        {handoff === "offer" ? (
+          <div className="help-chat-handoff">
+            <button
+              type="button"
+              className="help-chat-handoff-btn"
+              disabled={handoffBusy}
+              onClick={() => void askForPerson()}
+            >
+              <UserRound size={14} aria-hidden="true" />
+              Talk to a person
+            </button>
+          </div>
+        ) : null}
+        {handoff === "requested" ? (
+          <p className="help-chat-handoff help-chat-handoff-sent" role="status">
+            A member of the workshop team has been asked to help.
+          </p>
+        ) : null}
+        {actionError ? (
+          <p className="help-chat-error" role="alert">
+            {actionError}
+          </p>
+        ) : null}
         <div ref={bottomRef} />
       </div>
       <div className="help-chat-composer">
@@ -147,5 +246,40 @@ export default function HelpChatPanel({
         </button>
       </div>
     </aside>
+  );
+}
+
+function AnswerRating({
+  vote,
+  onRate,
+}: {
+  vote: VoteView;
+  onRate: (value: HelpVote) => void;
+}) {
+  return (
+    <div className="help-chat-rating" role="group" aria-label="Rate this answer">
+      <button
+        type="button"
+        className="help-chat-rate"
+        aria-label="Helpful"
+        title="Helpful"
+        aria-pressed={vote.chosen === "up"}
+        disabled={vote.disabled}
+        onClick={() => onRate("up")}
+      >
+        <ThumbsUp size={13} aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className="help-chat-rate"
+        aria-label="Not helpful"
+        title="Not helpful"
+        aria-pressed={vote.chosen === "down"}
+        disabled={vote.disabled}
+        onClick={() => onRate("down")}
+      >
+        <ThumbsDown size={13} aria-hidden="true" />
+      </button>
+    </div>
   );
 }

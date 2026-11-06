@@ -31,7 +31,8 @@ export type AppEvent =
       t: "help_message";
       message_id: string;
       help_request_id?: string | null;
-      sender_role: string;
+      /** `operator` is a person; `assistant` is the Workshop Assistant, an AI. */
+      sender_role: "attendee" | "operator" | "assistant" | string;
       sender?: string;
       body: string;
       created_at: string;
@@ -40,6 +41,10 @@ export type AppEvent =
       request_ack?: boolean;
     }
   | { t: "help_state"; raised: boolean; note?: string | null }
+  /** This seat's vote on an assistant answer, from whichever tab cast it. */
+  | { t: "help_feedback"; message_id: string; value: "up" | "down" }
+  /** This seat asked for a person, from whichever tab pressed the button. */
+  | { t: "help_handoff"; handoff_id: string; after_message_id: string | null }
   | { t: "content_updated" }
   | { t: "obo_refresh" }
   | { t: "reconnected" }
@@ -76,6 +81,16 @@ function parseServerEvent(data: string): AppEvent | null {
       ) ? value as AppEvent : null;
     case "help_state":
       return typeof value.raised === "boolean" ? value as AppEvent : null;
+    case "help_feedback":
+      return (
+        typeof value.message_id === "string"
+        && (value.value === "up" || value.value === "down")
+      ) ? value as AppEvent : null;
+    case "help_handoff":
+      return (
+        typeof value.handoff_id === "string"
+        && (typeof value.after_message_id === "string" || value.after_message_id === null)
+      ) ? value as AppEvent : null;
     case "content_updated":
     case "obo_refresh":
     case "pong":

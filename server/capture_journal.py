@@ -1130,23 +1130,21 @@ class CaptureJournal:
                 base_state = self._durable_state
                 target = copy.deepcopy(self._state)
             try:
-                steps = [(_delta(base_state, target), target)]
+                steps = [(_delta(base_state, target), target, len(pending))]
                 self._encode({"patch": steps[0][0]})
             except CaptureCapacityError:
                 # A large burst is retained change by change, as it was accepted.
                 steps, state = [], base_state
                 for _mutator, _context, patch in pending:
                     state = _apply(state, patch)
-                    steps.append((patch, state))
-            committed = self._append_steps(base_revision, base_hash, steps)
+                    steps.append((patch, state, 1))
+            committed = self._append_steps(base_revision, base_hash, base_state, steps)
             with self._lock:
                 if committed is not None:
-                    revision, head_hash = committed
-                    self._revision, self._head_hash, self._durable_state = revision, head_hash, steps[-1][1]
-                    del self._pending[:len(pending)]
+                    revision, head_hash, durable_state = committed
                     self._error = None
                     self._last_flush_at = time.time()
-                    checkpoint = (revision, head_hash, self._durable_state)
+                    checkpoint = (revision, head_hash, durable_state)
                 else:
                     self._rebase_locked()
                     checkpoint = None
@@ -1157,26 +1155,42 @@ class CaptureJournal:
             self._fault(error)
         raise error
 
-    def _append_steps(self, revision: int, head_hash: str, steps: list[tuple[list, dict[str, Any]]]) -> tuple[int, str] | None:
+    def _append_steps(
+        self,
+        revision: int,
+        head_hash: str,
+        durable_state: dict[str, Any],
+        steps: list[tuple[list, dict[str, Any], int]],
+    ) -> tuple[int, str, dict[str, Any]] | None:
         """Storage I/O for a flush; ``None`` when another process advanced the head."""
-        for patch, state in steps:
-            revision += 1
-            if revision > self.max_operations:
-                raise CaptureCapacityError("capture operation capacity is exhausted")
-            body = {
-                "schema_version": SCHEMA_VERSION,
-                "revision": revision,
-                "binding": self.binding,
-                "previous_hash": head_hash,
-                "operation_id": uuid.uuid4().hex,
-                "patch": patch,
-                "state_sha256": _digest(state),
-            }
-            raw = self._encode(body)
-            if not self._create_resolved(f"{revision:020d}.json", raw):
-                return None
-            head_hash = json.loads(raw)["hash"]
-        return revision, head_hash
+        committed_count = 0
+        try:
+            for patch, state, count in steps:
+                next_revision = revision + 1
+                if next_revision > self.max_operations:
+                    raise CaptureCapacityError("capture operation capacity is exhausted")
+                body = {
+                    "schema_version": SCHEMA_VERSION,
+                    "revision": next_revision,
+                    "binding": self.binding,
+                    "previous_hash": head_hash,
+                    "operation_id": uuid.uuid4().hex,
+                    "patch": patch,
+                    "state_sha256": _digest(state),
+                }
+                raw = self._encode(body)
+                if not self._create_resolved(f"{next_revision:020d}.json", raw):
+                    return None
+                revision = next_revision
+                head_hash = json.loads(raw)["hash"]
+                durable_state = state
+                committed_count += count
+            return revision, head_hash, durable_state
+        finally:
+            if committed_count:
+                with self._lock:
+                    self._revision, self._head_hash, self._durable_state = revision, head_hash, durable_state
+                    del self._pending[:committed_count]
 
     def _rebase_locked(self) -> None:
         """Another process appended: load its history, then replay ours on top."""

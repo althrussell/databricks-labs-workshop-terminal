@@ -364,6 +364,89 @@ def test_unknown_or_malformed_retained_help_cannot_seal_complete(kind, field, va
     assert result["manifest"]["complete"] is False
 
 
+ASSISTANT_ANSWER = {"message_id": "assistant-answer", "help_request_id": "help-thread",
+                    "sender_role": "assistant", "sender": "Workshop Assistant",
+                    "body": "Open the SQL editor from the sidebar."}
+
+
+def test_assistant_feedback_and_handoff_are_supported_required_help_output():
+    source = emitter()
+    help_module.configure_capture(source.journal)
+    help_module.ingest_operator_message(ASSISTANT_ANSWER)
+    help_module.record_feedback("assistant-answer", "up")
+    help_module.request_person()
+    help_module.ack_outbox(1)
+    manager = CloseoutManager(source, drainer=drained, finalizer=final_outputs)
+    begin(manager)
+    result = manager.advance()
+    assert result["phase"] == "SEALED" and result["complete"] is True, result["issues"]
+    entries = manager.entries(capture_id="capture-one", kind="help")["entries"]
+    assert [(entry["seq"], entry["kind"]) for entry in entries] == [(1, "feedback"), (2, "handoff")]
+    assert entries[1]["help_request_id"] == "help-thread"
+    assert result["manifest"]["streams"]["help"]["sha256"] == sha256(entries)
+
+
+MISSING = object()
+
+
+@pytest.mark.parametrize("kind,field,value", [
+    ("feedback", "value", "sideways"),
+    ("feedback", "value", None),
+    ("feedback", "message_id", ""),
+    ("feedback", "message_id", 7),
+    ("feedback", "created_at", "yesterday"),
+    ("feedback", "created_at", "2026-11-01T02:00:00+00:00"),
+    ("feedback", "created_at", MISSING),
+    ("feedback", "body", "an extra field"),
+    ("handoff", "handoff_id", "not-a-uuid"),
+    ("handoff", "handoff_id", None),
+    ("handoff", "help_request_id", 12),
+    ("handoff", "help_request_id", MISSING),
+    ("handoff", "created_at", "2026-13-01T02:00:00Z"),
+    ("handoff", "note", "an extra field"),
+])
+def test_malformed_assistant_help_output_cannot_seal_complete(kind, field, value):
+    now = [100.0]
+    source = emitter()
+    help_module.configure_capture(source.journal)
+    if kind == "feedback":
+        help_module.ingest_operator_message(ASSISTANT_ANSWER)
+        help_module.record_feedback("assistant-answer", "down")
+    else:
+        help_module.request_person()
+    help_module.ack_outbox(1)
+
+    def damage(state):
+        entry = state["help"]["history"]["1"]
+        if value is MISSING:
+            entry.pop(field)
+        else:
+            entry[field] = value
+    source.journal.transaction(damage)
+    manager = CloseoutManager(source, drainer=drained, finalizer=final_outputs, clock=lambda: now[0])
+    begin(manager, timeout=1)
+    now[0] += 2
+    result = manager.advance()
+    assert result["phase"] == "INCOMPLETE" and result["complete"] is False
+    assert result["issues"] == ["malformed_required_help_output"]
+    assert result["manifest"]["complete"] is False
+
+
+def test_a_new_release_resumes_a_closing_capture_retained_without_feedback():
+    """Replacing the app mid-closeout must not need a write the barrier refuses."""
+    source = emitter()
+    help_module.configure_capture(source.journal)
+    help_module.post_attendee_message("retained before the upgrade", sender=BINDING["owner"])
+    source.journal.transaction(lambda state: state["help"].pop("feedback"))
+    manager = CloseoutManager(source, drainer=drained, finalizer=final_outputs)
+    begin(manager)
+    help_module.reset_for_tests()
+    help_module.configure_capture(source.journal)
+    assert help_module.thread_snapshot()["feedback"] == {}
+    result = manager.advance()
+    assert result["phase"] == "SEALED" and result["complete"] is True, result["issues"]
+
+
 @pytest.mark.parametrize("path,value,remove", [
     (("capture_id",), None, False), (("generation",), "", False),
     (("stream_id",), "wrong-source-epoch", False), (("requested_at",), "yesterday", False),

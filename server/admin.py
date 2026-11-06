@@ -389,7 +389,12 @@ def broadcast(body: Broadcast):
 class HelpMessageIn(BaseModel):
     message_id: str | None = None
     help_request_id: str | None = None
+    # ``operator`` (a person) or ``assistant`` (the Workshop Assistant), stored
+    # as sent. ``assistant`` reaches only terminals advertising assistant_v1.
     sender_role: str = "operator"
+    # ``assistant`` or ``operator``: who wrote it, whatever role was sent.
+    # Display follows sender_role.
+    sender_kind: str | None = None
     sender: str = ""
     body: str
     created_at: str | None = None
@@ -962,6 +967,14 @@ def _journey(user) -> dict | None:
 def presence():
     from . import network_check
 
+    # Presence publishes the help outbox to Control Tower, so give accepted help
+    # changes a bounded chance to be retained first. Best effort: when the store
+    # is slow the outbox goes out anyway. A waiting attendee outranks a gap in
+    # the retained history, and Control Tower files messages by id and
+    # re-collects what it could not acknowledge, so a seq that falls behind
+    # after a crash neither loses nor duplicates a message there. Once here,
+    # not inside presence_fields(), which journey also reads.
+    help_module.flush_help_persistence()
     now = time.time()
     users = []
     for user in user_manager.all():
