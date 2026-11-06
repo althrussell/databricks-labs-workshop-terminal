@@ -742,6 +742,12 @@ body {
   background: var(--bg-panel);
   border: 1px solid var(--border);
   white-space: nowrap;
+  /* Each control stays on one line, but the bar wraps between them and never
+     grows past the screen: with Attach, Copy and Paste it no longer fits a
+     phone-width viewport on one row. */
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .active-agent .icon-btn {
@@ -797,7 +803,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  max-width: 420px;
+  max-width: min(420px, 100%);
   padding: 2px 6px;
   border-radius: 6px;
   background: var(--bg-panel);
