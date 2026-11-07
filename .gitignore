@@ -15,5 +15,7 @@ node_modules/
 
 /docs/evidence/
 /evidence/
+# Coding-agent task handoff (temporary, per worktree): see AGENTS.md.
+/.agent-handoff.md
 /test-results/
 /playwright-report/

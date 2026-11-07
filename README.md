@@ -253,7 +253,7 @@ app.yaml                  Databricks Apps entrypoint (single worker!)
 server/                   FastAPI backend
   auth.py                 identity + group authz (SCIM /Me, cached)
   users.py                per-user HOME/env isolation
-  credentials.py          vended-credential bootstrap + 10-min rotation
+  credentials.py          app-identity OAuth bearer: validate, rotate, fan out to CLIs
   cli_config.py           claude/codex/databricks CLI config writers
   sessions.py             PTY lifecycle, ownership, scrollback, reaper
   ws.py                   terminal + events websockets
@@ -266,3 +266,6 @@ content/                  default nugget pack + agent catalog
 scripts/                  push_content.py (steering), deploy_dev.py
 docs/admin-api.md         Control Tower integration contract
 ```
+
+The full, maintained map is [docs/agent-guide/REPO_MAP.md](docs/agent-guide/REPO_MAP.md).
+Coding agents start at [AGENTS.md](AGENTS.md).
