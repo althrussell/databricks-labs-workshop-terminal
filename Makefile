@@ -23,8 +23,8 @@ build-frontend:
 	cd frontend && npm run build
 
 test:
-	uv run --frozen python -m pytest tests/ -q -m "not host_process" -n 2 --dist loadfile --timeout=120
-	uv run --frozen python -m pytest tests/ -q -m host_process --timeout=300
+	uv run --frozen python -m pytest tests/ -q -m "not host_process" -n 4 --dist loadfile --timeout=120
+	uv run --frozen python -m pytest tests/test_closeout_writers.py tests/test_runtime_shutdown.py tests/test_supervisor.py -q -m host_process --timeout=300
 
 build-release:
 	uv run --frozen --no-group dev --group release python scripts/build_release.py

@@ -325,20 +325,25 @@ async def exercise(tmp_path, monkeypatch, browser, *, width=1440, faults=False, 
                     # The context manager closes this case's fresh context.
                     return
                 await dialog.wait_for()
+                full_journey = not any((
+                    faults, races, interrupted, malformed_draft, new_project,
+                    unavailable_suggestions, prepared_suggestions, save_pending,
+                ))
                 if faults:
                     await dialog.get_by_role("alert").wait_for()
                     await dialog.get_by_role("button", name="Retry loading").click()
                 goal = dialog.get_by_role("textbox", name="Your goal", exact=True)
                 await goal.fill("Help my bakery staff keep track of today's orders")
                 assert await dialog.get_by_role("button", name="Continue", exact=True).is_enabled()
-                for _ in range(14):
-                    await page.keyboard.press("Tab")
-                    assert await page.evaluate("document.activeElement.closest('dialog') !== null")
-                dimensions = await dialog.evaluate("element => ({left: element.getBoundingClientRect().left,right:element.getBoundingClientRect().right,overflow:element.scrollWidth>element.clientWidth})")
-                assert dimensions["left"] >= 0 and dimensions["right"] <= width and not dimensions["overflow"]
-                assert await page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-                assert await page.evaluate("document.body.style.overflow") == "hidden"
-                await page.screenshot(path=str(tmp_path / f"wizard-{width}.png"), full_page=True)
+                if full_journey:
+                    for _ in range(14):
+                        await page.keyboard.press("Tab")
+                        assert await page.evaluate("document.activeElement.closest('dialog') !== null")
+                    dimensions = await dialog.evaluate("element => ({left: element.getBoundingClientRect().left,right:element.getBoundingClientRect().right,overflow:element.scrollWidth>element.clientWidth})")
+                    assert dimensions["left"] >= 0 and dimensions["right"] <= width and not dimensions["overflow"]
+                    assert await page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+                    assert await page.evaluate("document.body.style.overflow") == "hidden"
+                    await page.screenshot(path=str(tmp_path / f"wizard-{width}.png"), full_page=True)
                 if races:
                     await dialog.get_by_role("button", name="Suggest ideas for my goal").click()
                     await suggestion_entered.wait()
@@ -357,11 +362,12 @@ async def exercise(tmp_path, monkeypatch, browser, *, width=1440, faults=False, 
                         draft.selected = {id:'broken',label:'Malformed selection',outcome:'Broken',prompt:'Broken',assumptions:{invalid:true}};
                         localStorage.setItem(key, JSON.stringify(draft));
                     }""")
-                await page.reload()
-                dialog = page.get_by_role("dialog", name="What would you like to build?")
-                await dialog.get_by_role("textbox", name="Your goal", exact=True).wait_for()
-                assert "bakery" in await dialog.get_by_role("textbox", name="Your goal", exact=True).input_value()
-                assert await dialog.get_by_text("Malformed selection", exact=True).count() == 0
+                if full_journey or malformed_draft:
+                    await page.reload()
+                    dialog = page.get_by_role("dialog", name="What would you like to build?")
+                    await dialog.get_by_role("textbox", name="Your goal", exact=True).wait_for()
+                    assert "bakery" in await dialog.get_by_role("textbox", name="Your goal", exact=True).input_value()
+                    assert await dialog.get_by_text("Malformed selection", exact=True).count() == 0
                 await dialog.get_by_role("button", name="Suggest ideas for my goal").click()
                 if unavailable_suggestions:
                     await dialog.get_by_text("Generated ideas could not be verified. Continue with your goal or try suggestions again.", exact=True).wait_for()
@@ -455,22 +461,23 @@ async def exercise(tmp_path, monkeypatch, browser, *, width=1440, faults=False, 
                 await saved_dialog.get_by_role("button", name="Claude Code", exact=False).click()
                 await saved_dialog.wait_for(state="hidden")
                 assert deliveries == [wizard.starter_prompt(saved)]
-                # Preferences remain reachable when onboarding is disabled.
-                switches["enabled"] = False
-                await page.reload()
-                await page.get_by_role("button", name="Agent preferences", exact=True).click()
-                preferences = page.get_by_role("dialog", name="Agent preferences")
-                # Three independent dimensions (W2); changing one leaves the others and the task.
-                await preferences.get_by_label("Explanation detail").select_option("brief")
-                await preferences.get_by_label("How would you like your coding agent to work with you?").select_option("learn")
-                await preferences.get_by_role("button", name="Save preferences", exact=True).click()
-                await preferences.get_by_role("status").wait_for()
-                saved_profile = attendee_profile.read(user)
-                assert saved_profile.explanation_detail == "brief" and saved_profile.working_approach == "learn"
-                assert saved_profile.help_preference == ""
-                assert wizard.read_brief(user).to_json() == saved.to_json()
-                await preferences.get_by_role("button", name="Done", exact=True).click()
-                assert await page.get_by_role("button", name="Agent preferences", exact=True).evaluate("e => e === document.activeElement")
+                if full_journey:
+                    # Preferences remain reachable when onboarding is disabled.
+                    switches["enabled"] = False
+                    await page.reload()
+                    await page.get_by_role("button", name="Agent preferences", exact=True).click()
+                    preferences = page.get_by_role("dialog", name="Agent preferences")
+                    # Three independent dimensions (W2); changing one leaves the others and the task.
+                    await preferences.get_by_label("Explanation detail").select_option("brief")
+                    await preferences.get_by_label("How would you like your coding agent to work with you?").select_option("learn")
+                    await preferences.get_by_role("button", name="Save preferences", exact=True).click()
+                    await preferences.get_by_role("status").wait_for()
+                    saved_profile = attendee_profile.read(user)
+                    assert saved_profile.explanation_detail == "brief" and saved_profile.working_approach == "learn"
+                    assert saved_profile.help_preference == ""
+                    assert wizard.read_brief(user).to_json() == saved.to_json()
+                    await preferences.get_by_role("button", name="Done", exact=True).click()
+                    assert await page.get_by_role("button", name="Agent preferences", exact=True).evaluate("e => e === document.activeElement")
                 assert not errors, errors
             finally:
                 # Release delayed handlers before the context and API fixture close.

@@ -102,7 +102,33 @@ def test_lost_ack_response_repeats_idempotently_after_restart(tmp_path):
 
 def test_actual_emitter_drains_more_than_one_page_with_explicit_acks(tmp_path):
     original = make(LocalCaptureStorage(tmp_path), max_buffer=2000)
-    append(original, 1003)
+
+    def seed_first_page(state):
+        insight = state["insight"]
+        for index in range(1000):
+            seq = index + 1
+            key = f"signal-{index}"
+            insight["events"][str(seq)] = {
+                "schema_version": 1,
+                "run_id": BINDING["run_id"],
+                "workspace_id": BINDING["workspace_id"],
+                "attendee": BINDING["owner"],
+                "type": "workshop.signal",
+                "occurred_at": "2026-10-16T12:00:00+00:00",
+                "payload": {"value": index},
+                "idempotency_key": key,
+            }
+            insight["keys"][key] = seq
+        insight["next_seq"] = 1000
+
+    original.journal.transaction(seed_first_page)
+    for index in range(1000, 1003):
+        original.emit(
+            "workshop.signal",
+            BINDING["owner"],
+            {"value": index},
+            idempotency_key=f"signal-{index}",
+        )
     first = original.collect(limit=5000)
     assert len(first["events"]) == 1000
     assert first["high_water"] == 1000 and first["pending"] == 1003

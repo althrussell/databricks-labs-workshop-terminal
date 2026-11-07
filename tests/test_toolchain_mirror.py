@@ -483,6 +483,7 @@ def test_a_partial_stage_still_records_sizes_for_what_did_land(tmp_path, monkeyp
         return PAYLOAD
 
     monkeypatch.setattr(ct_mirror, "_fetch_verified", fetch)
+    monkeypatch.setattr(ct_mirror.time, "sleep", lambda _s: None)
     files = FakeFiles({})
 
     report = ct_mirror.stage(FakeClient(files), volume)

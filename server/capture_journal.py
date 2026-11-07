@@ -835,8 +835,8 @@ class CaptureJournal:
                     "capture operation chain does not match its predecessor"
                 )
             state = _apply(self._state, operation.get("patch"))
-            self._check_state(state, retained=True)
-            if _digest(state) != operation.get("state_sha256"):
+            state_digest = self._check_state(state, retained=True)
+            if state_digest != operation.get("state_sha256"):
                 raise CaptureHeldError("capture state digest does not match operation")
             if audit and observer is not None:
                 # Proof consumers see only a contiguous prefix after all
@@ -851,7 +851,7 @@ class CaptureJournal:
             )
         self._error = None
 
-    def _check_state(self, state: dict[str, Any], *, retained: bool = False) -> None:
+    def _check_state(self, state: dict[str, Any], *, retained: bool = False) -> str:
         try:
             encoded = canonical_json(state)
         except (ValueError, TypeError, RecursionError) as error:
@@ -860,6 +860,7 @@ class CaptureJournal:
         if len(encoded) > self.max_state_bytes:
             cls = CaptureHeldError if retained else CaptureCapacityError
             raise cls("capture state exceeds the retained capacity limit")
+        return hashlib.sha256(encoded).hexdigest()
 
     @timing_stage("capture.journal_read")
     def read(self) -> dict[str, Any]:
@@ -975,7 +976,7 @@ class CaptureJournal:
                 try:
                     if not isinstance(state, dict):
                         raise CaptureCapacityError("capture state must be an object")
-                    self._check_state(state)
+                    state_digest = self._check_state(state)
                     patch = _delta(self._state, state)
                     if not patch:
                         return result
@@ -991,7 +992,7 @@ class CaptureJournal:
                         "previous_hash": self._head_hash,
                         "operation_id": uuid.uuid4().hex,
                         "patch": patch,
-                        "state_sha256": _digest(state),
+                        "state_sha256": state_digest,
                     }
                     raw = self._encode(body)
                     if not self._create_resolved(f"{revision:020d}.json", raw):

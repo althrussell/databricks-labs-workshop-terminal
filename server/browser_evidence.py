@@ -508,7 +508,7 @@ def inspect(
                 for index, (kind, value) in enumerate(actions, start=1):
                     before = facts.get("text_sha256_input", "")
                     step = _act(devtools, session, kind, value)
-                    devtools.settle(1.5)
+                    devtools.settle(min(request.settle_seconds, 1.5))
                     facts = _evaluate(devtools, session, _FACTS_JS) or {}
                     step["visible_change"] = facts.get("text_sha256_input", "") != before
                     step["viewport"] = viewport

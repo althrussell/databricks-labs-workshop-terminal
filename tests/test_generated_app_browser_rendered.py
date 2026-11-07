@@ -64,7 +64,7 @@ async def main():
             if request.method=='GET':
                 # The actual WT renders Hero before this separate request
                 # completes. A home-card visibility check races onboarding.
-                await asyncio.sleep(.5)
+                await asyncio.sleep(.1)
                 entry_events.append('wizard_state')
                 body={'enabled':wt_state['enabled'],'should_show':wt_state['enabled'] and not wt_state['seen']}
             else:

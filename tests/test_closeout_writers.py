@@ -268,15 +268,15 @@ def test_default_closeout_drains_real_terminal_and_requires_complete_host_census
         telemetry.session_started(owner.email, "claude", session.id)
         manager = CloseoutManager(source)
         manager.begin(capture_id="integrated-close", stream_id=source.stream_id, source=binding,
-                      drain_timeout_seconds=10)
-        closed = manager.advance(wait_seconds=3)
+                      drain_timeout_seconds=1)
+        closed = manager.advance(wait_seconds=0.2)
         # Each call makes bounded progress; the Linux process census can still
         # see a finishing writer on a busy runner. Exercise the caller's normal
         # retry protocol rather than requiring the first request to seal.
-        deadline = time.monotonic() + 10
+        deadline = time.monotonic() + 2
         while closed["phase"] == "CLOSING" and time.monotonic() < deadline:
             time.sleep(0.05)
-            closed = manager.advance(wait_seconds=1)
+            closed = manager.advance(wait_seconds=0.1)
         assert session._process.poll() is not None
         assert session._reader_done.is_set()
         assert not session._reader_thread.is_alive()

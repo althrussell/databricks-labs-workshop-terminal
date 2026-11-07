@@ -231,7 +231,7 @@ def test_a_capture_waits_for_the_pages_own_data_not_just_the_load_event(project,
         def do_GET(self):  # noqa: N802
             if self.path == "/data":
                 import time
-                time.sleep(3)
+                time.sleep(0.8)
                 body, kind = _LOADED.encode(), "text/plain"
             else:
                 body, kind = _SLOW_PAGE, "text/html"
