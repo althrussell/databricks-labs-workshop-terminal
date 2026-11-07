@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Repository instructions live in AGENTS.md at the repo root. If its content is not already in your context, read AGENTS.md before doing anything else, then docs/agent-guide/README.md.'"
+          }
+        ]
+      }
+    ]
+  }
+}
