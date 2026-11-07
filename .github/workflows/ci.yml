@@ -58,9 +58,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --no-group release
       - name: Run non-host-process tests in parallel
-        run: uv run --frozen --no-group release python -m pytest tests/ -q -m "not host_process" -n 2 --dist loadfile --timeout=120 --durations=50 --durations-min=0.05 --junitxml=test-results/parallel.xml
+        run: uv run --frozen --no-group release python -m pytest tests/ -q -m "not host_process" -n 4 --dist loadfile --timeout=120 --durations=50 --durations-min=0.05 --junitxml=test-results/parallel.xml
       - name: Run host-process tests serially
-        run: uv run --frozen --no-group release python -m pytest tests/ -q -m host_process --timeout=300 --durations=50 --durations-min=0.05 --junitxml=test-results/host-process.xml
+        run: uv run --frozen --no-group release python -m pytest tests/test_closeout_writers.py tests/test_runtime_shutdown.py tests/test_supervisor.py -q -m host_process --timeout=300 --durations=50 --durations-min=0.05 --junitxml=test-results/host-process.xml
       - name: Publish backend test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -186,8 +186,12 @@ jobs:
         run: uv sync --frozen --no-group dev --group release
       - name: Build the release twice
         run: |
-          uv run --frozen --no-group dev --group release python scripts/build_release.py --output-dir dist --git-sha "${GITHUB_SHA}"
-          uv run --frozen --no-group dev --group release python scripts/build_release.py --output-dir dist-repro --git-sha "${GITHUB_SHA}"
+          uv run --frozen --no-group dev --group release python scripts/build_release.py --output-dir dist --git-sha "${GITHUB_SHA}" &
+          pid_dist=$!
+          uv run --frozen --no-group dev --group release python scripts/build_release.py --output-dir dist-repro --git-sha "${GITHUB_SHA}" &
+          pid_repro=$!
+          wait "${pid_dist}"
+          wait "${pid_repro}"
       - name: Verify byte reproducibility
         run: |
           cmp dist/workshop-terminal.pex dist-repro/workshop-terminal.pex
@@ -244,4 +248,4 @@ jobs:
         env:
           WORKSHOP_E2E_BROWSER_TESTS: "1"
           WORKSHOP_BROWSER_EXECUTABLE: "/usr/bin/google-chrome"
-        run: .venv/bin/python -m pytest tests/test_wizard_rendered.py tests/test_projects_rendered.py tests/test_workshop_lifecycle_rendered.py tests/test_generated_app_browser_rendered.py -q
+        run: .venv/bin/python -m pytest tests/test_wizard_rendered.py tests/test_projects_rendered.py tests/test_workshop_lifecycle_rendered.py tests/test_generated_app_browser_rendered.py -n 4 --dist worksteal -q

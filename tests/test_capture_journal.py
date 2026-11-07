@@ -531,7 +531,8 @@ def test_full_audit_detects_old_history_corruption_before_checkpoint():
         replacement.audit()
 
 
-def test_large_backlog_spans_pages_without_eviction_and_replays(tmp_path):
+def test_large_backlog_spans_pages_without_eviction_and_replays(tmp_path, monkeypatch):
+    monkeypatch.setattr(os, "fsync", lambda _fd: None)
     retained = journal(LocalCaptureStorage(tmp_path), checkpoint_interval=100)
     for index in range(1003):
         retained.transaction(

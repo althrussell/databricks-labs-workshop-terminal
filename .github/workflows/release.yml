@@ -56,6 +56,13 @@ jobs:
             -f branch=main \
             -f status=completed \
             -f per_page=100 > "${RUNNER_TEMP}/main-ci-runs.json"
+          gh api --method GET \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
+            -f event=pull_request \
+            -f status=completed \
+            -f per_page=50 > "${RUNNER_TEMP}/pr-ci-runs.json"
+          TREE_SHA="$(git rev-parse "${GITHUB_SHA}^{tree}")"
+          export TREE_SHA
           python - <<'PY'
           import json
           import os
@@ -64,8 +71,13 @@ jobs:
           response = json.loads(
               Path(os.environ["RUNNER_TEMP"], "main-ci-runs.json").read_text()
           )
+          pr_response = json.loads(
+              Path(os.environ["RUNNER_TEMP"], "pr-ci-runs.json").read_text()
+          )
           sha = os.environ["GITHUB_SHA"]
+          tree_sha = os.environ["TREE_SHA"]
           runs = response.get("workflow_runs", [])
+          pr_runs = pr_response.get("workflow_runs", [])
           matched = any(
               run.get("path") == ".github/workflows/ci.yml"
               and run.get("head_sha") == sha
@@ -74,6 +86,16 @@ jobs:
               and run.get("status") == "completed"
               and run.get("conclusion") == "success"
               for run in runs
+          ) or any(
+              run.get("path") == ".github/workflows/ci.yml"
+              and run.get("event") == "pull_request"
+              and run.get("status") == "completed"
+              and run.get("conclusion") == "success"
+              and (
+                  run.get("head_sha") == sha
+                  or (run.get("head_commit") or {}).get("tree_id") == tree_sha
+              )
+              for run in pr_runs
           )
           if not matched:
               raise SystemExit(
@@ -96,16 +118,14 @@ jobs:
           git diff --exit-code -- pyproject.toml uv.lock requirements.txt requirements-dev.txt
       - name: Materialize the uv-locked build environment
         run: uv sync --frozen --no-group dev --group release
-      - name: Build immutable release assets
-        run: >-
-          uv run --frozen --no-group dev --group release
-          python scripts/build_release.py
-          --output-dir dist
-          --release-tag "${GITHUB_REF_NAME}"
-          --git-sha "${GITHUB_SHA}"
-      - name: Rebuild and verify reproducibility
+      - name: Build immutable release assets and verify reproducibility
         run: |
-          uv run --frozen --no-group dev --group release python scripts/build_release.py --output-dir dist-repro --release-tag "${GITHUB_REF_NAME}" --git-sha "${GITHUB_SHA}"
+          uv run --frozen --no-group dev --group release python scripts/build_release.py --output-dir dist --release-tag "${GITHUB_REF_NAME}" --git-sha "${GITHUB_SHA}" &
+          pid_dist=$!
+          uv run --frozen --no-group dev --group release python scripts/build_release.py --output-dir dist-repro --release-tag "${GITHUB_REF_NAME}" --git-sha "${GITHUB_SHA}" &
+          pid_repro=$!
+          wait "${pid_dist}"
+          wait "${pid_repro}"
           cmp dist/workshop-terminal.pex dist-repro/workshop-terminal.pex
           cmp dist/release-manifest.json dist-repro/release-manifest.json
       - name: Smoke in clean Linux without a network

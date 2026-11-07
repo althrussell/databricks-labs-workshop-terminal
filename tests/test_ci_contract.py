@@ -45,8 +45,8 @@ def test_backend_ci_runs_complementary_parallel_and_serial_layers():
 
     assert job["timeout-minutes"] == 15
     assert test_commands == [
-        'uv run --frozen --no-group release python -m pytest tests/ -q -m "not host_process" -n 2 --dist loadfile --timeout=120 --durations=50 --durations-min=0.05 --junitxml=test-results/parallel.xml',
-        "uv run --frozen --no-group release python -m pytest tests/ -q -m host_process --timeout=300 --durations=50 --durations-min=0.05 --junitxml=test-results/host-process.xml",
+        'uv run --frozen --no-group release python -m pytest tests/ -q -m "not host_process" -n 4 --dist loadfile --timeout=120 --durations=50 --durations-min=0.05 --junitxml=test-results/parallel.xml',
+        "uv run --frozen --no-group release python -m pytest tests/test_closeout_writers.py tests/test_runtime_shutdown.py tests/test_supervisor.py -q -m host_process --timeout=300 --durations=50 --durations-min=0.05 --junitxml=test-results/host-process.xml",
     ]
     assert "uv lock --check" in commands
     assert "uv export --frozen" in commands
@@ -124,7 +124,7 @@ def test_ci_triggers_and_rendered_browser_coverage_match_the_release_gate():
     assert "tests/test_generated_app_browser_rendered.py" in browser["run"]
 
     makefile = (ROOT / "Makefile").read_text()
-    assert '-m "not host_process" -n 2 --dist loadfile --timeout=120' in makefile
+    assert '-m "not host_process" -n 4 --dist loadfile --timeout=120' in makefile
     assert "-m host_process --timeout=300" in makefile
 
 

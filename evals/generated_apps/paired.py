@@ -22,12 +22,17 @@ product makes regardless of which model answers:
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
+
+from server.design_workflow import workflow as _workflow_module
 
 SCENARIOS = Path(__file__).parent / "scenarios" / "paired"
 HELPER = Path(__file__).resolve().parents[2] / "assets" / "bin" / "workshop-workflow"
@@ -35,6 +40,7 @@ HELPER = Path(__file__).resolve().parents[2] / "assets" / "bin" / "workshop-work
 #: Claude Code, so it is qualified through the Claude path.
 HARNESSES = {"claude": "claude", "codex": "codex", "omnigent": "claude"}
 PATHS = ("rapid", "guided")
+_IN_PROCESS_LOCK = threading.Lock()
 
 
 def scenarios() -> list[dict]:
@@ -44,13 +50,41 @@ def scenarios() -> list[dict]:
 class _Workflow:
     """One agent process's view: every call is a fresh helper run against the record."""
 
-    def __init__(self, project: Path, harness: str) -> None:
+    def __init__(self, project: Path, harness: str, *, subprocess_first: bool = False) -> None:
         self.project, self.harness = project, harness
+        self._subprocess_next = subprocess_first
 
     def run(self, *args: str, ok: bool = True) -> subprocess.CompletedProcess:
-        env = {**os.environ, "WORKSHOP_USER_EMAIL": "attendee@example.com", "WORKSHOP_HARNESS": self.harness}
-        result = subprocess.run([sys.executable, str(HELPER), "--project", str(self.project), *args],
-                                capture_output=True, text=True, env=env, timeout=60)
+        argv = ["--project", str(self.project), *args]
+        if self._subprocess_next:
+            self._subprocess_next = False
+            env = {**os.environ, "WORKSHOP_USER_EMAIL": "attendee@example.com", "WORKSHOP_HARNESS": self.harness}
+            result = subprocess.run([sys.executable, str(HELPER), *argv],
+                                    capture_output=True, text=True, env=env, timeout=60)
+        else:
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with _IN_PROCESS_LOCK:
+                prev_email = os.environ.get("WORKSHOP_USER_EMAIL")
+                prev_harness = os.environ.get("WORKSHOP_HARNESS")
+                os.environ["WORKSHOP_USER_EMAIL"] = "attendee@example.com"
+                os.environ["WORKSHOP_HARNESS"] = self.harness
+                try:
+                    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                        try:
+                            code = int(_workflow_module.main(argv))
+                        except SystemExit as exc:
+                            code = exc.code if isinstance(exc.code, int) else (1 if exc.code else 0)
+                finally:
+                    if prev_email is None:
+                        os.environ.pop("WORKSHOP_USER_EMAIL", None)
+                    else:
+                        os.environ["WORKSHOP_USER_EMAIL"] = prev_email
+                    if prev_harness is None:
+                        os.environ.pop("WORKSHOP_HARNESS", None)
+                    else:
+                        os.environ["WORKSHOP_HARNESS"] = prev_harness
+            result = subprocess.CompletedProcess([sys.executable, str(HELPER), *argv],
+                                                 code, stdout.getvalue(), stderr.getvalue())
         if ok and result.returncode:
             raise AssertionError(f"{self.harness}: workshop-workflow {' '.join(args)} failed: {result.stderr.strip()}")
         return result
@@ -59,11 +93,10 @@ class _Workflow:
         return json.loads(self.run("show", "--json").stdout)
 
 
-def smoke(scenario: dict, harness: str, path: str, project: Path) -> dict:
+def smoke(scenario: dict, harness: str, path: str, project: Path, *, subprocess_first: bool = False) -> dict:
     """Run one scripted journey; returns the invariants and whether each held."""
-    subprocess.run(["git", "init", "-q", str(project)], check=True)
     first, second = harness, ("codex" if harness != "codex" else "claude")
-    agent = _Workflow(project, first)
+    agent = _Workflow(project, first, subprocess_first=subprocess_first)
     checks: dict[str, bool] = {}
 
     refused = agent.run("path", path, "--by", "agent", ok=False)
@@ -132,15 +165,17 @@ def smoke(scenario: dict, harness: str, path: str, project: Path) -> dict:
 def run_smoke(selected: list[str] | None = None, workers: int = 2) -> list[dict]:
     if workers < 1:
         raise ValueError("workers must be at least 1")
-    journeys = [(scenario, harness, path)
-                for scenario in scenarios() if not selected or scenario["scenario_id"] in selected
-                for harness in HARNESSES for path in PATHS]
+    journeys = [(index, scenario, harness, path)
+                for index, (scenario, harness, path) in enumerate(
+                    (scenario, harness, path)
+                    for scenario in scenarios() if not selected or scenario["scenario_id"] in selected
+                    for harness in HARNESSES for path in PATHS)]
 
-    def run(journey: tuple[dict, str, str]) -> dict:
-        scenario, harness, path = journey
+    def run(journey: tuple[int, dict, str, str]) -> dict:
+        index, scenario, harness, path = journey
         try:
             with tempfile.TemporaryDirectory(prefix="wt-paired-") as temporary:
-                return smoke(scenario, harness, path, Path(temporary))
+                return smoke(scenario, harness, path, Path(temporary), subprocess_first=(index == 0))
         except Exception as error:
             error.add_note(f"Paired journey: scenario={scenario['scenario_id']}, harness={harness}, path={path}")
             raise

@@ -59,15 +59,15 @@ Run from the repository root unless a working directory is given.
 
 | Command | Prerequisites | Scope | Status |
 | --- | --- | --- | --- |
-| `uv run --frozen python -m pytest tests/ -q -m "not host_process" -n 2 --dist loadfile --timeout=120` | uv env | everything except `host_process`; LOCAL_DEV with real PTYs | ran ✓: 4292 passed, 68 skipped, 195 s |
-| `uv run --frozen python -m pytest tests/ -q -m host_process --timeout=300` | uv env | real host processes and signals, serial | ran ✓: 34 passed, 11 skipped |
+| `uv run --frozen python -m pytest tests/ -q -m "not host_process" -n 4 --dist loadfile --timeout=120` | uv env | everything except `host_process`; LOCAL_DEV with real PTYs | ran ✓: 4292 passed, 68 skipped, 86 s |
+| `uv run --frozen python -m pytest tests/test_closeout_writers.py tests/test_runtime_shutdown.py tests/test_supervisor.py -q -m host_process --timeout=300` | uv env | real host processes and signals, serial | ran ✓: 34 passed, 11 skipped, 9 s |
 | `make test` | uv env | both passes above | the two parts ran ✓ |
 | `uv run --frozen python -m pytest tests/test_agent_guide.py -q` | uv env | this guide's paths, symbols, links and placement rules | ran ✓ |
 | `cd frontend && npm ci && npm test` | Node 24 | `frontend/src/*.test.ts` via `tsx` | ran ✓: 207 passed |
 | `cd frontend && npm run build`, then `git status --porcelain -- static` | Node 24 | type-check, then rebuild `static/` | ran ✓: no drift from the committed build |
 | `uv lock --check`, the two `uv export` lines in `.github/workflows/ci.yml`, then `git diff --exit-code -- pyproject.toml uv.lock requirements.txt requirements-dev.txt` | uv env | lock and export consistency | ran ✓: no diff |
 | `python scripts/check_dependency_sources.py` | uv, direct access to `https://pypi.org/simple` | public-registry guard, first CI job | ran ✗ locally: connection to pypi.org refused by this machine's network. CI runs it |
-| `WORKSHOP_E2E_BROWSER_TESTS=1 WORKSHOP_BROWSER_EXECUTABLE=<chrome> .venv/bin/python -m pytest tests/test_wizard_rendered.py tests/test_projects_rendered.py tests/test_workshop_lifecycle_rendered.py tests/test_generated_app_browser_rendered.py -q` | `uv pip install -r evals/generated_apps/requirements-browser.txt`, Chrome | rendered UI against local API fixtures | CI (`wizard-browser`); skipped in the local run |
+| `WORKSHOP_E2E_BROWSER_TESTS=1 WORKSHOP_BROWSER_EXECUTABLE=<chrome> .venv/bin/python -m pytest tests/test_wizard_rendered.py tests/test_projects_rendered.py tests/test_workshop_lifecycle_rendered.py tests/test_generated_app_browser_rendered.py -n 4 --dist worksteal -q` | `uv pip install -r evals/generated_apps/requirements-browser.txt`, Chrome | rendered UI against local API fixtures | ran ✓: 46 passed, 26 s |
 | `uv run --frozen --only-group quality python scripts/check_quality_toolchain.py` | Python 3.12 | evaluator API contract, no workspace | CI |
 | `uv run --frozen python scripts/measure_startup_context.py` | installed CLIs | attendee startup context size | inspected |
 

@@ -57,7 +57,10 @@ SERVER = textwrap.dedent('''
         os.kill(os.getppid(), signal.SIGTERM)
     if mode == "orphan-kills-supervisor":
         # The shell exits at once, so the subshell is orphaned before it signals.
-        subprocess.Popen(["sh", "-c", f"(sleep 0.3; kill -TERM {os.getppid()}; sleep 2) & exit 0"])
+        subprocess.Popen(
+            ["sh", "-c", f"(sleep 0.1; kill -TERM {os.getppid()}; sleep 2) >/dev/null 2>&1 & exit 0"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
     while True:
         time.sleep(0.05)
 ''')

@@ -3,6 +3,7 @@
 from pathlib import Path
 import json
 import os
+import shutil
 import subprocess
 
 import pytest
@@ -28,9 +29,9 @@ def commit(root):
         "commit", "-qm", "Reviewed fixture inputs")
 
 
-@pytest.fixture
-def release_root(tmp_path):
-    root = tmp_path / "release"
+@pytest.fixture(scope="module")
+def _clean_release_template(tmp_path_factory):
+    root = tmp_path_factory.mktemp("release-template") / "release"
     names = set(dependency_sources.REQUIRED_INPUTS)
     names.update(path.relative_to(ROOT).as_posix() for path in (ROOT / "assets/artifacts").glob("*.*"))
     for name in names:
@@ -41,6 +42,13 @@ def release_root(tmp_path):
     git(root, "init", "-q")
     commit(root)
     dependency_sources.validate_release_inputs(root, require_clean=True)
+    return root
+
+
+@pytest.fixture
+def release_root(tmp_path, _clean_release_template):
+    root = tmp_path / "release"
+    shutil.copytree(_clean_release_template, root, symlinks=True)
     return root
 
 

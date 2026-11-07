@@ -82,7 +82,7 @@ Every pull request:
 
 1. validates the uv lock and source-deployment requirements exports;
 2. runs the full source suite on Python 3.11, with host-process-marked tests
-   kept serial and all other tests distributed across two workers;
+   kept serial and all other tests distributed across four workers;
 3. builds the PEX twice and compares both artifacts and manifests byte-for-byte;
 4. starts the real packaged entry point in a clean Python 3.11 container with
    networking disabled;
@@ -92,8 +92,9 @@ Every pull request:
    and runs the retained Omnigent lifecycle;
 8. records cold startup and artifact size in `release-benchmark.json`.
 
-A `v*` tag requires a successful, completed `ci.yml` push run on `main` for the
-exact tagged commit. Tag only after that full main CI run is green. The tag
+A `v*` tag requires a successful, completed `ci.yml` run for the exact tagged
+commit on `main` (or a completed `pull_request` `ci.yml` run whose commit carries
+the identical Git tree SHA). The tag
 workflow checks this gate without polling, then reruns only the tagged release
 build, byte-for-byte reproducibility comparison, and offline packaged smoke
 check before publishing the PEX and manifest as GitHub release assets; it does

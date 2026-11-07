@@ -44,7 +44,8 @@ smoke() {
   local image
   image="$(pull "$@")"
   rm -rf "${WORK}/${label}"
-  cp -R "${STAGE}" "${WORK}/${label}"
+  mkdir -p "${WORK}/${label}"
+  cp -R "${STAGE}/data" "${WORK}/${label}/data"
   # As the invoking user, like the Apps runtime (not root), so everything the
   # container writes stays removable and readable here.
   docker run --rm --pull never --platform linux/amd64 --network none \
@@ -52,6 +53,7 @@ smoke() {
     --volume "${ROOT}:/source:ro" \
     --volume "${DIST}:/release:ro" \
     --volume "${WORK}/${label}:/work" \
+    --volume "${STAGE}/python:/work/python:ro" \
     --volume "${OUT}:/out" \
     --env SMOKE_IMAGE="$1" \
     --env PEX_ROOT=/tmp/pex \
@@ -61,8 +63,12 @@ smoke() {
 }
 
 smoke ubuntu-22.04 /work/python/bin/python3.11 \
-  public.ecr.aws/docker/library/ubuntu:22.04 docker.io/library/ubuntu:22.04 mirror.gcr.io/library/ubuntu:22.04
+  public.ecr.aws/docker/library/ubuntu:22.04 docker.io/library/ubuntu:22.04 mirror.gcr.io/library/ubuntu:22.04 &
+PID_UBUNTU=$!
 smoke python-3.11-slim-bookworm python \
   public.ecr.aws/docker/library/python:3.11-slim-bookworm docker.io/library/python:3.11-slim-bookworm \
-  mirror.gcr.io/library/python:3.11-slim-bookworm
+  mirror.gcr.io/library/python:3.11-slim-bookworm &
+PID_BOOKWORM=$!
+wait "${PID_UBUNTU}"
+wait "${PID_BOOKWORM}"
 echo "browser smoke passed; screenshots in ${OUT}"
