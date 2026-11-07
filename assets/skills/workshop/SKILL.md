@@ -31,8 +31,9 @@ mine = WorkspaceClient(profile="me", config_file=cfg)        # the attendee's vi
 
 Create Unity Catalog objects inside `$WORKSHOP_CATALOG` (and `$WORKSHOP_SCHEMA`
 when set); the attendee has `ALL PRIVILEGES` there. Never create a new
-top-level catalog. Apps, jobs, Lakebase, pipelines and serving endpoints are
-shared with the attendee automatically; `workshop-grant-me` grants `CAN_MANAGE`
+top-level catalog. Apps, jobs, Lakebase, pipelines, serving endpoints, Genie
+spaces and dashboards are shared with the attendee automatically; run
+`workshop-grant-me` right after creating one so it is `CAN_MANAGE` for them
 immediately. Copy shared demo data into an owned table before changing it.
 Metastore `system.*` tables (`system.billing`, `system.access`, `system.compute`,
 `system.lakeflow`, `system.ai_gateway`, `system.serving`) are restricted for

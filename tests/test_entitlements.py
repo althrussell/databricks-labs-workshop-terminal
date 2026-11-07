@@ -128,6 +128,7 @@ def _strict_fake():
         ("/api/2.0/postgres/projects", {"page_size": 100}, "projects"),
         ("/api/2.0/sql/warehouses", {"page_size": 100}, "warehouses"),
         ("/api/2.0/lakeview/dashboards", {"page_size": 100}, "dashboards"),
+        ("/api/2.0/genie/spaces", {"page_size": 100}, "spaces"),
     ):
         fake.register_get(f"{host}{path}", params, {key: []})
     return fake
@@ -1488,3 +1489,87 @@ def test_demo_catalog_grant_is_skipped_when_permissions_cannot_be_read(monkeypat
 
     assert result["errors"] == []
     assert not [c for c in fake.calls if c[0] == "PATCH" and c[1].endswith("/permissions/catalog/workshop_demo")]
+
+
+def test_a_genie_space_this_apps_sp_built_is_handed_to_the_attendee(monkeypatch, enabled):
+    """Like dashboards: the list has no creator, the detail read's parent_path does (7 Nov 2026).
+
+    Measured live: the creator's CAN_MANAGE is inherited from their home folder, so the ACL can't
+    say who made a space, but parent_path is /Users/<creator>.
+    """
+    fake = _strict_fake()
+    host = "https://test.cloud.databricks.com"
+    fake.register_get(f"{host}/api/2.0/genie/spaces", {"page_size": 100}, {
+        "spaces": [
+            {"space_id": "ours", "title": "Churn", "create_time": "1970-01-01T00:18:20Z"},
+            {"space_id": "theirs", "title": "Staff", "create_time": "1970-01-01T00:18:20Z"},
+        ],
+    })
+    fake.register_get(f"{host}/api/2.0/genie/spaces/ours", {}, {
+        "space_id": "ours", "parent_path": "/Users/app-client-id", "create_time": "1970-01-01T00:18:20Z",
+    })
+    # A staff member's space (or the attendee's own): another home folder, left alone.
+    fake.register_get(f"{host}/api/2.0/genie/spaces/theirs", {}, {
+        "space_id": "theirs", "parent_path": "/Users/staff@example.com", "create_time": "1970-01-01T00:18:20Z",
+    })
+    fake.register_patch(f"{host}/api/2.0/permissions/genie/ours", {"CAN_MANAGE"})
+    mgr = _scoped_mgr(monkeypatch, fake)
+
+    result = mgr.reconcile("alice@example.com")
+
+    patched = [c[1] for c in fake.calls if c[0] == "PATCH" and "/genie/" in c[1]]
+    assert patched == [f"{host}/api/2.0/permissions/genie/ours"]
+    assert result["non_uc"]["alice@example.com"]["genie-spaces"] == 1
+    assert result["errors"] == []
+
+
+def test_a_genie_space_in_a_subfolder_of_the_sp_home_is_handed_to_the_attendee(monkeypatch, enabled):
+    """The Genie skill builds spaces in /Users/<application-id>/genie_spaces (Codex on #159): the
+    owner is the segment after /Users/, not the last one. A staff subfolder is still left alone."""
+    fake = _strict_fake()
+    host = "https://test.cloud.databricks.com"
+    fake.register_get(f"{host}/api/2.0/genie/spaces", {"page_size": 100}, {
+        "spaces": [
+            {"space_id": "nested", "title": "Churn", "create_time": "1970-01-01T00:18:20Z"},
+            {"space_id": "staff", "title": "Staff", "create_time": "1970-01-01T00:18:20Z"},
+        ],
+    })
+    fake.register_get(f"{host}/api/2.0/genie/spaces/nested", {}, {
+        "space_id": "nested", "parent_path": "/Workspace/Users/app-client-id/genie_spaces",
+        "create_time": "1970-01-01T00:18:20Z",
+    })
+    fake.register_get(f"{host}/api/2.0/genie/spaces/staff", {}, {
+        "space_id": "staff", "parent_path": "/Users/staff@example.com/app-client-id",
+        "create_time": "1970-01-01T00:18:20Z",
+    })
+    fake.register_patch(f"{host}/api/2.0/permissions/genie/nested", {"CAN_MANAGE"})
+    mgr = _scoped_mgr(monkeypatch, fake)
+
+    result = mgr.reconcile("alice@example.com")
+
+    patched = [c[1] for c in fake.calls if c[0] == "PATCH" and "/genie/" in c[1]]
+    assert patched == [f"{host}/api/2.0/permissions/genie/nested"]
+    assert result["errors"] == []
+
+
+def test_a_genie_space_from_before_the_run_is_left_alone(monkeypatch, enabled):
+    fake = _strict_fake()
+    host = "https://test.cloud.databricks.com"
+    fake.register_get(f"{host}/api/2.0/genie/spaces", {"page_size": 100}, {
+        "spaces": [{"space_id": "old", "title": "Seeded", "create_time": "1970-01-01T00:10:00Z"}],
+    })
+    fake.register_get(f"{host}/api/2.0/genie/spaces/old", {}, {
+        "space_id": "old", "parent_path": "/Users/app-client-id", "create_time": "1970-01-01T00:10:00Z",
+    })
+    mgr = _scoped_mgr(monkeypatch, fake)
+
+    result = mgr.reconcile("alice@example.com")
+
+    assert not [c for c in fake.calls if c[0] == "PATCH" and "/genie/" in c[1]]
+    assert result["errors"] == []
+
+
+def test_grant_me_accepts_genie_as_a_resource_type(monkeypatch, enabled):
+    from server import entitlements
+
+    assert entitlements.EntitlementManager._resource_label("genie") == "genie-spaces"
