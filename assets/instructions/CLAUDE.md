@@ -12,7 +12,8 @@
   says. `databricks …` (`DEFAULT`) builds, deploys, provisions, and reads;
   `databricks-me …` (`me`) reads as the attendee for row/column security. In
   Python: `WorkspaceClient(profile="DEFAULT")` builds, `profile="me"`
-  reads. Run `workshop-grant-me` for instant access. Never query `system.*`
+  reads. Run `workshop-grant-me` after creating non-catalog resources.
+  Never query `system.*`
   tables (`system.billing`, `system.access`, `system.compute`).
 - Data lives in their catalog `$WORKSHOP_CATALOG` (`$WORKSHOP_SCHEMA` when
   set), the read-only `$WORKSHOP_DEMO_CATALOG`, and anything they upload.

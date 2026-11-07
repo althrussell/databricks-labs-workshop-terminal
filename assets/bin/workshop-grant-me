@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # workshop-grant-me — make resources you just built (apps, jobs, Lakebase /
-# Postgres instances, pipelines, serving endpoints) usable by YOU immediately,
+# Postgres instances, pipelines, serving endpoints, Genie spaces) usable by YOU immediately,
 # instead of waiting for the next reconcile sweep. Run it after a build step.
 #
 # Unity Catalog objects created inside $WORKSHOP_CATALOG are already usable by
@@ -15,7 +15,7 @@ RESOURCE_TYPE="${1:-}"
 CAPABILITY_FILE="$HOME/.config/workshop/callback-capability"
 
 case "$RESOURCE_TYPE" in
-  ""|job|jobs|pipeline|pipelines|serving-endpoint|serving-endpoints|endpoint|app|apps|database-instance|database-instances|lakebase|database-project|database-projects|warehouse|warehouses|dashboard|dashboards) ;;
+  ""|job|jobs|pipeline|pipelines|serving-endpoint|serving-endpoints|endpoint|app|apps|database-instance|database-instances|lakebase|database-project|database-projects|warehouse|warehouses|dashboard|dashboards|genie|genie-space|genie-spaces) ;;
   *)
     echo "Unknown resource type '$RESOURCE_TYPE'. Omit it to refresh every type." >&2
     exit 2

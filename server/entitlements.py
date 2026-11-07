@@ -22,13 +22,11 @@ the app SP bearer and emit ``entitlements.health`` on failure.
 
 **Coverage audit.** The adapters below cover what a workshop build actually
 produces: apps, jobs, pipelines, serving endpoints, Lakebase instances and
-projects, warehouses, Lakeview dashboards, and every Unity Catalog object via
+projects, warehouses, Lakeview dashboards, Genie spaces (both by the creator's
+home folder in their detail read), and every Unity Catalog object via
 the catalog grant. Deliberately *not* covered, because handing off on an
 unverified creator is worse than not handing off at all:
 
-- **Genie spaces** — ``/api/2.0/genie/spaces`` returns neither a creator nor a
-  creation time, and there is no second read that supplies one. A ``genie``
-  permission type exists, so this becomes addable the moment the list does.
 - **Vector search endpoints, experiments, SQL queries and alerts, registered
   models** — permission types exist (``vector-search-endpoints``,
   ``experiments``, ``queries``, ``alerts``, ``registered-models``) but the list
@@ -262,6 +260,20 @@ _RESOURCE_SPECS = (
         creator_is_path=True,
         state_field="lifecycle_state",
         skip_states=frozenset({"TRASHED"}),
+    ),
+    # Genie spaces work like dashboards. Measured live on 7 Nov 2026: the list returns
+    # {"spaces": [{space_id, title, description, warehouse_id, create_time (ISO), update_time}],
+    # "next_page_token"} with no creator, and the detail read adds parent_path, which is
+    # /Users/<creator> for a space made without one, so /Users/<application-id> for this app's
+    # service principal. The creator's CAN_MANAGE is inherited from that folder, so the ACL can't
+    # name the creator. A space the agent put in the attendee's own folder is left alone: they
+    # already inherit CAN_MANAGE there. Before this, an attendee could not open the Genie space
+    # their own agent built (Control Tower persona runs 3-5, GEN-2).
+    ResourceSpec(
+        "genie-spaces", "/api/2.0/genie/spaces", "spaces", "space_id", "genie",
+        "parent_path", "create_time", {"page_size": 100},
+        detail_path="/api/2.0/genie/spaces/{id}",
+        creator_is_path=True,
     ),
 )
 
@@ -659,6 +671,8 @@ class EntitlementManager:
             "database-project": "database-projects",
             "warehouse": "warehouses",
             "dashboard": "dashboards",
+            "genie": "genie-spaces",
+            "genie-space": "genie-spaces",
         }
         label = aliases.get(raw, raw)
         if label not in {spec.label for spec in _RESOURCE_SPECS}:
