@@ -1523,6 +1523,35 @@ def test_a_genie_space_this_apps_sp_built_is_handed_to_the_attendee(monkeypatch,
     assert result["errors"] == []
 
 
+def test_a_genie_space_in_a_subfolder_of_the_sp_home_is_handed_to_the_attendee(monkeypatch, enabled):
+    """The Genie skill builds spaces in /Users/<application-id>/genie_spaces (Codex on #159): the
+    owner is the segment after /Users/, not the last one. A staff subfolder is still left alone."""
+    fake = _strict_fake()
+    host = "https://test.cloud.databricks.com"
+    fake.register_get(f"{host}/api/2.0/genie/spaces", {"page_size": 100}, {
+        "spaces": [
+            {"space_id": "nested", "title": "Churn", "create_time": "1970-01-01T00:18:20Z"},
+            {"space_id": "staff", "title": "Staff", "create_time": "1970-01-01T00:18:20Z"},
+        ],
+    })
+    fake.register_get(f"{host}/api/2.0/genie/spaces/nested", {}, {
+        "space_id": "nested", "parent_path": "/Workspace/Users/app-client-id/genie_spaces",
+        "create_time": "1970-01-01T00:18:20Z",
+    })
+    fake.register_get(f"{host}/api/2.0/genie/spaces/staff", {}, {
+        "space_id": "staff", "parent_path": "/Users/staff@example.com/app-client-id",
+        "create_time": "1970-01-01T00:18:20Z",
+    })
+    fake.register_patch(f"{host}/api/2.0/permissions/genie/nested", {"CAN_MANAGE"})
+    mgr = _scoped_mgr(monkeypatch, fake)
+
+    result = mgr.reconcile("alice@example.com")
+
+    patched = [c[1] for c in fake.calls if c[0] == "PATCH" and "/genie/" in c[1]]
+    assert patched == [f"{host}/api/2.0/permissions/genie/nested"]
+    assert result["errors"] == []
+
+
 def test_a_genie_space_from_before_the_run_is_left_alone(monkeypatch, enabled):
     fake = _strict_fake()
     host = "https://test.cloud.databricks.com"

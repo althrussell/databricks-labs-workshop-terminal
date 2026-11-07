@@ -504,9 +504,14 @@ def _created_by_sp(spec: ResourceSpec, item: dict, sp_identities: set[str]) -> b
         return True
     creator = str(_field_value(item, spec.creator_field) or "").strip().lower()
     if spec.creator_is_path:
-        # A workspace path names its owner in the last segment — /Users/<email>
-        # for a person, /Users/<application-id> for a service principal.
-        creator = creator.rstrip("/").rsplit("/", 1)[-1]
+        # A workspace path names its owner right after /Users/ — /Users/<email>
+        # for a person, /Users/<application-id> for a service principal — with
+        # or without /Workspace first, and however deep the object sits under it
+        # (the Genie skill builds spaces in /Users/<id>/genie_spaces).
+        parts = [part for part in creator.split("/") if part]
+        if parts[:1] == ["workspace"]:
+            parts = parts[1:]
+        creator = parts[1] if len(parts) > 1 and parts[0] == "users" else ""
     return bool(creator) and creator in sp_identities
 
 
