@@ -244,6 +244,18 @@ def test_a_deploy_that_leaves_the_live_app_without_the_scope_says_so(tmp_path):
     assert "does not show the ai-gateway scope" in result["message"]
 
 
+def test_a_deploy_that_strips_an_existing_scope_warns_even_when_present_before(tmp_path):
+    env, project = _env(tmp_path)
+    declared = APX_BUNDLE.replace("source_code_path: ./.build", "source_code_path: ./.build\n      user_api_scopes: [ai-gateway]")
+    (project / "databricks.yml").write_text(declared)
+    backend = BundleBackend(project, before=_app(scopes=("ai-gateway",)), after=_app(active="new", scopes=()))
+
+    result = _controller(env, backend).deploy(project_path=str(project))
+
+    assert result["status"] == "succeeded"
+    assert "does not show the ai-gateway scope" in result["message"]
+
+
 def test_a_bundle_that_already_declares_the_scope_is_not_edited_or_checked_again(tmp_path):
     env, project = _env(tmp_path)
     declared = APX_BUNDLE.replace("source_code_path: ./.build", "source_code_path: ./.build\n      user_api_scopes: [ai-gateway]")

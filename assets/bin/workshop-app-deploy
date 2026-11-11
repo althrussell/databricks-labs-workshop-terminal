@@ -1353,13 +1353,13 @@ class DeployController:
                 "could not be confirmed. If model calls as the attendee fail, ask a facilitator."
             )
         has_now = AI_GATEWAY_SCOPE in live
-        if before is True:
-            return ""
         if not has_now:
             return (
                 "The live App does not show the ai-gateway scope after this deploy, so model "
                 "calls as the attendee will fail. Ask a facilitator to add it to the App."
             )
+        if before is True:
+            return ""
         if before is None:
             return (
                 "The App asks for the ai-gateway scope. The attendee clicks Allow once, on the "
