@@ -32,6 +32,30 @@ same project and target. A concurrent duplicate waits for and returns the
 active call's result instead of deploying again, while lock waits still honor
 cancellation and timeout. There is no limit on sequential deployments.
 
+## Model access scope
+
+An App calls models as the signed-in attendee, so the bundle must give it the
+`ai-gateway` user authorization scope (`user_api_scopes`). Before submitting, the
+tool checks the resolved bundle (`bundle validate`) and, when the scope is
+missing, adds it to the app resource's list in `databricks.yml` (or a
+`resources/*.yml` file). Existing scopes are kept. The edit is checked by a second
+`bundle validate`, and the file is restored if any scope was lost or the edit
+could not be made. Nothing is deployed in those cases.
+
+- A first deploy creates the App with the scope, so the attendee's single Allow
+  click covers it. The success message says so.
+- An existing App without the scope gets it from this deploy. The success message
+  tells the agent to tell the attendee to reopen the App and click Allow. If the
+  live App still lacks the scope afterwards, the message says so and asks for a
+  facilitator.
+- `workshop-init-project` declares the scope in the scaffold the same way, through
+  `workshop-app-deploy --declare-ai-gateway <project>` (text only, no deploy).
+
+Open question: the CLI's `apps deploy` in a project directory is documented as
+validate, deploy the project and run it. Whether it also applies a changed
+`user_api_scopes` to an App that already exists is not verified. The success
+message reports what the live App shows after the deploy.
+
 ## Terminal outcomes
 
 | Status | Meaning | Follow-up |

@@ -36,7 +36,7 @@ resources:
 |---------------|-------------------|-------|
 | SQL Warehouse | CAN_USE | Minimum for query execution |
 | Model Serving Endpoint | CAN_QUERY | For inference calls on custom and external endpoints (and built-in foundation-model endpoints until the workspace moves to UC model services) |
-| UC Model Service | EXECUTE | Declare as a `uc_securable` resource (`securable_type: MODEL_SERVICE`); grants the app SP `EXECUTE`, plus `USE CATALOG` / `USE SCHEMA` on the parents when needed. The `serving_endpoint`/`CAN_QUERY` resource remains for custom, external, and MPS-backed serving endpoints |
+| UC Model Service | the user's EXECUTE | Not an app resource. Call it as the signed-in user with the forwarded token and the `ai-gateway` user scope; the app's service principal is not the caller. The `serving_endpoint`/`CAN_QUERY` resource remains for custom, external, and MPS-backed serving endpoints |
 | Vector Search Index (UC) | SELECT | UC securable of type TABLE |
 | Volume (UC) | READ_VOLUME | Via UC securable |
 | Secret Scope | READ | Deploying user needs MANAGE on the scope |

@@ -388,7 +388,7 @@ def _skills_entry() -> dict:
                 f"{install.SKILLS_UPSTREAM_DIR}/ is empty at {install.SKILLS_REF}"
             )
         raw_checksum = directory_checksum(upstream, names)
-        project_skills(upstream)
+        project_skills(upstream, strict=True)
         effective_names = {name for name in names if os.path.isdir(os.path.join(upstream, name))}
         return {
             "version": install.SKILLS_REF,

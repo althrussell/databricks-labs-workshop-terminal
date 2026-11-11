@@ -1,0 +1,76 @@
+# Calling models from an App
+
+An App calls models as the signed-in attendee, never as its own service principal.
+The attendee's token (OBO) is what the Unity AI Gateway checks, and the attendee already
+holds EXECUTE on the event's model pool. The App's identity has no such grant.
+
+## What the deploy sets up
+
+- `workshop-app-deploy` declares the `ai-gateway` user scope (`user_api_scopes`) on the
+  App before its first deploy, so the attendee's one Allow click covers it.
+- An existing App that lacks the scope gets it on the next deploy. Tell the attendee:
+  reopen the App and click Allow. Model calls fail until they do.
+- Declare no `uc_securable` MODEL_SERVICE resource. It grants the App's service principal,
+  which is not the caller.
+
+## Environment
+
+- `DATABRICKS_SERVING_BASE_URL`: `https://<workspace>/ai-gateway/mlflow/v1`.
+- `DATABRICKS_MODEL`: the event's driver, a `system.ai.<name>` model. Copy
+  `env.ANTHROPIC_MODEL` from `~/.claude/settings.json`. Set it in `app.yml`.
+
+## APX backend (FastAPI)
+
+The `Dependencies.UserClient` dependency is the attendee's client. Use its token for the
+gateway call; the OpenAI client is OpenAI-compatible and runs on the gateway path.
+
+```python
+import os
+
+from openai import OpenAI
+from pydantic import BaseModel
+
+from .core import Dependencies, create_router
+
+router = create_router()
+
+
+class QuestionIn(BaseModel):
+    question: str
+
+
+class AnswerOut(BaseModel):
+    answer: str
+
+
+@router.post("/ask", response_model=AnswerOut, operation_id="askModel")
+def ask(body: QuestionIn, user_ws: Dependencies.UserClient) -> AnswerOut:
+    # The signed-in attendee's bearer token, not the App's credentials.
+    token = user_ws.config.authenticate()["Authorization"].removeprefix("Bearer ")
+    client = OpenAI(
+        api_key=token,
+        base_url=f"{user_ws.config.host.rstrip('/')}/ai-gateway/mlflow/v1",
+    )
+    reply = client.chat.completions.create(
+        model=os.environ["DATABRICKS_MODEL"],
+        messages=[{"role": "user", "content": body.question}],
+        max_tokens=512,
+    )
+    return AnswerOut(answer=reply.choices[0].message.content or "")
+```
+
+Keep the OpenAI call inside the route, and add `openai` with `uv add openai`.
+
+## Other frameworks
+
+Read the forwarded header `X-Forwarded-Access-Token` and use it as the bearer token for
+`<host>/ai-gateway/mlflow/v1`. A complete Streamlit example is in the
+`databricks-apps-python` skill: `examples/fm-minimal-chat.py` and `examples/llm_config.py`
+(pass the token as `user_token`).
+
+## Background work and Agent Bricks
+
+- Background work with no signed-in user runs as the App, and relies on the automatic
+  access Control Tower grants it.
+- Agent Bricks agents (`agentbricks deploy`) call models as the App. If the model does not
+  exist right after deploy, wait 2 minutes and retry. Never grant it yourself.

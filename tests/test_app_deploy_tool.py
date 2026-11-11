@@ -55,6 +55,7 @@ def _app(
     pending: str = "",
     app_state: str = "RUNNING",
     compute_state: str = "ACTIVE",
+    scopes: tuple[str, ...] = ("ai-gateway",),
 ) -> dict:
     return {
         "url": "https://demo.databricksapps.com",
@@ -72,6 +73,7 @@ def _app(
         else None,
         "app_status": {"state": app_state},
         "compute_status": {"state": compute_state},
+        "user_api_scopes": list(scopes),
     }
 
 
@@ -100,6 +102,7 @@ class FakeBackend:
                     "demo": {
                         "id": "demo-app",
                         "url": "https://demo.databricksapps.com",
+                        "user_api_scopes": ["ai-gateway"],
                     }
                 }
             }
@@ -369,6 +372,7 @@ def test_first_deployment_falls_back_to_bundle_validate(tmp_path):
                         "demo": {
                             "name": "demo-app",
                             "url": "https://demo.databricksapps.com",
+                            "user_api_scopes": ["ai-gateway"],
                         }
                     }
                 }
@@ -405,6 +409,7 @@ class LakebaseBackend(FakeBackend):
             "url": "https://demo.databricksapps.com",
             "source_code_path": ".",
             "resources": list(resources),
+            "user_api_scopes": ["ai-gateway"],
         }
 
     def bundle_validate(self, _project, _target):
@@ -603,13 +608,23 @@ def test_a_failed_validation_does_not_block_a_plain_app(tmp_path):
 
     backend = BrokenValidate()
 
-    assert _controller(env, backend).deploy(project_path=str(project))["status"] == "succeeded"
+    result = _controller(env, backend).deploy(project_path=str(project))
+    result_message = result["message"]
+    assert result["status"] == "succeeded"
     assert backend.submissions == 1
-    assert calls == []  # the scan found no endpoint reader, so validate was never needed
+    # The Lakebase scan found no endpoint reader, so no Lakebase validate. The scope step
+    # asked the resolved bundle once (the App is in no file it can edit), and that failure
+    # is a warning on the result, not a refusal.
+    assert len(calls) == 1
+    assert "could not be checked" in result_message
 
 
 def test_the_bundle_is_validated_once_on_the_first_deployment_path(tmp_path):
     env, project = _env(tmp_path)
+    (project / "databricks.yml").write_text(
+        "bundle:\n  name: demo\nresources:\n  apps:\n    demo:\n      name: demo-app\n"
+        "      user_api_scopes:\n        - ai-gateway\n"
+    )
     calls = []
 
     class FirstDeployBackend(FakeBackend):
@@ -618,7 +633,7 @@ def test_the_bundle_is_validated_once_on_the_first_deployment_path(tmp_path):
 
         def bundle_validate(self, _project, _target):
             calls.append(1)
-            return {"resources": {"apps": {"demo": {"name": "demo-app"}}}}
+            return {"resources": {"apps": {"demo": {"name": "demo-app", "user_api_scopes": ["ai-gateway"]}}}}
 
     assert _controller(env, FirstDeployBackend()).deploy(project_path=str(project))["status"] == "succeeded"
     assert len(calls) == 1

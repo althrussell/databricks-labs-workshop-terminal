@@ -64,6 +64,10 @@ LAKEBASE_ENDPOINT_ENV = "LAKEBASE_ENDPOINT"
 APP_CONFIG_FILES = ("app.yml", "app.yaml")
 ENV_ITEM_RE = re.compile(r"^(\s*)-(?:\s+(.*?))?\s*$")
 ENV_KEY_RE = re.compile(r"^\s*(name|value|valueFrom|resource)\s*:\s*(.*?)\s*$")
+# Models are called as the attendee (OBO), which needs this user-authorization scope on the App.
+AI_GATEWAY_SCOPE = "ai-gateway"
+# A `key:` line in a bundle file, with the quoted or plain key in group 2.
+YAML_KEY_RE = re.compile(r"^(\s*)(\"[^\"]+\"|'[^']+'|[A-Za-z0-9_.\-]+)\s*:(?:\s+(.*?))?\s*$")
 # Code that reads the endpoint, so the app needs the app.yml entry. Other routes (PGHOST and a password) don't.
 CODE_SUFFIXES = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json")
 # Code that reads LAKEBASE_ENDPOINT directly, or through AppKit's lakebase() plugin, which reads it for the app.
@@ -502,6 +506,208 @@ def _app_candidates(summary: dict[str, Any]) -> list[dict[str, str]]:
     return sorted(unique.values(), key=lambda item: item["name"])
 
 
+def _declared_scopes(bundle: dict[str, Any], resource_key: str) -> list[str]:
+    """The user_api_scopes the resolved bundle gives one app resource."""
+    resources = bundle.get("resources") if isinstance(bundle, dict) else None
+    apps = resources.get("apps") if isinstance(resources, dict) else None
+    config = apps.get(resource_key) if isinstance(apps, dict) else None
+    scopes = config.get("user_api_scopes") if isinstance(config, dict) else None
+    return [str(scope) for scope in scopes] if isinstance(scopes, list) else []
+
+
+def _yaml_is_content(line: str) -> bool:
+    stripped = line.strip()
+    return bool(stripped) and not stripped.startswith("#")
+
+
+def _yaml_indent(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
+def _yaml_unquote(value: str) -> str:
+    return value.strip().strip("'\"")
+
+
+def _yaml_children(lines: list[str], start: int, end: int) -> list[tuple[int, int, str, str]]:
+    """Direct mapping keys in ``lines[start:end]`` as (line, indent, key, inline value)."""
+    indent: int | None = None
+    found: list[tuple[int, int, str, str]] = []
+    for index in range(start, end):
+        line = lines[index]
+        if not _yaml_is_content(line):
+            continue
+        current = _yaml_indent(line)
+        if indent is None:
+            indent = current
+        if current != indent:
+            continue
+        match = YAML_KEY_RE.match(_strip_comment(line))
+        if match:
+            found.append((index, current, _yaml_unquote(match.group(2)), (match.group(3) or "").strip()))
+    return found
+
+
+def _yaml_extent(lines: list[str], index: int, indent: int) -> int:
+    """The index just past the block that the key on ``index`` opens."""
+    end = index + 1
+    while end < len(lines) and (not _yaml_is_content(lines[end]) or _yaml_indent(lines[end]) > indent):
+        end += 1
+    return end
+
+
+def _yaml_child(lines: list[str], start: int, end: int, key: str) -> tuple[int, int, str, str] | None:
+    for entry in _yaml_children(lines, start, end):
+        if entry[2] == key:
+            return entry
+    return None
+
+
+def _yaml_app_block(lines: list[str], resource_key: str | None) -> tuple[int, int, str, str] | None:
+    """The ``resources.apps.<key>`` mapping entry, or the apps mapping when no key is given."""
+    resources = _yaml_child(lines, 0, len(lines), "resources")
+    if resources is None or resources[3]:
+        return None
+    apps = _yaml_child(lines, resources[0] + 1, _yaml_extent(lines, resources[0], resources[1]), "apps")
+    if apps is None or apps[3]:
+        return None
+    if resource_key is None:
+        return apps
+    app = _yaml_child(lines, apps[0] + 1, _yaml_extent(lines, apps[0], apps[1]), resource_key)
+    return app if app is not None and not app[3] else None
+
+
+def _yaml_app_keys(text: str) -> list[str]:
+    """The app resource keys under ``resources.apps`` in one bundle file."""
+    lines = text.splitlines(keepends=True)
+    apps = _yaml_app_block(lines, None)
+    if apps is None:
+        return []
+    return [
+        key
+        for _, _, key, value in _yaml_children(lines, apps[0] + 1, _yaml_extent(lines, apps[0], apps[1]))
+        if not value
+    ]
+
+
+def _yaml_add_ai_gateway(text: str, resource_key: str) -> str | None:
+    """``text`` with ``ai-gateway`` added to one app's ``user_api_scopes``.
+
+    Existing scopes are kept and nothing is removed. Returns None when the
+    resource is not a plain block mapping this reader can edit without a YAML
+    parser; the caller then refuses rather than guess. A result equal to
+    ``text`` means the scope was already there.
+    """
+    newline = "\r\n" if "\r\n" in text else "\n"
+    lines = text.splitlines(keepends=True)
+    app = _yaml_app_block(lines, resource_key)
+    if app is None:
+        return None
+    body_start, body_end = app[0] + 1, _yaml_extent(lines, app[0], app[1])
+    body = _yaml_children(lines, body_start, body_end)
+    if not body:
+        return None
+    child_indent = body[0][1]
+    scopes = next((entry for entry in body if entry[2] == "user_api_scopes"), None)
+
+    def insert_after(index: int, new_lines: list[str]) -> str:
+        edited = list(lines)
+        if not edited[index].endswith("\n"):
+            edited[index] += "\n"
+        edited[index + 1:index + 1] = [line + newline for line in new_lines]
+        return "".join(edited)
+
+    if scopes is None:
+        last = next(
+            index for index in range(body_end - 1, body_start - 1, -1) if _yaml_is_content(lines[index])
+        )
+        return insert_after(last, [
+            " " * child_indent + "user_api_scopes:",
+            " " * (child_indent + 2) + f"- {AI_GATEWAY_SCOPE}",
+        ])
+    line_index, scope_indent, _, value = scopes
+    if value.startswith("["):
+        if not value.endswith("]"):
+            return None
+        items = [_yaml_unquote(item) for item in value[1:-1].split(",") if item.strip()]
+        if AI_GATEWAY_SCOPE in items:
+            return text
+        ending = newline if lines[line_index].endswith("\n") else ""
+        edited = list(lines)
+        edited[line_index] = (
+            " " * scope_indent + "user_api_scopes: ["
+            + ", ".join([*items, AI_GATEWAY_SCOPE]) + "]" + ending
+        )
+        return "".join(edited)
+    if value:
+        return None
+    item_end = _yaml_extent(lines, line_index, scope_indent)
+    items = [index for index in range(line_index + 1, item_end) if _yaml_is_content(lines[index])]
+    if any(not _strip_comment(lines[index]).lstrip().startswith("-") for index in items):
+        return None
+    if any(
+        _yaml_unquote(_strip_comment(lines[index]).lstrip()[1:]) == AI_GATEWAY_SCOPE
+        for index in items
+    ):
+        return text
+    if items:
+        item_indent, last = _yaml_indent(lines[items[0]]), items[-1]
+    else:
+        item_indent, last = scope_indent + 2, line_index
+    return insert_after(last, [" " * item_indent + f"- {AI_GATEWAY_SCOPE}"])
+
+
+def _bundle_files(project: Path) -> list[Path]:
+    """Bundle files that can hold an app resource: databricks.yml and resources/*.yml."""
+    files: list[Path] = []
+    root = project / "databricks.yml"
+    if root.is_file() and not root.is_symlink():
+        files.append(root)
+    directory = project / "resources"
+    if directory.is_dir() and not directory.is_symlink():
+        for path in sorted(directory.iterdir()):
+            if path.suffix in (".yml", ".yaml") and path.is_file() and not path.is_symlink():
+                files.append(path)
+    return files
+
+
+def _read_text(path: Path) -> str:
+    with path.open(encoding="utf-8", newline="") as handle:
+        return handle.read()
+
+
+def _write_text(path: Path, text: str) -> None:
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        handle.write(text)
+
+
+def _scope_refusal(resource_key: str) -> str:
+    return (
+        f"The bundle's app resource {resource_key} is not a form this deploy tool can edit. "
+        f"Add `- {AI_GATEWAY_SCOPE}` under its user_api_scopes in databricks.yml, then deploy again."
+    )
+
+
+def declare_ai_gateway_in_project(project: Path) -> list[str]:
+    """Add ``ai-gateway`` to every app resource in a project's bundle files, text only.
+
+    ``workshop-init-project`` calls this right after a scaffold, before the first
+    commit, so the App is created with the scope. Returns the files it changed.
+    """
+    changed: list[str] = []
+    for path in _bundle_files(project):
+        original = _read_text(path)
+        text = original
+        for key in _yaml_app_keys(original):
+            edited = _yaml_add_ai_gateway(text, key)
+            if edited is None:
+                raise DeployError(_scope_refusal(key))
+            text = edited
+        if text != original:
+            _write_text(path, text)
+            changed.append(path.name)
+    return changed
+
+
 def _lakebase_resource_names(app_config: dict[str, Any]) -> tuple[bool, list[str]]:
     """Whether the app binds a Lakebase resource, and the names given to those bindings."""
     bound = False
@@ -660,6 +866,12 @@ def lakebase_problems(bundle: dict[str, Any], project: Path, apps: list[dict[str
                 f"(declared: {', '.join(names)}). Set valueFrom to one of those names."
             )
     return problems
+
+
+def _live_scopes(app: dict[str, Any]) -> list[str] | None:
+    """The user authorization scopes the live App has, or None when the payload has none."""
+    scopes = app.get("user_api_scopes") if isinstance(app, dict) else None
+    return [str(scope) for scope in scopes] if isinstance(scopes, list) else None
 
 
 def _deployment_id(value: object) -> str:
@@ -1012,6 +1224,90 @@ class DeployController:
                 ) from exc
         return lakebase_problems(bundle, project, apps)
 
+    def _declare_ai_gateway(self, project: Path, target: str, app: dict[str, str]) -> str:
+        """Make the bundle's app declare the ``ai-gateway`` scope, and say what was done.
+
+        The scope lets the attendee's token call models on ``/ai-gateway``.
+        Returns ``declared`` (already in place, no edit), ``added`` (the bundle was
+        edited and checked) or ``unchecked`` (the App is not in a bundle file this
+        tool can edit, and the resolved bundle could not be read). An edit that
+        cannot be checked is undone, and nothing is deployed.
+        """
+        key = app["resource_key"]
+        located = None
+        for path in _bundle_files(project):
+            original = _read_text(path)
+            if key in _yaml_app_keys(original):
+                located = (path, original, _yaml_add_ai_gateway(original, key))
+                break
+        if located is not None and located[2] == located[1]:
+            return "declared"  # the bundle file already says so; no CLI call needed
+        if located is not None and located[2] is not None:
+            return self._edit_ai_gateway(project, target, key, *located)
+        try:
+            declared = _declared_scopes(self.backend.bundle_validate(project, target), key)
+        except CliError:
+            return "unchecked"
+        if AI_GATEWAY_SCOPE in declared:
+            return "declared"
+        raise DeployError(_scope_refusal(key))
+
+    def _edit_ai_gateway(
+        self, project: Path, target: str, key: str, path: Path, original: str, edited: str
+    ) -> str:
+        try:
+            before = _declared_scopes(self.backend.bundle_validate(project, target), key)
+        except CliError as exc:
+            raise DeployError(
+                f"The app's user authorization scopes could not be checked ({_safe_line(exc)}). "
+                "Retry the deploy; nothing was deployed."
+            ) from exc
+        if AI_GATEWAY_SCOPE in before:
+            return "declared"  # declared through a target or include the text check did not see
+        _write_text(path, edited)
+        try:
+            now = _declared_scopes(self.backend.bundle_validate(project, target), key)
+        except CliError as exc:
+            _write_text(path, original)
+            raise DeployError(
+                f"The edited bundle could not be checked ({_safe_line(exc)}). "
+                "The file was restored; nothing was deployed."
+            ) from exc
+        if AI_GATEWAY_SCOPE not in now or not set(before) <= set(now):
+            _write_text(path, original)
+            raise DeployError(
+                "The edited bundle did not keep the app's scopes as expected. "
+                f"The file was restored. {_scope_refusal(key)}"
+            )
+        return "added"
+
+    def _scope_message(self, state: dict[str, Any], app: dict[str, Any]) -> str:
+        """What the agent must tell the attendee about the ai-gateway scope after a success."""
+        if state.get("ai_gateway_edit") == "unchecked":
+            return (
+                "The ai-gateway scope could not be checked, because the App is not in a bundle "
+                "file this tool edits. If model calls as the attendee fail, add `- ai-gateway` "
+                "under user_api_scopes in databricks.yml and deploy again."
+            )
+        before = state.get("ai_gateway_before")
+        has_now = AI_GATEWAY_SCOPE in (_live_scopes(app) or [])
+        if before is True:
+            return ""
+        if not has_now:
+            return (
+                "The live App does not show the ai-gateway scope after this deploy, so model "
+                "calls as the attendee will fail. Ask a facilitator to add it to the App."
+            )
+        if before is None:
+            return (
+                "The App asks for the ai-gateway scope. The attendee clicks Allow once, on the "
+                "first open of the App."
+            )
+        return (
+            "The App has just gained the ai-gateway scope. Tell the attendee: reopen the App "
+            "and click Allow. Model calls fail until they do."
+        )
+
     def _start(
         self,
         project: Path,
@@ -1055,8 +1351,11 @@ class DeployController:
             raise DeployError(" ".join(problems) + " Nothing was deployed.")
         baseline: set[str] = set()
         snapshot: dict[str, str] | None = None
+        live_scopes: list[str] | None = None
         try:
-            snapshot = _snapshot(self.backend.get_app(project, app["name"]))
+            app_payload = self.backend.get_app(project, app["name"])
+            snapshot = _snapshot(app_payload)
+            live_scopes = _live_scopes(app_payload)
             baseline.update(
                 value
                 for value in (
@@ -1069,6 +1368,9 @@ class DeployController:
                 app["url"] = snapshot["url"]
         except CliError:
             pass  # first deployment: the app may not exist yet
+        # Before anything is submitted: the scope is set at create, so the
+        # attendee's one Allow click covers the App from its first open.
+        edit = self._declare_ai_gateway(project, target, app)
         if snapshot is not None:
             # Outside the try: the wait's DeployError must reach the caller,
             # and its own CLI errors are handled inside it.
@@ -1089,6 +1391,9 @@ class DeployController:
             "created_at": self.wall_time(),
             "attempts": 0,
             "state_root": str(store.root),
+            # None: no App existed before this deploy. Otherwise whether the live App had ai-gateway.
+            "ai_gateway_before": None if snapshot is None else AI_GATEWAY_SCOPE in (live_scopes or []),
+            "ai_gateway_edit": edit,
         }
         store.save(state)
         self.backend.start_submit(state)
@@ -1218,6 +1523,7 @@ class DeployController:
                         "deployment_succeeded",
                         resumed,
                         call_started,
+                        message=self._scope_message(state, app),
                     )
                 if deployment_state == "SUCCEEDED" and (
                     snapshot["app_state"] == "CRASHED"
@@ -1779,6 +2085,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-path", default="", help=argparse.SUPPRESS)
     parser.add_argument("--exit-path", default="", help=argparse.SUPPRESS)
     parser.add_argument("--worker-token", default="", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--declare-ai-gateway",
+        default="",
+        metavar="PROJECT",
+        help="add the ai-gateway user scope to the project's app resources, then exit (no deploy)",
+    )
     return parser
 
 
@@ -1786,6 +2098,15 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.submit_worker:
         return submit_worker(args)
+    if args.declare_ai_gateway:
+        try:
+            changed = declare_ai_gateway_in_project(Path(args.declare_ai_gateway))
+        except (DeployError, OSError) as exc:
+            print(f"workshop-app-deploy: {_safe_line(exc)}", file=sys.stderr)
+            return 1
+        if changed:
+            print(f"ai-gateway scope declared in {', '.join(changed)}", file=sys.stderr)
+        return 0
     if args.mcp:
         return McpServer(DeployController()).serve()
     cancel = threading.Event()
@@ -1810,6 +2131,8 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, sort_keys=True))
     elif result["status"] == "succeeded":
         print(f"App is live: {result['app_url']}")
+        if result.get("message"):
+            print(result["message"])
     else:
         print(
             f"Deploy {result['status']}: {result['reason']} "

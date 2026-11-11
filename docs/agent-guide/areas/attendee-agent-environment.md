@@ -74,7 +74,9 @@ on this repository.
 - **Rotating tokens are read from a file at request time** (Claude `apiKeyHelper`, Codex
   `auth.command`). Never bake a token into a config value a long-running CLI caches.
 - **Vendored upstream skills are regenerated, not edited** (see the
-  [toolchain guide](toolchain-and-release.md)). Workshop-authored skills, such as
+  [toolchain guide](toolchain-and-release.md)). Workshop text for an upstream skill goes in
+  `server/bootstrap/skill_projection.py` (anchored replacements) or `assets/skill-overlays/` (whole files); see
+  `assets/skills/SKILLS_SOURCE.md`. Model calls run as the attendee, never the App's service principal. Workshop-authored skills, such as
   `assets/skills/workshop/` and `assets/skills/workshop-export/`, are edited directly.
   `scripts/refresh_vendored_skills.py` lists the fork-only set.
 - **Startup context is a budget.** Every line added to `assets/instructions/` is loaded by

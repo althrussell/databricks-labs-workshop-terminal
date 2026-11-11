@@ -23,6 +23,31 @@ Do not hand-edit platform skills; regenerate through the refresh scripts.
 The tag, commit and raw digest above equal the `databricks_agent_skills`
 manifest entry. `effective_content_sha256` verifies the delivered projection.
 
+## Workshop changes to upstream skills
+
+`server/bootstrap/skill_projection.py::project_skills` is the only place the
+workshop changes upstream text. Refresh and boot both run it over the pinned
+clone, so the vendored tree is that projection. Two mechanisms:
+
+- **Anchored replacements** (`_replace_once`, `_replace_span`) change one passage
+  of an upstream file. They fail loudly when the anchor is missing, so a new
+  upstream tag cannot silently keep the old model-call guidance.
+- **Overlays** (`assets/skill-overlays/<skill>/<path>`) replace a whole upstream
+  file. Use them for example code. Changes to an overlaid file need a review of
+  the upstream file on every refresh.
+
+The model-call changes (an App calls models as the attendee, not as its service
+principal) are in `databricks-apps-python/examples/fm-minimal-chat.py`,
+`databricks-apps-python/examples/llm_config.py` (overlays, `user_token` argument),
+`databricks-apps-python/examples/fm-parallel-calls.py` and
+`fm-structured-outputs.py` (default model docstring), and the AppKit and platform
+passages in `databricks-apps`. The `apx` skill is not projected: it is the
+official upstream bytes, checked by `scripts/refresh_apx.py`. Its model-call
+guidance is in the workshop-authored `workshop` skill (`references/app-model-calls.md`).
+
+The projection changes the effective digest, so `effective_content_sha256` in the
+manifest moves with it. The raw `content_sha256` and commit do not.
+
 ## Additional delivered skills
 
 - `impeccable` — the single upstream UX skill from

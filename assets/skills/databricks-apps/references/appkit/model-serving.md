@@ -218,90 +218,30 @@ Built-in pay-per-token `databricks-*` foundation-model endpoints are being retir
 
 Two related 403s look similar:
 
-- **Provisioned-throughput (PT) foundation-model endpoints** also reject direct queries under enforcement: `"Querying provisioned throughput foundation model endpoint '<name>' directly is disabled for this workspace. Please use Unity Gateway."` Create a model service that references the PT endpoint and declare that model service as the `uc_securable` below.
+- **Provisioned-throughput (PT) foundation-model endpoints** also reject direct queries under enforcement: `"Querying provisioned throughput foundation model endpoint '<name>' directly is disabled for this workspace. Please use Unity Gateway."` Create a model service that references the PT endpoint, and call that model service as the signed-in user (below).
 - `"Endpoint '<name>' is no longer available. Please use Unity Gateway."` is returned for AI Gateway v2 endpoints of every type, custom and external included. On its own it doesn't mean a built-in endpoint was retired; check which endpoint the app is calling.
 
-Declare the model service as a `uc_securable` app resource (`securable_type: MODEL_SERVICE`, `permission: EXECUTE`). On deploy, the app's service principal is granted `EXECUTE` on the model service, plus `USE CATALOG` and `USE SCHEMA` on its parents when account users don't already hold them — this replaces the `serving_endpoint` resource's `CAN_QUERY`. Inject it with `valueFrom: <resource-name>`; the env var resolves to the service's full name.
-
-```yaml
-# databricks.yml — declare the model service as an app resource (permissions granted on deploy)
-resources:
-  apps:
-    my_app:
-      resources:
-        - name: model
-          uc_securable:
-            securable_type: MODEL_SERVICE
-            permission: EXECUTE
-            securable_full_name: system.ai.claude-sonnet-4-5
-```
-
-```yaml
-# app.yaml — inject the resource; the env var resolves to the service FQN
-env:
-  - name: MODEL_SERVICE
-    valueFrom: model   # e.g. system.ai.claude-sonnet-4-5
-```
-
-`serving()` and its endpoint aliases take Model Serving endpoint names only — do not pass a model-service name to `serving()`. Call the model service from server code instead, passing the injected full name as `model` on the `/ai-gateway/mlflow/v1` path with the app service principal's credentials. From Python:
-
-```python
-import os
-
-import requests
-from databricks.sdk import WorkspaceClient
-
-w = WorkspaceClient()  # app service principal credentials injected by the Apps runtime
-
-response = requests.post(
-    f"{w.config.host.rstrip('/')}/ai-gateway/mlflow/v1/chat/completions",
-    headers={**w.config.authenticate(), "Content-Type": "application/json"},
-    json={
-        "model": os.environ["MODEL_SERVICE"],
-        "messages": [{"role": "user", "content": "Summarize this support case."}],
-        "max_tokens": 256,
-    },
-    timeout=60,
-)
-response.raise_for_status()
-print(response.json()["choices"][0]["message"]["content"])
-```
-
-From a Node.js server route (TypeScript), mint an OAuth token for the app service principal from the injected `DATABRICKS_CLIENT_ID` / `DATABRICKS_CLIENT_SECRET`:
+Call the model service as the signed-in user, never as the app's service principal, and do not declare it as a `uc_securable` resource. The Apps proxy forwards the attendee's token in `X-Forwarded-Access-Token` when the app declares the `ai-gateway` user scope (`user_api_scopes`). Send that token on `/ai-gateway/mlflow/v1`:
 
 ```typescript
+// Server route. `req` is the Express request.
+const token = req.header('x-forwarded-access-token');
+if (!token) throw new Error('No forwarded user token: the app needs the ai-gateway user scope');
 const host = process.env.DATABRICKS_HOST!.replace(/^(?!https?:\/\/)/, 'https://').replace(/\/$/, '');
-
-async function getAppToken(): Promise<string> {
-  const res = await fetch(`${host}/oidc/v1/token`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${Buffer.from(`${process.env.DATABRICKS_CLIENT_ID}:${process.env.DATABRICKS_CLIENT_SECRET}`).toString('base64')}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: 'grant_type=client_credentials&scope=all-apis',
-  });
-  if (!res.ok) throw new Error(`token request failed: ${res.status}`);
-  return (await res.json()).access_token;
-}
-
-const res = await fetch(`${host}/ai-gateway/mlflow/v1/chat/completions`, {
+const response = await fetch(`${host}/ai-gateway/mlflow/v1/chat/completions`, {
   method: 'POST',
-  headers: { Authorization: `Bearer ${await getAppToken()}`, 'Content-Type': 'application/json' },
+  headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
   body: JSON.stringify({
-    model: process.env.MODEL_SERVICE,
+    model: process.env.DATABRICKS_MODEL, // the event's driver, e.g. system.ai.claude-opus-5-5
     messages: [{ role: 'user', content: 'Summarize this support case.' }],
     max_tokens: 256,
   }),
 });
-if (!res.ok) throw new Error(`model service call failed: ${res.status}`);
-const data = await res.json();
-console.log(data.choices[0].message.content);
+if (!response.ok) throw new Error(`Model call failed: HTTP ${response.status}`);
+const data = await response.json();
 ```
 
-To migrate a retired built-in endpoint, look up the matching model service with `databricks ai-gateway list-model-services --parent schemas/system.ai` (don't guess the name from the endpoint), point `securable_full_name` at it, and call that full name in place of the endpoint name. For other query APIs (Responses, native provider APIs), permissions outside Apps, and migrating non-app clients, use the **`databricks-unity-gateway`** skill.
-
-> **Sovereign clouds:** On Azure Government, Azure China (Mooncake), and AWS GovCloud/DoD, the `system.ai.<model>` names are not available yet — keep using the legacy `databricks-<model>` endpoint names there.
+`serving()` and its endpoint aliases take Model Serving endpoint names only. Do not pass a model-service name to `serving()`. Background work with no signed-in user runs as the app; the Agent Bricks exception is in the workshop contract.
 
 ## Troubleshooting
 

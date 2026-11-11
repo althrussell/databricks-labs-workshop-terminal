@@ -9,17 +9,30 @@ from urllib.parse import urlsplit
 
 from openai import OpenAI
 
+# Model access for Databricks Apps.
+#
+# Inside an App request, pass the signed-in attendee's token as ``user_token``
+# (the ``X-Forwarded-Access-Token`` header). Model calls then run as the attendee,
+# and the App's own service principal is never the caller. Without ``user_token``
+# the calls run as the App's service principal, which is for background work with
+# no signed-in user only.
+
+
 CACHE_KEY = "dbx_oauth"
 VALIDATION_TTL_SECONDS = 300
 
 # Supported base-URL surfaces. `/serving-endpoints` targets a Model Serving
 # endpoint by name; `/ai-gateway/mlflow/v1` targets a Unity Catalog model
-# service by its full name (e.g. system.ai.claude-sonnet-4-5).
+# service by its full name (e.g. system.ai.claude-opus-5-5).
 ApiSurface = Literal["serving-endpoints", "unity-gateway"]
 API_SURFACE_BY_PATH: Dict[str, ApiSurface] = {
     "/serving-endpoints": "serving-endpoints",
     "/ai-gateway/mlflow/v1": "unity-gateway",
 }
+# Used on the Unity Gateway surface when DATABRICKS_MODEL is unset. Set
+# DATABRICKS_MODEL to the event's driver model (`env.ANTHROPIC_MODEL` in
+# ~/.claude/settings.json) to follow the workshop model policy.
+DEFAULT_UNITY_GATEWAY_MODEL = "system.ai.claude-opus-5-5"
 
 
 class DatabricksLLMConfigError(RuntimeError):
@@ -87,7 +100,7 @@ def _normalize_serving_base_url(raw_url: str) -> Tuple[str, str, ApiSurface]:
     return f"{workspace_host}{path}", workspace_host, api_surface
 
 
-def get_databricks_llm_config() -> DatabricksLLMConfig:
+def get_databricks_llm_config(user_token: str | None = None) -> DatabricksLLMConfig:
     serving_base_url, workspace_host, api_surface = _normalize_serving_base_url(
         os.environ.get("DATABRICKS_SERVING_BASE_URL", "")
     )
@@ -103,19 +116,20 @@ def get_databricks_llm_config() -> DatabricksLLMConfig:
     model = os.environ.get("DATABRICKS_MODEL", "").strip()
     if api_surface == "unity-gateway":
         # list-model-services returns names as model-services/<catalog>.<schema>.<service>.
-        model = model.removeprefix("model-services/")
+        model = model.removeprefix("model-services/") or DEFAULT_UNITY_GATEWAY_MODEL
     if not model:
         raise DatabricksLLMConfigError(
-            "DATABRICKS_MODEL must be set to a UC model service full name (e.g. "
-            "system.ai.claude-sonnet-4-5) for the Unity Gateway surface, or a serving "
-            "endpoint name for the serving-endpoints surface."
+            "DATABRICKS_MODEL must be set to a serving endpoint name for the "
+            "serving-endpoints surface."
         )
 
     client_id = os.environ.get("DATABRICKS_CLIENT_ID", "").strip()
     client_secret = os.environ.get("DATABRICKS_CLIENT_SECRET", "").strip()
     token = os.environ.get("DATABRICKS_TOKEN", "").strip()
 
-    if client_id and client_secret:
+    if user_token:
+        auth_mode = "user-token"
+    elif client_id and client_secret:
         auth_mode = "oauth-m2m"
     elif token:
         auth_mode = "pat"
@@ -181,8 +195,13 @@ def _token_cache_matches(
 
 def get_databricks_bearer_token(
     cache: MutableMapping[str, Any] | None = None,
+    user_token: str | None = None,
 ) -> str:
-    config = get_databricks_llm_config()
+    config = get_databricks_llm_config(user_token)
+
+    if user_token:
+        # The attendee's own token. Never cached: it belongs to one user.
+        return user_token.strip()
 
     if config.auth_mode == "pat":
         return os.environ["DATABRICKS_TOKEN"].strip()
@@ -311,21 +330,24 @@ def _validate_model_service(
 
 def validate_databricks_llm_config(
     cache: MutableMapping[str, Any] | None = None,
+    user_token: str | None = None,
 ) -> DatabricksLLMConfig:
-    config = get_databricks_llm_config()
+    config = get_databricks_llm_config(user_token)
     cache_key = (config.serving_base_url, config.model)
 
-    cached_expiry = _validation_cache.get(cache_key, 0)
+    # A per-user token is never shared through the module-level validation cache.
+    cached_expiry = 0 if user_token else _validation_cache.get(cache_key, 0)
     if cached_expiry > int(time.time()):
         return config
 
     requests = _requests_module()
-    token = get_databricks_bearer_token(cache=cache)
+    token = get_databricks_bearer_token(cache=cache, user_token=user_token)
     headers = {"Authorization": f"Bearer {token}"}
 
     if config.api_surface == "unity-gateway":
         _validate_model_service(config, headers, requests)
-        _validation_cache[cache_key] = int(time.time()) + VALIDATION_TTL_SECONDS
+        if not user_token:
+            _validation_cache[cache_key] = int(time.time()) + VALIDATION_TTL_SECONDS
         return config
     endpoint_url = f"{config.workspace_host}/api/2.0/serving-endpoints/{config.model}"
     try:
@@ -369,7 +391,8 @@ def validate_databricks_llm_config(
             f"{config.workspace_host} (HTTP {response.status_code}).{_server_message(response)}"
         )
 
-    _validation_cache[cache_key] = int(time.time()) + VALIDATION_TTL_SECONDS
+    if not user_token:
+        _validation_cache[cache_key] = int(time.time()) + VALIDATION_TTL_SECONDS
     return config
 
 
@@ -377,24 +400,30 @@ def build_openai_client(
     *,
     validate: bool = True,
     cache: MutableMapping[str, Any] | None = None,
+    user_token: str | None = None,
 ) -> OpenAI:
     config = (
-        validate_databricks_llm_config(cache=cache)
+        validate_databricks_llm_config(cache=cache, user_token=user_token)
         if validate
-        else get_databricks_llm_config()
+        else get_databricks_llm_config(user_token)
     )
-    token = get_databricks_bearer_token(cache=cache)
+    token = get_databricks_bearer_token(cache=cache, user_token=user_token)
     return OpenAI(api_key=token, base_url=config.serving_base_url)
 
 
 def create_foundation_model_client(
     cache: MutableMapping[str, Any] | None = None,
+    user_token: str | None = None,
 ) -> OpenAI:
-    return build_openai_client(validate=True, cache=cache)
+    """Model client. Pass the attendee's token as ``user_token`` inside App requests."""
+    return build_openai_client(validate=True, cache=cache, user_token=user_token)
 
 
-def resolve_bearer_token(cache: MutableMapping[str, Any] | None = None) -> str:
-    return get_databricks_bearer_token(cache=cache)
+def resolve_bearer_token(
+    cache: MutableMapping[str, Any] | None = None,
+    user_token: str | None = None,
+) -> str:
+    return get_databricks_bearer_token(cache=cache, user_token=user_token)
 
 
 def run_jobs_parallel(
