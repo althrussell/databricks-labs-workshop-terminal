@@ -203,6 +203,8 @@ jobs:
         with:
           path: dist/browser-stage
           key: wt-browser-smoke-${{ runner.os }}-${{ hashFiles('assets/artifacts/manifest.json', 'scripts/smoke_browser.py', 'server/bootstrap/browser_runtime.py', 'server/bootstrap/install.py') }}
+          restore-keys: |
+            wt-browser-smoke-${{ runner.os }}-
       - name: Install the prepared browser and screenshot a page in clean Linux
         timeout-minutes: 6
         env:

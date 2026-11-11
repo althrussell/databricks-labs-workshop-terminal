@@ -100,6 +100,7 @@ def test_packaged_ci_is_linux_cp311_reproducible_and_offline_smoked():
         if step.get("uses") == "actions/cache@v4"
     )
     assert cache["with"]["path"] == "dist/browser-stage"
+    assert "wt-browser-smoke-${{ runner.os }}-" in cache["with"]["restore-keys"]
     for source in (
         "assets/artifacts/manifest.json",
         "scripts/smoke_browser.py",
