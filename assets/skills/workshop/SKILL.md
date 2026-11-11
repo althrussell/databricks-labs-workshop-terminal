@@ -82,8 +82,9 @@ a MODEL_SERVICE resource; the code in `references/app-model-calls.md` shows the
 pattern. `workshop-app-deploy` declares the `ai-gateway` user scope before the first
 deploy. If an existing App lacks it, the attendee reopens the App and clicks Allow.
 
-Agent Bricks agents (`agentbricks deploy`) are the exception: they call models as the
-App, and Control Tower grants that shortly after the first deploy. If one says a model
+Two cases are the exception: Agent Bricks agents (`agentbricks deploy`), and background work
+with no signed-in user. Both call models as the App, and Control Tower grants that shortly
+after the first deploy. If one says a model
 does not exist right after deploy, wait 2 minutes and retry. Never grant it yourself,
 and never switch to a legacy serving endpoint to get round it.
 

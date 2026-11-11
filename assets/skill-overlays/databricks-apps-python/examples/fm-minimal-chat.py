@@ -50,6 +50,7 @@ Databricks Apps deployment:
        workshop-app-deploy (the deploy_databricks_app MCP tool)
 """
 
+import os
 import time
 from typing import Dict, List, Optional, Tuple
 
@@ -159,13 +160,17 @@ def main():
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 try:
-                    if not viewer_token:
+                    if viewer_token:
+                        # The attendee's token, not the app's service principal.
+                        client = create_foundation_model_client(user_token=viewer_token)
+                    elif os.environ.get("DATABRICKS_TOKEN"):
+                        # Local development only: a personal token stands in for the signed-in user.
+                        client = create_foundation_model_client()
+                    else:
                         raise RuntimeError(
                             "No signed-in token was forwarded. Open the app from its "
                             "Databricks Apps URL, then try again."
                         )
-                    # The attendee's token, not the app's service principal.
-                    client = create_foundation_model_client(user_token=viewer_token)
 
                     # Call foundation model
                     response, latency_ms = llm_chat(

@@ -61,6 +61,12 @@ def _scopes(text: str, key: str = "demo") -> list[str]:
         ),
         ("resources:\n  apps:\n    demo:\n      name: demo\n      user_api_scopes: []\n", []),
         ("resources:\n  apps:\n    'demo':\n      name: demo\n", []),
+        # YAML allows an indentless sequence under a mapping key: the items sit at the key's own indent.
+        (
+            "resources:\n  apps:\n    demo:\n      name: demo\n      user_api_scopes:\n      - sql\n      - files\n"
+            "      source_code_path: ./\n",
+            ["sql", "files"],
+        ),
         ("resources:\n  apps:\n    demo:\n      name: demo", []),  # no trailing newline
         ("resources:\r\n  apps:\r\n    demo:\r\n      name: demo\r\n", []),  # CRLF
     ],
@@ -101,6 +107,8 @@ def test_the_inserted_block_keeps_the_app_mapping_intact():
         ("resources:\n  apps:\n    demo:\n      name: demo\n      user_api_scopes: sql\n", "demo"),  # scalar scopes
         ("resources:\n  apps: {demo: {name: demo}}\n", "demo"),  # flow mapping this reader does not edit
         ("bundle:\n  name: demo\n", "demo"),  # no resources at all
+        # object-valued scope entries: the reader would have to understand them, so it refuses
+        ("resources:\n  apps:\n    demo:\n      name: demo\n      user_api_scopes:\n      - sql\n      - name: x\n        other: y\n", "demo"),
     ],
 )
 def test_a_form_the_editor_cannot_edit_safely_is_refused_not_guessed(text, key):
@@ -365,3 +373,49 @@ resources:
         ["git", "-C", str(project), "show", "HEAD:databricks.yml"], text=True, capture_output=True, check=True,
     ).stdout
     assert _scopes(committed, key="scaffolded-app") == ["ai-gateway"]
+
+
+def test_a_scope_list_is_not_reported_missing_when_the_payload_omits_it():
+    """Unknown is not absent: the agent must not be told to fix a scope the API did not describe."""
+    message = deploy_tool.DeployController._scope_message(
+        None, {"ai_gateway_before": "unknown"}, {"name": "demo-app"}
+    )
+
+    assert "were not returned" in message
+    assert "does not show" not in message
+
+
+def test_a_refusal_in_a_later_bundle_file_leaves_the_earlier_file_unedited(tmp_path):
+    project = tmp_path / "proj"
+    (project / "resources").mkdir(parents=True)
+    (project / "databricks.yml").write_text(APX_BUNDLE)
+    refusing = "resources:\n  apps:\n    web:\n      name: web\n      user_api_scopes: sql\n"
+    (project / "resources" / "web.yml").write_text(refusing)
+    before = (project / "databricks.yml").read_text()
+
+    with pytest.raises(deploy_tool.DeployError, match="Nothing was changed"):
+        deploy_tool.declare_ai_gateway_in_project(project)
+    assert (project / "databricks.yml").read_text() == before
+    assert (project / "resources" / "web.yml").read_text() == refusing
+
+
+def test_a_bundle_file_that_is_not_utf8_is_a_one_line_refusal(tmp_path, capsys):
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "databricks.yml").write_bytes("bundle:\n  name: caf\xe9\n".encode("latin-1"))
+
+    assert deploy_tool.main(["--declare-ai-gateway", str(project)]) == 1
+    assert "not UTF-8" in capsys.readouterr().err
+
+
+def test_a_span_replacement_refuses_anchors_out_of_order(tmp_path):
+    from server.bootstrap import skill_projection
+
+    page = tmp_path / "page.md"
+    page.write_text("## Troubleshooting\nDeclare the model service as a `uc_securable` app resource\n")
+
+    with pytest.raises(RuntimeError, match="out of order"):
+        skill_projection._replace_span(
+            page, "Declare the model service as a `uc_securable` app resource", "## Troubleshooting", "x", strict=True
+        )
+    assert page.read_text().startswith("## Troubleshooting")

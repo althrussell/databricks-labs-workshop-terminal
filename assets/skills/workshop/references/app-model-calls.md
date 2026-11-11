@@ -70,7 +70,7 @@ Read the forwarded header `X-Forwarded-Access-Token` and use it as the bearer to
 
 ## Background work and Agent Bricks
 
-- Background work with no signed-in user runs as the App, and relies on the automatic
-  access Control Tower grants it.
+- Background work with no signed-in user runs as the App. The automatic access Control Tower
+  grants the App is what it relies on, the same as Agent Bricks. Do not add a grant to the App.
 - Agent Bricks agents (`agentbricks deploy`) call models as the App. If the model does not
   exist right after deploy, wait 2 minutes and retry. Never grant it yourself.

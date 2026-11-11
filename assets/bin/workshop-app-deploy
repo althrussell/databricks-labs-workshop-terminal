@@ -640,10 +640,19 @@ def _yaml_add_ai_gateway(text: str, resource_key: str) -> str | None:
         return "".join(edited)
     if value:
         return None
-    item_end = _yaml_extent(lines, line_index, scope_indent)
-    items = [index for index in range(line_index + 1, item_end) if _yaml_is_content(lines[index])]
+    # Items are indented past the key, or sit at the key's own indent (YAML allows an
+    # indentless sequence under a mapping key). Both belong to this list.
+    items: list[int] = []
+    for index in range(line_index + 1, len(lines)):
+        if not _yaml_is_content(lines[index]):
+            continue
+        indent = _yaml_indent(lines[index])
+        if indent > scope_indent or (indent == scope_indent and lines[index].lstrip().startswith("-")):
+            items.append(index)
+        else:
+            break
     if any(not _strip_comment(lines[index]).lstrip().startswith("-") for index in items):
-        return None
+        return None  # an object-valued item: not a plain scope list this reader edits
     if any(
         _yaml_unquote(_strip_comment(lines[index]).lstrip()[1:]) == AI_GATEWAY_SCOPE
         for index in items
@@ -693,19 +702,24 @@ def declare_ai_gateway_in_project(project: Path) -> list[str]:
     ``workshop-init-project`` calls this right after a scaffold, before the first
     commit, so the App is created with the scope. Returns the files it changed.
     """
-    changed: list[str] = []
+    pending: list[tuple[Path, str]] = []
     for path in _bundle_files(project):
-        original = _read_text(path)
+        try:
+            original = _read_text(path)
+        except UnicodeDecodeError as exc:
+            raise DeployError(f"{path.name} is not UTF-8 text ({_safe_line(exc)}); nothing was changed") from exc
         text = original
         for key in _yaml_app_keys(original):
             edited = _yaml_add_ai_gateway(text, key)
             if edited is None:
-                raise DeployError(_scope_refusal(key))
+                raise DeployError(_scope_refusal(key) + " Nothing was changed.")
             text = edited
         if text != original:
-            _write_text(path, text)
-            changed.append(path.name)
-    return changed
+            pending.append((path, text))
+    # Every file is checked before the first write, so a refusal leaves the project as it was.
+    for path, text in pending:
+        _write_text(path, text)
+    return [path.name for path, _ in pending]
 
 
 def _lakebase_resource_names(app_config: dict[str, Any]) -> tuple[bool, list[str]]:
@@ -866,6 +880,15 @@ def lakebase_problems(bundle: dict[str, Any], project: Path, apps: list[dict[str
                 f"(declared: {', '.join(names)}). Set valueFrom to one of those names."
             )
     return problems
+
+
+def _scope_before(snapshot: object, live_scopes: list[str] | None) -> bool | str | None:
+    """Whether the live App had ai-gateway: None when no App existed, "unknown" when the payload did not say."""
+    if snapshot is None:
+        return None
+    if live_scopes is None:
+        return "unknown"
+    return AI_GATEWAY_SCOPE in live_scopes
 
 
 def _live_scopes(app: dict[str, Any]) -> list[str] | None:
@@ -1290,7 +1313,13 @@ class DeployController:
                 "under user_api_scopes in databricks.yml and deploy again."
             )
         before = state.get("ai_gateway_before")
-        has_now = AI_GATEWAY_SCOPE in (_live_scopes(app) or [])
+        live = _live_scopes(app)
+        if live is None:
+            return (
+                "The App's user authorization scopes were not returned, so the ai-gateway scope "
+                "could not be confirmed. If model calls as the attendee fail, ask a facilitator."
+            )
+        has_now = AI_GATEWAY_SCOPE in live
         if before is True:
             return ""
         if not has_now:
@@ -1392,7 +1421,7 @@ class DeployController:
             "attempts": 0,
             "state_root": str(store.root),
             # None: no App existed before this deploy. Otherwise whether the live App had ai-gateway.
-            "ai_gateway_before": None if snapshot is None else AI_GATEWAY_SCOPE in (live_scopes or []),
+            "ai_gateway_before": _scope_before(snapshot, live_scopes),
             "ai_gateway_edit": edit,
         }
         store.save(state)
@@ -2103,6 +2132,9 @@ def main(argv: list[str] | None = None) -> int:
             changed = declare_ai_gateway_in_project(Path(args.declare_ai_gateway))
         except (DeployError, OSError) as exc:
             print(f"workshop-app-deploy: {_safe_line(exc)}", file=sys.stderr)
+            return 1
+        except UnicodeDecodeError as exc:
+            print(f"workshop-app-deploy: a bundle file is not UTF-8 text ({_safe_line(exc)})", file=sys.stderr)
             return 1
         if changed:
             print(f"ai-gateway scope declared in {', '.join(changed)}", file=sys.stderr)

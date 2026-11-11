@@ -146,6 +146,10 @@ def _replace_span(path: Path, start: str, end: str, new: str, *, strict: bool) -
                 "update server/bootstrap/skill_projection.py for the new upstream text"
             )
         return
+    if text.index(end) < text.index(start):
+        if strict:
+            raise RuntimeError(f"workshop projection anchors out of order in {path.name}")
+        return
     head, _, rest = text.partition(start)
     _, _, tail = rest.partition(end)
     path.write_text(head + new + end + tail)
