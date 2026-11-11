@@ -52,6 +52,13 @@ env:
   # against a workspace that still serves both.
   - name: WORKSHOP_ROUTING_MODEL_PREFIXES
     value: ""
+  # The event's approved model pool, from Control Tower: comma-separated UC model
+  # service names (e.g. system.ai.claude-opus-5-5,system.ai.gpt-6-1-sol). Matched
+  # on the bare model id, so the databricks- and system.ai. spellings are the
+  # same model. When set, the attendee picker, sys_list_models, the judge menu
+  # and the judge itself use only these models. Empty keeps today's behaviour.
+  - name: WORKSHOP_ALLOWED_MODELS
+    value: ""
   # The judge's candidate menu, cheapest-first, and the arms it may never pick.
   # Both are comma-separated bare model ids. Here so a price change or a
   # withdrawn model is an app restart rather than a release.

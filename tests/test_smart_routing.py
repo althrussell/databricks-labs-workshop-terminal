@@ -78,6 +78,10 @@ class _FakeRuntimeCaps:
 @dataclass
 class _FakeExternalRoutingClient:
     kwargs: dict = field(default_factory=dict)
+    last_error: str | None = None
+
+    async def route(self, message, available_models):
+        return None
 
 
 @pytest.fixture
@@ -607,3 +611,156 @@ def test_the_current_generation_is_ranked_rather_than_unranked():
     for older, newer in smart_routing._SUPERSEDED.items():
         assert older in order and newer in order
         assert order.index(older) < order.index(newer)
+
+
+# --- Approved model pool (WORKSHOP_ALLOWED_MODELS) --------------------------
+
+POOL = "system.ai.claude-opus-5-5,system.ai.claude-haiku-5-5,system.ai.gpt-6-1-sol"
+
+
+@dataclass
+class _FakeListing:
+    models: tuple = ()
+    source: str = "gateway"
+    verified: bool = True
+    note: str = ""
+
+
+def _install_fake_catalog(monkeypatch, fake_omnigent, *, served, worker_models=()):
+    """Stand in for ``omnigent.models.model_catalog`` with a served-model listing."""
+    catalog = ModuleType("omnigent.models.model_catalog")
+    catalog.fetch_databricks_model_service_entries = lambda *_a, **_k: tuple(
+        SimpleNamespace(id=model) for model in served
+    )
+    catalog.list_models_for_worker = lambda spec, harness, **_k: _FakeListing(
+        models=tuple(SimpleNamespace(id=model) for model in worker_models)
+    )
+    models_pkg = ModuleType("omnigent.models")
+    models_pkg.model_catalog = catalog
+    monkeypatch.setitem(sys.modules, "omnigent.models", models_pkg)
+    monkeypatch.setitem(sys.modules, "omnigent.models.model_catalog", catalog)
+    return catalog
+
+
+def test_both_spellings_of_a_pooled_model_compare_equal():
+    env = {"WORKSHOP_ALLOWED_MODELS": POOL}
+    allowed = smart_routing.allowed_models(env)
+    for spelling in (
+        "databricks-claude-opus-5-5",
+        "system.ai.claude-opus-5-5",
+        "claude-opus-5-5",
+        "system.ai.Claude-Opus-5.5",
+    ):
+        assert smart_routing.model_allowed(spelling, allowed), spelling
+    assert not smart_routing.model_allowed("system.ai.gpt-5-4-mini", allowed)
+    assert not smart_routing.model_allowed("databricks-gpt-5-4-mini", allowed)
+
+
+def test_blank_entries_and_whitespace_are_ignored():
+    allowed = smart_routing.allowed_models({"WORKSHOP_ALLOWED_MODELS": " , system.ai.gpt-6-1-sol ,,"})
+    assert set(allowed) == {"gpt-6-1-sol"}
+
+
+def test_empty_or_unset_pool_means_no_narrowing():
+    assert smart_routing.allowed_models({}) is None
+    assert smart_routing.allowed_models({"WORKSHOP_ALLOWED_MODELS": "  , ,"}) is None
+    assert smart_routing.model_allowed("system.ai.gpt-5-4-mini", None) is True
+
+
+def test_picker_listing_is_narrowed_to_the_pool(fake_omnigent, monkeypatch):
+    served = [
+        "system.ai.claude-opus-5-5",
+        "databricks-claude-opus-5-5",
+        "system.ai.gpt-5-4-mini",
+        "system.ai.claude-haiku-5-5",
+    ]
+    catalog = _install_fake_catalog(monkeypatch, fake_omnigent, served=served, worker_models=served)
+    original_fetch = catalog.fetch_databricks_model_service_entries
+    original_worker = catalog.list_models_for_worker
+
+    assert smart_routing.install_model_allowlist({"WORKSHOP_ALLOWED_MODELS": POOL}) is True
+
+    fetched = [e.id for e in catalog.fetch_databricks_model_service_entries("h", "t")]
+    assert fetched == ["system.ai.claude-opus-5-5", "databricks-claude-opus-5-5", "system.ai.claude-haiku-5-5"]
+    listing = catalog.list_models_for_worker(object(), "claude-native")
+    assert [m.id for m in listing.models] == fetched
+    assert catalog.fetch_databricks_model_service_entries is not original_fetch
+    assert catalog.list_models_for_worker is not original_worker
+
+
+def test_empty_pool_leaves_upstream_listing_untouched(fake_omnigent, monkeypatch):
+    served = ["system.ai.gpt-5-4-mini", "system.ai.claude-opus-5-5"]
+    catalog = _install_fake_catalog(monkeypatch, fake_omnigent, served=served, worker_models=served)
+    original_fetch = catalog.fetch_databricks_model_service_entries
+    original_worker = catalog.list_models_for_worker
+
+    assert smart_routing.install_model_allowlist({"WORKSHOP_ALLOWED_MODELS": ""}) is False
+    assert catalog.fetch_databricks_model_service_entries is original_fetch
+    assert catalog.list_models_for_worker is original_worker
+    assert [e.id for e in catalog.fetch_databricks_model_service_entries("h", "t")] == served
+
+
+def test_judge_menu_is_narrowed_and_unchanged_without_a_pool():
+    menu = {"claude-sdk": ["system.ai.claude-haiku-5-5", "system.ai.claude-opus-5", "system.ai.gpt-5-4-mini"]}
+
+    shaped = smart_routing.shape_judge_menu(menu, env={})
+    assert shaped == {
+        "claude-sdk": ["system.ai.claude-haiku-5-5", "system.ai.claude-opus-5", "system.ai.gpt-5-4-mini"]
+    }
+
+    narrowed = smart_routing.shape_judge_menu(menu, env={"WORKSHOP_ALLOWED_MODELS": POOL})
+    assert narrowed == {"claude-sdk": ["system.ai.claude-haiku-5-5"]}
+
+
+def test_judge_keeps_the_configured_model_when_it_is_pooled():
+    env = {"WORKSHOP_ALLOWED_MODELS": "system.ai.gpt-5-6-luna,system.ai.claude-haiku-5-5"}
+    assert smart_routing.effective_judge_model(env) == "system.ai.gpt-5-6-luna"
+
+
+def test_judge_falls_back_to_the_cheapest_pooled_model_in_order():
+    # gpt-5-6-luna is off-pool. Cheapest allowed in _DEFAULT_MODEL_ORDER is
+    # claude-haiku-5-5 (opus and sol are dearer), so that is the judge.
+    env = {"WORKSHOP_ALLOWED_MODELS": "system.ai.claude-opus-5-5,system.ai.claude-haiku-5-5"}
+    assert smart_routing.effective_judge_model(env) == "system.ai.claude-haiku-5-5"
+
+
+def test_judge_skips_chat_only_and_excluded_fallbacks():
+    # claude-fable-5 is excluded, glm-5-2 is chat-only; neither may judge.
+    env = {"WORKSHOP_ALLOWED_MODELS": "system.ai.claude-fable-5,system.ai.glm-5-2"}
+    assert smart_routing.effective_judge_model(env) is None
+
+
+def test_no_pooled_judge_means_routing_stays_off(fake_omnigent):
+    env = {"WORKSHOP_ALLOWED_MODELS": "system.ai.gpt-5-4-mini"}
+    assert smart_routing.build_judge_routing_client(_client(), env=env) is None
+
+
+def test_build_runtime_caps_uses_the_pooled_judge(fake_omnigent):
+    env = {"WORKSHOP_ALLOWED_MODELS": "system.ai.claude-haiku-5-5"}
+    caps = smart_routing.build_runtime_caps(_client(), env=env)
+    assert caps.routing_backends.local._model == "system.ai.claude-haiku-5-5"
+    # The external verdict guard is attached on the same pool.
+    assert "route" in vars(caps.routing_backends.external)
+
+
+def test_external_verdict_outside_the_pool_is_dropped(fake_omnigent):
+    @dataclass
+    class _Verdict:
+        model: str
+
+    class _External:
+        last_error = None
+
+        async def route(self, message, available_models):
+            return _Verdict(model=self.pick)
+
+    client = _External()
+    client.pick = "system.ai.gpt-5-4-mini"
+    smart_routing._guard_external_verdicts(client, smart_routing.allowed_models(
+        {"WORKSHOP_ALLOWED_MODELS": POOL}
+    ))
+    assert asyncio.run(client.route("hi", {})) is None
+    assert "outside the approved pool" in client.last_error
+
+    client.pick = "databricks-claude-haiku-5-5"
+    assert asyncio.run(client.route("hi", {})).model == "databricks-claude-haiku-5-5"
