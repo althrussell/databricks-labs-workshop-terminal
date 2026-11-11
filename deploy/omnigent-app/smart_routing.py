@@ -55,6 +55,54 @@ def judge_model(env: dict[str, str] | None = None) -> str:
     return source.get("WORKSHOP_ROUTING_JUDGE_MODEL", "").strip() or _DEFAULT_JUDGE_MODEL
 
 
+def allowed_models(env: dict[str, str] | None = None) -> dict[str, str] | None:
+    """Parse ``WORKSHOP_ALLOWED_MODELS`` into bare id -> spelling as configured.
+
+    The value is the event's approved model pool, comma-separated UC model
+    service names (``system.ai.claude-opus-5-5,...``). Empty or unset returns
+    ``None``, which means no narrowing: non-CT deployments and older CT releases
+    keep today's behaviour.
+    """
+    source = env if env is not None else os.environ
+    allowed: dict[str, str] = {}
+    for part in source.get("WORKSHOP_ALLOWED_MODELS", "").split(","):
+        if not part.strip():
+            continue
+        allowed.setdefault(_bare_model_id(part), part.strip())
+    return allowed or None
+
+
+def model_allowed(model: str, allowed: dict[str, str] | None) -> bool:
+    """True when *model* is in the pool, or no pool is configured."""
+    return allowed is None or _bare_model_id(model) in allowed
+
+
+def effective_judge_model(env: dict[str, str] | None = None) -> str | None:
+    """The judge model to call, which is always inside the pool.
+
+    The configured judge is used when it is allowed. Otherwise the cheapest
+    allowed model in the routing order is used, skipping excluded and chat-only
+    arms. ``None`` means no allowed model can judge, so routing stays off rather
+    than calling an off-pool model.
+    """
+    source = env if env is not None else os.environ
+    allowed = allowed_models(source)
+    configured = judge_model(source)
+    if allowed is None or model_allowed(configured, allowed):
+        return configured
+    excluded = set(
+        _configured_ids(source, "WORKSHOP_ROUTING_MODEL_EXCLUDE", _DEFAULT_MODEL_EXCLUDE)
+    ) | set(_CHAT_ONLY_MODELS)
+    order = _configured_ids(source, "WORKSHOP_ROUTING_MODEL_ORDER", _DEFAULT_MODEL_ORDER)
+    for bare in order:
+        if bare in allowed and bare not in excluded:
+            return allowed[bare]
+    logger.warning(
+        "No allowed model can serve as the routing judge; routing stays off for this pool"
+    )
+    return None
+
+
 def restrict_upstream_auto_routing_harnesses() -> None:
     """Limit Omnigent Auto to the harnesses shipped by Workshop Terminal.
 
@@ -248,6 +296,9 @@ def shape_judge_menu(
     - **Wire mismatches.** See :data:`_CHAT_ONLY_MODELS`. This is the gap
       that bites hardest: upstream exclusions do not cover this Codex wire
       mismatch, so nothing stops a verdict naming an arm Codex cannot speak to.
+    - **Approved pool.** ``WORKSHOP_ALLOWED_MODELS`` narrows the menu to the
+      event's pool when set. Omnigent's live discovery lists every model the
+      workspace serves, so without this the judge can spend on an off-pool arm.
     - **Harness bars**, which ``route_turn`` already applies to ``available``
       before either backend sees it. Re-applied here because that filter is
       keyed on the harness having an exclusion entry at all, and because this
@@ -274,6 +325,7 @@ def shape_judge_menu(
         _configured_ids(source, "WORKSHOP_ROUTING_MODEL_EXCLUDE", _DEFAULT_MODEL_EXCLUDE)
     )
     chat_only = set(_CHAT_ONLY_MODELS)
+    allowed = allowed_models(source)
 
     def rank(model: str) -> tuple[int, str]:
         bare = _bare_model_id(model)
@@ -290,6 +342,7 @@ def shape_judge_menu(
             for model in candidates
             if _bare_model_id(model) not in excluded
             and _bare_model_id(model) not in chat_only
+            and model_allowed(model, allowed)
             and not (harness_bars_model and harness_bars_model(harness, model))
         ]
         offered = {_bare_model_id(model) for model in kept}
@@ -459,12 +512,79 @@ def build_external_routing_client(
         logger.warning("ExternalRoutingClient construction failed", exc_info=True)
         return None
 
+    allowed = allowed_models(env)
+    if allowed is not None:
+        _guard_external_verdicts(client, allowed)
+
     logger.info(
         "External router configured: base_url=%s router_name=%s",
         base_url,
         settings.router_name,
     )
     return client
+
+
+def _guard_external_verdicts(client: Any, allowed: dict[str, str]) -> None:
+    """Refuse an external verdict that names a model outside the pool.
+
+    The external router's arm menus are a fixed contract (``task_v1`` requires
+    them whole), so its candidates cannot be trimmed here. Its verdict is the
+    point that matters, and a verdict outside the pool is treated as no verdict,
+    so the turn runs on its default instead.
+    """
+    inner_route = client.route
+
+    async def route(message: str, available_models: dict[str, list[str]]) -> Any | None:
+        result = await inner_route(message, available_models)
+        model = getattr(result, "model", None)
+        if result is None or model is None or model_allowed(str(model), allowed):
+            return result
+        client.last_error = f"external router picked {model!r}, outside the approved pool"
+        logger.warning("External router verdict outside WORKSHOP_ALLOWED_MODELS; dropped")
+        return None
+
+    client.route = route
+
+
+def install_model_allowlist(env: dict[str, str] | None = None) -> bool:
+    """Narrow Omnigent's model listings to the event pool, when one is set.
+
+    Wraps the two upstream listing entry points every attendee-facing catalogue
+    passes through: the Unity Catalog model-service listing, and the per-worker
+    listing that feeds the model picker and ``sys_list_models``. Both are read
+    through the module at call time, so the wrap takes effect for the whole
+    process. Returns ``False`` and changes nothing when no pool is configured.
+    """
+    allowed = allowed_models(env)
+    if allowed is None:
+        return False
+
+    from dataclasses import replace
+
+    from omnigent.models import model_catalog
+
+    upstream_fetch = model_catalog.fetch_databricks_model_service_entries
+
+    def fetch_databricks_model_service_entries(*args: Any, **kwargs: Any) -> tuple[Any, ...]:
+        return tuple(
+            entry
+            for entry in upstream_fetch(*args, **kwargs)
+            if model_allowed(entry.id, allowed)
+        )
+
+    upstream_worker_listing = model_catalog.list_models_for_worker
+
+    def list_models_for_worker(spec: object, harness: str | None, **kwargs: Any) -> Any:
+        listing = upstream_worker_listing(spec, harness, **kwargs)
+        return replace(
+            listing,
+            models=tuple(m for m in listing.models if model_allowed(m.id, allowed)),
+        )
+
+    model_catalog.fetch_databricks_model_service_entries = fetch_databricks_model_service_entries
+    model_catalog.list_models_for_worker = list_models_for_worker
+    logger.info("Model listings narrowed to %d approved model(s)", len(allowed))
+    return True
 
 
 def build_judge_routing_client(
@@ -479,7 +599,9 @@ def build_judge_routing_client(
         logger.warning("Routing judge imports failed", exc_info=True)
         return None
 
-    model = judge_model(env)
+    model = effective_judge_model(env)
+    if model is None:
+        return None
     try:
         workspace_host(workspace_client, env)
     except Exception:  # noqa: BLE001
