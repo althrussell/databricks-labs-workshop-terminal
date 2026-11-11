@@ -56,8 +56,7 @@ Do not present an API-only URL as a finished attendee-facing app.
   another harness's credentials into an isolated worker. If that identity lacks
   a capability, use the workshop's normal provisioning handoff.
 - The released templates set `MODEL` in `agent/agent.py` to a fixed model. Replace it
-  with the event's driver, `env.ANTHROPIC_MODEL` in `~/.claude/settings.json` (already a
-  `system.ai.*` name), and check it is an accessible Unity Gateway service before running. A harness model choice
+  with `system.ai.claude-sonnet-5-5`, the workshop default for App features, and check it is an accessible Unity Gateway service before running. A harness model choice
   is not proof that the **generated agent's service principal** can invoke it.
   After deployment, verify a real model/tool turn as that deployed identity.
 - `agent.toml` declares framework, stores, tracing and tool bindings. Keep it

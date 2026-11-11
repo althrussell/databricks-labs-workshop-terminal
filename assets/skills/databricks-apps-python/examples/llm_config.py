@@ -23,16 +23,15 @@ VALIDATION_TTL_SECONDS = 300
 
 # Supported base-URL surfaces. `/serving-endpoints` targets a Model Serving
 # endpoint by name; `/ai-gateway/mlflow/v1` targets a Unity Catalog model
-# service by its full name (e.g. system.ai.claude-opus-5-5).
+# service by its full name (e.g. system.ai.claude-sonnet-5-5).
 ApiSurface = Literal["serving-endpoints", "unity-gateway"]
 API_SURFACE_BY_PATH: Dict[str, ApiSurface] = {
     "/serving-endpoints": "serving-endpoints",
     "/ai-gateway/mlflow/v1": "unity-gateway",
 }
-# Used on the Unity Gateway surface when DATABRICKS_MODEL is unset. Set
-# DATABRICKS_MODEL to the event's driver model (`env.ANTHROPIC_MODEL` in
-# ~/.claude/settings.json) to follow the workshop model policy.
-DEFAULT_UNITY_GATEWAY_MODEL = "system.ai.claude-opus-5-5"
+# Used on the Unity Gateway surface when DATABRICKS_MODEL is unset: the
+# workshop default for App features.
+DEFAULT_UNITY_GATEWAY_MODEL = "system.ai.claude-sonnet-5-5"
 
 
 class DatabricksLLMConfigError(RuntimeError):

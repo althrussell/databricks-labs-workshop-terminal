@@ -76,8 +76,8 @@ tool cannot authenticate on a seat.
 An App calls models as the signed-in attendee, not as its own service principal: the
 APX backend uses `Dependencies.UserClient`, other frameworks send the
 `X-Forwarded-Access-Token` header, and the base URL is `<host>/ai-gateway/mlflow/v1`
-with the model as `system.ai.<name>`. Put the model in the App's `DATABRICKS_MODEL`, the
-event's driver (`env.ANTHROPIC_MODEL` in `~/.claude/settings.json`). Never declare
+with the model as `system.ai.<name>`. Put the model in the App's `DATABRICKS_MODEL`:
+`system.ai.claude-sonnet-5-5`, the default for App features. Never declare
 a MODEL_SERVICE resource; the code in `references/app-model-calls.md` shows the
 pattern. `workshop-app-deploy` declares the `ai-gateway` user scope before the first
 deploy. If an existing App lacks it, the attendee reopens the App and clicks Allow.

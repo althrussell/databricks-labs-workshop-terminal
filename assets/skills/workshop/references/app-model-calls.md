@@ -16,8 +16,8 @@ holds EXECUTE on the event's model pool. The App's identity has no such grant.
 ## Environment
 
 - `DATABRICKS_SERVING_BASE_URL`: `https://<workspace>/ai-gateway/mlflow/v1`.
-- `DATABRICKS_MODEL`: the event's driver, a `system.ai.<name>` model. Copy
-  `env.ANTHROPIC_MODEL` from `~/.claude/settings.json`. Set it in `app.yml`.
+- `DATABRICKS_MODEL`: `system.ai.claude-sonnet-5-5`, the workshop default for App features (pick another
+  `system.ai.<name>` only if the attendee asks). Set it in `app.yml`.
 
 ## APX backend (FastAPI)
 

@@ -20,7 +20,7 @@ Configuration:
 - LLM_MAX_CONCURRENCY env var controls parallelism (positive integer, default: 5)
 - Balance between throughput and rate limits
 - DATABRICKS_MODEL must be set to a UC model service full name (e.g.
-  system.ai.claude-opus-5-5, with DATABRICKS_SERVING_BASE_URL ending in
+  system.ai.claude-sonnet-5-5, with DATABRICKS_SERVING_BASE_URL ending in
   /ai-gateway/mlflow/v1), or to a Model Serving endpoint name
 """
 

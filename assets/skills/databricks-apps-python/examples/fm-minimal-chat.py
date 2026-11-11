@@ -15,7 +15,7 @@ Features:
 Local Development (no signed-in user, so set a token for yourself):
     export DATABRICKS_TOKEN="dapi..."
     export DATABRICKS_SERVING_BASE_URL="https://<workspace>/ai-gateway/mlflow/v1"
-    export DATABRICKS_MODEL="system.ai.claude-opus-5-5"
+    export DATABRICKS_MODEL="system.ai.claude-sonnet-5-5"
     streamlit run fm-minimal-chat.py
 
 Databricks Apps deployment:
@@ -32,15 +32,15 @@ Databricks Apps deployment:
        Do NOT add a uc_securable MODEL_SERVICE resource. The app's service principal
        is not the caller, so a grant to it does not authorise these calls.
 
-    2. Set the environment in app.yaml. DATABRICKS_MODEL is the event's driver model:
-       copy `env.ANTHROPIC_MODEL` from ~/.claude/settings.json (it is already a
-       system.ai.* name). The Apps runtime sets DATABRICKS_HOST for you.
+    2. Set the environment in app.yaml. DATABRICKS_MODEL is
+       system.ai.claude-sonnet-5-5, the workshop default for App features. The Apps
+       runtime sets DATABRICKS_HOST for you.
        command: ["streamlit", "run", "fm-minimal-chat.py"]
        env:
          - name: DATABRICKS_SERVING_BASE_URL
            value: "https://<workspace>/ai-gateway/mlflow/v1"
          - name: DATABRICKS_MODEL
-           value: "system.ai.claude-opus-5-5"
+           value: "system.ai.claude-sonnet-5-5"
 
     3. Create requirements.txt:
        streamlit>=1.38,<2.0

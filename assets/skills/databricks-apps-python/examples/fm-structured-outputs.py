@@ -20,7 +20,7 @@ Use cases:
 - Any task requiring structured model output
 
 Set `DATABRICKS_MODEL` to a UC model service full name (e.g.
-system.ai.claude-opus-5-5, with DATABRICKS_SERVING_BASE_URL ending in
+system.ai.claude-sonnet-5-5, with DATABRICKS_SERVING_BASE_URL ending in
 /ai-gateway/mlflow/v1), or to a Model Serving endpoint name, before running.
 """
 
