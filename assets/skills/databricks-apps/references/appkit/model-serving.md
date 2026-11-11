@@ -232,7 +232,7 @@ const response = await fetch(`${host}/ai-gateway/mlflow/v1/chat/completions`, {
   method: 'POST',
   headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
   body: JSON.stringify({
-    model: process.env.DATABRICKS_MODEL, // the event's driver, e.g. system.ai.claude-opus-5-5
+    model: process.env.DATABRICKS_MODEL, // the workshop default for App features: system.ai.claude-sonnet-5-5
     messages: [{ role: 'user', content: 'Summarize this support case.' }],
     max_tokens: 256,
   }),
@@ -251,4 +251,4 @@ const data = await response.json();
 | `DATABRICKS_SERVING_ENDPOINT_NAME` env var empty | Missing env injection | Add `valueFrom: serving-endpoint` to `app.yaml` env section |
 | 502 / 504 Gateway Timeout | Inference exceeds the proxy timeout (60s without response headers on Spaces apps, 300s total) | Stream the response or reduce `max_tokens` — see [Platform Guide](../platform-guide.md) |
 | Unknown serving endpoint alias | Alias not configured or env var not set | Check `serving()` config in `server.ts` and `DATABRICKS_SERVING_ENDPOINT_*` in `app.yaml` / `.env` |
-| `403` / `PERMISSION_DENIED` on a foundation model: `"...is disabled for this workspace. Please use Unity Gateway."` (console UI: `"...is no longer available. Use Unity Catalog model services."`) | The workspace enabled Enforce Unity Gateway, so a built-in `databricks-*` pay-per-token endpoint is retired, or a provisioned-throughput foundation-model endpoint can no longer be queried directly (`"...provisioned throughput ... directly is disabled..."`); the UC model service needs `EXECUTE` (+ `USE CATALOG`/`USE SCHEMA`), not `CAN_QUERY` | For an app, declare a `uc_securable` (`MODEL_SERVICE`, `EXECUTE`) resource and call the model-service full name — see *Unity Catalog model services* above. For a PT endpoint, first create a model service that references it. For non-app callers, use the **`databricks-unity-gateway`** skill. |
+| `403` / `PERMISSION_DENIED` on a foundation model: `"...is disabled for this workspace. Please use Unity Gateway."` (console UI: `"...is no longer available. Use Unity Catalog model services."`) | The workspace enabled Enforce Unity Gateway, so a built-in `databricks-*` pay-per-token endpoint is retired, or a provisioned-throughput foundation-model endpoint can no longer be queried directly (`"...provisioned throughput ... directly is disabled..."`); the UC model service needs `EXECUTE` (+ `USE CATALOG`/`USE SCHEMA`), not `CAN_QUERY` | For an app, call the model service as the signed-in user with their forwarded token (`X-Forwarded-Access-Token`) and the `ai-gateway` user scope, with no `uc_securable` resource — see *Unity Catalog model services* above. For a PT endpoint, first create a model service that references it. For non-app callers, use the **`databricks-unity-gateway`** skill. |

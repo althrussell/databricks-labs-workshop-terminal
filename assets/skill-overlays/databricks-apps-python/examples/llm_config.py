@@ -125,8 +125,9 @@ def get_databricks_llm_config(user_token: str | None = None) -> DatabricksLLMCon
     client_id = os.environ.get("DATABRICKS_CLIENT_ID", "").strip()
     client_secret = os.environ.get("DATABRICKS_CLIENT_SECRET", "").strip()
     token = os.environ.get("DATABRICKS_TOKEN", "").strip()
+    cleaned_user_token = (user_token or "").strip()
 
-    if user_token:
+    if cleaned_user_token:
         auth_mode = "user-token"
     elif client_id and client_secret:
         auth_mode = "oauth-m2m"
@@ -196,11 +197,12 @@ def get_databricks_bearer_token(
     cache: MutableMapping[str, Any] | None = None,
     user_token: str | None = None,
 ) -> str:
-    config = get_databricks_llm_config(user_token)
+    cleaned_user_token = (user_token or "").strip() or None
+    config = get_databricks_llm_config(cleaned_user_token)
 
-    if user_token:
+    if cleaned_user_token:
         # The attendee's own token. Never cached: it belongs to one user.
-        return user_token.strip()
+        return cleaned_user_token
 
     if config.auth_mode == "pat":
         return os.environ["DATABRICKS_TOKEN"].strip()
@@ -331,22 +333,26 @@ def validate_databricks_llm_config(
     cache: MutableMapping[str, Any] | None = None,
     user_token: str | None = None,
 ) -> DatabricksLLMConfig:
-    config = get_databricks_llm_config(user_token)
+    cleaned_user_token = (user_token or "").strip() or None
+    config = get_databricks_llm_config(cleaned_user_token)
+    if config.auth_mode == "user-token":
+        # Forwarded OBO tokens carry the ai-gateway inference scope, not UC metadata
+        # control-plane scopes; the gateway validates the model service and EXECUTE
+        # grant on the inference request itself without an extra per-turn GET.
+        return config
     cache_key = (config.serving_base_url, config.model)
 
-    # A per-user token is never shared through the module-level validation cache.
-    cached_expiry = 0 if user_token else _validation_cache.get(cache_key, 0)
+    cached_expiry = _validation_cache.get(cache_key, 0)
     if cached_expiry > int(time.time()):
         return config
 
     requests = _requests_module()
-    token = get_databricks_bearer_token(cache=cache, user_token=user_token)
+    token = get_databricks_bearer_token(cache=cache)
     headers = {"Authorization": f"Bearer {token}"}
 
     if config.api_surface == "unity-gateway":
         _validate_model_service(config, headers, requests)
-        if not user_token:
-            _validation_cache[cache_key] = int(time.time()) + VALIDATION_TTL_SECONDS
+        _validation_cache[cache_key] = int(time.time()) + VALIDATION_TTL_SECONDS
         return config
     endpoint_url = f"{config.workspace_host}/api/2.0/serving-endpoints/{config.model}"
     try:

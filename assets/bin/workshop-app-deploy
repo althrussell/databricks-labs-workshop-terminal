@@ -589,6 +589,16 @@ def _yaml_app_keys(text: str) -> list[str]:
     ]
 
 
+def _yaml_is_plain_scope_item(raw: str) -> bool:
+    """True when ``raw`` is a scalar scope entry, not a mapping or nested collection."""
+    value = raw.strip()
+    if not value or value.startswith(("{", "[")):
+        return False
+    if value.startswith(("'", '"')):
+        return True
+    return re.search(r":(?:\s|$)", value) is None
+
+
 def _yaml_add_ai_gateway(text: str, resource_key: str) -> str | None:
     """``text`` with ``ai-gateway`` added to one app's ``user_api_scopes``.
 
@@ -628,7 +638,10 @@ def _yaml_add_ai_gateway(text: str, resource_key: str) -> str | None:
     if value.startswith("["):
         if not value.endswith("]"):
             return None
-        items = [_yaml_unquote(item) for item in value[1:-1].split(",") if item.strip()]
+        raw_parts = [item for item in value[1:-1].split(",") if item.strip()]
+        if any(not _yaml_is_plain_scope_item(item) for item in raw_parts):
+            return None
+        items = [_yaml_unquote(item) for item in raw_parts]
         if AI_GATEWAY_SCOPE in items:
             return text
         ending = newline if lines[line_index].endswith("\n") else ""
@@ -651,7 +664,11 @@ def _yaml_add_ai_gateway(text: str, resource_key: str) -> str | None:
             items.append(index)
         else:
             break
-    if any(not _strip_comment(lines[index]).lstrip().startswith("-") for index in items):
+    if any(
+        not _strip_comment(lines[index]).lstrip().startswith("-")
+        or not _yaml_is_plain_scope_item(_strip_comment(lines[index]).lstrip()[1:])
+        for index in items
+    ):
         return None  # an object-valued item: not a plain scope list this reader edits
     if any(
         _yaml_unquote(_strip_comment(lines[index]).lstrip()[1:]) == AI_GATEWAY_SCOPE
@@ -892,9 +909,18 @@ def _scope_before(snapshot: object, live_scopes: list[str] | None) -> bool | str
 
 
 def _live_scopes(app: dict[str, Any]) -> list[str] | None:
-    """The user authorization scopes the live App has, or None when the payload has none."""
-    scopes = app.get("user_api_scopes") if isinstance(app, dict) else None
-    return [str(scope) for scope in scopes] if isinstance(scopes, list) else None
+    """The user authorization scopes the live App has, or None when the payload has none.
+
+    The Go CLI omits an empty ``user_api_scopes`` (``omitempty``), while the platform
+    still populates ``effective_user_api_scopes`` with the default identity scopes.
+    """
+    if not isinstance(app, dict):
+        return None
+    for key in ("user_api_scopes", "effective_user_api_scopes"):
+        scopes = app.get(key)
+        if isinstance(scopes, list):
+            return [str(scope) for scope in scopes]
+    return None
 
 
 def _deployment_id(value: object) -> str:
@@ -1259,7 +1285,12 @@ class DeployController:
         key = app["resource_key"]
         located = None
         for path in _bundle_files(project):
-            original = _read_text(path)
+            try:
+                original = _read_text(path)
+            except UnicodeDecodeError as exc:
+                raise DeployError(
+                    f"{path.name} is not UTF-8 text ({_safe_line(exc)}); nothing was deployed."
+                ) from exc
             if key in _yaml_app_keys(original):
                 located = (path, original, _yaml_add_ai_gateway(original, key))
                 break
@@ -1269,7 +1300,9 @@ class DeployController:
             return self._edit_ai_gateway(project, target, key, *located)
         try:
             declared = _declared_scopes(self.backend.bundle_validate(project, target), key)
-        except CliError:
+        except CliError as exc:
+            if located is not None:
+                raise DeployError(_scope_refusal(key)) from exc
             return "unchecked"
         if AI_GATEWAY_SCOPE in declared:
             return "declared"

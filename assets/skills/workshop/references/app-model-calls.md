@@ -17,7 +17,7 @@ holds EXECUTE on the event's model pool. The App's identity has no such grant.
 
 - `DATABRICKS_SERVING_BASE_URL`: `https://<workspace>/ai-gateway/mlflow/v1`.
 - `DATABRICKS_MODEL`: `system.ai.claude-sonnet-5-5`, the workshop default for App features (pick another
-  `system.ai.<name>` only if the attendee asks). Set it in `app.yml`.
+  `system.ai.<name>` only if the attendee asks). Set it in `app.yml` (and `.env` for local `apx dev`).
 
 ## APX backend (FastAPI)
 
@@ -52,7 +52,7 @@ def ask(body: QuestionIn, user_ws: Dependencies.UserClient) -> AnswerOut:
         base_url=f"{user_ws.config.host.rstrip('/')}/ai-gateway/mlflow/v1",
     )
     reply = client.chat.completions.create(
-        model=os.environ["DATABRICKS_MODEL"],
+        model=os.environ.get("DATABRICKS_MODEL", "system.ai.claude-sonnet-5-5"),
         messages=[{"role": "user", "content": body.question}],
         max_tokens=512,
     )

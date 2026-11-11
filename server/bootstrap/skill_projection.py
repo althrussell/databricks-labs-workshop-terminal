@@ -204,6 +204,25 @@ _PLATFORM_ROW_WORKSHOP = (
     "the forwarded token and the `ai-gateway` user scope; the app's service principal is not the caller. "
     "The `serving_endpoint`/`CAN_QUERY` resource remains for custom, external, and MPS-backed serving endpoints |"
 )
+_PLATFORM_TROUBLESHOOT = (
+    "Declare a `uc_securable` (`securable_type: MODEL_SERVICE`, `EXECUTE`) resource for the model service, "
+    "inject it with `valueFrom`, and call the resolved full name as `model` — see "
+    "[Model Serving](appkit/model-serving.md#unity-catalog-model-services)."
+)
+_PLATFORM_TROUBLESHOOT_WORKSHOP = (
+    "Call the model service as the signed-in user with their forwarded token (`X-Forwarded-Access-Token`) "
+    "and the `ai-gateway` user scope on `/ai-gateway/mlflow/v1`, with no `uc_securable` resource — see "
+    "[Model Serving](appkit/model-serving.md#unity-catalog-model-services)."
+)
+_APPKIT_TROUBLESHOOT = (
+    "For an app, declare a `uc_securable` (`MODEL_SERVICE`, `EXECUTE`) resource and call the model-service "
+    "full name — see *Unity Catalog model services* above."
+)
+_APPKIT_TROUBLESHOOT_WORKSHOP = (
+    "For an app, call the model service as the signed-in user with their forwarded token "
+    "(`X-Forwarded-Access-Token`) and the `ai-gateway` user scope, with no `uc_securable` resource — "
+    "see *Unity Catalog model services* above."
+)
 _APPKIT_SECTION = """Call the model service as the signed-in user, never as the app's service principal, and do not declare it as a `uc_securable` resource. The Apps proxy forwards the attendee's token in `X-Forwarded-Access-Token` when the app declares the `ai-gateway` user scope (`user_api_scopes`). Send that token on `/ai-gateway/mlflow/v1`:
 
 ```typescript
@@ -215,7 +234,7 @@ const response = await fetch(`${host}/ai-gateway/mlflow/v1/chat/completions`, {
   method: 'POST',
   headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
   body: JSON.stringify({
-    model: process.env.DATABRICKS_MODEL, // the event's driver, e.g. system.ai.claude-opus-5-5
+    model: process.env.DATABRICKS_MODEL, // the workshop default for App features: system.ai.claude-sonnet-5-5
     messages: [{ role: 'user', content: 'Summarize this support case.' }],
     max_tokens: 256,
   }),
@@ -241,6 +260,7 @@ def _teach_model_calls(root: Path, *, strict: bool) -> None:
     platform = root / "databricks-apps/references/platform-guide.md"
     if platform.is_file():
         _replace_once(platform, _PLATFORM_ROW, _PLATFORM_ROW_WORKSHOP, strict=strict)
+        _replace_once(platform, _PLATFORM_TROUBLESHOOT, _PLATFORM_TROUBLESHOOT_WORKSHOP, strict=strict)
     appkit_models = root / "databricks-apps/references/appkit/model-serving.md"
     if appkit_models.is_file():
         _replace_once(
@@ -256,3 +276,4 @@ def _teach_model_calls(root: Path, *, strict: bool) -> None:
             _APPKIT_SECTION,
             strict=strict,
         )
+        _replace_once(appkit_models, _APPKIT_TROUBLESHOOT, _APPKIT_TROUBLESHOOT_WORKSHOP, strict=strict)

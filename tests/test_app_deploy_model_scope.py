@@ -69,6 +69,12 @@ def _scopes(text: str, key: str = "demo") -> list[str]:
         ),
         ("resources:\n  apps:\n    demo:\n      name: demo", []),  # no trailing newline
         ("resources:\r\n  apps:\r\n    demo:\r\n      name: demo\r\n", []),  # CRLF
+        # Colon-qualified scope names (such as catalog.catalogs:read) are scalar scopes, not mappings.
+        (
+            "resources:\n  apps:\n    demo:\n      name: demo\n      user_api_scopes:\n"
+            "        - catalog.catalogs:read\n",
+            ["catalog.catalogs:read"],
+        ),
     ],
 )
 def test_the_scope_is_added_and_every_existing_scope_kept(text, before):
@@ -109,6 +115,8 @@ def test_the_inserted_block_keeps_the_app_mapping_intact():
         ("bundle:\n  name: demo\n", "demo"),  # no resources at all
         # object-valued scope entries: the reader would have to understand them, so it refuses
         ("resources:\n  apps:\n    demo:\n      name: demo\n      user_api_scopes:\n      - sql\n      - name: x\n        other: y\n", "demo"),
+        ("resources:\n  apps:\n    demo:\n      name: demo\n      user_api_scopes:\n      - name: sql\n", "demo"),
+        ("resources:\n  apps:\n    demo:\n      name: demo\n      user_api_scopes: [{name: sql}]\n", "demo"),
     ],
 )
 def test_a_form_the_editor_cannot_edit_safely_is_refused_not_guessed(text, key):
@@ -419,3 +427,74 @@ def test_a_span_replacement_refuses_anchors_out_of_order(tmp_path):
             page, "Declare the model service as a `uc_securable` app resource", "## Troubleshooting", "x", strict=True
         )
     assert page.read_text().startswith("## Troubleshooting")
+
+
+def test_omitted_user_api_scopes_falls_back_to_effective_scopes_from_apps_get(tmp_path):
+    """The Go CLI omits an empty user_api_scopes (omitempty) while returning effective_user_api_scopes."""
+    env, project = _env(tmp_path)
+    (project / "databricks.yml").write_text(APX_BUNDLE)
+    before = {k: v for k, v in _app(scopes=()).items() if k != "user_api_scopes"}
+    before["effective_user_api_scopes"] = ["iam.access-control:read", "iam.current-user:read"]
+    after = {k: v for k, v in _app(active="new", scopes=()).items() if k != "user_api_scopes"}
+    after["effective_user_api_scopes"] = ["iam.access-control:read", "iam.current-user:read"]
+    backend = BundleBackend(project, before=before, after=after)
+
+    result = _controller(env, backend).deploy(project_path=str(project))
+
+    assert result["status"] == "succeeded"
+    assert "does not show the ai-gateway scope" in result["message"]
+
+
+def test_an_uneditable_bundle_resource_is_refused_even_when_bundle_validate_errors(tmp_path):
+    env, project = _env(tmp_path)
+    (project / "databricks.yml").write_text(
+        "resources:\n  apps:\n    demo:\n      name: demo-app\n      user_api_scopes: sql\n"
+    )
+    backend = BundleBackend(project, before=_app(scopes=()), validate_errors=["invalid user_api_scopes"])
+    backend.bundle_summary = lambda _p, _t: {
+        "resources": {"apps": {"demo": {"name": "demo-app", "url": "https://demo.databricksapps.com"}}}
+    }
+
+    with pytest.raises(deploy_tool.DeployError, match="Add `- ai-gateway`"):
+        _controller(env, backend).deploy(project_path=str(project))
+    assert backend.submissions == 0
+
+
+def test_llm_config_user_token_skips_control_plane_validation_and_rejects_whitespace(monkeypatch):
+    import importlib.machinery
+    import importlib.util
+    import sys
+    import types
+    from pathlib import Path
+
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=lambda **kwargs: kwargs))
+    overlay = (
+        Path(__file__).resolve().parents[1]
+        / "assets/skill-overlays/databricks-apps-python/examples/llm_config.py"
+    )
+    spec = importlib.util.spec_from_loader(
+        "llm_config_overlay_test",
+        importlib.machinery.SourceFileLoader("llm_config_overlay_test", str(overlay)),
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    monkeypatch.setenv("DATABRICKS_SERVING_BASE_URL", "https://dbc.example.com/ai-gateway/mlflow/v1")
+    monkeypatch.delenv("DATABRICKS_HOST", raising=False)
+    monkeypatch.delenv("DATABRICKS_MODEL", raising=False)
+    monkeypatch.delenv("DATABRICKS_TOKEN", raising=False)
+    monkeypatch.delenv("DATABRICKS_CLIENT_ID", raising=False)
+    monkeypatch.delenv("DATABRICKS_CLIENT_SECRET", raising=False)
+    monkeypatch.setattr(
+        module,
+        "_requests_module",
+        lambda: (_ for _ in ()).throw(AssertionError("control-plane GET must not run for user_token")),
+    )
+
+    client = module.create_foundation_model_client(user_token="  obo-token-123  ")
+    assert client == {"api_key": "obo-token-123", "base_url": "https://dbc.example.com/ai-gateway/mlflow/v1"}
+    config = module.validate_databricks_llm_config(user_token="  obo-token-123  ")
+    assert config.auth_mode == "user-token"
+    assert config.model == "system.ai.claude-sonnet-5-5"
+    with pytest.raises(module.DatabricksLLMConfigError, match="No Databricks auth configured"):
+        module.get_databricks_llm_config(user_token="   ")

@@ -147,6 +147,11 @@ def test_agent_bricks_missing_is_said_plainly_with_a_named_alternative(rendered)
     _has(rendered, ("project",), "offer Genie or a simple search")
 
 
+def test_app_model_calls_use_the_attendee_token_in_every_channel(rendered):
+    _has(rendered, ALL_CHANNELS, "Dependencies.UserClient", "X-Forwarded-Access-Token",
+         "/ai-gateway/mlflow/v1", "system.ai.claude-sonnet-5-5", "MODEL_SERVICE", "wait 2 minutes")
+
+
 # --- voice ---------------------------------------------------------------------------------------
 
 
