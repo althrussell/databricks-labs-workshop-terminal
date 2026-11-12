@@ -2,7 +2,7 @@
 //
 // Two ways this fails for an attendee, and both used to read as "Failed to fetch":
 //
-// 1. The Apps proxy session has expired. The proxy answers with a 302 to the
+// 1. The Apps proxy session has expired (or the connection dropped). The proxy answers with a 302 to the
 //    workspace sign-in page on another origin. A plain fetch() follows that hop,
 //    the cross-origin response carries no CORS header, and the browser reports
 //    only a TypeError. Asking fetch for manual redirects turns the hop into an
@@ -15,8 +15,8 @@
 // Pure where it can be, so the decisions are tested without a browser.
 
 export const SIGN_IN_ENDED_MESSAGE =
-  "Your Databricks sign-in ended before the export reached Workshop Terminal. " +
-  "Reload this tab, then choose Download my code again. Your projects are unchanged.";
+  "The export did not reach Workshop Terminal. Your Databricks sign-in may have ended, " +
+  "or the connection dropped. Reload this tab, then choose Download my code again. Your projects are unchanged.";
 
 export const TRANSFER_INTERRUPTED_MESSAGE =
   "The download was interrupted before the ZIP finished arriving. Choose Download my code again.";

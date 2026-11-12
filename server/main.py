@@ -1349,7 +1349,10 @@ def export_code(principal: Principal = Depends(get_current_user)):
     except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired) as error:
         raise HTTPException(status_code=503, detail=f"Export did not finish: {error}") from error
     local = Path(str(result.get("local_zip") or ""))
-    if not _EXPORT_ZIP_NAME.fullmatch(local.name) or not local.is_file() or not os.access(local, os.R_OK):
+    cache = Path(user.home, ".cache", "workshop", "exports")
+    if (not _EXPORT_ZIP_NAME.fullmatch(local.name) or local.is_symlink()
+            or local.parent.resolve() != cache.resolve()
+            or not local.is_file() or not os.access(local, os.R_OK)):
         raise HTTPException(
             status_code=503,
             detail="Your export ZIP is no longer on this workshop terminal. Click Download my code again to rebuild it.",

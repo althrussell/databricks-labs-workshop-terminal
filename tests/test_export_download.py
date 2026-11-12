@@ -25,13 +25,22 @@ def person():
     return {"X-Forwarded-Email": f"export-{uuid.uuid4().hex[:8]}@example.com"}
 
 
+def _cache(person) -> Path:
+    """The helper writes its ZIPs to the attendee's private cache, and only there are they served."""
+    from server.users import user_manager
+
+    cache = Path(user_manager.get(person["X-Forwarded-Email"]).home, ".cache", "workshop", "exports")
+    cache.mkdir(parents=True, exist_ok=True)
+    return cache
+
+
 @pytest.fixture
-def export_as(monkeypatch, tmp_path):
-    """Stand in for the helper: return a receipt pointing at a file the test made."""
+def export_as(monkeypatch, person):
+    """Stand in for the helper: return a receipt pointing at a file the test made in the cache."""
     import server.journey as journey
 
     def use(data: bytes | None, name: str = NAME) -> Path:
-        path = tmp_path / name
+        path = _cache(person) / name
         if data is not None:
             path.write_bytes(data)
         receipt = {"local_zip": str(path), "filename": name, "path": f"/Volumes/c/s/workshop_exports/code/{name}",
@@ -88,6 +97,35 @@ def test_an_unreadable_cache_file_is_a_clear_503(client, export_as, person):
 
     assert response.status_code == 503
     assert "Click Download my code again" in response.json()["detail"]
+
+
+def test_a_zip_outside_the_attendees_cache_is_refused(client, monkeypatch, tmp_path, person):
+    import server.journey as journey
+
+    elsewhere = tmp_path / NAME
+    elsewhere.write_bytes(b"not-the-helper-output")
+    monkeypatch.setattr(journey, "export", lambda user, **kwargs: {"local_zip": str(elsewhere), "filename": NAME})
+
+    response = client.post("/api/export", headers=person)
+
+    assert response.status_code == 503
+    assert b"not-the-helper-output" not in response.content
+
+
+def test_a_symlink_planted_in_the_cache_is_refused(client, monkeypatch, tmp_path, person):
+    """The attendee's own shell can plant a link under the cache; following it would serve the target."""
+    import server.journey as journey
+
+    target = tmp_path / "server-readable.txt"
+    target.write_text("dapi-server-side-secret\n")
+    link = _cache(person) / NAME
+    link.symlink_to(target)
+    monkeypatch.setattr(journey, "export", lambda user, **kwargs: {"local_zip": str(link), "filename": NAME})
+
+    response = client.post("/api/export", headers=person)
+
+    assert response.status_code == 503
+    assert b"dapi-server-side-secret" not in response.content
 
 
 def test_only_a_helper_archive_name_can_be_streamed(client, monkeypatch, tmp_path, person):

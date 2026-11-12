@@ -1,6 +1,6 @@
 ---
 name: workshop-export
-description: Export an attendee's workshop project source as a ZIP to their CT-assigned Unity Catalog volume, and show how to download it. Use for take-home, download-code, backup-source or end-of-workshop export requests.
+description: Package an attendee's workshop project source as a verified ZIP for take-home, then point them to the Download my code button in Workshop Terminal. Use for take-home, download-code, backup-source or end-of-workshop export requests.
 ---
 
 # Take your workshop code home

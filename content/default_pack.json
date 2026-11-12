@@ -583,7 +583,7 @@
         "topic:build-complete"
       ],
       "cta": "Export this project →",
-      "prompt": "Export the source for this project as a ZIP to my assigned Databricks Volume and show me how to download it to my computer.",
+      "prompt": "Package the source for this project as a verified ZIP with workshop-export, then tell me to click Download my code in the Workshop Terminal header to save it to my computer.",
       "weight": 1,
       "pinned": true
     },
@@ -599,7 +599,7 @@
         "wrap"
       ],
       "triggers": [],
-      "cta": "Export my code →",
+      "cta": "Download my code →",
       "prompt": "Export all my workshop projects as one ZIP with workshop-export, then tell me to click Download my code in the Workshop Terminal header so I can take my code home.",
       "weight": 3,
       "pinned": true
