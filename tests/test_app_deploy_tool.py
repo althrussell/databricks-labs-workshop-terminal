@@ -1343,3 +1343,66 @@ def test_a_transient_seat_group_failure_is_retried_on_a_later_poll(tmp_path):
 
     assert result["status"] == "succeeded"
     assert backend.enrolled == [(SEAT_GROUP, "555"), (SEAT_GROUP, "555")]
+
+
+def _bundle_with_targets(tmp_path: Path, targets_yaml: str) -> Path:
+    project = tmp_path / "demo"
+    project.mkdir()
+    (project / "databricks.yml").write_text("bundle:\n  name: demo\n" + targets_yaml)
+    return project
+
+
+def test_an_omitted_target_is_the_bundles_only_target(tmp_path):
+    project = _bundle_with_targets(tmp_path, "targets:\n  dev:\n    mode: development\n")
+
+    assert deploy_tool.resolve_target(project, None) == "dev"
+    assert deploy_tool.resolve_target(project, "  ") == "dev"
+    # An AppKit habit ("default") against an APX bundle with one target still deploys that target.
+    assert deploy_tool.resolve_target(project, "default") == "dev"
+
+
+def test_the_bundle_target_marked_default_wins_when_several_are_declared(tmp_path):
+    project = _bundle_with_targets(
+        tmp_path,
+        "targets:\n  prod:\n    mode: production\n  dev:\n    mode: development\n    default: true\n",
+    )
+
+    assert deploy_tool.resolve_target(project, None) == "dev"
+    assert deploy_tool.resolve_target(project, "prod") == "prod"
+
+
+def test_several_targets_without_a_default_must_be_named(tmp_path):
+    project = _bundle_with_targets(tmp_path, "targets:\n  dev:\n    mode: development\n  prod:\n    mode: production\n")
+
+    with pytest.raises(deploy_tool.DeployError, match="pass one as target"):
+        deploy_tool.resolve_target(project, None)
+    assert deploy_tool.resolve_target(project, "prod") == "prod"
+
+
+def test_a_bundle_without_targets_keeps_the_cli_default(tmp_path):
+    project = _bundle_with_targets(tmp_path, "")
+
+    assert deploy_tool.resolve_target(project, None) == "default"
+
+
+@pytest.mark.parametrize("alias", ["project_dir", "app_path"])
+def test_the_project_directory_is_accepted_under_its_other_names(alias):
+    seen = {}
+
+    class Controller:
+        def deploy(self, **kwargs):
+            seen.update(kwargs)
+            return {"status": "failed", "reason": "stub", "app_name": "", "app_url": "", "resumed": False}
+
+    server = deploy_tool.McpServer(Controller())
+    server._call_tool(
+        {
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "tools/call",
+            "params": {"name": deploy_tool.TOOL_NAME, "arguments": {alias: "/home/user/projects/demo"}},
+        }
+    )
+
+    assert seen["project_path"] == "/home/user/projects/demo"
+    assert seen["target"] is None

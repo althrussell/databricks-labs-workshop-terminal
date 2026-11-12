@@ -100,6 +100,7 @@ def project_skills(root: str | Path, *, strict: bool = False) -> None:
         ))
 
     _teach_model_calls(root, strict=strict)
+    _teach_lakebase(root, strict=strict)
     _apply_overlays(root, strict=strict)
 
 
@@ -246,6 +247,24 @@ const data = await response.json();
 `serving()` and its endpoint aliases take Model Serving endpoint names only. Do not pass a model-service name to `serving()`. Background work with no signed-in user runs as the app; the Agent Bricks exception is in the workshop contract.
 
 """
+
+
+_LAKEHOUSE_SYNC_LINE = (
+    "- [lakehouse-sync.md](references/lakehouse-sync.md) — CDC from Lakebase Postgres to Unity Catalog "
+    "Delta tables (programmable via `databricks postgres *-cdf-config` / `w.postgres.*_cdf_config`, Beta)"
+)
+_LAKEHOUSE_SYNC_WORKSHOP = _LAKEHOUSE_SYNC_LINE + (
+    "\n  - **Not in workshop catalogs:** seat catalogs use Default Storage, and Lakehouse Sync refuses it "
+    "(\"Lakebase CDF is not supported for catalogs using Default Storage\"). Copy the rows with a "
+    "scheduled job or a snapshot table instead."
+)
+
+
+def _teach_lakebase(root: Path, *, strict: bool) -> None:
+    """Tell agents up front that Lakehouse Sync is unavailable on a workshop seat."""
+    skill = root / "databricks-lakebase/SKILL.md"
+    if skill.is_file():
+        _replace_once(skill, _LAKEHOUSE_SYNC_LINE, _LAKEHOUSE_SYNC_WORKSHOP, strict=strict)
 
 
 def _teach_model_calls(root: Path, *, strict: bool) -> None:

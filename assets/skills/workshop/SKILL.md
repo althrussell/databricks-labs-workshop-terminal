@@ -61,17 +61,23 @@ restart or a redeploy can't lose it. That copy is **not** a take-home.
 
 ## Deploying
 
-`deploy_databricks_app` (MCP) takes the absolute project directory (`pwd`) and
-a target: `dev` for a standard APX scaffold, `default` for AppKit, otherwise
-the target in `databricks.yml`. It runs `databricks apps deploy`, polls
+`deploy_databricks_app` (MCP) takes `project_path`, the absolute project directory
+(`pwd`, the folder with `databricks.yml`). Leave `target` out: the tool uses the bundle's
+only target (`dev` for an APX scaffold, `default` for AppKit), and names the choices when
+`databricks.yml` declares several. It runs `databricks apps deploy`, polls
 `databricks apps get` for the exact deployment, returns only when it `SUCCEEDED` and the app is
 `RUNNING`/`ACTIVE`, and requests the attendee's access. Without MCP, run
-`workshop-app-deploy --project "$PWD" --target <target>`. Never use a hand-built
+`workshop-app-deploy --project "$PWD"` (add `--target` only when several are declared). Never use a hand-built
 `--source-code-path` or a bare `databricks bundle deploy`: that leaves the app
 stopped with no URL.
 
 Read a deployed app's logs with `databricks apps logs <app>`; the apx MCP logs
-tool cannot authenticate on a seat.
+tool cannot authenticate on a seat. The apx MCP tools (`check`, `routes`, `start`, …) take
+`app_path`, the same absolute directory; there is no `project_dir`.
+
+Waiting for a deploy, an endpoint or a log line: never chain `sleep` with another command,
+because the harness blocks it. Claude Code uses the Monitor tool with an until-loop; Codex and
+Omnigent check status in separate calls.
 
 An App calls models as the signed-in attendee, not as its own service principal: the
 APX backend uses `Dependencies.UserClient`, other frameworks send the

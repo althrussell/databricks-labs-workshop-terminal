@@ -228,3 +228,10 @@ def test_skills_upstream_directory_is_the_current_one():
     repo uses `skills/`. Reading the wrong one copies nothing and silently falls
     back to the vendored set."""
     assert install.SKILLS_UPSTREAM_DIR == "skills"
+
+
+def test_lakebase_skill_says_lakehouse_sync_is_unavailable_on_a_seat():
+    """Perth, 12 Nov: four seats tried create-cdf-config and hit Default Storage."""
+    text = open(os.path.join(SKILLS_DIR, "databricks-lakebase", "SKILL.md")).read()
+    assert "Not in workshop catalogs" in text
+    assert "scheduled job or a snapshot table" in text

@@ -379,3 +379,14 @@ def test_attach_image_shows_what_was_attached_and_why_it_is_disabled():
     assert 'alt="Image attached"' in app
     assert "Now tell the agent what to do with it." not in app
     assert "Attaching images works while the workshop is open" in app
+
+
+def test_the_home_channels_say_how_to_wait_and_how_to_read_columns(client, monkeypatch, person):
+    """Melbourne and Perth, 11-12 Nov: chained `sleep` calls were blocked, and SQL guessed column names."""
+    _ready(monkeypatch)
+    _open(client, person, "claude", has_starter_prompt=True)
+    for name in ("claude", "codex"):
+        text = " ".join(_channels(_home(person))[name].split())
+        assert "never chain `sleep` with another command" in text
+        assert "`DESCRIBE TABLE <t>` on its own" in text
+        assert "information_schema.columns" in text

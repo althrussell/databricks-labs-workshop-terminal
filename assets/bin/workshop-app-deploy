@@ -161,6 +161,51 @@ def validate_target(value: str) -> str:
     return target
 
 
+def declared_targets(project: Path) -> tuple[list[str], list[str]]:
+    """Target names under the root ``targets:`` mapping, and those marked ``default: true``.
+
+    Empty when the bundle declares none (the CLI then uses its implicit ``default``).
+    """
+    lines = (project / "databricks.yml").read_text(encoding="utf-8").splitlines(keepends=True)
+    block = _yaml_child(lines, 0, len(lines), "targets")
+    if block is None or block[3]:
+        return [], []
+    names: list[str] = []
+    marked: list[str] = []
+    end = _yaml_extent(lines, block[0], block[1])
+    for index, indent, key, value in _yaml_children(lines, block[0] + 1, end):
+        if value:
+            continue
+        names.append(key)
+        child = _yaml_child(lines, index + 1, _yaml_extent(lines, index, indent), "default")
+        if child is not None and child[3].lower() == "true":
+            marked.append(key)
+    return names, marked
+
+
+def resolve_target(project: Path, requested: str | None) -> str:
+    """The bundle target to deploy. An omitted target is the bundle's own default.
+
+    A bundle that declares one target uses it, whatever the caller asked for: an APX
+    scaffold's only target is ``dev``, and agents kept passing AppKit's ``default``.
+    """
+    names, marked = declared_targets(project)
+    if requested is None or not requested.strip():
+        if len(marked) == 1:
+            return marked[0]
+        if len(names) == 1:
+            return names[0]
+        if len(names) > 1:
+            raise DeployError(
+                f"databricks.yml declares several targets ({', '.join(names)}); pass one as target"
+            )
+        return validate_target(None)
+    target = validate_target(requested)
+    if len(names) == 1 and target not in names:
+        return names[0]
+    return target
+
+
 def validate_timeout(value: object) -> int:
     try:
         timeout = int(value)
@@ -1078,7 +1123,7 @@ class DeployController:
         self,
         *,
         project_path: str = ".",
-        target: str = "default",
+        target: str | None = None,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
         cancel: threading.Event | None = None,
         progress: Callable[[str], None] | None = None,
@@ -1086,7 +1131,7 @@ class DeployController:
         cwd: Path | None = None,
     ) -> dict[str, Any]:
         project = resolve_project_path(project_path, self.env, cwd)
-        target = validate_target(target)
+        target = resolve_target(project, target)
         timeout = validate_timeout(timeout_seconds)
         cancel = cancel or threading.Event()
         progress = progress or (lambda _message: None)
@@ -1858,7 +1903,7 @@ def _write_bounded(handle, line: str, written: int, truncated: bool) -> tuple[in
 def submit_worker(args: argparse.Namespace, env: dict[str, str] | None = None) -> int:
     current_env = dict(os.environ if env is None else env)
     project = resolve_project_path(args.project, current_env)
-    target = validate_target(args.target)
+    target = resolve_target(project, args.target)
     log_path = Path(args.log_path).resolve()
     exit_path = Path(args.exit_path).resolve()
     log_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -1964,13 +2009,15 @@ class McpServer:
                     "project_path": {
                         "type": "string",
                         "description": (
-                            "Absolute App project directory under ~/projects."
+                            "Absolute App project directory under ~/projects (the folder with databricks.yml)."
                         ),
                     },
                     "target": {
                         "type": "string",
-                        "description": "Databricks bundle target.",
-                        "default": "default",
+                        "description": (
+                            "Bundle target. Omit it to use the project's only target (dev for an APX "
+                            "scaffold, default for AppKit)."
+                        ),
                     },
                     "timeout_seconds": {
                         "type": "integer",
@@ -2025,6 +2072,12 @@ class McpServer:
         if not isinstance(arguments, dict):
             self._error(request_id, -32602, "Tool arguments must be an object")
             return
+        arguments = dict(arguments)
+        # Agents reach for the other tools' names for the project directory. Accept
+        # them as aliases of project_path rather than spend a turn on the error.
+        for alias in ("project_dir", "app_path"):
+            if alias in arguments and "project_path" not in arguments:
+                arguments["project_path"] = arguments.pop(alias)
         allowed_arguments = {"project_path", "target", "timeout_seconds"}
         unknown_arguments = sorted(set(arguments) - allowed_arguments)
         if unknown_arguments:
@@ -2046,8 +2099,8 @@ class McpServer:
                 "project_path must be an absolute path",
             )
             return
-        target = arguments.get("target", "default")
-        if not isinstance(target, str):
+        target = arguments.get("target")
+        if target is not None and not isinstance(target, str):
             self._error(request_id, -32602, "target must be a string")
             return
         timeout_seconds = arguments.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS)
@@ -2158,7 +2211,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--mcp", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--project", default=".")
-    parser.add_argument("--target", default="default")
+    parser.add_argument("--target", default=None, help="bundle target; omit to use the project's own")
     parser.add_argument("--timeout-seconds", type=int, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--submit-worker", action="store_true", help=argparse.SUPPRESS)

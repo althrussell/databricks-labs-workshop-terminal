@@ -3,8 +3,12 @@
 Workshop Terminal registers one local MCP server named `workshop` for Claude
 Code and Codex. It exposes exactly one tool: `deploy_databricks_app`.
 
-The tool accepts an absolute project directory below `~/projects`, a bundle
-target, and a 30–3600 second timeout. Agents resolve the current project path
+The tool accepts `project_path`, an absolute project directory below
+`~/projects`, an optional bundle target, and a 30–3600 second timeout. `project_dir`
+and `app_path` are accepted as aliases of `project_path`. An omitted target resolves
+from the project's `databricks.yml`: the only declared target, or the one marked
+`default: true`; several undefined targets are refused. When the bundle declares a
+single target, any other requested name (such as AppKit's `default`) resolves to it. Agents resolve the current project path
 before calling MCP; relative paths are rejected so the MCP server cannot deploy
 a tree selected by its own process working directory. It runs the supported
 project deployment pipeline:
@@ -83,8 +87,10 @@ email, and credentials are excluded.
 The same controller is available when an MCP client cannot start:
 
 ```bash
-workshop-app-deploy --project "$PWD" --target default
+workshop-app-deploy --project "$PWD"
 ```
+
+`--target` is optional with the same resolution as the MCP tool.
 
 The CLI fallback resolves relative paths from the caller's shell working
 directory; this differs intentionally from the MCP boundary.

@@ -47,6 +47,7 @@ For context when reading older configs or docs, here is how the retired Provisio
 - [connectivity.md](references/connectivity.md) — Connection patterns, token refresh, Data API
 - [synced-tables.md](references/synced-tables.md) — Lakebase synced tables, data type mapping, capacity planning
 - [lakehouse-sync.md](references/lakehouse-sync.md) — CDC from Lakebase Postgres to Unity Catalog Delta tables (programmable via `databricks postgres *-cdf-config` / `w.postgres.*_cdf_config`, Beta)
+  - **Not in workshop catalogs:** seat catalogs use Default Storage, and Lakehouse Sync refuses it ("Lakebase CDF is not supported for catalogs using Default Storage"). Copy the rows with a scheduled job or a snapshot table instead.
 - [pgvector.md](references/pgvector.md) — Vector similarity search with pgvector extension
 - [off-platform.md](references/off-platform.md) — Off-platform Lakebase (NOT Databricks Apps): external Node.js apps connecting via `@databricks/lakebase`, env management, token refresh, Drizzle ORM
 
