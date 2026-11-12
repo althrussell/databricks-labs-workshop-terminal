@@ -33,38 +33,26 @@ export class ExportInterruptedError extends Error {
   }
 }
 
-export type ExportFetch = (input: string, init?: RequestInit) => Promise<Response>;
-
 /** Whether a response is the proxy handing the attendee to a sign-in page. */
 export function isSignInRedirect(resp: Pick<Response, "type" | "redirected" | "status">): boolean {
   return resp.type === "opaqueredirect" || resp.redirected || (resp.status >= 300 && resp.status < 400);
 }
 
 /**
- * POST /api/export without following redirects. A refused or opaque redirect,
- * or a request that never completes, is reported as a sign-in interruption so
- * the attendee is told to reload instead of seeing "Failed to fetch".
+ * What a failed request means. A refused redirect, or a request that never
+ * completes, is reported as a sign-in interruption so the attendee is told to
+ * reload instead of seeing "Failed to fetch". Anything else is rethrown as-is.
+ * (The request itself is made in api.ts, the only HTTP module.)
  */
-export async function requestExport(send: ExportFetch = (input, init) => fetch(input, init)): Promise<Response> {
-  let resp: Response;
-  try {
-    resp = await send("/api/export", { method: "POST", redirect: "manual" });
-  } catch (error) {
-    if (error instanceof TypeError) throw new ExportInterruptedError("sign_in");
-    throw error;
-  }
-  if (isSignInRedirect(resp)) throw new ExportInterruptedError("sign_in");
-  return resp;
+export function exportTransportFailure(error: unknown): unknown {
+  if (error instanceof TypeError) return new ExportInterruptedError("sign_in");
+  return error;
 }
 
-/** Read the body; a connection that drops mid-transfer is a named interruption. */
-export async function readExportBlob(resp: Pick<Response, "blob">): Promise<Blob> {
-  try {
-    return await resp.blob();
-  } catch (error) {
-    if (error instanceof TypeError) throw new ExportInterruptedError("transfer");
-    throw error;
-  }
+/** A body that stops arriving partway is a named transfer interruption. */
+export function exportBodyFailure(error: unknown): unknown {
+  if (error instanceof TypeError) return new ExportInterruptedError("transfer");
+  return error;
 }
 
 export interface DownloadEnv {

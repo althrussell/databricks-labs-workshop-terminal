@@ -1,7 +1,12 @@
 import type { BuildView } from "./build";
 import { retryQuietly } from "./transientRetry";
 import { isWorkshopClosingDetail, notifyWorkshopClosing, type WorkshopStatus } from "./workshopLifecycle";
-import { readExportBlob, requestExport } from "./exportDownload";
+import {
+  ExportInterruptedError,
+  exportBodyFailure,
+  exportTransportFailure,
+  isSignInRedirect,
+} from "./exportDownload";
 
 export interface ShellLink {
   label: string;
@@ -507,7 +512,15 @@ export const api = {
   buildStop: () => request<{ stopped: boolean; detail: string }>("/api/build/stop", { method: "POST" }),
   /** Export my code: the ZIP downloads, and a verified copy stays in the workshop Volume. */
   exportCode: async (): Promise<{ blob: Blob; filename: string; volumePath: string }> => {
-    const resp = await requestExport();
+    let resp: Response;
+    try {
+      // Manual redirects: an expired Apps sign-in answers with a cross-origin
+      // 302 that a followed fetch cannot read. See exportDownload.ts.
+      resp = await fetch("/api/export", { method: "POST", redirect: "manual" });
+    } catch (error) {
+      throw exportTransportFailure(error);
+    }
+    if (isSignInRedirect(resp)) throw new ExportInterruptedError("sign_in");
     if (!resp.ok) {
       let detail: unknown = resp.statusText;
       try { detail = (await resp.json()).detail ?? detail; } catch { /* non-JSON error body */ }
@@ -515,7 +528,13 @@ export const api = {
     }
     const disposition = resp.headers.get("Content-Disposition") ?? "";
     const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? "workshop-code.zip";
-    return { blob: await readExportBlob(resp), filename, volumePath: resp.headers.get("X-Workshop-Export-Path") ?? "" };
+    let blob: Blob;
+    try {
+      blob = await resp.blob();
+    } catch (error) {
+      throw exportBodyFailure(error);
+    }
+    return { blob, filename, volumePath: resp.headers.get("X-Workshop-Export-Path") ?? "" };
   },
   attachImage: (body: { filename: string; data_base64: string; project_name?: string }) =>
     request<{ path: string; relative_path: string; prompt_path?: string; bytes: number; project: string }>(
