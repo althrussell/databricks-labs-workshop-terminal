@@ -6,10 +6,10 @@ holds EXECUTE on the event's model pool. The App's identity has no such grant.
 
 ## What the deploy sets up
 
-- `workshop-app-deploy` declares the `ai-gateway` user scope (`user_api_scopes`) on the
-  App before its first deploy, so the attendee's one Allow click covers it.
-- An existing App that lacks the scope gets it on the next deploy. Tell the attendee:
-  reopen the App and click Allow. Model calls fail until they do.
+- `workshop-app-deploy` declares the `ai-gateway` and `genie` user scopes
+  (`user_api_scopes`) on the App before its first deploy, so the attendee's one Allow click covers both.
+- An existing App that lacks either scope gets it on the next deploy. Tell the attendee:
+  reopen the App and click Allow. Model and Genie calls fail until they do.
 - Declare no `uc_securable` MODEL_SERVICE resource. It grants the App's service principal,
   which is not the caller.
 
@@ -67,6 +67,12 @@ Read the forwarded header `X-Forwarded-Access-Token` and use it as the bearer to
 `<host>/ai-gateway/mlflow/v1`. A complete Streamlit example is in the
 `databricks-apps-python` skill: `examples/fm-minimal-chat.py` and `examples/llm_config.py`
 (pass the token as `user_token`).
+
+## Genie
+
+Call Genie with the attendee's token, the same way as a model: `Dependencies.UserClient`
+in APX, or `X-Forwarded-Access-Token` elsewhere. The deploy tool declares the `genie` scope.
+What Genie returns is then governed by the attendee's own grants.
 
 ## Background work and Agent Bricks
 

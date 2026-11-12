@@ -66,6 +66,10 @@ ENV_ITEM_RE = re.compile(r"^(\s*)-(?:\s+(.*?))?\s*$")
 ENV_KEY_RE = re.compile(r"^\s*(name|value|valueFrom|resource)\s*:\s*(.*?)\s*$")
 # Models are called as the attendee (OBO), which needs this user-authorization scope on the App.
 AI_GATEWAY_SCOPE = "ai-gateway"
+GENIE_SCOPE = "genie"
+# Every App gets both: model calls (ai-gateway) and Genie (genie), as the attendee. A missing scope
+# breaks the App, while an extra consent line costs nothing in a disposable seat workspace.
+REQUIRED_USER_SCOPES = (AI_GATEWAY_SCOPE, GENIE_SCOPE)
 # A `key:` line in a bundle file, with the quoted or plain key in group 2.
 YAML_KEY_RE = re.compile(r"^(\s*)(\"[^\"]+\"|'[^']+'|[A-Za-z0-9_.\-]+)\s*:(?:\s+(.*?))?\s*$")
 # Code that reads the endpoint, so the app needs the app.yml entry. Other routes (PGHOST and a password) don't.
@@ -599,8 +603,8 @@ def _yaml_is_plain_scope_item(raw: str) -> bool:
     return re.search(r":(?:\s|$)", value) is None
 
 
-def _yaml_add_ai_gateway(text: str, resource_key: str) -> str | None:
-    """``text`` with ``ai-gateway`` added to one app's ``user_api_scopes``.
+def _yaml_add_scope(text: str, resource_key: str, scope: str) -> str | None:
+    """``text`` with ``scope`` added to one app's ``user_api_scopes``.
 
     Existing scopes are kept and nothing is removed. Returns None when the
     resource is not a plain block mapping this reader can edit without a YAML
@@ -632,7 +636,7 @@ def _yaml_add_ai_gateway(text: str, resource_key: str) -> str | None:
         )
         return insert_after(last, [
             " " * child_indent + "user_api_scopes:",
-            " " * (child_indent + 2) + f"- {AI_GATEWAY_SCOPE}",
+            " " * (child_indent + 2) + f"- {scope}",
         ])
     line_index, scope_indent, _, value = scopes
     if value.startswith("["):
@@ -642,13 +646,13 @@ def _yaml_add_ai_gateway(text: str, resource_key: str) -> str | None:
         if any(not _yaml_is_plain_scope_item(item) for item in raw_parts):
             return None
         items = [_yaml_unquote(item) for item in raw_parts]
-        if AI_GATEWAY_SCOPE in items:
+        if scope in items:
             return text
         ending = newline if lines[line_index].endswith("\n") else ""
         edited = list(lines)
         edited[line_index] = (
             " " * scope_indent + "user_api_scopes: ["
-            + ", ".join([*items, AI_GATEWAY_SCOPE]) + "]" + ending
+            + ", ".join([*items, scope]) + "]" + ending
         )
         return "".join(edited)
     if value:
@@ -671,7 +675,7 @@ def _yaml_add_ai_gateway(text: str, resource_key: str) -> str | None:
     ):
         return None  # an object-valued item: not a plain scope list this reader edits
     if any(
-        _yaml_unquote(_strip_comment(lines[index]).lstrip()[1:]) == AI_GATEWAY_SCOPE
+        _yaml_unquote(_strip_comment(lines[index]).lstrip()[1:]) == scope
         for index in items
     ):
         return text
@@ -679,7 +683,18 @@ def _yaml_add_ai_gateway(text: str, resource_key: str) -> str | None:
         item_indent, last = _yaml_indent(lines[items[0]]), items[-1]
     else:
         item_indent, last = scope_indent + 2, line_index
-    return insert_after(last, [" " * item_indent + f"- {AI_GATEWAY_SCOPE}"])
+    return insert_after(last, [" " * item_indent + f"- {scope}"])
+
+
+def _yaml_add_scopes(text: str, resource_key: str, scopes: tuple[str, ...] = REQUIRED_USER_SCOPES) -> str | None:
+    """``text`` with every scope in ``scopes`` present on one app, or None if any edit is refused."""
+    edited = text
+    for scope in scopes:
+        step = _yaml_add_scope(edited, resource_key, scope)
+        if step is None:
+            return None
+        edited = step
+    return edited
 
 
 def _bundle_files(project: Path) -> list[Path]:
@@ -707,9 +722,10 @@ def _write_text(path: Path, text: str) -> None:
 
 
 def _scope_refusal(resource_key: str) -> str:
+    names = " and ".join(f"`- {scope}`" for scope in REQUIRED_USER_SCOPES)
     return (
         f"The bundle's app resource {resource_key} is not a form this deploy tool can edit. "
-        f"Add `- {AI_GATEWAY_SCOPE}` under its user_api_scopes in databricks.yml, then deploy again."
+        f"Add {names} under its user_api_scopes in databricks.yml, then deploy again."
     )
 
 
@@ -727,7 +743,7 @@ def declare_ai_gateway_in_project(project: Path) -> list[str]:
             raise DeployError(f"{path.name} is not UTF-8 text ({_safe_line(exc)}); nothing was changed") from exc
         text = original
         for key in _yaml_app_keys(original):
-            edited = _yaml_add_ai_gateway(text, key)
+            edited = _yaml_add_scopes(text, key)
             if edited is None:
                 raise DeployError(_scope_refusal(key) + " Nothing was changed.")
             text = edited
@@ -899,13 +915,13 @@ def lakebase_problems(bundle: dict[str, Any], project: Path, apps: list[dict[str
     return problems
 
 
-def _scope_before(snapshot: object, live_scopes: list[str] | None) -> bool | str | None:
-    """Whether the live App had ai-gateway: None when no App existed, "unknown" when the payload did not say."""
+def _scopes_missing_before(snapshot: object, live_scopes: list[str] | None) -> list[str] | str | None:
+    """Required scopes the live App lacked: None when no App existed, "unknown" when the payload did not say."""
     if snapshot is None:
         return None
     if live_scopes is None:
         return "unknown"
-    return AI_GATEWAY_SCOPE in live_scopes
+    return [scope for scope in REQUIRED_USER_SCOPES if scope not in live_scopes]
 
 
 def _live_scopes(app: dict[str, Any]) -> list[str] | None:
@@ -1292,23 +1308,23 @@ class DeployController:
                     f"{path.name} is not UTF-8 text ({_safe_line(exc)}); nothing was deployed."
                 ) from exc
             if key in _yaml_app_keys(original):
-                located = (path, original, _yaml_add_ai_gateway(original, key))
+                located = (path, original, _yaml_add_scopes(original, key))
                 break
         if located is not None and located[2] == located[1]:
             return "declared"  # the bundle file already says so; no CLI call needed
         if located is not None and located[2] is not None:
-            return self._edit_ai_gateway(project, target, key, *located)
+            return self._edit_scopes(project, target, key, *located)
         try:
             declared = _declared_scopes(self.backend.bundle_validate(project, target), key)
         except CliError as exc:
             if located is not None:
                 raise DeployError(_scope_refusal(key)) from exc
             return "unchecked"
-        if AI_GATEWAY_SCOPE in declared:
+        if all(scope in declared for scope in REQUIRED_USER_SCOPES):
             return "declared"
         raise DeployError(_scope_refusal(key))
 
-    def _edit_ai_gateway(
+    def _edit_scopes(
         self, project: Path, target: str, key: str, path: Path, original: str, edited: str
     ) -> str:
         try:
@@ -1318,7 +1334,7 @@ class DeployController:
                 f"The app's user authorization scopes could not be checked ({_safe_line(exc)}). "
                 "Retry the deploy; nothing was deployed."
             ) from exc
-        if AI_GATEWAY_SCOPE in before:
+        if all(scope in before for scope in REQUIRED_USER_SCOPES):
             return "declared"  # declared through a target or include the text check did not see
         _write_text(path, edited)
         try:
@@ -1329,7 +1345,7 @@ class DeployController:
                 f"The edited bundle could not be checked ({_safe_line(exc)}). "
                 "The file was restored; nothing was deployed."
             ) from exc
-        if AI_GATEWAY_SCOPE not in now or not set(before) <= set(now):
+        if any(scope not in now for scope in REQUIRED_USER_SCOPES) or not set(before) <= set(now):
             _write_text(path, original)
             raise DeployError(
                 "The edited bundle did not keep the app's scopes as expected. "
@@ -1338,37 +1354,39 @@ class DeployController:
         return "added"
 
     def _scope_message(self, state: dict[str, Any], app: dict[str, Any]) -> str:
-        """What the agent must tell the attendee about the ai-gateway scope after a success."""
+        """What the agent must tell the attendee about the required user scopes after a success."""
+        names = ", ".join(f"`{scope}`" for scope in REQUIRED_USER_SCOPES)
         if state.get("ai_gateway_edit") == "unchecked":
             return (
-                "The ai-gateway scope could not be checked, because the App is not in a bundle "
-                "file this tool edits. If model calls as the attendee fail, add `- ai-gateway` "
+                f"The {names} scopes could not be checked, because the App is not in a bundle "
+                "file this tool edits. If model or Genie calls as the attendee fail, add them "
                 "under user_api_scopes in databricks.yml and deploy again."
             )
-        before = state.get("ai_gateway_before")
+        before = state.get("scopes_missing_before")
         live = _live_scopes(app)
         if live is None:
             return (
-                "The App's user authorization scopes were not returned, so the ai-gateway scope "
-                "could not be confirmed. If model calls as the attendee fail, ask a facilitator."
+                f"The App's user authorization scopes were not returned, so {names} could not be "
+                "confirmed. If model or Genie calls as the attendee fail, ask a facilitator."
             )
-        has_now = AI_GATEWAY_SCOPE in live
-        if not has_now:
+        missing_now = [scope for scope in REQUIRED_USER_SCOPES if scope not in live]
+        if missing_now:
             return (
-                "The live App does not show the ai-gateway scope after this deploy, so model "
-                "calls as the attendee will fail. Ask a facilitator to add it to the App."
+                f"The live App does not show the scope(s) {', '.join(f'`{s}`' for s in missing_now)} "
+                "after this deploy, so model or Genie calls as the attendee will fail. Ask a "
+                "facilitator to add them to the App."
             )
-        if before is True:
-            return ""
         if before is None:
             return (
-                "The App asks for the ai-gateway scope. The attendee clicks Allow once, on the "
+                f"The App asks for the {names} scopes. The attendee clicks Allow once, on the "
                 "first open of the App."
             )
-        return (
-            "The App has just gained the ai-gateway scope. Tell the attendee: reopen the App "
-            "and click Allow. Model calls fail until they do."
-        )
+        if before == "unknown" or before:
+            return (
+                "The App has just gained scopes. Tell the attendee: reopen the App and click "
+                "Allow. Model and Genie calls fail until they do."
+            )
+        return ""
 
     def _start(
         self,
@@ -1454,7 +1472,7 @@ class DeployController:
             "attempts": 0,
             "state_root": str(store.root),
             # None: no App existed before this deploy. Otherwise whether the live App had ai-gateway.
-            "ai_gateway_before": _scope_before(snapshot, live_scopes),
+            "scopes_missing_before": _scopes_missing_before(snapshot, live_scopes),
             "ai_gateway_edit": edit,
         }
         store.save(state)

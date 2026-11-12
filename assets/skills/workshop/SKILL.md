@@ -79,8 +79,8 @@ APX backend uses `Dependencies.UserClient`, other frameworks send the
 with the model as `system.ai.<name>`. Put the model in the App's `DATABRICKS_MODEL`:
 `system.ai.claude-sonnet-5-5`, the default for App features. Never declare
 a MODEL_SERVICE resource; the code in `references/app-model-calls.md` shows the
-pattern. `workshop-app-deploy` declares the `ai-gateway` user scope before the first
-deploy. If an existing App lacks it, the attendee reopens the App and clicks Allow.
+pattern. `workshop-app-deploy` declares the `ai-gateway` and `genie` user scopes before the
+first deploy. If an existing App lacks one, the attendee reopens the App and clicks Allow.
 
 Two cases are the exception: Agent Bricks agents (`agentbricks deploy`), and background work
 with no signed-in user. Both call models as the App, and Control Tower grants that shortly

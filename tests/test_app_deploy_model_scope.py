@@ -78,30 +78,30 @@ def _scopes(text: str, key: str = "demo") -> list[str]:
     ],
 )
 def test_the_scope_is_added_and_every_existing_scope_kept(text, before):
-    edited = deploy_tool._yaml_add_ai_gateway(text, "demo")
+    edited = deploy_tool._yaml_add_scopes(text, "demo")
 
     assert edited is not None and edited != text
     if "\r\n" in text:
         assert "\r\n" in edited
     after = _scopes(edited.replace("\r\n", "\n"))
-    assert after == [*before, "ai-gateway"]
+    assert after == [*before, "ai-gateway", "genie"]
 
 
 def test_an_app_that_already_declares_the_scope_is_left_byte_identical():
-    text = APX_BUNDLE.replace("source_code_path: ./.build", "source_code_path: ./.build\n      user_api_scopes:\n        - ai-gateway")
+    text = APX_BUNDLE.replace("source_code_path: ./.build", "source_code_path: ./.build\n      user_api_scopes:\n        - ai-gateway\n        - genie")
 
-    assert deploy_tool._yaml_add_ai_gateway(text, "demo") == text
+    assert deploy_tool._yaml_add_scopes(text, "demo") == text
 
 
 def test_the_inserted_block_keeps_the_app_mapping_intact():
-    edited = deploy_tool._yaml_add_ai_gateway(APX_BUNDLE, "demo")
+    edited = deploy_tool._yaml_add_scopes(APX_BUNDLE, "demo")
     app = yaml.safe_load(edited)["resources"]["apps"]["demo"]
 
     assert app == {
         "name": "demo-app",
         "description": "demo created with apx",
         "source_code_path": "./.build",
-        "user_api_scopes": ["ai-gateway"],
+        "user_api_scopes": ["ai-gateway", "genie"],
     }
     assert yaml.safe_load(edited)["targets"] == {"dev": {"mode": "development", "default": True}}
 
@@ -120,7 +120,7 @@ def test_the_inserted_block_keeps_the_app_mapping_intact():
     ],
 )
 def test_a_form_the_editor_cannot_edit_safely_is_refused_not_guessed(text, key):
-    assert deploy_tool._yaml_add_ai_gateway(text, key) is None
+    assert deploy_tool._yaml_add_scopes(text, key) is None
 
 
 def test_app_keys_are_read_from_the_apps_mapping():
@@ -140,7 +140,7 @@ def test_the_scaffold_declares_the_scope_once_and_reports_the_file(tmp_path):
     (project / "databricks.yml").write_text(APX_BUNDLE)
 
     assert deploy_tool.declare_ai_gateway_in_project(project) == ["databricks.yml"]
-    assert _scopes((project / "databricks.yml").read_text()) == ["ai-gateway"]
+    assert _scopes((project / "databricks.yml").read_text()) == ["ai-gateway", "genie"]
     assert deploy_tool.declare_ai_gateway_in_project(project) == []
 
 
@@ -151,7 +151,7 @@ def test_an_app_in_a_resources_file_is_declared_too(tmp_path):
     (project / "resources" / "app.yml").write_text(APX_BUNDLE.split("\ntargets")[0].replace("bundle:\n  name: demo\n", ""))
 
     assert deploy_tool.declare_ai_gateway_in_project(project) == ["app.yml"]
-    assert _scopes((project / "resources" / "app.yml").read_text()) == ["ai-gateway"]
+    assert _scopes((project / "resources" / "app.yml").read_text()) == ["ai-gateway", "genie"]
 
 
 def test_an_unsupported_form_fails_the_scaffold_without_touching_the_file(tmp_path):
@@ -171,7 +171,7 @@ def test_the_cli_flag_declares_the_scope_without_deploying(tmp_path, capsys):
     (project / "databricks.yml").write_text(APX_BUNDLE)
 
     assert deploy_tool.main(["--declare-ai-gateway", str(project)]) == 0
-    assert _scopes((project / "databricks.yml").read_text()) == ["ai-gateway"]
+    assert _scopes((project / "databricks.yml").read_text()) == ["ai-gateway", "genie"]
     assert capsys.readouterr().out == ""
 
 
@@ -184,7 +184,7 @@ class BundleBackend(FakeBackend):
         super().__init__(**kwargs)
         self.project = project
         self.before = before  # the live App before this deploy; None means it does not exist yet
-        self.after = after or _app(active="new", scopes=("sql", "ai-gateway"))
+        self.after = after or _app(active="new", scopes=("sql", "ai-gateway", "genie"))
         self.validate_errors = list(validate_errors)  # raised by successive bundle_validate calls
         self.validations = 0
 
@@ -217,7 +217,7 @@ def test_a_first_deploy_declares_the_scope_before_submitting(tmp_path):
 
     assert result["status"] == "succeeded"
     assert backend.submissions == 1
-    assert _scopes((project / "databricks.yml").read_text()) == ["ai-gateway"]
+    assert _scopes((project / "databricks.yml").read_text()) == ["ai-gateway", "genie"]
     assert "clicks Allow once" in result["message"]
 
 
@@ -229,7 +229,7 @@ def test_an_existing_app_without_the_scope_gets_it_and_the_attendee_is_asked_to_
     result = _controller(env, backend).deploy(project_path=str(project))
 
     assert result["status"] == "succeeded"
-    assert _scopes((project / "databricks.yml").read_text()) == ["sql", "ai-gateway"]
+    assert _scopes((project / "databricks.yml").read_text()) == ["sql", "ai-gateway", "genie"]
     assert "reopen the App and click Allow" in result["message"]
 
 
@@ -241,26 +241,26 @@ def test_a_deploy_that_leaves_the_live_app_without_the_scope_says_so(tmp_path):
     result = _controller(env, backend).deploy(project_path=str(project))
 
     assert result["status"] == "succeeded"
-    assert "does not show the ai-gateway scope" in result["message"]
+    assert "does not show the scope(s)" in result["message"]
 
 
 def test_a_deploy_that_strips_an_existing_scope_warns_even_when_present_before(tmp_path):
     env, project = _env(tmp_path)
-    declared = APX_BUNDLE.replace("source_code_path: ./.build", "source_code_path: ./.build\n      user_api_scopes: [ai-gateway]")
+    declared = APX_BUNDLE.replace("source_code_path: ./.build", "source_code_path: ./.build\n      user_api_scopes: [ai-gateway, genie]")
     (project / "databricks.yml").write_text(declared)
-    backend = BundleBackend(project, before=_app(scopes=("ai-gateway",)), after=_app(active="new", scopes=()))
+    backend = BundleBackend(project, before=_app(scopes=("ai-gateway", "genie")), after=_app(active="new", scopes=()))
 
     result = _controller(env, backend).deploy(project_path=str(project))
 
     assert result["status"] == "succeeded"
-    assert "does not show the ai-gateway scope" in result["message"]
+    assert "does not show the scope(s)" in result["message"]
 
 
 def test_a_bundle_that_already_declares_the_scope_is_not_edited_or_checked_again(tmp_path):
     env, project = _env(tmp_path)
-    declared = APX_BUNDLE.replace("source_code_path: ./.build", "source_code_path: ./.build\n      user_api_scopes: [ai-gateway]")
+    declared = APX_BUNDLE.replace("source_code_path: ./.build", "source_code_path: ./.build\n      user_api_scopes: [ai-gateway, genie]")
     (project / "databricks.yml").write_text(declared)
-    backend = BundleBackend(project, before=_app(scopes=("ai-gateway",)))
+    backend = BundleBackend(project, before=_app(scopes=("ai-gateway", "genie")))
 
     result = _controller(env, backend).deploy(project_path=str(project))
 
@@ -392,13 +392,13 @@ resources:
     committed = subprocess.run(
         ["git", "-C", str(project), "show", "HEAD:databricks.yml"], text=True, capture_output=True, check=True,
     ).stdout
-    assert _scopes(committed, key="scaffolded-app") == ["ai-gateway"]
+    assert _scopes(committed, key="scaffolded-app") == ["ai-gateway", "genie"]
 
 
 def test_a_scope_list_is_not_reported_missing_when_the_payload_omits_it():
     """Unknown is not absent: the agent must not be told to fix a scope the API did not describe."""
     message = deploy_tool.DeployController._scope_message(
-        None, {"ai_gateway_before": "unknown"}, {"name": "demo-app"}
+        None, {"scopes_missing_before": "unknown"}, {"name": "demo-app"}
     )
 
     assert "were not returned" in message
@@ -454,7 +454,7 @@ def test_omitted_user_api_scopes_falls_back_to_effective_scopes_from_apps_get(tm
     result = _controller(env, backend).deploy(project_path=str(project))
 
     assert result["status"] == "succeeded"
-    assert "does not show the ai-gateway scope" in result["message"]
+    assert "does not show the scope(s)" in result["message"]
 
 
 def test_an_uneditable_bundle_resource_is_refused_even_when_bundle_validate_errors(tmp_path):
@@ -510,3 +510,58 @@ def test_llm_config_user_token_skips_control_plane_validation_and_rejects_whites
     assert config.model == "system.ai.claude-sonnet-5-5"
     with pytest.raises(module.DatabricksLLMConfigError, match="No Databricks auth configured"):
         module.get_databricks_llm_config(user_token="   ")
+
+
+def test_both_required_scopes_merge_with_existing_scopes_and_nothing_is_removed(tmp_path):
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "databricks.yml").write_text(
+        "resources:\n  apps:\n    demo:\n      name: demo\n      user_api_scopes: [sql, \"files\"]\n"
+    )
+
+    assert deploy_tool.declare_ai_gateway_in_project(project) == ["databricks.yml"]
+    assert _scopes((project / "databricks.yml").read_text()) == ["sql", "files", "ai-gateway", "genie"]
+
+
+def test_a_file_with_only_ai_gateway_gains_genie_and_keeps_its_order():
+    text = (
+        "resources:\n  apps:\n    demo:\n      name: demo\n      user_api_scopes:\n"
+        "        - ai-gateway\n        - sql\n"
+    )
+
+    edited = deploy_tool._yaml_add_scopes(text, "demo")
+
+    assert _scopes(edited) == ["ai-gateway", "sql", "genie"]
+
+
+def test_an_existing_app_that_lacks_only_genie_is_edited_and_the_attendee_is_asked_to_allow(tmp_path):
+    env, project = _env(tmp_path)
+    (project / "databricks.yml").write_text(
+        APX_BUNDLE.replace(
+            "source_code_path: ./.build",
+            "source_code_path: ./.build\n      user_api_scopes:\n        - ai-gateway",
+        )
+    )
+    backend = BundleBackend(project, before=_app(scopes=("ai-gateway",)))
+
+    result = _controller(env, backend).deploy(project_path=str(project))
+
+    assert result["status"] == "succeeded"
+    assert _scopes((project / "databricks.yml").read_text()) == ["ai-gateway", "genie"]
+    assert "reopen the App and click Allow" in result["message"]
+
+
+def test_a_live_app_still_missing_genie_after_the_deploy_is_reported(tmp_path):
+    env, project = _env(tmp_path)
+    (project / "databricks.yml").write_text(APX_BUNDLE)
+    backend = BundleBackend(
+        project,
+        before=_app(scopes=("ai-gateway",)),
+        after=_app(active="new", scopes=("ai-gateway",)),
+    )
+
+    result = _controller(env, backend).deploy(project_path=str(project))
+
+    assert result["status"] == "succeeded"
+    assert "`genie`" in result["message"]
+    assert "does not show the scope(s)" in result["message"]

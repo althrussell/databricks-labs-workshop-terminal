@@ -235,13 +235,13 @@ if [ "$APPKIT" = "1" ] && [ ! -e "$DEST" ]; then
   fi
 fi
 
-# An App calls models as the attendee, so its bundle declares the ai-gateway user
+# An App calls models and Genie as the attendee, so its bundle declares the ai-gateway and genie user
 # scope before the first commit: the App is created with it and the attendee's
 # one Allow click covers it. Best effort: workshop-app-deploy adds it at deploy
 # too, so a failure here is reported, not fatal.
 if [ "$APX" = "1" ] || [ "$APPKIT" = "1" ]; then
   if [ -f "$DEST/databricks.yml" ] && ! "$(dirname "$0")/workshop-app-deploy" --declare-ai-gateway "$DEST" >&2; then
-    echo "workshop-init-project: could not declare the ai-gateway scope in databricks.yml; the deploy tool adds it, or add it by hand" >&2
+    echo "workshop-init-project: could not declare the ai-gateway and genie scopes in databricks.yml; the deploy tool adds it, or add it by hand" >&2
   fi
 fi
 

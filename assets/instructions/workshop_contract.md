@@ -27,7 +27,7 @@ Recommend a path. If none is recorded, ask once: "Would you like a rapid prototy
 
 ### Models in an App
 
-- An App calls models as the signed-in attendee, never as its service principal or through a MODEL_SERVICE resource: APX `Dependencies.UserClient` (or the `X-Forwarded-Access-Token` header) on `<host>/ai-gateway/mlflow/v1`, with `DATABRICKS_MODEL` = `system.ai.claude-sonnet-5-5` by default. `workshop-app-deploy` declares the `ai-gateway` scope; if an existing App lacks it, the attendee reopens it and clicks Allow.
+- An App calls models as the signed-in attendee, never as its service principal or through a MODEL_SERVICE resource: APX `Dependencies.UserClient` (or the `X-Forwarded-Access-Token` header) on `<host>/ai-gateway/mlflow/v1`, with `DATABRICKS_MODEL` = `system.ai.claude-sonnet-5-5` by default. `workshop-app-deploy` declares the `ai-gateway` and `genie` scopes; if an existing App lacks one, the attendee reopens it and clicks Allow.
 - Exception: Agent Bricks agents, and background work with no signed-in user, call models as the App. Control Tower grants that after the first deploy. If a model "does not exist" right after deploy, wait 2 minutes and retry; never grant it yourself.
 
 ### Skills and verification

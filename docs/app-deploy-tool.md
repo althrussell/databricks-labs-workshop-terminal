@@ -34,11 +34,13 @@ cancellation and timeout. There is no limit on sequential deployments.
 
 ## Model access scope
 
-An App calls models as the signed-in attendee, so the bundle must give it the
-`ai-gateway` user authorization scope (`user_api_scopes`). Before submitting, the
-tool checks the resolved bundle (`bundle validate`) and, when the scope is
-missing, adds it to the app resource's list in `databricks.yml` (or a
-`resources/*.yml` file). Existing scopes are kept. The edit is checked by a second
+An App calls models and Genie as the signed-in attendee, so the bundle must give it the
+`ai-gateway` and `genie` user authorization scopes (`user_api_scopes`). They are declared
+always, not only when a model call is detected: a missing scope breaks the App, while an
+extra consent line costs nothing in a disposable seat workspace. Before submitting, the
+tool checks the bundle file and, when a scope is missing, adds it to the app resource's
+list in `databricks.yml` (or a `resources/*.yml` file), or checks the resolved bundle
+when the App is in no file it can edit. Existing scopes are kept. The edit is checked by a second
 `bundle validate`, and the file is restored if any scope was lost or the edit
 could not be made. Nothing is deployed in those cases.
 

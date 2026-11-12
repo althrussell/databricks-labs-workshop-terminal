@@ -55,7 +55,7 @@ def _app(
     pending: str = "",
     app_state: str = "RUNNING",
     compute_state: str = "ACTIVE",
-    scopes: tuple[str, ...] = ("ai-gateway",),
+    scopes: tuple[str, ...] = ("ai-gateway", "genie"),
 ) -> dict:
     return {
         "url": "https://demo.databricksapps.com",
@@ -102,7 +102,7 @@ class FakeBackend:
                     "demo": {
                         "id": "demo-app",
                         "url": "https://demo.databricksapps.com",
-                        "user_api_scopes": ["ai-gateway"],
+                        "user_api_scopes": ["ai-gateway", "genie"],
                     }
                 }
             }
@@ -372,7 +372,7 @@ def test_first_deployment_falls_back_to_bundle_validate(tmp_path):
                         "demo": {
                             "name": "demo-app",
                             "url": "https://demo.databricksapps.com",
-                            "user_api_scopes": ["ai-gateway"],
+                            "user_api_scopes": ["ai-gateway", "genie"],
                         }
                     }
                 }
@@ -409,7 +409,7 @@ class LakebaseBackend(FakeBackend):
             "url": "https://demo.databricksapps.com",
             "source_code_path": ".",
             "resources": list(resources),
-            "user_api_scopes": ["ai-gateway"],
+            "user_api_scopes": ["ai-gateway", "genie"],
         }
 
     def bundle_validate(self, _project, _target):
@@ -623,7 +623,7 @@ def test_the_bundle_is_validated_once_on_the_first_deployment_path(tmp_path):
     env, project = _env(tmp_path)
     (project / "databricks.yml").write_text(
         "bundle:\n  name: demo\nresources:\n  apps:\n    demo:\n      name: demo-app\n"
-        "      user_api_scopes:\n        - ai-gateway\n"
+        "      user_api_scopes:\n        - ai-gateway\n        - genie\n"
     )
     calls = []
 
@@ -633,7 +633,7 @@ def test_the_bundle_is_validated_once_on_the_first_deployment_path(tmp_path):
 
         def bundle_validate(self, _project, _target):
             calls.append(1)
-            return {"resources": {"apps": {"demo": {"name": "demo-app", "user_api_scopes": ["ai-gateway"]}}}}
+            return {"resources": {"apps": {"demo": {"name": "demo-app", "user_api_scopes": ["ai-gateway", "genie"]}}}}
 
     assert _controller(env, FirstDeployBackend()).deploy(project_path=str(project))["status"] == "succeeded"
     assert len(calls) == 1
