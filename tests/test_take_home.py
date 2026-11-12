@@ -78,7 +78,8 @@ def test_the_wrap_guidance_names_both_routes_out(instructions: str):
     assert "git remote add origin" in instructions
     assert "git push -u origin main" in instructions
     assert "workshop-export" in instructions
-    assert "File options → Download file" in instructions
+    assert "**Download my code**" in instructions
+    assert "File options" not in instructions
 
 
 def test_the_agent_is_told_not_to_persist_the_attendee_s_token(instructions: str):

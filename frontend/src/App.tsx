@@ -55,6 +55,7 @@ import TerminalView, { type TerminalHandle } from "./components/TerminalView";
 import TerminalClipboard from "./components/TerminalClipboard";
 import ImageDropZone from "./components/ImageDropZone";
 import { rejectedMessage, splitAttachable } from "./imageDrop";
+import { saveDownload } from "./exportDownload";
 import type { ClipboardNotice } from "./terminalClipboard";
 import AgentSwitchDialog from "./components/AgentSwitchDialog";
 import ProjectBar from "./components/ProjectBar";
@@ -946,11 +947,7 @@ export default function App() {
     setExportBusy(true);
     try {
       const { blob, filename } = await api.exportCode();
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = filename;
-      link.click();
-      URL.revokeObjectURL(link.href);
+      saveDownload(blob, filename);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

@@ -306,7 +306,10 @@ live tabs.
    See [docs/app-deploy-tool.md](../app-deploy-tool.md).
 8. Take-home: `server/main.py::export_code` → `server/journey.py::export` runs
    `assets/bin/workshop-export`. It zips the source, uploads it to the CT-assigned Volume and
-   verifies the uploaded bytes ([docs/take-home-export.md](../take-home-export.md)).
+   verifies the uploaded bytes. `export_code` then streams that verified local ZIP to the browser
+   as an attachment. The browser side is `frontend/src/exportDownload.ts::requestExport`, which
+   uses manual redirects so an expired Apps sign-in is reported, not shown as "Failed to fetch"
+   ([docs/take-home-export.md](../take-home-export.md)).
 
 Git commits sync to the attendee's Workspace home through a post-commit hook written by
 `server/user_content.py`. After a restart, `server/build_restore.py` restores builds in the

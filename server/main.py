@@ -1327,9 +1327,18 @@ def attach_project_image(
     }
 
 
+_EXPORT_ZIP_NAME = re.compile(r"workshop-code-[A-Za-z0-9T._-]{1,100}\.zip")
+
+
 @app.post("/api/export")
 def export_code(principal: Principal = Depends(get_current_user)):
-    """Export my code (WT-P6): the ZIP streams to the browser; the volume copy stays."""
+    """Export my code (WT-P6): this server streams the verified ZIP to the browser.
+
+    The bytes come from the attendee's private cache, which the helper wrote before
+    uploading. The browser never reads the Volume, so no Volume permission is needed,
+    and nothing on this path has a size cap. A missing or unreadable cache file is a
+    503 with a clear message, not an unhandled 500 after the response has started.
+    """
     from fastapi.responses import FileResponse
 
     from . import journey
@@ -1339,8 +1348,15 @@ def export_code(principal: Principal = Depends(get_current_user)):
         result = journey.export(user, reason="attendee")
     except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired) as error:
         raise HTTPException(status_code=503, detail=f"Export did not finish: {error}") from error
-    return FileResponse(result["local_zip"], media_type="application/zip", filename=result["filename"],
-                        headers={"X-Workshop-Export-Path": str(result.get("path") or ""),
+    local = Path(str(result.get("local_zip") or ""))
+    if not _EXPORT_ZIP_NAME.fullmatch(local.name) or not local.is_file() or not os.access(local, os.R_OK):
+        raise HTTPException(
+            status_code=503,
+            detail="Your export ZIP is no longer on this workshop terminal. Click Download my code again to rebuild it.",
+        )
+    return FileResponse(local, media_type="application/zip", filename=local.name,
+                        headers={"Cache-Control": "no-store",
+                                 "X-Workshop-Export-Path": str(result.get("path") or ""),
                                  "X-Workshop-Export-Files": str(result.get("files", ""))})
 
 

@@ -215,7 +215,8 @@ def test_success_prints_specific_volume_and_download_steps(source, fake_cli, mon
     output = capsys.readouterr().out
     assert "attendee_catalog.assigned_schema.workshop_exports" in output
     assert "For workshop-code-" in output
-    assert "File options → Download file" in output
+    assert "Download my code" in output
+    assert "File options" not in output
     assert "before the workshop environment is deleted" in output
     assert "read-back matches" in output
 

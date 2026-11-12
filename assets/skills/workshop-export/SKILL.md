@@ -40,17 +40,16 @@ environment variable before exporting. Do not copy home configuration or
 tokens into the project to make it run elsewhere. Databricks resources and
 application data are separate from this source export.
 
-After a verified upload, tell the attendee they can click **Download my code**
-in the Workshop Terminal header to download the ZIP directly to their computer,
-and also show the exact Volume link, ZIP filename and these Catalog Explorer
-fallback steps on screen:
+After a verified upload, tell the attendee to click **Download my code** in the
+Workshop Terminal header. That one click saves the ZIP to their computer: the
+terminal streams it from its own copy, so no Volume or Catalog permission is
+needed. Name the ZIP filename. Do not send them to Catalog or Volume download
+steps; they may not have Volume access. If the button says the sign-in ended,
+tell them to reload this tab and click again. If it still fails, report that and
+keep the local ZIP.
 
-1. Open **Catalog** in Databricks, then the assigned **catalog → schema**.
-2. Open **Volumes → workshop_exports → code**.
-3. Open the named ZIP's **File options → Download file**, then unzip it on their computer.
-
-Say briefly: **Download before the workshop ends. The Volume is deleted with
-the workshop environment; your downloaded ZIP is the copy you keep.**
+Say briefly: **Download before the workshop ends. The workshop environment is
+deleted; your downloaded ZIP is the copy you keep.**
 
 Keep this handoff short. Use existing project notes; no architecture/security/
 Jira document pack or rebuild is needed. Report unfinished work and material

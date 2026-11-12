@@ -34,14 +34,19 @@ compared with the local ZIP before success is reported. Failed uploads or
 verification retain the local ZIP in the attendee's private cache; a repeat
 export preserves earlier archives.
 
-The helper and agent show the exact Volume link and filename, followed by:
+The attendee gets the ZIP from **Download my code** in the Workshop Terminal header.
+Workshop Terminal streams its own verified copy of the ZIP to the browser, so the
+attendee needs no Volume or Catalog permission and the download has no size cap.
+The agent does not send attendees to the Volume: a Volume download depends on
+Catalog access that attendees may not have. The Volume copy is the workshop's
+backup and CT keeps it at teardown.
 
-1. Open **Catalog → your catalog → your schema** in Databricks.
-2. Open **Volumes → workshop_exports → code**.
-3. Open the named ZIP's **File options → Download file**, then unzip it on your computer.
+If the Apps proxy sign-in has expired, the browser cannot follow the sign-in redirect
+from a fetch. Workshop Terminal detects the redirect and asks the attendee to reload
+the tab and click again; it does not show a bare "Failed to fetch".
 
-Download before the event ends: the temporary Volume disappears when the
-workshop environment is deleted. The downloaded ZIP is the attendee's own copy.
+Download before the event ends: the workshop environment is deleted with the
+temporary Volume. The downloaded ZIP is the attendee's own copy.
 
 Bootstrap/refresh removes the retired `promote` skill from warm shared trees.
 Managed home links and existing managed project copies reconcile to the new

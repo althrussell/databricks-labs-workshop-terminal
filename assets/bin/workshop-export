@@ -297,12 +297,10 @@ def main() -> int:
     else:
         print(f"Exported {result['files']} source files. Uploaded ZIP read-back matches the local ZIP.")
         print(f"Volume: {result['volume']}\nZIP: {result['volume_path']}")
-        if result["volume_url"]:
-            print(f"Open: {result['volume_url']}")
         print("Download to your computer before the workshop environment is deleted:")
-        print("1. In Databricks, open Catalog and select your catalog and schema.")
-        print(f"2. Open Volumes → {VOLUME} → code.")
-        print(f"3. For {result['filename']}, open File options → Download file, then unzip it on your computer.")
+        print("1. Click Download my code in the Workshop Terminal header.")
+        print(f"2. For {result['filename']}, your browser saves the ZIP; unzip it on your computer.")
+        print("3. If it says your sign-in ended, reload this tab and click again.")
         print("The Volume is temporary workshop storage; the downloaded ZIP is your take-home copy.")
     return 0
 
