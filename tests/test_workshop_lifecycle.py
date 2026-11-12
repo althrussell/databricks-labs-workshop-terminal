@@ -72,6 +72,7 @@ def test_unavailable_or_invalid_lifecycle_never_reports_open(client, source, mon
     ("/api/help/messages", "post", {"body": "late help"}),
     ("/api/help/raise", "post", {"note": "late hand"}),
     ("/api/projects/select", "post", {"name": "late build", "new": True}),
+    ("/api/export", "post", None),
     ("/api/certificate?name=Alice", "get", None),
 ])
 def test_closed_actions_use_one_attendee_safe_refusal(client, source, path, method, body):

@@ -928,12 +928,7 @@ export default function App() {
       }
       if (!resp.ok) throw new Error("Certificate generation failed — try again");
       const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "databricks-workshop-certificate.pdf";
-      a.click();
-      URL.revokeObjectURL(url);
+      saveDownload(blob, "databricks-workshop-certificate.pdf");
       setCertOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

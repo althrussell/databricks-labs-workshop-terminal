@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { api, ApiError } from "./api.ts";
+import { onWorkshopClosing } from "./workshopLifecycle.ts";
 import {
   ExportInterruptedError,
   REVOKE_DELAY_MS,
@@ -19,9 +20,10 @@ function response(init: {
   redirected?: boolean;
   headers?: Record<string, string>;
   body?: Blob;
+  json?: unknown;
   blob?: () => Promise<Blob>;
 }): Response {
-  const { status = 200, type = "basic", redirected = false, headers = {}, body = new Blob([]), blob } = init;
+  const { status = 200, type = "basic", redirected = false, headers = {}, body = new Blob([]), json = {}, blob } = init;
   return {
     status,
     type,
@@ -30,7 +32,7 @@ function response(init: {
     statusText: "",
     headers: new Headers(headers),
     blob: blob ?? (async () => body),
-    json: async () => ({}),
+    json: async () => json,
   } as unknown as Response;
 }
 
@@ -94,6 +96,71 @@ test("a server error keeps its own message for the caller", async () => {
     withFetch(async () => response({ status: 503, headers: {} }), () => api.exportCode()),
     (error: unknown) => error instanceof ApiError && error.status === 503,
   );
+});
+
+test("export passes an optional project filter as a query parameter", async () => {
+  const urls: string[] = [];
+  await withFetch(async (url) => {
+    urls.push(url);
+    return response({ headers: { "Content-Disposition": 'attachment; filename="workshop-code-1.zip"' } });
+  }, () => api.exportCode("garden build"));
+  assert.deepEqual(urls, ["/api/export?project=garden%20build"]);
+});
+
+test("a 409 workshop_closing refusal on export notifies lifecycle listeners immediately", async () => {
+  let closedCount = 0;
+  const off = onWorkshopClosing(() => { closedCount += 1; });
+  try {
+    await assert.rejects(
+      withFetch(
+        async () => response({
+          status: 409,
+          json: { detail: { code: "workshop_closing", message: "This workshop is closing. New input is disabled." } },
+        }),
+        () => api.exportCode(),
+      ),
+      (error: unknown) => error instanceof ApiError && error.status === 409,
+    );
+    assert.equal(closedCount, 1);
+  } finally {
+    off();
+  }
+});
+
+test("a 403 wrong_seat_identity refusal on export latches wrong-identity state and blocks retries", async () => {
+  const fresh = await import("./api.ts?wrong-seat-export");
+  const details: string[] = [];
+  const off = fresh.onWrongIdentity((detail: string) => details.push(detail));
+  let networkCalls = 0;
+  try {
+    await assert.rejects(
+      withFetch(
+        async () => {
+          networkCalls += 1;
+          return response({
+            status: 403,
+            headers: { "X-Workshop-Error-Code": "wrong_seat_identity" },
+            json: { detail: "This workshop instance is assigned to alice@example.com." },
+          });
+        },
+        () => fresh.api.exportCode(),
+      ),
+      (error: unknown) => error instanceof fresh.ApiError && error.status === 403,
+    );
+    assert.deepEqual(details, ["This workshop instance is assigned to alice@example.com."]);
+    assert.equal(fresh.isWrongIdentityLocked(), true);
+
+    await assert.rejects(
+      withFetch(async () => {
+        networkCalls += 1;
+        return response({});
+      }, () => fresh.api.exportCode()),
+      (error: unknown) => error instanceof fresh.ApiError && error.status === 403,
+    );
+    assert.equal(networkCalls, 1);
+  } finally {
+    off();
+  }
 });
 
 test("a ZIP that stops arriving halfway is a named transfer interruption", async () => {

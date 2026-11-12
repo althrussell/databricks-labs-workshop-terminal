@@ -140,3 +140,18 @@ def test_one_click_hands_the_problem_to_the_agent(pack: dict):
 def test_export_card_requires_a_download_before_teardown(pack: dict):
     markdown = _nugget(pack, "export-project")["markdown"]
     assert "Download it to your computer before the workshop ends" in markdown
+
+
+def test_ingested_docs_do_not_instruct_attendees_to_download_from_the_volume():
+    """CT's Workshop Assistant ingests docs/**/*.md (outside docs/agent-guide/).
+    Leaving Catalog Explorer 'File options → Download file' instructions there caused
+    the assistant to send attendees to a Volume their OBO scopes cannot read."""
+    docs_root = ROOT / "docs"
+    offenders = []
+    for doc in sorted(docs_root.rglob("*.md")):
+        if "agent-guide" in doc.parts:
+            continue
+        text = doc.read_text(encoding="utf-8")
+        if "File options → Download file" in text or "inherited `ALL_PRIVILEGES`/`MANAGE` on the Volume" in text:
+            offenders.append(str(doc.relative_to(ROOT)))
+    assert offenders == []

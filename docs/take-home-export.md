@@ -37,6 +37,9 @@ export preserves earlier archives.
 The attendee gets the ZIP from **Download my code** in the Workshop Terminal header.
 Workshop Terminal streams its own verified copy of the ZIP to the browser, so the
 attendee needs no Volume or Catalog permission and the download has no size cap.
+When an agent has just run `workshop-export` (including `--project` for a single
+build) and `~/projects` has not changed since, **Download my code** reuses that
+verified local ZIP and filename directly instead of re-uploading to the Volume.
 The agent does not send attendees to the Volume: a Volume download depends on
 Catalog access that attendees may not have. The Volume copy is the workshop's
 backup and CT keeps it at teardown.
@@ -61,9 +64,9 @@ fixture, not a new full runtime deployment. A simple attendee request exported
 93 source files across Repair Desk, Pollinator Pocket and a setup project.
 Recovered garden source was identified as the deployed snapshot, and both apps'
 exported source matched their exact deployed source. Upload read-back passed;
-an actual Catalog Explorer download matched the verified Volume ZIP byte for
-byte. Console download used the operator browser session; the attendee's
-inherited `ALL_PRIVILEGES`/`MANAGE` on the Volume was verified independently.
+an operator-session backup check confirmed the Volume ZIP matched byte for byte,
+while attendees save their copy directly through **Download my code** in Workshop
+Terminal without needing Volume or Catalog access.
 
 The initial test exposed a missing assigned schema in WT's CT-simulation
 runner and unsuitable OBO scopes for the Volume API. The WT-owned runner now

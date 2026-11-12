@@ -128,6 +128,50 @@ def test_a_symlink_planted_in_the_cache_is_refused(client, monkeypatch, tmp_path
     assert b"dapi-server-side-secret" not in response.content
 
 
+@pytest.mark.parametrize("symlink_rel", [".cache", ".cache/workshop", ".cache/workshop/exports"])
+def test_a_symlinked_cache_ancestor_directory_is_refused(client, monkeypatch, tmp_path, person, symlink_rel):
+    """Replacing ~/.cache, ~/.cache/workshop, or ~/.cache/workshop/exports with a directory symlink
+    must not trick parent-path comparison into serving files outside the attendee home."""
+    import shutil
+    import server.journey as journey
+    from server.users import user_manager
+
+    home = Path(user_manager.get(person["X-Forwarded-Email"]).home)
+    home.mkdir(parents=True, exist_ok=True)
+    outside_root = tmp_path / "outside"
+    rel_parts = Path(symlink_rel).parts
+    remaining_parts = (".cache", "workshop", "exports")[len(rel_parts):]
+    target_exports = outside_root.joinpath(*remaining_parts)
+    target_exports.mkdir(parents=True, exist_ok=True)
+    (target_exports / NAME).write_text("dapi-ancestor-symlink-secret\n")
+
+    link_path = home.joinpath(*rel_parts)
+    if link_path.is_dir() and not link_path.is_symlink():
+        shutil.rmtree(link_path)
+    link_path.parent.mkdir(parents=True, exist_ok=True)
+    link_path.symlink_to(outside_root, target_is_directory=True)
+
+    planted = home / ".cache" / "workshop" / "exports" / NAME
+    monkeypatch.setattr(journey, "export", lambda user, **kwargs: {"local_zip": str(planted), "filename": NAME})
+
+    response = client.post("/api/export", headers=person)
+
+    assert response.status_code == 503
+    assert b"dapi-ancestor-symlink-secret" not in response.content
+
+
+def test_a_non_regular_file_in_the_cache_is_refused(client, monkeypatch, person):
+    import server.journey as journey
+
+    fifo = _cache(person) / NAME
+    os.mkfifo(fifo)
+    monkeypatch.setattr(journey, "export", lambda user, **kwargs: {"local_zip": str(fifo), "filename": NAME})
+
+    response = client.post("/api/export", headers=person)
+
+    assert response.status_code == 503
+
+
 def test_only_a_helper_archive_name_can_be_streamed(client, monkeypatch, tmp_path, person):
     """The route must not become a file server: a receipt pointing elsewhere is refused."""
     import server.journey as journey
@@ -155,3 +199,173 @@ def test_a_helper_failure_is_reported_with_its_own_message(client, monkeypatch, 
 
     assert response.status_code == 503
     assert response.json()["detail"].startswith("Export did not finish: Permission denied")
+
+
+def test_download_my_code_reuses_fresh_single_project_cli_export_end_to_end(client, monkeypatch, person):
+    """Running `workshop-export --project ...` in the terminal then clicking Download my code
+    streams that exact single-project ZIP and filename without a second Volume round-trip."""
+    import json
+    import subprocess
+    import zipfile
+    from server.users import user_manager
+
+    user = user_manager.get(person["X-Forwarded-Email"])
+    home = Path(user.home)
+    for proj in ("garden", "repair-desk"):
+        proj_dir = home / "projects" / proj
+        proj_dir.mkdir(parents=True, exist_ok=True)
+        (proj_dir / "app.py").write_text(f"print({proj!r})\n")
+
+    bin_dir = home / ".local" / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    log_file = home / "databricks-calls.jsonl"
+    state_dir = home / "fake-volume"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    fake_dbx = bin_dir / "databricks"
+    fake_dbx.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, pathlib, shutil, sys\n"
+        f"log = pathlib.Path({str(log_file)!r})\n"
+        f"store = pathlib.Path({str(state_dir)!r})\n"
+        "args = sys.argv[1:]\n"
+        "with log.open('a') as f:\n"
+        "    f.write(json.dumps(args) + '\\n')\n"
+        "if args[:2] == ['current-user', 'me']:\n"
+        "    print(json.dumps({'userName': 'coding-sp'}))\n"
+        "elif args[:2] == ['grants', 'get-effective']:\n"
+        "    print(json.dumps({'privilege_assignments': [{'principal': 'coding-sp', 'privileges': [{'privilege': 'ALL_PRIVILEGES'}]}]}))\n"
+        "elif args[:2] == ['fs', 'cp']:\n"
+        "    src, dst = args[2], args[3]\n"
+        "    if src.startswith('dbfs:'):\n"
+        "        shutil.copyfile(store / pathlib.Path(src).name, dst)\n"
+        "    else:\n"
+        "        shutil.copyfile(src, store / pathlib.Path(dst).name)\n"
+        "else:\n"
+        "    print('{}')\n"
+    )
+    fake_dbx.chmod(0o755)
+
+    env = {
+        **user.shell_env(),
+        "HOME": str(home),
+        "WORKSHOP_CATALOG": "cat",
+        "WORKSHOP_SCHEMA": "sch",
+        "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+    }
+    monkeypatch.setattr(user, "shell_env", lambda: env.copy())
+
+    helper = Path(__file__).resolve().parents[1] / "assets" / "bin" / "workshop-export"
+    cli_run = subprocess.run(
+        [str(helper), "--project", str(home / "projects" / "garden")],
+        capture_output=True, text=True, env=env, cwd=str(home), check=True,
+    )
+    calls_after_cli = len(log_file.read_text().splitlines())
+    assert calls_after_cli > 0
+
+    response = client.post("/api/export", headers=person)
+
+    assert response.status_code == 200, response.text
+    disposition = response.headers["content-disposition"]
+    cli_filename = next(
+        word.rstrip(",") for word in cli_run.stdout.split()
+        if word.startswith("workshop-code-") and word.rstrip(",").endswith(".zip")
+    )
+    assert cli_filename in disposition
+    assert len(log_file.read_text().splitlines()) == calls_after_cli
+
+    saved_zip = home / "downloaded.zip"
+    saved_zip.write_bytes(response.content)
+    with zipfile.ZipFile(saved_zip) as zf:
+        names = set(zf.namelist())
+        assert "workshop-code/garden/app.py" in names
+        assert not any("repair-desk" in name for name in names)
+
+
+def test_export_endpoint_supports_project_filter_and_rejects_traversal(client, monkeypatch, person):
+    import server.journey as journey
+    from server.users import user_manager
+
+    user = user_manager.get(person["X-Forwarded-Email"])
+    (Path(user.home) / "projects" / "garden").mkdir(parents=True, exist_ok=True)
+    seen: list[str | None] = []
+
+    def fake_export(u, *, reason="attendee", reuse=False, project=None):
+        seen.append(project)
+        path = _cache(person) / NAME
+        path.write_bytes(b"PK\x05\x06" + b"\x00" * 18)
+        return {"local_zip": str(path), "filename": NAME, "path": f"/Volumes/c/s/workshop_exports/code/{NAME}", "files": 1}
+
+    monkeypatch.setattr(journey, "export", fake_export)
+
+    ok = client.post("/api/export?project=garden", headers=person)
+    assert ok.status_code == 200
+    assert seen == ["garden"]
+
+    bad = client.post("/api/export?project=../outside", headers=person)
+    assert bad.status_code == 400
+
+
+def test_a_failed_export_download_never_blocks_the_closeout_seal(client, monkeypatch):
+    """A 503 on POST /api/export (no files yet, transient Volume error, or missing cache ZIP)
+    must never leave an unresolvable accepted_writer_failed that blocks WT-02 closeout."""
+    import server.event_emitter as emitter_module
+    import server.journey as journey
+    import server.main as main
+    from server.capture_journal import CaptureJournal, MemoryCaptureStorage
+    from server.closeout import CloseoutManager
+    from server.event_emitter import EventEmitter
+
+    binding = {
+        "run_id": "export-closeout-run",
+        "unit_id": "export-closeout-unit",
+        "workspace_id": "123",
+        "owner": "alice@example.com",
+    }
+    owner_headers = {"X-Forwarded-Email": binding["owner"]}
+    monkeypatch.setenv("WORKSHOP_INSIGHT_CAPTURE", "true")
+    emitter = EventEmitter(
+        run_id=binding["run_id"],
+        workspace_id=binding["workspace_id"],
+        ingest_url="",
+        ingest_token="",
+        journal=CaptureJournal(MemoryCaptureStorage(), binding, {}),
+    )
+    monkeypatch.setattr(emitter_module, "event_emitter", emitter)
+    monkeypatch.setattr(main, "event_emitter", emitter)
+
+    # 1. Helper failure -> 503
+    def fail_helper(user, **kwargs):
+        raise RuntimeError("No project source files were found to export.")
+
+    monkeypatch.setattr(journey, "export", fail_helper)
+    r1 = client.post("/api/export", headers=owner_headers)
+    assert r1.status_code == 503
+
+    # 2. Missing cache file -> 503
+    monkeypatch.setattr(
+        journey,
+        "export",
+        lambda user, **kwargs: {"local_zip": "/nonexistent/" + NAME, "filename": NAME},
+    )
+    r2 = client.post("/api/export", headers=owner_headers)
+    assert r2.status_code == 503
+
+    assert emitter.journal.read().get("closeout", {}).get("writer_outcomes", []) == []
+
+    now = [100.0]
+    manager = CloseoutManager(
+        emitter,
+        clock=lambda: now[0],
+        drainer=lambda _timeout: {"complete": True, "issues": [], "outcomes": []},
+        finalizer=lambda *_args: {"complete": True, "issues": [], "outputs": {}},
+    )
+    manager.begin(
+        capture_id="export-seal-check",
+        stream_id=emitter.stream_id,
+        source=binding,
+        drain_timeout_seconds=1,
+    )
+    now[0] += 2
+    sealed = manager.advance()
+    assert sealed["phase"] == "SEALED"
+    assert sealed["complete"] is True
