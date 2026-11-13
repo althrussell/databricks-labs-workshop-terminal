@@ -32,6 +32,7 @@ what else depends on it. Routing by task is in [README.md](README.md); execution
 | `static/` | committed production build of `frontend/` | **generated**; never hand-edit | runtime root; CI diff-checks it |
 | `assets/instructions/` | templates for the attendee agents' CLAUDE.md / AGENTS.md | active product payload *(traced)* | read by `server/user_content.py` |
 | `assets/skills/` | skills offered to attendee agents | mostly **vendored** upstream; fork-only skills are authored | see `assets/skills/SKILLS_SOURCE.md` |
+| `assets/skill-overlays/` | whole-file workshop replacements for vendored upstream skill files, applied by `server/bootstrap/skill_projection.py` | active *(traced: skill projection)* | see `assets/skills/SKILLS_SOURCE.md` |
 | `assets/bin/` | helper CLIs installed into attendee `~/.local/bin` | active *(traced: deploy, export, init-project)* | Python/bash scripts with tests |
 | `assets/artifacts/` | reviewed toolchain manifest, locks, installer scripts | **generated** manifest plus pinned locks | `manifest.json` has a GENERATED header |
 | `assets/design-references/`, `assets/brand/` | design reference compositions; brand fonts and logos | active *(inventoried)* | `scripts/check_design_references.py` |

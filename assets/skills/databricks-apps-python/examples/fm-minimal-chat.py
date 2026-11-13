@@ -1,71 +1,56 @@
 """
 Minimal Databricks Foundation Model Chat App
 
-A complete, deployable Streamlit app demonstrating Foundation Model API integration
-in Databricks Apps. This is a working example extracted from databricksters-check-and-pub.
+A complete, deployable Streamlit app that calls a Unity Catalog model service
+as the signed-in user. Workshop edition: model calls use the attendee's token,
+never the App's service principal, and the app declares no MODEL_SERVICE resource.
 
 Features:
-- Validated dual-mode auth (OAuth M2M in Apps, PAT for local dev)
-- OpenAI SDK wired to Databricks model services (Unity Gateway) or serving endpoints
-- Token caching with expiry check
+- The attendee's token from the X-Forwarded-Access-Token header (OBO)
+- OpenAI SDK wired to the Unity AI Gateway at /ai-gateway/mlflow/v1
 - Multi-turn chat with conversation history
 - Viewer identity display
 - Latency tracking
 
-Local Development:
+Local Development (no signed-in user, so set a token for yourself):
     export DATABRICKS_TOKEN="dapi..."
-    # Preferred: a Unity Catalog model service (built-in foundation models)
     export DATABRICKS_SERVING_BASE_URL="https://<workspace>/ai-gateway/mlflow/v1"
-    export DATABRICKS_MODEL="system.ai.claude-sonnet-4-5"  # See databricks-unity-gateway
+    export DATABRICKS_MODEL="system.ai.claude-sonnet-5-5"
     streamlit run fm-minimal-chat.py
 
-    # Alternatively, a Model Serving endpoint (custom or external models):
-    #   DATABRICKS_SERVING_BASE_URL="https://<workspace>/serving-endpoints"
-    #   DATABRICKS_MODEL="<endpoint-name>"  # See databricks-model-serving
-
-Databricks Apps Deployment:
-    1. Declare the model service as an app resource in databricks.yml. On deploy,
-       the app's service principal is granted EXECUTE on it (plus USE CATALOG /
-       USE SCHEMA when needed):
+Databricks Apps deployment:
+    1. Declare the ai-gateway user scope on the app (workshop-app-deploy does this
+       for databricks.yml; the attendee clicks Allow once on first open):
        resources:
          apps:
-           foundation_chat:
-             name: foundation-chat
+           chat_app:
+             name: chat-app
              source_code_path: ./
-             resources:
-               - name: model
-                 uc_securable:
-                   securable_type: MODEL_SERVICE
-                   permission: EXECUTE
-                   securable_full_name: system.ai.claude-sonnet-4-5
+             user_api_scopes:
+               - ai-gateway
 
-    2. Create app.yaml and inject the resource with valueFrom (it resolves to the
-       model service's full name):
+       Do NOT add a uc_securable MODEL_SERVICE resource. The app's service principal
+       is not the caller, so a grant to it does not authorise these calls.
+
+    2. Set the environment in app.yaml. DATABRICKS_MODEL is
+       system.ai.claude-sonnet-5-5, the workshop default for App features. The Apps
+       runtime sets DATABRICKS_HOST for you.
        command: ["streamlit", "run", "fm-minimal-chat.py"]
        env:
          - name: DATABRICKS_SERVING_BASE_URL
            value: "https://<workspace>/ai-gateway/mlflow/v1"
          - name: DATABRICKS_MODEL
-           valueFrom: model
-
-       For a Model Serving endpoint instead, declare a `serving_endpoint` resource
-       (CAN_QUERY), set the base URL to .../serving-endpoints, and use
-       `valueFrom: <that resource's name>` for DATABRICKS_MODEL.
+           value: "system.ai.claude-sonnet-5-5"
 
     3. Create requirements.txt:
        streamlit>=1.38,<2.0
        openai>=1.30,<2.0
-       requests>=2.31,<3.0  # Needed for model validation and OAuth fallback
 
-    4. Deploy the bundle, then start the app (deploy alone leaves it stopped
-       unless the app sets lifecycle.started: true):
-       databricks bundle deploy
-       databricks bundle run foundation_chat
-       The Apps runtime injects the service principal's DATABRICKS_CLIENT_ID /
-       DATABRICKS_CLIENT_SECRET for OAuth M2M; no manual service-principal setup
-       is needed.
+    4. Deploy, then start the app:
+       workshop-app-deploy (the deploy_databricks_app MCP tool)
 """
 
+import os
 import time
 from typing import Dict, List, Optional, Tuple
 
@@ -83,6 +68,7 @@ def _get_forwarded_headers() -> Dict[str, str]:
 
 
 def get_viewer_identity() -> Tuple[Optional[str], Optional[str]]:
+    """The signed-in user's email and access token, as forwarded by the Apps proxy."""
     headers = _get_forwarded_headers()
     email = headers.get("X-Forwarded-Email") or headers.get("x-forwarded-email")
     token = headers.get("X-Forwarded-Access-Token") or headers.get(
@@ -102,7 +88,7 @@ def llm_chat(
     max_tokens: int = 1000,
     temperature: float = 0.7,
 ) -> Tuple[str, int]:
-    """Call foundation model and return (response, latency_ms)."""
+    """Call the model and return (response, latency_ms)."""
     t0 = time.perf_counter()
     resp = client.chat.completions.create(
         model=model,
@@ -129,7 +115,7 @@ def main():
     st.caption("Powered by Databricks Apps")
 
     # Sidebar: viewer identity
-    viewer_email, _ = get_viewer_identity()
+    viewer_email, viewer_token = get_viewer_identity()
     if viewer_email:
         st.sidebar.success(f"Logged in as: {viewer_email}")
     else:
@@ -147,11 +133,8 @@ def main():
         with st.expander("ℹ️ About"):
             st.markdown(
                 """
-                This app demonstrates calling Databricks Foundation Model APIs
-                from a Streamlit app using:
-                - Shared dual-mode auth (PAT + OAuth M2M)
-                - Shared OpenAI client wiring
-                - Viewer identity extraction
+                This app calls a Unity Catalog model service as the signed-in
+                user, with the token Databricks Apps forwards for that user.
                 """
             )
 
@@ -177,7 +160,17 @@ def main():
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 try:
-                    client = create_foundation_model_client(cache=st.session_state)
+                    if viewer_token:
+                        # The attendee's token, not the app's service principal.
+                        client = create_foundation_model_client(user_token=viewer_token)
+                    elif os.environ.get("DATABRICKS_TOKEN"):
+                        # Local development only: a personal token stands in for the signed-in user.
+                        client = create_foundation_model_client()
+                    else:
+                        raise RuntimeError(
+                            "No signed-in token was forwarded. Open the app from its "
+                            "Databricks Apps URL, then try again."
+                        )
 
                     # Call foundation model
                     response, latency_ms = llm_chat(

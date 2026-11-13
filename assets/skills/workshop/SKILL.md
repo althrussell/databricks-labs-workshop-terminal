@@ -73,11 +73,20 @@ stopped with no URL.
 Read a deployed app's logs with `databricks apps logs <app>`; the apx MCP logs
 tool cannot authenticate on a seat.
 
-An app you deploy gets access to the workshop models (`system.ai.*`) under its own
-identity automatically, about a minute after it first appears. Never grant it
-yourself, and never switch to a legacy serving endpoint to get round it. If the
-deployed app gets "does not exist" from a `system.ai` model right after a deploy,
-wait a minute and retry (F-027, 1 Nov).
+An App calls models as the signed-in attendee, not as its own service principal: the
+APX backend uses `Dependencies.UserClient`, other frameworks send the
+`X-Forwarded-Access-Token` header, and the base URL is `<host>/ai-gateway/mlflow/v1`
+with the model as `system.ai.<name>`. Put the model in the App's `DATABRICKS_MODEL`:
+`system.ai.claude-sonnet-5-5`, the default for App features. Never declare
+a MODEL_SERVICE resource; the code in `references/app-model-calls.md` shows the
+pattern. `workshop-app-deploy` declares the `ai-gateway` and `genie` user scopes before the
+first deploy. If an existing App lacks one, the attendee reopens the App and clicks Allow.
+
+Two cases are the exception: Agent Bricks agents (`agentbricks deploy`), and background work
+with no signed-in user. Both call models as the App, and Control Tower grants that shortly
+after the first deploy. If one says a model
+does not exist right after deploy, wait 2 minutes and retry. Never grant it yourself,
+and never switch to a legacy serving endpoint to get round it.
 
 Any control that writes (approve, save, assign, submit) disables while its request
 is in flight and after success, and the server write is an upsert on a natural key,

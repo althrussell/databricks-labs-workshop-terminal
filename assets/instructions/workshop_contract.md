@@ -25,6 +25,11 @@ Recommend a path. If none is recorded, ask once: "Would you like a rapid prototy
 - Report the strongest planted signal, not the first: split by each category that looks like a cause before naming a driver. On synthetic data, call a pattern illustrative unless it clearly holds; never read a signal into data that has none.
 - Never GRANT on `$WORKSHOP_DEMO_CATALOG`: read in place.
 
+### Models in an App
+
+- An App calls models as the signed-in attendee, never as its service principal or through a MODEL_SERVICE resource: APX `Dependencies.UserClient` (or the `X-Forwarded-Access-Token` header) on `<host>/ai-gateway/mlflow/v1`, with `DATABRICKS_MODEL` = `system.ai.claude-sonnet-5-5` by default. `workshop-app-deploy` declares the `ai-gateway` and `genie` scopes; if an existing App lacks one, the attendee reopens it and clicks Allow.
+- Exception: Agent Bricks agents, and background work with no signed-in user, call models as the App. Control Tower grants that after the first deploy. If a model "does not exist" right after deploy, wait 2 minutes and retry; never grant it yourself.
+
 ### Skills and verification
 
 - **UI design:** Impeccable is the design authority: `impeccable context`, `DESIGN.md`, `reference/craft-floor.md`, `$WORKSHOP_DESIGN_REFERENCES`; run `detect` once, never `impeccable-finish-reviewer` or phone viewports.

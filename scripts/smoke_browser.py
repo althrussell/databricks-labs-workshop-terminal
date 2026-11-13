@@ -49,6 +49,7 @@ p{font-family:serif;font-size:22px}</style></head><body>
 
 
 def stage(work: Path) -> None:
+    from concurrent.futures import ThreadPoolExecutor
     import hashlib
     import tempfile
     import urllib.request
@@ -59,13 +60,17 @@ def stage(work: Path) -> None:
     work.mkdir(parents=True, exist_ok=True)
     contract = ArtifactManifest.from_path("")
     staging = work / "data" / "shared" / "artifacts"
-    total = 0
-    for name in [install.BROWSER_ARTIFACT, *browser_runtime.artifact_names()]:
+    names = [install.BROWSER_ARTIFACT, *browser_runtime.artifact_names()]
+
+    def fetch_one(name: str) -> int:
         print(f"browser artifact fetch started: name={name}", flush=True)
         fetched = contract.fetch(name, staging_dir=str(staging))
         size = os.path.getsize(fetched.path)
-        total += size
         print(f"browser artifact fetch complete: name={name} bytes={size} source={fetched.source}", flush=True)
+        return size
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        total = sum(pool.map(fetch_one, names))
     print(f"staged {total} bytes of browser artifacts into {staging}")
 
     url, expected = PYTHON_311
