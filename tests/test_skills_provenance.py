@@ -228,3 +228,62 @@ def test_skills_upstream_directory_is_the_current_one():
     repo uses `skills/`. Reading the wrong one copies nothing and silently falls
     back to the vendored set."""
     assert install.SKILLS_UPSTREAM_DIR == "skills"
+
+
+def test_lakebase_skill_says_lakehouse_sync_is_unavailable_on_a_seat():
+    """Perth, 12 Nov: four seats tried create-cdf-config and hit Default Storage."""
+    for relative in (
+        ("databricks-lakebase", "SKILL.md"),
+        ("databricks-lakebase", "references", "lakehouse-sync.md"),
+    ):
+        text = open(os.path.join(SKILLS_DIR, *relative)).read()
+        assert "Not in workshop catalogs" in text, relative
+        assert "scheduled job or a snapshot table" in text, relative
+
+
+def test_projecting_an_already_projected_lakebase_skill_is_a_no_op(tmp_path):
+    """A second projection pass must not append the Default Storage note again."""
+    from server.bootstrap.skill_projection import (
+        _LAKEHOUSE_SYNC_LINE,
+        _LAKEHOUSE_SYNC_REF_HEADING,
+        project_skills,
+    )
+
+    skill = tmp_path / "databricks-lakebase" / "SKILL.md"
+    ref = tmp_path / "databricks-lakebase" / "references" / "lakehouse-sync.md"
+    ref.parent.mkdir(parents=True)
+    skill.write_text("# Lakebase\n\n" + _LAKEHOUSE_SYNC_LINE + "\n\n## Next\n")
+    ref.write_text(_LAKEHOUSE_SYNC_REF_HEADING + "\nLakehouse Sync streams changes.\n")
+    project_skills(tmp_path)
+    first_skill = skill.read_bytes()
+    first_ref = ref.read_bytes()
+    checksum = directory_checksum(tmp_path)
+    assert first_skill.count(b"Not in workshop catalogs") == 1
+    assert first_ref.count(b"Not in workshop catalogs") == 1
+
+    project_skills(tmp_path)
+
+    assert skill.read_bytes() == first_skill
+    assert ref.read_bytes() == first_ref
+    assert directory_checksum(tmp_path) == checksum
+
+
+def test_strict_skill_projection_ignores_pycache_in_overlays(tmp_path, monkeypatch):
+    """Importing an overlaid example writes `__pycache__/*.pyc` under `assets/skill-overlays`."""
+    from server.bootstrap import skill_projection
+
+    overlays = tmp_path / "overlays"
+    example_dir = overlays / "databricks-apps-python" / "examples"
+    cache_dir = example_dir / "__pycache__"
+    cache_dir.mkdir(parents=True)
+    (example_dir / "llm_config.py").write_text("MODEL = 'system.ai.claude-sonnet-5-5'\n")
+    (cache_dir / "llm_config.cpython-312.pyc").write_bytes(b"\x00compiled")
+
+    skills = tmp_path / "skills"
+    (skills / "databricks-apps-python" / "examples").mkdir(parents=True)
+    monkeypatch.setattr(skill_projection, "OVERLAY_ROOT", overlays)
+
+    skill_projection.project_skills(skills, strict=True)
+
+    assert (skills / "databricks-apps-python" / "examples" / "llm_config.py").is_file()
+    assert not (skills / "databricks-apps-python" / "examples" / "__pycache__").exists()

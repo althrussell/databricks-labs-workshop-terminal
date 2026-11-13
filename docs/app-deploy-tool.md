@@ -3,14 +3,29 @@
 Workshop Terminal registers one local MCP server named `workshop` for Claude
 Code and Codex. It exposes exactly one tool: `deploy_databricks_app`.
 
-The tool accepts an absolute project directory below `~/projects`, a bundle
-target, and a 30–3600 second timeout. Agents resolve the current project path
-before calling MCP; relative paths are rejected so the MCP server cannot deploy
-a tree selected by its own process working directory. It runs the supported
-project deployment pipeline:
+The tool accepts `project_path`, an absolute project directory below
+`~/projects`, an optional bundle target, and a 30–3600 second timeout. `project_dir`
+and `app_path` are accepted as aliases of `project_path`: any mix of the three is
+collapsed when every value names the same directory after normalisation, and a call
+whose values disagree fails with `reason: invalid_request` naming the conflicting
+fields. Agents resolve the current project path before calling MCP; relative paths
+are rejected so the MCP server cannot deploy a tree selected by its own process
+working directory.
+
+**Target rule.** The tool never reads `databricks.yml` to choose a target.
+
+- No target, or an empty one: the tool runs the CLI without `--target`, so the
+  Databricks CLI picks the bundle's own default (the target marked `default: true`,
+  the only declared target, or the CLI's implicit default). `include:` files and
+  single-target bundles are the CLI's to resolve.
+- A target: passed through unchanged. It is validated for characters only (letters,
+  numbers, dot, underscore, hyphen); it is never remapped, so a name the bundle does
+  not declare is reported by the CLI.
+
+The tool runs the supported project deployment pipeline:
 
 ```text
-databricks apps deploy --target <target> --auto-approve --no-wait
+databricks apps deploy [--target <target>] --auto-approve --no-wait
 ```
 
 It then follows the exact deployment returned by the Apps API until the
@@ -28,7 +43,12 @@ project paths must be absolute and all project paths are constrained below
 
 State and bounded CLI progress are stored with mode `0600` below
 `~/.config/workshop/app-deploy/`. One file lock serializes deployment of the
-same project and target. A concurrent duplicate waits for and returns the
+same project and target. An omitted target uses the lock and state key `default`,
+the key the tool used before targets were optional, so pre-upgrade state files
+still resume; recorded operations distinguish an omitted target from an explicit
+`default` target so neither resumes or returns the other's result. The detached
+submit worker receives the controller's recorded target (or no `--target` flag) and
+never resolves it again. A concurrent duplicate waits for and returns the
 active call's result instead of deploying again, while lock waits still honor
 cancellation and timeout. There is no limit on sequential deployments.
 
@@ -83,8 +103,11 @@ email, and credentials are excluded.
 The same controller is available when an MCP client cannot start:
 
 ```bash
-workshop-app-deploy --project "$PWD" --target default
+workshop-app-deploy --project "$PWD"
 ```
+
+`--target` is optional with the same rule as the MCP tool: omitted means the CLI's
+default target, and a given name is passed through unchanged.
 
 The CLI fallback resolves relative paths from the caller's shell working
 directory; this differs intentionally from the MCP boundary.

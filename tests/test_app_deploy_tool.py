@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import fcntl
 import importlib.machinery
+import hashlib
 import importlib.util
 import json
 import os
@@ -13,6 +14,7 @@ import subprocess
 import sys
 import threading
 import tomllib
+import types
 
 import pytest
 
@@ -1343,3 +1345,333 @@ def test_a_transient_seat_group_failure_is_retried_on_a_later_poll(tmp_path):
 
     assert result["status"] == "succeeded"
     assert backend.enrolled == [(SEAT_GROUP, "555"), (SEAT_GROUP, "555")]
+
+
+def _run_submit_worker(tmp_path: Path, env, project, *target_args: str) -> list[str]:
+    """Run the detached submit worker against a shim CLI and return the argv it used."""
+    shim = tmp_path / "shim"
+    shim.mkdir(exist_ok=True)
+    arguments = tmp_path / "arguments.json"
+    executable = shim / "databricks"
+    executable.write_text(
+        "#!/bin/sh\n"
+        "python3 - \"$@\" <<'PY'\n"
+        "import json,sys\n"
+        f"open({str(arguments)!r}, 'w').write(json.dumps({{'argv': sys.argv[1:]}}))\n"
+        "print('submitted')\n"
+        "PY\n"
+    )
+    executable.chmod(0o755)
+    command_env = {**env, "PATH": f"{shim}:{env['PATH']}"}
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(HELPER),
+            "--submit-worker",
+            "--project",
+            str(project),
+            *target_args,
+            "--log-path",
+            str(tmp_path / "submit.log"),
+            "--exit-path",
+            str(tmp_path / "submit.exit"),
+            "--worker-token",
+            "test-worker",
+        ],
+        env=command_env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr
+    return json.loads(arguments.read_text())["argv"]
+
+
+def _bundle_with_targets(tmp_path: Path, targets_yaml: str) -> Path:
+    project = tmp_path / "demo"
+    project.mkdir()
+    (project / "databricks.yml").write_text("bundle:\n  name: demo\n" + targets_yaml)
+    return project
+
+
+@pytest.mark.parametrize("target", [None, "", "   "])
+def test_an_omitted_target_runs_the_cli_without_a_target_flag(tmp_path, target):
+    env, project = _env(tmp_path)
+    # The bundle declares two targets; the CLI, not the tool, picks the default one.
+    (project / "databricks.yml").write_text(
+        "bundle:\n  name: demo\ntargets:\n  prod:\n    mode: production\n"
+        "  dev:\n    mode: development\n    default: true\n"
+    )
+    assert deploy_tool.normalize_target(target) is None
+
+    argv = _run_submit_worker(
+        tmp_path, env, project, *(["--target", target] if target is not None else [])
+    )
+
+    assert "--target" not in argv
+    assert argv == ["apps", "deploy", "--auto-approve", "--no-wait", "--output", "json"]
+
+
+def test_an_explicit_target_is_passed_through_unchanged(tmp_path):
+    env, project = _env(tmp_path)
+    # Never remapped, even when the bundle declares one target: the CLI reports an undeclared name.
+    (project / "databricks.yml").write_text("bundle:\n  name: demo\ntargets:\n  dev:\n    mode: development\n")
+
+    for name in ("default", "dev", "prod-eu.1"):
+        argv = _run_submit_worker(tmp_path, env, project, "--target", name)
+        assert argv[:4] == ["apps", "deploy", "--target", name]
+        assert argv[4:] == ["--auto-approve", "--no-wait", "--output", "json"]
+
+
+def test_an_explicit_target_is_refused_only_for_bad_characters(tmp_path):
+    assert deploy_tool.normalize_target(" dev ") == "dev"
+    assert deploy_tool.normalize_target("default") == "default"
+    with pytest.raises(deploy_tool.DeployError, match="target must contain only"):
+        deploy_tool.normalize_target("bad target")
+
+
+def test_the_state_key_for_no_target_is_the_key_the_tool_always_used(tmp_path):
+    env, project = _env(tmp_path)
+    expected = hashlib.sha256(f"{project}\0default".encode("utf-8")).hexdigest()
+
+    assert deploy_tool.StateStore(project, None, env).path.name == f"{expected}.json"
+    assert deploy_tool.StateStore(project, "default", env).path.name == f"{expected}.json"
+    assert deploy_tool.StateStore(project, "dev", env).path.name != f"{expected}.json"
+
+
+def test_the_controller_records_no_target_and_the_worker_gets_the_same_argv(tmp_path, monkeypatch):
+    env, project = _env(tmp_path)
+    launched: list[list[str]] = []
+
+    class Popen:
+        pid = 4242
+
+        def __init__(self, command, **_kwargs):
+            launched.append(command)
+
+    monkeypatch.setattr(deploy_tool, "subprocess", types.SimpleNamespace(Popen=Popen, DEVNULL=subprocess.DEVNULL))
+    backend = deploy_tool.CliBackend(env)
+    state = {
+        "state_root": str(tmp_path / "state"),
+        "operation_id": "op",
+        "project_path": str(project),
+        "target": None,
+    }
+    (tmp_path / "state").mkdir()
+
+    backend.start_submit(state)
+
+    worker = launched[0]
+    assert "--target" not in worker
+    assert state.get("submit_pid") == 4242
+    # Run the worker with exactly the target arguments the controller recorded.
+    target_arguments = worker[worker.index("--project") + 2 : worker.index("--log-path")]
+    assert target_arguments == []
+    assert _run_submit_worker(tmp_path, env, project, *target_arguments) == [
+        "apps", "deploy", "--auto-approve", "--no-wait", "--output", "json",
+    ]
+
+
+def test_the_controller_and_worker_use_one_target_value(tmp_path, monkeypatch):
+    env, project = _env(tmp_path)
+    launched: list[list[str]] = []
+
+    class Popen:
+        pid = 7
+
+        def __init__(self, command, **_kwargs):
+            launched.append(command)
+
+    monkeypatch.setattr(deploy_tool, "subprocess", types.SimpleNamespace(Popen=Popen, DEVNULL=subprocess.DEVNULL))
+    backend = deploy_tool.CliBackend(env)
+    (tmp_path / "state").mkdir()
+    state = {
+        "state_root": str(tmp_path / "state"),
+        "operation_id": "op",
+        "project_path": str(project),
+        "target": "dev",
+    }
+
+    backend.start_submit(state)
+
+    worker = launched[0]
+    assert worker[worker.index("--target") + 1] == "dev"
+    assert _run_submit_worker(tmp_path, env, project, "--target", "dev")[:4] == [
+        "apps", "deploy", "--target", "dev",
+    ]
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"project_path": "/home/user/projects/demo", "project_dir": "/home/user/projects/demo/"},
+        {"project_path": "/home/user/projects/demo", "app_path": "/home/user/projects/demo"},
+        {"project_dir": "/home/user/projects/demo", "app_path": "/home/user/projects/./demo"},
+    ],
+)
+def test_aliases_with_equal_values_collapse_to_project_path(arguments):
+    collapsed = deploy_tool.collapse_project_path_aliases(dict(arguments))
+
+    assert set(collapsed) == {"project_path"}
+    assert os.path.normpath(collapsed["project_path"]) == "/home/user/projects/demo"
+
+
+def test_aliases_that_disagree_are_an_invalid_request_naming_the_fields():
+    seen = []
+
+    class Controller:
+        def deploy(self, **kwargs):
+            seen.append(kwargs)
+            return {"status": "succeeded"}
+
+    server = deploy_tool.McpServer(Controller())
+    responses = []
+    server._result = lambda request_id, result: responses.append(result)
+    server._call_tool(
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": deploy_tool.TOOL_NAME,
+                "arguments": {
+                    "project_path": "/home/user/projects/demo",
+                    "app_path": "/home/user/projects/other",
+                },
+            },
+        }
+    )
+
+    assert seen == []
+    assert responses[0]["isError"] is True
+    assert responses[0]["structuredContent"]["reason"] == "invalid_request"
+    assert "project_path" in responses[0]["structuredContent"]["message"]
+    assert "app_path" in responses[0]["structuredContent"]["message"]
+
+
+@pytest.mark.parametrize("alias", ["project_dir", "app_path"])
+def test_the_project_directory_is_accepted_under_its_other_names(alias):
+    seen = {}
+
+    class Controller:
+        def deploy(self, **kwargs):
+            seen.update(kwargs)
+            return {"status": "failed", "reason": "stub", "app_name": "", "app_url": "", "resumed": False}
+
+    server = deploy_tool.McpServer(Controller())
+    server._call_tool(
+        {
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "tools/call",
+            "params": {"name": deploy_tool.TOOL_NAME, "arguments": {alias: "/home/user/projects/demo"}},
+        }
+    )
+
+    assert seen["project_path"] == "/home/user/projects/demo"
+    assert seen["target"] is None
+
+
+def test_explicit_default_target_does_not_resume_omitted_target_or_clean_its_worker(tmp_path):
+    """An omitted target (CLI default, e.g. dev) and an explicit `--target default` are distinct."""
+    env, project = _env(tmp_path)
+
+    class DevOnlyBackend(FakeBackend):
+        def bundle_summary(self, project, target):
+            if target == "default":
+                raise deploy_tool.CliError("default: no such target. Available targets: dev", returncode=1)
+            return super().bundle_summary(project, target)
+
+        def submission_status(self, _state):
+            return False, None
+
+        def cancel_submission(self, _state):
+            return False
+
+    ticks = iter([0.0, 0.0, 0.0, 31.0, 40.0, 41.0, 71.0, 71.0])
+    backend = DevOnlyBackend()
+    controller = _controller(env, backend, monotonic=lambda: next(ticks))
+
+    first = controller.deploy(project_path=str(project), target=None, timeout_seconds=30)
+    assert first["status"] == "timed_out"
+    store = deploy_tool.StateStore(project, None, env)
+    saved_before = store.load()
+    assert saved_before["target"] is None
+    assert backend.cleaned == 0
+
+    with pytest.raises(deploy_tool.CliError, match="default: no such target"):
+        controller.deploy(project_path=str(project), target="default", timeout_seconds=30)
+
+    # A rejected explicit target must not clean up or overwrite the in-flight omitted-target state.
+    assert backend.cleaned == 0
+    assert store.load() == saved_before
+
+
+def test_omitted_target_does_not_resume_an_explicit_default_target(tmp_path):
+    """When a bundle has both `prod` (`default: true`) and a separate `default` target, omitting `target` deploys `prod`."""
+    env, project = _env(tmp_path)
+    seen_targets: list[str | None] = []
+
+    class TwoTargetBackend(FakeBackend):
+        def bundle_summary(self, project, target):
+            seen_targets.append(target)
+            return super().bundle_summary(project, target)
+
+    store = deploy_tool.StateStore(project, "default", env)
+    store.save(
+        {
+            "schema_version": 1,
+            "operation_id": "explicit-default-op",
+            "phase": "polling",
+            "project_path": str(project),
+            "target": "default",
+            "target_omitted": False,
+            "app_name": "demo-app",
+            "app_url": "https://demo.databricksapps.com",
+            "baseline_deployment_ids": [],
+            "deployment_id": "old-default",
+            "created_at": 1.0,
+            "attempts": 1,
+            "state_root": str(store.root),
+        }
+    )
+    backend = TwoTargetBackend()
+    controller = _controller(env, backend)
+
+    result = controller.deploy(project_path=str(project), target=None)
+
+    assert result["status"] == "succeeded"
+    assert result["resumed"] is False
+    assert backend.submissions == 1
+    assert seen_targets[0] is None
+
+
+def test_pre_upgrade_default_state_still_resumes_when_target_is_omitted(tmp_path):
+    """State files written before `target` became optional had `"target": "default"` without `target_omitted`."""
+    env, project = _env(tmp_path)
+    store = deploy_tool.StateStore(project, None, env)
+    store.save(
+        {
+            "schema_version": 1,
+            "operation_id": "legacy-op",
+            "phase": "polling",
+            "project_path": str(project),
+            "target": "default",
+            "app_name": "demo-app",
+            "app_url": "https://demo.databricksapps.com",
+            "baseline_deployment_ids": [],
+            "deployment_id": "new-1",
+            "created_at": 1.0,
+            "attempts": 1,
+            "state_root": str(store.root),
+        }
+    )
+    backend = FakeBackend(app_states=[_app(active="new-1")])
+    backend.submitted = True
+    controller = _controller(env, backend)
+
+    result = controller.deploy(project_path=str(project), target=None)
+
+    assert result["status"] == "succeeded"
+    assert result["resumed"] is True
+    assert backend.submissions == 0

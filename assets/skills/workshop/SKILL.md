@@ -39,7 +39,10 @@ Metastore `system.*` tables (`system.billing`, `system.access`, `system.compute`
 `system.lakeflow`, `system.ai_gateway`, `system.serving`) are restricted for
 multi-tenant isolation: for FinOps or observability apps, use
 `$WORKSHOP_DEMO_CATALOG` or synthetic tables in `$WORKSHOP_CATALOG` instead of
-probing `system.*`. On views, use `DESCRIBE TABLE` rather than `DESCRIBE DETAIL`.
+probing `system.*`. Read real column names before querying with a standalone
+`DESCRIBE TABLE <t>` or `<catalog>.information_schema.columns`; never guess
+column names or write `SELECT … FROM (DESCRIBE TABLE …)` (`DESCRIBE` is not a
+subquery). On views, use `DESCRIBE TABLE` rather than `DESCRIBE DETAIL`.
 Workshop compute is complimentary during the session; if an attendee asks about
 cost, explain that their workshop seat is free and give standard production DBU
 sizing guidance.
@@ -61,17 +64,24 @@ restart or a redeploy can't lose it. That copy is **not** a take-home.
 
 ## Deploying
 
-`deploy_databricks_app` (MCP) takes the absolute project directory (`pwd`) and
-a target: `dev` for a standard APX scaffold, `default` for AppKit, otherwise
-the target in `databricks.yml`. It runs `databricks apps deploy`, polls
+`deploy_databricks_app` (MCP) takes `project_path`, the absolute project directory
+(`pwd`, the folder with `databricks.yml`). Leave `target` out: the Databricks CLI then uses
+the bundle's own default target. Pass one only when the bundle has several targets and none is
+marked default. A named target is passed through unchanged. It runs `databricks apps deploy`, polls
 `databricks apps get` for the exact deployment, returns only when it `SUCCEEDED` and the app is
 `RUNNING`/`ACTIVE`, and requests the attendee's access. Without MCP, run
-`workshop-app-deploy --project "$PWD" --target <target>`. Never use a hand-built
+`workshop-app-deploy --project "$PWD"` (add `--target` only for a named target). Never use a hand-built
 `--source-code-path` or a bare `databricks bundle deploy`: that leaves the app
 stopped with no URL.
 
 Read a deployed app's logs with `databricks apps logs <app>`; the apx MCP logs
-tool cannot authenticate on a seat.
+tool cannot authenticate on a seat. The apx MCP tools (`check`, `routes`, `start`, …) take
+`app_path`, the same absolute directory; there is no `project_dir`.
+
+Waiting for a deploy, an endpoint or a log line: never chain `sleep` with another command,
+because the harness blocks it. Claude Code uses the Monitor tool with an until-loop. Codex uses
+its own wait or status tool when it has one, otherwise separate status checks. Omnigent uses
+separate status checks.
 
 An App calls models as the signed-in attendee, not as its own service principal: the
 APX backend uses `Dependencies.UserClient`, other frameworks send the
