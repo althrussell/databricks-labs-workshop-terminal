@@ -41,8 +41,10 @@ principal) are in `databricks-apps-python/examples/fm-minimal-chat.py`,
 `databricks-apps-python/examples/llm_config.py` (overlays, `user_token` argument),
 `databricks-apps-python/examples/fm-parallel-calls.py` and
 `fm-structured-outputs.py` (default model docstring), and the AppKit and platform
-passages in `databricks-apps`. The `apx` skill is not projected: it is the
-official upstream bytes, checked by `scripts/refresh_apx.py`. Its model-call
+passages in `databricks-apps`. `databricks-lakebase` (`SKILL.md` and
+`references/lakehouse-sync.md`) notes that Lakehouse Sync / Lakebase CDF is
+refused on Default Storage seat catalogs. The `apx` skill is not projected: it is
+the official upstream bytes, checked by `scripts/refresh_apx.py`. Its model-call
 guidance is in the workshop-authored `workshop` skill (`references/app-model-calls.md`).
 
 The projection changes the effective digest, so `effective_content_sha256` in the

@@ -204,6 +204,18 @@ def state_target_key(target: str | None) -> str:
     return target or "default"
 
 
+def _same_target(state: dict[str, Any], target: str | None) -> bool:
+    """Whether ``state`` was started for ``target``.
+
+    Current records store ``target`` (``None`` when omitted) alongside
+    ``target_omitted``; pre-optional-target records stored ``"target": "default"``
+    without ``target_omitted`` and still resume when ``target`` is omitted or ``"default"``.
+    """
+    if "target_omitted" not in state and state.get("target") == "default":
+        return target in (None, "default")
+    return state.get("target") == target
+
+
 def target_args(target: str | None) -> list[str]:
     return ["--target", target] if target else []
 
@@ -1154,7 +1166,7 @@ class DeployController:
                 same_operation = bool(
                     state
                     and state.get("project_path") == str(project)
-                    and state_target_key(state.get("target")) == state_target_key(target)
+                    and _same_target(state, target)
                 )
                 if (
                     waited_for_lock
@@ -1192,13 +1204,14 @@ class DeployController:
                             self.backend.start_submit(state)
                             store.save(state)
                     else:
-                        if state:
-                            cleanup = getattr(self.backend, "cleanup_submission", None)
-                            if cleanup is not None:
-                                cleanup(state)
+                        previous_state = state
                         state = self._start(
                             project, target, store, progress, cancel=cancel, deadline=deadline
                         )
+                        if previous_state:
+                            cleanup = getattr(self.backend, "cleanup_submission", None)
+                            if cleanup is not None:
+                                cleanup(previous_state)
                     result = self._wait(
                         state,
                         store,
@@ -1310,7 +1323,7 @@ class DeployController:
     def _config_problems(
         self,
         project: Path,
-        target: str,
+        target: str | None,
         apps: list[dict[str, str]],
         bundle: dict[str, Any] | None = None,
     ) -> list[str]:
@@ -1335,7 +1348,7 @@ class DeployController:
                 ) from exc
         return lakebase_problems(bundle, project, apps)
 
-    def _declare_ai_gateway(self, project: Path, target: str, app: dict[str, str]) -> str:
+    def _declare_ai_gateway(self, project: Path, target: str | None, app: dict[str, str]) -> str:
         """Make the bundle's app declare the ``ai-gateway`` scope, and say what was done.
 
         The scope lets the attendee's token call models on ``/ai-gateway``.
@@ -1371,7 +1384,7 @@ class DeployController:
         raise DeployError(_scope_refusal(key))
 
     def _edit_scopes(
-        self, project: Path, target: str, key: str, path: Path, original: str, edited: str
+        self, project: Path, target: str | None, key: str, path: Path, original: str, edited: str
     ) -> str:
         try:
             before = _declared_scopes(self.backend.bundle_validate(project, target), key)
@@ -1437,7 +1450,7 @@ class DeployController:
     def _start(
         self,
         project: Path,
-        target: str,
+        target: str | None,
         store: StateStore,
         progress: Callable[[str], None],
         *,
@@ -1510,6 +1523,7 @@ class DeployController:
             "phase": "submitting",
             "project_path": str(project),
             "target": target,
+            "target_omitted": target is None,
             "app_name": app["name"],
             "app_url": app["url"],
             "baseline_deployment_ids": sorted(baseline),

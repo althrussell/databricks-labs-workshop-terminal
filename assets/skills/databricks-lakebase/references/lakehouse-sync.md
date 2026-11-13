@@ -1,5 +1,7 @@
 # Lakehouse Sync: CDC from Lakebase to Unity Catalog
 
+> **Not in workshop catalogs:** seat catalogs (`$WORKSHOP_CATALOG`) use Default Storage, and Lakehouse Sync refuses it (`Lakebase CDF is not supported for catalogs using Default Storage`). Copy the rows with a scheduled job or a snapshot table instead.
+
 Lakehouse Sync continuously streams changes **from** Lakebase Postgres **into** Unity Catalog Delta tables using Change Data Capture (CDC). Each synced table produces an SCD Type 2 history table in Unity Catalog, giving you a full audit trail queryable from the lakehouse.
 
 This is the reverse direction from synced tables (which go UC → Lakebase). No external compute, pipelines, or jobs are required — it is a native Lakebase feature.

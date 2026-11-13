@@ -39,7 +39,10 @@ Metastore `system.*` tables (`system.billing`, `system.access`, `system.compute`
 `system.lakeflow`, `system.ai_gateway`, `system.serving`) are restricted for
 multi-tenant isolation: for FinOps or observability apps, use
 `$WORKSHOP_DEMO_CATALOG` or synthetic tables in `$WORKSHOP_CATALOG` instead of
-probing `system.*`. On views, use `DESCRIBE TABLE` rather than `DESCRIBE DETAIL`.
+probing `system.*`. Read real column names before querying with a standalone
+`DESCRIBE TABLE <t>` or `<catalog>.information_schema.columns`; never guess
+column names or write `SELECT … FROM (DESCRIBE TABLE …)` (`DESCRIBE` is not a
+subquery). On views, use `DESCRIBE TABLE` rather than `DESCRIBE DETAIL`.
 Workshop compute is complimentary during the session; if an attendee asks about
 cost, explain that their workshop seat is free and give standard production DBU
 sizing guidance.

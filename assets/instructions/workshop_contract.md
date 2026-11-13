@@ -21,7 +21,7 @@ Recommend a path. If none is recorded, ask once: "Would you like a rapid prototy
 ### Data
 
 - Check available data before inventing it: theirs, then `$WORKSHOP_DEMO_CATALOG` (read-only), then `$WORKSHOP_CATALOG`; joins are normal. The plan names the `workshop_demo` tables it will read, with their key columns.
-- Check real column names first: `DESCRIBE TABLE <t>` alone, or `<catalog>.information_schema.columns`; never guess them.
+- Check real columns: standalone `DESCRIBE TABLE <t>` or `<catalog>.information_schema.columns`; never `FROM (DESCRIBE…)` or guess.
 - Label synthetic or assumed numbers where they are stated.
 - Report the strongest planted signal, not the first: split by each category that looks like a cause before naming a driver. On synthetic data, call a pattern illustrative unless it clearly holds; never read a signal into data that has none.
 - Never GRANT on `$WORKSHOP_DEMO_CATALOG`: read in place.

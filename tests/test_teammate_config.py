@@ -381,12 +381,15 @@ def test_attach_image_shows_what_was_attached_and_why_it_is_disabled():
     assert "Attaching images works while the workshop is open" in app
 
 
-def test_the_home_channels_say_how_to_wait_and_how_to_read_columns(client, monkeypatch, person):
-    """Melbourne and Perth, 11-12 Nov: chained `sleep` calls were blocked, and SQL guessed column names."""
+def test_every_channel_says_how_to_wait_and_how_to_read_columns(client, monkeypatch, person):
+    """Melbourne and Perth, 11-12 Nov: chained `sleep` calls were blocked, and SQL guessed or nested DESCRIBE."""
     _ready(monkeypatch)
     _open(client, person, "claude", has_starter_prompt=True)
-    for name in ("claude", "codex"):
+    for name in ("claude", "codex", "project"):
         text = " ".join(_channels(_home(person))[name].split())
-        assert "never chain `sleep` with another command" in text
-        assert "`DESCRIBE TABLE <t>` alone" in text
-        assert "information_schema.columns" in text
+        assert "never chain `sleep` with another command" in text, name
+        assert "standalone `DESCRIBE TABLE <t>`" in text, name
+        assert "information_schema.columns" in text, name
+        assert "FROM (DESCRIBE" in text, name
+    skill = " ".join((ROOT / "assets" / "skills" / "workshop" / "SKILL.md").read_text().split())
+    assert "SELECT … FROM (DESCRIBE TABLE" in skill

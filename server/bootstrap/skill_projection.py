@@ -1,9 +1,10 @@
 """Deterministic workshop routing over checksum-verified platform skills.
 
 Keep raw upstream provenance separate from the delivered digest. This projection
-only retires the competing UX skill and its callers and leaves out the skills the
-workshop doesn't use; platform/API guidance stays upstream-owned. Refresh and
-bootstrap use the same projection.
+retires competing or unused skills, routes custom apps to APX and Impeccable,
+points App model calls at the signed-in attendee's token, and notes workshop-seat
+constraints such as Default Storage on Lakehouse Sync. Refresh and bootstrap use
+the same projection.
 """
 from pathlib import Path
 import shutil
@@ -113,6 +114,8 @@ def _apply_overlays(root: Path, *, strict: bool) -> None:
     """Replace upstream files with the workshop versions under ``assets/skill-overlays``."""
     for source in sorted(OVERLAY_ROOT.rglob("*")):
         if not source.is_file():
+            continue
+        if "__pycache__" in source.parts or source.suffix in {".pyc", ".pyo"}:
             continue
         target = root / source.relative_to(OVERLAY_ROOT)
         if not target.parent.is_dir():
@@ -258,17 +261,25 @@ _LAKEHOUSE_SYNC_WORKSHOP = _LAKEHOUSE_SYNC_LINE + (
     "(\"Lakebase CDF is not supported for catalogs using Default Storage\"). Copy the rows with a "
     "scheduled job or a snapshot table instead."
 )
+_LAKEHOUSE_SYNC_REF_HEADING = "# Lakehouse Sync: CDC from Lakebase to Unity Catalog\n"
+_LAKEHOUSE_SYNC_REF_WORKSHOP = (
+    _LAKEHOUSE_SYNC_REF_HEADING
+    + "\n> **Not in workshop catalogs:** seat catalogs (`$WORKSHOP_CATALOG`) use Default Storage, "
+    "and Lakehouse Sync refuses it (`Lakebase CDF is not supported for catalogs using Default Storage`). "
+    "Copy the rows with a scheduled job or a snapshot table instead.\n"
+)
 
 
 def _teach_lakebase(root: Path, *, strict: bool) -> None:
     """Tell agents up front that Lakehouse Sync is unavailable on a workshop seat."""
     skill = root / "databricks-lakebase/SKILL.md"
-    if skill.is_file():
+    if skill.is_file() and _LAKEHOUSE_SYNC_WORKSHOP not in skill.read_text():
         # The workshop text starts with the upstream line, so the upstream anchor
         # still matches after projection. An exact check makes a second pass a no-op.
-        if _LAKEHOUSE_SYNC_WORKSHOP in skill.read_text():
-            return
         _replace_once(skill, _LAKEHOUSE_SYNC_LINE, _LAKEHOUSE_SYNC_WORKSHOP, strict=strict)
+    ref = root / "databricks-lakebase/references/lakehouse-sync.md"
+    if ref.is_file() and _LAKEHOUSE_SYNC_REF_WORKSHOP not in ref.read_text():
+        _replace_once(ref, _LAKEHOUSE_SYNC_REF_HEADING, _LAKEHOUSE_SYNC_REF_WORKSHOP, strict=strict)
 
 
 def _teach_model_calls(root: Path, *, strict: bool) -> None:

@@ -43,8 +43,10 @@ project paths must be absolute and all project paths are constrained below
 
 State and bounded CLI progress are stored with mode `0600` below
 `~/.config/workshop/app-deploy/`. One file lock serializes deployment of the
-same project and target. An omitted target uses the key `default`, the key the tool
-has always used for its default, so existing state files still resume. The detached
+same project and target. An omitted target uses the lock and state key `default`,
+the key the tool used before targets were optional, so pre-upgrade state files
+still resume; recorded operations distinguish an omitted target from an explicit
+`default` target so neither resumes or returns the other's result. The detached
 submit worker receives the controller's recorded target (or no `--target` flag) and
 never resolves it again. A concurrent duplicate waits for and returns the
 active call's result instead of deploying again, while lock waits still honor

@@ -1570,3 +1570,108 @@ def test_the_project_directory_is_accepted_under_its_other_names(alias):
 
     assert seen["project_path"] == "/home/user/projects/demo"
     assert seen["target"] is None
+
+
+def test_explicit_default_target_does_not_resume_omitted_target_or_clean_its_worker(tmp_path):
+    """An omitted target (CLI default, e.g. dev) and an explicit `--target default` are distinct."""
+    env, project = _env(tmp_path)
+
+    class DevOnlyBackend(FakeBackend):
+        def bundle_summary(self, project, target):
+            if target == "default":
+                raise deploy_tool.CliError("default: no such target. Available targets: dev", returncode=1)
+            return super().bundle_summary(project, target)
+
+        def submission_status(self, _state):
+            return False, None
+
+        def cancel_submission(self, _state):
+            return False
+
+    ticks = iter([0.0, 0.0, 0.0, 31.0, 40.0, 41.0, 71.0, 71.0])
+    backend = DevOnlyBackend()
+    controller = _controller(env, backend, monotonic=lambda: next(ticks))
+
+    first = controller.deploy(project_path=str(project), target=None, timeout_seconds=30)
+    assert first["status"] == "timed_out"
+    store = deploy_tool.StateStore(project, None, env)
+    saved_before = store.load()
+    assert saved_before["target"] is None
+    assert backend.cleaned == 0
+
+    with pytest.raises(deploy_tool.CliError, match="default: no such target"):
+        controller.deploy(project_path=str(project), target="default", timeout_seconds=30)
+
+    # A rejected explicit target must not clean up or overwrite the in-flight omitted-target state.
+    assert backend.cleaned == 0
+    assert store.load() == saved_before
+
+
+def test_omitted_target_does_not_resume_an_explicit_default_target(tmp_path):
+    """When a bundle has both `prod` (`default: true`) and a separate `default` target, omitting `target` deploys `prod`."""
+    env, project = _env(tmp_path)
+    seen_targets: list[str | None] = []
+
+    class TwoTargetBackend(FakeBackend):
+        def bundle_summary(self, project, target):
+            seen_targets.append(target)
+            return super().bundle_summary(project, target)
+
+    store = deploy_tool.StateStore(project, "default", env)
+    store.save(
+        {
+            "schema_version": 1,
+            "operation_id": "explicit-default-op",
+            "phase": "polling",
+            "project_path": str(project),
+            "target": "default",
+            "target_omitted": False,
+            "app_name": "demo-app",
+            "app_url": "https://demo.databricksapps.com",
+            "baseline_deployment_ids": [],
+            "deployment_id": "old-default",
+            "created_at": 1.0,
+            "attempts": 1,
+            "state_root": str(store.root),
+        }
+    )
+    backend = TwoTargetBackend()
+    controller = _controller(env, backend)
+
+    result = controller.deploy(project_path=str(project), target=None)
+
+    assert result["status"] == "succeeded"
+    assert result["resumed"] is False
+    assert backend.submissions == 1
+    assert seen_targets[0] is None
+
+
+def test_pre_upgrade_default_state_still_resumes_when_target_is_omitted(tmp_path):
+    """State files written before `target` became optional had `"target": "default"` without `target_omitted`."""
+    env, project = _env(tmp_path)
+    store = deploy_tool.StateStore(project, None, env)
+    store.save(
+        {
+            "schema_version": 1,
+            "operation_id": "legacy-op",
+            "phase": "polling",
+            "project_path": str(project),
+            "target": "default",
+            "app_name": "demo-app",
+            "app_url": "https://demo.databricksapps.com",
+            "baseline_deployment_ids": [],
+            "deployment_id": "new-1",
+            "created_at": 1.0,
+            "attempts": 1,
+            "state_root": str(store.root),
+        }
+    )
+    backend = FakeBackend(app_states=[_app(active="new-1")])
+    backend.submitted = True
+    controller = _controller(env, backend)
+
+    result = controller.deploy(project_path=str(project), target=None)
+
+    assert result["status"] == "succeeded"
+    assert result["resumed"] is True
+    assert backend.submissions == 0
