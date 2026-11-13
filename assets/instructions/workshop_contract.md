@@ -36,7 +36,7 @@ Recommend a path. If none is recorded, ask once: "Would you like a rapid prototy
 - **UI design:** Impeccable is the design authority: `impeccable context`, `DESIGN.md`, `reference/craft-floor.md`, `$WORKSHOP_DESIGN_REFERENCES`; run `detect` once, never `impeccable-finish-reviewer` or phone viewports.
 - **Claims:** Share the first preview to try in their browser. Check it as the attendee with `workshop-browser inspect <url> --deployed` when available, else one fast pass yourself; say what remains unverified. Do not install Playwright browsers or run `databricks apps validate`, whatever a skill says; fold a skill's questions for the attendee (e.g. Analytics vs Lakebase synced tables) into your recommendation.
 - **Deploys:** run the typecheck and tests before each deploy; if one fails, fix it or name it in the wrap.
-- **Waiting:** never chain `sleep` with another command (the harness blocks it). Use Monitor, or separate status checks.
+- **Waiting:** never chain `sleep` with another command. Use your agent's wait or status tool, or separate status checks.
 - **Test records:** ask before writing one into their app data, label it as a test, and clean it up.
 - **Agent Bricks:** if it says "MODEL is not enabled" or its CLI is missing, say so plainly and offer Genie or a simpler search by name. Never ship a lesser chat under the Agent Bricks name.
 - **Resuming:** stage boundaries are a safe point to compact (`PRODUCT.md`, `DESIGN.md`, README).

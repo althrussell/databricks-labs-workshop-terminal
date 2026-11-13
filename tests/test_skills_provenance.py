@@ -235,3 +235,21 @@ def test_lakebase_skill_says_lakehouse_sync_is_unavailable_on_a_seat():
     text = open(os.path.join(SKILLS_DIR, "databricks-lakebase", "SKILL.md")).read()
     assert "Not in workshop catalogs" in text
     assert "scheduled job or a snapshot table" in text
+
+
+def test_projecting_an_already_projected_lakebase_skill_is_a_no_op(tmp_path):
+    """A second projection pass must not append the Default Storage note again."""
+    from server.bootstrap.skill_projection import _LAKEHOUSE_SYNC_LINE, project_skills
+
+    skill = tmp_path / "databricks-lakebase" / "SKILL.md"
+    skill.parent.mkdir()
+    skill.write_text("# Lakebase\n\n" + _LAKEHOUSE_SYNC_LINE + "\n\n## Next\n")
+    project_skills(tmp_path)
+    first = skill.read_bytes()
+    checksum = directory_checksum(tmp_path)
+    assert first.count(b"Not in workshop catalogs") == 1
+
+    project_skills(tmp_path)
+
+    assert skill.read_bytes() == first
+    assert directory_checksum(tmp_path) == checksum

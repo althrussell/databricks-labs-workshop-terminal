@@ -264,6 +264,10 @@ def _teach_lakebase(root: Path, *, strict: bool) -> None:
     """Tell agents up front that Lakehouse Sync is unavailable on a workshop seat."""
     skill = root / "databricks-lakebase/SKILL.md"
     if skill.is_file():
+        # The workshop text starts with the upstream line, so the upstream anchor
+        # still matches after projection. An exact check makes a second pass a no-op.
+        if _LAKEHOUSE_SYNC_WORKSHOP in skill.read_text():
+            return
         _replace_once(skill, _LAKEHOUSE_SYNC_LINE, _LAKEHOUSE_SYNC_WORKSHOP, strict=strict)
 
 

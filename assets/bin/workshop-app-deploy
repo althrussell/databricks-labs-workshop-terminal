@@ -152,8 +152,46 @@ def resolve_project_path(raw: str, env: dict[str, str], cwd: Path | None = None)
     return candidate
 
 
-def validate_target(value: str) -> str:
-    target = (value or "default").strip()
+PROJECT_PATH_ALIASES = ("project_dir", "app_path")
+
+
+def collapse_project_path_aliases(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Fold ``project_dir`` and ``app_path`` into ``project_path``.
+
+    Agents reach for the other tools' names for the project directory. Any mix of the
+    three is accepted when every value names the same directory after normalisation;
+    if they disagree, the call is refused and the conflicting fields are named.
+    """
+    names = [name for name in ("project_path", *PROJECT_PATH_ALIASES) if name in arguments]
+    if not names or names == ["project_path"]:
+        return arguments
+
+    def key(value: Any) -> Any:
+        if isinstance(value, str) and value.strip():
+            return os.path.normpath(value.strip())
+        return repr(value)
+
+    if len({key(arguments[name]) for name in names}) > 1:
+        raise DeployError(
+            "project_path, project_dir and app_path must name the same directory; "
+            f"these disagree: {', '.join(names)}"
+        )
+    collapsed = {k: v for k, v in arguments.items() if k not in PROJECT_PATH_ALIASES}
+    collapsed["project_path"] = arguments[names[0]]
+    return collapsed
+
+
+def normalize_target(value: str | None) -> str | None:
+    """The bundle target the caller named, or None when none was given.
+
+    An omitted or empty target is never sent: ``databricks`` then picks the bundle's own
+    default target (``default: true``, the only target, or the implicit ``default``). A
+    named target is validated and passed through unchanged; it is never remapped, so an
+    undeclared name is reported by the CLI.
+    """
+    if value is None or not value.strip():
+        return None
+    target = value.strip()
     if not TARGET_RE.fullmatch(target):
         raise DeployError(
             "target must contain only letters, numbers, dot, underscore, or hyphen"
@@ -161,49 +199,13 @@ def validate_target(value: str) -> str:
     return target
 
 
-def declared_targets(project: Path) -> tuple[list[str], list[str]]:
-    """Target names under the root ``targets:`` mapping, and those marked ``default: true``.
-
-    Empty when the bundle declares none (the CLI then uses its implicit ``default``).
-    """
-    lines = (project / "databricks.yml").read_text(encoding="utf-8").splitlines(keepends=True)
-    block = _yaml_child(lines, 0, len(lines), "targets")
-    if block is None or block[3]:
-        return [], []
-    names: list[str] = []
-    marked: list[str] = []
-    end = _yaml_extent(lines, block[0], block[1])
-    for index, indent, key, value in _yaml_children(lines, block[0] + 1, end):
-        if value:
-            continue
-        names.append(key)
-        child = _yaml_child(lines, index + 1, _yaml_extent(lines, index, indent), "default")
-        if child is not None and child[3].lower() == "true":
-            marked.append(key)
-    return names, marked
+def state_target_key(target: str | None) -> str:
+    """The lock and state key. An omitted target keeps the key the tool used before targets were optional."""
+    return target or "default"
 
 
-def resolve_target(project: Path, requested: str | None) -> str:
-    """The bundle target to deploy. An omitted target is the bundle's own default.
-
-    A bundle that declares one target uses it, whatever the caller asked for: an APX
-    scaffold's only target is ``dev``, and agents kept passing AppKit's ``default``.
-    """
-    names, marked = declared_targets(project)
-    if requested is None or not requested.strip():
-        if len(marked) == 1:
-            return marked[0]
-        if len(names) == 1:
-            return names[0]
-        if len(names) > 1:
-            raise DeployError(
-                f"databricks.yml declares several targets ({', '.join(names)}); pass one as target"
-            )
-        return validate_target(None)
-    target = validate_target(requested)
-    if len(names) == 1 and target not in names:
-        return names[0]
-    return target
+def target_args(target: str | None) -> list[str]:
+    return ["--target", target] if target else []
 
 
 def validate_timeout(value: object) -> int:
@@ -220,9 +222,9 @@ def validate_timeout(value: object) -> int:
 
 
 class StateStore:
-    def __init__(self, project: Path, target: str, env: dict[str, str]):
+    def __init__(self, project: Path, target: str | None, env: dict[str, str]):
         digest = hashlib.sha256(
-            f"{project}\0{target}".encode("utf-8")
+            f"{project}\0{state_target_key(target)}".encode("utf-8")
         ).hexdigest()
         self.root = _state_root(env)
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -353,11 +355,11 @@ class CliBackend:
             raise CliError(detail, returncode=completed.returncode)
         return _json_from_output(completed.stdout, allow_empty=allow_empty)
 
-    def bundle_summary(self, project: Path, target: str) -> dict[str, Any]:
-        return self._json(["bundle", "summary", "--target", target], project, 60)
+    def bundle_summary(self, project: Path, target: str | None) -> dict[str, Any]:
+        return self._json(["bundle", "summary", *target_args(target)], project, 60)
 
-    def bundle_validate(self, project: Path, target: str) -> dict[str, Any]:
-        return self._json(["bundle", "validate", "--target", target], project, 60)
+    def bundle_validate(self, project: Path, target: str | None) -> dict[str, Any]:
+        return self._json(["bundle", "validate", *target_args(target)], project, 60)
 
     def get_app(self, project: Path, app_name: str) -> dict[str, Any]:
         return self._json(["apps", "get", app_name], project)
@@ -416,8 +418,7 @@ class CliBackend:
             "--submit-worker",
             "--project",
             state["project_path"],
-            "--target",
-            state["target"],
+            *target_args(state.get("target")),
             "--log-path",
             str(log_path),
             "--exit-path",
@@ -1131,7 +1132,7 @@ class DeployController:
         cwd: Path | None = None,
     ) -> dict[str, Any]:
         project = resolve_project_path(project_path, self.env, cwd)
-        target = resolve_target(project, target)
+        target = normalize_target(target)
         timeout = validate_timeout(timeout_seconds)
         cancel = cancel or threading.Event()
         progress = progress or (lambda _message: None)
@@ -1153,7 +1154,7 @@ class DeployController:
                 same_operation = bool(
                     state
                     and state.get("project_path") == str(project)
-                    and state.get("target") == target
+                    and state_target_key(state.get("target")) == state_target_key(target)
                 )
                 if (
                     waited_for_lock
@@ -1903,7 +1904,8 @@ def _write_bounded(handle, line: str, written: int, truncated: bool) -> tuple[in
 def submit_worker(args: argparse.Namespace, env: dict[str, str] | None = None) -> int:
     current_env = dict(os.environ if env is None else env)
     project = resolve_project_path(args.project, current_env)
-    target = resolve_target(project, args.target)
+    # The controller's recorded target, passed as-is: the worker never re-resolves it.
+    target = normalize_target(args.target)
     log_path = Path(args.log_path).resolve()
     exit_path = Path(args.exit_path).resolve()
     log_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -1916,8 +1918,7 @@ def submit_worker(args: argparse.Namespace, env: dict[str, str] | None = None) -
             "databricks",
             "apps",
             "deploy",
-            "--target",
-            target,
+            *target_args(target),
             "--auto-approve",
             "--no-wait",
             "--output",
@@ -2015,8 +2016,8 @@ class McpServer:
                     "target": {
                         "type": "string",
                         "description": (
-                            "Bundle target. Omit it to use the project's only target (dev for an APX "
-                            "scaffold, default for AppKit)."
+                            "Bundle target name, passed to databricks apps deploy unchanged. "
+                            "Omit it to use the bundle's default target."
                         ),
                     },
                     "timeout_seconds": {
@@ -2072,12 +2073,26 @@ class McpServer:
         if not isinstance(arguments, dict):
             self._error(request_id, -32602, "Tool arguments must be an object")
             return
-        arguments = dict(arguments)
-        # Agents reach for the other tools' names for the project directory. Accept
-        # them as aliases of project_path rather than spend a turn on the error.
-        for alias in ("project_dir", "app_path"):
-            if alias in arguments and "project_path" not in arguments:
-                arguments["project_path"] = arguments.pop(alias)
+        try:
+            arguments = collapse_project_path_aliases(arguments)
+        except DeployError as exc:
+            result = {
+                "status": "failed",
+                "reason": "invalid_request",
+                "message": _safe_line(exc),
+                "app_name": "",
+                "app_url": "",
+                "resumed": False,
+            }
+            self._result(
+                request_id,
+                {
+                    "content": [{"type": "text", "text": json.dumps(result)}],
+                    "structuredContent": result,
+                    "isError": True,
+                },
+            )
+            return
         allowed_arguments = {"project_path", "target", "timeout_seconds"}
         unknown_arguments = sorted(set(arguments) - allowed_arguments)
         if unknown_arguments:
@@ -2211,7 +2226,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--mcp", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--project", default=".")
-    parser.add_argument("--target", default=None, help="bundle target; omit to use the project's own")
+    parser.add_argument(
+        "--target",
+        default=None,
+        help="bundle target, passed to the CLI unchanged; omit to use the bundle's default",
+    )
     parser.add_argument("--timeout-seconds", type=int, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--submit-worker", action="store_true", help=argparse.SUPPRESS)
