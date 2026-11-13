@@ -388,5 +388,5 @@ def test_the_home_channels_say_how_to_wait_and_how_to_read_columns(client, monke
     for name in ("claude", "codex"):
         text = " ".join(_channels(_home(person))[name].split())
         assert "never chain `sleep` with another command" in text
-        assert "`DESCRIBE TABLE <t>` on its own" in text
+        assert "`DESCRIBE TABLE <t>` alone" in text
         assert "information_schema.columns" in text
