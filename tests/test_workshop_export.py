@@ -215,9 +215,48 @@ def test_success_prints_specific_volume_and_download_steps(source, fake_cli, mon
     output = capsys.readouterr().out
     assert "attendee_catalog.assigned_schema.workshop_exports" in output
     assert "For workshop-code-" in output
-    assert "File options → Download file" in output
+    assert "Download my code" in output
+    assert "File options" not in output
     assert "before the workshop environment is deleted" in output
     assert "read-back matches" in output
+
+
+def test_reuse_recent_returns_unchanged_single_project_archive_without_reuploading(source, fake_cli):
+    first = helper.export(str(source / "garden"))
+    cli_calls_after_first = len(fake_cli[0])
+
+    reused = helper.export(reuse_recent_seconds=300)
+
+    assert reused["reused"] is True
+    assert reused["filename"] == first["filename"]
+    assert reused["local_zip"] == first["local_zip"]
+    assert reused["projects"] == ["garden"]
+    assert len(fake_cli[0]) == cli_calls_after_first
+
+
+def test_reuse_recent_rebuilds_when_any_project_source_changes(source, fake_cli):
+    first = helper.export(str(source / "garden"))
+    (source / "repair-desk/src/main.py").write_text("print('updated')\n")
+
+    rebuilt = helper.export(reuse_recent_seconds=300)
+
+    assert reused_flag(rebuilt) is False
+    assert rebuilt["filename"] != first["filename"]
+    assert rebuilt["projects"] == ["garden", "repair-desk"]
+
+
+def test_reuse_recent_rebuilds_when_local_zip_is_modified(source, fake_cli):
+    first = helper.export()
+    Path(first["local_zip"]).write_bytes(b"corrupted-local-cache")
+
+    rebuilt = helper.export(reuse_recent_seconds=300)
+
+    assert reused_flag(rebuilt) is False
+    assert rebuilt["filename"] != first["filename"]
+
+
+def reused_flag(receipt: dict) -> bool:
+    return bool(receipt.get("reused"))
 
 
 def test_removed_promote_and_export_pack_load():

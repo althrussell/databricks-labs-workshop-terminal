@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useState } from "react";
 import { Download, ExternalLink, MessageSquareText, Octagon, Sparkles } from "lucide-react";
 import { api } from "../api";
 import { availableActions, phaseLabel, reviewLabel, type BuildView } from "../build";
+import { saveDownload } from "../exportDownload";
 
 /**
  * "Your build" (W4): the attendee's goal, stage, next decision, preview and
@@ -92,11 +93,9 @@ export default function YourBuild({ refreshKey, onGetHelp }: { refreshKey: unkno
         <button className="btn btn-ghost" onClick={onGetHelp}>Get help</button>
         {actions.exportCode && <button className="btn btn-ghost" disabled={busy} onClick={() => act(async () => {
           const { blob, filename, volumePath } = await api.exportCode();
-          const link = document.createElement("a");
-          link.href = URL.createObjectURL(blob); link.download = filename; link.click();
-          URL.revokeObjectURL(link.href);
+          saveDownload(blob, filename);
           return `Downloaded ${filename}. A verified copy is also kept at ${volumePath}.`;
-        })}><Download size={14} aria-hidden="true" />Export my code</button>}
+        })}><Download size={14} aria-hidden="true" />Download my code</button>}
       </div>}
     </div>}
     {notice && <p role="status" className="project-feedback">{notice}</p>}

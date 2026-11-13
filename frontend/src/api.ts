@@ -1,6 +1,12 @@
 import type { BuildView } from "./build";
 import { retryQuietly } from "./transientRetry";
 import { isWorkshopClosingDetail, notifyWorkshopClosing, type WorkshopStatus } from "./workshopLifecycle";
+import {
+  ExportInterruptedError,
+  exportBodyFailure,
+  exportTransportFailure,
+  isSignInRedirect,
+} from "./exportDownload";
 
 export interface ShellLink {
   label: string;
@@ -460,6 +466,28 @@ export function isWrongIdentityLocked(): boolean {
   return wrongIdentityLatched !== null;
 }
 
+async function throwApiError(path: string, resp: Response): Promise<never> {
+  let detail: unknown = resp.statusText;
+  try {
+    detail = (await resp.json()).detail ?? detail;
+  } catch {
+    /* non-JSON error body */
+  }
+  if (resp.status === 409 && isWorkshopClosingDetail(detail)) notifyWorkshopClosing();
+  const errorCode = resp.headers?.get?.("X-Workshop-Error-Code") ?? "";
+  const isWrongSeat =
+    errorCode === "wrong_seat_identity" ||
+    (typeof detail === "string" && detail.includes("This workshop instance is assigned to "));
+  if (resp.status === 403 && isWrongSeat && !path.startsWith("/api/admin/")) {
+    const msg = typeof detail === "string" ? detail : "This workshop seat is assigned to another attendee.";
+    if (!wrongIdentityLatched) {
+      wrongIdentityLatched = msg;
+      wrongIdentityListeners.forEach((fn) => fn(msg));
+    }
+  }
+  throw new ApiError(resp.status, detail);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (wrongIdentityLatched && !path.startsWith("/api/admin/")) {
     throw new ApiError(403, wrongIdentityLatched);
@@ -469,25 +497,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   if (!resp.ok) {
-    let detail: unknown = resp.statusText;
-    try {
-      detail = (await resp.json()).detail ?? detail;
-    } catch {
-      /* non-JSON error body */
-    }
-    if (resp.status === 409 && isWorkshopClosingDetail(detail)) notifyWorkshopClosing();
-    const errorCode = resp.headers?.get?.("X-Workshop-Error-Code") ?? "";
-    const isWrongSeat =
-      errorCode === "wrong_seat_identity" ||
-      (typeof detail === "string" && detail.includes("This workshop instance is assigned to "));
-    if (resp.status === 403 && isWrongSeat && !path.startsWith("/api/admin/")) {
-      const msg = typeof detail === "string" ? detail : "This workshop seat is assigned to another attendee.";
-      if (!wrongIdentityLatched) {
-        wrongIdentityLatched = msg;
-        wrongIdentityListeners.forEach((fn) => fn(msg));
-      }
-    }
-    throw new ApiError(resp.status, detail);
+    return throwApiError(path, resp);
   }
   return resp.json();
 }
@@ -505,16 +515,32 @@ export const api = {
     request<{ revision: number }>("/api/build/decide", { method: "POST", body: JSON.stringify(decision) }),
   buildStop: () => request<{ stopped: boolean; detail: string }>("/api/build/stop", { method: "POST" }),
   /** Export my code: the ZIP downloads, and a verified copy stays in the workshop Volume. */
-  exportCode: async (): Promise<{ blob: Blob; filename: string; volumePath: string }> => {
-    const resp = await fetch("/api/export", { method: "POST" });
+  exportCode: async (project?: string): Promise<{ blob: Blob; filename: string; volumePath: string }> => {
+    const path = project ? `/api/export?project=${encodeURIComponent(project)}` : "/api/export";
+    if (wrongIdentityLatched) {
+      throw new ApiError(403, wrongIdentityLatched);
+    }
+    let resp: Response;
+    try {
+      // Manual redirects: an expired Apps sign-in answers with a cross-origin
+      // 302 that a followed fetch cannot read. See exportDownload.ts.
+      resp = await fetch(path, { method: "POST", redirect: "manual" });
+    } catch (error) {
+      throw exportTransportFailure(error);
+    }
+    if (isSignInRedirect(resp)) throw new ExportInterruptedError("sign_in");
     if (!resp.ok) {
-      let detail: unknown = resp.statusText;
-      try { detail = (await resp.json()).detail ?? detail; } catch { /* non-JSON error body */ }
-      throw new ApiError(resp.status, detail);
+      return throwApiError(path, resp);
     }
     const disposition = resp.headers.get("Content-Disposition") ?? "";
     const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? "workshop-code.zip";
-    return { blob: await resp.blob(), filename, volumePath: resp.headers.get("X-Workshop-Export-Path") ?? "" };
+    let blob: Blob;
+    try {
+      blob = await resp.blob();
+    } catch (error) {
+      throw exportBodyFailure(error);
+    }
+    return { blob, filename, volumePath: resp.headers.get("X-Workshop-Export-Path") ?? "" };
   },
   attachImage: (body: { filename: string; data_base64: string; project_name?: string }) =>
     request<{ path: string; relative_path: string; prompt_path?: string; bytes: number; project: string }>(

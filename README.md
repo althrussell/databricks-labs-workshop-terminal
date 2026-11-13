@@ -77,9 +77,9 @@ operator admin panel.
   deletes the workspace too.
 - **Take-home code**: ask the agent to export one project or all workshop
   projects as a ZIP to `workshop_exports` inside the CT-assigned catalog/schema.
-  It verifies the uploaded copy and shows the Volume link, filename and download
-  steps. Download the ZIP to your computer before the event ends; the Volume is
-  temporary. Source, tests, assets and dependency files are included; credentials,
+  It verifies the uploaded copy. Then click **Download my code** in the Workshop
+  Terminal header to save the ZIP; the Volume is temporary, so download before the
+  event ends. Source, tests, assets and dependency files are included; credentials,
   installed dependencies and generated builds are excluded. See
   [docs/take-home-export.md](docs/take-home-export.md).
 

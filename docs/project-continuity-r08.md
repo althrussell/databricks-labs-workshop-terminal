@@ -75,8 +75,9 @@ its exact content in Workspace. No direct sync or hook modification was used for
 this acceptance commit. Both builds were then exported using `workshop-export`.
 Independent downloads matched all 56 source/context/check files across Workspace
 and ZIP, preserved both current goals and all original application code, and
-confirmed generated output was excluded. The helper printed the assigned Volume
-and Catalog → Volumes → File options → Download file steps.
+confirmed generated output was excluded. Attendees now save the verified ZIP from
+**Download my code** in the Workshop Terminal header rather than navigating to the
+backup Volume in Catalog Explorer.
 
 Readiness after attendee reconnect is HTTP 200, `ready:true`; disabled isolated
 test telemetry remains a soft amber check. Resources, model policy, app identity

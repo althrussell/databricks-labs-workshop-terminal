@@ -312,48 +312,66 @@ def stop(session) -> dict:
 # Export (WT-P6)
 # ---------------------------------------------------------------------------
 
-def export(user, *, reason: str = "attendee", reuse: bool = False) -> dict:
+def export(user, *, reason: str = "attendee", reuse: bool = False, project: str | None = None) -> dict:
     """Run ``workshop-export`` as the attendee; reuse a recent export when asked."""
+    target_project = str(projects.project_path(user, project)) if project else None
+    cache_key = f"{user.email}:{project or ''}"
     with _export_lock:
-        cached = _exports.get(user.email)
+        cached = _exports.get(cache_key)
         if reuse and cached and time.time() - cached["at"] < EXPORT_REUSE_SECONDS:
             return {**cached["result"], "reused": True}
-        helper = os.path.join(user.home, ".local", "bin", "workshop-export")
-        if not os.path.isfile(helper):
-            helper = os.path.join(os.path.dirname(__file__), "..", "assets", "bin", "workshop-export")
-        done = subprocess.run([helper, "--json"], capture_output=True, text=True, timeout=600,
+        helper = os.path.join(os.path.dirname(__file__), "..", "assets", "bin", "workshop-export")
+        command = [helper]
+        if target_project:
+            command.extend(["--project", target_project])
+        if reason == "attendee":
+            command.extend(["--reuse-recent", str(EXPORT_REUSE_SECONDS)])
+        command.append("--json")
+        done = subprocess.run(command, capture_output=True, text=True, timeout=600,
                               env={**user.shell_env(), "WORKSHOP_EXPORT_REASON": reason}, cwd=user.home)
         if done.returncode != 0:
             raise RuntimeError((done.stderr or done.stdout or "export failed").strip()[-600:])
         result = json.loads(done.stdout.strip().splitlines()[-1])
         local = result.get("local_zip", "")
+        has_local = bool(local and os.path.isfile(local) and not os.path.islink(local))
         result = {**result, "path": result.get("volume_path"),
-                  "bytes": os.path.getsize(local) if local and os.path.isfile(local) else 0, "reused": False}
-        _exports[user.email] = {"at": time.time(), "result": result}
+                  "bytes": os.path.getsize(local) if has_local else 0,
+                  "reused": bool(result.get("reused", False))}
+        if has_local:
+            _exports[cache_key] = {"at": time.time(), "result": result}
 
-    def _post_export_screenshots() -> None:
-        try:
-            from . import browser_evidence
+    if has_local:
+        def _post_export_screenshots() -> None:
+            try:
+                from . import browser_evidence
+                from .event_emitter import event_emitter
+                from .workshop_lifecycle import attendee_status
 
-            if not browser_evidence.browser_binary():
-                return
-            deadline = time.monotonic() + 20.0
-            root = projects.root(user)
-            if not root.is_dir():
-                return
-            for child in sorted(root.iterdir()):
-                if time.monotonic() >= deadline:
-                    break
-                if child.is_dir() and not child.is_symlink() and not child.name.startswith("."):
-                    browser_evidence.capture_project_preview_screenshot(user, child)
-        except Exception:  # noqa: BLE001 — screenshot capture never blocks code export
-            pass
+                if not browser_evidence.browser_binary():
+                    return
+                deadline = time.monotonic() + 20.0
+                root = projects.root(user)
+                if not root.is_dir():
+                    return
+                for child in sorted(root.iterdir()):
+                    if time.monotonic() >= deadline:
+                        break
+                    try:
+                        event_emitter._ensure_ready()
+                        if not attendee_status(event_emitter.journal)["accepting_input"]:
+                            break
+                    except Exception:  # noqa: BLE001
+                        break
+                    if child.is_dir() and not child.is_symlink() and not child.name.startswith("."):
+                        browser_evidence.capture_project_preview_screenshot(user, child)
+            except Exception:  # noqa: BLE001 — screenshot capture never blocks code export
+                pass
 
-    threading.Thread(
-        target=_post_export_screenshots,
-        daemon=True,
-        name="post-export-screenshots",
-    ).start()
+        threading.Thread(
+            target=_post_export_screenshots,
+            daemon=True,
+            name="post-export-screenshots",
+        ).start()
     return result
 
 

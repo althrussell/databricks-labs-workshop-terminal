@@ -151,11 +151,10 @@ with the record before delegating so worktree workers receive both.
 ## Documents and take-home
 
 Write documents only when asked, inside the project. For "take my work home",
-tell the attendee they can click **Download my code** in the Workshop Terminal
-header to download the ZIP directly, or use the `workshop-export` skill
-(`--project <path>` for one project). Show its
-Volume link and the Catalog → … → workshop_exports → code →
-File options → Download file steps. "It's committed and synced" is not the same as "it's saved"
+tell the attendee to click **Download my code** in the Workshop Terminal
+header. That saves the ZIP to their computer. Use the `workshop-export` skill
+(`--project <path>` for one project) first; it verifies the copy and then sends
+them to that same button. Never send them to Catalog or Volume download steps. "It's committed and synced" is not the same as "it's saved"
 on their computer: everything here is deleted after the workshop, so remind them
 to download before teardown, and never claim they have. For a Git remote they
 own: `git remote add origin <their-repo-url>`, then `git push -u origin main`;

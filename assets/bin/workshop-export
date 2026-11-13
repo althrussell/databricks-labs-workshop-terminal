@@ -14,12 +14,15 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from urllib.parse import quote
 import uuid
 import zipfile
 
 
 VOLUME = "workshop_exports"
+ARCHIVE_NAME_RE = re.compile(r"workshop-code-[A-Za-z0-9T._-]{1,100}\.zip")
+RECEIPT_FILE = "latest.json"
 SKIP_DIRS = frozenset({
     ".git", ".agents", ".claude", ".codex", ".databricks", ".workshop",
     "node_modules", ".venv", "venv", "__pycache__", ".cache", ".pytest_cache",
@@ -59,66 +62,92 @@ def _strip_workshop_managed(text: str) -> str:
     return text
 
 
-def build_archive(source: Path, destination: Path, *, single_project: bool) -> dict:
-    """Include uncommitted/untracked source; never follow links outside a project."""
-    included = []
-    omitted = []
-    with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for directory, dirs, files in os.walk(source, followlinks=False):
-            parent = Path(directory)
-            for name in list(dirs):
-                path = parent / name
-                if name in SKIP_DIRS or path.is_symlink():
-                    dirs.remove(name)
-                    omitted.append(path.relative_to(source).as_posix() + "/")
-                    # Carry only the portable project goal, never the rest of
-                    # .workshop's runtime state. Do not follow either link.
-                    project_root = parent == source if single_project else parent.parent == source
-                    context = path / "project.json"
-                    if (name == ".workshop" and project_root and not path.is_symlink()
-                            and context.is_file() and not context.is_symlink()):
-                        relative = context.relative_to(source)
-                        member = Path(source.name) / relative if single_project else relative
-                        archive.write(context, arcname=(Path("workshop-code") / member).as_posix())
-                        included.append(member.as_posix())
-                    evidence_dir = path / "evidence"
-                    if (name == ".workshop" and project_root and not path.is_symlink()
-                            and evidence_dir.is_dir() and not evidence_dir.is_symlink()):
-                        for shot in sorted(evidence_dir.glob("*.png")):
-                            if shot.is_file() and not shot.is_symlink():
-                                rel_project = parent.relative_to(source)
-                                shot_member = (
-                                    Path(source.name) / "screenshots" / shot.name
-                                    if single_project
-                                    else rel_project / "screenshots" / shot.name
-                                )
-                                archive.write(
-                                    shot,
-                                    arcname=(Path("workshop-code") / shot_member).as_posix(),
-                                )
-                                included.append(shot_member.as_posix())
-            dirs.sort()
-            for name in sorted(files):
-                path = parent / name
-                relative = path.relative_to(source)
-                if path.is_symlink() or excluded_file(name) or not path.is_file():
+def _walk_export_tree(source: Path, *, single_project: bool) -> tuple[list[tuple[str, Path | None, bytes | None]], list[str]]:
+    """Collect (member_relpath, source_file_or_None, inline_utf8_bytes_or_None) and omitted paths."""
+    entries: list[tuple[str, Path | None, bytes | None]] = []
+    omitted: list[str] = []
+    for directory, dirs, files in os.walk(source, followlinks=False):
+        parent = Path(directory)
+        for name in list(dirs):
+            path = parent / name
+            if name in SKIP_DIRS or path.is_symlink():
+                dirs.remove(name)
+                omitted.append(path.relative_to(source).as_posix() + "/")
+                # Carry only the portable project goal, never the rest of
+                # .workshop's runtime state. Do not follow either link.
+                project_root = parent == source if single_project else parent.parent == source
+                context = path / "project.json"
+                if (name == ".workshop" and project_root and not path.is_symlink()
+                        and context.is_file() and not context.is_symlink()):
+                    relative = context.relative_to(source)
+                    member = Path(source.name) / relative if single_project else relative
+                    entries.append((member.as_posix(), context, None))
+                evidence_dir = path / "evidence"
+                if (name == ".workshop" and project_root and not path.is_symlink()
+                        and evidence_dir.is_dir() and not evidence_dir.is_symlink()):
+                    for shot in sorted(evidence_dir.glob("*.png")):
+                        if shot.is_file() and not shot.is_symlink():
+                            rel_project = parent.relative_to(source)
+                            shot_member = (
+                                Path(source.name) / "screenshots" / shot.name
+                                if single_project
+                                else rel_project / "screenshots" / shot.name
+                            )
+                            entries.append((shot_member.as_posix(), shot, None))
+        dirs.sort()
+        for name in sorted(files):
+            path = parent / name
+            relative = path.relative_to(source)
+            if path.is_symlink() or excluded_file(name) or not path.is_file():
+                omitted.append(relative.as_posix())
+                continue
+            member = Path(source.name) / relative if single_project else relative
+            if name in {"AGENTS.md", "CLAUDE.md"}:
+                raw_text = path.read_text(encoding="utf-8", errors="replace")
+                stripped = _strip_workshop_managed(raw_text)
+                if not stripped:
                     omitted.append(relative.as_posix())
                     continue
-                member = Path(source.name) / relative if single_project else relative
-                if name in {"AGENTS.md", "CLAUDE.md"}:
-                    raw_text = path.read_text(encoding="utf-8", errors="replace")
-                    stripped = _strip_workshop_managed(raw_text)
-                    if not stripped:
-                        omitted.append(relative.as_posix())
-                        continue
-                    if stripped != raw_text:
-                        archive.writestr((Path("workshop-code") / member).as_posix(), stripped)
-                        included.append(member.as_posix())
-                        continue
-                archive.write(path, arcname=(Path("workshop-code") / member).as_posix())
-                included.append(member.as_posix())
-        if not included:
-            raise ExportError("No project source files were found to export.")
+                if stripped != raw_text:
+                    entries.append((member.as_posix(), None, stripped.encode("utf-8")))
+                    continue
+            entries.append((member.as_posix(), path, None))
+    return entries, omitted
+
+
+def source_fingerprint(projects_root: Path) -> str:
+    """Deterministic SHA-256 over all exportable project content under ~/projects."""
+    digest = hashlib.sha256()
+    if projects_root.is_symlink() or not projects_root.is_dir():
+        return digest.hexdigest()
+    entries, omitted = _walk_export_tree(projects_root, single_project=False)
+    for member, file_path, inline_bytes in entries:
+        if inline_bytes is not None:
+            content_hash = hashlib.sha256(inline_bytes).hexdigest()
+        else:
+            assert file_path is not None
+            with file_path.open("rb") as handle:
+                content_hash = hashlib.file_digest(handle, "sha256").hexdigest()
+        digest.update(f"{member}:{content_hash}\n".encode("utf-8"))
+    digest.update(("omitted:" + "|".join(omitted)).encode("utf-8"))
+    return digest.hexdigest()
+
+
+def build_archive(source: Path, destination: Path, *, single_project: bool) -> dict:
+    """Include uncommitted/untracked source; never follow links outside a project."""
+    entries, omitted = _walk_export_tree(source, single_project=single_project)
+    if not entries:
+        raise ExportError("No project source files were found to export.")
+    included: list[str] = []
+    with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for member, file_path, inline_bytes in entries:
+            arcname = (Path("workshop-code") / member).as_posix()
+            if inline_bytes is not None:
+                archive.writestr(arcname, inline_bytes)
+            else:
+                assert file_path is not None
+                archive.write(file_path, arcname=arcname)
+            included.append(member)
         archive.writestr("workshop-code/EXPORT_INFO.txt", (
             "Workshop source export\n\n"
             "Contains current files, including uncommitted changes, tests, assets,\n"
@@ -250,7 +279,85 @@ def upload_screenshots(source: Path, catalog: str, schema: str, *, single_projec
     return uploaded
 
 
-def export(project: str | None = None) -> dict:
+def _safe_cache_dir() -> Path | None:
+    """Return ~/.cache/workshop/exports only when no segment beneath HOME is a symlink."""
+    home = Path.home()
+    cur = home
+    for part in (".cache", "workshop", "exports"):
+        cur = cur / part
+        if cur.is_symlink() or (cur.exists() and not cur.is_dir()):
+            return None
+    return cur
+
+
+def _write_latest_receipt(cache: Path, payload: dict) -> None:
+    if _safe_cache_dir() is None:
+        return
+    fd, tmp_name = tempfile.mkstemp(prefix=".latest-", suffix=".json", dir=cache)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+        os.replace(tmp_name, cache / RECEIPT_FILE)
+    except OSError:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+
+
+def _read_reusable_receipt(
+    cache: Path,
+    projects: Path,
+    *,
+    single_project: bool,
+    project_name: str | None,
+    max_age_seconds: int,
+) -> dict | None:
+    if max_age_seconds <= 0 or _safe_cache_dir() is None:
+        return None
+    receipt_path = cache / RECEIPT_FILE
+    if receipt_path.is_symlink() or not receipt_path.is_file():
+        return None
+    try:
+        if receipt_path.stat().st_size > 65536:
+            return None
+        saved = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(saved, dict):
+        return None
+    at = saved.get("at")
+    if not isinstance(at, (int, float)) or isinstance(at, bool):
+        return None
+    age = time.time() - float(at)
+    if age < -1.0 or age > max_age_seconds:
+        return None
+    receipt = saved.get("receipt")
+    if not isinstance(receipt, dict) or receipt.get("verified") is not True:
+        return None
+    if single_project:
+        if saved.get("single_project") is not True or saved.get("project") != project_name:
+            return None
+    filename = str(receipt.get("filename") or "")
+    archive = cache / filename
+    if (not ARCHIVE_NAME_RE.fullmatch(filename)
+            or str(archive) != str(receipt.get("local_zip") or "")
+            or archive.is_symlink() or not archive.is_file()):
+        return None
+    if source_fingerprint(projects) != saved.get("workspace_fingerprint"):
+        return None
+    try:
+        with archive.open("rb") as handle:
+            zip_sha256 = hashlib.file_digest(handle, "sha256").hexdigest()
+    except OSError:
+        return None
+    if zip_sha256 != saved.get("zip_sha256"):
+        return None
+    return {**receipt, "reused": True}
+
+
+def export(project: str | None = None, *, reuse_recent_seconds: int = 0) -> dict:
     catalog, schema = namespace()
     projects = Path.home() / "projects"
     source = Path(project).expanduser().absolute() if project else projects
@@ -258,14 +365,24 @@ def export(project: str | None = None) -> dict:
         raise ExportError("The project source directory does not exist or is a symlink.")
     if not source.resolve().is_relative_to(projects.resolve()):
         raise ExportError("Export a project inside your ~/projects directory.")
+    single_project = project is not None
     cache = Path.home() / ".cache/workshop/exports"
+    reused = _read_reusable_receipt(
+        cache,
+        projects,
+        single_project=single_project,
+        project_name=source.name if single_project else None,
+        max_age_seconds=reuse_recent_seconds,
+    )
+    if reused is not None:
+        return reused
     cache.mkdir(parents=True, exist_ok=True, mode=0o700)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     archive = cache / f"workshop-code-{stamp}-{uuid.uuid4().hex[:8]}.zip"
     # A local copy survives an upload/authentication failure; it is outside the
     # source tree so repeat exports never recursively include previous ZIPs.
     archive.touch(mode=0o600, exist_ok=False)
-    single_project = project is not None
+    workspace_fp = source_fingerprint(projects)
     result = build_archive(source, archive, single_project=single_project)
     try:
         path = upload_archive(archive, catalog, schema)
@@ -273,22 +390,35 @@ def export(project: str | None = None) -> dict:
         raise ExportError(f"{error}\nLocal ZIP retained at {archive}") from None
     screenshots = upload_screenshots(source, catalog, schema, single_project=single_project)
     host = workspace_host()
-    return {**result, "local_zip": str(archive), "volume_path": path,
-            "screenshots": screenshots,
-            "volume": f"{catalog}.{schema}.{VOLUME}", "filename": archive.name,
-            "verified": True,
-            "volume_url": (host + "/explore/data/volumes/" + "/".join(
-                quote(part, safe="") for part in (catalog, schema, VOLUME)
-            )) if host else ""}
+    receipt = {**result, "local_zip": str(archive), "volume_path": path,
+               "screenshots": screenshots,
+               "volume": f"{catalog}.{schema}.{VOLUME}", "filename": archive.name,
+               "verified": True, "reused": False,
+               "volume_url": (host + "/explore/data/volumes/" + "/".join(
+                   quote(part, safe="") for part in (catalog, schema, VOLUME)
+               )) if host else ""}
+    with archive.open("rb") as handle:
+        zip_sha256 = hashlib.file_digest(handle, "sha256").hexdigest()
+    _write_latest_receipt(cache, {
+        "at": time.time(),
+        "single_project": single_project,
+        "project": source.name if single_project else None,
+        "workspace_fingerprint": workspace_fp,
+        "zip_sha256": zip_sha256,
+        "receipt": receipt,
+    })
+    return receipt
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", help="Export one project; otherwise export all of ~/projects")
+    parser.add_argument("--reuse-recent", type=int, default=0,
+                        help="Reuse the latest verified export within N seconds if ~/projects is unchanged")
     parser.add_argument("--json", action="store_true", help="Return the verified export receipt as JSON")
     args = parser.parse_args()
     try:
-        result = export(args.project)
+        result = export(args.project, reuse_recent_seconds=args.reuse_recent)
     except (ExportError, OSError, configparser.Error) as error:
         print(f"workshop-export: {error}", file=sys.stderr)
         return 1
@@ -297,12 +427,10 @@ def main() -> int:
     else:
         print(f"Exported {result['files']} source files. Uploaded ZIP read-back matches the local ZIP.")
         print(f"Volume: {result['volume']}\nZIP: {result['volume_path']}")
-        if result["volume_url"]:
-            print(f"Open: {result['volume_url']}")
         print("Download to your computer before the workshop environment is deleted:")
-        print("1. In Databricks, open Catalog and select your catalog and schema.")
-        print(f"2. Open Volumes → {VOLUME} → code.")
-        print(f"3. For {result['filename']}, open File options → Download file, then unzip it on your computer.")
+        print("1. Click Download my code in the Workshop Terminal header.")
+        print(f"2. For {result['filename']}, your browser saves the ZIP; unzip it on your computer.")
+        print("3. If it says your sign-in ended, reload this tab and click again.")
         print("The Volume is temporary workshop storage; the downloaded ZIP is your take-home copy.")
     return 0
 

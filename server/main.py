@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+import stat
 import subprocess
 import threading
 import time
@@ -1327,21 +1328,106 @@ def attach_project_image(
     }
 
 
-@app.post("/api/export")
-def export_code(principal: Principal = Depends(get_current_user)):
-    """Export my code (WT-P6): the ZIP streams to the browser; the volume copy stays."""
-    from fastapi.responses import FileResponse
+_EXPORT_ZIP_NAME = re.compile(r"workshop-code-[A-Za-z0-9T._-]{1,100}\.zip")
 
-    from . import journey
+
+def _open_verified_export_zip(user_home: str | Path, candidate: str | Path) -> tuple[int, str, int]:
+    """Open a regular export ZIP strictly inside ``user_home/.cache/workshop/exports``
+    without following symlinks on any cache segment or the archive itself."""
+    local = Path(str(candidate or ""))
+    if not _EXPORT_ZIP_NAME.fullmatch(local.name) or local.is_symlink():
+        raise ValueError("invalid export archive name or link")
+    home_real = Path(user_home).resolve(strict=True)
+    expected_cache = home_real / ".cache" / "workshop" / "exports"
+    if local.parent.resolve(strict=True) != expected_cache:
+        raise ValueError("export archive is outside the attendee cache")
+    dir_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    nofollow_dir_flags = dir_flags | getattr(os, "O_NOFOLLOW", 0)
+    file_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    cur_fd = os.open(home_real, dir_flags)
+    try:
+        for segment in (".cache", "workshop", "exports"):
+            next_fd = os.open(segment, nofollow_dir_flags, dir_fd=cur_fd)
+            os.close(cur_fd)
+            cur_fd = next_fd
+        file_fd = os.open(local.name, file_flags, dir_fd=cur_fd)
+    finally:
+        os.close(cur_fd)
+    try:
+        st = os.fstat(file_fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise ValueError("export archive is not a regular file")
+        os.set_blocking(file_fd, True)
+    except BaseException:
+        os.close(file_fd)
+        raise
+    return file_fd, local.name, st.st_size
+
+
+@app.post("/api/export")
+def export_code(
+    project: str | None = None,
+    principal: Principal = Depends(get_current_user),
+):
+    """Export my code (WT-P6): this server streams the verified ZIP to the browser.
+
+    The bytes come from the attendee's private cache, which the helper wrote before
+    uploading. The browser never reads the Volume, so no Volume permission is needed,
+    and nothing on this path has a size cap. A missing or unreadable cache file is a
+    503 with a clear message, not an unhandled 500 after the response has started.
+    """
+    from fastapi.responses import StreamingResponse
+    from starlette.background import BackgroundTask
+
+    from . import journey, projects
+    from .closeout_guard import check_open
+
+    try:
+        event_emitter._ensure_ready()
+        check_open(event_emitter.journal)
+    except CaptureClosedError:
+        raise
+    except CaptureError as error:
+        raise HTTPException(status_code=503, detail=UNAVAILABLE_DETAIL) from error
 
     user = user_manager.get(principal.name)
+    if project is not None:
+        try:
+            projects.project_path(user, project)
+        except projects.ProjectError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
     try:
-        result = journey.export(user, reason="attendee")
+        result = journey.export(user, reason="attendee", project=project)
     except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired) as error:
         raise HTTPException(status_code=503, detail=f"Export did not finish: {error}") from error
-    return FileResponse(result["local_zip"], media_type="application/zip", filename=result["filename"],
-                        headers={"X-Workshop-Export-Path": str(result.get("path") or ""),
-                                 "X-Workshop-Export-Files": str(result.get("files", ""))})
+    try:
+        file_fd, filename, byte_size = _open_verified_export_zip(user.home, result.get("local_zip") or "")
+    except (OSError, ValueError) as error:
+        raise HTTPException(
+            status_code=503,
+            detail="Your export ZIP is no longer on this workshop terminal. Click Download my code again to rebuild it.",
+        ) from error
+    file_obj = os.fdopen(file_fd, "rb")
+
+    def _stream_zip():
+        try:
+            while chunk := file_obj.read(64 * 1024):
+                yield chunk
+        finally:
+            file_obj.close()
+
+    return StreamingResponse(
+        _stream_zip(),
+        media_type="application/zip",
+        background=BackgroundTask(file_obj.close),
+        headers={
+            "Content-Length": str(byte_size),
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+            "X-Workshop-Export-Path": str(result.get("path") or ""),
+            "X-Workshop-Export-Files": str(result.get("files", "")),
+        },
+    )
 
 
 @app.get("/api/wizard")

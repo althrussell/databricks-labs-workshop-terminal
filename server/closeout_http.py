@@ -60,6 +60,10 @@ def produces_capture(scope) -> bool:
         # records nothing. WT runs it unprompted on an empty build list, so as a
         # writer its credential refusal would block the seal.
         "/api/projects/saved",
+        # Streams the attendee's take-home ZIP without recording insight or help
+        # events; export_code enforces the closeout barrier directly so a 503
+        # never leaves an unresolvable accepted_writer_failed.
+        "/api/export",
     }:
         return False
     return scope.get("method") in {"POST", "PUT", "PATCH", "DELETE"} or path == "/api/certificate"

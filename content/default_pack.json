@@ -571,7 +571,7 @@
     {
       "id": "export-project",
       "title": "Take your code home",
-      "markdown": "Keep the source for this project as a ZIP. Your agent copies it to your assigned Databricks Volume and shows how to download it. Download it to your computer before the workshop ends; the Volume is temporary.",
+      "markdown": "Keep the source for this project as a ZIP. Your agent packages it, then click **Download my code** in the Workshop Terminal header. Download it to your computer before the workshop ends.",
       "tags": [
         "export",
         "build"
@@ -583,14 +583,14 @@
         "topic:build-complete"
       ],
       "cta": "Export this project →",
-      "prompt": "Export the source for this project as a ZIP to my assigned Databricks Volume and show me how to download it to my computer.",
+      "prompt": "Package the source for this project as a verified ZIP with workshop-export, then tell me to click Download my code in the Workshop Terminal header to save it to my computer.",
       "weight": 1,
       "pinned": true
     },
     {
       "id": "wrap-take-it-with-you",
       "title": "Take your workshop code home",
-      "markdown": "The terminal, workspace folder your commits sync to, and export Volume are deleted after the workshop. Committed is not the same as saved on your computer.\n\nAsk your agent to export all your projects as one ZIP. It will give you the Volume link and filename. Open **Catalog → your catalog → your schema → Volumes → workshop_exports → code**, open its **File options → Download file** before the event ends.",
+      "markdown": "The terminal, workspace folder your commits sync to, and export Volume are deleted after the workshop. Committed is not the same as saved on your computer.\n\nClick **Download my code** in the Workshop Terminal header to save all your projects as one ZIP, before the event ends. If it says your sign-in ended, reload this tab and click again.",
       "tags": [
         "wrap",
         "export"
@@ -599,8 +599,8 @@
         "wrap"
       ],
       "triggers": [],
-      "cta": "Export my code →",
-      "prompt": "Export all my workshop projects as one ZIP to my assigned Databricks Volume and show me the exact download steps so I can take my code home.",
+      "cta": "Download my code →",
+      "prompt": "Export all my workshop projects as one ZIP with workshop-export, then tell me to click Download my code in the Workshop Terminal header so I can take my code home.",
       "weight": 3,
       "pinned": true
     },
@@ -755,7 +755,7 @@
       },
       {
         "label": "Take my work with me",
-        "prompt": "Export all my workshop projects as one ZIP to my assigned Databricks Volume and show me the exact download steps so I can take my code home."
+        "prompt": "Export all my workshop projects as one ZIP with workshop-export, then tell me to click Download my code in the Workshop Terminal header so I can take my code home."
       }
     ]
   },
