@@ -29,6 +29,13 @@ CAPABILITY = "sealed-closeout-v1"
 _lock_creation = threading.Lock()
 _FINALIZER_LEASE_SECONDS = 120
 _FINALIZER_RENEW_SECONDS = 20
+# Writer-drain budget for one status read; every stage shares it. The process
+# census comes last and keeps no cursor between reads, so a budget shorter than
+# one full census holds a busy seat in CLOSING on every read. A read that seals
+# runs two drains, then finalization and the audit replay; the drains take at
+# most 10 s of CT's 30 s request timeout. The step is not cut to the operation's
+# drain_deadline: a read resuming after the deadline still needs a whole census.
+_DRAIN_STEP_SECONDS = 5.0
 SUPPORTED_EVENTS = frozenset({
     "session.started", "session.switched", "session.exited", "build.commit",
     "resource.created", "milestone.completed", "agent.error", "cost.sample", "heartbeat",
@@ -328,8 +335,9 @@ class CloseoutManager:
                 "final_outputs": copy.deepcopy(value.get("final_outputs", {})),
                 "ct_verification_required": True}
 
-    def advance(self, *, capture_id: str = "", wait_seconds: float = 0.25) -> dict:
+    def advance(self, *, capture_id: str = "", wait_seconds: float = _DRAIN_STEP_SECONDS) -> dict:
         current = self.status(capture_id=capture_id)
+        step = max(0.0, min(wait_seconds, _DRAIN_STEP_SECONDS))
         if current["phase"] not in {"CLOSING", "INCOMPLETE"} or not self._lock.acquire(blocking=False):
             return current
         claim_id = ""
@@ -342,7 +350,7 @@ class CloseoutManager:
                         value.pop("manifest", None)
                         value.pop("manifest_sha256", None)
                 control_transaction(self.journal, resume, durable=True)
-            drained = self.drainer(max(0.0, min(wait_seconds, 5.0)))
+            drained = self.drainer(step)
             value = closeout_state(self.journal.read())
             issues = list(drained.get("issues", []))
             if value["writers"]:
@@ -362,7 +370,8 @@ class CloseoutManager:
                 return self.status(capture_id=capture_id)
             # Stop a process which an already-admitted spawn finished creating
             # during the first drain; no new admission can start after begin.
-            drained = self.drainer(0.25)
+            # It runs the census again, so it needs the same budget.
+            drained = self.drainer(step)
             if not drained["complete"]:
                 def record_racing_writer(state):
                     operation = closeout_state(state)

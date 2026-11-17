@@ -549,6 +549,97 @@ def test_coordinator_keeps_failed_stage_and_continues_with_one_deadline(monkeypa
     assert "private" not in json.dumps(result)
 
 
+def _busy_seat(monkeypatch, *, unreadable_first=False, clock=None):
+    """A closing seat whose writers have stopped and whose /proc census takes 0.4 s."""
+    from server import closeout_writers, identity, insight_summary, user_content
+    from server.capture_journal import CaptureJournal, MemoryCaptureStorage
+    from server.closeout import CloseoutManager
+    from server.event_emitter import EventEmitter
+    from server.omnigent_remote import remote_host_manager
+    from server.sessions import session_manager
+    from server.users import user_manager
+
+    monkeypatch.setenv("WORKSHOP_INSIGHT_CAPTURE", "true")
+    binding = {"run_id": "busy-run", "unit_id": "busy-unit", "workspace_id": "123",
+               "owner": "alice@example.com"}
+    journal = CaptureJournal(MemoryCaptureStorage(), binding, {})
+    source = EventEmitter(run_id=binding["run_id"], workspace_id=binding["workspace_id"],
+                          ingest_url="", ingest_token="", journal=journal)
+
+    def idle(*_args, deadline):
+        return {"complete": True, "issues": []}
+
+    # Every writer has already stopped; only the census is left to do real work.
+    monkeypatch.setattr(user_content, "closeout_sync_barrier", idle)
+    monkeypatch.setattr(session_manager, "drain_for_closeout", idle)
+    monkeypatch.setattr(remote_host_manager, "drain_for_closeout", idle)
+    monkeypatch.setattr(identity, "drain_for_closeout", idle)
+    monkeypatch.setattr(user_content, "drain_sync_for_closeout", idle)
+    monkeypatch.setattr(user_manager, "all", lambda: [])
+    monkeypatch.setattr(insight_summary, "_background_workers", set())
+    monkeypatch.setattr(insight_summary, "_background_outcomes", [])
+    censuses = []
+
+    def busy_census(_users, *, deadline, proc_root=None):
+        if unreadable_first and not censuses:
+            censuses.append("unreadable")
+            return {"complete": False, "issues": ["attendee_process_census_unreadable"],
+                    "matched": 0, "unreadable": 1}
+        # Like the real /proc scan: checks the shared deadline as it goes and
+        # keeps no cursor, so the next read starts from the first process again.
+        finish = time.monotonic() + 0.4
+        while time.monotonic() < finish:
+            if time.monotonic() >= deadline:
+                censuses.append("timeout")
+                return {"complete": False, "issues": ["attendee_process_census_timeout"],
+                        "matched": 0, "unreadable": 0}
+            time.sleep(0.01)
+        censuses.append("complete")
+        return {"complete": True, "issues": [], "matched": 0, "unreadable": 0, "inspected": 400}
+
+    monkeypatch.setattr(closeout_writers, "census_attendee_writers", busy_census)
+
+    def finalize(emitter, capture_id):
+        seq = emitter.emit("workshop.signal", binding["owner"], {"final_capture_id": capture_id})
+        return {"complete": True, "issues": [], "outputs": {"final_signal": seq}}
+
+    options = {} if clock is None else {"clock": clock}
+    manager = CloseoutManager(source, finalizer=finalize, **options)
+    return manager, source, binding, censuses
+
+
+def test_default_status_read_lets_a_busy_seat_finish_its_process_census(monkeypatch):
+    """A whole census must fit in one status read, because it restarts on the next.
+
+    Both admin endpoints call ``advance()`` with its defaults. With a 0.25 s drain
+    per read, a seat whose census took longer stayed CLOSING on every read and no
+    event seat sealed (``attendee_process_census_timeout``, AKL to ADL, Nov 2026).
+    """
+    manager, source, binding, censuses = _busy_seat(monkeypatch)
+    manager.begin(capture_id="busy-close", stream_id=source.stream_id, source=binding,
+                  drain_timeout_seconds=120)
+    closed = manager.advance(capture_id="busy-close")
+    assert closed["phase"] == "SEALED", json.dumps(closed, sort_keys=True)
+    # The first drain and the racing-writer recheck both finish the census.
+    assert censuses == ["complete", "complete"]
+
+
+def test_read_after_the_drain_deadline_still_gets_a_whole_census(monkeypatch):
+    """INCOMPLETE resumes on the next read, which needs the same budget to seal."""
+    now = [100.0]
+    manager, source, binding, censuses = _busy_seat(
+        monkeypatch, unreadable_first=True, clock=lambda: now[0])
+    manager.begin(capture_id="late-close", stream_id=source.stream_id, source=binding,
+                  drain_timeout_seconds=5)
+    now[0] += 6
+    held = manager.advance(capture_id="late-close")
+    assert held["phase"] == "INCOMPLETE"
+    assert held["issues"] == ["attendee_process_census_unreadable"]
+    closed = manager.advance(capture_id="late-close")
+    assert closed["phase"] == "SEALED", json.dumps(closed, sort_keys=True)
+    assert censuses == ["unreadable", "complete", "complete"]
+
+
 def _proc_entry(root, pid, *, home, cwd, state="S"):
     entry = root / str(pid)
     entry.mkdir()

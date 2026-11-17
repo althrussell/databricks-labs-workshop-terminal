@@ -66,8 +66,13 @@ GET /api/admin/capture-closeout/entries?capture_id=operator-generated-id&kind=he
 ```
 
 Begin persists the barrier before attempting bounded progress. Status advances
-by default; `advance=false` is read-only. Each request performs bounded drain
-work; callers poll rather than assume the first response is final. States are
+by default; `advance=false` is read-only. Each request drains writers for at
+most 5 s. Every stage shares that budget, and the process census keeps no
+cursor between requests, so the budget must fit one full census of a busy seat.
+A drain that completes runs once more to catch a racing writer, and the same
+request then finalizes and audits the journal. Callers allow for both drains
+plus finalization (CT uses 30 s per request), poll while the phase is `CLOSING`
+or `INCOMPLETE`, and never assume the first response is final. States are
 `OPEN`, `CLOSING`, `INCOMPLETE` and `SEALED`. `INCOMPLETE` retains issues and can
 resume the same operation when the cause is resolved; it never reopens input.
 An orphaned accepted writer or irrecoverable history gap remains held.

@@ -102,7 +102,7 @@ def verify_artifact(artifact: Path, release_path: Path, source_root: Path) -> No
 
 
 def _request(
-    method: str, url: str, payload: dict | None = None
+    method: str, url: str, payload: dict | None = None, *, timeout: float = 3
 ) -> tuple[int, dict]:
     body = json.dumps(payload).encode("utf-8") if payload is not None else None
     request = Request(
@@ -115,7 +115,7 @@ def _request(
         },
     )
     try:
-        response = urlopen(request, timeout=3)
+        response = urlopen(request, timeout=timeout)
     except HTTPError as error:
         response = error
     with response:
@@ -202,10 +202,14 @@ def _closeout(url: str, application) -> None:
         raise AssertionError("packaged help capture failed")
     request = {"schema_version": 1, "capture_id": "packaged-smoke", "source": binding,
                "stream_id": emitter.stream_id, "drain_timeout_seconds": 5}
-    code, status = _request("POST", f"{url}/api/admin/capture-closeout/begin", request)
-    deadline = time.monotonic() + 5
-    while code == 200 and status["phase"] == "CLOSING" and time.monotonic() < deadline:
-        code, status = _request("GET", f"{url}/api/admin/capture-closeout/status")
+    # A read can drain writers twice for up to 5 s each, then finalize; allow
+    # for it as CT does. One slow read can pass the 5 s operation deadline and
+    # record INCOMPLETE, which the next read resumes, so poll until sealed.
+    code, status = _request("POST", f"{url}/api/admin/capture-closeout/begin", request, timeout=30)
+    deadline = time.monotonic() + 20
+    while (code == 200 and status["phase"] in {"CLOSING", "INCOMPLETE"}
+           and time.monotonic() < deadline):
+        code, status = _request("GET", f"{url}/api/admin/capture-closeout/status", timeout=30)
     if code != 200 or status.get("phase") != "SEALED" or status.get("complete") is not True:
         raise AssertionError(f"packaged closeout failed: {code} {status}")
     manifest = status["manifest"]
