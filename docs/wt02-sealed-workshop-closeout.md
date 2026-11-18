@@ -76,7 +76,8 @@ per request), poll while the phase is `CLOSING` or `INCOMPLETE`, and never assum
 the first response is final. While the phase is `CLOSING` or `INCOMPLETE`, the
 status also carries `drain`: the last drain's per-stage outcomes, with issue codes,
 counts and `stage_elapsed_ms`, and never paths or contents. It is diagnostics, not
-proof, and a `SEALED` status does not carry it. States are
+proof. A `SEALED` status has no top-level `drain`; its manifest's `drain` records
+the final drain, with the same per-stage fields. States are
 `OPEN`, `CLOSING`, `INCOMPLETE` and `SEALED`. `INCOMPLETE` retains issues and can
 resume the same operation when the cause is resolved; it never reopens input.
 An orphaned accepted writer or irrecoverable history gap remains held.
@@ -100,9 +101,11 @@ detects remaining attendee HOME/cwd writers; uncertainty or unmanaged writers
 holds closeout instead of killing unrecognized processes. A non-Linux host cannot
 certify that production census. Failed accepted work remains explicit evidence.
 The census reads each process's cwd on every pass, because cwd can change.
-It keeps each process's HOME verdict, keyed by pid and start time, because a
-process's initial environment cannot change and a reused pid has a new start time.
-Its outcome counts processes, scanned, environ reads and cached verdicts.
+It keeps each process's HOME verdict, keyed by program image (pid, start time,
+comm, exe and a cmdline digest), because the environment changes only through
+execve, which replaces the image. Verdicts for exited processes are dropped after
+a complete pass. Its outcome counts processes, scanned, environ reads and cached
+verdicts.
 
 Final facts bypass code caches and require fresh resource observations and the
 journal-bound owner. Operator visitors cannot replace that attendee. Read/parse

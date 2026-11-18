@@ -6,6 +6,7 @@ durable admission; all stages share one deadline and return explicit uncertainty
 
 from __future__ import annotations
 
+import hashlib
 import math
 import os
 import subprocess
@@ -61,16 +62,33 @@ def process_group_alive(pgid: int) -> bool:
     return uncertain
 
 
-# Whether a process's HOME is an attendee's, by (proc root, pid, start time).
-# A process's initial environment cannot change (its cwd can, so cwd is read on
-# every pass), and a reused pid has a new start time. Reading environ is the
-# census's dearest step, and the census keeps no other progress between status
-# reads: on 18 Nov every busy seat's census outlasted a 5 s read, restarted from
-# the first process each time, and the seat never sealed. With these verdicts a
-# timed-out pass still leaves the next pass less to read.
-_ENVIRON_VERDICTS: dict[tuple[str, int, str], bool] = {}
+# Whether a process's HOME is an attendee's, keyed by what identifies one program
+# image: proc root, pid, start time, comm, exe target and a digest of cmdline. The
+# environment can only change through execve, which keeps the pid and start time
+# but replaces exe, comm or cmdline, so a verdict is reused only for the same
+# image. cwd can change at any time, so it is read on every pass. Reading environ
+# is the census's dearest step: on 18 Nov every busy seat's census outlasted a 5 s
+# read, restarted from the first process each time, and the seat never sealed.
+# With these verdicts a timed-out pass still leaves the next pass less to read.
+_ENVIRON_VERDICTS: dict[tuple, bool] = {}
 _ENVIRON_HOMES: tuple[str, ...] = ()
 _ENVIRON_VERDICTS_MAX = 65536
+
+
+def _image_key(root: Path, item: Path, stat_text: str, fields: list[str]) -> tuple | None:
+    """The program image a HOME verdict belongs to, or None when it can't be told."""
+    if len(fields) <= 19:
+        return None
+    try:
+        exe = os.readlink(item / "exe")
+        with (item / "cmdline").open("rb") as handle:
+            cmdline = handle.read(4096)
+    except OSError:
+        return None
+    comm = stat_text[stat_text.find("(") + 1:stat_text.rfind(")")]
+    # Field 22 of stat, the start time, is the 20th after the comm.
+    return (str(root), int(item.name), fields[19], comm, exe,
+            hashlib.blake2s(cmdline, digest_size=16).hexdigest())
 
 
 def census_attendee_writers(users, *, proc_root: Path | None = None, deadline: float | None = None) -> dict:
@@ -97,6 +115,7 @@ def census_attendee_writers(users, *, proc_root: Path | None = None, deadline: f
     # and neither is an attendee program.
     own = {os.getpid(), supervisor.supervisor_pid()}
     owned_paths: dict[str, bool] = {}
+    seen: set[tuple] = set()
 
     def owned(path: str) -> bool:
         # realpath costs several syscalls, and many processes share a cwd.
@@ -123,7 +142,8 @@ def census_attendee_writers(users, *, proc_root: Path | None = None, deadline: f
         try:
             if item.stat().st_uid != os.getuid():
                 continue
-            fields = (item / "stat").read_text().rpartition(") ")[2].split()
+            stat_text = (item / "stat").read_text()
+            fields = stat_text.rpartition(") ")[2].split()
             if not fields:
                 unreadable += 1
                 continue
@@ -132,31 +152,37 @@ def census_attendee_writers(users, *, proc_root: Path | None = None, deadline: f
             inspected += 1
             uncertain = False
             belongs = False
-            try:
-                belongs = owned(os.readlink(item / "cwd"))
-            except OSError:
-                uncertain = True
-            if not belongs:
-                # Field 22 of stat, the start time, is the 20th after the comm.
-                key = (str(root), int(item.name), fields[19]) if len(fields) > 19 else None
-                cached = _ENVIRON_VERDICTS.get(key) if key is not None else None
-                if cached is not None:
-                    environ_cached += 1
-                    belongs = cached
-                else:
-                    try:
-                        with (item / "environ").open("rb") as handle:
-                            raw = handle.read(262145)
-                        environ_reads += 1
-                        if len(raw) > 262144:
-                            uncertain = True
-                        else:
-                            home_values = [entry[5:] for entry in raw.split(b"\0") if entry.startswith(b"HOME=")]
-                            belongs = any(owned(os.fsdecode(value)) for value in home_values)
-                            if key is not None and len(_ENVIRON_VERDICTS) < _ENVIRON_VERDICTS_MAX:
-                                _ENVIRON_VERDICTS[key] = belongs
-                    except OSError:
+            key = _image_key(root, item, stat_text, fields)
+            if key is not None:
+                seen.add(key)
+            cached = _ENVIRON_VERDICTS.get(key) if key is not None else None
+            if cached is True:
+                # Already an attendee's program image: it holds the seat whatever its cwd.
+                environ_cached += 1
+                belongs = True
+            else:
+                try:
+                    belongs = owned(os.readlink(item / "cwd"))
+                except OSError:
+                    uncertain = True
+            if not belongs and cached is False:
+                environ_cached += 1
+            elif not belongs:
+                try:
+                    with (item / "environ").open("rb") as handle:
+                        raw = handle.read(262145)
+                    environ_reads += 1
+                    if len(raw) > 262144:
                         uncertain = True
+                    else:
+                        home_values = [entry[5:] for entry in raw.split(b"\0") if entry.startswith(b"HOME=")]
+                        belongs = any(owned(os.fsdecode(value)) for value in home_values)
+                        if key is not None:
+                            if len(_ENVIRON_VERDICTS) >= _ENVIRON_VERDICTS_MAX:
+                                _ENVIRON_VERDICTS.clear()  # bounded: start over rather than stop caching
+                            _ENVIRON_VERDICTS[key] = belongs
+                except OSError:
+                    uncertain = True
             if belongs:
                 matched += 1
             elif uncertain:
@@ -167,6 +193,10 @@ def census_attendee_writers(users, *, proc_root: Path | None = None, deadline: f
             continue
         except (OSError, ValueError):
             unreadable += 1
+    if not timed_out:
+        # A complete pass saw every live process under this root: forget exited ones.
+        for stale in [key for key in _ENVIRON_VERDICTS if key[0] == str(root) and key not in seen]:
+            del _ENVIRON_VERDICTS[stale]
     issues = []
     if matched:
         issues.append("unmanaged_writer_unverified")
