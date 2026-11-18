@@ -117,7 +117,10 @@ def qualify(prefix: Path, temporary: Path) -> dict:
     assert status["ready"]
     project = Path(status["project_path"])
     assert not (project / ".mcp.json").exists(), "scaffold must not add unpinned browser MCP/hooks"
-    assert 'constraint-dependencies = ["databricks-sdk<0.168"]' in (project / "pyproject.toml").read_text(), \
+    import tomllib
+    constraints = tomllib.loads((project / "pyproject.toml").read_text(encoding="utf-8")) \
+        .get("tool", {}).get("uv", {}).get("constraint-dependencies", [])
+    assert "databricks-sdk<0.168" in constraints, \
         "scaffold must hold databricks-sdk below 0.168 (APX 0.3.8 MCP docs-index panic)"
     for name in ("apx", "impeccable"):
         assert directory_checksum(project / ".agents/skills" / name) == directory_checksum(ROOT / "assets/skills" / name)
