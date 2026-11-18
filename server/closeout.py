@@ -333,6 +333,12 @@ class CloseoutManager:
                 "writer_outcomes": copy.deepcopy(value["writer_outcomes"]),
                 "manifest": copy.deepcopy(manifest), "manifest_sha256": value.get("manifest_sha256"),
                 "final_outputs": copy.deepcopy(value.get("final_outputs", {})),
+                # Diagnostics only, never proof, and only while unsealed: the last
+                # drain's per-stage outcomes (completion, issue codes, counts and
+                # stage_elapsed_ms; no paths or contents), so CT's retained status
+                # shows why a seat is still CLOSING. A sealed status is unchanged.
+                **({"drain": copy.deepcopy(value.get("drain"))}
+                   if value["phase"] in {"CLOSING", "INCOMPLETE"} else {}),
                 "ct_verification_required": True}
 
     def advance(self, *, capture_id: str = "", wait_seconds: float = _DRAIN_STEP_SECONDS) -> dict:

@@ -67,12 +67,16 @@ GET /api/admin/capture-closeout/entries?capture_id=operator-generated-id&kind=he
 
 Begin persists the barrier before attempting bounded progress. Status advances
 by default; `advance=false` is read-only. Each request drains writers for at
-most 5 s. Every stage shares that budget, and the process census keeps no
-cursor between requests, so the budget must fit one full census of a busy seat.
-A drain that completes runs once more to catch a racing writer, and the same
-request then finalizes and audits the journal. Callers allow for both drains
-plus finalization (CT uses 30 s per request), poll while the phase is `CLOSING`
-or `INCOMPLETE`, and never assume the first response is final. States are
+most 5 s. Every stage shares that budget. A census pass that runs out of time
+still keeps the HOME verdict of every process it read (see Seal and inventory),
+so each pass has less left to read than the one before. A drain that completes
+runs once more to catch a racing writer, and the same request then finalizes and
+audits the journal. Callers allow for both drains plus finalization (CT uses 30 s
+per request), poll while the phase is `CLOSING` or `INCOMPLETE`, and never assume
+the first response is final. While the phase is `CLOSING` or `INCOMPLETE`, the
+status also carries `drain`: the last drain's per-stage outcomes, with issue codes,
+counts and `stage_elapsed_ms`, and never paths or contents. It is diagnostics, not
+proof, and a `SEALED` status does not carry it. States are
 `OPEN`, `CLOSING`, `INCOMPLETE` and `SEALED`. `INCOMPLETE` retains issues and can
 resume the same operation when the cause is resolved; it never reopens input.
 An orphaned accepted writer or irrecoverable history gap remains held.
@@ -95,6 +99,10 @@ Process groups must stop and readers finish. A read-only Linux process census
 detects remaining attendee HOME/cwd writers; uncertainty or unmanaged writers
 holds closeout instead of killing unrecognized processes. A non-Linux host cannot
 certify that production census. Failed accepted work remains explicit evidence.
+The census reads each process's cwd on every pass, because cwd can change.
+It keeps each process's HOME verdict, keyed by pid and start time, because a
+process's initial environment cannot change and a reused pid has a new start time.
+Its outcome counts processes, scanned, environ reads and cached verdicts.
 
 Final facts bypass code caches and require fresh resource observations and the
 journal-bound owner. Operator visitors cannot replace that attendee. Read/parse

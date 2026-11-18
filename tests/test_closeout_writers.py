@@ -699,6 +699,86 @@ def test_process_census_skips_the_supervisor_it_cannot_read(tmp_path, monkeypatc
     )["issues"] == ["attendee_process_census_unreadable"]
 
 
+def _proc_entry_started(root, pid, *, home, cwd, start):
+    """A process whose stat carries a start time (field 22), as on Linux."""
+    entry = root / str(pid)
+    entry.mkdir()
+    after_comm = ["S", "1", str(pid), str(pid), "0", "-1", "4194560"] + ["0"] * 12 + [str(start), "0", "0"]
+    (entry / "stat").write_text(f"{pid} (private process name) " + " ".join(after_comm))
+    (entry / "environ").write_bytes(b"TOKEN=private-secret\0HOME=" + os.fsencode(home) + b"\0")
+    (entry / "cwd").symlink_to(cwd)
+    return entry
+
+
+def test_process_census_keeps_environ_verdicts_by_pid_and_start_time(tmp_path, monkeypatch):
+    """A census that outlasts one status read must not start from nothing on the next.
+
+    18 Nov rehearsal: every busy seat's census timed out on every 5 s read and the
+    seat never sealed. A process's initial environment cannot change, so its HOME
+    verdict is kept; its cwd can, so cwd is read on every pass.
+    """
+    from server import closeout_writers
+    from server.closeout_writers import census_attendee_writers
+
+    monkeypatch.setattr(closeout_writers, "_ENVIRON_VERDICTS", {})
+    monkeypatch.setattr(closeout_writers, "_ENVIRON_HOMES", ())
+    root = tmp_path / "proc"
+    root.mkdir()
+    home = tmp_path / "attendee"
+    home.mkdir()
+    user = SimpleNamespace(home=str(home))
+    attendee = _proc_entry_started(root, 61001, home=home, cwd="/tmp", start=111)
+    platform = _proc_entry_started(root, 61002, home="/platform", cwd="/tmp", start=222)
+
+    first = census_attendee_writers([user], proc_root=root)
+    assert first["matched"] == 1 and first["environ_reads"] == 2 and first["environ_cached"] == 0
+    assert first["processes"] == first["scanned"] == 2
+
+    # Verdicts outlive the files: a later pass reads no environ for the same processes.
+    (attendee / "environ").unlink()
+    (platform / "environ").unlink()
+    second = census_attendee_writers([user], proc_root=root)
+    assert second["matched"] == 1 and second["unreadable"] == 0
+    assert second["environ_reads"] == 0 and second["environ_cached"] == 2
+
+    # cwd is still read every pass: a cleared process that moved into the home matches.
+    (platform / "cwd").unlink()
+    (platform / "cwd").symlink_to(home)
+    assert census_attendee_writers([user], proc_root=root)["matched"] == 2
+    (platform / "cwd").unlink()
+    (platform / "cwd").symlink_to("/tmp")
+
+    # A reused pid has a new start time, so its environ is read again (and is missing now).
+    (platform / "stat").write_text((platform / "stat").read_text().replace(" 222 ", " 333 "))
+    third = census_attendee_writers([user], proc_root=root)
+    assert third["environ_reads"] == 0 and third["environ_cached"] == 1
+    assert third["unreadable"] == 1 and "attendee_process_census_unreadable" in third["issues"]
+
+    # Another set of attendee homes starts with no verdicts.
+    other = tmp_path / "other"
+    other.mkdir()
+    assert census_attendee_writers([SimpleNamespace(home=str(other))], proc_root=root)["environ_cached"] == 0
+    assert "private" not in json.dumps(first) and str(home) not in json.dumps(first)
+
+
+def test_drain_outcomes_report_where_the_budget_went(monkeypatch):
+    from server import closeout_writers, identity, user_content
+    from server.omnigent_remote import remote_host_manager
+    from server.sessions import session_manager
+
+    def good(*_args, deadline):
+        return {"complete": True, "issues": []}
+
+    for target, name in ((user_content, "closeout_sync_barrier"), (session_manager, "drain_for_closeout"),
+                         (remote_host_manager, "drain_for_closeout"), (identity, "drain_for_closeout"),
+                         (user_content, "drain_sync_for_closeout"), (closeout_writers, "_settled_attendee_census")):
+        monkeypatch.setattr(target, name, good)
+    result = closeout_writers.drain(1)
+    assert result["complete"] and set(result) == {"complete", "issues", "outcomes"}
+    assert all(type(row["stage_elapsed_ms"]) is int and row["stage_elapsed_ms"] >= 0
+               for row in result["outcomes"])
+
+
 def test_process_census_never_infers_success_when_unavailable(tmp_path):
     from server.closeout_writers import census_attendee_writers
 

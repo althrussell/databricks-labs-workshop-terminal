@@ -61,12 +61,26 @@ def process_group_alive(pgid: int) -> bool:
     return uncertain
 
 
+# Whether a process's HOME is an attendee's, by (proc root, pid, start time).
+# A process's initial environment cannot change (its cwd can, so cwd is read on
+# every pass), and a reused pid has a new start time. Reading environ is the
+# census's dearest step, and the census keeps no other progress between status
+# reads: on 18 Nov every busy seat's census outlasted a 5 s read, restarted from
+# the first process each time, and the seat never sealed. With these verdicts a
+# timed-out pass still leaves the next pass less to read.
+_ENVIRON_VERDICTS: dict[tuple[str, int, str], bool] = {}
+_ENVIRON_HOMES: tuple[str, ...] = ()
+_ENVIRON_VERDICTS_MAX = 65536
+
+
 def census_attendee_writers(users, *, proc_root: Path | None = None, deadline: float | None = None) -> dict:
     """Detect detached attendee programs without signalling unowned processes.
 
     Only HOME and cwd are compared. No command, environment value, native output,
     attendee identity, or filesystem path is copied into the receipt.
     """
+    global _ENVIRON_HOMES
+    started = time.monotonic()
     homes = [os.path.realpath(user.home) for user in users]
     if not homes:
         return {"complete": True, "issues": [], "matched": 0, "unreadable": 0}
@@ -74,19 +88,28 @@ def census_attendee_writers(users, *, proc_root: Path | None = None, deadline: f
     if not root.is_dir():
         return {"complete": False, "issues": ["attendee_process_census_unavailable"],
                 "matched": 0, "unreadable": 0}
-    matched = unreadable = inspected = 0
+    if tuple(sorted(homes)) != _ENVIRON_HOMES:
+        _ENVIRON_VERDICTS.clear()
+        _ENVIRON_HOMES = tuple(sorted(homes))
+    matched = unreadable = inspected = scanned = environ_reads = environ_cached = 0
     timed_out = False
     # This server and its supervisor are non-dumpable by design, so unreadable,
     # and neither is an attendee program.
     own = {os.getpid(), supervisor.supervisor_pid()}
+    owned_paths: dict[str, bool] = {}
 
     def owned(path: str) -> bool:
-        # Linux appends this suffix when a live process retains a deleted cwd.
-        canonical = os.path.realpath(path.removesuffix(" (deleted)"))
-        return any(canonical == home or canonical.startswith(home + os.sep) for home in homes)
+        # realpath costs several syscalls, and many processes share a cwd.
+        known = owned_paths.get(path)
+        if known is None:
+            # Linux appends this suffix when a live process retains a deleted cwd.
+            canonical = os.path.realpath(path.removesuffix(" (deleted)"))
+            known = any(canonical == home or canonical.startswith(home + os.sep) for home in homes)
+            owned_paths[path] = known
+        return known
 
     try:
-        entries = list(root.iterdir())
+        entries = [item for item in root.iterdir() if item.name.isdigit()]
     except OSError:
         return {"complete": False, "issues": ["attendee_process_census_unreadable"],
                 "matched": 0, "unreadable": 1}
@@ -94,7 +117,8 @@ def census_attendee_writers(users, *, proc_root: Path | None = None, deadline: f
         if deadline is not None and time.monotonic() >= deadline:
             timed_out = True
             break
-        if not item.name.isdigit() or int(item.name) in own:
+        scanned += 1
+        if int(item.name) in own:
             continue
         try:
             if item.stat().st_uid != os.getuid():
@@ -112,16 +136,27 @@ def census_attendee_writers(users, *, proc_root: Path | None = None, deadline: f
                 belongs = owned(os.readlink(item / "cwd"))
             except OSError:
                 uncertain = True
-            try:
-                with (item / "environ").open("rb") as handle:
-                    raw = handle.read(262145)
-                if len(raw) > 262144:
-                    uncertain = True
+            if not belongs:
+                # Field 22 of stat, the start time, is the 20th after the comm.
+                key = (str(root), int(item.name), fields[19]) if len(fields) > 19 else None
+                cached = _ENVIRON_VERDICTS.get(key) if key is not None else None
+                if cached is not None:
+                    environ_cached += 1
+                    belongs = cached
                 else:
-                    home_values = [entry[5:] for entry in raw.split(b"\0") if entry.startswith(b"HOME=")]
-                    belongs = belongs or any(owned(os.fsdecode(value)) for value in home_values)
-            except OSError:
-                uncertain = True
+                    try:
+                        with (item / "environ").open("rb") as handle:
+                            raw = handle.read(262145)
+                        environ_reads += 1
+                        if len(raw) > 262144:
+                            uncertain = True
+                        else:
+                            home_values = [entry[5:] for entry in raw.split(b"\0") if entry.startswith(b"HOME=")]
+                            belongs = any(owned(os.fsdecode(value)) for value in home_values)
+                            if key is not None and len(_ENVIRON_VERDICTS) < _ENVIRON_VERDICTS_MAX:
+                                _ENVIRON_VERDICTS[key] = belongs
+                    except OSError:
+                        uncertain = True
             if belongs:
                 matched += 1
             elif uncertain:
@@ -140,7 +175,11 @@ def census_attendee_writers(users, *, proc_root: Path | None = None, deadline: f
     if timed_out:
         issues.append("attendee_process_census_timeout")
     return {"complete": not issues, "issues": issues, "matched": matched,
-            "unreadable": unreadable, "inspected": inspected}
+            "unreadable": unreadable, "inspected": inspected,
+            # Counts only: how far this pass got, and how much the verdicts saved.
+            "processes": len(entries), "scanned": scanned,
+            "environ_reads": environ_reads, "environ_cached": environ_cached,
+            "elapsed_ms": round((time.monotonic() - started) * 1000)}
 
 
 def _settled_attendee_census(users, *, deadline: float) -> dict:
@@ -177,6 +216,7 @@ def drain(timeout: float) -> dict:
         ("attendee_process_census", lambda: _settled_attendee_census(users, deadline=deadline)),
     )
     for name, operation in stages:
+        stage_started = time.monotonic()
         try:
             result = operation()
             if not isinstance(result, dict) or type(result.get("complete")) is not bool:
@@ -192,6 +232,8 @@ def drain(timeout: float) -> dict:
             issue = f"{name}_drain_failed:{type(error).__name__}"
             issues.append(issue)
             outcome = {"kind": name, "complete": False, "issues": [issue]}
+        # Where one read's budget went: CT keeps this in the retained status.
+        outcome["stage_elapsed_ms"] = round((time.monotonic() - stage_started) * 1000)
         outcomes.append(outcome)
     return {"complete": not issues and all(row["complete"] for row in outcomes),
             "issues": issues, "outcomes": outcomes}
