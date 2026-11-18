@@ -699,11 +699,14 @@ def test_process_census_skips_the_supervisor_it_cannot_read(tmp_path, monkeypatc
     )["issues"] == ["attendee_process_census_unreadable"]
 
 
-def _proc_entry_started(root, pid, *, home, cwd, start):
-    """A process whose stat carries a start time (field 22), with an exe and cmdline, as on Linux."""
+def _proc_entry_started(root, pid, *, home, cwd, start, stack=0x7FFD0000):
+    """A Linux process: stat with a start time (field 22) and argument/environment
+    addresses (fields 49-52), plus exe and cmdline."""
     entry = root / str(pid)
     entry.mkdir()
-    after_comm = ["S", "1", str(pid), str(pid), "0", "-1", "4194560"] + ["0"] * 12 + [str(start), "0", "0"]
+    addresses = [str(stack), str(stack + 24), str(stack + 24), str(stack + 96)]
+    after_comm = (["S", "1", str(pid), str(pid), "0", "-1", "4194560"] + ["0"] * 12
+                  + [str(start)] + ["0"] * 26 + addresses + ["0"])
     (entry / "stat").write_text(f"{pid} (private process name) " + " ".join(after_comm))
     (entry / "environ").write_bytes(b"TOKEN=private-secret\0HOME=" + os.fsencode(home) + b"\0")
     (entry / "cwd").symlink_to(cwd)
@@ -716,8 +719,8 @@ def test_process_census_keeps_environ_verdicts_by_pid_and_start_time(tmp_path, m
     """A census that outlasts one status read must not start from nothing on the next.
 
     18 Nov rehearsal: every busy seat's census timed out on every 5 s read and the
-    seat never sealed. A process's initial environment cannot change, so its HOME
-    verdict is kept; its cwd can, so cwd is read on every pass.
+    seat never sealed. A process's environment changes only through execve, so its
+    HOME verdict is kept for its program image; its cwd can, so cwd is read on every pass.
     """
     from server import closeout_writers
     from server.closeout_writers import census_attendee_writers
@@ -788,6 +791,18 @@ def test_process_census_rereads_environ_after_exec_and_forgets_exited_processes(
     after_exec = census_attendee_writers([user], proc_root=root)
     assert after_exec["matched"] == 1 and after_exec["environ_reads"] == 1
     assert "unmanaged_writer_unverified" in after_exec["issues"]
+
+    # Re-exec of the same binary with the same arguments: only the stack moves.
+    again = _proc_entry_started(root, 62003, home="/platform", cwd="/tmp", start=700)
+    assert census_attendee_writers([user], proc_root=root)["matched"] == 1
+    (again / "environ").write_bytes(b"HOME=" + os.fsencode(home) + b"\0")
+    stat = (again / "stat").read_text().replace(str(0x7FFD0000), str(0x7FFE0000))
+    (again / "stat").write_text(stat)
+    after_reexec = census_attendee_writers([user], proc_root=root)
+    assert after_reexec["matched"] == 2 and after_reexec["environ_reads"] == 1
+    for name in ("stat", "environ", "exe", "cmdline", "cwd"):
+        (again / name).unlink()
+    again.rmdir()
 
     # A complete pass drops verdicts for processes that have exited.
     for name in ("stat", "environ", "exe", "cmdline", "cwd"):

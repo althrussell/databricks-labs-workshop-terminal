@@ -102,8 +102,8 @@ holds closeout instead of killing unrecognized processes. A non-Linux host canno
 certify that production census. Failed accepted work remains explicit evidence.
 The census reads each process's cwd on every pass, because cwd can change.
 It keeps each process's HOME verdict, keyed by program image (pid, start time,
-comm, exe and a cmdline digest), because the environment changes only through
-execve, which replaces the image. Verdicts for exited processes are dropped after
+argument and environment addresses, comm, exe and a cmdline digest), because the
+environment changes only through execve, which lays out a new image. Verdicts for exited processes are dropped after
 a complete pass. Its outcome counts processes, scanned, environ reads and cached
 verdicts.
 

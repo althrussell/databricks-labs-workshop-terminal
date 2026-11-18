@@ -63,10 +63,11 @@ def process_group_alive(pgid: int) -> bool:
 
 
 # Whether a process's HOME is an attendee's, keyed by what identifies one program
-# image: proc root, pid, start time, comm, exe target and a digest of cmdline. The
-# environment can only change through execve, which keeps the pid and start time
-# but replaces exe, comm or cmdline, so a verdict is reused only for the same
-# image. cwd can change at any time, so it is read on every pass. Reading environ
+# image: proc root, pid, start time, the argument and environment addresses, comm,
+# exe target and a digest of cmdline. The environment can only change through
+# execve, which keeps the pid and start time but lays out a new stack (moved by
+# ASLR) and usually a new exe, comm or cmdline, so a verdict is reused only for
+# the same image. cwd can change at any time, so it is read on every pass. Reading environ
 # is the census's dearest step: on 18 Nov every busy seat's census outlasted a 5 s
 # read, restarted from the first process each time, and the seat never sealed.
 # With these verdicts a timed-out pass still leaves the next pass less to read.
@@ -77,8 +78,8 @@ _ENVIRON_VERDICTS_MAX = 65536
 
 def _image_key(root: Path, item: Path, stat_text: str, fields: list[str]) -> tuple | None:
     """The program image a HOME verdict belongs to, or None when it can't be told."""
-    if len(fields) <= 19:
-        return None
+    if len(fields) <= 49:
+        return None  # Linux < 3.5 has no argument or environment addresses.
     try:
         exe = os.readlink(item / "exe")
         with (item / "cmdline").open("rb") as handle:
@@ -86,8 +87,9 @@ def _image_key(root: Path, item: Path, stat_text: str, fields: list[str]) -> tup
     except OSError:
         return None
     comm = stat_text[stat_text.find("(") + 1:stat_text.rfind(")")]
-    # Field 22 of stat, the start time, is the 20th after the comm.
-    return (str(root), int(item.name), fields[19], comm, exe,
+    # stat field N is fields[N - 3]: start time is field 22; arg_start, arg_end,
+    # env_start and env_end are fields 49-52.
+    return (str(root), int(item.name), fields[19], tuple(fields[46:50]), comm, exe,
             hashlib.blake2s(cmdline, digest_size=16).hexdigest())
 
 
