@@ -585,8 +585,8 @@ def _busy_seat(monkeypatch, *, unreadable_first=False, clock=None):
             censuses.append("unreadable")
             return {"complete": False, "issues": ["attendee_process_census_unreadable"],
                     "matched": 0, "unreadable": 1}
-        # Like the real /proc scan: checks the shared deadline as it goes and
-        # keeps no cursor, so the next read starts from the first process again.
+        # Checks the shared deadline as it goes, like the real /proc scan, but
+        # keeps no verdicts: every read pays the whole census again (worst case).
         finish = time.monotonic() + 0.4
         while time.monotonic() < finish:
             if time.monotonic() >= deadline:
@@ -609,7 +609,7 @@ def _busy_seat(monkeypatch, *, unreadable_first=False, clock=None):
 
 
 def test_default_status_read_lets_a_busy_seat_finish_its_process_census(monkeypatch):
-    """A whole census must fit in one status read, because it restarts on the next.
+    """A busy seat's census (this fake keeps no progress) must fit one status read's budget.
 
     Both admin endpoints call ``advance()`` with its defaults. With a 0.25 s drain
     per read, a seat whose census took longer stayed CLOSING on every read and no
@@ -697,6 +697,137 @@ def test_process_census_skips_the_supervisor_it_cannot_read(tmp_path, monkeypatc
     assert census_attendee_writers(
         [SimpleNamespace(home="/attendee")], proc_root=root,
     )["issues"] == ["attendee_process_census_unreadable"]
+
+
+def _proc_entry_started(root, pid, *, home, cwd, start, stack=0x7FFD0000):
+    """A Linux process: stat with a start time (field 22) and argument/environment
+    addresses (fields 49-52), plus exe and cmdline."""
+    entry = root / str(pid)
+    entry.mkdir()
+    addresses = [str(stack), str(stack + 24), str(stack + 24), str(stack + 96)]
+    after_comm = (["S", "1", str(pid), str(pid), "0", "-1", "4194560"] + ["0"] * 12
+                  + [str(start)] + ["0"] * 26 + addresses + ["0"])
+    (entry / "stat").write_text(f"{pid} (private process name) " + " ".join(after_comm))
+    (entry / "environ").write_bytes(b"TOKEN=private-secret\0HOME=" + os.fsencode(home) + b"\0")
+    (entry / "cwd").symlink_to(cwd)
+    (entry / "exe").symlink_to("/usr/bin/private-binary")
+    (entry / "cmdline").write_bytes(b"private-binary\0--flag\0")
+    return entry
+
+
+def test_process_census_keeps_environ_verdicts_by_pid_and_start_time(tmp_path, monkeypatch):
+    """A census that outlasts one status read must not start from nothing on the next.
+
+    18 Nov rehearsal: every busy seat's census timed out on every 5 s read and the
+    seat never sealed. A process's environment changes only through execve, so its
+    HOME verdict is kept for its program image; its cwd can, so cwd is read on every pass.
+    """
+    from server import closeout_writers
+    from server.closeout_writers import census_attendee_writers
+
+    monkeypatch.setattr(closeout_writers, "_ENVIRON_VERDICTS", {})
+    monkeypatch.setattr(closeout_writers, "_ENVIRON_HOMES", ())
+    root = tmp_path / "proc"
+    root.mkdir()
+    home = tmp_path / "attendee"
+    home.mkdir()
+    user = SimpleNamespace(home=str(home))
+    attendee = _proc_entry_started(root, 61001, home=home, cwd="/tmp", start=111)
+    platform = _proc_entry_started(root, 61002, home="/platform", cwd="/tmp", start=222)
+
+    first = census_attendee_writers([user], proc_root=root)
+    assert first["matched"] == 1 and first["environ_reads"] == 2 and first["environ_cached"] == 0
+    assert first["processes"] == first["scanned"] == 2
+
+    # Verdicts outlive the files: a later pass reads no environ for the same processes.
+    (attendee / "environ").unlink()
+    (platform / "environ").unlink()
+    second = census_attendee_writers([user], proc_root=root)
+    assert second["matched"] == 1 and second["unreadable"] == 0
+    assert second["environ_reads"] == 0 and second["environ_cached"] == 2
+
+    # cwd is still read every pass: a cleared process that moved into the home matches.
+    (platform / "cwd").unlink()
+    (platform / "cwd").symlink_to(home)
+    assert census_attendee_writers([user], proc_root=root)["matched"] == 2
+    (platform / "cwd").unlink()
+    (platform / "cwd").symlink_to("/tmp")
+
+    # A reused pid has a new start time, so its environ is read again (and is missing now).
+    (platform / "stat").write_text((platform / "stat").read_text().replace(" 222 ", " 333 "))
+    third = census_attendee_writers([user], proc_root=root)
+    assert third["environ_reads"] == 0 and third["environ_cached"] == 1
+    assert third["unreadable"] == 1 and "attendee_process_census_unreadable" in third["issues"]
+
+    # Another set of attendee homes starts with no verdicts.
+    other = tmp_path / "other"
+    other.mkdir()
+    assert census_attendee_writers([SimpleNamespace(home=str(other))], proc_root=root)["environ_cached"] == 0
+    assert "private" not in json.dumps(first) and str(home) not in json.dumps(first)
+
+
+def test_process_census_rereads_environ_after_exec_and_forgets_exited_processes(tmp_path, monkeypatch):
+    """execve replaces the environment but keeps the pid and start time (code review on #166)."""
+    from server import closeout_writers
+    from server.closeout_writers import census_attendee_writers
+
+    monkeypatch.setattr(closeout_writers, "_ENVIRON_VERDICTS", {})
+    monkeypatch.setattr(closeout_writers, "_ENVIRON_HOMES", ())
+    root = tmp_path / "proc"
+    root.mkdir()
+    home = tmp_path / "attendee"
+    home.mkdir()
+    user = SimpleNamespace(home=str(home))
+    launcher = _proc_entry_started(root, 62001, home="/platform", cwd="/tmp", start=500)
+    gone = _proc_entry_started(root, 62002, home="/platform", cwd="/tmp", start=600)
+    assert census_attendee_writers([user], proc_root=root)["matched"] == 0
+    assert len(closeout_writers._ENVIRON_VERDICTS) == 2
+
+    # The launcher execs a new image whose HOME is the attendee's: same pid and start time.
+    (launcher / "environ").write_bytes(b"HOME=" + os.fsencode(home) + b"\0")
+    (launcher / "exe").unlink()
+    (launcher / "exe").symlink_to("/usr/bin/private-tool")
+    (launcher / "cmdline").write_bytes(b"private-tool\0")
+    after_exec = census_attendee_writers([user], proc_root=root)
+    assert after_exec["matched"] == 1 and after_exec["environ_reads"] == 1
+    assert "unmanaged_writer_unverified" in after_exec["issues"]
+
+    # Re-exec of the same binary with the same arguments: only the stack moves.
+    again = _proc_entry_started(root, 62003, home="/platform", cwd="/tmp", start=700)
+    assert census_attendee_writers([user], proc_root=root)["matched"] == 1
+    (again / "environ").write_bytes(b"HOME=" + os.fsencode(home) + b"\0")
+    stat = (again / "stat").read_text().replace(str(0x7FFD0000), str(0x7FFE0000))
+    (again / "stat").write_text(stat)
+    after_reexec = census_attendee_writers([user], proc_root=root)
+    assert after_reexec["matched"] == 2 and after_reexec["environ_reads"] == 1
+    for name in ("stat", "environ", "exe", "cmdline", "cwd"):
+        (again / name).unlink()
+    again.rmdir()
+
+    # A complete pass drops verdicts for processes that have exited.
+    for name in ("stat", "environ", "exe", "cmdline", "cwd"):
+        (gone / name).unlink()
+    gone.rmdir()
+    census_attendee_writers([user], proc_root=root)
+    assert {key[1] for key in closeout_writers._ENVIRON_VERDICTS} == {62001}
+
+
+def test_drain_outcomes_report_where_the_budget_went(monkeypatch):
+    from server import closeout_writers, identity, user_content
+    from server.omnigent_remote import remote_host_manager
+    from server.sessions import session_manager
+
+    def good(*_args, deadline):
+        return {"complete": True, "issues": []}
+
+    for target, name in ((user_content, "closeout_sync_barrier"), (session_manager, "drain_for_closeout"),
+                         (remote_host_manager, "drain_for_closeout"), (identity, "drain_for_closeout"),
+                         (user_content, "drain_sync_for_closeout"), (closeout_writers, "_settled_attendee_census")):
+        monkeypatch.setattr(target, name, good)
+    result = closeout_writers.drain(1)
+    assert result["complete"] and set(result) == {"complete", "issues", "outcomes"}
+    assert all(type(row["stage_elapsed_ms"]) is int and row["stage_elapsed_ms"] >= 0
+               for row in result["outcomes"])
 
 
 def test_process_census_never_infers_success_when_unavailable(tmp_path):

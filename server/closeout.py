@@ -30,8 +30,8 @@ _lock_creation = threading.Lock()
 _FINALIZER_LEASE_SECONDS = 120
 _FINALIZER_RENEW_SECONDS = 20
 # Writer-drain budget for one status read; every stage shares it. The process
-# census comes last and keeps no cursor between reads, so a budget shorter than
-# one full census holds a busy seat in CLOSING on every read. A read that seals
+# census comes last; it keeps each process's HOME verdict between reads, so a
+# read that runs out of time still leaves the next one less to do. A read that seals
 # runs two drains, then finalization and the audit replay; the drains take at
 # most 10 s of CT's 30 s request timeout. The step is not cut to the operation's
 # drain_deadline: a read resuming after the deadline still needs a whole census.
@@ -333,6 +333,13 @@ class CloseoutManager:
                 "writer_outcomes": copy.deepcopy(value["writer_outcomes"]),
                 "manifest": copy.deepcopy(manifest), "manifest_sha256": value.get("manifest_sha256"),
                 "final_outputs": copy.deepcopy(value.get("final_outputs", {})),
+                # Diagnostics only, never proof, and only while unsealed: the last
+                # drain's per-stage outcomes (completion, issue codes, counts and
+                # stage_elapsed_ms; no paths or contents), so CT's retained status
+                # shows why a seat is still CLOSING. A sealed status is unchanged.
+                **({"drain": copy.deepcopy(value["drain"])}
+                   if value["phase"] in {"CLOSING", "INCOMPLETE"} and value.get("drain") is not None
+                   else {}),
                 "ct_verification_required": True}
 
     def advance(self, *, capture_id: str = "", wait_seconds: float = _DRAIN_STEP_SECONDS) -> dict:

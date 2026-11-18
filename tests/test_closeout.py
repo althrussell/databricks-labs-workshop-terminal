@@ -640,3 +640,30 @@ def test_finalizer_cannot_write_after_lease_expiry_without_a_replacement_claim()
     replacement = CloseoutManager(emitter(source.journal.storage), drainer=drained,
                                   finalizer=final_outputs, clock=lambda: now[0])
     assert replacement.advance()["complete"] is True
+
+
+def test_an_unsealed_status_shows_the_last_drain_and_a_sealed_one_does_not():
+    """CT keeps the status it reads; while a seat is CLOSING that should say why."""
+    source = emitter()
+    now = [100.0]
+    outcomes = [{"kind": "attendee_process_census", "complete": False,
+                 "issues": ["attendee_process_census_timeout"], "processes": 412, "scanned": 180,
+                 "environ_reads": 175, "environ_cached": 0, "stage_elapsed_ms": 4980}]
+    state = {"done": False}
+
+    def drainer(_timeout):
+        if state["done"]:
+            return drained(_timeout)
+        return {"complete": False, "issues": ["attendee_process_census_timeout"], "outcomes": outcomes}
+
+    manager = CloseoutManager(source, drainer=drainer, finalizer=final_outputs, clock=lambda: now[0])
+    begin(manager, timeout=120)
+    closing = manager.advance(capture_id="capture-one")
+    assert closing["phase"] == "CLOSING"
+    assert closing["drain"]["outcomes"] == outcomes
+    assert "/" not in json.dumps(closing["drain"])
+
+    state["done"] = True
+    sealed = manager.advance(capture_id="capture-one")
+    assert sealed["phase"] == "SEALED"
+    assert "drain" not in sealed  # the sealed status and its shared corpus are unchanged
