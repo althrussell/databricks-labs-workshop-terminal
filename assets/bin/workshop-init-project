@@ -164,6 +164,27 @@ for path in Path(sys.argv[1]).glob('src/*/__init__.py'):
             '        raise\n'
             '    from importlib.metadata import version as installed_version\n'
             '    version = installed_version(__name__)\n', 1))
+
+# APX 0.3.8's MCP builds its docs index from the project's databricks-sdk
+# release. On 0.168.0's docs it panics (a byte slice inside '⚠',
+# docs_index.rs:135) and exits before replying, so the agent loses every APX
+# tool. Hold new projects below that release until APX ships a fix. The
+# template declares only `databricks-sdk>=0.74.0` and no [tool.uv] table.
+import re
+
+pin = 'constraint-dependencies = ["databricks-sdk<0.168"]'
+pyproject = Path(sys.argv[1]) / 'pyproject.toml'
+if pyproject.is_file():
+    text = pyproject.read_text(encoding='utf-8')
+    table = re.search(r'^\[tool\.uv\][ \t]*$', text, re.M)
+    if table is None:
+        text = text.rstrip('\n') + '\n\n[tool.uv]\n' + pin + '\n'
+    elif not re.search(r'^constraint-dependencies\s*=', text[table.end():].split('\n[', 1)[0], re.M):
+        text = text[:table.end()] + '\n' + pin + text[table.end():]
+    else:
+        print('workshop-init-project: [tool.uv] already sets constraint-dependencies; '
+              'add "databricks-sdk<0.168" to it', file=sys.stderr)
+    pyproject.write_text(text, encoding='utf-8')
 PY
     fi
   elif ! grep -q '\[tool.apx' "$DEST/pyproject.toml" 2>/dev/null; then

@@ -122,3 +122,49 @@ sys.exit(""" + ("1" if failure else "0") + ")\n")
     rejected = subprocess.run(["bash", helper, "existing-appkit", "--apx"], env=env, capture_output=True)
     assert rejected.returncode == 1
     assert (plain / "package.json").read_text() == '{"name":"existing"}'
+
+
+@pytest.mark.parametrize("uv_table", [
+    "",  # the APX 0.3.8 template: no [tool.uv] table
+    '\\n[tool.uv]\\ndev-dependencies = ["ruff"]\\n',  # a later template with its own [tool.uv]
+])
+def test_new_apx_project_holds_the_sdk_below_the_release_that_breaks_apx_mcp(tmp_path, uv_table):
+    """APX 0.3.8's MCP panics indexing databricks-sdk 0.168.0's docs, so a new scaffold stays below it."""
+    import tomllib
+
+    home, binaries = tmp_path / "home", tmp_path / "bin"
+    binaries.mkdir()
+    template = home / ".config/workshop/project-memory.md"
+    template.parent.mkdir(parents=True)
+    template.write_text("APX default\n")
+    apx_cli = binaries / "apx"
+    # The APX 0.3.8 template's relevant shape: an open-ended SDK floor and no [tool.uv] table.
+    apx_cli.write_text("""#!/usr/bin/env python3
+import pathlib,sys
+root=pathlib.Path(sys.argv[2]);root.mkdir(parents=True)
+(root/'pyproject.toml').write_text('[project]\\nname = "fleet-desk"\\ndependencies = [\\n    "databricks-sdk>=0.74.0",\\n]\\n\\n[tool.apx.metadata]\\napp-name = "fleet-desk"\\n""" + uv_table + """')
+""")
+    apx_cli.chmod(0o755)
+    for name in ("uv", "bun"):
+        (binaries / name).symlink_to(apx_cli)
+    env = os.environ | {"HOME": str(home), "PATH": str(binaries) + ":" + os.environ["PATH"],
+                        "DATABRICKS_CONFIG_PROFILE": "DEFAULT", "GIT_CONFIG_GLOBAL": "/dev/null",
+                        "GIT_AUTHOR_NAME": "Fixture", "GIT_AUTHOR_EMAIL": "test@example.com",
+                        "GIT_COMMITTER_NAME": "Fixture", "GIT_COMMITTER_EMAIL": "test@example.com"}
+    helper = str(ROOT / "assets/bin/workshop-init-project")
+    approve_for_env(env, "fleet-desk")
+    result = subprocess.run(["bash", helper, "fleet-desk", "--apx", "--json"], env=env, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    pyproject = home / "projects/fleet-desk/pyproject.toml"
+    data = tomllib.loads(pyproject.read_text())
+    assert data["tool"]["uv"]["constraint-dependencies"] == ["databricks-sdk<0.168"]
+    assert data["project"]["dependencies"] == ["databricks-sdk>=0.74.0"]  # the attendee's own floor is kept
+    assert data["tool"]["apx"]["metadata"]["app-name"] == "fleet-desk"
+    if uv_table:
+        assert data["tool"]["uv"]["dev-dependencies"] == ["ruff"]  # the existing table is kept
+
+    # Reopening the project adopts it as it is: the pin is added once, never again.
+    approve_for_env(env, "fleet-desk")
+    rerun = subprocess.run(["bash", helper, "fleet-desk", "--apx"], env=env, text=True, capture_output=True)
+    assert rerun.returncode == 0, rerun.stderr
+    assert pyproject.read_text().count("[tool.uv]") == 1

@@ -22,7 +22,7 @@ on this repository.
 | CLI config and tokens | `server/cli_config.py::configure_claude`, `server/cli_config.py::configure_codex`, `server/cli_config.py::configure_omnigent`, `server/cli_config.py::configure_databricks_cli` |
 | Skills linking | `server/user_content.py::_link_skills`, using the runtime tree `server/user_content.py::shared_skills_dir` or the vendored `assets/skills/` |
 | Helper CLIs | `assets/bin/*`, installed by `server/user_content.py::_install_cli_helpers` and `_install_project_helper` |
-| Project scaffold contract | `assets/bin/workshop-init-project`: a managed block in project `AGENTS.md`/`CLAUDE.md`, committed |
+| Project scaffold contract | `assets/bin/workshop-init-project`: a managed block in project `AGENTS.md`/`CLAUDE.md`, committed. New APX projects also get `[tool.uv] constraint-dependencies = ["databricks-sdk<0.168"]`, because APX 0.3.8's MCP panics indexing 0.168.0's docs |
 | Environment isolation | `server/users.py::User.shell_env`, `server/users.py::_SHELL_ENV_ALLOWLIST` |
 
 ## Where things land
