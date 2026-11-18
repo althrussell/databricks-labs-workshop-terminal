@@ -24,7 +24,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-from smart_routing import build_runtime_caps
+from smart_routing import build_runtime_caps, install_model_allowlist
 from volume_probe import probe_artifact_volume
 
 # WARNING by default: Apps forwards this process's stderr to any telemetry
@@ -176,6 +176,12 @@ try:
     # HostStore is the durable control-plane registry/router for external
     # hosts. Constructing it does not start a local host or runner process.
     host_store = HostStore(DB_URI)
+
+    # Before any catalogue or routing call. With WORKSHOP_ALLOWED_MODELS set this
+    # narrows the picker, sys_list_models and judge menus to the event pool. It
+    # is deliberately not fail-soft: a configured pool that cannot be enforced
+    # must stop the App rather than serve off-pool models.
+    install_model_allowlist()
 
     # Fail-soft: build_runtime_caps returns bare RuntimeCaps when smart routing
     # is off or misconfigured so App health still passes.

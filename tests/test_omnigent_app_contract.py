@@ -139,6 +139,7 @@ def test_app_yaml_binds_runtime_port_and_required_resources():
         # reads as cheapest-first.
         "WORKSHOP_ROUTING_MODEL_ORDER",
         "WORKSHOP_ROUTING_MODEL_EXCLUDE",
+        "WORKSHOP_ALLOWED_MODELS",
         "WORKSHOP_APP_URL",
         "WORKSHOP_RUN_ID",
         "WORKSHOP_UNIT_ID",
