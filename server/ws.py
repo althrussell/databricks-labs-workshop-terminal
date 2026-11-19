@@ -4,6 +4,8 @@
   client -> server: {"t":"input","data":...} {"t":"resize","cols":..,"rows":..} {"t":"ping"}
   server -> client: {"t":"replay","data":...} (once, on attach)
                     {"t":"output","data":...} {"t":"exit"} {"t":"pong"}
+  Several sockets (a phone and a laptop) may share one session. The PTY has
+  one size, so the socket that sends input re-applies its last resize first.
 
 /ws/events — one socket per browser tab: phase changes, broadcasts, nugget
 refresh hints. Heartbeats on either socket feed presence and the idle reaper.
@@ -213,6 +215,10 @@ async def session_socket(websocket: WebSocket, session_id: str):
             await pump_terminal_output(websocket, queue, session_id)
 
         async def pump_input():
+            # This socket's own terminal size. A phone and a laptop can share
+            # the session; whichever one types re-applies its size first, so
+            # the TUI redraws for the device the attendee is using.
+            client_size: tuple[int, int] | None = None
             while True:
                 raw = await websocket.receive_text()
                 try:
@@ -229,10 +235,13 @@ async def session_socket(websocket: WebSocket, session_id: str):
                 # worker thread, no storage. Only the in-memory closeout fence.
                 _check_input_open()
                 if t == "input":
+                    if client_size is not None and session.size != client_size:
+                        session.resize(*client_size)
                     session.write_keystrokes(msg.get("data", ""))
                     user.last_seen = time.time()
                 elif t == "resize":
-                    session.resize(int(msg.get("cols", 80)), int(msg.get("rows", 24)))
+                    client_size = (int(msg.get("cols", 80)), int(msg.get("rows", 24)))
+                    session.resize(*client_size)
                 else:
                     session.touch()
                     user.last_seen = time.time()

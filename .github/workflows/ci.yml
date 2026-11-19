@@ -250,4 +250,4 @@ jobs:
         env:
           WORKSHOP_E2E_BROWSER_TESTS: "1"
           WORKSHOP_BROWSER_EXECUTABLE: "/usr/bin/google-chrome"
-        run: .venv/bin/python -m pytest tests/test_wizard_rendered.py tests/test_projects_rendered.py tests/test_workshop_lifecycle_rendered.py tests/test_generated_app_browser_rendered.py -n 4 --dist worksteal -q
+        run: .venv/bin/python -m pytest tests/test_wizard_rendered.py tests/test_projects_rendered.py tests/test_workshop_lifecycle_rendered.py tests/test_generated_app_browser_rendered.py tests/test_mobile_rendered.py -n 4 --dist worksteal -q

@@ -7,6 +7,7 @@ import {
   House,
   Link as LinkIcon,
   MessageSquare,
+  Mic,
   Rocket,
   ShieldCheck,
   Sparkles,
@@ -53,6 +54,12 @@ import HelpChatPanel from "./components/HelpChatPanel";
 import ToastHost from "./components/ToastHost";
 import TerminalView, { type TerminalHandle } from "./components/TerminalView";
 import TerminalClipboard from "./components/TerminalClipboard";
+import PromptComposer, { type PromptComposerHandle } from "./components/PromptComposer";
+import TouchKeyBar from "./components/TouchKeyBar";
+import OpenOnPhone from "./components/OpenOnPhone";
+import { TOUCH_QUERY, useMediaQuery } from "./components/useMediaQuery";
+import { speechRecognitionCtor } from "./voice";
+import { KeyboardTracker } from "./viewport";
 import ImageDropZone from "./components/ImageDropZone";
 import { rejectedMessage, splitAttachable } from "./imageDrop";
 import { saveDownload } from "./exportDownload";
@@ -167,6 +174,35 @@ export default function App() {
   const [attached, setAttached] = useState<{ name: string; url: string } | null>(null);
   const terminalRef = useRef<TerminalHandle | null>(null);
   const [clipboardNotice, setClipboardNotice] = useState<ClipboardNotice | null>(null);
+  // Phones get the prompt box and key bar docked under the terminal; a laptop
+  // opens the prompt box from the agent bar's mic.
+  const touch = useMediaQuery(TOUCH_QUERY);
+  const narrowScreen = useMediaQuery("(max-width: 700px)");
+  const [speech] = useState(() => speechRecognitionCtor(window as Parameters<typeof speechRecognitionCtor>[0]));
+  const composerRef = useRef<PromptComposerHandle | null>(null);
+  const [composerOpen, setComposerOpen] = useState(false);
+  // Size the app to the visible area, so a phone's toolbars and keyboard never
+  // cover the prompt box; with the keyboard up, the top bars step aside
+  // (styles.css, html[data-keyboard]).
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const root = document.documentElement;
+    const keyboard = new KeyboardTracker();
+    const update = () => {
+      root.style.setProperty("--app-height", `${Math.round(vv.height)}px`);
+      root.dataset.keyboard = touch && keyboard.update(vv.width, vv.height) ? "open" : "closed";
+      // iOS scrolls the page to reveal a focused box; the app already fits.
+      if (vv.offsetTop > 0) window.scrollTo(0, 0);
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, [touch]);
   useEffect(() => {
     if (!attached) return;
     const timer = window.setTimeout(() => setAttached(null), 20000);
@@ -1010,7 +1046,7 @@ export default function App() {
     agents.find((agent) => agent.id === agentId)?.label ?? agentId;
 
   return (
-    <div className="app">
+    <div className="app" data-view={view}>
       <header className="header">
         <div className="header-brand">
           <img
@@ -1100,6 +1136,7 @@ export default function App() {
           <button className="operator-toggle" disabled={inputDisabled} onClick={() => setPreferencesOpen(true)} aria-label="Agent preferences" title="Agent preferences — change how your agent helps">
             <Settings2 size={16} aria-hidden="true" /><span className="nav-label">Agent preferences</span>
           </button>
+          {!touch && <OpenOnPhone />}
           <NetworkStatusControl
             status={networkStatus}
             result={networkResult}
@@ -1276,13 +1313,28 @@ export default function App() {
                       )}
                     </>
                   )}
+                  {!session.exited && !touch && speech && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      aria-label="Speak a prompt"
+                      title="Speak a prompt"
+                      onClick={() => {
+                        setComposerOpen(true);
+                        // Within the click, so the browser grants the microphone.
+                        composerRef.current?.toggleListening();
+                      }}
+                    >
+                      <Mic size={14} aria-hidden="true" />
+                    </button>
+                  )}
                   <TerminalClipboard
                     terminal={terminalRef}
                     notice={clipboardNotice}
                     onNotice={setClipboardNotice}
                     canPaste={!session.exited && !inputDisabled}
                   />
-                  <span>{session.label} {session.exited ? "has ended" : "is running"}</span>
+                  <span className="active-agent-status">{session.label} {session.exited ? "has ended" : "is running"}</span>
                   {session.exited && (
                     <button
                       className="primary-btn"
@@ -1358,8 +1410,25 @@ export default function App() {
                 />
               )}
             </div>
+            {session && view === "agent" && !session.exited && (
+              // Mounted while hidden, so the agent bar's mic can start listening
+              // within its own click.
+              <div className="prompt-dock" hidden={!touch && !composerOpen}>
+                {touch && <TouchKeyBar terminal={terminalRef} />}
+                <PromptComposer
+                  ref={composerRef}
+                  terminal={terminalRef}
+                  speech={speech}
+                  onClose={touch ? undefined : () => setComposerOpen(false)}
+                />
+              </div>
+            )}
           </fieldset>
 
+          {showNuggets && narrowScreen && !nuggetsCollapsed && (
+            // On a phone the open tips cover the terminal; a tap beside them closes them.
+            <div className="nuggets-backdrop" aria-hidden="true" onClick={() => setNuggetsCollapsed(true)} />
+          )}
           {showNuggets && (
             <NuggetsPane
               inputDisabled={inputDisabled}

@@ -167,6 +167,41 @@ def test_terminal_io_and_replay(client):
         assert "workshop-2" in msg["data"]
 
 
+def _read_until(ws, predicate, limit=200):
+    seen = ""
+    for _ in range(limit):
+        msg = json.loads(ws.receive_text())
+        if msg["t"] in ("output", "replay"):
+            seen += msg["data"]
+        if predicate(msg, seen):
+            return seen
+    raise AssertionError(f"marker not seen in {seen[-400:]!r}")
+
+
+def test_typing_device_owns_terminal_size(client):
+    """A phone and a laptop share one PTY; the one that types gets its size back."""
+    session = _create(client, ALICE)
+    url = f"/ws/sessions/{session['id']}"
+
+    def size_seen_by(ws, n):
+        # The arithmetic keeps the end marker out of the echoed command line, so
+        # the read always stops and a wrong size fails instead of hanging.
+        ws.send_text(json.dumps({"t": "input", "data": f"echo size-$(stty size | tr ' ' x) end-$((1+{n}))\n"}))
+        seen = _read_until(ws, lambda _msg, out: f"end-{n + 1}" in out)
+        return seen.rsplit("size-", 1)[1].split()[0]
+
+    with client.websocket_connect(url, headers=ALICE) as laptop, \
+            client.websocket_connect(url, headers=ALICE) as phone:
+        laptop.send_text(json.dumps({"t": "resize", "cols": 120, "rows": 40}))
+        phone.send_text(json.dumps({"t": "resize", "cols": 50, "rows": 30}))
+        # The pong proves the phone's resize was applied before the laptop types.
+        phone.send_text(json.dumps({"t": "ping"}))
+        _read_until(phone, lambda msg, _seen: msg["t"] == "pong")
+
+        assert size_seen_by(laptop, 10) == "40x120"
+        assert size_seen_by(phone, 20) == "30x50"
+
+
 def test_close_session(client):
     session = _create(client, ALICE)
     assert client.delete(f"/api/sessions/{session['id']}", headers=ALICE).status_code == 200

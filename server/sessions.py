@@ -171,6 +171,9 @@ class Session:
         self._exit_reported = False
         # Live websocket subscribers: asyncio queues drained by ws handlers.
         self.subscribers: set[asyncio.Queue] = set()
+        # Last (cols, rows) applied to the PTY. A phone and a laptop can both
+        # attach; the socket that types re-applies its own size (server/ws.py).
+        self.size: tuple[int, int] | None = None
 
     def touch(self) -> None:
         with self.lock:
@@ -242,6 +245,8 @@ class Session:
             fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, winsize)
         except OSError as e:
             logger.warning("resize failed for %s: %s", self.id, e)
+            return
+        self.size = (cols, rows)
 
     def replay_text(self) -> str:
         with self.lock:
