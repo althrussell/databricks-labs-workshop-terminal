@@ -167,6 +167,115 @@ def test_terminal_io_and_replay(client):
         assert "workshop-2" in msg["data"]
 
 
+def _read_until(ws, predicate, limit=200):
+    seen = ""
+    for _ in range(limit):
+        msg = json.loads(ws.receive_text())
+        if msg["t"] in ("output", "replay"):
+            seen += msg["data"]
+        if predicate(msg, seen):
+            return seen
+    raise AssertionError(f"marker not seen in {seen[-400:]!r}")
+
+
+def test_typing_device_owns_terminal_size(client):
+    """A phone and a laptop share one PTY; the one that types gets its size back."""
+    session = _create(client, ALICE)
+    url = f"/ws/sessions/{session['id']}"
+
+    def size_seen_by(ws, n):
+        # The arithmetic keeps the end marker out of the echoed command line, so
+        # the read always stops and a wrong size fails instead of hanging.
+        ws.send_text(json.dumps({"t": "input", "data": f"echo size-$(stty size | tr ' ' x) end-$((1+{n}))\n"}))
+        seen = _read_until(ws, lambda _msg, out: f"end-{n + 1}" in out)
+        return seen.rsplit("size-", 1)[1].split()[0]
+
+    with client.websocket_connect(url, headers=ALICE) as laptop, \
+            client.websocket_connect(url, headers=ALICE) as phone:
+        laptop.send_text(json.dumps({"t": "resize", "cols": 120, "rows": 40}))
+        phone.send_text(json.dumps({"t": "resize", "cols": 50, "rows": 30}))
+        # The pong proves the phone's resize was applied before the laptop types.
+        phone.send_text(json.dumps({"t": "ping"}))
+        _read_until(phone, lambda msg, _seen: msg["t"] == "pong")
+
+        assert size_seen_by(laptop, 10) == "40x120"
+        assert size_seen_by(phone, 20) == "30x50"
+
+
+def test_malformed_and_out_of_range_resize_frames_do_not_crash_or_zero_pty(client):
+    """Bad resize frames must neither crash session_socket nor set a 0x0 PTY."""
+    session = _create(client, ALICE)
+    url = f"/ws/sessions/{session['id']}"
+
+    with client.websocket_connect(url, headers=ALICE) as ws:
+        ws.send_text(json.dumps({"t": "resize", "cols": 110, "rows": 35}))
+        for bad in (
+            {"t": "resize", "cols": None, "rows": None},
+            {"t": "resize", "cols": "wide", "rows": 24},
+            {"t": "resize", "cols": -10, "rows": 24},
+            {"t": "resize", "cols": 0, "rows": 0},
+            {"t": "resize", "cols": True, "rows": False},
+            {"t": "input", "data": None},
+        ):
+            ws.send_text(json.dumps(bad))
+        # Valid JSON that parses to inf or nan: int() raises OverflowError or ValueError.
+        for raw in (
+            '{"t":"resize","cols":1e400,"rows":24}',
+            '{"t":"resize","cols":80,"rows":-Infinity}',
+            '{"t":"resize","cols":NaN,"rows":24}',
+        ):
+            ws.send_text(raw)
+        ws.send_text(json.dumps({"t": "input", "data": "echo keep-$(stty size | tr ' ' x) done-$((2+2))\n"}))
+        seen = _read_until(ws, lambda _msg, out: "done-4" in out)
+        assert seen.rsplit("keep-", 1)[1].split()[0] == "35x110"
+
+        # Oversized values (>65535) must clamp rather than raising struct.error.
+        ws.send_text(json.dumps({"t": "resize", "cols": 100000, "rows": 99999}))
+        ws.send_text(json.dumps({"t": "input", "data": "echo clamp-$(stty size | tr ' ' x) done-$((3+3))\n"}))
+        clamped = _read_until(ws, lambda _msg, out: "done-6" in out)
+        assert clamped.rsplit("clamp-", 1)[1].split()[0] == "200x500"
+
+
+def test_resize_applies_one_size_policy_and_skips_unchanged_sizes(monkeypatch):
+    """Taps re-send the same size; only a change reaches the PTY, clamped once."""
+    from server import sessions, ws
+
+    calls = []
+    monkeypatch.setattr(sessions.fcntl, "ioctl", lambda *args: calls.append(args))
+    session = sessions.Session("alice@example.com", "claude", "Claude", 999, 12345)
+    session.resize(100, 40)
+    session.resize(100, 40)
+    assert session.size == (100, 40) and len(calls) == 1
+    session.resize(90, 40)
+    assert session.size == (90, 40) and len(calls) == 2
+
+    limit = (sessions.MAX_TERMINAL_COLS, sessions.MAX_TERMINAL_ROWS)
+    session.resize(100000, 99999)
+    assert session.size == limit
+    assert ws._parse_terminal_size({"cols": 100000, "rows": 99999}) == limit
+    assert ws._parse_terminal_size({"cols": 0, "rows": 24}) is None
+
+
+def test_resize_skips_closed_or_exited_pty_master(monkeypatch):
+    """Session.resize must never call ioctl after _master_closed or exited (FD reuse hazard)."""
+    from server import sessions
+
+    monkeypatch.setattr(
+        sessions.fcntl,
+        "ioctl",
+        lambda *_args: pytest.fail("ioctl called on closed/exited master_fd"),
+    )
+    closed_session = sessions.Session("alice@example.com", "claude", "Claude", 999, 12345)
+    closed_session._master_closed = True
+    closed_session.resize(100, 40)
+    assert closed_session.size is None
+
+    exited_session = sessions.Session("alice@example.com", "claude", "Claude", 999, 12345)
+    exited_session.exited = True
+    exited_session.resize(100, 40)
+    assert exited_session.size is None
+
+
 def test_close_session(client):
     session = _create(client, ALICE)
     assert client.delete(f"/api/sessions/{session['id']}", headers=ALICE).status_code == 200

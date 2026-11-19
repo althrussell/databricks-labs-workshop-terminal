@@ -208,7 +208,7 @@ milestone record may describe superseded behaviour; verify it against code befor
     `docs/omnigent-control-tower-contract.md`, `docs/omnigent-modes.md`.
   - Toolchain and release: `docs/artifact-manifest.md`, `docs/release-artifact.md`.
   - Attendee features: `docs/app-deploy-tool.md`, `docs/take-home-export.md`,
-    `docs/attendee-messaging.md`, `docs/agent-bricks-cli.md`.
+    `docs/attendee-messaging.md`, `docs/agent-bricks-cli.md`, `docs/mobile-and-voice.md`.
   - Pinned by tests: `tests/test_auth_identity_doc.py` and `tests/test_operator_runbook.py`
     assert claims in these docs.
 - **Runbooks and gates:** `docs/operator-runbook.md`, `docs/verification-gate.md`,

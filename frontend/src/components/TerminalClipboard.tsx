@@ -47,6 +47,11 @@ export default function TerminalClipboard({ terminal, notice, onNotice, canPaste
     return () => window.clearTimeout(timer);
   }, [notice, onNotice]);
 
+  /** No-op on touch screens: TerminalView decides (TerminalHandle.focus). */
+  function focusHardwareTerminal() {
+    terminal.current?.focus();
+  }
+
   function insert(text: string) {
     const sent = terminal.current?.paste(text) ?? false;
     onNotice(pasteNotice(sent ? "pasted" : "offline"));
@@ -64,7 +69,7 @@ export default function TerminalClipboard({ terminal, notice, onNotice, canPaste
       }
       if (read.kind === "text") insert(read.text);
       else onNotice(pasteNotice("empty"));
-      terminal.current?.focus();
+      focusHardwareTerminal();
     } finally {
       setReading(false);
     }
@@ -78,7 +83,7 @@ export default function TerminalClipboard({ terminal, notice, onNotice, canPaste
         title={`Copy the highlighted terminal text (${COPY_CHORD} also works)`}
         onClick={() => {
           terminal.current?.copySelection();
-          terminal.current?.focus();
+          focusHardwareTerminal();
         }}
       >
         <Copy size={14} aria-hidden="true" /> Copy
@@ -108,7 +113,7 @@ export default function TerminalClipboard({ terminal, notice, onNotice, canPaste
           onInsert={insert}
           onClose={(inserted) => {
             setBoxOpen(false);
-            if (inserted) terminal.current?.focus();
+            if (inserted) focusHardwareTerminal();
             else pasteButtonRef.current?.focus();
           }}
         />

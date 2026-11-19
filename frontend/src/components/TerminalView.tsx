@@ -15,6 +15,7 @@ import {
   type ClipboardNotice,
 } from "../terminalClipboard";
 import { decideTerminalKey } from "../terminalKeys";
+import { keySequence, type TouchKey } from "../touchKeys";
 import type { AttendeeErrorCode } from "../telemetry";
 import { notifyWorkshopClosing, workshopNotice } from "../workshopLifecycle";
 
@@ -24,9 +25,24 @@ export interface TerminalHandle {
   copySelection: () => void;
   /** Type text as a paste. False when the terminal can't take input. */
   paste: (text: string) => boolean;
-  /** Return the keyboard to the prompt once a button or dialog is done. */
+  /** Return the keyboard to the prompt once a button or dialog is done. On a
+   * touch screen this does nothing: focusing xterm opens the OS keyboard. */
   focus: () => void;
+  /** Focus the terminal for direct typing, opening the OS keyboard on touch. */
+  openKeyboard: () => void;
+  /** Type `text` as a paste, then press Enter: the composer's Send. */
+  submit: (text: string) => boolean;
+  /** Press one key a phone keyboard lacks (Esc, Tab, an arrow, Ctrl+C). */
+  press: (key: TouchKey) => boolean;
 }
+
+/** Gap between a pasted prompt and its Enter. Agent TUIs that time keystrokes
+ * to spot a paste would otherwise read the Enter as a newline in the prompt. */
+const SUBMIT_ENTER_DELAY_MS = 120;
+
+/** Phones get a smaller font so an agent TUI has room for ~45 columns. */
+const NARROW = "(max-width: 700px)";
+const fontSizeFor = (narrow: boolean) => (narrow ? 12 : 13);
 
 interface Props {
   ref?: Ref<TerminalHandle>;
@@ -39,22 +55,30 @@ interface Props {
   ) => void;
   /** Every copy and paste outcome, so none of them is silent. */
   onClipboard?: (notice: ClipboardNotice) => void;
+  /** A touch screen (App's useMediaQuery(TOUCH_QUERY)): the one place that decides. */
+  touch?: boolean;
 }
 
 // One xterm + one websocket per session, kept alive across tab switches
 // (the component stays mounted; `active` only toggles visibility). The
 // server holds the PTY and scrollback, so a dropped socket reconnects and
 // replays seamlessly.
-export default function TerminalView({ ref, sessionId, active, readOnly = false, onExit, onGatewayLimit, onClipboard }: Props) {
+export default function TerminalView({ ref, sessionId, active, readOnly = false, onExit, onGatewayLimit, onClipboard, touch = false }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const closedRef = useRef(false);
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const readOnlyRef = useRef(readOnly);
+  const touchRef = useRef(touch);
+  touchRef.current = touch;
   readOnlyRef.current = readOnly;
   const onClipboardRef = useRef(onClipboard);
   onClipboardRef.current = onClipboard;
+  const sendResizeRef = useRef<() => void>(() => {});
+  const submitTimersRef = useRef<Set<number>>(new Set());
 
   function inputOpen() {
     return !readOnlyRef.current && !closedRef.current && socketRef.current?.readyState === WebSocket.OPEN;
@@ -85,16 +109,41 @@ export default function TerminalView({ ref, sessionId, active, readOnly = false,
       term.paste(text);
       return true;
     },
-    focus: () => termRef.current?.focus(),
+    focus: () => {
+      if (!touchRef.current) termRef.current?.focus();
+    },
+    openKeyboard: () => termRef.current?.focus(),
+    submit: (text: string) => {
+      const term = termRef.current;
+      if (!term || !inputOpen() || !text.trim()) return false;
+      // Sending is the attendee's call: this runs only from their Send tap.
+      // A trailing newline would be a second Enter inside the paste.
+      term.paste(text.replace(/\s+$/, ""));
+      const timer = window.setTimeout(() => {
+        submitTimersRef.current.delete(timer);
+        if (inputOpen()) term.input("\r", true);
+      }, SUBMIT_ENTER_DELAY_MS);
+      submitTimersRef.current.add(timer);
+      return true;
+    },
+    press: (key: TouchKey) => {
+      const term = termRef.current;
+      if (!term || !inputOpen()) return false;
+      // As typed: scrolls to the prompt and clears a selection, without moving
+      // focus, so a key-bar tap doesn't pop the phone keyboard open.
+      term.input(keySequence(key, term.modes.applicationCursorKeysMode), true);
+      return true;
+    },
   }), []);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
+    const narrow = window.matchMedia(NARROW);
     const term = new Terminal({
       cursorBlink: true,
-      fontSize: 13,
+      fontSize: fontSizeFor(narrow.matches),
       fontFamily: "'JetBrains Mono', 'SF Mono', Menlo, monospace",
       theme: {
         background: "#0e1116",
@@ -137,6 +186,42 @@ export default function TerminalView({ ref, sessionId, active, readOnly = false,
     };
     container.addEventListener("copy", onNativeCopy);
     container.addEventListener("paste", onNativePaste, true);
+
+    // xterm 6's SmoothScrollableElement listens only to wheel events, so finger
+    // drags on touch screens must drive scrollLines directly.
+    let touchY: number | null = null;
+    let touchRemainder = 0;
+    const onTouchStart = (event: TouchEvent) => {
+      if (event.touches.length === 1) {
+        touchY = event.touches[0].clientY;
+        touchRemainder = 0;
+      } else {
+        touchY = null;
+      }
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      if (touchY === null || event.touches.length !== 1) return;
+      const nextY = event.touches[0].clientY;
+      const dy = touchY - nextY;
+      touchY = nextY;
+      const cellHeight = container.clientHeight / Math.max(1, term.rows) || 16;
+      const total = touchRemainder + dy / cellHeight;
+      const lines = total > 0 ? Math.floor(total) : Math.ceil(total);
+      touchRemainder = total - lines;
+      if (lines !== 0 && term.buffer.active.baseY > 0) {
+        term.scrollLines(lines);
+        if (event.cancelable) event.preventDefault();
+      }
+    };
+    const onTouchEnd = () => {
+      touchY = null;
+      touchRemainder = 0;
+    };
+    container.addEventListener("touchstart", onTouchStart, { passive: true });
+    container.addEventListener("touchmove", onTouchMove, { passive: false });
+    container.addEventListener("touchend", onTouchEnd, { passive: true });
+    container.addEventListener("touchcancel", onTouchEnd, { passive: true });
+
     term.open(container);
     fit.fit();
     termRef.current = term;
@@ -226,20 +311,47 @@ export default function TerminalView({ ref, sessionId, active, readOnly = false,
 
     function sendResize() {
       const socket = socketRef.current;
-      if (!readOnlyRef.current && !closedRef.current && socket?.readyState === WebSocket.OPEN) {
+      if (
+        activeRef.current &&
+        !readOnlyRef.current &&
+        !closedRef.current &&
+        socket?.readyState === WebSocket.OPEN &&
+        term.cols > 0 &&
+        term.rows > 0
+      ) {
         socket.send(JSON.stringify({ t: "resize", cols: term.cols, rows: term.rows }));
       }
     }
+    sendResizeRef.current = sendResize;
 
     const inputDisposable = term.onData((data) => {
       if (inputOpen()) socketRef.current?.send(JSON.stringify({ t: "input", data }));
     });
 
     const resizeObserver = new ResizeObserver(() => {
+      if (!activeRef.current) return;
       fit.fit();
       sendResize();
     });
     resizeObserver.observe(container);
+
+    const onNarrowChange = () => {
+      term.options.fontSize = fontSizeFor(narrow.matches);
+      if (!activeRef.current) return;
+      fit.fit();
+      sendResize();
+    };
+    narrow.addEventListener("change", onNarrowChange);
+
+    // A phone and a laptop can share this session, and the PTY has one size.
+    // The device the attendee comes back to (or clicks into) claims it before
+    // they type; the server also re-applies the typing socket's size (server/ws.py).
+    const reclaimSize = () => {
+      if (document.visibilityState === "visible") sendResize();
+    };
+    document.addEventListener("visibilitychange", reclaimSize);
+    window.addEventListener("focus", reclaimSize);
+    container.addEventListener("pointerdown", reclaimSize);
 
     const heartbeat = setInterval(() => {
       const socket = socketRef.current;
@@ -252,10 +364,21 @@ export default function TerminalView({ ref, sessionId, active, readOnly = false,
 
     return () => {
       disposed = true;
+      sendResizeRef.current = () => {};
+      for (const timer of submitTimersRef.current) window.clearTimeout(timer);
+      submitTimersRef.current.clear();
       clearInterval(heartbeat);
       resizeObserver.disconnect();
+      narrow.removeEventListener("change", onNarrowChange);
+      document.removeEventListener("visibilitychange", reclaimSize);
+      window.removeEventListener("focus", reclaimSize);
+      container.removeEventListener("pointerdown", reclaimSize);
       container.removeEventListener("copy", onNativeCopy);
       container.removeEventListener("paste", onNativePaste, true);
+      container.removeEventListener("touchstart", onTouchStart);
+      container.removeEventListener("touchmove", onTouchMove);
+      container.removeEventListener("touchend", onTouchEnd);
+      container.removeEventListener("touchcancel", onTouchEnd);
       inputDisposable.dispose();
       socketRef.current?.close();
       term.dispose();
@@ -269,7 +392,10 @@ export default function TerminalView({ ref, sessionId, active, readOnly = false,
   useEffect(() => {
     if (active) {
       fitRef.current?.fit();
-      termRef.current?.focus();
+      sendResizeRef.current();
+      // On touch screens, focusing xterm opens the raw OS keyboard over the terminal;
+      // the key bar's keyboard button (openKeyboard) still focuses it on demand.
+      if (!touchRef.current) termRef.current?.focus();
     }
   }, [active]);
 

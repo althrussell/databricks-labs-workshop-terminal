@@ -39,6 +39,10 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  /* The visible area (App.tsx sets --app-height from the visual viewport), so a
+     phone's toolbars and keyboard never cover the bottom of the app. */
+  height: var(--app-height, 100dvh);
+  padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
 }
 
 /* Build controls keep context in view without interrupting the terminal. */
@@ -346,6 +350,7 @@ body {
   right: 0;
   width: var(--help-panel-width);
   height: 100vh;
+  height: var(--app-height, 100dvh);
   z-index: 40;
   display: flex;
   flex-direction: column;
@@ -1473,19 +1478,6 @@ body {
   background-color: transparent !important;
 }
 
-.terminal-container .xterm-viewport::-webkit-scrollbar {
-  width: 8px;
-}
-
-.terminal-container .xterm-viewport::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.terminal-container .xterm-viewport::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 4px;
-}
-
 .empty-state {
   position: absolute;
   inset: 0;
@@ -1907,7 +1899,11 @@ body {
 
 .modal-backdrop {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100vh;
+  height: var(--app-height, 100dvh);
   background: rgba(5, 8, 12, 0.65);
   display: grid;
   place-items: center;
@@ -1915,7 +1911,7 @@ body {
 }
 
 .modal {
-  width: 420px;
+  width: min(420px, calc(100vw - 32px));
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -2015,7 +2011,7 @@ dialog.modal::backdrop {
 
 .modal-wide {
   width: min(720px, 92vw);
-  max-height: 88vh;
+  max-height: min(88vh, calc(var(--app-height, 100dvh) - 32px));
   overflow-y: auto;
 }
 
@@ -2457,7 +2453,7 @@ dialog.modal::backdrop {
 
 /* Goal-first onboarding shares the terminal palette and contains its own scroll. */
 dialog.wizard {
-  max-height: calc(100dvh - 32px);
+  max-height: calc(var(--app-height, 100dvh) - 32px);
   max-width: calc(100vw - 24px);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -2529,3 +2525,427 @@ dialog.wizard {
 .build-status-ready_to_try { border-color: var(--brand-primary); }
 .build-status-blocked, .build-status-help_requested { border-color: var(--warning); color: var(--warning); }
 .your-build button:focus-visible, .your-build a:focus-visible, .your-build input:focus-visible, .your-build textarea:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 3px; }
+
+/* ---- prompt dock: type or speak a prompt, and the keys a phone lacks ---- */
+
+.prompt-dock {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px max(8px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+
+.prompt-dock[hidden] {
+  display: none;
+}
+
+.prompt-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.composer-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  max-height: 128px;
+  resize: none;
+  overflow-y: auto;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.composer-input:focus-visible,
+.composer-btn:focus-visible,
+.touch-key:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 1px;
+}
+
+.composer-btn {
+  flex-shrink: 0;
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  color: var(--text-dim);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.composer-btn:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.composer-send:not(:disabled) {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: #fff;
+}
+
+.composer-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.composer-mic-live {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  animation: composer-listening 1.4s ease-in-out infinite;
+}
+
+@keyframes composer-listening {
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--danger) 25%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-mic-live {
+    animation: none;
+  }
+}
+
+.composer-close {
+  align-self: center;
+}
+
+.composer-notice {
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.touch-keys {
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+
+.touch-keys::-webkit-scrollbar {
+  display: none;
+}
+
+.touch-key {
+  flex-shrink: 0;
+  display: inline-grid;
+  place-items: center;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.touch-key:active {
+  background: color-mix(in srgb, var(--text) 12%, var(--bg-panel));
+}
+
+.nuggets-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 19;
+  background: rgb(0 0 0 / 35%);
+}
+
+/* ---- phones and tablets ---- */
+
+@media (pointer: coarse) {
+  /* iOS zooms the whole page into any focused box under 16px. A platform
+     floor, not a style: it must beat every component's own size, so it is
+     the one !important here. */
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+
+  /* Fingers need about 40px; these were sized for a mouse. */
+  .icon-btn {
+    min-width: 40px;
+    min-height: 40px;
+    justify-content: center;
+  }
+
+  .header-links :is(a, button),
+  .btn,
+  .launch-btn,
+  .phase-btn,
+  .primary-btn,
+  .banner-action,
+  .help-chat-rate,
+  .hero-chip {
+    min-height: 40px;
+  }
+
+  .header-links[data-compact="true"] :is(a, .operator-toggle, .raise-hand-btn, .help-chat-toggle) {
+    min-width: 40px;
+  }
+
+  button,
+  a {
+    touch-action: manipulation;
+  }
+
+  /* The key bar and prompt box show their own pressed state. */
+  .composer-btn,
+  .touch-key {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .composer-btn:active:not(:disabled) {
+    filter: brightness(1.25);
+  }
+
+  /* With the keyboard up for the terminal or prompt box, the top bars step
+     aside; inputs inside the bars themselves stay visible while being edited. */
+  html[data-keyboard="open"] .app[data-view="agent"]:has(:is(.terminal-stage, .prompt-dock):focus-within) :is(.header, .project-controls, .your-build, .toolbar) {
+    display: none;
+  }
+
+  .work-area .hero {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* A phone in the agent view: the header compacts to icons and each bar in the
+   work area above the terminal (.project-bar, .your-build-bar, .toolbar) is one
+   row, so the terminal keeps most of the screen. Button labels stay in the DOM
+   as their accessible names; only the icon shows. */
+@media (max-width: 700px) {
+  .app[data-view="agent"] .header {
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding: 0 12px;
+  }
+
+  .app[data-view="agent"] :is(.brand-text, .header-user) {
+    display: none;
+  }
+
+  .app[data-view="agent"] .header-links {
+    order: 0;
+    flex-basis: auto;
+  }
+
+  .project-actions::-webkit-scrollbar,
+  .toolbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .project-bar {
+    padding: 6px 12px;
+  }
+
+  .project-actions {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .project-actions .btn {
+    flex-shrink: 0;
+  }
+
+  .app[data-view="agent"] .project-bar {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px;
+  }
+
+  .app[data-view="agent"] .project-current {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .app[data-view="agent"] .project-current > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app[data-view="agent"] .project-actions {
+    width: auto;
+    max-width: 58%;
+    flex-shrink: 0;
+  }
+
+  .your-build-bar {
+    gap: 2px 8px;
+    padding: 4px 12px;
+  }
+
+  .your-build-next {
+    order: 3;
+    flex-basis: 100%;
+    min-width: 0;
+    font-size: 13px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .your-build-bar .your-build-actions {
+    margin-left: auto;
+  }
+
+  .your-build-toggle {
+    padding-inline: 4px;
+  }
+
+  .app[data-view="agent"] .your-build-bar {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+
+  .app[data-view="agent"] .your-build-toggle {
+    flex-shrink: 0;
+  }
+
+  .app[data-view="agent"] .your-build-next {
+    order: 0;
+    flex: 1;
+    flex-basis: auto;
+    display: block;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .app[data-view="agent"] .your-build-bar .your-build-actions {
+    flex-shrink: 0;
+    flex-wrap: nowrap;
+  }
+
+  .your-build-bar .your-build-actions button.btn,
+  .active-agent .btn {
+    font-size: 0;
+    gap: 0;
+    min-width: 40px;
+    min-height: 40px;
+    padding: 8px;
+    justify-content: center;
+  }
+
+  /* Tools first, then the agents: one row that swipes sideways. */
+  .toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    gap: 8px;
+    padding: 6px 12px;
+  }
+
+  .toolbar .active-agent {
+    order: -1;
+    flex-shrink: 0;
+    flex-wrap: nowrap;
+    padding: 0 4px;
+  }
+
+  .toolbar .launch-bar {
+    flex-shrink: 0;
+  }
+
+  .launch-btn {
+    flex-shrink: 0;
+  }
+
+  .active-agent-status {
+    display: none;
+  }
+
+  /* The agent bar scrolls sideways, so its notice floats above everything. */
+  .active-agent .clipboard-notice {
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    z-index: 61;
+    max-width: none;
+    padding: 8px 10px;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  }
+
+  .terminal-container {
+    inset: 6px;
+  }
+}
+
+@media (pointer: coarse) and (max-width: 700px) {
+  /* Toasts drop from the top on a phone, clear of the prompt box. With the help
+     panel open they keep their place above its composer (rule above). */
+  .toast-host:not([data-help-open="true"]) {
+    top: 8px;
+    bottom: auto;
+    right: 8px;
+    width: calc(100vw - 16px);
+    max-height: 50vh;
+  }
+}
+
+/* ---- open on phone ---- */
+
+dialog.phone-dialog {
+  width: min(340px, calc(100vw - 32px));
+  padding: 0;
+}
+
+.phone-dialog-body {
+  padding: 22px 24px;
+}
+
+.phone-qr {
+  display: block;
+  width: min(240px, 100%);
+  height: auto;
+  margin: 8px auto 12px;
+  border-radius: 8px;
+}
+
+.phone-url {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.phone-url code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-dim);
+}

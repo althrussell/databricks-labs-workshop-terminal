@@ -168,11 +168,28 @@ never leaves the attendee's container.
 
 ---
 
+## Phones and voice prompts
+
+Attendees can open their seat on a phone (header → **Open on phone**) and speak prompts. The
+usual questions:
+
+- "No mic button": Firefox, or a browser without speech recognition. Use the phone keyboard's
+  dictation key, or type.
+- "Microphone blocked": allow it for the site in browser settings.
+- "Garbled after using my phone": type on the laptop, and it takes the terminal size back.
+
+Using a phone does not change the tab rule: keep the laptop tab open. A locked phone suspends
+its tab, which can let Omnigent's sign-in go stale. Answer that with rung 1, as usual. Details
+are in [`mobile-and-voice.md`](./mobile-and-voice.md).
+
+---
+
 ## Related
 
 - [`auth-identity-model.md`](./auth-identity-model.md) — why the credential is
   tab-bound and what each plane can do.
 - [`admin-api.md`](./admin-api.md) — the full operator API.
+- [`mobile-and-voice.md`](./mobile-and-voice.md) — phone use and voice prompts.
 - [`model-comparison.md`](./model-comparison.md) — the model comparison exercise.
 - [`control-tower-implementation.md`](./control-tower-implementation.md) —
   fleet-level operations and admission.

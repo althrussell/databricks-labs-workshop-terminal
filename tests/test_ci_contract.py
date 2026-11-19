@@ -123,6 +123,7 @@ def test_ci_triggers_and_rendered_browser_coverage_match_the_release_gate():
         if "python -m pytest" in step.get("run", "")
     )
     assert "tests/test_generated_app_browser_rendered.py" in browser["run"]
+    assert "tests/test_mobile_rendered.py" in browser["run"]
 
     makefile = (ROOT / "Makefile").read_text()
     assert '-m "not host_process" -n 4 --dist loadfile --timeout=120' in makefile

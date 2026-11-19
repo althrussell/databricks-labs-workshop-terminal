@@ -31,6 +31,17 @@ table is in [docs/agent-guide/README.md](../docs/agent-guide/README.md).
   Do not add explanatory sentences in compact toolbars or bars (agent bar, PR #154). Reserve
   text for warnings the attendee must act on.
 - Before finishing UI work, check the real rendered app, not just the tests.
+- Phones are supported ([docs/mobile-and-voice.md](../docs/mobile-and-voice.md)). On
+  `(pointer: coarse)`, inputs are at least 16px (iOS zooms into smaller ones) and tap targets
+  at least 40px. Height comes from `--app-height`, not `100vh`. In the agent view at ≤700px,
+  the header compacts to icons and each work-area bar above the terminal (`.project-bar`,
+  `.your-build-bar`, `.toolbar`) is one row. `tests/test_mobile_rendered.py` checks a 390px
+  touch viewport.
+- Terminal input from a new control goes through `TerminalHandle` (`submit`, `press`, `paste`)
+  in `TerminalView.tsx`, never a second socket or `/type`.
+- "Is this a touch screen" is decided once: App's `useMediaQuery(TOUCH_QUERY)`, passed to
+  `TerminalView` as `touch`. Return focus with `TerminalHandle.focus` (a no-op on touch) and
+  open the OS keyboard only with `openKeyboard`; don't add another `matchMedia` check.
 - WebSocket close codes are a server contract. `4403`, `4404`, `4408`, `4410` and `4413`
   come from `server/ws.py`. Handle new codes on both sides.
 

@@ -4,6 +4,8 @@
   client -> server: {"t":"input","data":...} {"t":"resize","cols":..,"rows":..} {"t":"ping"}
   server -> client: {"t":"replay","data":...} (once, on attach)
                     {"t":"output","data":...} {"t":"exit"} {"t":"pong"}
+  Several sockets (a phone and a laptop) may share one session. The PTY has
+  one size, so the socket that sends input re-applies its last resize first.
 
 /ws/events — one socket per browser tab: phase changes, broadcasts, nugget
 refresh hints. Heartbeats on either socket feed presence and the idle reaper.
@@ -26,7 +28,7 @@ from .capture_journal import CaptureError
 from .closeout_guard import CaptureClosedError, admitted_writer
 from .events import event_hub
 from .operational import metrics as operational_metrics
-from .sessions import session_manager
+from .sessions import clamp_terminal_size, session_manager
 from .users import user_manager
 
 logger = logging.getLogger(__name__)
@@ -142,6 +144,21 @@ def _check_input_open() -> None:
     check_open(event_emitter.journal)
 
 
+def _parse_terminal_size(msg: dict) -> tuple[int, int] | None:
+    """Parse a client resize frame into a clamped size; None ignores it."""
+    raw_cols = msg.get("cols", 80)
+    raw_rows = msg.get("rows", 24)
+    if isinstance(raw_cols, bool) or isinstance(raw_rows, bool):
+        return None
+    try:
+        cols = int(raw_cols)
+        rows = int(raw_rows)
+    except (TypeError, ValueError, OverflowError):
+        # OverflowError: JSON such as 1e400 or Infinity parses to an infinite float.
+        return None
+    return clamp_terminal_size(cols, rows)
+
+
 def _writer(kind: str):
     from .event_emitter import event_emitter
 
@@ -213,6 +230,10 @@ async def session_socket(websocket: WebSocket, session_id: str):
             await pump_terminal_output(websocket, queue, session_id)
 
         async def pump_input():
+            # This socket's own terminal size. A phone and a laptop can share
+            # the session; whichever one types re-applies its size first, so
+            # the TUI redraws for the device the attendee is using.
+            client_size: tuple[int, int] | None = None
             while True:
                 raw = await websocket.receive_text()
                 try:
@@ -229,10 +250,18 @@ async def session_socket(websocket: WebSocket, session_id: str):
                 # worker thread, no storage. Only the in-memory closeout fence.
                 _check_input_open()
                 if t == "input":
-                    session.write_keystrokes(msg.get("data", ""))
+                    data = msg.get("data", "")
+                    if not isinstance(data, str):
+                        continue
+                    if client_size is not None and session.size != client_size:
+                        session.resize(*client_size)
+                    session.write_keystrokes(data)
                     user.last_seen = time.time()
                 elif t == "resize":
-                    session.resize(int(msg.get("cols", 80)), int(msg.get("rows", 24)))
+                    size = _parse_terminal_size(msg)
+                    if size is not None:
+                        client_size = size
+                        session.resize(*client_size)
                 else:
                     session.touch()
                     user.last_seen = time.time()

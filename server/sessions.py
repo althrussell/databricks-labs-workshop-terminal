@@ -36,6 +36,17 @@ PROCESS_EXIT_WAIT = 0.25
 REAPER_INTERVAL = 60
 SCROLLBACK_MAX_BYTES = 2 * 1024 * 1024
 TERMINAL_SUBSCRIBER_QUEUE_SIZE = 128
+# The one terminal-size policy: server/ws.py parses resize frames into it, and
+# Session.resize applies it again for any other caller.
+MAX_TERMINAL_COLS = 500
+MAX_TERMINAL_ROWS = 200
+
+
+def clamp_terminal_size(cols: int, rows: int) -> tuple[int, int] | None:
+    """None for a size no PTY should take; otherwise capped to the limits."""
+    if cols < 1 or rows < 1:
+        return None
+    return (min(cols, MAX_TERMINAL_COLS), min(rows, MAX_TERMINAL_ROWS))
 
 
 def _utf8_tail(value: str | bytes, max_bytes: int) -> bytes:
@@ -171,6 +182,9 @@ class Session:
         self._exit_reported = False
         # Live websocket subscribers: asyncio queues drained by ws handlers.
         self.subscribers: set[asyncio.Queue] = set()
+        # Last (cols, rows) applied to the PTY. A phone and a laptop can both
+        # attach; the socket that types re-applies its own size (server/ws.py).
+        self.size: tuple[int, int] | None = None
 
     def touch(self) -> None:
         with self.lock:
@@ -237,11 +251,24 @@ class Session:
         return acknowledgement
 
     def resize(self, cols: int, rows: int) -> None:
-        try:
-            winsize = struct.pack("HHHH", rows, cols, 0, 0)
-            fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, winsize)
-        except OSError as e:
-            logger.warning("resize failed for %s: %s", self.id, e)
+        size = clamp_terminal_size(cols, rows)
+        if size is None:
+            return
+        cols, rows = size
+        with self.lock:
+            if self.exited or self._master_closed:
+                return
+            # A phone re-sends its size on every tap, so most calls change
+            # nothing: skip the ioctl (the kernel would send no SIGWINCH anyway).
+            if self.size == size:
+                return
+            try:
+                winsize = struct.pack("HHHH", rows, cols, 0, 0)
+                fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, winsize)
+            except OSError as e:
+                logger.warning("resize failed for %s: %s", self.id, e)
+                return
+            self.size = size
 
     def replay_text(self) -> str:
         with self.lock:
