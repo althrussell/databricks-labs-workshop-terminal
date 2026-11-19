@@ -139,7 +139,7 @@ xterm keystrokes, `TerminalHandle.submit` from the prompt box
 `POST /api/sessions/{id}/type` is the only HTTP path, and it never submits. Several sockets can
 share one session, such as a phone and a laptop. The PTY has one size, so `pump_input` in
 `server/ws.py::session_socket` re-applies a socket's last `resize` before writing its input.
-The client also re-sends its size when the tab becomes visible again.
+The client also re-sends its size when an active terminal tab becomes visible again or is clicked into.
 
 **Lifecycle:**
 
@@ -158,7 +158,8 @@ The client also re-sends its size when the tab becomes visible again.
   `tests/test_obo_gating.py`, `tests/test_user_content.py`, `tests/test_shell_env.py`,
   `tests/test_ws_capture_operations.py`.
 - Frontend: `frontend/src/terminalExit.test.ts`, `frontend/src/sessionSwitch.test.ts`,
-  `frontend/src/touchKeys.test.ts`, `frontend/src/voice.test.ts`.
+  `frontend/src/touchKeys.test.ts`, `frontend/src/voice.test.ts`,
+  `frontend/src/viewport.test.ts`, `frontend/src/qr.test.ts`.
 - Rendered: `tests/test_mobile_rendered.py` (prompt box, voice and key bar on a phone and a
   laptop).
 

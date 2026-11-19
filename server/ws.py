@@ -144,6 +144,22 @@ def _check_input_open() -> None:
     check_open(event_emitter.journal)
 
 
+def _parse_terminal_size(msg: dict) -> tuple[int, int] | None:
+    """Validate and clamp a client resize frame; None ignores malformed sizes."""
+    raw_cols = msg.get("cols", 80)
+    raw_rows = msg.get("rows", 24)
+    if isinstance(raw_cols, bool) or isinstance(raw_rows, bool):
+        return None
+    try:
+        cols = int(raw_cols)
+        rows = int(raw_rows)
+    except (TypeError, ValueError):
+        return None
+    if cols < 1 or rows < 1:
+        return None
+    return (min(cols, 500), min(rows, 200))
+
+
 def _writer(kind: str):
     from .event_emitter import event_emitter
 
@@ -235,13 +251,18 @@ async def session_socket(websocket: WebSocket, session_id: str):
                 # worker thread, no storage. Only the in-memory closeout fence.
                 _check_input_open()
                 if t == "input":
+                    data = msg.get("data", "")
+                    if not isinstance(data, str):
+                        continue
                     if client_size is not None and session.size != client_size:
                         session.resize(*client_size)
-                    session.write_keystrokes(msg.get("data", ""))
+                    session.write_keystrokes(data)
                     user.last_seen = time.time()
                 elif t == "resize":
-                    client_size = (int(msg.get("cols", 80)), int(msg.get("rows", 24)))
-                    session.resize(*client_size)
+                    size = _parse_terminal_size(msg)
+                    if size is not None:
+                        client_size = size
+                        session.resize(*client_size)
                 else:
                     session.touch()
                     user.last_seen = time.time()

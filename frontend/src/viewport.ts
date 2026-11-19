@@ -24,3 +24,32 @@ export class KeyboardTracker {
     return height < this.tallest * KEYBOARD_SHARE;
   }
 }
+
+export interface VisualViewportLike {
+  readonly width: number;
+  readonly height: number;
+  readonly offsetTop: number;
+  readonly scale?: number;
+}
+
+export interface ViewportUpdate {
+  appHeightPx: number;
+  keyboardOpen: boolean;
+  resetScroll: boolean;
+}
+
+/** Decide how to update `--app-height`, `data-keyboard` and page scroll; null while pinch-zoomed. */
+export function measureViewport(
+  tracker: KeyboardTracker,
+  vv: VisualViewportLike,
+  scrollY: number,
+  touch: boolean
+): ViewportUpdate | null {
+  // Pinch-zooming shrinks vv.height and sets vv.offsetTop > 0: leave layout and panning alone.
+  if ((vv.scale ?? 1) > 1.01) return null;
+  return {
+    appHeightPx: Math.round(vv.height),
+    keyboardOpen: touch && tracker.update(vv.width, vv.height),
+    resetScroll: vv.offsetTop > 0 || scrollY > 0,
+  };
+}

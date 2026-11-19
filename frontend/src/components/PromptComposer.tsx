@@ -14,6 +14,10 @@ interface Props {
   terminal: RefObject<TerminalHandle | null>;
   /** The browser's recognizer; null hides the mic (Firefox, insecure pages). */
   speech: RecognitionCtor | null;
+  /** False while another view is shown so leaving Agent view stops the mic without losing drafts. */
+  active?: boolean;
+  /** True once the workshop stops accepting input, releasing any live microphone immediately. */
+  disabled?: boolean;
   /** Laptop: the composer opens from the agent bar and can be closed again. */
   onClose?: () => void;
 }
@@ -21,6 +25,7 @@ interface Props {
 /** About five lines; longer prompts scroll inside the box. */
 const MAX_HEIGHT_PX = 128;
 const NOTICE_MS = 8000;
+const STOP_FALLBACK_MS = 1500;
 
 /** A prompt box under the terminal: type or speak, read it back, then send.
  *
@@ -29,7 +34,14 @@ const NOTICE_MS = 8000;
  * Send pastes the text into the agent and presses Enter, exactly as if the
  * attendee had typed it: nothing is stored or logged on the way.
  */
-export default function PromptComposer({ ref, terminal, speech, onClose }: Props) {
+export default function PromptComposer({
+  ref,
+  terminal,
+  speech,
+  active = true,
+  disabled = false,
+  onClose,
+}: Props) {
   const [text, setText] = useState("");
   const [listening, setListening] = useState(false);
   // Shown beside the box rather than in the agent bar, which a phone hides
@@ -38,22 +50,44 @@ export default function PromptComposer({ ref, terminal, speech, onClose }: Props
   const textRef = useRef(text);
   textRef.current = text;
   const dictationRef = useRef<Dictation | null>(null);
+  const stoppingRef = useRef(false);
+  const stopTimerRef = useRef<number | undefined>(undefined);
   const boxRef = useRef<HTMLTextAreaElement>(null);
 
-  /** `discard`: the box was just sent or closed, so late results are dropped
-   * instead of refilling it. Otherwise the recognizer's final words still land. */
+  function clearStopTimer() {
+    window.clearTimeout(stopTimerRef.current);
+    stopTimerRef.current = undefined;
+  }
+
+  /** `discard`: the box was just sent, edited or closed, so recognition aborts
+   * immediately instead of refilling it. Otherwise final words still land, with
+   * a second tap or timeout aborting if the speech service stalls on stop(). */
   function stopListening(discard: boolean) {
     const current = dictationRef.current;
     if (!current) return;
-    if (discard) {
+    if (discard || stoppingRef.current) {
+      clearStopTimer();
       dictationRef.current = null;
+      stoppingRef.current = false;
       setListening(false);
+      current.abort();
+      return;
     }
+    stoppingRef.current = true;
     current.stop();
+    clearStopTimer();
+    stopTimerRef.current = window.setTimeout(() => {
+      if (dictationRef.current === current) {
+        dictationRef.current = null;
+        stoppingRef.current = false;
+        setListening(false);
+        current.abort();
+      }
+    }, STOP_FALLBACK_MS);
   }
 
   function toggleListening() {
-    if (!speech) return;
+    if (!speech || disabled) return;
     if (dictationRef.current) {
       stopListening(false);
       return;
@@ -62,6 +96,7 @@ export default function PromptComposer({ ref, terminal, speech, onClose }: Props
     const base = textRef.current;
     let ended = false;
     let dictation: Dictation | null = null;
+    stoppingRef.current = false;
     setListening(true);
     dictation = startDictation(speech, {
       lang: navigator.language || "en-US",
@@ -70,6 +105,8 @@ export default function PromptComposer({ ref, terminal, speech, onClose }: Props
       },
       onEnd: () => {
         ended = true;
+        clearStopTimer();
+        stoppingRef.current = false;
         if (dictationRef.current === dictation) {
           dictationRef.current = null;
           setListening(false);
@@ -89,8 +126,19 @@ export default function PromptComposer({ ref, terminal, speech, onClose }: Props
 
   useImperativeHandle(ref, () => ({ toggleListening }));
 
-  // Stop the microphone when the composer goes away (session closed or ended).
-  useEffect(() => () => dictationRef.current?.stop(), []);
+  useEffect(() => {
+    if (disabled) stopListening(true);
+  }, [disabled]);
+
+  useEffect(() => {
+    if (!active) stopListening(false);
+  }, [active]);
+
+  // Release the microphone when the composer goes away (session closed or ended).
+  useEffect(() => () => {
+    clearStopTimer();
+    dictationRef.current?.abort();
+  }, []);
 
   useLayoutEffect(() => {
     const box = boxRef.current;
@@ -153,7 +201,10 @@ export default function PromptComposer({ ref, terminal, speech, onClose }: Props
         enterKeyHint="send"
         autoCapitalize="sentences"
         maxLength={12000}
-        onChange={(event) => setText(event.target.value)}
+        onChange={(event) => {
+          if (dictationRef.current) stopListening(true);
+          setText(event.target.value);
+        }}
         onKeyDown={(event) => {
           // Shift+Enter adds a line; an IME's Enter confirms a word, not the prompt.
           if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {

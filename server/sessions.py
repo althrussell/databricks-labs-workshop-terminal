@@ -240,13 +240,20 @@ class Session:
         return acknowledgement
 
     def resize(self, cols: int, rows: int) -> None:
-        try:
-            winsize = struct.pack("HHHH", rows, cols, 0, 0)
-            fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, winsize)
-        except OSError as e:
-            logger.warning("resize failed for %s: %s", self.id, e)
+        if cols < 1 or rows < 1:
             return
-        self.size = (cols, rows)
+        cols = min(cols, 500)
+        rows = min(rows, 200)
+        with self.lock:
+            if self.exited or self._master_closed:
+                return
+            try:
+                winsize = struct.pack("HHHH", rows, cols, 0, 0)
+                fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, winsize)
+            except OSError as e:
+                logger.warning("resize failed for %s: %s", self.id, e)
+                return
+            self.size = (cols, rows)
 
     def replay_text(self) -> str:
         with self.lock:

@@ -59,7 +59,7 @@ import TouchKeyBar from "./components/TouchKeyBar";
 import OpenOnPhone from "./components/OpenOnPhone";
 import { TOUCH_QUERY, useMediaQuery } from "./components/useMediaQuery";
 import { speechRecognitionCtor } from "./voice";
-import { KeyboardTracker } from "./viewport";
+import { KeyboardTracker, measureViewport } from "./viewport";
 import ImageDropZone from "./components/ImageDropZone";
 import { rejectedMessage, splitAttachable } from "./imageDrop";
 import { saveDownload } from "./exportDownload";
@@ -190,10 +190,12 @@ export default function App() {
     const root = document.documentElement;
     const keyboard = new KeyboardTracker();
     const update = () => {
-      root.style.setProperty("--app-height", `${Math.round(vv.height)}px`);
-      root.dataset.keyboard = touch && keyboard.update(vv.width, vv.height) ? "open" : "closed";
+      const next = measureViewport(keyboard, vv, window.scrollY, touch);
+      if (!next) return;
+      root.style.setProperty("--app-height", `${next.appHeightPx}px`);
+      root.dataset.keyboard = next.keyboardOpen ? "open" : "closed";
       // iOS scrolls the page to reveal a focused box; the app already fits.
-      if (vv.offsetTop > 0) window.scrollTo(0, 0);
+      if (next.resetScroll) window.scrollTo(0, 0);
     };
     update();
     vv.addEventListener("resize", update);
@@ -1410,15 +1412,18 @@ export default function App() {
                 />
               )}
             </div>
-            {session && view === "agent" && !session.exited && (
-              // Mounted while hidden, so the agent bar's mic can start listening
-              // within its own click.
-              <div className="prompt-dock" hidden={!touch && !composerOpen}>
+            {session && !session.exited && (
+              // Mounted while the session is live so drafts survive Home/Operator
+              // navigation and the agent bar's mic can start listening within its click.
+              <div className="prompt-dock" hidden={view !== "agent" || (!touch && !composerOpen)}>
                 {touch && <TouchKeyBar terminal={terminalRef} />}
                 <PromptComposer
+                  key={session.id}
                   ref={composerRef}
                   terminal={terminalRef}
                   speech={speech}
+                  active={view === "agent"}
+                  disabled={inputDisabled}
                   onClose={touch ? undefined : () => setComposerOpen(false)}
                 />
               </div>

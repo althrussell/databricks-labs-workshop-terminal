@@ -21,6 +21,7 @@ class FakeRecognition implements RecognitionLike {
   onend: RecognitionLike["onend"] = null;
   started = false;
   stopped = false;
+  aborted = false;
   constructor() {
     FakeRecognition.last = this;
   }
@@ -30,6 +31,9 @@ class FakeRecognition implements RecognitionLike {
   }
   stop() {
     this.stopped = true;
+  }
+  abort() {
+    this.aborted = true;
   }
 }
 
@@ -49,6 +53,15 @@ test("voice input is offered only on secure pages with a recognizer", () => {
 test("final and tentative results read as one sentence", () => {
   assert.equal(spokenText(results(["build a dashboard", true], [" for sales ", false])), "build a dashboard for sales");
   assert.equal(spokenText(results()), "");
+});
+
+test("cumulative Android results collapse without eating distinct short words", () => {
+  assert.equal(
+    spokenText(results(["build", true], ["build a", true], ["build a sales", true], ["build a sales chart", false])),
+    "build a sales chart"
+  );
+  assert.equal(spokenText(results(["hello", true], ["hello", true])), "hello");
+  assert.equal(spokenText(results(["no", true], ["not yet", false])), "no not yet");
 });
 
 test("speech is appended to what the attendee already typed", () => {
@@ -105,4 +118,21 @@ test("a recognizer that refuses to start ends with a notice", () => {
   FakeRecognition.failStart = false;
   assert.equal(ends, 1);
   assert.equal(errors.length, 1);
+});
+
+test("aborting dictation cancels recognition and fires onEnd immediately even if onend stalls", () => {
+  FakeRecognition.failStart = false;
+  let ends = 0;
+  const dictation = startDictation(FakeRecognition, {
+    lang: "en",
+    onText: () => {},
+    onEnd: () => (ends += 1),
+    onError: () => {},
+  });
+  const rec = FakeRecognition.last!;
+  dictation.abort();
+  assert.ok(rec.aborted);
+  assert.equal(ends, 1);
+  rec.onend?.();
+  assert.equal(ends, 1, "late browser onend does not fire onEnd twice");
 });

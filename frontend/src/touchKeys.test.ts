@@ -29,3 +29,11 @@ test("every key on the bar has a label and an accessible name", () => {
     assert.ok(keySequence(k.key, false).length > 0);
   }
 });
+
+test("menu navigation and interrupt keys come before horizontal cursor keys so 390px phones show them without scrolling", () => {
+  const keys = TOUCH_KEYS.map((k) => k.key);
+  const firstSeven = keys.slice(0, 7);
+  for (const essential of ["esc", "up", "down", "enter", "ctrlC"] as const) {
+    assert.ok(firstSeven.includes(essential), `${essential} should be in the first 7 visible keys, got ${firstSeven.join(",")}`);
+  }
+});

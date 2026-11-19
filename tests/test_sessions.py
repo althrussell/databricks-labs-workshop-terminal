@@ -202,6 +202,53 @@ def test_typing_device_owns_terminal_size(client):
         assert size_seen_by(phone, 20) == "30x50"
 
 
+def test_malformed_and_out_of_range_resize_frames_do_not_crash_or_zero_pty(client):
+    """Bad resize frames must neither crash session_socket nor set a 0x0 PTY."""
+    session = _create(client, ALICE)
+    url = f"/ws/sessions/{session['id']}"
+
+    with client.websocket_connect(url, headers=ALICE) as ws:
+        ws.send_text(json.dumps({"t": "resize", "cols": 110, "rows": 35}))
+        for bad in (
+            {"t": "resize", "cols": None, "rows": None},
+            {"t": "resize", "cols": "wide", "rows": 24},
+            {"t": "resize", "cols": -10, "rows": 24},
+            {"t": "resize", "cols": 0, "rows": 0},
+            {"t": "resize", "cols": True, "rows": False},
+            {"t": "input", "data": None},
+        ):
+            ws.send_text(json.dumps(bad))
+        ws.send_text(json.dumps({"t": "input", "data": "echo keep-$(stty size | tr ' ' x) done-$((2+2))\n"}))
+        seen = _read_until(ws, lambda _msg, out: "done-4" in out)
+        assert seen.rsplit("keep-", 1)[1].split()[0] == "35x110"
+
+        # Oversized values (>65535) must clamp rather than raising struct.error.
+        ws.send_text(json.dumps({"t": "resize", "cols": 100000, "rows": 99999}))
+        ws.send_text(json.dumps({"t": "input", "data": "echo clamp-$(stty size | tr ' ' x) done-$((3+3))\n"}))
+        clamped = _read_until(ws, lambda _msg, out: "done-6" in out)
+        assert clamped.rsplit("clamp-", 1)[1].split()[0] == "200x500"
+
+
+def test_resize_skips_closed_or_exited_pty_master(monkeypatch):
+    """Session.resize must never call ioctl after _master_closed or exited (FD reuse hazard)."""
+    from server import sessions
+
+    monkeypatch.setattr(
+        sessions.fcntl,
+        "ioctl",
+        lambda *_args: pytest.fail("ioctl called on closed/exited master_fd"),
+    )
+    closed_session = sessions.Session("alice@example.com", "claude", "Claude", 999, 12345)
+    closed_session._master_closed = True
+    closed_session.resize(100, 40)
+    assert closed_session.size is None
+
+    exited_session = sessions.Session("alice@example.com", "claude", "Claude", 999, 12345)
+    exited_session.exited = True
+    exited_session.resize(100, 40)
+    assert exited_session.size is None
+
+
 def test_close_session(client):
     session = _create(client, ALICE)
     assert client.delete(f"/api/sessions/{session['id']}", headers=ALICE).status_code == 200

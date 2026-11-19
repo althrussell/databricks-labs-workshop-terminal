@@ -34,8 +34,9 @@ table is in [docs/agent-guide/README.md](../docs/agent-guide/README.md).
 - Phones are supported ([docs/mobile-and-voice.md](../docs/mobile-and-voice.md)). On
   `(pointer: coarse)`, inputs are at least 16px (iOS zooms into smaller ones) and tap targets
   at least 40px. Height comes from `--app-height`, not `100vh`. In the agent view at ≤700px,
-  each bar above the terminal is one row. `tests/test_mobile_rendered.py` checks a 390px touch
-  viewport.
+  the header compacts to icons and each work-area bar above the terminal (`.project-bar`,
+  `.your-build-bar`, `.toolbar`) is one row. `tests/test_mobile_rendered.py` checks a 390px
+  touch viewport.
 - Terminal input from a new control goes through `TerminalHandle` (`submit`, `press`, `paste`)
   in `TerminalView.tsx`, never a second socket or `/type`.
 - WebSocket close codes are a server contract. `4403`, `4404`, `4408`, `4410` and `4413`

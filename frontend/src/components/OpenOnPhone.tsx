@@ -61,35 +61,37 @@ function PhoneDialog({ onClose }: { onClose: () => void }) {
       }}
       onKeyDown={trapDialogTab}
     >
-      <h2 id="phone-dialog-title">
-        <Smartphone size={18} aria-hidden="true" /> Open on phone
-      </h2>
-      <svg
-        className="phone-qr"
-        viewBox={`${-MARGIN} ${-MARGIN} ${box} ${box}`}
-        role="img"
-        aria-label={`QR code for ${url}`}
-        shapeRendering="crispEdges"
-      >
-        <rect x={-MARGIN} y={-MARGIN} width={box} height={box} fill="#fff" />
-        <path d={d} fill="#000" />
-      </svg>
-      <div className="phone-url">
-        <code>{url}</code>
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label={copied ? "Link copied" : "Copy link"}
-          title={copied ? "Link copied" : "Copy link"}
-          onClick={() => void copyText(url, browserClipboardEnv()).then((outcome) => setCopied(outcome === "copied"))}
+      <div className="phone-dialog-body">
+        <h2 id="phone-dialog-title">
+          <Smartphone size={18} aria-hidden="true" /> Open on phone
+        </h2>
+        <svg
+          className="phone-qr"
+          viewBox={`${-MARGIN} ${-MARGIN} ${box} ${box}`}
+          role="img"
+          aria-label={`QR code for ${url}`}
+          shapeRendering="crispEdges"
         >
-          {copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
-        </button>
-      </div>
-      <div className="modal-actions">
-        <button type="button" className="primary-btn" autoFocus onClick={finish}>
-          Done
-        </button>
+          <rect x={-MARGIN} y={-MARGIN} width={box} height={box} fill="#fff" />
+          <path d={d} fill="#000" />
+        </svg>
+        <div className="phone-url">
+          <code>{url}</code>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label={copied ? "Link copied" : "Copy link"}
+            title={copied ? "Link copied" : "Copy link"}
+            onClick={() => void copyText(url, browserClipboardEnv()).then((outcome) => setCopied(outcome === "copied"))}
+          >
+            {copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
+          </button>
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="primary-btn" autoFocus onClick={finish}>
+            Done
+          </button>
+        </div>
       </div>
     </dialog>
   );

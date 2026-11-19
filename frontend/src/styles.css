@@ -1478,19 +1478,6 @@ body {
   background-color: transparent !important;
 }
 
-.terminal-container .xterm-viewport::-webkit-scrollbar {
-  width: 8px;
-}
-
-.terminal-container .xterm-viewport::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.terminal-container .xterm-viewport::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 4px;
-}
-
 .empty-state {
   position: absolute;
   inset: 0;
@@ -1912,7 +1899,11 @@ body {
 
 .modal-backdrop {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100vh;
+  height: var(--app-height, 100dvh);
   background: rgba(5, 8, 12, 0.65);
   display: grid;
   place-items: center;
@@ -2020,7 +2011,7 @@ dialog.modal::backdrop {
 
 .modal-wide {
   width: min(720px, 92vw);
-  max-height: 88vh;
+  max-height: min(88vh, calc(var(--app-height, 100dvh) - 32px));
   overflow-y: auto;
 }
 
@@ -2462,7 +2453,7 @@ dialog.modal::backdrop {
 
 /* Goal-first onboarding shares the terminal palette and contains its own scroll. */
 dialog.wizard {
-  max-height: calc(100dvh - 32px);
+  max-height: calc(var(--app-height, 100dvh) - 32px);
   max-width: calc(100vw - 24px);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -2645,7 +2636,7 @@ dialog.wizard {
 
 .touch-keys {
   display: flex;
-  gap: 6px;
+  gap: 5px;
   overflow-x: auto;
   scrollbar-width: none;
   overscroll-behavior-x: contain;
@@ -2659,9 +2650,9 @@ dialog.wizard {
   flex-shrink: 0;
   display: inline-grid;
   place-items: center;
-  min-width: 44px;
+  min-width: 40px;
   height: 40px;
-  padding: 0 10px;
+  padding: 0 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-panel);
@@ -2704,10 +2695,19 @@ dialog.wizard {
     justify-content: center;
   }
 
+  .header-links :is(a, button),
+  .btn,
+  .launch-btn,
+  .phase-btn,
+  .primary-btn,
   .banner-action,
   .help-chat-rate,
   .hero-chip {
     min-height: 40px;
+  }
+
+  .header-links[data-compact="true"] :is(a, .operator-toggle, .raise-hand-btn, .help-chat-toggle) {
+    min-width: 40px;
   }
 
   button,
@@ -2725,8 +2725,9 @@ dialog.wizard {
     filter: brightness(1.25);
   }
 
-  /* With the keyboard up, the terminal and the prompt box get the screen. */
-  html[data-keyboard="open"] :is(.header, .project-controls, .your-build, .toolbar) {
+  /* With the keyboard up for the terminal or prompt box, the top bars step
+     aside; inputs inside the bars themselves stay visible while being edited. */
+  html[data-keyboard="open"] .app[data-view="agent"]:has(:is(.terminal-stage, .prompt-dock):focus-within) :is(.header, .project-controls, .your-build, .toolbar) {
     display: none;
   }
 
@@ -2735,9 +2736,10 @@ dialog.wizard {
   }
 }
 
-/* A phone in the agent view: every bar above the terminal is one row, so the
-   terminal keeps most of the screen. Button labels stay in the DOM as their
-   accessible names; only the icon shows. */
+/* A phone in the agent view: the header compacts to icons and each bar in the
+   work area above the terminal (.project-bar, .your-build-bar, .toolbar) is one
+   row, so the terminal keeps most of the screen. Button labels stay in the DOM
+   as their accessible names; only the icon shows. */
 @media (max-width: 700px) {
   .app[data-view="agent"] .header {
     flex-wrap: nowrap;
@@ -2754,6 +2756,11 @@ dialog.wizard {
     flex-basis: auto;
   }
 
+  .project-actions::-webkit-scrollbar,
+  .toolbar::-webkit-scrollbar {
+    display: none;
+  }
+
   .project-bar {
     padding: 6px 12px;
   }
@@ -2765,6 +2772,30 @@ dialog.wizard {
   }
 
   .project-actions .btn {
+    flex-shrink: 0;
+  }
+
+  .app[data-view="agent"] .project-bar {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px;
+  }
+
+  .app[data-view="agent"] .project-current {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .app[data-view="agent"] .project-current > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app[data-view="agent"] .project-actions {
+    width: auto;
+    max-width: 58%;
     flex-shrink: 0;
   }
 
@@ -2784,7 +2815,7 @@ dialog.wizard {
     overflow: hidden;
   }
 
-  .your-build-actions {
+  .your-build-bar .your-build-actions {
     margin-left: auto;
   }
 
@@ -2792,7 +2823,30 @@ dialog.wizard {
     padding-inline: 4px;
   }
 
-  .your-build-actions button.btn,
+  .app[data-view="agent"] .your-build-bar {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+
+  .app[data-view="agent"] .your-build-toggle {
+    flex-shrink: 0;
+  }
+
+  .app[data-view="agent"] .your-build-next {
+    order: 0;
+    flex: 1;
+    flex-basis: auto;
+    display: block;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .app[data-view="agent"] .your-build-bar .your-build-actions {
+    flex-shrink: 0;
+    flex-wrap: nowrap;
+  }
+
+  .your-build-bar .your-build-actions button.btn,
   .active-agent .btn {
     font-size: 0;
     gap: 0;
@@ -2861,8 +2915,13 @@ dialog.wizard {
 
 /* ---- open on phone ---- */
 
-.phone-dialog {
+dialog.phone-dialog {
   width: min(340px, calc(100vw - 32px));
+  padding: 0;
+}
+
+.phone-dialog-body {
+  padding: 22px 24px;
 }
 
 .phone-qr {

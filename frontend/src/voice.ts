@@ -34,6 +34,7 @@ export interface RecognitionLike {
   onend: (() => void) | null;
   start(): void;
   stop(): void;
+  abort?(): void;
 }
 
 export type RecognitionCtor = new () => RecognitionLike;
@@ -57,7 +58,19 @@ export function spokenText(results: RecognitionEventLike["results"]): string {
   const parts: string[] = [];
   for (let i = 0; i < results.length; i += 1) {
     const text = results[i]?.[0]?.transcript?.trim();
-    if (text) parts.push(text);
+    if (!text) continue;
+    // Android Chrome's SpeechRecognizer bridge emits cumulative prefixes across
+    // results[0..n] when continuous=true ("build", "build a", "build a chart").
+    const prev = parts[parts.length - 1];
+    if (prev) {
+      const prevLower = prev.toLowerCase();
+      const curLower = text.toLowerCase();
+      if (curLower === prevLower || curLower.startsWith(`${prevLower} `)) {
+        parts[parts.length - 1] = text;
+        continue;
+      }
+    }
+    parts.push(text);
   }
   return parts.join(" ");
 }
@@ -101,26 +114,30 @@ export interface DictationHandlers {
 
 export interface Dictation {
   stop: () => void;
+  abort: () => void;
 }
 
 export function startDictation(Ctor: RecognitionCtor, handlers: DictationHandlers): Dictation {
   const recognition = new Ctor();
   let ended = false;
+  const finish = () => {
+    if (ended) return;
+    ended = true;
+    handlers.onEnd();
+  };
   recognition.lang = handlers.lang;
   // Keep listening through short pauses; Safari may still end early, and the
   // box keeps whatever was heard.
   recognition.continuous = true;
   recognition.interimResults = true;
-  recognition.onresult = (event) => handlers.onText(spokenText(event.results));
+  recognition.onresult = (event) => {
+    if (!ended) handlers.onText(spokenText(event.results));
+  };
   recognition.onerror = (event) => {
     const notice = voiceNotice(event.error);
     if (notice) handlers.onError(notice);
   };
-  recognition.onend = () => {
-    if (ended) return;
-    ended = true;
-    handlers.onEnd();
-  };
+  recognition.onend = finish;
   try {
     recognition.start();
   } catch {
@@ -129,5 +146,12 @@ export function startDictation(Ctor: RecognitionCtor, handlers: DictationHandler
     handlers.onError({ level: "warning", text: "Voice input is busy. Try again in a moment." });
     handlers.onEnd();
   }
-  return { stop: () => recognition.stop() };
+  return {
+    stop: () => recognition.stop(),
+    abort: () => {
+      if (recognition.abort) recognition.abort();
+      else recognition.stop();
+      finish();
+    },
+  };
 }

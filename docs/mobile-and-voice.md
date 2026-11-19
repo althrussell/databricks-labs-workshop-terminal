@@ -9,15 +9,16 @@ and what an operator needs to know when either goes wrong.
 | --- | --- | --- |
 | Prompt box | Opens from the mic icon in the agent bar; close it with ×. | Always docked under the terminal. |
 | Speak a prompt | Mic icon (Chrome, Edge, Safari). | Mic in the prompt box, or the keyboard's own dictation key. |
-| Terminal keys | The hardware keyboard. | A key bar: Esc, Tab, ⇧Tab, arrows, ⏎, ^C, and ⌨ to type in the terminal itself. |
+| Terminal keys | The hardware keyboard. | A key bar: Esc, ↑, ↓, ⏎, ⇧Tab, Tab, ^C, ←, →, and ⌨ to type in the terminal itself. |
 | Open on phone | Phone icon in the header shows a QR code of this app. | Hidden. |
 
 The prompt box shows the text before anything is sent. **Send** (or Enter) pastes it into the
 running agent and presses Enter, exactly as if the attendee had typed it. Shift+Enter adds a
 line. Nothing reaches the agent until the attendee sends it.
 
-On a phone the bars above the terminal shrink to one row each in the agent view. While the
-keyboard is open, they step aside so the terminal and the prompt box fill the screen.
+On a phone in the agent view, the header compacts to icons and the build, workflow and agent
+bars above the terminal shrink to one row each. While the keyboard is open for the prompt box
+or terminal, they step aside so the terminal and the prompt box fill the screen.
 
 ## How voice works, and where the audio goes
 
