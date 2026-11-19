@@ -28,7 +28,7 @@ from .capture_journal import CaptureError
 from .closeout_guard import CaptureClosedError, admitted_writer
 from .events import event_hub
 from .operational import metrics as operational_metrics
-from .sessions import session_manager
+from .sessions import clamp_terminal_size, session_manager
 from .users import user_manager
 
 logger = logging.getLogger(__name__)
@@ -145,7 +145,7 @@ def _check_input_open() -> None:
 
 
 def _parse_terminal_size(msg: dict) -> tuple[int, int] | None:
-    """Validate and clamp a client resize frame; None ignores malformed sizes."""
+    """Parse a client resize frame into a clamped size; None ignores it."""
     raw_cols = msg.get("cols", 80)
     raw_rows = msg.get("rows", 24)
     if isinstance(raw_cols, bool) or isinstance(raw_rows, bool):
@@ -156,9 +156,7 @@ def _parse_terminal_size(msg: dict) -> tuple[int, int] | None:
     except (TypeError, ValueError, OverflowError):
         # OverflowError: JSON such as 1e400 or Infinity parses to an infinite float.
         return None
-    if cols < 1 or rows < 1:
-        return None
-    return (min(cols, 500), min(rows, 200))
+    return clamp_terminal_size(cols, rows)
 
 
 def _writer(kind: str):

@@ -38,18 +38,25 @@ export interface ViewportUpdate {
   resetScroll: boolean;
 }
 
-/** Decide how to update `--app-height`, `data-keyboard` and page scroll; null while pinch-zoomed. */
+/** Decide how to update `--app-height`, `data-keyboard` and page scroll.
+ *
+ * Pinch-zoom shrinks the visual viewport by its scale, so the size is scaled
+ * back first: zooming neither resizes the app nor reads as a keyboard, while a
+ * keyboard opened or closed during the zoom still counts. */
 export function measureViewport(
   tracker: KeyboardTracker,
   vv: VisualViewportLike,
   scrollY: number,
   touch: boolean
-): ViewportUpdate | null {
-  // Pinch-zooming shrinks vv.height and sets vv.offsetTop > 0: leave layout and panning alone.
-  if ((vv.scale ?? 1) > 1.01) return null;
+): ViewportUpdate {
+  const scale = Math.max(vv.scale ?? 1, 1);
+  const zoomed = scale > 1.01;
+  const width = vv.width * scale;
+  const height = vv.height * scale;
   return {
-    appHeightPx: Math.round(vv.height),
-    keyboardOpen: touch && tracker.update(vv.width, vv.height),
-    resetScroll: vv.offsetTop > 0 || scrollY > 0,
+    appHeightPx: Math.round(height),
+    keyboardOpen: touch && tracker.update(width, height),
+    // While zoomed, offsetTop is the attendee panning: leave it alone.
+    resetScroll: !zoomed && (vv.offsetTop > 0 || scrollY > 0),
   };
 }

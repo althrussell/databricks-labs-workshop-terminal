@@ -82,7 +82,9 @@ a deployed instance:
 1. iPhone (Safari) and Android (Chrome): scan the QR code, sign in, and launch Claude Code and
    Codex.
 2. Dictate a prompt and send it. Check that each agent submits it as one prompt; Send waits
-   120 ms between the paste and Enter.
+   120 ms between the paste and Enter. On Android, dictate a long sentence with a pause in it:
+   it should appear once, not repeated (Chrome on Android restates earlier words, and
+   `voice.ts::spokenText` merges them).
 3. Answer an agent menu with ↑/↓/⏎ and back out with Esc.
 4. Open the keyboard: the prompt box stays visible above it.
 5. Scroll agent output with a finger.

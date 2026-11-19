@@ -39,6 +39,9 @@ table is in [docs/agent-guide/README.md](../docs/agent-guide/README.md).
   touch viewport.
 - Terminal input from a new control goes through `TerminalHandle` (`submit`, `press`, `paste`)
   in `TerminalView.tsx`, never a second socket or `/type`.
+- "Is this a touch screen" is decided once: App's `useMediaQuery(TOUCH_QUERY)`, passed to
+  `TerminalView` as `touch`. Return focus with `TerminalHandle.focus` (a no-op on touch) and
+  open the OS keyboard only with `openKeyboard`; don't add another `matchMedia` check.
 - WebSocket close codes are a server contract. `4403`, `4404`, `4408`, `4410` and `4413`
   come from `server/ws.py`. Handle new codes on both sides.
 

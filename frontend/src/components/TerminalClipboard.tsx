@@ -10,7 +10,6 @@ import {
   type ClipboardNotice,
 } from "../terminalClipboard";
 import type { TerminalHandle } from "./TerminalView";
-import { TOUCH_QUERY } from "./useMediaQuery";
 
 interface Props {
   terminal: RefObject<TerminalHandle | null>;
@@ -48,10 +47,9 @@ export default function TerminalClipboard({ terminal, notice, onNotice, canPaste
     return () => window.clearTimeout(timer);
   }, [notice, onNotice]);
 
+  /** No-op on touch screens: TerminalView decides (TerminalHandle.focus). */
   function focusHardwareTerminal() {
-    if (!window.matchMedia(TOUCH_QUERY).matches) {
-      terminal.current?.focus();
-    }
+    terminal.current?.focus();
   }
 
   function insert(text: string) {

@@ -236,6 +236,26 @@ def test_malformed_and_out_of_range_resize_frames_do_not_crash_or_zero_pty(clien
         assert clamped.rsplit("clamp-", 1)[1].split()[0] == "200x500"
 
 
+def test_resize_applies_one_size_policy_and_skips_unchanged_sizes(monkeypatch):
+    """Taps re-send the same size; only a change reaches the PTY, clamped once."""
+    from server import sessions, ws
+
+    calls = []
+    monkeypatch.setattr(sessions.fcntl, "ioctl", lambda *args: calls.append(args))
+    session = sessions.Session("alice@example.com", "claude", "Claude", 999, 12345)
+    session.resize(100, 40)
+    session.resize(100, 40)
+    assert session.size == (100, 40) and len(calls) == 1
+    session.resize(90, 40)
+    assert session.size == (90, 40) and len(calls) == 2
+
+    limit = (sessions.MAX_TERMINAL_COLS, sessions.MAX_TERMINAL_ROWS)
+    session.resize(100000, 99999)
+    assert session.size == limit
+    assert ws._parse_terminal_size({"cols": 100000, "rows": 99999}) == limit
+    assert ws._parse_terminal_size({"cols": 0, "rows": 24}) is None
+
+
 def test_resize_skips_closed_or_exited_pty_master(monkeypatch):
     """Session.resize must never call ioctl after _master_closed or exited (FD reuse hazard)."""
     from server import sessions

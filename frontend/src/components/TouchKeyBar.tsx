@@ -32,7 +32,7 @@ export default function TouchKeyBar({ terminal }: Props) {
         className="touch-key"
         aria-label="Type in the terminal"
         title="Type in the terminal"
-        onClick={() => terminal.current?.focus()}
+        onClick={() => terminal.current?.openKeyboard()}
       >
         <Keyboard size={16} aria-hidden="true" />
       </button>

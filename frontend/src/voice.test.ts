@@ -4,6 +4,7 @@ import {
   composeTranscript,
   speechRecognitionCtor,
   spokenText,
+  cumulativeResults,
   startDictation,
   voiceNotice,
   type RecognitionEventLike,
@@ -57,11 +58,31 @@ test("final and tentative results read as one sentence", () => {
 
 test("cumulative Android results collapse without eating distinct short words", () => {
   assert.equal(
-    spokenText(results(["build", true], ["build a", true], ["build a sales", true], ["build a sales chart", false])),
+    spokenText(results(["build", true], ["build a", true], ["build a sales", true], ["build a sales chart", false]), true),
     "build a sales chart"
   );
-  assert.equal(spokenText(results(["hello", true], ["hello", true])), "hello");
-  assert.equal(spokenText(results(["no", true], ["not yet", false])), "no not yet");
+  assert.equal(spokenText(results(["hello", true], ["hello", true]), true), "hello");
+  assert.equal(spokenText(results(["no", true], ["not yet", false]), true), "no not yet");
+});
+
+test("an Android revision of an earlier word replaces it instead of repeating the sentence", () => {
+  assert.equal(spokenText(results(["build a sale", true], ["build a sales chart", false]), true), "build a sales chart");
+  assert.equal(spokenText(results(["add the chart", true], ["add a chart", false]), true), "add a chart");
+  assert.equal(
+    spokenText(results(["make it blue", true], ["make it blue and add a legend", false]), true),
+    "make it blue and add a legend"
+  );
+});
+
+test("other browsers keep every segment, including a phrase said twice", () => {
+  assert.equal(spokenText(results(["no", true], ["no", true])), "no no");
+  assert.equal(spokenText(results(["build a sale", true], ["build a sales chart", false])), "build a sale build a sales chart");
+});
+
+test("only Android user agents restate earlier results", () => {
+  assert.equal(cumulativeResults("Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 Chrome/131.0 Mobile Safari/537.36"), true);
+  assert.equal(cumulativeResults("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1"), false);
+  assert.equal(cumulativeResults("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/131.0 Safari/537.36"), false);
 });
 
 test("speech is appended to what the attendee already typed", () => {

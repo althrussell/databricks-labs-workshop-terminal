@@ -54,25 +54,41 @@ export function speechRecognitionCtor(win: SpeechWindow): RecognitionCtor | null
 }
 
 /** Everything heard so far in one listening session, final and tentative alike. */
-export function spokenText(results: RecognitionEventLike["results"]): string {
+export function spokenText(results: RecognitionEventLike["results"], cumulative = false): string {
   const parts: string[] = [];
   for (let i = 0; i < results.length; i += 1) {
     const text = results[i]?.[0]?.transcript?.trim();
     if (!text) continue;
-    // Android Chrome's SpeechRecognizer bridge emits cumulative prefixes across
-    // results[0..n] when continuous=true ("build", "build a", "build a chart").
     const prev = parts[parts.length - 1];
-    if (prev) {
-      const prevLower = prev.toLowerCase();
-      const curLower = text.toLowerCase();
-      if (curLower === prevLower || curLower.startsWith(`${prevLower} `)) {
-        parts[parts.length - 1] = text;
-        continue;
-      }
+    // Only Android repeats what came before; elsewhere a repeat is speech
+    // ("no, no"), so every result is kept.
+    if (cumulative && prev && restates(prev, text)) {
+      parts[parts.length - 1] = text;
+      continue;
     }
     parts.push(text);
   }
   return parts.join(" ");
+}
+
+/** Android Chrome's recognizer, with `continuous` on, starts each new result
+ * with the whole utterance so far ("build", "build a", "build a sales chart"),
+ * revising earlier words as it goes. Other browsers give separate segments. */
+export function cumulativeResults(userAgent: string): boolean {
+  return /\bAndroid\b/i.test(userAgent);
+}
+
+const words = (text: string) => text.toLowerCase().split(/\s+/).filter(Boolean);
+
+/** Whether `cur` restates `prev`: at least half of prev's words recur in the
+ * same places, and it is no more than a word shorter. A revised word anywhere
+ * ("add the chart" to "add a chart") still counts as the same utterance. */
+function restates(prev: string, cur: string): boolean {
+  const before = words(prev);
+  const after = words(cur);
+  if (after.length + 1 < before.length) return false;
+  const same = before.filter((word, i) => after[i] === word).length;
+  return same >= Math.ceil(before.length / 2);
 }
 
 /** The prompt box while listening: what was typed before, then what is heard. */
@@ -105,6 +121,8 @@ export function voiceNotice(error: string): ClipboardNotice | null {
 
 export interface DictationHandlers {
   lang: string;
+  /** The recognizer restates earlier results (Android Chrome): see cumulativeResults. */
+  cumulative?: boolean;
   /** Called with everything heard so far each time the recognizer updates. */
   onText: (spoken: string) => void;
   /** Called once when listening ends for any reason. */
@@ -131,7 +149,7 @@ export function startDictation(Ctor: RecognitionCtor, handlers: DictationHandler
   recognition.continuous = true;
   recognition.interimResults = true;
   recognition.onresult = (event) => {
-    if (!ended) handlers.onText(spokenText(event.results));
+    if (!ended) handlers.onText(spokenText(event.results, handlers.cumulative ?? false));
   };
   recognition.onerror = (event) => {
     const notice = voiceNotice(event.error);

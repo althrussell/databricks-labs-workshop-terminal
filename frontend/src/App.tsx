@@ -191,7 +191,6 @@ export default function App() {
     const keyboard = new KeyboardTracker();
     const update = () => {
       const next = measureViewport(keyboard, vv, window.scrollY, touch);
-      if (!next) return;
       root.style.setProperty("--app-height", `${next.appHeightPx}px`);
       root.dataset.keyboard = next.keyboardOpen ? "open" : "closed";
       // iOS scrolls the page to reveal a focused box; the app already fits.
@@ -1409,6 +1408,7 @@ export default function App() {
                   onExit={finishSession}
                   onGatewayLimit={handleGatewayLimit}
                   onClipboard={setClipboardNotice}
+                  touch={touch}
                 />
               )}
             </div>

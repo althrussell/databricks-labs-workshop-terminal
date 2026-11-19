@@ -18,7 +18,6 @@ import { decideTerminalKey } from "../terminalKeys";
 import { keySequence, type TouchKey } from "../touchKeys";
 import type { AttendeeErrorCode } from "../telemetry";
 import { notifyWorkshopClosing, workshopNotice } from "../workshopLifecycle";
-import { TOUCH_QUERY } from "./useMediaQuery";
 
 /** What the toolbar's Copy and Paste buttons can ask of the live terminal. */
 export interface TerminalHandle {
@@ -26,8 +25,11 @@ export interface TerminalHandle {
   copySelection: () => void;
   /** Type text as a paste. False when the terminal can't take input. */
   paste: (text: string) => boolean;
-  /** Return the keyboard to the prompt once a button or dialog is done. */
+  /** Return the keyboard to the prompt once a button or dialog is done. On a
+   * touch screen this does nothing: focusing xterm opens the OS keyboard. */
   focus: () => void;
+  /** Focus the terminal for direct typing, opening the OS keyboard on touch. */
+  openKeyboard: () => void;
   /** Type `text` as a paste, then press Enter: the composer's Send. */
   submit: (text: string) => boolean;
   /** Press one key a phone keyboard lacks (Esc, Tab, an arrow, Ctrl+C). */
@@ -53,13 +55,15 @@ interface Props {
   ) => void;
   /** Every copy and paste outcome, so none of them is silent. */
   onClipboard?: (notice: ClipboardNotice) => void;
+  /** A touch screen (App's useMediaQuery(TOUCH_QUERY)): the one place that decides. */
+  touch?: boolean;
 }
 
 // One xterm + one websocket per session, kept alive across tab switches
 // (the component stays mounted; `active` only toggles visibility). The
 // server holds the PTY and scrollback, so a dropped socket reconnects and
 // replays seamlessly.
-export default function TerminalView({ ref, sessionId, active, readOnly = false, onExit, onGatewayLimit, onClipboard }: Props) {
+export default function TerminalView({ ref, sessionId, active, readOnly = false, onExit, onGatewayLimit, onClipboard, touch = false }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -68,6 +72,8 @@ export default function TerminalView({ ref, sessionId, active, readOnly = false,
   const activeRef = useRef(active);
   activeRef.current = active;
   const readOnlyRef = useRef(readOnly);
+  const touchRef = useRef(touch);
+  touchRef.current = touch;
   readOnlyRef.current = readOnly;
   const onClipboardRef = useRef(onClipboard);
   onClipboardRef.current = onClipboard;
@@ -103,7 +109,10 @@ export default function TerminalView({ ref, sessionId, active, readOnly = false,
       term.paste(text);
       return true;
     },
-    focus: () => termRef.current?.focus(),
+    focus: () => {
+      if (!touchRef.current) termRef.current?.focus();
+    },
+    openKeyboard: () => termRef.current?.focus(),
     submit: (text: string) => {
       const term = termRef.current;
       if (!term || !inputOpen() || !text.trim()) return false;
@@ -385,10 +394,8 @@ export default function TerminalView({ ref, sessionId, active, readOnly = false,
       fitRef.current?.fit();
       sendResizeRef.current();
       // On touch screens, focusing xterm opens the raw OS keyboard over the terminal;
-      // the key bar's explicit keyboard button still focuses it on demand.
-      if (!window.matchMedia(TOUCH_QUERY).matches) {
-        termRef.current?.focus();
-      }
+      // the key bar's keyboard button (openKeyboard) still focuses it on demand.
+      if (!touchRef.current) termRef.current?.focus();
     }
   }, [active]);
 

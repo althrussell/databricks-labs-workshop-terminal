@@ -1,7 +1,7 @@
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref, type RefObject } from "react";
 import { Mic, MicOff, SendHorizontal, X } from "lucide-react";
 import { pasteNotice, type ClipboardNotice } from "../terminalClipboard";
-import { composeTranscript, startDictation, type Dictation, type RecognitionCtor } from "../voice";
+import { composeTranscript, cumulativeResults, startDictation, type Dictation, type RecognitionCtor } from "../voice";
 import type { TerminalHandle } from "./TerminalView";
 
 export interface PromptComposerHandle {
@@ -25,7 +25,10 @@ interface Props {
 /** About five lines; longer prompts scroll inside the box. */
 const MAX_HEIGHT_PX = 128;
 const NOTICE_MS = 8000;
-const STOP_FALLBACK_MS = 1500;
+/** How long a stopped recognizer may take to send its final words before the
+ * mic is released anyway. A speech service on slow venue Wi-Fi can take a few
+ * seconds; only a stalled one (no end event at all) should hit this. */
+const STOP_FALLBACK_MS = 5000;
 
 /** A prompt box under the terminal: type or speak, read it back, then send.
  *
@@ -100,6 +103,7 @@ export default function PromptComposer({
     setListening(true);
     dictation = startDictation(speech, {
       lang: navigator.language || "en-US",
+      cumulative: cumulativeResults(navigator.userAgent),
       onText: (spoken) => {
         if (!ended && dictationRef.current === dictation) setText(composeTranscript(base, spoken));
       },
