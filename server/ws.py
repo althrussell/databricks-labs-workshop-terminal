@@ -153,7 +153,8 @@ def _parse_terminal_size(msg: dict) -> tuple[int, int] | None:
     try:
         cols = int(raw_cols)
         rows = int(raw_rows)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        # OverflowError: JSON such as 1e400 or Infinity parses to an infinite float.
         return None
     if cols < 1 or rows < 1:
         return None

@@ -218,6 +218,13 @@ def test_malformed_and_out_of_range_resize_frames_do_not_crash_or_zero_pty(clien
             {"t": "input", "data": None},
         ):
             ws.send_text(json.dumps(bad))
+        # Valid JSON that parses to inf or nan: int() raises OverflowError or ValueError.
+        for raw in (
+            '{"t":"resize","cols":1e400,"rows":24}',
+            '{"t":"resize","cols":80,"rows":-Infinity}',
+            '{"t":"resize","cols":NaN,"rows":24}',
+        ):
+            ws.send_text(raw)
         ws.send_text(json.dumps({"t": "input", "data": "echo keep-$(stty size | tr ' ' x) done-$((2+2))\n"}))
         seen = _read_until(ws, lambda _msg, out: "done-4" in out)
         assert seen.rsplit("keep-", 1)[1].split()[0] == "35x110"
