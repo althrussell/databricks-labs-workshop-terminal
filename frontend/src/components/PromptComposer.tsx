@@ -77,8 +77,14 @@ export default function PromptComposer({ ref, terminal, speech, onClose }: Props
       },
       onError: setNotice,
     });
-    // A recognizer that refused to start has already ended.
-    if (!ended) dictationRef.current = dictation;
+    // start() threw: startDictation has already ended it and shown a notice.
+    // Clear the mic here rather than rely on onEnd's ref check, which ran
+    // before anything was registered.
+    if (ended) {
+      setListening(false);
+      return;
+    }
+    dictationRef.current = dictation;
   }
 
   useImperativeHandle(ref, () => ({ toggleListening }));

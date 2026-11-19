@@ -25,6 +25,8 @@ FAKE_SPEECH = """
 window.__voiceStarts = 0;
 class FakeRecognition {
   start() {
+    // Browsers throw here when another recognizer is already running.
+    if (window.__voiceFailStart) throw new Error("InvalidStateError");
     window.__voiceStarts += 1;
     setTimeout(() => {
       const alt = Object.assign([{ transcript: %s }], { isFinal: true });
@@ -145,6 +147,16 @@ async def exercise(client, tmp_path, monkeypatch, device):
                     await tap(keys.get_by_role("button", name="Up arrow"))
                     await tap(keys.get_by_role("button", name="Shift+Tab"))
                     assert await _inputs_after(frames, start, ["\x1b", "\x1b[A", "\x1b[Z"]) == ["\x1b", "\x1b[A", "\x1b[Z"]
+                    # A recognizer that refuses to start leaves the mic usable, not stuck listening.
+                    await page.evaluate("window.__voiceFailStart = true")
+                    mic = composer.get_by_role("button", name="Speak a prompt")
+                    await tap(mic)
+                    await page.get_by_role("status").filter(has_text="Voice input is busy").wait_for()
+                    assert await mic.get_attribute("aria-pressed") == "false"
+                    assert await prompt.get_attribute("placeholder") == "Prompt the agent"
+                    await page.evaluate("window.__voiceFailStart = false")
+                    await tap(mic)
+                    await page.wait_for_function("() => window.__voiceStarts === 2")
                     await tap(page.get_by_role("button", name="Ask for help", exact=False).first)
                     panel = page.locator(".help-chat-panel")
                     await panel.wait_for()
