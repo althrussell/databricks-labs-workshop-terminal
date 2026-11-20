@@ -115,11 +115,11 @@ up the step budget the census needs. Its rules:
   reparent to the supervisor.
 - If an attendee home is `/` or contains the server's own cwd or HOME, nothing is
   signalled and the stage reports `attendee_process_stop_refused`.
-- Issues: `attendee_process_stop_pending` (waiting out the grace),
-  `attendee_process_stop_incomplete` (a program it may not or could not stop) and
-  `attendee_process_stop_partial` (its census did not see every process).
+- Issues: `attendee_process_stop_pending` (waiting out the grace) and
+  `attendee_process_stop_incomplete` (a program it may not or could not stop).
 - Its outcome holds counts only: `matched`, `terminated`, `killed`, `remaining`
-  and `server_children`.
+  and `server_children`, plus `census_complete`, which is false when its census
+  could not see every process. That shortfall is the census stage's own issue.
 
 A read-only Linux process census then verifies that no attendee HOME/cwd writer
 remains. Uncertainty, or a writer that survived the stop, still holds closeout.

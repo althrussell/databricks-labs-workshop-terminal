@@ -361,7 +361,8 @@ def stop_attendee_writers(users, *, deadline: float, proc_root: Path | None = No
     """
     started = clock()
     root = Path("/proc") if proc_root is None else proc_root
-    empty = {"matched": 0, "terminated": 0, "killed": 0, "remaining": 0, "server_children": 0}
+    empty = {"matched": 0, "terminated": 0, "killed": 0, "remaining": 0, "server_children": 0,
+             "census_complete": True}
     homes = [os.path.realpath(user.home) for user in users]
     if not homes:
         return {"complete": True, "issues": [], **empty, "elapsed_ms": 0}
@@ -417,11 +418,12 @@ def stop_attendee_writers(users, *, deadline: float, proc_root: Path | None = No
         issues.append("attendee_process_stop_pending")  # SIGKILL follows on a later read
     if len(remaining) > len(in_grace):
         issues.append("attendee_process_stop_incomplete")
-    if not census["complete"] and set(census["issues"]) - {"unmanaged_writer_unverified"}:
-        issues.append("attendee_process_stop_partial")  # the census behind it did not see everything
+    # Whether the census behind this stop saw every process. A partial view is
+    # the census stage's own issue to report; this receipt only records it.
+    saw_everything = census["complete"] or not (set(census["issues"]) - {"unmanaged_writer_unverified"})
     return {"complete": not issues, "issues": issues, "matched": len(targets),
             "terminated": terminated, "killed": killed, "remaining": len(remaining),
-            "server_children": len(server_children),
+            "server_children": len(server_children), "census_complete": saw_everything,
             "elapsed_ms": round((clock() - started) * 1000)}
 
 

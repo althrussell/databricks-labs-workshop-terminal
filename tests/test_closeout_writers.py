@@ -982,7 +982,9 @@ def test_closeout_stop_says_when_its_census_did_not_see_everything(tmp_path, mon
     monkeypatch.setattr(closeout_writers, "census_attendee_writers",
                         lambda *_a, **_k: {"complete": False, "issues": ["attendee_process_census_timeout"]})
     result = _stop([SimpleNamespace(home=str(home))], root, send=lambda *_: None)
-    assert result["issues"] == ["attendee_process_stop_partial"]
+    # Recorded, not raised again: the census stage reports its own timeout.
+    assert result["complete"] is True and result["issues"] == []
+    assert result["census_complete"] is False
 
 
 def test_a_census_cut_off_between_passes_reports_what_it_last_found(monkeypatch):
