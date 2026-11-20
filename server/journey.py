@@ -353,15 +353,17 @@ def export(user, *, reason: str = "attendee", reuse: bool = False, project: str 
     target_project = str(projects.project_path(user, project)) if project else None
     # Insight v2 only: with the flag off, the export behaves exactly as it always did.
     capture_first = reason in CAPTURE_FIRST_REASONS and config.insight_v2_enabled()
+    if capture_first:
+        # Wrap and teardown always export: a reused export would upload shots from
+        # before this capture. The capture runs outside the export lock, so a long
+        # browser pass never stalls other seats or an attendee's download.
+        reuse = False
+        _capture_projects_safely(user, time.monotonic() + SCREENSHOT_BUDGET_SECONDS)
     cache_key = f"{user.email}:{project or ''}"
     with _export_lock:
         cached = _exports.get(cache_key)
         if reuse and cached and time.time() - cached["at"] < EXPORT_REUSE_SECONDS:
             return {**cached["result"], "reused": True}
-        if capture_first:
-            # Wrap and teardown: the kept screenshots must be current before they
-            # upload, so capture first, within a bounded budget.
-            _capture_projects_safely(user, time.monotonic() + SCREENSHOT_BUDGET_SECONDS)
         helper = os.path.join(os.path.dirname(__file__), "..", "assets", "bin", "workshop-export")
         command = [helper]
         if target_project:

@@ -729,9 +729,11 @@ def _help_messages() -> list[tuple[str, str | None]]:
 def ask_candidates(harvest: artifacts.Harvest, user: User) -> list[AskCandidate]:
     """Every attendee-authored candidate, in the fixed order the model indexes.
 
-    Prompts come first, so a prompt's index is its position in ``harvest.prompts``.
-    Help messages and the wizard answer follow. Every text is redacted here, once,
-    so anything copied from a candidate is already clean.
+    Prompts come first. Redaction replaces text and never removes it, and a
+    harvested prompt is never empty, so each prompt keeps its position in
+    ``harvest.prompts``. Help messages and the wizard answer follow. Callers index
+    this returned list, never ``harvest.prompts``. Every text is redacted here,
+    once, so anything copied from a candidate is already clean.
     """
     candidates: list[AskCandidate] = []
     for prompt in harvest.prompts:

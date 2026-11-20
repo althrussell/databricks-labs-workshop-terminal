@@ -429,7 +429,8 @@ def _design_record(project: Path) -> dict:
 
 def screenshots(project: Path, record: dict) -> list[dict]:
     folder = project / ".workshop" / "evidence"
-    if folder.is_symlink() or not folder.is_dir():
+    # Every component, not only the leaf: a linked .workshop would send the walk elsewhere.
+    if (project / ".workshop").is_symlink() or folder.is_symlink() or not folder.is_dir():
         return []
     names = []
     for entry in os.scandir(folder):

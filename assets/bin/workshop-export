@@ -354,6 +354,8 @@ def upload_screenshots(source: Path, catalog: str, schema: str, *, single_projec
     shots: list[tuple[str, Path, Path]] = []
     for proj in candidates:
         evidence = proj / ".workshop" / "evidence"
+        if (proj / ".workshop").is_symlink():
+            continue  # a linked .workshop would send the shot search elsewhere
         if evidence.is_dir() and not evidence.is_symlink():
             for png in _project_shots(evidence, v2=v2):
                 shots.append((proj.name, png, proj))

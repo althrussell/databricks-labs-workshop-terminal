@@ -317,7 +317,10 @@ def _outbound(text: str | None) -> str | None:
 
 def raise_hand(note: str | None = None) -> dict[str, Any]:
     _ensure_ready()
-    note_clean = _outbound((note or "").strip()[:280] or None)
+    note_clean = (note or "").strip()[:280] or None
+    # The attendee's own thread keeps what they typed; only the copy that leaves
+    # the seat is redacted.
+    outbound = _outbound(note_clean)
     note_id = str(uuid4()) if note_clean else ""
     now = time.time()
     created_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -329,10 +332,10 @@ def raise_hand(note: str | None = None) -> dict[str, Any]:
                          "sender_role": "attendee", "sender": "", "body": note_clean,
                          "created_at": created_at}
                 _append_local(state, local)
-                _enqueue(state, "message", **local)
+                _enqueue(state, "message", **{**local, "body": outbound})
         _mutate_locked(apply)
     flush_help_persistence()
-    pushed = _push_control_tower("raise", note_clean, message_id=note_id)
+    pushed = _push_control_tower("raise", outbound, message_id=note_id)
     event_hub.publish({"t": "help_state", "raised": True, "note": note_clean})
     return {"raised": True, "pushed": pushed, "note": note_clean}
 
@@ -379,7 +382,7 @@ def post_attendee_message(body: str, *, sender: str = "") -> dict[str, Any]:
     text = (body or "").strip()[:2000]
     if not text:
         raise ValueError("message body is required")
-    text = _outbound(text) or text
+    outbound = _outbound(text) or text
     _ensure_ready()
     message_id = str(uuid4())
     now = time.time()
@@ -392,13 +395,13 @@ def post_attendee_message(body: str, *, sender: str = "") -> dict[str, Any]:
                      "sender_role": "attendee", "sender": sender, "body": text,
                      "created_at": created_at}
             _append_local(state, local)
-            _enqueue(state, "message", **local)
+            _enqueue(state, "message", **{**local, "body": outbound})
             return local
         local = _mutate_locked(apply)
     flush_help_persistence()
-    pushed = _push_control_tower_message(text, message_id=local["message_id"])
+    pushed = _push_control_tower_message(outbound, message_id=local["message_id"])
     if not pushed and not _push_rejection["logged"]:
-        _push_control_tower("raise", text[:280], message_id=local["message_id"])
+        _push_control_tower("raise", outbound[:280], message_id=local["message_id"])
     event_hub.publish({"t": "help_message", **local, "surface": "none", "request_ack": False})
     event_hub.publish({"t": "help_state", "raised": True})
     return {"message": local, "pushed": pushed, "raised": True}

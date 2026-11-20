@@ -79,13 +79,19 @@ def _prepare(emitter, capture_id: str) -> tuple[dict, list[str]]:
             issues.add("final_artifact_home_unavailable")
         harvest = artifacts.harvest_user(user, single_attendee=len(users) <= 1)
         issues.update(harvest.issues)
-        if harvest.is_empty():
+        background = ""
+        if config.insight_v2_enabled():
+            # Insight v2: help and wizard text are material, and the final summary
+            # carries the same asks and background as the rolling ones.
+            harvest.ask_candidates = insight_summary.ask_candidates(harvest, user)
+            background = insight_summary._background(user)
+        if harvest.is_empty() and not harvest.ask_candidates:
             summaries[user.email] = {"status": "no_material"}
             continue
         template = insight_summary._payload(
             insight_summary._extraction(harvest, row.get("signal")), harvest,
             run_id=emitter.run_id, email=user.email, phase=content_service.phase,
-            generator="extraction", model=None, revision=1,
+            generator="extraction", model=None, revision=1, background=background,
         )
         template["final_capture_id"] = capture_id
         summary = {"status": "prepared", "fingerprint": insight_summary._fingerprint(
