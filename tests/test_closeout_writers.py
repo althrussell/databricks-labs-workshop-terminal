@@ -1013,8 +1013,12 @@ def test_closeout_stops_real_orphaned_programs_including_one_that_ignores_sigter
     home = tmp_path / "attendee"
     home.mkdir()
     pids = tmp_path / "pids"
+    ready = tmp_path / "stubborn-ready"
+    # The stubborn child says it is ready only after it ignores SIGTERM; otherwise
+    # the stop could reach it first and kill it outright (Codex on #168).
     programs = ["import time; time.sleep(60)",
-                "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"]
+                "import pathlib,signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                f"pathlib.Path({str(ready)!r}).touch(); time.sleep(60)"]
     launcher = ("import subprocess,sys\n"
                 f"pids=[subprocess.Popen([sys.executable,'-c',p],start_new_session=True).pid for p in {programs!r}]\n"
                 f"open({str(pids)!r},'w').write(' '.join(map(str,pids)))\n")
@@ -1029,6 +1033,7 @@ def test_closeout_stops_real_orphaned_programs_including_one_that_ignores_sigter
             return False
 
     try:
+        _wait(ready.exists, timeout=10)
         user = SimpleNamespace(home=str(home))
         first = stop_attendee_writers([user], deadline=time.monotonic() + 5)
         assert first["matched"] >= 2 and first["terminated"] >= 2, first
