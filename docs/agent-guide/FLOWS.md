@@ -411,7 +411,8 @@ sequenceDiagram
    `server/closeout_http.py::CloseoutAdmissionMiddleware` refuses producing requests
    (`server/closeout_http.py::produces_capture`) with 409 `workshop_closing`.
 6. Advancing:
-   - drains writers;
+   - drains writers, stops any program the attendee left running
+     (`server/closeout_writers.py::stop_attendee_writers`) and verifies none remain;
    - writes model-free final outputs (`server/closeout_outputs.py`);
    - reconciles refusals;
    - builds the manifest (`server/closeout.py::manifest_for`);

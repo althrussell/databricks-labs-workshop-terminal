@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -297,7 +298,8 @@ def test_default_closeout_drains_real_terminal_and_requires_complete_host_census
             outcomes = {row["kind"]: row for row in journal.read()["closeout"]["drain"]["outcomes"]}
             assert set(outcomes) == {"workspace_sync_admission", "terminal_processes",
                                      "paired_host_processes", "identity_workers",
-                                     "workspace_sync_workers", "attendee_process_census"}
+                                     "workspace_sync_workers", "attendee_process_stop",
+                                     "attendee_process_census"}
             census = outcomes.pop("attendee_process_census")
             assert all(row["complete"] for row in outcomes.values()), outcomes
             assert census["complete"] is False
@@ -310,7 +312,7 @@ def test_default_closeout_drains_real_terminal_and_requires_complete_host_census
             return
         assert closed["phase"] == "SEALED", json.dumps(closed, sort_keys=True)
         assert closed["complete"] is True
-        assert len(closed["manifest"]["drain"]["outcomes"]) >= 6
+        assert len(closed["manifest"]["drain"]["outcomes"]) >= 7
         assert all(item["complete"] for item in closed["manifest"]["drain"]["outcomes"])
         categories = {row["type"]: row["count"] for row in closed["manifest"]["categories"]}
         assert categories["session.started"] == categories["session.exited"] == 1
@@ -540,10 +542,11 @@ def test_coordinator_keeps_failed_stage_and_continues_with_one_deadline(monkeypa
     monkeypatch.setattr(remote_host_manager, "drain_for_closeout", good)
     monkeypatch.setattr(identity, "drain_for_closeout", good)
     monkeypatch.setattr(user_content, "drain_sync_for_closeout", good)
+    monkeypatch.setattr(closeout_writers, "stop_attendee_writers", good)
     monkeypatch.setattr(closeout_writers, "_settled_attendee_census", good)
     result = closeout_writers.drain(1)
     assert not result["complete"]
-    assert len(result["outcomes"]) == 6
+    assert len(result["outcomes"]) == 7
     assert len(set(deadlines)) == 1
     assert result["issues"] == ["workspace_sync_admission_drain_failed:OSError"]
     assert "private" not in json.dumps(result)
@@ -844,3 +847,202 @@ def test_invalid_drain_deadline_is_rejected(timeout):
 
     with pytest.raises(ValueError):
         drain(timeout)
+
+
+def _stat_line(pid, *, start, state="S", ppid=1):
+    # Fields after the comm: state is field 3, so stat field N is fields[N - 3];
+    # the parent is field 4 (fields[1]) and the start time field 22 (fields[19]).
+    fields = [state, str(ppid), str(pid), str(pid)] + ["0"] * 46
+    fields[19] = str(start)
+    return f"{pid} (private process name) " + " ".join(fields)
+
+
+def _running(root, pid, *, home, cwd, start, ppid=1):
+    entry = _proc_entry(root, pid, home=home, cwd=cwd)
+    (entry / "stat").write_text(_stat_line(pid, start=start, ppid=ppid))
+    return entry
+
+
+def _exit(root, pid):
+    (root / str(pid) / "stat").write_text(_stat_line(pid, start=0, state="Z"))
+
+
+def _stop(users, root, **kwargs):
+    from server.closeout_writers import stop_attendee_writers
+
+    kwargs.setdefault("deadline", time.monotonic() + 5)
+    return stop_attendee_writers(users, proc_root=root, **kwargs)
+
+
+def test_closeout_stops_what_the_attendee_left_running_then_reports_counts_only(tmp_path):
+    """RAC, 20 Nov 2026: every seat held CLOSING because something the attendee
+    left running under their HOME never exited. Closeout now ends it: SIGTERM on
+    one read, SIGKILL on a later read once the grace has passed, counts only."""
+    root = tmp_path / "proc"
+    root.mkdir()
+    home = tmp_path / "attendee"
+    home.mkdir()
+    _running(root, 61001, home=home, cwd="/tmp", start=100)            # exits on SIGTERM
+    _running(root, 61002, home="/platform", cwd=home / "app", start=200)  # ignores SIGTERM
+    _running(root, 61003, home="/platform", cwd="/tmp", start=300)      # not an attendee's
+    sent = []
+
+    def send(pid, sig):
+        sent.append((pid, sig))
+        if pid == 61001 or sig == signal.SIGKILL:
+            _exit(root, pid)
+
+    users = [SimpleNamespace(home=str(home))]
+    first = _stop(users, root, send=send, grace_seconds=60)
+    assert first["complete"] is False
+    assert first["issues"] == ["attendee_process_stop_pending"]
+    assert (first["matched"], first["terminated"], first["killed"], first["remaining"]) == (2, 2, 0, 1)
+    # Inside the grace a later read sends nothing new.
+    assert _stop(users, root, send=send, grace_seconds=60)["issues"] == ["attendee_process_stop_pending"]
+    assert sorted(sent) == [(61001, signal.SIGTERM), (61002, signal.SIGTERM)]
+
+    after_grace = _stop(users, root, send=send, grace_seconds=0)
+    assert after_grace["complete"] is True, after_grace
+    assert (after_grace["killed"], after_grace["remaining"]) == (1, 0)
+    assert sent[-1] == (61002, signal.SIGKILL)
+    assert "private" not in json.dumps([first, after_grace]) and str(home) not in json.dumps(first)
+
+
+def test_closeout_never_signals_a_reused_pid_or_one_it_cannot_identify(tmp_path, monkeypatch):
+    from server import closeout_writers
+
+    root = tmp_path / "proc"
+    root.mkdir()
+    home = tmp_path / "attendee"
+    home.mkdir()
+    _running(root, 61011, home=home, cwd=home, start=999)  # the pid now belongs to another program
+    unreadable = _running(root, 61012, home=home, cwd=home, start=500)
+    (unreadable / "stat").unlink()
+    (unreadable / "stat").mkdir()  # reading it raises an OSError other than "not found"
+    _running(root, 61013, home=home, cwd=home, start=700)  # matched with no start time
+
+    def census(_users, *, proc_root, deadline, matches):
+        matches.extend([(61011, "100"), (61012, "500"), (61013, "")])
+        return {"complete": False, "issues": ["unmanaged_writer_unverified"]}
+
+    monkeypatch.setattr(closeout_writers, "census_attendee_writers", census)
+    result = _stop([SimpleNamespace(home=str(home))], root, deadline=time.monotonic() + 1,
+                   send=lambda pid, sig: pytest.fail(f"signalled {pid}"), grace_seconds=0)
+    # The reused pid is not ours and is not left over; the other two are not called stopped.
+    assert result["issues"] == ["attendee_process_stop_incomplete"]
+    assert (result["terminated"], result["killed"], result["remaining"]) == (0, 0, 2)
+
+
+def test_closeout_refuses_to_signal_when_an_attendee_home_would_cover_the_server(tmp_path):
+    root = tmp_path / "proc"
+    root.mkdir()
+    _running(root, 61021, home="/", cwd="/", start=1)
+    for home in ("/", os.getcwd(), os.path.dirname(os.getcwd())):
+        result = _stop([SimpleNamespace(home=home)], root, deadline=time.monotonic() + 1,
+                       send=lambda *_: pytest.fail("must not signal"))
+        assert result["issues"] == ["attendee_process_stop_refused"], home
+        assert result["complete"] is False
+
+
+def test_closeout_never_signals_the_server_its_ancestors_or_its_own_children(tmp_path, monkeypatch):
+    """The server, its supervisor and the launcher above it stay up, and an
+    in-flight git or CLI call the server started is not an attendee program."""
+    from server import closeout_writers
+
+    root = tmp_path / "proc"
+    root.mkdir()
+    home = tmp_path / "attendee"
+    home.mkdir()
+    launcher = 61030
+    _running(root, launcher, home=home, cwd=home, start=5)
+    _running(root, os.getppid(), home=home, cwd=home, start=6, ppid=launcher)
+    _running(root, os.getpid(), home=home, cwd=home, start=7, ppid=os.getppid())
+    _running(root, 61031, home=home, cwd=home, start=8, ppid=os.getpid())  # the server's git call
+    _running(root, 61032, home=home, cwd=home, start=9, ppid=61031)        # and its child
+
+    def census(_users, *, proc_root, deadline, matches):
+        matches.extend([(launcher, "5"), (os.getppid(), "6"), (os.getpid(), "7"), (61031, "8"),
+                        (61032, "9"), (1, "1")])
+        return {"complete": False, "issues": ["unmanaged_writer_unverified"]}
+
+    monkeypatch.setattr(closeout_writers, "census_attendee_writers", census)
+    result = _stop([SimpleNamespace(home=str(home))], root, deadline=time.monotonic() + 1,
+                   send=lambda *_: pytest.fail("must not signal"), grace_seconds=0)
+    assert result["complete"] is True, result
+    assert (result["matched"], result["server_children"]) == (0, 2)
+
+
+def test_closeout_stop_says_when_its_census_did_not_see_everything(tmp_path, monkeypatch):
+    from server import closeout_writers
+
+    root = tmp_path / "proc"
+    root.mkdir()
+    home = tmp_path / "attendee"
+    home.mkdir()
+    monkeypatch.setattr(closeout_writers, "census_attendee_writers",
+                        lambda *_a, **_k: {"complete": False, "issues": ["attendee_process_census_timeout"]})
+    result = _stop([SimpleNamespace(home=str(home))], root, send=lambda *_: None)
+    # Recorded, not raised again: the census stage reports its own timeout.
+    assert result["complete"] is True and result["issues"] == []
+    assert result["census_complete"] is False
+
+
+def test_a_census_cut_off_between_passes_reports_what_it_last_found(monkeypatch):
+    """RAC, 20 Nov 2026: 22 of 32 seats reported only ``attendee_process_census_timeout``
+    with nothing scanned. The pass before had found an attendee program; say so."""
+    from server import closeout_writers
+
+    passes = iter([
+        {"complete": False, "issues": ["unmanaged_writer_unverified"], "matched": 2, "scanned": 24},
+        {"complete": False, "issues": ["attendee_process_census_timeout"], "matched": 0, "scanned": 0},
+    ])
+    monkeypatch.setattr(closeout_writers, "census_attendee_writers", lambda *_a, **_k: next(passes))
+    result = closeout_writers._settled_attendee_census([], deadline=time.monotonic() + 1)
+    assert result["complete"] is False
+    assert result["matched"] == 2
+    assert result["issues"] == ["attendee_process_census_timeout", "unmanaged_writer_unverified"]
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux") or not os.path.isdir("/proc"),
+                    reason="stopping real processes needs the Linux process census")
+def test_closeout_stops_real_orphaned_programs_including_one_that_ignores_sigterm(tmp_path):
+    """Real orphans, as an attendee's detached dev server is: the launcher exits, so
+    the programs reparent away from this process, and only HOME ties them to the seat."""
+    from server.closeout_writers import census_attendee_writers, stop_attendee_writers
+
+    home = tmp_path / "attendee"
+    home.mkdir()
+    pids = tmp_path / "pids"
+    ready = tmp_path / "stubborn-ready"
+    # The stubborn child says it is ready only after it ignores SIGTERM; otherwise
+    # the stop could reach it first and kill it outright (Codex on #168).
+    programs = ["import time; time.sleep(60)",
+                "import pathlib,signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                f"pathlib.Path({str(ready)!r}).touch(); time.sleep(60)"]
+    launcher = ("import subprocess,sys\n"
+                f"pids=[subprocess.Popen([sys.executable,'-c',p],start_new_session=True).pid for p in {programs!r}]\n"
+                f"open({str(pids)!r},'w').write(' '.join(map(str,pids)))\n")
+    subprocess.run([sys.executable, "-c", launcher], cwd=home, env={**os.environ, "HOME": str(home)},
+                   check=True, timeout=30)
+    orphans = [int(pid) for pid in pids.read_text().split()]
+
+    def alive(pid):
+        try:
+            return (Path("/proc") / str(pid) / "stat").read_text().rpartition(") ")[2].split()[0] not in {"Z", "X"}
+        except FileNotFoundError:
+            return False
+
+    try:
+        _wait(ready.exists, timeout=10)
+        user = SimpleNamespace(home=str(home))
+        first = stop_attendee_writers([user], deadline=time.monotonic() + 5)
+        assert first["matched"] >= 2 and first["terminated"] >= 2, first
+        assert first["issues"] == ["attendee_process_stop_pending"], first  # one ignores SIGTERM
+        second = stop_attendee_writers([user], deadline=time.monotonic() + 5, grace_seconds=0)
+        assert second["complete"] is True and second["killed"] >= 1, second
+        _wait(lambda: not any(alive(pid) for pid in orphans), timeout=5)
+        assert census_attendee_writers([user], deadline=time.monotonic() + 5)["matched"] == 0
+    finally:
+        for pid in orphans:
+            if alive(pid):
+                os.kill(pid, signal.SIGKILL)

@@ -96,10 +96,37 @@ to continue. Pages do not acknowledge anything.
 Admission tickets persist before HTTP work or detached identity/summary workers
 start. Existing terminal processes, paired hosts, readers, summary/identity work
 and detached workspace-sync receipts are drained before final observations.
-Process groups must stop and readers finish. A read-only Linux process census
-detects remaining attendee HOME/cwd writers; uncertainty or unmanaged writers
-holds closeout instead of killing unrecognized processes. A non-Linux host cannot
-certify that production census. Failed accepted work remains explicit evidence.
+Process groups must stop and readers finish.
+
+Closeout is forced. CT begins it only just before the app is stopped,
+redeployed or deleted, and it never reopens input. So the `attendee_process_stop`
+stage ends every program still running under an attendee HOME or cwd, such as an
+orphaned `apx dev` or vite server or a detached script. A program gets SIGTERM on
+one read and, if it is still running once 2 s have passed, SIGKILL on a later
+read. Each read waits at most 0.5 s for programs to exit, so the grace never uses
+up the step budget the census needs. Its rules:
+- A pid is signalled only while its start time is unchanged. On Linux the signal
+  goes through a pidfd, so a reused pid is never hit.
+- A process whose start time is unknown or unreadable is neither signalled nor
+  reported as stopped.
+- The server, init and every ancestor of the server (its supervisor included)
+  are never signalled. Nor are the server's own child processes, such as an
+  in-flight `git` or CLI call; programs an attendee left behind are orphans that
+  reparent to the supervisor.
+- If an attendee home is `/` or contains the server's own cwd or HOME, nothing is
+  signalled and the stage reports `attendee_process_stop_refused`.
+- Issues: `attendee_process_stop_pending` (waiting out the grace) and
+  `attendee_process_stop_incomplete` (a program it may not or could not stop).
+- Its outcome holds counts only: `matched`, `terminated`, `killed`, `remaining`
+  and `server_children`, plus `census_complete`, which is false when its census
+  could not see every process. That shortfall is the census stage's own issue.
+
+A read-only Linux process census then verifies that no attendee HOME/cwd writer
+remains. Uncertainty, or a writer that survived the stop, still holds closeout.
+When the drain deadline falls between census passes, the census reports what the
+last pass that looked found (for example `unmanaged_writer_unverified`), not only
+the empty pass's timeout. A non-Linux host cannot certify that production census.
+Failed accepted work remains explicit evidence.
 The census reads each process's cwd on every pass, because cwd can change.
 It keeps each process's HOME verdict, keyed by program image (pid, start time,
 argument and environment addresses, comm, exe and a cmdline digest), because the
