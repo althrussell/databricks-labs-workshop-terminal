@@ -645,6 +645,9 @@ burned once will not open the second one.
   closeout validation rejects unknown fields today, so an older consumer would turn
   a v2 summary into a rejected closeout. The Terminal therefore sends v2 only when
   its app env says so, and Control Tower sets that only after it accepts v2.
-- A consumer that meets an unknown `type` must reject it (the allowlist is
-  explicit on purpose, so additions are deliberate). A consumer that meets an
-  unknown payload *field* must ignore it.
+- Control Tower validates sealed closeout against explicit allowlists. Any new
+  field or event type needs a CT release that accepts it first, so new fields ship
+  behind a flag that CT sets (`WORKSHOP_INSIGHT_V2`). Optional fields may be
+  omitted. Every v2 summary field requires `summary_schema_version: 2`.
+- Capture-first at wrap is skipped once the seat is no longer accepting input
+  (CLOSING or SEALED). The kept shots then come from the previous trigger.
