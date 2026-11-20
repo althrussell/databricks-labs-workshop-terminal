@@ -185,6 +185,9 @@ class Harvest:
     # Assurance metadata only. Paths and exception messages stay local; a final
     # closeout must distinguish an empty session from material it could not read.
     issues: list[str] = field(default_factory=list)
+    # Insight v2 only: the indexed candidate asks (prompts, then help messages,
+    # then the wizard answer), filled in by insight_summary. Never emitted as-is.
+    ask_candidates: list = field(default_factory=list)
 
     def is_empty(self) -> bool:
         """Nothing worth summarising.

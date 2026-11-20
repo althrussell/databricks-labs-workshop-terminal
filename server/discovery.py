@@ -125,6 +125,76 @@ def redact(text: str) -> tuple[str, int]:
     return text, count
 
 
+# --- personal and workspace identifiers (contract v2) ------------------------
+#
+# Applied on top of ``redact``, to text that may be shown to an account team:
+# attendee asks, framing, approach, pivots, and help messages. Each match is
+# replaced with a labelled marker so a reader can see that something was removed.
+
+_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
+_URL = re.compile(r"\bhttps?://[^\s<>\"'`]+", re.IGNORECASE)
+_TOKEN_PARAM = re.compile(
+    r"[?&](?:token|sig|signature|x-amz-signature|key|api[_-]?key|access[_-]?token|code|"
+    r"secret|x-goog-signature)=",
+    re.IGNORECASE,
+)
+_DATABRICKS_HOST = re.compile(
+    r"\b(?:[A-Za-z0-9-]+\.)+(?:cloud\.databricks\.com|azuredatabricks\.net|"
+    r"gcp\.databricks\.com|databricksapps\.com)\b",
+    re.IGNORECASE,
+)
+_IPV4 = re.compile(
+    r"(?<![\w.])(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?!\w|\.\d)"
+)
+_IPV6 = re.compile(
+    r"(?<![\w:])(?:"
+    r"(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}"
+    r"|(?:[0-9A-Fa-f]{1,4}:){1,6}:(?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,5})?"
+    r"|::(?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6})"
+    r")(?![\w:])"
+)
+# International (+61 4xx xxx xxx, +1 (555) 010-0199) and Australian national
+# formats (0412 345 678, 02 1234 5678). Dates and version numbers are excluded
+# by requiring a leading plus, or a leading 0 followed by a phone-shaped run.
+_PHONE_INTERNATIONAL = re.compile(r"(?<![\w+])\+\d[\d\s().-]{6,18}\d(?![\w])")
+_PHONE_NATIONAL = re.compile(r"(?<![\w.])0[2-478](?:[ .-]?\d){8}(?![\w])")
+
+
+def redact_pii(text: str) -> tuple[str, int]:
+    """Replace personal and workspace identifiers in ``text``. Returns (clean, count).
+
+    Runs after ``redact``. It covers emails, phone numbers (international and
+    Australian), IPv4 and IPv6 addresses, URLs whose query carries a token,
+    signature or key, and Databricks workspace hosts. Each replacement is a
+    ``[redacted-…]`` marker, and the count is the number of replacements.
+    """
+    if not text:
+        return text, 0
+    count = 0
+
+    def sub(pattern: re.Pattern, replacement: str, value: str) -> str:
+        nonlocal count
+        value, hits = pattern.subn(replacement, value)
+        count += hits
+        return value
+
+    def url(match: re.Match) -> str:
+        nonlocal count
+        if _TOKEN_PARAM.search(match.group(0)):
+            count += 1
+            return "[redacted-url]"
+        return match.group(0)
+
+    text = _URL.sub(url, text)
+    text = sub(_EMAIL, "[redacted-email]", text)
+    text = sub(_DATABRICKS_HOST, "[redacted-workspace-host]", text)
+    text = sub(_IPV4, "[redacted-ip]", text)
+    text = sub(_IPV6, "[redacted-ip]", text)
+    text = sub(_PHONE_INTERNATIONAL, "[redacted-phone]", text)
+    text = sub(_PHONE_NATIONAL, "[redacted-phone]", text)
+    return text, count
+
+
 @dataclass
 class DiscoveryRecord:
     """One agent-elicited discovery record for one attendee.

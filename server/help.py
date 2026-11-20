@@ -299,9 +299,25 @@ def _append_local(state: dict[str, Any], message: dict[str, Any]) -> None:
     state["messages"] = state["messages"][-_MAX_MESSAGES:]
 
 
+def _outbound(text: str | None) -> str | None:
+    """Redact attendee text bound for Control Tower (insight v2 only).
+
+    Flag-off payloads must stay byte-identical to today, so nothing changes here
+    unless ``WORKSHOP_INSIGHT_V2`` is on. The same secret-then-PII order as the
+    discovery and summary paths.
+    """
+    if not text or not config.insight_v2_enabled():
+        return text
+    from . import discovery
+
+    cleaned, _ = discovery.redact(text)
+    cleaned, _ = discovery.redact_pii(cleaned)
+    return cleaned
+
+
 def raise_hand(note: str | None = None) -> dict[str, Any]:
     _ensure_ready()
-    note_clean = (note or "").strip()[:280] or None
+    note_clean = _outbound((note or "").strip()[:280] or None)
     note_id = str(uuid4()) if note_clean else ""
     now = time.time()
     created_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -363,6 +379,7 @@ def post_attendee_message(body: str, *, sender: str = "") -> dict[str, Any]:
     text = (body or "").strip()[:2000]
     if not text:
         raise ValueError("message body is required")
+    text = _outbound(text) or text
     _ensure_ready()
     message_id = str(uuid4())
     now = time.time()

@@ -32,11 +32,28 @@ SCHEMA_VERSION = 1
 COLLECT_SCHEMA_VERSION = 2
 DEFAULT_MAX_BUFFER = 5000
 DEFAULT_COLLECT_LIMIT = 1000
+#: Slots held back from non-priority events, so the account-team data survives a
+#: backlog that is filling with routine telemetry.
+PRIORITY_HEADROOM = 500
+#: Event types that may use the reserved headroom. Everything else is refused
+#: once the backlog reaches ``max_buffer - headroom``.
+PRIORITY_EVENT_TYPES = frozenset({
+    "insight.summary", "discovery.record", "attendee.identity", "workshop.signal",
+    "app.manifest",
+})
 _parse_timestamp = datetime.fromisoformat
 
 
 class CaptureConflictError(ValueError):
     """A logical retry changed an already accepted event's content."""
+
+
+class CaptureHeadroomError(CaptureCapacityError):
+    """A non-priority event was refused to keep headroom for priority events.
+
+    Not a producer fault, so it is counted in ``dropped`` without marking the
+    instance's delivery as rejected.
+    """
 
 
 class CaptureEncodingError(CaptureError):
@@ -73,6 +90,10 @@ class EventEmitter:
         self.ingest_url = (ingest_url or "").rstrip("/")
         self.ingest_token = ingest_token or ""
         self._max_buffer = max_buffer
+        # The reserve applies only when the buffer is big enough to hold it twice
+        # over. A small buffer is all non-priority output, as it always was.
+        self._headroom = PRIORITY_HEADROOM if max_buffer >= 2 * PRIORITY_HEADROOM else 0
+        self._refused = 0
         self._lock = threading.RLock()
         self._collections = 0
         self._last_collected_at: float | None = None
@@ -430,9 +451,15 @@ class EventEmitter:
                         "logical key already has different capture content"
                     )
                 return previous
-            if insight["next_seq"] - insight["acked_through"] >= self._max_buffer:
+            backlog = insight["next_seq"] - insight["acked_through"]
+            if backlog >= self._max_buffer:
                 raise CaptureCapacityError(
                     "capture backlog is full; existing records are retained"
+                )
+            if (backlog >= self._max_buffer - self._headroom
+                    and event_type not in PRIORITY_EVENT_TYPES):
+                raise CaptureHeadroomError(
+                    "capture backlog headroom is reserved for priority events"
                 )
             seq = insight["next_seq"] + 1
             insight["events"][str(seq)] = event
@@ -450,9 +477,13 @@ class EventEmitter:
 
             if isinstance(exc, CaptureClosedError):
                 raise  # Intentional close refusal must not poison a valid seal.
+            if isinstance(exc, CaptureCapacityError):
+                # Refused, not lost silently: ``dropped`` reports every refusal.
+                with self._lock:
+                    self._refused += 1
             if isinstance(exc, CaptureHeldError):
                 self.journal.mark_held(exc)
-            else:
+            elif not isinstance(exc, CaptureHeadroomError):
                 self._rejected(exc, attempted_key)
             raise
 
@@ -475,8 +506,13 @@ class EventEmitter:
 
     @property
     def dropped(self) -> int:
-        self._ensure_ready()
-        return 0
+        """Events refused since this process started, by backlog limit or headroom.
+
+        A refused event was never accepted, so the producer's retry is the only
+        other copy; a restart resets the count.
+        """
+        with self._lock:
+            return self._refused
 
     def collect(
         self, *, after: int = 0, stream: str = "", limit: int = DEFAULT_COLLECT_LIMIT
@@ -518,7 +554,7 @@ class EventEmitter:
             "events": entries,
             "high_water": entries[-1]["seq"] if entries else after,
             "pending": insight["next_seq"] - insight["acked_through"],
-            "dropped": 0,
+            "dropped": self.dropped,
             "cursor_reset": reset,
             "delivery": "pull",
         }
@@ -584,7 +620,7 @@ class EventEmitter:
                 "ack_mode": "explicit",
                 "stream_id": epoch,
                 "pending": pending,
-                "dropped": 0,
+                "dropped": self._refused,
                 "acked_through": ack,
                 "collections": self._collections,
                 "last_collected_at": self._last_collected_at,

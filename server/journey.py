@@ -22,7 +22,7 @@ import threading
 import time
 from typing import Any
 
-from . import design_workflow, projects
+from . import config, design_workflow, projects
 
 #: Coarse facilitator signals. ``working`` covers everything else.
 STATUSES = ("not_started", "needs_decision", "ready_to_try", "blocked", "help_requested", "working")
@@ -312,14 +312,56 @@ def stop(session) -> dict:
 # Export (WT-P6)
 # ---------------------------------------------------------------------------
 
+#: Export reasons that run a fresh capture before the upload (insight v2).
+CAPTURE_FIRST_REASONS = frozenset({"wrap_up", "teardown"})
+SCREENSHOT_BUDGET_SECONDS = 20.0
+
+
+def _capture_projects_safely(user, deadline: float) -> None:
+    """Refresh each project's preview screenshot, within a deadline.
+
+    Stops at the deadline, or as soon as the seat stops accepting input. Never
+    raises: screenshot capture must not block a code export.
+    """
+    try:
+        from . import browser_evidence
+        from .event_emitter import event_emitter
+        from .workshop_lifecycle import attendee_status
+
+        if not browser_evidence.browser_binary():
+            return
+        root = projects.root(user)
+        if not root.is_dir():
+            return
+        for child in sorted(root.iterdir()):
+            if time.monotonic() >= deadline:
+                break
+            try:
+                event_emitter._ensure_ready()
+                if not attendee_status(event_emitter.journal)["accepting_input"]:
+                    break
+            except Exception:  # noqa: BLE001
+                break
+            if child.is_dir() and not child.is_symlink() and not child.name.startswith("."):
+                browser_evidence.capture_project_preview_screenshot(user, child)
+    except Exception:  # noqa: BLE001 — screenshot capture never blocks code export
+        pass
+
+
 def export(user, *, reason: str = "attendee", reuse: bool = False, project: str | None = None) -> dict:
     """Run ``workshop-export`` as the attendee; reuse a recent export when asked."""
     target_project = str(projects.project_path(user, project)) if project else None
+    # Insight v2 only: with the flag off, the export behaves exactly as it always did.
+    capture_first = reason in CAPTURE_FIRST_REASONS and config.insight_v2_enabled()
     cache_key = f"{user.email}:{project or ''}"
     with _export_lock:
         cached = _exports.get(cache_key)
         if reuse and cached and time.time() - cached["at"] < EXPORT_REUSE_SECONDS:
             return {**cached["result"], "reused": True}
+        if capture_first:
+            # Wrap and teardown: the kept screenshots must be current before they
+            # upload, so capture first, within a bounded budget.
+            _capture_projects_safely(user, time.monotonic() + SCREENSHOT_BUDGET_SECONDS)
         helper = os.path.join(os.path.dirname(__file__), "..", "assets", "bin", "workshop-export")
         command = [helper]
         if target_project:
@@ -327,8 +369,13 @@ def export(user, *, reason: str = "attendee", reuse: bool = False, project: str 
         if reason == "attendee":
             command.extend(["--reuse-recent", str(EXPORT_REUSE_SECONDS)])
         command.append("--json")
+        # The export helper reads its environment through an allowlist, so the v2
+        # switch is passed explicitly rather than inherited.
+        env = {**user.shell_env(), "WORKSHOP_EXPORT_REASON": reason}
+        if config.insight_v2_enabled():
+            env["WORKSHOP_INSIGHT_V2"] = "1"
         done = subprocess.run(command, capture_output=True, text=True, timeout=600,
-                              env={**user.shell_env(), "WORKSHOP_EXPORT_REASON": reason}, cwd=user.home)
+                              env=env, cwd=user.home)
         if done.returncode != 0:
             raise RuntimeError((done.stderr or done.stdout or "export failed").strip()[-600:])
         result = json.loads(done.stdout.strip().splitlines()[-1])
@@ -340,35 +387,12 @@ def export(user, *, reason: str = "attendee", reuse: bool = False, project: str 
         if has_local:
             _exports[cache_key] = {"at": time.time(), "result": result}
 
-    if has_local:
-        def _post_export_screenshots() -> None:
-            try:
-                from . import browser_evidence
-                from .event_emitter import event_emitter
-                from .workshop_lifecycle import attendee_status
-
-                if not browser_evidence.browser_binary():
-                    return
-                deadline = time.monotonic() + 20.0
-                root = projects.root(user)
-                if not root.is_dir():
-                    return
-                for child in sorted(root.iterdir()):
-                    if time.monotonic() >= deadline:
-                        break
-                    try:
-                        event_emitter._ensure_ready()
-                        if not attendee_status(event_emitter.journal)["accepting_input"]:
-                            break
-                    except Exception:  # noqa: BLE001
-                        break
-                    if child.is_dir() and not child.is_symlink() and not child.name.startswith("."):
-                        browser_evidence.capture_project_preview_screenshot(user, child)
-            except Exception:  # noqa: BLE001 — screenshot capture never blocks code export
-                pass
-
+    if has_local and not capture_first:
+        # Other reasons keep the historical post-export refresh. Wrap and teardown
+        # captured before the upload above, so their kept shots are current.
         threading.Thread(
-            target=_post_export_screenshots,
+            target=_capture_projects_safely,
+            args=(user, time.monotonic() + SCREENSHOT_BUDGET_SECONDS),
             daemon=True,
             name="post-export-screenshots",
         ).start()

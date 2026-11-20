@@ -588,6 +588,18 @@ def insight_capture_enabled() -> bool:
     return _env_bool("WORKSHOP_INSIGHT_CAPTURE", False)
 
 
+def insight_v2_enabled() -> bool:
+    """Insight contract v2 (``WORKSHOP_INSIGHT_V2``): asks, framing, manifests, sidecar.
+
+    Gated on capture as well, so v2 can never add anything to an instance whose
+    operator did not arrange consent. Off by default: Control Tower rejects
+    unknown fields in sealed closeout, so flag-off payloads must stay what they
+    were before v2. CT sets this only once it accepts v2 (see
+    ``docs/workshop-insight-contract.md``).
+    """
+    return insight_capture_enabled() and _env_bool("WORKSHOP_INSIGHT_V2", False)
+
+
 def discovery_enabled() -> bool:
     """Whether the *agent-elicited* discovery tier runs, within capture.
 

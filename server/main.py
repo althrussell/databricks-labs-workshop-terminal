@@ -776,7 +776,7 @@ def record_app_deploy_event(body: _AppDeployEventBody, request: Request):
     if body.outcome == "succeeded":
         def _bg_screenshot(owner_email: str) -> None:
             try:
-                from . import browser_evidence, projects
+                from . import app_manifest, browser_evidence, projects
 
                 if not browser_evidence.browser_binary():
                     return
@@ -785,7 +785,10 @@ def record_app_deploy_event(body: _AppDeployEventBody, request: Request):
                 if root.is_dir():
                     for child in sorted(root.iterdir()):
                         if child.is_dir() and not child.is_symlink() and not child.name.startswith("."):
-                            browser_evidence.capture_project_preview_screenshot(user, child)
+                            shot = browser_evidence.capture_project_preview_screenshot(user, child)
+                            if shot:
+                                # Insight v2: the manifest follows the screenshot it describes.
+                                app_manifest.emit(user, child)
             except Exception:  # noqa: BLE001
                 pass
 
