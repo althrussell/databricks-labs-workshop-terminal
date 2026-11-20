@@ -492,7 +492,8 @@ The contract names `{revision or content-sha}`. The implementation always includ
 the content digest, and the revision alongside it, because a revision alone would
 let a later manifest for the same commit (a dirty tree, a new screenshot) de-dupe
 against the deploy-time one and be lost. The digest covers everything except
-`captured_at`.
+`captured_at`. A re-emit of the same content with a later `captured_at` is the same
+logical event: the emitter keeps the first copy and does not record a conflict.
 
 ### Health events (pre-existing, now actually accepted)
 

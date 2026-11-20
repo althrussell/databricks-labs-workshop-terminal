@@ -343,9 +343,29 @@ def _capture_projects_safely(user, deadline: float) -> None:
             except Exception:  # noqa: BLE001
                 break
             if child.is_dir() and not child.is_symlink() and not child.name.startswith("."):
-                browser_evidence.capture_project_preview_screenshot(user, child)
+                if not _capture_within(browser_evidence.capture_project_preview_screenshot, user, child, deadline):
+                    break  # still running past the budget: the export goes ahead without it
     except Exception:  # noqa: BLE001 — screenshot capture never blocks code export
         pass
+
+
+def _capture_within(capture, user, project: Path, deadline: float) -> bool:
+    """Run one project's capture, waiting no longer than the deadline. False if it overran.
+
+    The browser pass has per-call timeouts that can add up past the budget, so the
+    wait is bounded here. A capture that overruns keeps running in its thread, and a
+    shot it writes after the upload is simply not in this export.
+    """
+    def run() -> None:
+        try:
+            capture(user, project)
+        except Exception:  # noqa: BLE001 — one project's capture never stops the others
+            pass
+
+    worker = threading.Thread(target=run, name="insight-capture", daemon=True)
+    worker.start()
+    worker.join(max(0.0, deadline - time.monotonic()))
+    return not worker.is_alive()
 
 
 def export(user, *, reason: str = "attendee", reuse: bool = False, project: str | None = None) -> dict:

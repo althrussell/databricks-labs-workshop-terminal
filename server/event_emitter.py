@@ -14,7 +14,7 @@ import json
 import threading
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from typing import Any
 
@@ -68,6 +68,26 @@ def _canonical(value: Any) -> str:
         ensure_ascii=False,
         allow_nan=False,
     )
+
+
+_IDENTITY_FIELDS = (
+    "schema_version", "run_id", "workspace_id", "attendee", "type", "payload", "idempotency_key",
+)
+
+
+def _retry_identity(event: Mapping[str, Any], identity: tuple[str, ...] = _IDENTITY_FIELDS) -> str:
+    """The canonical fields a logical retry must repeat exactly.
+
+    An ``app.manifest`` key already digests its whole content except ``captured_at``
+    (see ``app_manifest.idempotency_key``), so the payload's ``captured_at`` is left
+    out too: a re-emit of the same content at wrap is the same logical event, and
+    the first copy is kept rather than rejected as a conflict.
+    """
+    fields = {name: event.get(name) for name in identity}
+    payload = fields.get("payload")
+    if event.get("type") == "app.manifest" and isinstance(payload, dict):
+        fields["payload"] = {k: v for k, v in payload.items() if k != "captured_at"}
+    return _canonical(fields)
 
 
 class EventEmitter:
@@ -444,9 +464,7 @@ class EventEmitter:
                     "payload",
                     "idempotency_key",
                 )
-                if _canonical({name: old.get(name) for name in identity}) != _canonical(
-                    {name: event[name] for name in identity}
-                ):
+                if _retry_identity(old, identity) != _retry_identity(event, identity):
                     raise CaptureConflictError(
                         "logical key already has different capture content"
                     )

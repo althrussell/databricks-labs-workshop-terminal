@@ -35,6 +35,7 @@ from typing import Any
 import yaml
 
 from . import config
+from .discovery import redact, redact_pii
 
 logger = logging.getLogger("workshop.app_manifest")
 
@@ -86,7 +87,7 @@ _NAME_PART = r"[A-Za-z_][A-Za-z0-9_]{0,127}"
 # A three-part name counts only where SQL or a string literal makes it one. A
 # Python attribute chain (``self.cfg.table.name``) has neither, so it is excluded.
 _UC_KEYWORD = re.compile(
-    rf"\b(?:FROM|JOIN|INTO|UPDATE|TABLE|VIEW|USING)\s+`?({_NAME_PART})`?\.`?({_NAME_PART})`?\.`?({_NAME_PART})`?\b",
+    rf"\b(?:FROM|JOIN|INTO|UPDATE|TABLE|VIEW|USING)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?`?({_NAME_PART})`?\.`?({_NAME_PART})`?\.`?({_NAME_PART})`?\b",
     re.IGNORECASE,
 )
 _UC_LITERAL = re.compile(rf"([\"'`])({_NAME_PART})\.({_NAME_PART})\.({_NAME_PART})\1")
@@ -100,6 +101,10 @@ _NOT_UC_FIRST = frozenset({
 _NOT_UC_LAST = frozenset({
     "py", "ts", "tsx", "js", "jsx", "json", "md", "csv", "yaml", "yml", "txt", "html",
     "css", "png", "sql", "zip", "gz", "lock", "parquet",
+})
+# The last segment of a dotted string literal that is a host name, not a table.
+_HOST_LAST = frozenset({
+    "com", "org", "net", "io", "dev", "ai", "edu", "gov", "cloud", "internal", "local", "localhost",
 })
 
 _IMPORT_LINE = re.compile(r"^\s*(?:from\s+\S+\s+import\b|import\b|export\b.*\bfrom\b)")
@@ -122,6 +127,13 @@ def _now() -> str:
 
 def _clip(value: object, limit: int) -> str:
     return " ".join(str(value or "").split())[:limit]
+
+
+def _scrub(value: object) -> str:
+    """Secrets, then personal identifiers: the pass every free-text manifest field gets."""
+    text, _ = redact(str(value or ""))
+    text, _ = redact_pii(text)
+    return text
 
 
 def _posix(path: str) -> str:
@@ -205,16 +217,19 @@ def scan_project(root: Path) -> ProjectScan:
 # --- line evidence ------------------------------------------------------------
 
 
-def _line_of(text: str, pattern: re.Pattern | str, default: int = 1) -> int:
+def _line_of(text: str, pattern: re.Pattern | str, default: int = 1, skip: int = 0) -> int:
+    """The line of the first match after ``skip`` earlier matches, so repeated keys cite their own line."""
     regex = re.compile(pattern) if isinstance(pattern, str) else pattern
     for number, line in enumerate(text.splitlines(), start=1):
         if regex.search(line):
-            return number
+            if skip <= 0:
+                return number
+            skip -= 1
     return default
 
 
-def _source(relative: str, text: str, pattern: re.Pattern | str) -> str:
-    return f"{relative}:{_line_of(text, pattern)}"[:200]
+def _source(relative: str, text: str, pattern: re.Pattern | str, skip: int = 0) -> str:
+    return f"{relative}:{_line_of(text, pattern, skip=skip)}"[:200]
 
 
 # --- resources and app identity from YAML --------------------------------------
@@ -236,17 +251,20 @@ def _load_yaml(text: str) -> Any:
 def _app_yaml_resources(relative: str, text: str, facts: ConfigFacts) -> None:
     document = _load_yaml(text)
     entries = document.get("resources") if isinstance(document, dict) else None
+    seen: dict[str, int] = {}
     for item in entries if isinstance(entries, list) else []:
         if not isinstance(item, dict):
             continue
         key = next((k for k in item if k in APP_RESOURCE_KINDS), None)
         if key is None:
             continue
+        occurrence = seen.get(key, 0)
+        seen[key] = occurrence + 1
         name = item.get("name") if isinstance(item.get("name"), str) else None
         facts.resources.append({
             "kind": APP_RESOURCE_KINDS[key],
-            "name": _clip(name, 200) or None,
-            "source": _source(relative, text, rf"^\s*(?:-\s*)?{re.escape(key)}\s*:"),
+            "name": _clip(_scrub(name), 200) or None,
+            "source": _source(relative, text, rf"^\s*(?:-\s*)?{re.escape(key)}\s*:", occurrence),
         })
 
 
@@ -259,7 +277,7 @@ def _bundle_resources(relative: str, text: str, facts: ConfigFacts) -> None:
     if isinstance(apps, dict) and facts.app_name is None:
         for key, value in apps.items():
             name = value.get("name") if isinstance(value, dict) else None
-            facts.app_name = _clip(name or key, 120) or None
+            facts.app_name = _clip(_scrub(name or key), 120) or None
             break
     for collection, kind in BUNDLE_RESOURCE_KINDS.items():
         members = resources.get(collection)
@@ -269,7 +287,7 @@ def _bundle_resources(relative: str, text: str, facts: ConfigFacts) -> None:
             name = value.get("name") if isinstance(value, dict) else None
             facts.resources.append({
                 "kind": kind,
-                "name": _clip(name or key, 200) or None,
+                "name": _clip(_scrub(name or key), 200) or None,
                 "source": _source(relative, text, rf"^\s*{re.escape(str(key))}\s*:"),
             })
 
@@ -315,12 +333,15 @@ def uc_tables(scan: ProjectScan) -> list[dict]:
         for line_number, line in enumerate(text.splitlines(), start=1):
             if _IMPORT_LINE.match(line):
                 continue  # ``from pkg.mod.sub import x`` is an import, not a table
-            candidates = [match.groups() for match in _UC_KEYWORD.finditer(line)]
+            # (names, from_sql): a SQL keyword is firm evidence; a literal is only a guess.
+            candidates = [(match.groups(), True) for match in _UC_KEYWORD.finditer(line)]
             if is_code:
-                candidates += [m.groups()[1:] for m in _UC_LITERAL.finditer(line)]
-            for catalog, schema, table in candidates:
+                candidates += [(m.groups()[1:], False) for m in _UC_LITERAL.finditer(line)]
+            for (catalog, schema, table), from_sql in candidates:
                 if not _plausible_uc(catalog, schema, table):
                     continue
+                if not from_sql and table.lower() in _HOST_LAST:
+                    continue  # ``"api.example.com"`` is a host, not a table
                 name = f"{catalog}.{schema}.{table}"
                 if name not in found and len(found) < MAX_UC_TABLES:
                     found[name] = f"{relative}:{line_number}"[:200]
@@ -463,7 +484,7 @@ def screenshots(project: Path, record: dict) -> list[dict]:
             "scope": match.group("scope"),
             "label": match.group("label")[:40],
             "url": _url(url),
-            "title": _clip(title, 200) or None,
+            "title": _clip(_scrub(title), 200) or None,
         })
     return out
 
@@ -508,7 +529,7 @@ def build(project: Path, *, captured_at: str | None = None) -> dict | None:
     preview = (((record.get("evidence") or {}).get("build") or {}).get("preview"))
     return {
         "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
-        "project": _clip(project.name, 120),
+        "project": _clip(_scrub(project.name), 120),
         "app_name": facts.app_name,
         "url": _url(preview),
         "revision": revision(project),

@@ -755,9 +755,10 @@ def state(user: User, industry: str | None = None, query: str = "") -> dict[str,
             )
         ],
         "capture_enabled": config.discovery_enabled(),
-        # The one-line account-team notice. Shown only when v2 (and therefore
-        # capture) is on, so an instance without capture never tells anyone.
-        "insight_capture_notice": config.insight_v2_enabled(),
+        # The one-line account-team notice. Shown only when capture is on, so an
+        # instance without capture never tells anyone. Capture (v1 extraction
+        # included) is what sends the attendee's prompts to the account team.
+        "insight_capture_notice": config.insight_capture_enabled(),
         "llm_wizard": {
             "enabled": llm_on,
             # Whatever is in force right now, which after a live swap is not the

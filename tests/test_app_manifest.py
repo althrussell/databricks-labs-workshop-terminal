@@ -437,3 +437,38 @@ def test_emit_for_user_visits_each_visible_project(tmp_path, monkeypatch):
     monkeypatch.setattr(projects_module, "root", lambda user: root)
 
     assert app_manifest.emit_for_user(_User(), emitter=emitter) == 2
+
+
+def test_host_literals_are_not_tables_and_if_not_exists_still_counts(tmp_path):
+    root = tmp_path / "p"
+    root.mkdir()
+    (root / "app.py").write_text(
+        'HOST = "api.example.com"\n'
+        'url = "sales.reporting.internal"\n'
+    )
+    (root / "setup.sql").write_text("CREATE TABLE IF NOT EXISTS main.fraud.x (id INT);\n")
+
+    names = {t["name"] for t in _manifest(root)["uc_tables"]}
+
+    assert names == {"main.fraud.x"}
+
+
+def test_a_re_emit_with_only_a_new_capture_time_is_the_same_logical_event(project):
+    emitter = EventEmitter(run_id=RUN_ID, workspace_id="ws1", ingest_url="", ingest_token="")
+    first = app_manifest.build(project, captured_at="2026-11-20T10:00:00Z")
+    again = app_manifest.build(project, captured_at="2026-11-20T11:00:00Z")
+    key = app_manifest.idempotency_key(RUN_ID, "labuser001@x.com", first)
+    assert key == app_manifest.idempotency_key(RUN_ID, "labuser001@x.com", again)
+
+    emitter.emit(app_manifest.EVENT_TYPE, "labuser001@x.com", first, idempotency_key=key)
+    emitter.emit(app_manifest.EVENT_TYPE, "labuser001@x.com", again, idempotency_key=key)
+
+    assert emitter.pending() == 1
+
+
+def test_free_text_in_the_manifest_is_redacted_and_ipv6_needs_a_digit():
+    from server.discovery import redact_pii
+
+    assert "ada@example.com" not in app_manifest._scrub("Inbox for ada@example.com")
+    assert redact_pii("Foo::cadd()") == ("Foo::cadd()", 0)
+    assert redact_pii("host 2001:db8::1 here")[0] == "host [redacted-ip] here"

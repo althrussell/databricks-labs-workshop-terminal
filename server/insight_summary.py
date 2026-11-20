@@ -752,7 +752,10 @@ def ask_candidates(harvest: artifacts.Harvest, user: User) -> list[AskCandidate]
 
 def _fallback_candidates(candidates: list[AskCandidate]) -> list[AskCandidate]:
     """Extraction-mode order: the attendee's explicit words first, then their longest prompts."""
-    explicit = [c for c in candidates if c.source in ("wizard", "help")]
+    # The contract order is wizard, then help, then prompts; the sort is stable,
+    # so each source keeps its own arrival order.
+    explicit = ([c for c in candidates if c.source == "wizard"]
+                + [c for c in candidates if c.source == "help"])
     prompts = sorted((c for c in candidates if c.source == "prompt"),
                      key=lambda c: len(c.text), reverse=True)
     return explicit + prompts
