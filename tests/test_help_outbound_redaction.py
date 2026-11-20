@@ -73,3 +73,15 @@ def test_with_the_flag_off_a_raise_hand_note_is_unchanged(client, no_push, monke
 
     notes = [m["body"] for m in help_module.thread_snapshot()["messages"]]
     assert any("https://dbc-9.cloud.databricks.com/?token=abc" in n for n in notes)
+
+
+def test_with_the_flag_on_the_presence_note_is_redacted_too(client, no_push, monkeypatch):
+    monkeypatch.setenv("WORKSHOP_INSIGHT_CAPTURE", "true")
+    monkeypatch.setenv("WORKSHOP_INSIGHT_V2", "true")
+
+    help_module.raise_hand(EMAIL_NOTE)
+
+    # Control Tower polls presence, so the note it reads is the redacted copy.
+    note = help_module.presence_fields()["help_note"]
+    assert "ada@example.com" not in note and "412 345 678" not in note
+    assert "[redacted-email]" in note

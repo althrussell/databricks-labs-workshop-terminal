@@ -239,7 +239,8 @@ def presence_fields() -> dict[str, Any]:
     _ensure_ready()
     with _lock:
         state = _read_locked()
-        return {"help_raised": state["raised"], "help_note": state["note"] or None,
+        # The presence response leaves the seat, so the note goes out redacted.
+        return {"help_raised": state["raised"], "help_note": _outbound(state["note"]) or None,
                 "help_raised_at": state["raised_at"] if state["raised"] else None,
                 "help_open": state["raised"],
                 "help_outbox": copy.deepcopy(state["outbox"][:_OUTBOX_PAGE]),
