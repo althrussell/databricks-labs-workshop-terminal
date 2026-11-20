@@ -44,6 +44,17 @@ The agent does not send attendees to the Volume: a Volume download depends on
 Catalog access that attendees may not have. The Volume copy is the workshop's
 backup and CT keeps it at teardown.
 
+**Screenshots (insight contract v2, `WORKSHOP_INSIGHT_V2` only).** Alongside the
+ZIP, `workshop-export` uploads up to three PNGs per project under
+`screenshots/`: the newest deployed `initial` shot, then up to two newest
+`after-N` shots. Each PNG is at most 2 MB, and each keeps the name
+`{project}-{png}`. With v2 on, the export also writes `screenshots/manifest.json`,
+which records each shot's project, deployed URL, title, SHA-256, size, capture time
+and scope. At wrap and teardown the export captures fresh shots first, bounded to
+20 seconds, so the kept screenshots are current. Without the flag the export
+uploads only the newest PNG per project, as before. The v2 switch reaches the
+helper through `journey.export`, because the helper's environment is an allowlist.
+
 If the Apps proxy sign-in has expired, the browser cannot follow the sign-in redirect
 from a fetch. Workshop Terminal detects the redirect and asks the attendee to reload
 the tab and click again; it does not show a bare "Failed to fetch".

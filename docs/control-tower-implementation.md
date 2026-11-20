@@ -444,7 +444,8 @@ Content-Type: application/json
 ```
 
 - Respond **2xx** to acknowledge; non-2xx keeps the event buffered and retried
-  (the buffer is bounded, drop-oldest — never blocks attendees).
+  (the buffer is bounded and refuses new output when full, with a reserve for
+  priority types — never blocks attendees).
 - De-dupe on `idempotency_key`.
 - `payload.state` ∈ `rotating` (healthy) · `degraded` (static credential, no
   rotation) · `unhealthy` (rejected/expired or nothing configured) · `unknown`.

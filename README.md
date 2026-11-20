@@ -116,6 +116,15 @@ operator admin panel.
   content now leaves the instance. Raw terminal output still never does, the app
   still owns no database, and teardown is still `apps.delete`. See
   [docs/adr/0001-workshop-insight-capture.md](docs/adr/0001-workshop-insight-capture.md).
+  With `WORKSHOP_INSIGHT_V2` also on (default off, and only once Control Tower
+  accepts v2), the account team also gets a curated, redacted set of up to 12
+  verbatim asks per seat, the project's declared resources and Unity Catalog
+  table names, and three screenshots. Attendees see one line in the wizard
+  saying so, and the same personal identifiers (emails, phone numbers, IP
+  addresses, tokenised URLs, workspace hosts) are redacted from every text
+  field. There is no exit survey. Attendee code, transcripts and raw logs never
+  leave the seat. See
+  [docs/workshop-insight-contract.md](docs/workshop-insight-contract.md).
 - **Security**: workspace-group based. Identity from the Apps proxy headers;
   operator access requires `ADMIN_GROUP` (default `platform_admins`)
   membership resolved via SCIM — using the caller's bearer token for service

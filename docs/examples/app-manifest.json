@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "run_id": "3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90",
+  "workspace_id": "4217334529551234",
+  "attendee": "labuser007@example.com",
+  "type": "app.manifest",
+  "occurred_at": "2026-07-30T11:59:02.118000+00:00",
+  "idempotency_key": "app-manifest:3f1b8c2e-9a44-4d21-8f0e-7c5b1a2d6e90:labuser007@example.com:feature-store:4f2a9c1b7e3d0a58c6e1f2a3b4c5d6e7f8091a2b:9d1e4c7a2b6f0813",
+  "payload": {
+    "manifest_schema_version": 1,
+    "project": "feature-store",
+    "app_name": "feature-lookup",
+    "url": "https://feature-lookup-0000000000000000.0.azure.example.invalid",
+    "revision": "4f2a9c1b7e3d0a58c6e1f2a3b4c5d6e7f8091a2b",
+    "captured_at": "2026-07-30T11:59:02Z",
+    "stack": [
+      "fastapi",
+      "react",
+      "python"
+    ],
+    "resources": [
+      {
+        "kind": "database",
+        "name": "feature_db",
+        "source": "app.yaml:9"
+      },
+      {
+        "kind": "sql_warehouse",
+        "name": "serverless-shared",
+        "source": "databricks.yml:21"
+      }
+    ],
+    "uc_tables": [
+      {
+        "name": "main_demo.fraud.account_features",
+        "source": "app/queries.sql:4"
+      }
+    ],
+    "products_evidenced": [
+      {
+        "product": "Databricks Apps",
+        "source": "app.yaml:1"
+      },
+      {
+        "product": "Lakebase",
+        "source": "app.yaml:9"
+      },
+      {
+        "product": "Databricks SQL",
+        "source": "databricks.yml:21"
+      },
+      {
+        "product": "Unity Catalog",
+        "source": "app/queries.sql:4"
+      }
+    ],
+    "screenshots": [
+      {
+        "file": "feature-store-20260730T113012Z-deployed-desktop-initial.png",
+        "sha256": "9f2b1c0d8e7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e",
+        "bytes": 184320,
+        "captured_at": "2026-07-30T11:30:12Z",
+        "scope": "deployed",
+        "label": "initial",
+        "url": "https://feature-lookup-0000000000000000.0.azure.example.invalid/",
+        "title": "Feature lookup"
+      }
+    ]
+  }
+}

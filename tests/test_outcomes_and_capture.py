@@ -192,4 +192,4 @@ def test_phase_changes_emit_coarse_durations_and_activity_is_emitted_on_change(m
 def test_new_event_types_are_accepted_by_closeout():
     from server.closeout import SUPPORTED_EVENTS
 
-    assert {"agent.activity", "journey.phase", "journey.outcome"} <= SUPPORTED_EVENTS
+    assert {"agent.activity", "journey.phase", "journey.outcome", "app.manifest"} <= SUPPORTED_EVENTS

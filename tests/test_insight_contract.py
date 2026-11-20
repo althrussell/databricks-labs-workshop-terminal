@@ -35,7 +35,9 @@ EXAMPLE_NAMES = (
     "discovery-record-withdrawn.json",
     "insight-summary.json",
     "insight-summary-extraction.json",
+    "insight-summary-v2.json",
     "attendee-identity.json",
+    "app-manifest.json",
 )
 
 EVENT_TYPES = (
@@ -43,6 +45,7 @@ EVENT_TYPES = (
     "discovery.record",
     "insight.summary",
     "attendee.identity",
+    "app.manifest",
 )
 
 

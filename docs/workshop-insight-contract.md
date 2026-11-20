@@ -64,6 +64,7 @@ which is worse than no data because it is confidently wrong about a customer.
 |---|---|---|
 | `WORKSHOP_INSIGHT_CAPTURE` | `false` | Master switch. Off means no signal, no discovery, no summary, and no instruction overlay. |
 | `DISCOVERY_ENABLED` | `true` | Sub-flag. Behavioural signal only when off — no agent-elicited questions, in the home instructions *and* the committed project-level ones. |
+| `WORKSHOP_INSIGHT_V2` | `false` | Contract v2 on the Terminal: summary `asks`, `framing`, `approach`, `pivots`, `systems_mentioned`, `attendee_background`, the `app.manifest` event, the screenshot sidecar and PII redaction of asks and help text. Active only with `WORKSHOP_INSIGHT_CAPTURE` on. Control Tower sets it in the Terminal's app env only after it accepts v2 (see [Versioning](#versioning)). Off means every payload is byte-identical to v1. |
 | `INSIGHT_SUMMARY_MIN_INTERVAL_MINUTES` | `10` | Floor between edge summaries for one attendee. Not a consent control — capture is already on if this matters. |
 
 `WORKSHOP_INSIGHT_CAPTURE` is the only switch that matters. Capture needs no
@@ -105,9 +106,15 @@ Properties of the buffer (`server/event_emitter.py`) this contract depends on:
 - **Always captures.** `emit` buffers regardless of configuration. There is no
   "delivery is unconfigured" state to disable it — that state *is* the normal
   posture for a deployed instance.
-- **Bounded, drop-oldest.** Capped at 5000 events. Overflow is counted in
-  `dropped` and reported on both the collect response and `/readyz`, because it is
-  the one loss no later collection can undo.
+- **Bounded, refuse-newest, with a priority reserve.** Capped at 5000 events. The
+  buffer never evicts an accepted event. When the backlog reaches 5000, every new
+  event is refused. When it reaches 4500, only the priority types are accepted
+  (`insight.summary`, `discovery.record`, `attendee.identity`, `workshop.signal`,
+  `app.manifest`); routine telemetry is refused first, so the account-team data is
+  the last to go. Every refusal is counted in `dropped`, reported on the collect
+  response and on `/readyz`, because it is the one loss no later collection can
+  undo. A refusal for the reserve is not a delivery fault and does not mark
+  delivery as rejected; a refusal for a full backlog still does.
 - **Cursored and self-acknowledging.** `after` is Control Tower's cursor and
   doubles as an acknowledgement: events at or below it are discarded, so a
   collector that keeps up keeps the buffer flat.
@@ -390,6 +397,28 @@ cold, and a model call there fails silently into nothing.
 | `prompt_count` | integer | Every attendee turn, including the context-free continuations withheld from the summariser's input. |
 | `redactions` | integer | Secrets stripped while harvesting. |
 
+**Insight contract v2 fields** (present only with `WORKSHOP_INSIGHT_V2` on; each is
+optional and absent means v1). The worked example is
+[examples/insight-summary-v2.json](examples/insight-summary-v2.json).
+
+| Field | Type | Notes |
+|---|---|---|
+| `summary_schema_version` | integer | `2`. Absent means v1. |
+| `asks` | object[] ≤12 | `{text, kind, source, at}`. `text` is a verbatim, redacted slice (≤280 characters, cut at a word boundary) of the attendee's own prompt, help message or wizard answer. The model chooses each ask by **index** into the candidate list, so no ask text is ever generated. `kind`: `business`, `data`, `how_to`, `blocker`, `ambition`, or `unclassified` (fallback only). `source`: `prompt`, `help` or `wizard`. `at`: ISO-8601 UTC for help messages, else `null`. |
+| `framing` | string ≤600 | How the attendee framed the problem, third person. Model-written; LLM generator only. |
+| `approach` | string ≤600 | The approach they chose and why. LLM generator only. |
+| `pivots` | string[] ≤5, each ≤200 | Changes of direction. LLM generator only. |
+| `systems_mentioned` | object[] ≤10 | `{name ≤80, kind}`; `kind`: `source_system`, `incumbent_tool`, `competitor`, `cloud`, `other`. LLM generator only. |
+| `attendee_background` | string | The wizard background enum, `domain`, `data`, `developer` or `exploring`, or `""` when not given. It is the background the attendee chose, never a title or role. |
+
+Fallback mode (no model) sends at most five asks, all `unclassified`, chosen
+explicit-words-first (wizard, then help, then the longest prompts), and sends no
+`framing`, `approach`, `pivots` or `systems_mentioned`. Personal and workspace
+identifiers are redacted from every free-text v2 field by `discovery.redact_pii`
+(emails, phone numbers, IPv4 and IPv6 addresses, URLs whose query carries a token,
+signature or key, and Databricks workspace hosts), after the existing secret
+redaction.
+
 `generator` must be surfaced wherever a summary is presented. An `extraction`
 summary is keyword-level and thin — its `use_cases` are the attendee's own prompts
 quoted verbatim, with no paraphrase offered — while an `llm` one is prose.
@@ -419,6 +448,52 @@ consumer must retain both records and apply the existing LLM preference when
 presenting a narrative. An attendee with no harvestable material is explicit
 `{"status":"no_material"}` in final outputs and produces no invented summary.
 
+### `app.manifest` — per-project manifest (v2, journal-only)
+
+WT emits one `app.manifest` per attendee project after a successful deploy
+screenshot, and again at wrap, so the latest state wins. It is **not** an insight
+row: Control Tower accepts it as a journal event and never folds it into the
+synthesis snapshot. The worked example is
+[examples/app-manifest.json](examples/app-manifest.json).
+
+| Field | Type | Notes |
+|---|---|---|
+| `manifest_schema_version` | integer | `1`. |
+| `project` | string ≤120 | The project directory name. |
+| `app_name` | string ≤120 \| null | From `databricks.yml` `apps`, if declared. |
+| `url` | string ≤500 \| null | The deployed preview URL, with its query and fragment removed. |
+| `revision` | string ≤64 \| null | Git `HEAD` of the project's own repository. Never an enclosing one. |
+| `captured_at` | RFC 3339 | |
+| `stack` | string[] ≤10 | For example `fastapi`, `react`, `streamlit`, `dash`, `flask`, `node`, `python`. |
+| `resources` | object[] ≤30 | `{kind, name, source}` from `app.yaml` and `databricks.yml` resources. `source` is `path:line`. |
+| `uc_tables` | object[] ≤50 | `{name, source}`: three-part Unity Catalog names found in SQL context or a string literal. |
+| `products_evidenced` | object[] ≤20 | `{product, source}`, canonical product names only. |
+| `screenshots` | object[] ≤3 | Metadata only (see [Screenshot sidecar](#screenshot-sidecar)). |
+
+**Evidence rules.** A product is evidenced only from config, code or a resource.
+Keyword mentions in prose never count. Mapping: any `app.yaml` → Databricks Apps;
+`database` resource → Lakebase; `genie_space` resource or `w.genie.` → Genie;
+`serving_endpoint` resource, `serving_endpoints.query` or `ai_query(` → Model Serving;
+`vector_search` import → Vector Search; `sql_warehouse` resource or the
+`databricks-sql-connector` import → Databricks SQL; `job` resource → Lakeflow Jobs;
+`pipeline` resource → Lakeflow Declarative Pipelines; `import mlflow` → MLflow;
+any three-part Unity Catalog name → Unity Catalog. A three-part name counts only
+after `FROM`, `JOIN`, `INTO`, `UPDATE`, `TABLE`, `VIEW` or `USING`, or as a whole
+string literal in code. Python attribute chains and import lines never count.
+
+**Bounds.** Symlinks are never followed or read. A file over 512 KB is skipped, and
+at most 5 MB is read per project. Only `app.yaml`/`app.yml`, `databricks.yml`,
+`resources/*.yml`, `requirements.txt`, `package.json`, `pyproject.toml`, and
+`.py`, `.sql`, `.ts`, `.tsx` and `.js` files are read. Hidden directories and
+`node_modules` are not walked.
+
+**Idempotency.** `app-manifest:{run_id}:{attendee}:{project}:{revision}:{digest}`.
+The contract names `{revision or content-sha}`. The implementation always includes
+the content digest, and the revision alongside it, because a revision alone would
+let a later manifest for the same commit (a dirty tree, a new screenshot) de-dupe
+against the deploy-time one and be lost. The digest covers everything except
+`captured_at`.
+
 ### Health events (pre-existing, now actually accepted)
 
 `credential.health`, `entitlements.health`, and `operational.health` are emitted
@@ -437,6 +512,7 @@ whether repeated harvests accumulate or supersede:
 | `workshop.signal` | `signal:{run_id}:{attendee}:{bucket}` | One row per time bucket per attendee. Bounded growth; latest wins in reporting. |
 | `discovery.record` | `discovery:{run_id}:{attendee}:{record_id}:{revision}` | One row per revision; the projection keeps the highest. |
 | `insight.summary` | `summary:{run_id}:{attendee}:{generator}:{revision}` | One row per revision per generator; the projection keeps the highest revision, and `llm` supersedes `extraction` on the shared `summary_id` regardless of revision. Without `{revision}` every regeneration after the first would be discarded as a duplicate. |
+| `app.manifest` | `app-manifest:{run_id}:{attendee}:{project}:{revision}:{digest}` | One row per distinct manifest content per project. The projection keeps the latest by `captured_at`. |
 | `attendee.identity` | `identity:{run_id}:{attendee}:{count}` | One row per observation count, so each new name is a new logical event while a retried flush of the same picture is a duplicate. The projection keeps the longest list rather than the last arrival, because the retry buffer can flush out of order and a shorter list is always an older picture. |
 | Final `workshop.signal` | `signal:closeout:{capture_id}:{attendee}` | One immutable final observation per close generation; retries preserve its original bytes. |
 | Final `insight.summary` | `summary:closeout:{capture_id}:{attendee}` | One immutable final extraction per close generation; its retained revision still increases from the attendee's earlier summaries. |
@@ -483,6 +559,26 @@ describing their stack, and that must not become a row in Lakebase.
 
 The count is reported rather than hidden: a record with a high `redactions` value
 is a signal worth an operator's attention.
+
+## Screenshot sidecar
+
+`workshop-export` uploads up to three PNGs per project, each ≤2 MB: the newest
+deployed `initial` shot, then up to two newest `after-N` shots. Names are unchanged,
+`{project}-{png}`, under `/Volumes/<cat>/<schema>/workshop_exports/screenshots/`.
+With v2 on it also writes `screenshots/manifest.json`, which describes every shot
+it uploaded in this seat's export:
+
+```jsonc
+{"schema_version": 1, "generated_at": "…",
+ "shots": [{"file": "…", "project": "…", "app_name": null, "url": "… | null",
+            "title": "… | null", "sha256": "…", "bytes": 1, "captured_at": "…",
+            "scope": "deployed|local", "label": "initial"}]}
+```
+
+The sidecar is written on full exports only. A single-project export would
+describe part of the seat. At wrap and teardown, `journey.export` captures fresh
+screenshots first (bounded to 20 seconds), then uploads, so the kept shots are
+current and not one trigger stale.
 
 ## Roster CSV (Control Tower side)
 
@@ -544,6 +640,11 @@ burned once will not open the second one.
   the Terminal shipped `2` — a skew this change closes.
 - Adding an optional payload field is backward compatible and does not need a
   version bump. Removing or retyping one does.
+- **Contract v2** (`summary_schema_version: 2`, `app.manifest`) is gated on
+  `WORKSHOP_INSIGHT_V2`, not only on the field being optional. Control Tower's sealed
+  closeout validation rejects unknown fields today, so an older consumer would turn
+  a v2 summary into a rejected closeout. The Terminal therefore sends v2 only when
+  its app env says so, and Control Tower sets that only after it accepts v2.
 - A consumer that meets an unknown `type` must reject it (the allowlist is
   explicit on purpose, so additions are deliberate). A consumer that meets an
   unknown payload *field* must ignore it.
