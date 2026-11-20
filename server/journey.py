@@ -343,7 +343,10 @@ def _capture_projects_safely(user, deadline: float) -> None:
             except Exception:  # noqa: BLE001
                 break
             if child.is_dir() and not child.is_symlink() and not child.name.startswith("."):
-                if not _capture_within(browser_evidence.capture_project_preview_screenshot, user, child, deadline):
+                if not _capture_within(
+                    lambda u, p: browser_evidence.capture_project_preview_screenshot(u, p, refresh=True),
+                    user, child, deadline,
+                ):
                     break  # still running past the budget: the export goes ahead without it
     except Exception:  # noqa: BLE001 — screenshot capture never blocks code export
         pass

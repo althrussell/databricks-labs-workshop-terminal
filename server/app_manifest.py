@@ -159,15 +159,18 @@ def _wanted(relative: str) -> bool:
     return name.endswith(SOURCE_SUFFIXES)
 
 
-def _read_plain(path: str) -> bytes | None:
-    """Bytes of a regular file, opened without following a final symlink."""
+def _read_plain(path: str, limit: int = MAX_FILE_BYTES) -> bytes | None:
+    """Bytes of a regular file, opened without following a final symlink.
+
+    At most ``limit + 1`` bytes are read, so a caller can tell an oversize file apart.
+    """
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
         fd = os.open(path, flags)
     except OSError:
         return None
     with os.fdopen(fd, "rb") as handle:
-        return handle.read(MAX_FILE_BYTES + 1)
+        return handle.read(limit + 1)
 
 
 def scan_project(root: Path) -> ProjectScan:
@@ -468,7 +471,7 @@ def screenshots(project: Path, record: dict) -> list[dict]:
     out: list[dict] = []
     for name in select_shots(names):
         path = folder / name
-        data = _read_plain(str(path))
+        data = _read_plain(str(path), MAX_SCREENSHOT_BYTES)
         if data is None or len(data) > MAX_SCREENSHOT_BYTES:
             continue
         match = _SHOT_NAME.match(name)

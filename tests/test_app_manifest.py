@@ -472,3 +472,15 @@ def test_free_text_in_the_manifest_is_redacted_and_ipv6_needs_a_digit():
     assert "ada@example.com" not in app_manifest._scrub("Inbox for ada@example.com")
     assert redact_pii("Foo::cadd()") == ("Foo::cadd()", 0)
     assert redact_pii("host 2001:db8::1 here")[0] == "host [redacted-ip] here"
+
+
+def test_a_screenshot_between_the_source_and_screenshot_limits_is_read_whole(project):
+    folder = project / ".workshop" / "evidence"
+    folder.mkdir(parents=True)
+    data = PNG + b"0" * (700 * 1024)
+    _shot(folder, "20260730T113012Z-deployed-desktop-initial.png", data)
+
+    [shot] = _manifest(project)["screenshots"]
+
+    assert shot["bytes"] == len(data)
+    assert shot["sha256"] == hashlib.sha256(data).hexdigest()

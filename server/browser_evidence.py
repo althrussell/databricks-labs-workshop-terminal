@@ -565,8 +565,13 @@ def archival_token(user) -> str:
     return tok
 
 
-def capture_project_preview_screenshot(user, project: Path) -> dict | None:
-    """Best-effort desktop screenshot of a project's deployed preview_url."""
+def capture_project_preview_screenshot(user, project: Path, *, refresh: bool = False) -> dict | None:
+    """Best-effort desktop screenshot of a project's deployed preview_url.
+
+    A shot already recorded for the current revision is reused unless ``refresh`` is
+    set. Wrap and teardown exports pass ``refresh=True``: the deployed page can change
+    without a source change, and those exports promise current evidence.
+    """
     if not browser_binary():
         return None
     from . import design_workflow
@@ -586,7 +591,7 @@ def capture_project_preview_screenshot(user, project: Path) -> dict | None:
         ((record_doc.get("evidence") or {}).get("inspect") or {}).get("artifacts") or []
     )
     current_rev = _revision(project)
-    for item in artifacts:
+    for item in ([] if refresh else artifacts):
         if (
             isinstance(item, dict)
             and item.get("kind") == "screenshot"
