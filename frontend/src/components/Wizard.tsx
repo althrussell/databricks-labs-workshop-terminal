@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ChevronDown, Database, Loader2, Sparkles } from "lucide-react";
 import { api, ApiError, AgentInfo, WizardBrief, WizardIdea, WizardState } from "../api";
 import AgentCards, { SetupProgress, SetupSteps, SETUP_POLL_MS } from "./AgentCards";
-import { humanIndustry } from "../wizard";
+import { humanIndustry, insightCaptureNotice } from "../wizard";
 import { WizardRequests } from "../wizardRequests";
 import HelpPreference from "./HelpPreference";
 import type { EngagementPath } from "../api";
@@ -263,6 +263,7 @@ export default function Wizard({ agents, launching, onLaunch, onOpenAgent, onClo
         <p id="wizard-description" className="wizard-sub">{step === 1
           ? "Tell us the useful thing you have in mind, or choose an idea. Your agent will help shape a small first version."
           : "Choose a ready agent. It opens with your goal in the prompt, ready for you to send."}</p>
+        {step === 1 && state && insightCaptureNotice(state) && <p className="wizard-industry-note">{insightCaptureNotice(state)}</p>}
         {error && <div className="wizard-error" role="alert"><p>{error}</p>
           {error.includes("delivery was interrupted") && onOpenAgent && <button className="btn btn-ghost" onClick={onOpenAgent}>Open agent</button>}
           {conflict && <><p>Saved in another tab: {conflict.what_building || conflict.selected_idea?.label}</p>

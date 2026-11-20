@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 import {
   humanIndustry,
   INDUSTRY_CHIPS_ATTR,
+  INSIGHT_CAPTURE_NOTICE,
   ideaDataMode,
   industryFromOther,
   industryOf,
+  insightCaptureNotice,
   isGenericIdea,
   otherBlurCommits,
   slugifyIndustry,
@@ -132,4 +134,16 @@ test("ideaDataMode prefers the server field then falls back to tables", () => {
   assert.equal(ideaDataMode(idea({ data_mode: "generate", demo_tables: ["retail.orders"] })), "generate");
   assert.equal(ideaDataMode(idea({ demo_tables: ["retail.orders"] })), "demo");
   assert.equal(ideaDataMode(idea()), "generate");
+});
+
+test("the account-team notice shows only when insight capture is on, with the approved wording", () => {
+  // Owner-approved text, verbatim. An attendee on an instance without capture
+  // must never be told that anyone sees what they build.
+  assert.equal(
+    INSIGHT_CAPTURE_NOTICE,
+    "Your Databricks account team will see what you build and the questions you ask today.",
+  );
+  assert.equal(insightCaptureNotice({ insight_capture_notice: true }), INSIGHT_CAPTURE_NOTICE);
+  assert.equal(insightCaptureNotice({ insight_capture_notice: false }), null);
+  assert.equal(insightCaptureNotice({}), null, "an older server that omits the field shows nothing");
 });

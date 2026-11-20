@@ -87,6 +87,15 @@ export function slugifyIndustry(
 /** Marks the chip row, so a blur landing inside it can be recognised. */
 export const INDUSTRY_CHIPS_ATTR = "data-industry-chips";
 
+/** The one line an attendee sees when insight capture is on. Exact wording is owner-approved. */
+export const INSIGHT_CAPTURE_NOTICE =
+  "Your Databricks account team will see what you build and the questions you ask today.";
+
+/** The capture notice for a wizard state, or null when this instance does not capture insight. */
+export function insightCaptureNotice(state: { insight_capture_notice?: boolean }): string | null {
+  return state.insight_capture_notice === true ? INSIGHT_CAPTURE_NOTICE : null;
+}
+
 /** Whether a blur out of the free-text box should commit what was typed.
  *
  * Not when the click that caused it is landing on a chip. Blur runs before the

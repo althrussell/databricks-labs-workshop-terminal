@@ -131,6 +131,8 @@ export interface WizardState {
   stacks?: string[];
   ideas: WizardIdea[];
   capture_enabled: boolean;
+  /** Insight contract v2 on (and so capture on): show the account-team notice. */
+  insight_capture_notice?: boolean;
   llm_wizard?: { enabled: boolean; model: string };
 }
 
