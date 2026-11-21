@@ -2727,7 +2727,7 @@ dialog.wizard {
 
   /* With the keyboard up for the terminal or prompt box, the top bars step
      aside; inputs inside the bars themselves stay visible while being edited. */
-  html[data-keyboard="open"] .app[data-view="agent"]:has(:is(.terminal-stage, .prompt-dock):focus-within) :is(.header, .project-controls, .your-build, .toolbar) {
+  html[data-keyboard="open"] .app[data-shell="desktop"][data-view="agent"]:has(:is(.terminal-stage, .prompt-dock):focus-within) :is(.header, .project-controls, .your-build, .toolbar) {
     display: none;
   }
 
@@ -2736,75 +2736,75 @@ dialog.wizard {
   }
 }
 
-/* A phone in the agent view: the header compacts to icons and each bar in the
+/* A narrow laptop window (and a tablet) in the agent view: the header compacts to icons and each bar in the
    work area above the terminal (.project-bar, .your-build-bar, .toolbar) is one
    row, so the terminal keeps most of the screen. Button labels stay in the DOM
    as their accessible names; only the icon shows. */
 @media (max-width: 700px) {
-  .app[data-view="agent"] .header {
+  .app[data-shell="desktop"][data-view="agent"] .header {
     flex-wrap: nowrap;
     gap: 8px;
     padding: 0 12px;
   }
 
-  .app[data-view="agent"] :is(.brand-text, .header-user) {
+  .app[data-shell="desktop"][data-view="agent"] :is(.brand-text, .header-user) {
     display: none;
   }
 
-  .app[data-view="agent"] .header-links {
+  .app[data-shell="desktop"][data-view="agent"] .header-links {
     order: 0;
     flex-basis: auto;
   }
 
-  .project-actions::-webkit-scrollbar,
-  .toolbar::-webkit-scrollbar {
+  .app[data-shell="desktop"] .project-actions::-webkit-scrollbar,
+  .app[data-shell="desktop"] .toolbar::-webkit-scrollbar {
     display: none;
   }
 
-  .project-bar {
+  .app[data-shell="desktop"] .project-bar {
     padding: 6px 12px;
   }
 
-  .project-actions {
+  .app[data-shell="desktop"] .project-actions {
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
   }
 
-  .project-actions .btn {
+  .app[data-shell="desktop"] .project-actions .btn {
     flex-shrink: 0;
   }
 
-  .app[data-view="agent"] .project-bar {
+  .app[data-shell="desktop"][data-view="agent"] .project-bar {
     flex-direction: row;
     align-items: center;
     gap: 8px;
     padding: 4px 12px;
   }
 
-  .app[data-view="agent"] .project-current {
+  .app[data-shell="desktop"][data-view="agent"] .project-current {
     flex: 1;
     min-width: 0;
   }
 
-  .app[data-view="agent"] .project-current > span {
+  .app[data-shell="desktop"][data-view="agent"] .project-current > span {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .app[data-view="agent"] .project-actions {
+  .app[data-shell="desktop"][data-view="agent"] .project-actions {
     width: auto;
     max-width: 58%;
     flex-shrink: 0;
   }
 
-  .your-build-bar {
+  .app[data-shell="desktop"] .your-build-bar {
     gap: 2px 8px;
     padding: 4px 12px;
   }
 
-  .your-build-next {
+  .app[data-shell="desktop"] .your-build-next {
     order: 3;
     flex-basis: 100%;
     min-width: 0;
@@ -2815,24 +2815,24 @@ dialog.wizard {
     overflow: hidden;
   }
 
-  .your-build-bar .your-build-actions {
+  .app[data-shell="desktop"] .your-build-bar .your-build-actions {
     margin-left: auto;
   }
 
-  .your-build-toggle {
+  .app[data-shell="desktop"] .your-build-toggle {
     padding-inline: 4px;
   }
 
-  .app[data-view="agent"] .your-build-bar {
+  .app[data-shell="desktop"][data-view="agent"] .your-build-bar {
     flex-wrap: nowrap;
     gap: 6px;
   }
 
-  .app[data-view="agent"] .your-build-toggle {
+  .app[data-shell="desktop"][data-view="agent"] .your-build-toggle {
     flex-shrink: 0;
   }
 
-  .app[data-view="agent"] .your-build-next {
+  .app[data-shell="desktop"][data-view="agent"] .your-build-next {
     order: 0;
     flex: 1;
     flex-basis: auto;
@@ -2841,13 +2841,13 @@ dialog.wizard {
     text-overflow: ellipsis;
   }
 
-  .app[data-view="agent"] .your-build-bar .your-build-actions {
+  .app[data-shell="desktop"][data-view="agent"] .your-build-bar .your-build-actions {
     flex-shrink: 0;
     flex-wrap: nowrap;
   }
 
-  .your-build-bar .your-build-actions button.btn,
-  .active-agent .btn {
+  .app[data-shell="desktop"] .your-build-bar .your-build-actions button.btn,
+  .app[data-shell="desktop"] .active-agent .btn {
     font-size: 0;
     gap: 0;
     min-width: 40px;
@@ -2857,7 +2857,7 @@ dialog.wizard {
   }
 
   /* Tools first, then the agents: one row that swipes sideways. */
-  .toolbar {
+  .app[data-shell="desktop"] .toolbar {
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
@@ -2865,27 +2865,27 @@ dialog.wizard {
     padding: 6px 12px;
   }
 
-  .toolbar .active-agent {
+  .app[data-shell="desktop"] .toolbar .active-agent {
     order: -1;
     flex-shrink: 0;
     flex-wrap: nowrap;
     padding: 0 4px;
   }
 
-  .toolbar .launch-bar {
+  .app[data-shell="desktop"] .toolbar .launch-bar {
     flex-shrink: 0;
   }
 
-  .launch-btn {
+  .app[data-shell="desktop"] .launch-btn {
     flex-shrink: 0;
   }
 
-  .active-agent-status {
+  .app[data-shell="desktop"] .active-agent-status {
     display: none;
   }
 
   /* The agent bar scrolls sideways, so its notice floats above everything. */
-  .active-agent .clipboard-notice {
+  .app[data-shell="desktop"] .active-agent .clipboard-notice {
     position: fixed;
     top: 8px;
     left: 8px;
@@ -2896,7 +2896,7 @@ dialog.wizard {
     box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
   }
 
-  .terminal-container {
+  .app[data-shell="desktop"] .terminal-container {
     inset: 6px;
   }
 }
@@ -2948,4 +2948,451 @@ dialog.phone-dialog {
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-dim);
+}
+
+/* ---- phone shell: no header, a bottom tab bar, the terminal gets the screen ----
+   App.tsx sets data-shell="phone" from PHONE_QUERY and data-tab to the open tab.
+   Everything here is scoped to it, so tablets and laptops are unchanged. */
+
+/* Desktop: the Build tab's wrapper is invisible and the bars sit where they always have. */
+.build-area {
+  display: contents;
+}
+
+.prompt-composer {
+  position: relative;
+}
+
+.app[data-shell="phone"] {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* The keep-this-tab-open note moves into the Help tab; a blocking sign-in banner stays on top. */
+.app[data-shell="phone"] > .tab-rule,
+.app[data-shell="phone"] .phone-help .banner-blocking {
+  display: none;
+}
+
+.app[data-shell="phone"] .main {
+  flex-direction: column;
+  min-height: 0;
+}
+
+.app[data-shell="phone"] .work-area {
+  min-height: 0;
+}
+
+/* One page per tab. */
+.app[data-shell="phone"]:is([data-tab="tips"], [data-tab="help"]) .work-area,
+.app[data-shell="phone"]:not([data-tab="build"]) .build-area,
+.app[data-shell="phone"]:not([data-tab="tips"]) .phone-tips,
+.app[data-shell="phone"]:not([data-tab="help"]) .phone-help,
+.app[data-shell="phone"][data-tab="build"] :is(.phone-status, .terminal-stage, .prompt-dock) {
+  display: none;
+}
+
+/* Terminal tab */
+
+.phone-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 4px 0 10px;
+  flex-shrink: 0;
+  background: #0e1116;
+}
+
+.phone-capsule {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  font-size: 12px;
+}
+
+.phone-capsule-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-status-actions,
+.phone-relaunch {
+  margin-left: auto;
+}
+
+.phone-status-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Attach image as an icon: its label stays the accessible name. */
+.phone-status .btn.image-drop {
+  font-size: 0;
+  gap: 0;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 8px;
+  justify-content: center;
+  border-color: transparent;
+}
+
+.app[data-shell="phone"] .terminal-container {
+  inset: 2px 6px;
+}
+
+.app[data-shell="phone"] .prompt-dock {
+  gap: 6px;
+  padding: 6px 8px;
+}
+
+/* B1: one slim row of nine keys that always fits, no scrolling. */
+.app[data-shell="phone"] .touch-keys {
+  gap: 4px;
+  overflow: hidden;
+}
+
+.app[data-shell="phone"] .touch-key {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0;
+  font-size: 12px;
+  background: #1b212b;
+}
+
+.app[data-shell="phone"] .touch-key[aria-label="Enter"] {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: #fff;
+}
+
+/* The ⌨ toggle sits inside the prompt box, at its right end. */
+.app[data-shell="phone"] .composer-input {
+  padding-right: 40px;
+}
+
+.composer-keys {
+  position: absolute;
+  right: 50px;
+  bottom: 4px;
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.composer-keys[aria-pressed="true"] {
+  color: var(--brand-primary);
+  background: color-mix(in srgb, var(--brand-primary) 14%, transparent);
+}
+
+/* Build tab: one scrolling page of cards. */
+
+.app[data-shell="phone"][data-tab="build"] .build-area {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px;
+}
+
+.app[data-shell="phone"] .build-area > :is(.project-controls, .your-build, .phone-card) {
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+
+.app[data-shell="phone"] .project-bar {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.app[data-shell="phone"] .project-actions {
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.app[data-shell="phone"] .your-build-bar {
+  padding: 8px 12px;
+}
+
+.app[data-shell="phone"] .your-build-next {
+  flex-basis: 100%;
+  min-width: 0;
+}
+
+.phone-card-title {
+  margin: 14px 14px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.phone-session {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 8px 14px;
+}
+
+.phone-session-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.phone-agents .hero-cards {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+/* On the Build page an agent is one row: icon, name, state. The description is the Home card's job. */
+.phone-agents .hero-card {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 12px;
+  animation: none;
+}
+
+.phone-agents .hero-card:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+}
+
+.phone-agents .hero-card-icon {
+  width: 36px;
+  height: 36px;
+}
+
+.phone-agents .hero-card-desc {
+  display: none;
+}
+
+.phone-more {
+  display: flex;
+  flex-direction: column;
+}
+
+.phone-more-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.phone-more-row:disabled {
+  opacity: 0.5;
+}
+
+.phone-more-highlight {
+  color: var(--brand-primary);
+}
+
+.phone-more-end {
+  margin-left: auto;
+  display: inline-flex;
+  color: var(--text-dim);
+}
+
+/* Tips and Help tabs: full pages. */
+
+.phone-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.phone-tips {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.nuggets-page {
+  width: 100%;
+  flex: 1;
+  border-left: none;
+}
+
+.nuggets-page .nuggets-list {
+  flex: none;
+  overflow: visible;
+}
+
+.phone-help-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+
+.phone-help .tab-rule {
+  padding: 6px 12px;
+}
+
+.help-chat-inline {
+  position: static;
+  width: 100%;
+  height: auto;
+  flex: 1;
+  min-height: 0;
+  border-left: none;
+  box-shadow: none;
+}
+
+/* The tab bar, in the thumb zone. */
+
+.phone-tabs {
+  display: flex;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-raised);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.phone-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 50px;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.phone-tab[aria-current="page"] {
+  color: var(--brand-primary);
+}
+
+.phone-tab:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: -4px;
+}
+
+.phone-tab-icon {
+  position: relative;
+  display: inline-flex;
+}
+
+.phone-tab-badge {
+  position: absolute;
+  top: -6px;
+  right: -10px;
+  display: grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* With the keyboard up, the terminal, keys and prompt box get the screen. */
+html[data-keyboard="open"] .app[data-shell="phone"] :is(.phone-tabs, .phone-status) {
+  display: none;
+}
+
+/* Sideways: the tabs become a left rail and the terminal gets the full height. */
+@media (orientation: landscape) {
+  .app[data-shell="phone"] {
+    padding-left: calc(56px + env(safe-area-inset-left));
+  }
+
+  html[data-keyboard="open"] .app[data-shell="phone"] {
+    padding-left: env(safe-area-inset-left);
+  }
+
+  .app[data-shell="phone"] .phone-tabs {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 30;
+    flex-direction: column;
+    width: calc(56px + env(safe-area-inset-left));
+    padding: 8px 0 0 env(safe-area-inset-left);
+    border-top: none;
+    border-right: 1px solid var(--border);
+  }
+
+  .app[data-shell="phone"] .phone-tab {
+    flex: 0 0 auto;
+    min-height: 56px;
+  }
+
+  /* The status row folds into the foot of the rail: its two icons, no capsule. */
+  .app[data-shell="phone"] .phone-status {
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    z-index: 31;
+    flex-direction: column;
+    width: calc(56px + env(safe-area-inset-left));
+    height: auto;
+    padding: 0 0 8px env(safe-area-inset-left);
+    background: transparent;
+  }
+
+  .app[data-shell="phone"] .phone-capsule {
+    display: none;
+  }
+
+  .app[data-shell="phone"] .phone-status-actions {
+    flex-direction: column;
+    margin: 0;
+  }
+
+  .app[data-shell="phone"] .phone-relaunch {
+    margin: 0;
+    font-size: 0;
+    padding: 8px;
+  }
 }

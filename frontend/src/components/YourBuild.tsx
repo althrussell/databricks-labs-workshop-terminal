@@ -9,10 +9,15 @@ import { saveDownload } from "../exportDownload";
  * what changed, from the structured workflow record only. The terminal stays
  * the primary workspace; this never becomes a second conversation.
  */
-export default function YourBuild({ refreshKey, onGetHelp }: { refreshKey: unknown; onGetHelp: () => void }) {
+export default function YourBuild({ refreshKey, onGetHelp, defaultOpen = false }: {
+  refreshKey: unknown;
+  onGetHelp: () => void;
+  /** The phone's Build tab is a page with room for the details, so they start shown. */
+  defaultOpen?: boolean;
+}) {
   const id = useId();
   const [view, setView] = useState<BuildView | null>(null);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [ask, setAsk] = useState<"change" | "explain" | null>(null);
   const [text, setText] = useState("");
   const [answer, setAnswer] = useState<Record<string, string>>({});
