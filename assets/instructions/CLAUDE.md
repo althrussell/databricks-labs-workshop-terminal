@@ -12,7 +12,8 @@
   says. `databricks …` (`DEFAULT`) builds, deploys, provisions, and reads;
   `databricks-me …` (`me`) reads as the attendee for row/column security. In
   Python: `WorkspaceClient(profile="DEFAULT")` builds, `profile="me"`
-  reads. Run `workshop-grant-me` after creating non-catalog resources.
+  reads. Run `workshop-grant-me` after creating non-catalog resources; a Genie
+  space needs `genie <space_id>`.
   Never query `system.*`
   tables (`system.billing`, `system.access`, `system.compute`).
 - Data lives in their catalog `$WORKSHOP_CATALOG` (`$WORKSHOP_SCHEMA` when
@@ -20,7 +21,7 @@
   Query `$WORKSHOP_DEMO_CATALOG` directly and join freely across all three;
   never copy a demo table just to read it. Write new derived tables or views
   in `$WORKSHOP_CATALOG`; app write-back goes to Lakebase. Copy demo rows only
-  to edit them or apply governance to them, and then only the rows you need.
+  to edit or govern them, and only the rows you need.
   If the demo data only partly fits, extend it: their upload, or labelled
   synthetic rows. If a permission blocks a read, run `workshop-grant-me` and
   say so. Create objects only in `$WORKSHOP_CATALOG`, never a new catalog.

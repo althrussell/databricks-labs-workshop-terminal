@@ -53,6 +53,7 @@ import copy
 import logging
 import os
 import random
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -69,6 +70,18 @@ logger = logging.getLogger(__name__)
 
 HEARTBEAT = 30  # loop wake interval (seconds)
 ALERT_REEMIT_INTERVAL = 1800  # re-emit a degraded health event at most every 30 min
+# After an on-demand sweep that finds nothing new, three forced sweeps run at these
+# offsets (seconds after that sweep started) before the manager returns to idle
+# cadence. A Genie space or dashboard created seconds before the helper ran can
+# be missing from its list for a while; the first pass covers the ~4 s create-to-
+# helper gap seen live (with headroom), the next two cover slower listing, and the
+# last one ends the series at two minutes. Each series is bounded to three passes
+# and is never re-armed while one is pending.
+FOLLOW_UP_OFFSETS = (15.0, 45.0, 120.0)
+_FOLLOW_UP_SOURCE = "follow_up"
+# A Databricks object id as it appears in a URL path: no slash, and not made of
+# dots alone (".." would normalise to a different endpoint).
+_RESOURCE_ID_PATTERN = re.compile(r"(?!\.+$)[A-Za-z0-9._-]{1,128}")
 
 
 class EntitlementApiError(Exception):
@@ -626,6 +639,9 @@ class EntitlementManager:
         # grant a one-shot per app rather than a per-sweep re-grant.
         self._app_sp_grants: dict[str, str] = {}
         self._last_telemetry_emitted_at = 0.0
+        # Absolute deadlines of the pending follow-up passes, and the attendee they serve.
+        self._follow_ups: list[float] = []
+        self._follow_up_email: str | None = None
 
     def start(self) -> None:
         if not config.entitlements_enabled():
@@ -861,7 +877,7 @@ class EntitlementManager:
             if not due:
                 continue
             try:
-                self.reconcile()
+                self._run_due_pass()
             except Exception as e:  # noqa: BLE001 — the loop must never die
                 logger.error("entitlement reconcile failed unexpectedly: %s", e)
                 from . import telemetry
@@ -875,6 +891,16 @@ class EntitlementManager:
                         "exception_type": type(e).__name__,
                     },
                 )
+
+    def _run_due_pass(self) -> None:
+        """One scheduled pass: a due follow-up for the last on-demand caller, else the normal sweep."""
+        with self._lock:
+            follow_up_due = bool(self._follow_ups) and self._follow_ups[0] <= self._clock()
+            email = self._follow_up_email if follow_up_due else None
+        if follow_up_due:
+            self.reconcile(email, source=_FOLLOW_UP_SOURCE)
+        else:
+            self.reconcile()
 
     def _enumerate_resources(
         self,
@@ -967,17 +993,29 @@ class EntitlementManager:
         resource_type: str | None = None,
         *,
         source: str | None = None,
+        resource_id: str | None = None,
     ) -> dict:
         """Idempotently make SP-created resources usable by the labuser(s).
 
         With ``email`` set, reconciles just that attendee (the on-demand
-        ``workshop-grant-me`` path); otherwise every known attendee. Never
+        ``workshop-grant-me`` path); otherwise every known attendee. With
+        ``resource_id`` set, grants that one resource of ``resource_type`` from
+        its detail read and never consults the list. Invalid arguments raise
+        ``ValueError`` (the endpoint maps it to 422); everything else never
         raises — failures are recorded and surfaced via health + status.
         """
         if not config.entitlements_enabled():
             return {"enabled": False}
 
         label = self._resource_label(resource_type)
+        resource_id = (resource_id or "").strip() or None
+        if resource_id:
+            if label is None:
+                raise ValueError("resource_id needs a resource_type, e.g. genie <space_id>")
+            if not email:
+                raise ValueError("resource_id needs the attendee's identity")
+            if not _RESOURCE_ID_PATTERN.fullmatch(resource_id):
+                raise ValueError("resource_id is not a Databricks object id")
         source = source or ("on_demand" if email else "background")
         deferred, backoff_remaining = self._backoff_response()
         if deferred is not None:
@@ -1016,7 +1054,9 @@ class EntitlementManager:
                 )
                 return deferred
             try:
-                return self._reconcile_once(email, label=label, source=source)
+                return self._reconcile_once(
+                    email, label=label, source=source, resource_id=resource_id
+                )
             except Exception as exc:  # noqa: BLE001 — public reconcile is fail-soft
                 # ``finish`` normally restores the ContextVar. Keep an
                 # unexpected adapter exception from poisoning this worker's
@@ -1072,13 +1112,20 @@ class EntitlementManager:
             )
 
     def _reconcile_once(
-        self, email: str | None, *, label: str | None, source: str
+        self,
+        email: str | None,
+        *,
+        label: str | None,
+        source: str,
+        resource_id: str | None = None,
     ) -> dict:
         started_at = self._monotonic()
         now = self._clock()
         stats = _RequestStats()
         stats_token = _request_stats.set(stats)
         with self._lock:
+            if source == _FOLLOW_UP_SOURCE and self._follow_ups:
+                self._follow_ups.pop(0)
             self._last_run_at = now
             self._last_attempt_at = now
             attempt_wake_generation = self._wake_generation
@@ -1103,10 +1150,11 @@ class EntitlementManager:
                 errors = [str(error) for error in result.get("errors", [])]
                 with self._lock:
                     after_signature = self._ledger_signature_locked()
+                changed = before_signature != after_signature
                 no_change = (
                     not errors
                     and prior_ok is True
-                    and before_signature == after_signature
+                    and not changed
                 )
                 if stats.rate_limits:
                     backoff_seconds = self._defer_backoff(
@@ -1128,6 +1176,13 @@ class EntitlementManager:
                         }
                     )
                 else:
+                    self._update_follow_ups(
+                        source=source,
+                        email=email,
+                        changed=changed,
+                        named=resource_id is not None,
+                        now=now,
+                    )
                     convergence_ms = self._record(
                         not errors,
                         "; ".join(errors[:5]) if errors else None,
@@ -1266,6 +1321,17 @@ class EntitlementManager:
         identities = _sp_identities(host, bearer)
         if not identities:
             errors.append("cannot verify app service-principal identity")
+        elif resource_id is not None and label is not None:
+            spec = next(spec for spec in _RESOURCE_SPECS if spec.label == label)
+            outcome = self._grant_named_resource(
+                host, bearer, email or "", identities, spec, resource_id
+            )
+            result["resource"] = outcome
+            result["non_uc"][email or ""] = {
+                spec.label: 1 if outcome["state"] == "handed_off" else 0
+            }
+            if outcome["state"] == "failed":
+                errors.append(f"{spec.label} {resource_id}: {outcome['message']}")
         else:
             for em in emails:
                 if "@" not in em:
@@ -1916,6 +1982,10 @@ class EntitlementManager:
                 self._app_sp_grants = previous_app_sp_grants
             if previous_adapter_errors is not None:
                 self._adapter_errors = previous_adapter_errors
+            # The platform asked us to stop: the follow-up series is an
+            # optimisation and does not survive a 429.
+            self._follow_ups = []
+            self._follow_up_email = None
             self._backoff_attempt += 1
             window = min(
                 float(config.entitlement_backoff_cap()),
@@ -1942,6 +2012,118 @@ class EntitlementManager:
         )
         self._wake_event.set()
         return delay
+
+    def _update_follow_ups(
+        self,
+        *,
+        source: str,
+        email: str | None,
+        changed: bool,
+        named: bool,
+        now: float,
+    ) -> None:
+        """Arm the short follow-up series, or cancel it once something was handed off.
+
+        Any pass that is neither background nor a follow-up (the workshop-grant-me
+        helper and the admin route) arms it when it finds nothing new, unless it
+        named one resource or a series is already pending. A pass that changes
+        the ledger cancels it: the resource it was waiting for has been handed
+        over, so the extra sweeps would only cost list calls.
+        """
+        with self._lock:
+            if changed and source != "background":
+                self._follow_ups = []
+                self._follow_up_email = None
+                return
+            if (
+                not changed
+                and source not in ("background", _FOLLOW_UP_SOURCE)
+                and not named
+                and not self._follow_ups
+            ):
+                self._follow_ups = [now + offset for offset in FOLLOW_UP_OFFSETS]
+                self._follow_up_email = email
+
+    def _grant_named_resource(
+        self,
+        host: str,
+        bearer: str,
+        principal: str,
+        sp_identities: set[str],
+        spec: ResourceSpec,
+        resource_id: str,
+    ) -> dict:
+        """Hand one named resource to the attendee from its detail read alone.
+
+        The same rules as the list sweep apply: the creator must be this app's
+        service principal, the resource must be from this run, and CAN_MANAGE
+        goes through the same grant and readback. The list is never read, so a
+        resource the list has not caught up with yet is still found.
+        """
+        outcome: dict = {
+            "resource_type": spec.label,
+            "resource_id": resource_id,
+            "state": "refused",
+            "permission_level": None,
+            "can_manage": False,
+            "message": "",
+        }
+
+        def answer(state: str, message: str) -> dict:
+            outcome["state"] = state
+            outcome["message"] = message
+            return outcome
+
+        if not spec.detail_path:
+            return answer(
+                "unsupported",
+                f"{spec.label} has no direct lookup; run workshop-grant-me {spec.label} "
+                "to refresh its list",
+            )
+        detail, error = _get_json(
+            f"{host}{spec.detail_path.format(id=resource_id)}", bearer
+        )
+        if error is not None:
+            if error.rate_limit_reason:
+                return answer("rate_limited", "the platform asked us to slow down")
+            if error.status_code == 404:
+                return answer("not_found", f"no {spec.label} with that id is visible to the app")
+            return answer("failed", f"detail read: {error}")
+        item = dict(detail or {})
+        self._transition(principal, spec.label, resource_id, "discovered")
+        state_value = str(item.get(spec.state_field or "") or "").strip().upper()
+        if spec.skip_states and state_value in spec.skip_states:
+            return answer("refused", f"it is {state_value.lower()}, so it was left alone")
+        if not _created_by_sp(spec, item, sp_identities):
+            return answer(
+                "refused",
+                "it was not created by this app's service principal, so it was left alone",
+            )
+        verified, verification_error = self._verify_resource(
+            host, bearer, spec, resource_id, item, sp_identities
+        )
+        if verification_error:
+            self._transition(principal, spec.label, resource_id, "failed", error=verification_error)
+            return answer("failed", verification_error)
+        if not verified:
+            return answer("refused", "it was created before this workshop run, so it was left alone")
+        self._transition(principal, spec.label, resource_id, "verified_creator")
+
+        ok, error_or_message, level = self._grant_resource(
+            host, bearer, spec, resource_id, principal
+        )
+        if ok:
+            self._transition(
+                principal, spec.label, resource_id, "handed_off", permission_level=level
+            )
+            outcome["permission_level"] = level
+            outcome["can_manage"] = level in ("CAN_MANAGE", "IS_OWNER")
+            return answer("handed_off", f"{level} granted to {principal}")
+        if isinstance(error_or_message, EntitlementApiError) and error_or_message.rate_limit_reason:
+            return answer("rate_limited", "the platform asked us to slow down")
+        message = str(error_or_message or "permission handoff failed")
+        self._transition(principal, spec.label, resource_id, "failed", error=message)
+        return answer("failed", message)
 
     def _record(
         self, ok: bool, error: str | None, *, verified_no_change: bool = False
@@ -2005,7 +2187,8 @@ class EntitlementManager:
         must win over that choice, otherwise its event has already been set but
         the loop observes a future deadline and quietly discards the request.
         Targeted invalidations that failed for a non-rate-limit reason retain
-        their per-adapter retry deadline instead of spinning immediately.
+        their per-adapter retry deadline instead of spinning immediately. A
+        pending follow-up pass wins over the idle cadence, but never over a wake.
         """
         now = self._clock()
         with self._lock:
@@ -2017,20 +2200,30 @@ class EntitlementManager:
                 ),
                 default=None,
             )
-            if not generation_changed and pending_deadline is None:
+            follow_up_at = self._follow_ups[0] if self._follow_ups else None
+            if not generation_changed and pending_deadline is None and follow_up_at is None:
                 return
-            deadline = (
-                max(now, pending_deadline)
-                if pending_deadline is not None
-                else now
-            )
-            if not self._next_attempt_at or deadline < self._next_attempt_at:
-                self._next_attempt_at = deadline
-                self._next_attempt_reason = (
+            deadline: float | None = None
+            reason = ""
+            if generation_changed or pending_deadline is not None:
+                deadline = (
+                    max(now, pending_deadline)
+                    if pending_deadline is not None
+                    else now
+                )
+                reason = (
                     self._last_wake_reason
                     if generation_changed
                     else "resource_refresh"
                 )
+            if follow_up_at is not None and (deadline is None or follow_up_at < deadline):
+                deadline = follow_up_at
+                reason = _FOLLOW_UP_SOURCE
+            if deadline is not None and (
+                not self._next_attempt_at or deadline < self._next_attempt_at
+            ):
+                self._next_attempt_at = deadline
+                self._next_attempt_reason = reason
             self._idle = False
         self._wake_event.set()
 
@@ -2072,6 +2265,7 @@ class EntitlementManager:
             baseline_ready = sorted(self._baseline_ready)
             baseline_retry_pending = self._baseline_retry_pending
             handoff = self._handoff_snapshot_locked()
+            follow_up_at = list(self._follow_ups)
             cache = {
                 spec.label: {
                     "cached": spec.label in self._enumeration_cache,
@@ -2113,6 +2307,7 @@ class EntitlementManager:
             "idle": idle,
             "next_attempt_at": next_attempt_at or None,
             "next_attempt_reason": next_attempt_reason,
+            "follow_up_at": follow_up_at,
             "deferred_reason": deferred_reason,
             "backoff_seconds": backoff_seconds,
             "backoff_attempt": backoff_attempt,

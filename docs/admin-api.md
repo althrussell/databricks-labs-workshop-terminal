@@ -430,7 +430,7 @@ reconciler that makes SP-created resources usable by the labuser:
   "state": "healthy", "last_reconcile": 1750000000, "last_error": null,
   "interval": 300, "idle_interval": 1800, "idle": true,
   "next_attempt_at": 1750001200, "next_attempt_reason": "cache_expiry",
-  "deferred_reason": null, "backoff_seconds": 0 }
+  "follow_up_at": [], "deferred_reason": null, "backoff_seconds": 0 }
 ```
 
 `ok: false` with a `last_error` means a grant is failing (commonly the app SP
@@ -444,9 +444,11 @@ their last verified values during that bounded delay.
 `POST /api/admin/entitlements/reconcile` forces a verified pass for every bound
 attendee or the optional `email`. An optional `resource_type` refreshes only
 that adapter (`apps`, `jobs`, `pipelines`, `serving-endpoints`,
-`database-instances`, `database-projects`, `warehouses`, or `dashboards`). A
-request made during platform backoff returns the deferred status without making
-another Databricks API call.
+`database-instances`, `database-projects`, `warehouses`, `dashboards`, or
+`genie-spaces`). A request made during platform backoff returns the deferred
+status without making another Databricks API call. A forced pass that finds
+nothing new arms the follow-up series described under the app callback
+endpoint below.
 
 ### App callback endpoints (not admin-gated)
 
@@ -460,6 +462,26 @@ them, and both no-op cleanly when the feature is disabled:
   for the attendee (the `workshop-grant-me` path), returning the per-resource
   grant summary. The optional `resource_type` body field performs a targeted
   refresh; the helper accepts the same value as its first argument.
+  - Body: `{"email", "resource_type"?, "resource_id"?}`. With `resource_id`
+    (≤128 characters, letters, digits, `.`, `_`, `-`) and `resource_type`
+    `genie` or `dashboards`, the app grants that one object from its detail
+    read; the list is not read. `resource_id` without `resource_type`, or any
+    other type, is 422. Other types answer `unsupported` until they have a
+    detail read.
+  - Response: the usual summary plus `resource`:
+    `{resource_type, resource_id, state, permission_level, can_manage, message}`.
+    `state` is `handed_off` (CAN_MANAGE or IS_OWNER read back, `can_manage`
+    true), `refused` (not created by the app's service principal, or created
+    before this run, or trashed), `not_found` (404 from the detail read),
+    `unsupported`, `rate_limited` (the response is then `degraded_backoff`) or
+    `failed`. A `failed` state also appears in `errors`; the other states do
+    not, because they are answers, not faults.
+  - Follow-up passes: an on-demand pass (no `resource_id`) that changes nothing
+    in the handoff ledger arms three forced sweeps at +15 s, +45 s and +120 s.
+    A pass that hands something over cancels the series; a 429 cancels it too,
+    and no follow-up ever runs inside the backoff floor. A series is never
+    re-armed while one is pending. The `entitlements` block lists the pending
+    deadlines as `follow_up_at` (epoch seconds).
 - `POST /api/discovery` — records one agent-elicited discovery record (the
   `workshop-discovery` path, contract C6). Only `record_id` is meaningful as a
   key; every other field is optional, unknown fields are ignored, and free text

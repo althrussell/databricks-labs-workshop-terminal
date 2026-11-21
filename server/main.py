@@ -626,6 +626,8 @@ class _EmailBody(BaseModel):
 
 class _EntitlementReconcileBody(_EmailBody):
     resource_type: str | None = None
+    # With resource_type, grant this one object by id from its detail read.
+    resource_id: str | None = Field(default=None, max_length=128)
 
 
 class _AppDeployEventBody(_EmailBody):
@@ -729,11 +731,14 @@ def recover(principal: Principal = Depends(get_current_user)):
 def reconcile_entitlements(body: _EntitlementReconcileBody, request: Request):
     """On-demand entitlement reconcile (the ``workshop-grant-me`` path): makes a
     just-created app/job/Lakebase instance usable by the labuser immediately
-    instead of waiting for the next sweep."""
+    instead of waiting for the next sweep. With ``resource_id`` it grants that
+    one object (``resource_type`` genie or dashboards) from its detail read."""
     principal = _callback_identity(body, request)
     try:
         return entitlement_manager.reconcile(
-            email=principal.name, resource_type=body.resource_type
+            email=principal.name,
+            resource_type=body.resource_type,
+            resource_id=body.resource_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
