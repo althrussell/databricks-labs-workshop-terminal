@@ -34,7 +34,11 @@ when set); the attendee has `ALL PRIVILEGES` there. Never create a new
 top-level catalog. Apps, jobs, Lakebase, pipelines, serving endpoints, Genie
 spaces and dashboards are shared with the attendee automatically; run
 `workshop-grant-me` right after creating one so it is `CAN_MANAGE` for them
-immediately. Copy shared demo data into an owned table before changing it.
+immediately. A Genie space: run `workshop-grant-me genie <space_id>` with the id
+`create-space` printed (dashboards: `dashboards <id>`). It replies
+`CAN_MANAGE: yes` or `CAN_MANAGE: no`; tell the attendee to open the space only
+after `yes`. Exit 75 = retry later (throttled); exit 1 = it will not work as asked. A bare `workshop-grant-me` can miss a space created seconds ago.
+Copy shared demo data into an owned table before changing it.
 Metastore `system.*` tables (`system.billing`, `system.access`, `system.compute`,
 `system.lakeflow`, `system.ai_gateway`, `system.serving`) are restricted for
 multi-tenant isolation: for FinOps or observability apps, use

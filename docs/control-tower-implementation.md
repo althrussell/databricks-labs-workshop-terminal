@@ -565,10 +565,16 @@ access to them. Provision a per-attendee catalog so usability is automatic:
   endpoints), granting the labuser `CAN_MANAGE` (these don't inherit). All calls
   run as the app SP, are idempotent, and emit `entitlements.health` on failure.
   Enumeration is cached with independently staggered expiries; a verified
-  no-change pass enters a 30-minute idle cadence. Session launch, an explicit
-  reconcile, a known resource type, cache expiry, or failed verification wakes
-  it. Platform 429/`RESOURCE_EXHAUSTED` responses use capped full-jitter backoff
-  and preserve the last verified health/ledger as `degraded_backoff`.
+  no-change pass enters a 30-minute idle cadence. An on-demand pass that hands
+  over nothing new is followed by three forced re-lists of genie-spaces and
+  dashboards (or of the one type asked for) at +15 s, +45 s and +120 s, so
+  a Genie space or dashboard the list has not caught up with yet is handed over
+  within two minutes. `workshop-grant-me genie|dashboards <id>` grants one object
+  by id from its detail read, with no list call, and reports `CAN_MANAGE: yes`
+  or `no`. Session launch, an explicit reconcile, a known resource type, cache
+  expiry, or failed verification wakes it. Platform 429/`RESOURCE_EXHAUSTED`
+  responses use capped full-jitter backoff and preserve the last verified
+  health/ledger as `degraded_backoff`.
 
 Grant payloads the app issues (the app SP uses catalog-scoped `MANAGE`; it does
 not need ownership or metastore-wide `MANAGE`):
