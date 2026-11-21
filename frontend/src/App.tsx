@@ -54,14 +54,14 @@ import TerminalClipboard from "./components/TerminalClipboard";
 import PromptComposer, { type PromptComposerHandle } from "./components/PromptComposer";
 import TouchKeyBar from "./components/TouchKeyBar";
 import OpenOnPhone from "./components/OpenOnPhone";
-import { PHONE_QUERY, TOUCH_QUERY, useMediaQuery } from "./components/useMediaQuery";
+import { TOUCH_QUERY, useMediaQuery } from "./components/useMediaQuery";
 import { LINK_ICONS } from "./components/linkIcons";
 import AgentCards from "./components/AgentCards";
 import PhoneTabBar, { type PhoneTab } from "./components/PhoneTabBar";
 import PhoneStatusRow from "./components/PhoneStatusRow";
 import PhoneMoreList from "./components/PhoneMoreList";
 import { speechRecognitionCtor } from "./voice";
-import { isPhoneViewport, KeyboardTracker, measureViewport } from "./viewport";
+import { isPhoneScreen, KeyboardTracker, measureViewport } from "./viewport";
 import ImageDropZone from "./components/ImageDropZone";
 import { rejectedMessage, splitAttachable } from "./imageDrop";
 import { saveDownload } from "./exportDownload";
@@ -176,11 +176,9 @@ export default function App() {
   const touch = useMediaQuery(TOUCH_QUERY);
   const narrowScreen = useMediaQuery("(max-width: 700px)");
   // A phone gets its own shell: no header, a bottom tab bar, the terminal
-  // filling the Terminal tab (styles.css, .app[data-shell="phone"]).
-  // Tracked alongside KeyboardTracker below so opening a soft keyboard on a
-  // landscape tablet (interactive-widget=resizes-content) never flips shells.
-  const phoneQuery = useMediaQuery(PHONE_QUERY);
-  const [phone, setPhone] = useState(() => window.matchMedia(PHONE_QUERY).matches);
+  // filling the Terminal tab (styles.css, .app[data-shell="phone"]). Decided
+  // from the screen, which the keyboard and rotation never change (viewport.ts).
+  const phone = isPhoneScreen(touch, window.screen);
   const [phoneTab, setPhoneTab] = useState<PhoneTab>("terminal");
   // The key row above the phone prompt box, remembered per device.
   const [keysOpen, setKeysOpen] = useState(() => {
@@ -195,9 +193,6 @@ export default function App() {
   const [speech] = useState(() => speechRecognitionCtor(window as Parameters<typeof speechRecognitionCtor>[0]));
   const composerRef = useRef<PromptComposerHandle | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
-  useEffect(() => {
-    if (!window.visualViewport) setPhone(phoneQuery);
-  }, [phoneQuery]);
   // Size the app to the visible area, so a phone's toolbars and keyboard never
   // cover the prompt box; with the keyboard up, the top bars step aside
   // (styles.css, html[data-keyboard]).
@@ -208,8 +203,6 @@ export default function App() {
     const keyboard = new KeyboardTracker();
     const update = () => {
       const next = measureViewport(keyboard, vv, window.scrollY, touch);
-      const scale = Math.max(vv.scale ?? 1, 1);
-      setPhone(isPhoneViewport(touch, vv.width * scale, keyboard.fullHeight || vv.height * scale));
       root.style.setProperty("--app-height", `${next.appHeightPx}px`);
       root.dataset.keyboard = next.keyboardOpen ? "open" : "closed";
       // iOS scrolls the page to reveal a focused box; the app already fits.
@@ -218,11 +211,9 @@ export default function App() {
     update();
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
-    window.addEventListener("resize", update);
     return () => {
       vv.removeEventListener("resize", update);
       vv.removeEventListener("scroll", update);
-      window.removeEventListener("resize", update);
     };
   }, [touch]);
   useEffect(() => {

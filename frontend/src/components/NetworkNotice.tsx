@@ -56,10 +56,11 @@ export function NetworkStatusControl({
   status: NetworkStatusKind;
   result: NetworkCheckResult | null;
   onRunAgain: () => void;
-  /** "above" opens the popover upward (e.g. near the bottom of the phone Build page). */
-  placement?: "below" | "above";
+  /** "auto" opens upward unless that would leave the top of the screen (phone Build page). */
+  placement?: "below" | "auto";
 }) {
   const [open, setOpen] = useState(false);
+  const [upward, setUpward] = useState(false);
   const summary = formatNetworkSummary(result);
   const outage = isOutageShaped(result);
   const dotClass =
@@ -87,7 +88,11 @@ export function NetworkStatusControl({
         aria-label={label}
         aria-expanded={open}
         title={label}
-        onClick={() => setOpen((v) => !v)}
+        onClick={(event) => {
+          // About 120px of details: open upward when there is room above the button.
+          if (placement === "auto") setUpward(event.currentTarget.getBoundingClientRect().top > 160);
+          setOpen((v) => !v);
+        }}
       >
         {status === "blocked" || (status !== "checking" && outage) ? (
           <WifiOff size={15} aria-hidden="true" />
@@ -103,7 +108,7 @@ export function NetworkStatusControl({
           aria-label="Network check details"
           style={{
             position: "absolute",
-            ...(placement === "above"
+            ...(placement === "auto" && upward
               ? { bottom: "calc(100% + 6px)" }
               : { top: "calc(100% + 6px)" }),
             right: 0,

@@ -84,7 +84,7 @@ signs in to the workspace on the phone with the same account.
 - Prompt box and mic: `frontend/src/components/PromptComposer.tsx`, `frontend/src/voice.ts`.
 - Key bar: `frontend/src/components/TouchKeyBar.tsx`, `frontend/src/touchKeys.ts`.
 - Phone shell:
-  - `PHONE_QUERY` in `frontend/src/components/useMediaQuery.ts`;
+  - `isPhoneScreen` in `frontend/src/viewport.ts`: a touch screen whose short side is at most 500px. The screen, unlike the viewport, does not change when the keyboard opens or the phone turns;
   - `data-shell` and `data-tab` set in `frontend/src/App.tsx`;
   - `frontend/src/components/PhoneTabBar.tsx`, `PhoneStatusRow.tsx` and `PhoneMoreList.tsx`;
   - CSS under `.app[data-shell="phone"]` in `frontend/src/styles.css`.

@@ -2953,7 +2953,7 @@ dialog.phone-dialog {
 }
 
 /* ---- phone shell: no header, a bottom tab bar, the terminal gets the screen ----
-   App.tsx sets data-shell="phone" from PHONE_QUERY and data-tab to the open tab.
+   App.tsx sets data-shell="phone" from isPhoneScreen (viewport.ts) and data-tab to the open tab.
    Everything here is scoped to it, so tablets and laptops are unchanged. */
 
 /* Desktop: the Build tab's wrapper is invisible and the bars sit where they always have. */
@@ -3008,6 +3008,13 @@ dialog.phone-dialog {
   right: max(8px, env(safe-area-inset-right));
   width: min(380px, calc(100vw - 16px - env(safe-area-inset-left) - env(safe-area-inset-right)));
   max-height: 45%;
+}
+
+/* On the Help tab the top holds Raise hand and the chat header; toasts sit below
+   them, over the oldest messages, clear of the composer. */
+.app[data-shell="phone"][data-tab="help"] .toast-host {
+  top: calc(120px + env(safe-area-inset-top));
+  max-height: 35%;
 }
 
 /* Terminal tab */
@@ -3098,7 +3105,7 @@ dialog.phone-dialog {
 .composer-keys {
   position: absolute;
   right: 49px;
-  bottom: 1px;
+  bottom: 0;
   display: inline-grid;
   place-items: center;
   width: 40px;

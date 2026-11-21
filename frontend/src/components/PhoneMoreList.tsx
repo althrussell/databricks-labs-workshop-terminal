@@ -61,7 +61,7 @@ export default function PhoneMoreList(props: Props) {
             status={props.networkStatus}
             result={props.networkResult}
             onRunAgain={props.onRunNetworkCheck}
-            placement="above"
+            placement="auto"
           />
         </span>
       </div>
