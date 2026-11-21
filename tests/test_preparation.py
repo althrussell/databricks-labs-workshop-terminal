@@ -12,6 +12,21 @@ from .conftest import ALICE
 from tests.plan_approval import approve_for_env
 
 
+@pytest.fixture(autouse=True)
+def _finish_bootstrap_retries():
+    """Let a test's retry thread end before the next test starts.
+
+    install.retry_failed runs on a daemon thread that clears _retry_active only
+    after its last step, so a test that waits on its own repair event can return
+    while that retry is still "active". The next test's retry_failed() then
+    correctly refuses a second retry and returns False (seen on a loaded CI runner).
+    """
+    yield
+    for thread in threading.enumerate():
+        if thread.name == "bootstrap-retry":
+            thread.join(timeout=5)
+
+
 @pytest.fixture
 def attendee(monkeypatch, tmp_path):
     from server import config
