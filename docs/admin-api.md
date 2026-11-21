@@ -430,7 +430,7 @@ reconciler that makes SP-created resources usable by the labuser:
   "state": "healthy", "last_reconcile": 1750000000, "last_error": null,
   "interval": 300, "idle_interval": 1800, "idle": true,
   "next_attempt_at": 1750001200, "next_attempt_reason": "cache_expiry",
-  "deferred_reason": null, "backoff_seconds": 0 }
+  "follow_up_at": [], "deferred_reason": null, "backoff_seconds": 0 }
 ```
 
 `ok: false` with a `last_error` means a grant is failing (commonly the app SP
@@ -444,9 +444,11 @@ their last verified values during that bounded delay.
 `POST /api/admin/entitlements/reconcile` forces a verified pass for every bound
 attendee or the optional `email`. An optional `resource_type` refreshes only
 that adapter (`apps`, `jobs`, `pipelines`, `serving-endpoints`,
-`database-instances`, `database-projects`, `warehouses`, or `dashboards`). A
-request made during platform backoff returns the deferred status without making
-another Databricks API call.
+`database-instances`, `database-projects`, `warehouses`, `dashboards`, or
+`genie-spaces`). A request made during platform backoff returns the deferred
+status without making another Databricks API call. A forced pass that finds
+nothing new arms the follow-up series described under the app callback
+endpoint below.
 
 ### App callback endpoints (not admin-gated)
 
@@ -460,6 +462,35 @@ them, and both no-op cleanly when the feature is disabled:
   for the attendee (the `workshop-grant-me` path), returning the per-resource
   grant summary. The optional `resource_type` body field performs a targeted
   refresh; the helper accepts the same value as its first argument.
+  - Body: `{"email", "resource_type"?, "resource_id"?}`. With `resource_id`
+    (≤128 characters, letters, digits, `.`, `_`, `-`) and `resource_type`
+    `genie` or `dashboards`, the app grants that one object from its detail
+    read; the list is not read. `resource_id` without `resource_type` is 422,
+    and so is an unknown `resource_type`. A known type without a detail read
+    (apps, jobs and the rest) is 200 with `state: unsupported`.
+  - Response: the usual summary plus `resource`:
+    `{resource_type, resource_id, state, permission_level, can_manage, message}`.
+    `state` is `handed_off` (CAN_MANAGE or IS_OWNER read back, `can_manage`
+    true), `refused` (not created by the app's service principal, or created
+    before this run, or trashed), `not_found` (404 from the detail read),
+    `unsupported`, `rate_limited` (the response is then `degraded_backoff`) or
+    `failed`. A `failed` state also appears in `errors`; the other states do
+    not, because they are answers, not faults. Refused, trashed and missing
+    objects leave no ledger entry. A throttled readback is `rate_limited`, not
+    `failed`. The helper maps the result to exit codes: 0 CAN_MANAGE, 75
+    (EX_TEMPFAIL) retry later (rate limit or backoff, with the time), 1 will not
+    succeed as asked (refused, not found, switched off, identity or other error).
+  - Follow-up passes: an on-demand pass (no `resource_id`) that changes nothing
+    in the handoff ledger arms three forced follow-up passes at +15 s, +45 s and +120 s.
+    A pass that hands the attendee something new (a new `handed_off` entry)
+    cancels the series; a discovery that is not theirs or a recorded failure
+    does not. A later empty on-demand call restarts the series from its own
+    start, replacing the pending deadlines, so there is never more than one.
+    A bare call's follow-ups re-list only `genie-spaces` and `dashboards`; a
+    call for one type re-lists only that type. Follow-ups take no catalog
+    grant, baseline or app enrolment, and a 429 cancels the series; no
+    follow-up runs inside the backoff floor. The `entitlements` block lists
+    the pending deadlines as `follow_up_at` (epoch seconds).
 - `POST /api/discovery` — records one agent-elicited discovery record (the
   `workshop-discovery` path, contract C6). Only `record_id` is meaningful as a
   key; every other field is optional, unknown fields are ignored, and free text

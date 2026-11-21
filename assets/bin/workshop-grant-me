@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 # workshop-grant-me — make resources you just built (apps, jobs, Lakebase /
-# Postgres instances, pipelines, serving endpoints, Genie spaces) usable by YOU immediately,
-# instead of waiting for the next reconcile sweep. Run it after a build step.
+# Postgres instances, pipelines, serving endpoints, Genie spaces, dashboards)
+# usable by YOU immediately, instead of waiting for the next reconcile sweep.
+# Run it after a build step.
+#
+#   workshop-grant-me                   refresh every resource type
+#   workshop-grant-me <type>            refresh one type
+#   workshop-grant-me <type> <id>       grant one object by id (genie, dashboards)
+#     exit 0: CAN_MANAGE for you; 75: retry later; 1: will not succeed as asked
 #
 # Unity Catalog objects created inside $WORKSHOP_CATALOG are already usable by
 # you via inherited grants — this is only needed for non-UC resources.
@@ -12,6 +18,7 @@ set -uo pipefail
 APP="${WORKSHOP_APP_URL:-http://localhost:8000}"
 EMAIL="${WORKSHOP_USER_EMAIL:-}"
 RESOURCE_TYPE="${1:-}"
+RESOURCE_ID="${2:-}"
 CAPABILITY_FILE="$HOME/.config/workshop/callback-capability"
 
 case "$RESOURCE_TYPE" in
@@ -22,9 +29,20 @@ case "$RESOURCE_TYPE" in
     ;;
 esac
 
-DATA="{\"email\":\"${EMAIL}\"}"
-if [[ -n "$RESOURCE_TYPE" ]]; then
+if [[ -n "$RESOURCE_ID" ]]; then
+  if [[ -z "$RESOURCE_TYPE" ]]; then
+    echo "Give the resource type before its id, e.g. workshop-grant-me genie <space_id>." >&2
+    exit 2
+  fi
+  if [[ ! "$RESOURCE_ID" =~ ^[A-Za-z0-9._-]{1,128}$ || "$RESOURCE_ID" =~ ^\.+$ ]]; then
+    echo "'$RESOURCE_ID' is not a Databricks id (letters, digits, . _ - only)." >&2
+    exit 2
+  fi
+  DATA="{\"email\":\"${EMAIL}\",\"resource_type\":\"${RESOURCE_TYPE}\",\"resource_id\":\"${RESOURCE_ID}\"}"
+elif [[ -n "$RESOURCE_TYPE" ]]; then
   DATA="{\"email\":\"${EMAIL}\",\"resource_type\":\"${RESOURCE_TYPE}\"}"
+else
+  DATA="{\"email\":\"${EMAIL}\"}"
 fi
 
 # The status and the server's reason are kept apart from the body, so a refusal
@@ -42,6 +60,52 @@ if [[ "$STATUS" != 2* ]]; then
   echo "The workshop app refused the entitlement handoff (HTTP $STATUS): $BODY" >&2
   exit 1
 fi
+
+if [[ -n "$RESOURCE_ID" ]]; then
+  # One object: say plainly whether it is CAN_MANAGE for the attendee. Exit 0 when
+  # it is, 75 (EX_TEMPFAIL) when it may succeed later, and 1 when it will not.
+  VERDICT="$(printf '%s' "$BODY" | python3 -c '
+import json, sys, time
+rtype, rid = sys.argv[1], sys.argv[2]
+label = rtype + " " + rid
+try:
+    data = json.load(sys.stdin)
+except ValueError:
+    data = {}
+if not isinstance(data, dict):
+    data = {}
+resource = data.get("resource") or {}
+retry = False
+if resource.get("can_manage"):
+    print("CAN_MANAGE: yes. %s is %s for you." % (label, resource.get("permission_level") or "CAN_MANAGE"))
+    sys.exit(0)
+if resource:
+    reason = resource.get("message") or "the app gave no reason"
+    retry = resource.get("state") == "rate_limited"
+elif data.get("enabled") is False:
+    reason = "entitlements are switched off on this app"
+elif data.get("deferred") or data.get("state") == "degraded_backoff":
+    reason = "the platform asked the app to slow down"
+    retry = True
+elif data.get("errors"):
+    reason = "; ".join(str(e) for e in data["errors"][:2])
+else:
+    reason = "the app gave no answer"
+at = data.get("next_attempt_at")
+if retry and isinstance(at, (int, float)):
+    reason += "; retry after " + time.strftime("%H:%M:%S", time.localtime(at))
+print("CAN_MANAGE: no. %s is not yet CAN_MANAGE for you: %s" % (label, reason))
+sys.exit(75 if retry else 1)
+' "$RESOURCE_TYPE" "$RESOURCE_ID" 2>/dev/null)"
+  STATUS_CODE=$?
+  if [[ -z "$VERDICT" ]]; then
+    echo "CAN_MANAGE: unknown. The app answered, but its answer could not be read." >&2
+    exit 1
+  fi
+  echo "$VERDICT"
+  exit "$STATUS_CODE"
+fi
+
 echo "$BODY"
 echo ""
 echo "Requested a verified entitlement handoff for resources created during this workshop run."
