@@ -1177,3 +1177,22 @@ def test_healthz_remains_liveness_only_when_readiness_is_red(client, monkeypatch
     response = client.get("/healthz")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_a_recent_proof_does_not_hide_a_known_catalog_failure(tmp_path):
+    """Codex P2: a catalog proof that is still recent must not make /readyz green
+    while the last sweep recorded a catalog failure."""
+    healthy = {
+        "enabled": True, "ok": True, "thread_alive": True,
+        "last_verified_at": 900.0, "verified_email": "alice@example.com",
+        "verified_catalog": "workshop_alice", "verification_source": "background",
+    }
+    failing = {
+        **healthy, "ok": False,
+        "last_error": "catalog grant alice@example.com: 500 boom",
+    }
+
+    assert _evaluate(tmp_path, entitlements=healthy)["checks"]["entitlements"]["ok"] is True
+    failed = _evaluate(tmp_path, entitlements=failing)["checks"]["entitlements"]
+    assert failed["ok"] is False
+    assert "catalog grant" in failed["last_error"]

@@ -2110,3 +2110,86 @@ def test_an_unhandled_error_still_runs_the_pending_follow_up(monkeypatch, enable
     assert status["follow_up_at"] == [start + 45, start + 120]
     assert status["next_attempt_at"] == start + 45, "not the error retry interval"
     assert status["next_attempt_reason"] == "follow_up"
+
+
+# --- scoped passes never clear a check they skipped ---------------------------
+
+def test_a_catalog_failure_survives_follow_ups_until_a_full_pass_verifies_it(monkeypatch, enabled):
+    fake = _strict_fake()
+    fake.catalog_response = _Resp(500, {}, "boom")
+    clock = _Clock()
+    mgr = _scheduled_mgr(monkeypatch, fake, clock)
+    start = clock()
+
+    first = mgr.reconcile("alice@example.com")
+    assert any(e.startswith("catalog grant") for e in first["errors"])
+    assert mgr.status()["ok"] is False
+    assert mgr.status()["follow_up_at"] == [start + 15, start + 45, start + 120]
+
+    # Genie catches up and the follow-up hands the space over. It skips the catalog
+    # step, so it must not report the catalog as healthy.
+    clock.value = start + 15
+    fake.register_get(_SPACE_LIST, {"page_size": 100}, {"spaces": [
+        {"space_id": "late", "create_time": "1970-01-01T00:18:20Z"},
+    ]})
+    fake.register_get(f"{_HOST}/api/2.0/genie/spaces/late", {}, _genie_detail("late"))
+    fake.register_patch(f"{_HOST}/api/2.0/permissions/genie/late", {"CAN_MANAGE"})
+    catalog_calls = len([c for c in fake.calls if "unity-catalog" in c[1]])
+    mgr._run_due_pass()
+
+    status = mgr.status()
+    assert any(d["resource_id"] == "late" and d["state"] == "handed_off"
+               for d in status["handoff"]["details"])
+    assert len([c for c in fake.calls if "unity-catalog" in c[1]]) == catalog_calls
+    assert status["ok"] is False
+    assert "catalog grant" in (status["last_error"] or "")
+
+    # Only a full pass that re-runs the catalog step can clear it.
+    fake.catalog_response = _Resp(200, {})
+    clock.value = start + 300
+    mgr.reconcile("alice@example.com")
+    assert mgr.status()["ok"] is True
+    assert mgr.status()["last_error"] is None
+
+
+def test_a_named_grant_does_not_clear_a_catalog_failure(monkeypatch, enabled):
+    fake = _strict_fake()
+    fake.catalog_response = _Resp(500, {}, "boom")
+    clock = _Clock()
+    mgr = _scheduled_mgr(monkeypatch, fake, clock)
+    mgr.reconcile("alice@example.com")
+    fake.register_get(f"{_HOST}/api/2.0/genie/spaces/01f1e5", {}, _genie_detail("01f1e5"))
+    fake.register_patch(f"{_HOST}/api/2.0/permissions/genie/01f1e5", {"CAN_MANAGE"})
+
+    named = mgr.reconcile("alice@example.com", resource_type="genie", resource_id="01f1e5")
+
+    assert named["resource"]["state"] == "handed_off"
+    assert mgr.status()["ok"] is False
+    assert any(e.startswith("catalog grant") for e in mgr.status()["last_error"].split("; "))
+
+
+def test_a_baseline_failure_survives_scoped_passes_and_skipped_checks_are_not_rerun(
+    monkeypatch, enabled
+):
+    fake = _strict_fake()
+    clock = _Clock()
+    mgr = _scheduled_mgr(monkeypatch, fake, clock)
+    start = clock()
+    monkeypatch.setattr(mgr, "_capture_missing_baselines",
+                        lambda host, bearer: ["pipelines baseline: boom"])
+    mgr.reconcile("alice@example.com")
+    assert mgr.status()["ok"] is False
+
+    calls = []
+    monkeypatch.setattr(mgr, "_capture_missing_baselines",
+                        lambda host, bearer: calls.append(1) or [])
+    clock.value = start + 15
+    mgr._run_due_pass()
+    assert calls == [], "a follow-up does not re-run the baseline capture"
+    assert mgr.status()["ok"] is False
+    assert "pipelines baseline" in mgr.status()["last_error"]
+
+    clock.value = start + 300
+    mgr.reconcile("alice@example.com")
+    assert calls == [1]
+    assert mgr.status()["ok"] is True

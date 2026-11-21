@@ -620,6 +620,11 @@ class EntitlementManager:
         self._baseline_retry_pending = False
         self._ledger: dict[tuple[str, str, str], dict] = {}
         self._adapter_errors: dict[tuple[str, str], tuple[str, ...]] = {}
+        # Outcome of the last full sweep's checks that scoped passes skip (the
+        # baseline capture and the catalog grant and proof). A scoped pass keeps
+        # these until a full sweep re-runs the check, so a skipped check is never
+        # read as a passed one.
+        self._scope_errors: dict[str, tuple[str, ...]] = {}
         self._enumeration_cache: dict[str, _EnumerationCacheEntry] = {}
         self._cache_invalidations: dict[str, int] = {}
         self._cache_retry_at: dict[str, float] = {}
@@ -1157,6 +1162,7 @@ class EntitlementManager:
             before_signature = self._ledger_signature_locked()
             before_ledger = copy.deepcopy(self._ledger)
             before_adapter_errors = copy.deepcopy(self._adapter_errors)
+            before_scope_errors = dict(self._scope_errors)
             before_app_sp_grants = dict(self._app_sp_grants)
             before_verification = (
                 self._last_verified_at,
@@ -1196,6 +1202,7 @@ class EntitlementManager:
                         before_verification,
                         before_app_sp_grants,
                         before_adapter_errors,
+                        before_scope_errors,
                     )
                     outcome = "degraded_backoff"
                     reason_code = stats.rate_limit_reason or "rate_limited"
@@ -1306,9 +1313,16 @@ class EntitlementManager:
         # A named grant reads one object and a follow-up re-lists two types: neither
         # needs the baseline capture or the catalog re-grant a full sweep does.
         sweeping = resource_id is None and source != _FOLLOW_UP_SOURCE
-        errors = self._capture_missing_baselines(host, bearer) if sweeping else []
+        if sweeping:
+            baseline_failures = self._capture_missing_baselines(host, bearer)
+            self._set_scope_errors("baseline", baseline_failures)
+            errors = list(baseline_failures)
+        else:
+            errors = []
         catalog = config.workshop_catalog() if sweeping else None
         if not catalog:
+            if sweeping:
+                self._set_scope_errors("catalog", [])
             # Not an error: an event can run entitlements on without handing out
             # a per-attendee catalog, and plenty of builds never touch Unity
             # Catalog at all (a game, a landing page). Control Tower only injects
@@ -1322,6 +1336,7 @@ class EntitlementManager:
             # Same reasoning as the missing-id case in _handoff_resources below.
             logger.debug("catalog grant skipped (no catalog, or not a full sweep)")
         else:
+            catalog_failures_start = len(errors)
             for em in emails:
                 if not em or "@" not in em:
                     errors.append("invalid attendee identity for catalog verification")
@@ -1354,6 +1369,9 @@ class EntitlementManager:
                         self._verified_email = em
                         self._verified_catalog = catalog
                         self._verification_source = source
+            if sweeping:
+                # Only a full sweep that ran the catalog step can clear it.
+                self._set_scope_errors("catalog", errors[catalog_failures_start:])
 
         identities = _sp_identities(host, bearer)
         if not identities:
@@ -1389,7 +1407,7 @@ class EntitlementManager:
         # A targeted pass proves only the adapter it visited. Preserve failures
         # from every untouched adapter so a narrow success cannot turn global
         # readiness green or move the reconciler into idle cadence.
-        for unresolved in self._adapter_error_messages():
+        for unresolved in [*self._scope_error_messages(), *self._adapter_error_messages()]:
             if unresolved not in errors:
                 errors.append(unresolved)
         result["errors"] = errors
@@ -1928,6 +1946,20 @@ class EntitlementManager:
             else:
                 self._adapter_errors.pop(key, None)
 
+    def _set_scope_errors(self, check: str, messages) -> None:
+        """Record the outcome of a full sweep's ``check`` (empty means it passed)."""
+        with self._lock:
+            self._scope_errors[check] = tuple(str(message) for message in messages)
+
+    def _scope_error_messages(self) -> list[str]:
+        """Unresolved failures of checks the current pass did not re-run."""
+        with self._lock:
+            return [
+                message
+                for messages in self._scope_errors.values()
+                for message in messages
+            ]
+
     def _adapter_error_messages(self) -> list[str]:
         """Return unresolved failures from adapters not visited by this pass."""
         with self._lock:
@@ -2014,10 +2046,13 @@ class EntitlementManager:
         previous_app_sp_grants: dict[str, str] | None = None,
         previous_adapter_errors: dict[tuple[str, str], tuple[str, ...]]
         | None = None,
+        previous_scope_errors: dict[str, tuple[str, ...]] | None = None,
     ) -> float:
         now = self._clock()
         with self._lock:
             self._ledger = previous_ledger
+            if previous_scope_errors is not None:
+                self._scope_errors = previous_scope_errors
             if previous_verification is not None:
                 (
                     self._last_verified_at,
