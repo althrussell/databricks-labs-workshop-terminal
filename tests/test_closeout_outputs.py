@@ -28,8 +28,22 @@ REAL_HARVEST = artifacts.harvest_user
 REAL_CENSUS = stats._workspace_resources
 
 
+def _finish_earlier_sessions(timeout=5.0):
+    """Let PTY sessions from earlier tests in this worker report their exit first.
+
+    terminate() returns before a session's reader thread emits session.exited,
+    and that event goes to whatever global emitter is current. Without this, a
+    late exit from another test lands in this test's journal.
+    """
+    deadline = time.monotonic() + timeout
+    for thread in threading.enumerate():
+        if thread.name.startswith("pty-reader-"):
+            thread.join(max(0.0, deadline - time.monotonic()))
+
+
 @pytest.fixture
 def source(monkeypatch, tmp_path):
+    _finish_earlier_sessions()
     monkeypatch.setenv("DATA_ROOT", str(tmp_path))
     monkeypatch.setenv("WORKSHOP_INSIGHT_CAPTURE", "true")
     journal = CaptureJournal(MemoryCaptureStorage(), BINDING, {})
