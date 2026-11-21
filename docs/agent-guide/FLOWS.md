@@ -160,7 +160,7 @@ The client also re-sends its size when an active terminal tab becomes visible ag
 - Frontend: `frontend/src/terminalExit.test.ts`, `frontend/src/sessionSwitch.test.ts`,
   `frontend/src/touchKeys.test.ts`, `frontend/src/voice.test.ts`,
   `frontend/src/viewport.test.ts`, `frontend/src/qr.test.ts`.
-- Rendered: `tests/test_mobile_rendered.py` (prompt box, voice and key bar on a phone and a
+- Rendered: `tests/test_mobile_rendered.py` (phone tab shell, prompt box, voice and key bar on a phone and a
   laptop).
 
 *(gap)* No test covers the reconnect loop in `frontend/src/components/TerminalView.tsx`, or

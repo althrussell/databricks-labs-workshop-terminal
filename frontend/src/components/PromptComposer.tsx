@@ -1,5 +1,5 @@
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref, type RefObject } from "react";
-import { Mic, MicOff, SendHorizontal, X } from "lucide-react";
+import { Keyboard, Mic, MicOff, SendHorizontal, X } from "lucide-react";
 import { pasteNotice, type ClipboardNotice } from "../terminalClipboard";
 import { composeTranscript, cumulativeResults, startDictation, type Dictation, type RecognitionCtor } from "../voice";
 import type { TerminalHandle } from "./TerminalView";
@@ -20,6 +20,10 @@ interface Props {
   disabled?: boolean;
   /** Laptop: the composer opens from the agent bar and can be closed again. */
   onClose?: () => void;
+  /** Phone: a ⌨ toggle in the box shows or hides the key row above it. */
+  keysOpen?: boolean;
+  onToggleKeys?: () => void;
+  placeholder?: string;
 }
 
 /** About five lines; longer prompts scroll inside the box. */
@@ -44,6 +48,9 @@ export default function PromptComposer({
   active = true,
   disabled = false,
   onClose,
+  keysOpen = false,
+  onToggleKeys,
+  placeholder = "Prompt the agent",
 }: Props) {
   const [text, setText] = useState("");
   const [listening, setListening] = useState(false);
@@ -200,7 +207,7 @@ export default function PromptComposer({
         className="composer-input"
         rows={1}
         value={text}
-        placeholder={listening ? "Listening…" : "Prompt the agent"}
+        placeholder={listening ? "Listening…" : placeholder}
         aria-label="Prompt"
         enterKeyHint="send"
         autoCapitalize="sentences"
@@ -217,6 +224,20 @@ export default function PromptComposer({
           }
         }}
       />
+      {onToggleKeys && (
+        <button
+          type="button"
+          className="composer-keys"
+          aria-label={keysOpen ? "Hide terminal keys" : "Show terminal keys"}
+          aria-pressed={keysOpen}
+          title={keysOpen ? "Hide terminal keys" : "Show terminal keys"}
+          // Keep the soft keyboard where it is: the toggle is not a text field.
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={onToggleKeys}
+        >
+          <Keyboard size={16} aria-hidden="true" />
+        </button>
+      )}
       <button
         type="submit"
         className="composer-btn composer-send"

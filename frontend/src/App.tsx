@@ -1,16 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Award,
-  BookOpen,
   Download,
-  GraduationCap,
   House,
   Link as LinkIcon,
   MessageSquare,
   Mic,
   Rocket,
   ShieldCheck,
-  Sparkles,
   Bot,
   X,
   Settings2,
@@ -57,9 +54,14 @@ import TerminalClipboard from "./components/TerminalClipboard";
 import PromptComposer, { type PromptComposerHandle } from "./components/PromptComposer";
 import TouchKeyBar from "./components/TouchKeyBar";
 import OpenOnPhone from "./components/OpenOnPhone";
-import { TOUCH_QUERY, useMediaQuery } from "./components/useMediaQuery";
+import { PHONE_QUERY, TOUCH_QUERY, useMediaQuery } from "./components/useMediaQuery";
+import { LINK_ICONS } from "./components/linkIcons";
+import AgentCards from "./components/AgentCards";
+import PhoneTabBar, { type PhoneTab } from "./components/PhoneTabBar";
+import PhoneStatusRow from "./components/PhoneStatusRow";
+import PhoneMoreList from "./components/PhoneMoreList";
 import { speechRecognitionCtor } from "./voice";
-import { KeyboardTracker, measureViewport } from "./viewport";
+import { isPhoneViewport, KeyboardTracker, measureViewport } from "./viewport";
 import ImageDropZone from "./components/ImageDropZone";
 import { rejectedMessage, splitAttachable } from "./imageDrop";
 import { saveDownload } from "./exportDownload";
@@ -113,16 +115,11 @@ async function typeWhenSessionReady(sessionId: string, text: string, deliveryId:
   }
 }
 
-const LINK_ICONS: Record<string, typeof LinkIcon> = {
-  "book-open": BookOpen,
-  "graduation-cap": GraduationCap,
-  rocket: Rocket,
-  sparkles: Sparkles,
-  link: LinkIcon,
-};
 
 /** The restore notice an attendee dismissed (server/build_restore.py), so it is told once. */
 const restoreSeenKey = "workshop.buildRestore.seen";
+/** Whether the phone's key row is shown ("0" hides it); it starts shown. */
+const PHONE_KEYS_KEY = "wt.phone.keys";
 
 export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -178,9 +175,29 @@ export default function App() {
   // opens the prompt box from the agent bar's mic.
   const touch = useMediaQuery(TOUCH_QUERY);
   const narrowScreen = useMediaQuery("(max-width: 700px)");
+  // A phone gets its own shell: no header, a bottom tab bar, the terminal
+  // filling the Terminal tab (styles.css, .app[data-shell="phone"]).
+  // Tracked alongside KeyboardTracker below so opening a soft keyboard on a
+  // landscape tablet (interactive-widget=resizes-content) never flips shells.
+  const phoneQuery = useMediaQuery(PHONE_QUERY);
+  const [phone, setPhone] = useState(() => window.matchMedia(PHONE_QUERY).matches);
+  const [phoneTab, setPhoneTab] = useState<PhoneTab>("terminal");
+  // The key row above the phone prompt box, remembered per device.
+  const [keysOpen, setKeysOpen] = useState(() => {
+    try { return localStorage.getItem(PHONE_KEYS_KEY) !== "0"; } catch { return true; }
+  });
+  const toggleKeys = useCallback(() => {
+    setKeysOpen((open) => {
+      try { localStorage.setItem(PHONE_KEYS_KEY, open ? "0" : "1"); } catch { /* per tab only */ }
+      return !open;
+    });
+  }, []);
   const [speech] = useState(() => speechRecognitionCtor(window as Parameters<typeof speechRecognitionCtor>[0]));
   const composerRef = useRef<PromptComposerHandle | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
+  useEffect(() => {
+    if (!window.visualViewport) setPhone(phoneQuery);
+  }, [phoneQuery]);
   // Size the app to the visible area, so a phone's toolbars and keyboard never
   // cover the prompt box; with the keyboard up, the top bars step aside
   // (styles.css, html[data-keyboard]).
@@ -191,6 +208,8 @@ export default function App() {
     const keyboard = new KeyboardTracker();
     const update = () => {
       const next = measureViewport(keyboard, vv, window.scrollY, touch);
+      const scale = Math.max(vv.scale ?? 1, 1);
+      setPhone(isPhoneViewport(touch, vv.width * scale, keyboard.fullHeight || vv.height * scale));
       root.style.setProperty("--app-height", `${next.appHeightPx}px`);
       root.dataset.keyboard = next.keyboardOpen ? "open" : "closed";
       // iOS scrolls the page to reveal a focused box; the app already fits.
@@ -199,9 +218,11 @@ export default function App() {
     update();
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
+    window.addEventListener("resize", update);
     return () => {
       vv.removeEventListener("resize", update);
       vv.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
     };
   }, [touch]);
   useEffect(() => {
@@ -224,6 +245,12 @@ export default function App() {
   const [view, setView] = useState<"home" | "agent" | "operator">(
     location.pathname.startsWith("/operator") ? "operator" : "home"
   );
+  /** Open the agent: on a phone that also means the Terminal tab, so a launch
+   * from the Build tab or an idea from Tips lands on the terminal. */
+  const showTerminal = useCallback(() => {
+    setView("agent");
+    setPhoneTab("terminal");
+  }, []);
 
   const refreshAgents = useCallback(() => {
     api.agents().then((data) => setAgents(data.agents)).catch(() => undefined);
@@ -497,9 +524,28 @@ export default function App() {
   }, [buildRestore]);
   const restoreMessage = buildRestore && buildRestore.id !== restoreSeen ? restoreNotice(buildRestore) : "";
 
+  const selectPhoneTab = useCallback((tab: PhoneTab) => {
+    setPhoneTab(tab);
+    setView((current) => (current === "operator" ? (session ? "agent" : "home") : current));
+  }, [session]);
+
+  // On a phone the Help tab is the chat; elsewhere the slide-over panel.
+  // OperatorPanel replaces .main (unmounting the phone Help tab), so it is not open there.
+  const helpOpen = phone ? phoneTab === "help" && view !== "operator" : helpChatOpen;
+  const openHelp = useCallback(() => {
+    if (phone) selectPhoneTab("help");
+    else setHelpChatOpen(true);
+  }, [phone, selectPhoneTab]);
+
   useEffect(() => {
-    helpChatOpenRef.current = helpChatOpen;
-  }, [helpChatOpen]);
+    helpChatOpenRef.current = helpOpen;
+  }, [helpOpen]);
+
+  // A phone has no Home button: what the Terminal tab shows follows the session.
+  useEffect(() => {
+    if (!phone) return;
+    setView((current) => (current === "operator" ? current : session ? "agent" : "home"));
+  }, [phone, session]);
 
   useEffect(() => {
     const narrow = window.matchMedia("(max-width: 700px)");
@@ -584,7 +630,7 @@ export default function App() {
       const { session: created } = await api.createSession(agentId, undefined, projectInventoryRef.current?.active,
         Boolean(starterPrompt));
       setSession(created);
-      setView("agent");
+      showTerminal();
       return created;
     } catch (e) {
       if (signal?.aborted) return null;
@@ -596,7 +642,7 @@ export default function App() {
           if (signal?.aborted) return null;
           const resolution = resolveSessionConflict(active, agentId, starterPrompt);
           if (resolution.action === "focus") {
-            setView("agent");
+            showTerminal();
             return resolution.active;
           }
           if (resolution.action === "confirm") {
@@ -730,7 +776,7 @@ export default function App() {
         if (active) {
           try {
             await typeWhenSessionReady(active.id, goalChangePrompt(selection.name, selection.goal));
-            setView("agent");
+            showTerminal();
             return "Goal saved and typed into your agent. Press Enter in the terminal to request the change.";
           } catch (caught) {
             throw new Error(`Goal saved, but the change could not be typed. Tell your agent the new goal or retry. ${caught instanceof Error ? caught.message : String(caught)}`);
@@ -754,7 +800,7 @@ export default function App() {
     }
     const selection = agentSelection(session, agentId);
     if (selection === "focus") {
-      setView("agent");
+      showTerminal();
       if (starterPrompt && session) {
         await api.typeIntoSession(session.id, starterPrompt);
       }
@@ -796,7 +842,7 @@ export default function App() {
       if (signal.aborted) return;
       await api.typeIntoSession(session.id, starterPrompt, deliveryId);
       if (signal.aborted) return;
-      setView("agent");
+      showTerminal();
     } else {
       const created = await launch(agentId, false, starterPrompt, false, signal);
       // Keep ownership of an already requested session, but stop the wizard's
@@ -836,7 +882,7 @@ export default function App() {
       }
       return;
     }
-    setView("agent");
+    showTerminal();
     try {
       await api.typeIntoSession(action.sessionId, action.prompt);
     } catch (e) {
@@ -896,7 +942,7 @@ export default function App() {
             Boolean(requested.starterPrompt))).session,
       });
       setSession(created);
-      setView("agent");
+      showTerminal();
       setPendingSwitch(null);
       if (requested.starterPrompt) {
         await typeWhenSessionReady(created.id, requested.starterPrompt);
@@ -914,7 +960,7 @@ export default function App() {
       }
       if (active?.agent_id === requested.agentId) {
         setPendingSwitch(null);
-        setView("agent");
+        showTerminal();
         if (requested.starterPrompt) {
           try {
             await typeWhenSessionReady(active.id, requested.starterPrompt);
@@ -1045,10 +1091,12 @@ export default function App() {
   const isAdmin = config?.user.is_admin ?? false;
   const agentLabel = (agentId: string) =>
     agents.find((agent) => agent.id === agentId)?.label ?? agentId;
+  // The terminal is on screen: Agent view, and on a phone the Terminal tab.
+  const terminalShown = view === "agent" && (!phone || phoneTab === "terminal");
 
   return (
-    <div className="app" data-view={view}>
-      <header className="header">
+    <div className="app" data-view={view} data-shell={phone ? "phone" : "desktop"} data-tab={phone ? phoneTab : undefined}>
+      {!phone && <header className="header">
         <div className="header-brand">
           <img
             src={branding?.brand_logo_url || databricksLogo}
@@ -1077,7 +1125,7 @@ export default function App() {
           {session && (
             <button
               className={`operator-toggle ${view === "agent" ? "operator-toggle-active" : ""}`}
-              onClick={() => setView("agent")}
+              onClick={showTerminal}
               aria-label={session.label}
               title={`Back to ${session.label}`}
             >
@@ -1189,7 +1237,7 @@ export default function App() {
             })}
         </ResponsiveNav>
         <div className="header-user" title={config?.user.email}>{config?.user.email}</div>
-      </header>
+      </header>}
 
       <BannerBar initial={config?.broadcast ?? null} />
       {workshopState && workshopState !== "open" && (
@@ -1216,10 +1264,10 @@ export default function App() {
         />
       )}
       <ToastHost
-        onOpenHelp={() => setHelpChatOpen(true)}
-        helpOpen={helpChatOpen}
+        onOpenHelp={openHelp}
+        helpOpen={helpOpen}
       />
-      <HelpChatPanel
+      {!phone && <HelpChatPanel
         readOnly={inputDisabled}
         open={helpChatOpen}
         onClose={() => setHelpChatOpen(false)}
@@ -1227,7 +1275,7 @@ export default function App() {
         onClearUnread={() => setHelpUnread(0)}
         raised={helpRaised}
         onRaisedChange={setHelpRaised}
-      />
+      />}
       {connectionLost && !inputDisabled && (
         <div className="banner banner-warning">
           <span>
@@ -1285,14 +1333,53 @@ export default function App() {
         <OperatorPanel />
       ) : (
         <div className="main">
-          <fieldset className="work-area workshop-inputs" disabled={inputDisabled} aria-label="Workshop activities">
-            <ProjectBar inventory={projectInventory} session={session} loading={!projectsLoaded} loadError={projectLoadError}
-              onRefresh={refreshProjects} onSelect={selectBuild} savedChecked={savedChecked}
-              restoreNotice={restoreMessage}
-              onDismissRestore={restoreInProgress(buildRestore) ? undefined : dismissRestore} />
-            <YourBuild refreshKey={[projectInventory?.active, session?.id, session?.exited]}
-              onGetHelp={() => setHelpChatOpen(true)} />
-            {session && view === "agent" && (
+          <div className="work-area">
+            <fieldset className="workshop-inputs work-area-inputs" disabled={inputDisabled} aria-label="Workshop activities">
+              {phone && session && (
+                <PhoneStatusRow
+                  session={session}
+                  buildName={projectInventory?.active ?? ""}
+                  launching={launching !== null}
+                  inputDisabled={inputDisabled}
+                  attachBusy={attachBusy}
+                  attached={attached}
+                  onFiles={(files) => void attachImageFiles(files)}
+                  onRelaunch={() => requestAgent(session.agent_id)}
+                  onTypeInTerminal={() => terminalRef.current?.openKeyboard()}
+                />
+              )}
+              {/* Desktop: display: contents, so the bars sit where they always have.
+                  Phone: the Build tab's workshop cards; More sits below the fieldset so
+                  Operator and Network stay clickable while the workshop is closing. */}
+              <div className="build-area">
+                <ProjectBar inventory={projectInventory} session={session} loading={!projectsLoaded} loadError={projectLoadError}
+                  onRefresh={refreshProjects} onSelect={selectBuild} savedChecked={savedChecked}
+                  restoreNotice={restoreMessage}
+                  onDismissRestore={restoreInProgress(buildRestore) ? undefined : dismissRestore} />
+                <YourBuild refreshKey={[projectInventory?.active, session?.id, session?.exited]}
+                  onGetHelp={openHelp} defaultOpen={phone} />
+                {phone && (
+                  <section className="phone-card phone-agents" aria-label="Agents">
+                    <h2 className="phone-card-title">Agents</h2>
+                    {session && (
+                      <div className="phone-session">
+                        <span className={`dot ${session.exited ? "dot-warn" : "dot-online"}`} aria-hidden="true" />
+                        <span className="phone-session-text">{session.label} {session.exited ? "has ended" : "is running"}</span>
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          aria-label={`Close ${session.label}`}
+                          onClick={() => closeSession(session.id)}
+                        >
+                          <X size={14} aria-hidden="true" /> Close
+                        </button>
+                      </div>
+                    )}
+                    <AgentCards agents={agents} launching={launching} onLaunch={requestAgent} />
+                  </section>
+                )}
+              </div>
+            {!phone && session && view === "agent" && (
               <div className="toolbar">
                 <LaunchBar agents={agents} launching={launching} onLaunch={requestAgent} />
                 <div className="active-agent">
@@ -1403,7 +1490,7 @@ export default function App() {
                   key={session.id}
                   ref={terminalRef}
                   sessionId={session.id}
-                  active={view === "agent"}
+                  active={terminalShown}
                   readOnly={inputDisabled}
                   onExit={finishSession}
                   onGatewayLimit={handleGatewayLimit}
@@ -1415,35 +1502,110 @@ export default function App() {
             {session && !session.exited && (
               // Mounted while the session is live so drafts survive Home/Operator
               // navigation and the agent bar's mic can start listening within its click.
-              <div className="prompt-dock" hidden={view !== "agent" || (!touch && !composerOpen)}>
-                {touch && <TouchKeyBar terminal={terminalRef} />}
+              <div className="prompt-dock" hidden={!terminalShown || (!touch && !composerOpen)}>
+                {touch && (!phone || keysOpen) && <TouchKeyBar terminal={terminalRef} typeKey={!phone} />}
                 <PromptComposer
                   key={session.id}
                   ref={composerRef}
                   terminal={terminalRef}
                   speech={speech}
-                  active={view === "agent"}
+                  active={terminalShown}
                   disabled={inputDisabled}
                   onClose={touch ? undefined : () => setComposerOpen(false)}
+                  keysOpen={phone ? keysOpen : undefined}
+                  onToggleKeys={phone ? toggleKeys : undefined}
+                  placeholder={phone ? `Message ${session.label}…` : undefined}
                 />
               </div>
             )}
-          </fieldset>
+            </fieldset>
+            {phone && (
+              <PhoneMoreList
+                links={shellLinks}
+                workspaceUrl={config?.workspace_url ?? ""}
+                omnigentUrl={config?.omnigent_remote?.enabled ? config.omnigent_remote.url ?? "" : ""}
+                isAdmin={isAdmin}
+                inputDisabled={inputDisabled}
+                canDownload={Boolean(projectInventory?.active || (projectInventory?.projects && projectInventory.projects.length > 0))}
+                exportBusy={exportBusy}
+                networkStatus={networkStatus}
+                networkResult={networkResult}
+                onRunNetworkCheck={() => triggerNetworkCheck(true)}
+                onPreferences={() => setPreferencesOpen(true)}
+                onDownload={() => void downloadAllCode()}
+                onCertificate={openCertificate}
+                onOperator={() => setView("operator")}
+              />
+            )}
+          </div>
 
-          {showNuggets && narrowScreen && !nuggetsCollapsed && (
-            // On a phone the open tips cover the terminal; a tap beside them closes them.
-            <div className="nuggets-backdrop" aria-hidden="true" onClick={() => setNuggetsCollapsed(true)} />
-          )}
-          {showNuggets && (
-            <NuggetsPane
-              inputDisabled={inputDisabled}
-              collapsed={nuggetsCollapsed}
-              onToggle={() => setNuggetsCollapsed((c) => !c)}
-              onCertificate={openCertificate}
-              onTryPrompt={ideaToSession}
-            />
+          {phone ? (
+            <>
+              {showNuggets && (
+                <section className="phone-page phone-tips" aria-label="Workshop tips">
+                  <NuggetsPane
+                    layout="page"
+                    inputDisabled={inputDisabled}
+                    collapsed={false}
+                    onToggle={() => undefined}
+                    onCertificate={openCertificate}
+                    onTryPrompt={ideaToSession}
+                  />
+                </section>
+              )}
+              <section className="phone-page phone-help" aria-label="Help">
+                <div className="phone-help-head">
+                  <RaiseHandButton
+                    disabled={inputDisabled}
+                    initial={config?.help ?? null}
+                    raised={helpRaised}
+                    onRaisedChange={setHelpRaised}
+                  />
+                </div>
+                {/* The tab rule lives here on a phone; a blocking sign-in banner stays on top. */}
+                {!inputDisabled && <SignInNotice
+                  omnigentEnabled={!!config?.omnigent_remote.enabled}
+                  obo={config?.obo}
+                  onReload={() => location.reload()}
+                />}
+                <HelpChatPanel
+                  inline
+                  readOnly={inputDisabled}
+                  open={helpOpen}
+                  onClose={() => selectPhoneTab("terminal")}
+                  unread={helpUnread}
+                  onClearUnread={() => setHelpUnread(0)}
+                  raised={helpRaised}
+                  onRaisedChange={setHelpRaised}
+                />
+              </section>
+            </>
+          ) : (
+            <>
+              {showNuggets && narrowScreen && !nuggetsCollapsed && (
+                // On a narrow window the open tips cover the terminal; a tap beside them closes them.
+                <div className="nuggets-backdrop" aria-hidden="true" onClick={() => setNuggetsCollapsed(true)} />
+              )}
+              {showNuggets && (
+                <NuggetsPane
+                  inputDisabled={inputDisabled}
+                  collapsed={nuggetsCollapsed}
+                  onToggle={() => setNuggetsCollapsed((c) => !c)}
+                  onCertificate={openCertificate}
+                  onTryPrompt={ideaToSession}
+                />
+              )}
+            </>
           )}
         </div>
+      )}
+      {phone && (
+        <PhoneTabBar
+          tab={view === "operator" ? null : phoneTab}
+          helpUnread={helpUnread}
+          showTips={showNuggets}
+          onSelect={selectPhoneTab}
+        />
       )}
 
       {wizardOpen && !inputDisabled && (
@@ -1451,7 +1613,7 @@ export default function App() {
           agents={agents}
           launching={launching}
           onLaunch={launchFromWizard}
-          onOpenAgent={() => { setView("agent"); setWizardOpen(false); }}
+          onOpenAgent={() => { showTerminal(); setWizardOpen(false); }}
           onClose={closeWizard}
           onSaved={setBrief}
           draftKey={config ? `wt-wizard-draft:v1:${config.workspace_url}:${config.user.email}` : undefined}

@@ -177,6 +177,8 @@ usual questions:
   dictation key, or type.
 - "Microphone blocked": allow it for the site in browser settings.
 - "Garbled after using my phone": type on the laptop, and it takes the terminal size back.
+- "Where is Raise hand on my phone?": the **Help** tab. The certificate and Download my code are
+  at the bottom of the **Build** tab.
 
 Using a phone does not change the tab rule: keep the laptop tab open. A locked phone suspends
 its tab, which can let Omnigent's sign-in go stale. Answer that with rung 1, as usual. Details
