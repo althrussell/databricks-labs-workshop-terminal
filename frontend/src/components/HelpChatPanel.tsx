@@ -12,6 +12,7 @@ export default function HelpChatPanel({
   raised,
   onRaisedChange,
   readOnly = false,
+  inline = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -20,6 +21,8 @@ export default function HelpChatPanel({
   raised: boolean;
   onRaisedChange: (raised: boolean) => void;
   readOnly?: boolean;
+  /** The phone's Help tab: a full-height page, left by the tab bar, so no close button. */
+  inline?: boolean;
 }) {
   const [messages, setMessages] = useState<HelpMessage[]>([]);
   const [feedback, setFeedback] = useState<Record<string, HelpVote>>({});
@@ -151,7 +154,7 @@ export default function HelpChatPanel({
   const handoff = handoffView(messages, { readOnly, requestedAfter: handoffAfter, raised });
 
   return (
-    <aside className="help-chat-panel" aria-label="Help chat with operators">
+    <aside className={inline ? "help-chat-panel help-chat-inline" : "help-chat-panel"} aria-label="Help chat with operators">
       <div className="help-chat-header">
         <div className="help-chat-title">
           <MessageSquare size={16} />
@@ -159,9 +162,11 @@ export default function HelpChatPanel({
           {raised ? <span className="help-chat-raised-pill">Hand raised</span> : null}
           {unread > 0 ? <span className="help-chat-unread">{unread}</span> : null}
         </div>
-        <button type="button" className="icon-btn" onClick={onClose} aria-label="Close help chat">
-          <X size={16} />
-        </button>
+        {!inline && (
+          <button type="button" className="icon-btn" onClick={onClose} aria-label="Close help chat">
+            <X size={16} />
+          </button>
+        )}
       </div>
       {showsBetaNote(messages) ? (
         <p className="help-chat-beta-note">

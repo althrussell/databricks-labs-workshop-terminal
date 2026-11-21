@@ -31,12 +31,21 @@ table is in [docs/agent-guide/README.md](../docs/agent-guide/README.md).
   Do not add explanatory sentences in compact toolbars or bars (agent bar, PR #154). Reserve
   text for warnings the attendee must act on.
 - Before finishing UI work, check the real rendered app, not just the tests.
-- Phones are supported ([docs/mobile-and-voice.md](../docs/mobile-and-voice.md)). On
-  `(pointer: coarse)`, inputs are at least 16px (iOS zooms into smaller ones) and tap targets
-  at least 40px. Height comes from `--app-height`, not `100vh`. In the agent view at ≤700px,
-  the header compacts to icons and each work-area bar above the terminal (`.project-bar`,
-  `.your-build-bar`, `.toolbar`) is one row. `tests/test_mobile_rendered.py` checks a 390px
-  touch viewport.
+- Phones get their own shell ([docs/mobile-and-voice.md](../docs/mobile-and-voice.md)):
+  - App sets `data-shell="phone"` and `data-tab` on `.app` from `isPhoneScreen` (`viewport.ts`).
+    It decides from the screen's short side, never the viewport, so neither the keyboard nor a
+    rotation flips the shell.
+  - There is no header. A bottom tab bar (Terminal, Build, Tips, Help) becomes a left rail in
+    landscape.
+  - Phone CSS goes under `.app[data-shell="phone"]`. Narrow laptop windows and tablets stay
+    `desktop`; their ≤700px rules are scoped to `.app[data-shell="desktop"]`.
+  - Components keep one mount point and are shown per tab, not rendered twice.
+- On `(pointer: coarse)`:
+  - inputs are at least 16px, because iOS zooms into smaller ones;
+  - tap targets are at least 40px;
+  - height comes from `--app-height`, not `100vh`.
+- `tests/test_mobile_rendered.py` runs the iPhone 15 Pro Max metrics. The desktop rendered
+  tests at 390px have no touch, so they cover the narrow desktop layout.
 - Terminal input from a new control goes through `TerminalHandle` (`submit`, `press`, `paste`)
   in `TerminalView.tsx`, never a second socket or `/type`.
 - "Is this a touch screen" is decided once: App's `useMediaQuery(TOUCH_QUERY)`, passed to

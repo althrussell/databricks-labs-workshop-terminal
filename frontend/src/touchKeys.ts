@@ -16,16 +16,18 @@ export type TouchKey =
   | "enter"
   | "ctrlC";
 
+/** Keyboard order, as on a laptop. All nine share one row at phone width
+ * (the bar sizes them evenly), so none is hidden behind a scroll. */
 export const TOUCH_KEYS: readonly { key: TouchKey; label: string; name: string }[] = [
   { key: "esc", label: "Esc", name: "Escape" },
+  { key: "tab", label: "Tab", name: "Tab" },
+  { key: "shiftTab", label: "⇧Tab", name: "Shift+Tab" },
   { key: "up", label: "↑", name: "Up arrow" },
   { key: "down", label: "↓", name: "Down arrow" },
-  { key: "enter", label: "⏎", name: "Enter" },
-  { key: "shiftTab", label: "⇧Tab", name: "Shift+Tab" },
-  { key: "tab", label: "Tab", name: "Tab" },
-  { key: "ctrlC", label: "^C", name: "Ctrl+C (interrupt)" },
   { key: "left", label: "←", name: "Left arrow" },
   { key: "right", label: "→", name: "Right arrow" },
+  { key: "enter", label: "⏎", name: "Enter" },
+  { key: "ctrlC", label: "^C", name: "Ctrl+C (interrupt)" },
 ];
 
 const ARROWS: Record<"up" | "down" | "left" | "right", string> = {

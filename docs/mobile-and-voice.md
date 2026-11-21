@@ -5,20 +5,39 @@ and what an operator needs to know when either goes wrong.
 
 ## What the attendee gets
 
-| | Laptop | Phone or tablet (touch screen) |
-| --- | --- | --- |
-| Prompt box | Opens from the mic icon in the agent bar; close it with ×. | Always docked under the terminal. |
-| Speak a prompt | Mic icon (Chrome, Edge, Safari). | Mic in the prompt box, or the keyboard's own dictation key. |
-| Terminal keys | The hardware keyboard. | A key bar: Esc, ↑, ↓, ⏎, ⇧Tab, Tab, ^C, ←, →, and ⌨ to type in the terminal itself. |
-| Open on phone | Phone icon in the header shows a QR code of this app. | Hidden. |
+| | Laptop | Tablet | Phone |
+| --- | --- | --- | --- |
+| Layout | Header, build bars and agent bar above the terminal | As the laptop | **No header.** A tab bar at the bottom (a left rail when sideways): Terminal · Build · Tips · Help |
+| Prompt box | Opens from the mic icon in the agent bar; close it with ×. | Docked under the terminal | Docked above the tab bar, with a ⌨ toggle for the key row |
+| Speak a prompt | Mic icon (Chrome, Edge, Safari) | Mic in the prompt box, or the keyboard's dictation key | As the tablet |
+| Terminal keys | The hardware keyboard | A key bar: Esc, Tab, ⇧Tab, the arrows, ⏎, ^C, and ⌨ to type in the terminal | One slim row of those nine keys above the prompt box, shown while ⌨ is on (remembered per device) |
+| Open on phone | Phone icon in the header shows a QR code of this app | Hidden | Hidden |
 
 The prompt box shows the text before anything is sent. **Send** (or Enter) pastes it into the
 running agent and presses Enter, exactly as if the attendee had typed it. Shift+Enter adds a
 line. Nothing reaches the agent until the attendee sends it.
 
-On a phone in the agent view, the header compacts to icons and the build, workflow and agent
-bars above the terminal shrink to one row each. While the keyboard is open for the prompt box
-or terminal, they step aside so the terminal and the prompt box fill the screen.
+### The phone tabs
+
+- **Terminal:**
+  - a slim status row ("● Claude Code · my-build", with Attach image and "Type in the
+    terminal" icons, or **Relaunch** when the agent has ended);
+  - the terminal, full width;
+  - the key row and the prompt box.
+  - With no agent running it shows the agent cards.
+- **Build:** one scrolling page:
+  - the current build (My builds, New build, Change goal);
+  - Your build, with its next step and decisions;
+  - Agents, to launch, switch or close one;
+  - **More**: Agent preferences, Download my code, Certificate, the event's links, Workspace,
+    Omnigent, Network, and Operator for admins.
+- **Tips:** the workshop tips as a page.
+- **Help:** Raise hand, the keep-this-tab-open note, and the help chat. The tab shows a badge for
+  unread replies.
+
+While the keyboard is open, the status row and tab bar step aside so the terminal, the keys and
+the prompt box fill the screen. Copy and Paste buttons are laptop-only: on a phone, paste into the
+prompt box with the keyboard.
 
 ## How voice works, and where the audio goes
 
@@ -57,12 +76,18 @@ signs in to the workspace on the phone with the same account.
 | "It says the microphone is blocked." | Allow the microphone for this site in the browser's site settings, then tap the mic again. |
 | "The phone asks me to sign in." | Expected: the phone needs its own workspace sign-in, with the same account as the laptop. |
 | "Text looks garbled on my laptop after using my phone." | Type anything, or click into the laptop tab: the laptop takes the size back. |
-| "The agent didn't react to Send." | Check the agent is running (agent bar). Send needs a connected terminal and shows a notice if it is not. |
+| "The agent didn't react to Send." | Check the agent is running (the agent bar on a laptop, the status row on a phone). Send needs a connected terminal and shows a notice if it is not. |
+| "Where is Raise hand / help on my phone?" | The **Help** tab. Agent preferences, Download my code and the certificate are at the bottom of the **Build** tab. |
 
 ## Code and tests
 
 - Prompt box and mic: `frontend/src/components/PromptComposer.tsx`, `frontend/src/voice.ts`.
 - Key bar: `frontend/src/components/TouchKeyBar.tsx`, `frontend/src/touchKeys.ts`.
+- Phone shell:
+  - `isPhoneScreen` in `frontend/src/viewport.ts`: a touch screen whose short side is at most 500px. The screen, unlike the viewport, does not change when the keyboard opens or the phone turns;
+  - `data-shell` and `data-tab` set in `frontend/src/App.tsx`;
+  - `frontend/src/components/PhoneTabBar.tsx`, `PhoneStatusRow.tsx` and `PhoneMoreList.tsx`;
+  - CSS under `.app[data-shell="phone"]` in `frontend/src/styles.css`.
 - Keyboard-aware layout: `frontend/src/viewport.ts`; the effect in `frontend/src/App.tsx` sets
   `--app-height` and `data-keyboard`.
 - QR code: `frontend/src/components/OpenOnPhone.tsx`, `frontend/src/qr.ts`.
@@ -70,7 +95,10 @@ signs in to the workspace on the phone with the same account.
   Terminal size ownership is in `server/ws.py::session_socket`.
 - Tests:
   - `tests/test_sessions.py::test_typing_device_owns_terminal_size`;
-  - `tests/test_mobile_rendered.py`, phone and laptop, with a fake speech service;
+  - `tests/test_mobile_rendered.py`, with a fake speech service. The phone runs Playwright's
+    iPhone 15 Pro Max metrics (430×739, the area Safari leaves visible) and checks the tabs, the
+    terminal's share of the screen, keyboard-open and the landscape rail. The laptop is checked
+    too;
   - `frontend/src/voice.test.ts`, `frontend/src/touchKeys.test.ts`,
     `frontend/src/viewport.test.ts` and `frontend/src/qr.test.ts`.
 
@@ -80,13 +108,13 @@ The rendered tests emulate a phone in Chrome. Before relying on this at an event
 a deployed instance:
 
 1. iPhone (Safari) and Android (Chrome): scan the QR code, sign in, and launch Claude Code and
-   Codex.
+   Codex. Walk the four tabs, and turn the phone sideways: the tabs move to a left rail.
 2. Dictate a prompt and send it. Check that each agent submits it as one prompt; Send waits
    120 ms between the paste and Enter. On Android, dictate a long sentence with a pause in it:
    it should appear once, not repeated (Chrome on Android restates earlier words, and
    `voice.ts::spokenText` merges them).
-3. Answer an agent menu with ↑/↓/⏎ and back out with Esc.
-4. Open the keyboard: the prompt box stays visible above it.
+3. Answer an agent menu with ↑/↓/⏎ and back out with Esc. Hide and show the key row with ⌨.
+4. Open the keyboard: the tab bar steps aside, and the keys and prompt box stay visible above it.
 5. Scroll agent output with a finger.
 6. With the laptop tab still open, type on each device in turn: each redraws cleanly.
 7. Run `curl -sI <app-url>` and confirm no `Permissions-Policy` header blocks `microphone`.

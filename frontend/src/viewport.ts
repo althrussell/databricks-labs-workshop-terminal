@@ -9,6 +9,9 @@
 /** Below this share of the tallest height seen at this width, a keyboard is up. */
 const KEYBOARD_SHARE = 0.75;
 
+/** A phone's short side in CSS px; tablets start around 600 (iPad mini 744). */
+export const PHONE_MAX_SHORT_SIDE = 500;
+
 export class KeyboardTracker {
   private width = 0;
   private tallest = 0;
@@ -23,6 +26,16 @@ export class KeyboardTracker {
     this.tallest = Math.max(this.tallest, height);
     return height < this.tallest * KEYBOARD_SHARE;
   }
+}
+
+/** Whether a touch device gets the phone tab shell.
+ *
+ * Decided from the screen, not the viewport: its short side does not change when
+ * the soft keyboard opens (interactive-widget=resizes-content shrinks the
+ * viewport) or when the device turns, so a landscape tablet never flips into the
+ * phone shell mid-keystroke and a phone stays one when held sideways. */
+export function isPhoneScreen(touch: boolean, screen: { width: number; height: number }): boolean {
+  return touch && Math.min(screen.width, screen.height) <= PHONE_MAX_SHORT_SIDE;
 }
 
 export interface VisualViewportLike {

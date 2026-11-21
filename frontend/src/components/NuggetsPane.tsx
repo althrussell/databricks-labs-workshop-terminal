@@ -10,6 +10,8 @@ interface Props {
   onToggle: () => void;
   onCertificate: () => void;
   onTryPrompt: (prompt: string) => void;
+  /** "page": the phone's Tips tab, every card in one scrolling list, no rotation. */
+  layout?: "side" | "page";
 }
 
 const CARD_HEIGHT = 200; // estimated card footprint incl. gap — drives fit count
@@ -18,7 +20,8 @@ const ROTATE_MS = 25000;
 // The pane never scrolls: it shows only as many cards as fit, with the most
 // relevant (contextually matched, then pinned) first, and rotates the
 // remaining slots through the ranked list.
-export default function NuggetsPane({ collapsed, inputDisabled = false, onToggle, onCertificate, onTryPrompt }: Props) {
+export default function NuggetsPane({ collapsed, inputDisabled = false, onToggle, onCertificate, onTryPrompt, layout = "side" }: Props) {
+  const page = layout === "page";
   const [nuggets, setNuggets] = useState<Nugget[]>([]);
   const [phase, setPhase] = useState("");
   const [offset, setOffset] = useState(0);
@@ -64,15 +67,15 @@ export default function NuggetsPane({ collapsed, inputDisabled = false, onToggle
 
   // Rotate the non-anchored slots through the ranked list.
   useEffect(() => {
-    if (nuggets.length <= fitCount) return;
+    if (page || nuggets.length <= fitCount) return;
     const timer = setInterval(
       () => setOffset((o) => (o + 1) % nuggets.length),
       ROTATE_MS
     );
     return () => clearInterval(timer);
-  }, [nuggets.length, fitCount]);
+  }, [nuggets.length, fitCount, page]);
 
-  if (collapsed) {
+  if (collapsed && !page) {
     return (
       <button className="nuggets-collapsed" onClick={onToggle} title="Show workshop tips">
         <Lightbulb size={18} />
@@ -84,7 +87,8 @@ export default function NuggetsPane({ collapsed, inputDisabled = false, onToggle
   // followed by idle nudges; remaining slots rotate through the pool.
   const anchor = nuggets.find((n) => n.matched_topic) ?? nuggets.find((n) => n.nudge) ?? null;
   const pool = anchor ? nuggets.filter((n) => n.id !== anchor.id) : nuggets;
-  const slots = anchor ? Math.max(0, fitCount - 1) : fitCount;
+  // A page scrolls, so it shows the whole ranked list.
+  const slots = page ? pool.length : anchor ? Math.max(0, fitCount - 1) : fitCount;
   const rotated =
     pool.length <= slots
       ? pool
@@ -92,16 +96,18 @@ export default function NuggetsPane({ collapsed, inputDisabled = false, onToggle
   const visible = anchor ? [anchor, ...rotated] : rotated;
 
   return (
-    <aside className="nuggets-pane">
+    <aside className={page ? "nuggets-pane nuggets-page" : "nuggets-pane"}>
       <div className="nuggets-header">
         <div className="nuggets-title">
           <Lightbulb size={16} />
           <span>Workshop tips</span>
           {phase && <span className="phase-chip">{phase}</span>}
         </div>
-        <button className="icon-btn" onClick={onToggle} title="Collapse">
-          <ChevronRight size={16} />
-        </button>
+        {!page && (
+          <button className="icon-btn" onClick={onToggle} title="Collapse">
+            <ChevronRight size={16} />
+          </button>
+        )}
       </div>
       <div className="nuggets-list" ref={listRef}>
         {visible.length === 0 && (
