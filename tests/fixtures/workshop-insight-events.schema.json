@@ -24,7 +24,8 @@
         "workshop.signal",
         "discovery.record",
         "insight.summary",
-        "attendee.identity"
+        "attendee.identity",
+        "app.manifest"
       ]
     },
     "occurred_at": {"type": "string", "minLength": 1},
@@ -228,7 +229,14 @@
                 }
               },
               "prompt_count": {"type": "integer"},
-              "redactions": {"type": "integer"}
+              "redactions": {"type": "integer"},
+              "summary_schema_version": {"type": "integer", "enum": [2], "description": "Insight contract v2. Present only when WORKSHOP_INSIGHT_V2 is on; absent means v1."},
+              "asks": {"type": "array", "maxItems": 12, "description": "Attendee's own words, verbatim (redacted) from a prompt, help message or the wizard answer. Chosen by index, never paraphrased.", "items": {"type": "object", "additionalProperties": false, "required": ["text", "kind", "source"], "properties": {"text": {"type": "string", "minLength": 1, "maxLength": 280}, "kind": {"type": "string", "enum": ["business", "data", "how_to", "blocker", "ambition", "unclassified"], "description": "unclassified only in fallback mode."}, "source": {"type": "string", "enum": ["prompt", "help", "wizard"]}, "at": {"type": ["string", "null"]}}}},
+              "framing": {"type": "string", "maxLength": 600, "description": "Model-written, third person. Llm generator only."},
+              "approach": {"type": "string", "maxLength": 600, "description": "Llm generator only."},
+              "pivots": {"type": "array", "maxItems": 5, "items": {"type": "string", "maxLength": 200}},
+              "systems_mentioned": {"type": "array", "maxItems": 10, "items": {"type": "object", "additionalProperties": false, "required": ["name", "kind"], "properties": {"name": {"type": "string", "minLength": 1, "maxLength": 80}, "kind": {"type": "string", "enum": ["source_system", "incumbent_tool", "competitor", "cloud", "other"]}}}},
+              "attendee_background": {"type": "string", "enum": ["", "domain", "data", "developer", "exploring"], "description": "The wizard background enum. Never a title or a role; empty means not given."}
             }
           }
         }
@@ -275,6 +283,34 @@
                   }
                 }
               }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"type": "object", "required": ["type"], "properties": {"type": {"const": "app.manifest"}}},
+      "then": {
+        "type": "object",
+        "properties": {
+          "idempotency_key": {"type": "string", "pattern": "^app-manifest:.+$"},
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["manifest_schema_version", "project", "captured_at", "stack", "resources", "uc_tables", "products_evidenced", "screenshots"],
+            "description": "Journal-only, not an insight row. A priority type: may use the reserved buffer headroom.",
+            "properties": {
+              "manifest_schema_version": {"type": "integer", "enum": [1]},
+              "project": {"type": "string", "minLength": 1, "maxLength": 120},
+              "app_name": {"type": ["string", "null"], "maxLength": 120},
+              "url": {"type": ["string", "null"], "maxLength": 500},
+              "revision": {"type": ["string", "null"], "maxLength": 64},
+              "captured_at": {"type": "string", "minLength": 1},
+              "stack": {"type": "array", "maxItems": 10, "items": {"type": "string", "maxLength": 40}},
+              "resources": {"type": "array", "maxItems": 30, "items": {"type": "object", "additionalProperties": false, "required": ["kind", "name", "source"], "properties": {"kind": {"type": "string", "enum": ["sql_warehouse", "serving_endpoint", "database", "genie_space", "job", "pipeline", "volume", "secret", "uc_securable", "vector_search_index", "other"]}, "name": {"type": ["string", "null"], "maxLength": 200}, "source": {"type": "string", "maxLength": 200}}}},
+              "uc_tables": {"type": "array", "maxItems": 50, "items": {"type": "object", "additionalProperties": false, "required": ["name", "source"], "properties": {"name": {"type": "string", "maxLength": 300}, "source": {"type": "string", "maxLength": 200}}}},
+              "products_evidenced": {"type": "array", "maxItems": 20, "items": {"type": "object", "additionalProperties": false, "required": ["product", "source"], "properties": {"product": {"type": "string", "maxLength": 80}, "source": {"type": "string", "maxLength": 200}}}},
+              "screenshots": {"type": "array", "maxItems": 3, "items": {"type": "object", "additionalProperties": false, "required": ["file", "sha256", "bytes", "captured_at", "scope", "label"], "properties": {"file": {"type": "string", "maxLength": 200}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "bytes": {"type": "integer", "minimum": 0}, "captured_at": {"type": "string", "minLength": 1}, "scope": {"type": "string", "enum": ["deployed", "local"]}, "label": {"type": "string", "maxLength": 40}, "url": {"type": ["string", "null"], "maxLength": 500}, "title": {"type": ["string", "null"], "maxLength": 200}}}}
             }
           }
         }

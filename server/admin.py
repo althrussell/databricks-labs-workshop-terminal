@@ -946,6 +946,11 @@ def admin_export(body: _AdminExportBody | None = None):
                             "files": result.get("files"), "reused": result.get("reused", False)})
         except Exception as error:  # noqa: BLE001 — one attendee's failure is reported, not raised
             failed.append({"email": user.email, "error": str(error)[-300:]})
+        if reason == "wrap_up":
+            # Insight v2: the wrap manifest reflects the shots the export just captured.
+            from . import app_manifest
+
+            app_manifest.emit_for_user(user)
     lead = exports[0] if exports else {}
     return {"path": lead.get("path"), "bytes": lead.get("bytes", 0), "exports": exports, "failed": failed}
 

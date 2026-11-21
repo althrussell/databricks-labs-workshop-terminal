@@ -45,7 +45,7 @@ SUPPORTED_EVENTS = frozenset({
     "obo.health", "omnigent.host_health", "attendee.error_seen", "session.create_failed",
     "install.step_failed", "omnigent.error_detected", "app.error_detected", "selfheal.attempted",
     "identity.resolved", "workshop.signal", "discovery.record", "insight.summary", "attendee.identity",
-    "journey.status", "journey.phase", "journey.outcome", "agent.activity",
+    "app.manifest", "journey.status", "journey.phase", "journey.outcome", "agent.activity",
     "network.check", "omnigent.session_ready", "omnigent.first_message",
     "omnigent.first_message_missing", "omnigent.session_start_stalled",
     "omnigent.terminal_exited_early", "friction.event",

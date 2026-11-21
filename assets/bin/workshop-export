@@ -254,28 +254,127 @@ def workspace_host() -> str:
     return host.rstrip("/")
 
 
+# Insight contract v2, section 3. The selection rule mirrors server/app_manifest.py
+# (select_shots); tests/test_workshop_export_screenshots.py pins the two together.
+SCREENSHOT_MAX_BYTES = 2 * 1024 * 1024
+SCREENSHOTS_PER_PROJECT = 3
+SIDECAR_NAME = "manifest.json"
+SHOT_NAME_RE = re.compile(
+    r"^(?P<stamp>\d{8}T\d{6}Z)-(?P<scope>deployed|local)-(?P<viewport>[a-z]+)-(?P<label>[a-z0-9-]+)\.png$"
+)
+
+
+def insight_v2_enabled() -> bool:
+    """WT sets WORKSHOP_INSIGHT_V2=1 only when the instance has v2 on (see journey.export)."""
+    return os.environ.get("WORKSHOP_INSIGHT_V2", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def select_shots(names: list[str]) -> list[str]:
+    """Newest deployed initial, then up to two newest after-N; newest first, at most three."""
+    parsed = []
+    for name in names:
+        match = SHOT_NAME_RE.match(name)
+        if match:
+            parsed.append((match.group("stamp"), match.group("scope"), match.group("label"), name))
+    parsed.sort(key=lambda item: (item[0], item[3]), reverse=True)
+    chosen: list[str] = []
+    initial = next((p for p in parsed if p[1] == "deployed" and p[2] == "initial"), None)
+    if initial:
+        chosen.append(initial[3])
+    afters = [p for p in parsed if p[2].startswith("after-") and p[3] not in chosen]
+    chosen.extend(p[3] for p in afters[:2])
+    chosen.sort(key=lambda name: (SHOT_NAME_RE.match(name).group("stamp"), name), reverse=True)
+    return chosen[:SCREENSHOTS_PER_PROJECT]
+
+
+def _project_shots(evidence: Path, *, v2: bool) -> list[Path]:
+    pngs = [p for p in sorted(evidence.glob("*.png")) if p.is_file() and not p.is_symlink()]
+    if not v2:
+        return pngs[-1:]  # unchanged from before v2: the newest png only
+    fitting = {p.name: p for p in pngs if p.stat().st_size <= SCREENSHOT_MAX_BYTES}
+    return [fitting[name] for name in select_shots(list(fitting))]
+
+
+def _design_record(project: Path) -> dict:
+    record = project / ".workshop" / "design-workflow.json"
+    if record.is_symlink() or not record.is_file() or record.stat().st_size > 512 * 1024:
+        return {}
+    try:
+        value = json.loads(record.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _sidecar_entry(proj_name: str, png: Path, project: Path) -> dict:
+    data = png.read_bytes()
+    match = SHOT_NAME_RE.match(png.name)
+    meta: dict = {}
+    for item in (((_design_record(project).get("evidence") or {}).get("inspect") or {}).get("artifacts") or []):
+        if isinstance(item, dict) and os.path.basename(str(item.get("path") or "")) == png.name:
+            meta = item
+            break
+    url = str(meta.get("url") or "").split("#", 1)[0].split("?", 1)[0]
+    stamp = datetime.strptime(match.group("stamp"), "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+    return {
+        "file": f"{proj_name}-{png.name}",
+        "project": proj_name,
+        "app_name": None,
+        "url": url[:500] if url.startswith(("https://", "http://")) else None,
+        "title": str(meta.get("title") or "")[:200] or None,
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "bytes": len(data),
+        "captured_at": stamp.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "scope": match.group("scope"),
+        "label": match.group("label"),
+    }
+
+
+def _upload_sidecar(folder: str, shots: list[dict]) -> None:
+    """``screenshots/manifest.json``: what each uploaded shot is, and its digest."""
+    payload = {
+        "schema_version": 1,
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "shots": shots,
+    }
+    with tempfile.TemporaryDirectory(prefix="workshop-shots-") as temporary:
+        local = Path(temporary) / SIDECAR_NAME
+        local.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+        run_cli(["fs", "cp", str(local), "dbfs:" + f"{folder}/{SIDECAR_NAME}", "--overwrite"],
+                allow_failure=True)
+
+
 def upload_screenshots(source: Path, catalog: str, schema: str, *, single_project: bool) -> list[str]:
     uploaded: list[str] = []
+    v2 = insight_v2_enabled()
     candidates = [source] if single_project else [
         child for child in sorted(source.iterdir())
         if child.is_dir() and not child.is_symlink() and not child.name.startswith(".")
     ]
-    shots: list[tuple[str, Path]] = []
+    shots: list[tuple[str, Path, Path]] = []
     for proj in candidates:
         evidence = proj / ".workshop" / "evidence"
+        if (proj / ".workshop").is_symlink():
+            continue  # a linked .workshop would send the shot search elsewhere
         if evidence.is_dir() and not evidence.is_symlink():
-            pngs = [p for p in sorted(evidence.glob("*.png")) if p.is_file() and not p.is_symlink()]
-            if pngs:
-                shots.append((proj.name, pngs[-1]))
+            for png in _project_shots(evidence, v2=v2):
+                shots.append((proj.name, png, proj))
     if not shots:
         return uploaded
     folder = f"/Volumes/{catalog}/{schema}/{VOLUME}/screenshots"
     run_cli(["fs", "mkdirs", "dbfs:" + folder], allow_failure=True)
-    for proj_name, png in shots:
+    entries: list[dict] = []
+    for proj_name, png, proj in shots:
         dest = f"{folder}/{proj_name}-{png.name}"
         cp_res = run_cli(["fs", "cp", str(png), "dbfs:" + dest], allow_failure=True)
         if cp_res.returncode == 0:
             uploaded.append(dest)
+            if v2:
+                entries.append(_sidecar_entry(proj_name, png, proj))
+    # The sidecar describes a whole seat. A single-project export would describe
+    # only part of it, so it writes the sidecar on full exports alone.
+    if v2 and entries and not single_project:
+        _upload_sidecar(folder, entries)
     return uploaded
 
 

@@ -239,7 +239,8 @@ def presence_fields() -> dict[str, Any]:
     _ensure_ready()
     with _lock:
         state = _read_locked()
-        return {"help_raised": state["raised"], "help_note": state["note"] or None,
+        # The presence response leaves the seat, so the note goes out redacted.
+        return {"help_raised": state["raised"], "help_note": _outbound(state["note"]) or None,
                 "help_raised_at": state["raised_at"] if state["raised"] else None,
                 "help_open": state["raised"],
                 "help_outbox": copy.deepcopy(state["outbox"][:_OUTBOX_PAGE]),
@@ -299,9 +300,28 @@ def _append_local(state: dict[str, Any], message: dict[str, Any]) -> None:
     state["messages"] = state["messages"][-_MAX_MESSAGES:]
 
 
+def _outbound(text: str | None) -> str | None:
+    """Redact attendee text bound for Control Tower (insight v2 only).
+
+    Flag-off payloads must stay byte-identical to today, so nothing changes here
+    unless ``WORKSHOP_INSIGHT_V2`` is on. The same secret-then-PII order as the
+    discovery and summary paths.
+    """
+    if not text or not config.insight_v2_enabled():
+        return text
+    from . import discovery
+
+    cleaned, _ = discovery.redact(text)
+    cleaned, _ = discovery.redact_pii(cleaned)
+    return cleaned
+
+
 def raise_hand(note: str | None = None) -> dict[str, Any]:
     _ensure_ready()
     note_clean = (note or "").strip()[:280] or None
+    # The attendee's own thread keeps what they typed; only the copy that leaves
+    # the seat is redacted.
+    outbound = _outbound(note_clean)
     note_id = str(uuid4()) if note_clean else ""
     now = time.time()
     created_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -313,10 +333,10 @@ def raise_hand(note: str | None = None) -> dict[str, Any]:
                          "sender_role": "attendee", "sender": "", "body": note_clean,
                          "created_at": created_at}
                 _append_local(state, local)
-                _enqueue(state, "message", **local)
+                _enqueue(state, "message", **{**local, "body": outbound})
         _mutate_locked(apply)
     flush_help_persistence()
-    pushed = _push_control_tower("raise", note_clean, message_id=note_id)
+    pushed = _push_control_tower("raise", outbound, message_id=note_id)
     event_hub.publish({"t": "help_state", "raised": True, "note": note_clean})
     return {"raised": True, "pushed": pushed, "note": note_clean}
 
@@ -363,6 +383,7 @@ def post_attendee_message(body: str, *, sender: str = "") -> dict[str, Any]:
     text = (body or "").strip()[:2000]
     if not text:
         raise ValueError("message body is required")
+    outbound = _outbound(text) or text
     _ensure_ready()
     message_id = str(uuid4())
     now = time.time()
@@ -375,13 +396,13 @@ def post_attendee_message(body: str, *, sender: str = "") -> dict[str, Any]:
                      "sender_role": "attendee", "sender": sender, "body": text,
                      "created_at": created_at}
             _append_local(state, local)
-            _enqueue(state, "message", **local)
+            _enqueue(state, "message", **{**local, "body": outbound})
             return local
         local = _mutate_locked(apply)
     flush_help_persistence()
-    pushed = _push_control_tower_message(text, message_id=local["message_id"])
+    pushed = _push_control_tower_message(outbound, message_id=local["message_id"])
     if not pushed and not _push_rejection["logged"]:
-        _push_control_tower("raise", text[:280], message_id=local["message_id"])
+        _push_control_tower("raise", outbound[:280], message_id=local["message_id"])
     event_hub.publish({"t": "help_message", **local, "surface": "none", "request_ack": False})
     event_hub.publish({"t": "help_state", "raised": True})
     return {"message": local, "pushed": pushed, "raised": True}

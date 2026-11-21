@@ -205,7 +205,9 @@ def test_overflow_refuses_new_output_without_evicting_accepted_events():
 
     response = emitter.collect()
 
-    assert response["dropped"] == 0
+    # The refused output is counted, not silently lost: ``dropped`` is truthful.
+    assert response["dropped"] == 1
+    assert emitter.delivery_status()["dropped"] == 1
     assert _keys(response) == ["k0", "k1", "k2"]
     assert emitter.delivery_status()["retention_ready"] is False
     assert emitter.delivery_status()["retention_issues"]

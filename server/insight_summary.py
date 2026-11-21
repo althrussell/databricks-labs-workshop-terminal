@@ -49,7 +49,8 @@ from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from . import artifacts, config, models
+from . import artifacts, attendee_profile, config, discovery, models
+from .attendee_profile import BACKGROUNDS as _BACKGROUNDS
 from .capture_journal import CaptureHeldError
 from .closeout_guard import CaptureClosedError, admitted_writer, check_open
 from .discovery import SESSION_INTENTS
@@ -64,6 +65,22 @@ MAX_HEADLINE_CHARS = 240
 MAX_TEXT_CHARS = 1200
 MAX_USE_CASES = 5
 MAX_LIST_ITEMS = 10
+
+# Insight contract v2 (docs/workshop-insight-contract.md, section 1). Only active
+# when config.insight_v2_enabled(); with the flag off none of this runs.
+SUMMARY_SCHEMA_V2 = 2
+ASK_KINDS = ("business", "data", "how_to", "blocker", "ambition")
+FALLBACK_ASK_KIND = "unclassified"
+SYSTEM_KINDS = ("source_system", "incumbent_tool", "competitor", "cloud", "other")
+MAX_ASKS = 12
+MAX_FALLBACK_ASKS = 5
+MAX_ASK_CHARS = 280
+MAX_FRAMING_CHARS = 600
+MAX_PIVOTS = 5
+MAX_PIVOT_CHARS = 200
+MAX_SYSTEMS = 10
+MAX_SYSTEM_NAME_CHARS = 80
+_MAX_TOKENS_V2 = 2200
 
 _PROMPT = """You are summarising one attendee's hands-on session at a Databricks \
 workshop, for the account team that covers their company.
@@ -107,6 +124,34 @@ Classify "session_intent" from what they actually built:
 Say "fun" when it was fun. A Space Invaders session classified as a business \
 problem sends someone to chase a lead that was never there, and that costs more \
 than an empty field. If the material genuinely does not say, leave it empty.
+"""
+
+# Appended to _PROMPT when insight v2 is on. The model chooses asks by INDEX into
+# the indexed items list; it never writes ask text, so what leaves the seat is
+# always a slice of what the attendee actually typed.
+_PROMPT_V2 = """
+Also return these fields. The material lists items as "[index] (source) text".
+
+  "asks": [{"index": 0, "kind": "business"}],
+  "framing": "how the attendee framed the problem, third person, one short paragraph, or empty",
+  "approach": "the approach they chose and why, one short paragraph, or empty",
+  "pivots": ["switched from X to Y because Z"],
+  "systems_mentioned": [{"name": "Snowflake", "kind": "incumbent_tool"}]
+
+Rules for these fields:
+- "asks": up to 12 items, each an index from the list that is something the \
+attendee asked for, wanted or was blocked on, in their own words. Give the index \
+only; never write ask text. kind is one of: business (a business problem or outcome \
+they want), data (a data question or dataset they need), how_to (a technique or \
+syntax question), blocker (something that stopped them), ambition (where they want \
+to get to). Skip harness messages, continuations such as "yes" or "continue", and \
+anything that is the agent's rather than the attendee's.
+- "framing" and "approach": third person, no names, emails, hosts or tokens.
+- "pivots": at most 5 changes of direction actually visible in the material.
+- "systems_mentioned": at most 10 systems named in the material. kind is one of \
+source_system (where data lives), incumbent_tool (what they run today), competitor \
+(a rival vendor's product), cloud (a cloud provider or its service), other.
+Leave any of these empty rather than inventing it.
 """
 
 
@@ -456,13 +501,14 @@ def _ask_model(harvest: artifacts.Harvest, signal: dict | None) -> tuple[dict, s
         raise ModelUnavailable(f"no workshop credential: {exc}") from exc
 
     model = _pick_model(token)
+    v2 = config.insight_v2_enabled()
     body = {
         "model": model,
         "messages": [
-            {"role": "system", "content": _PROMPT},
+            {"role": "system", "content": _PROMPT + (_PROMPT_V2 if v2 else "")},
             {"role": "user", "content": _material(harvest, signal)},
         ],
-        "max_tokens": _MAX_TOKENS,
+        "max_tokens": _MAX_TOKENS_V2 if v2 else _MAX_TOKENS,
     }
     headers = {
         "Authorization": f"Bearer {token}",
@@ -509,7 +555,17 @@ def _material(harvest: artifacts.Harvest, signal: dict | None) -> str:
                 ", ".join(signal.get("products") or []) or "none",
             )
         )
-    if harvest.prompts:
+    if harvest.ask_candidates:
+        # Insight v2: every candidate ask, indexed, so the model can select by
+        # number. Replaces the plain prompt list, which it supersedes.
+        blocks.append(
+            "Indexed items (attendee's own words; the index is what you return):\n"
+            + "\n".join(
+                f"[{index}] ({c.source}) {c.text}"
+                for index, c in enumerate(harvest.ask_candidates)
+            )
+        )
+    elif harvest.prompts:
         blocks.append(
             "Attendee prompts (verbatim, newest last):\n"
             + "\n".join(f"- {p}" for p in harvest.prompts)
@@ -605,6 +661,190 @@ def _extraction(harvest: artifacts.Harvest, signal: dict | None) -> dict:
     }
 
 
+# --- insight v2: candidate asks, sanitising, validation -----------------------
+
+
+@dataclass(frozen=True)
+class AskCandidate:
+    """One attendee-authored text an ask may be copied from. ``text`` is redacted."""
+
+    source: str  # prompt | help | wizard
+    text: str
+    at: str | None = None
+
+
+def _redacted(text: str) -> str:
+    """Secret and personal redaction, in that order, as the contract requires."""
+    cleaned, _ = discovery.redact(text)
+    cleaned, _ = discovery.redact_pii(cleaned)
+    return cleaned
+
+
+def _clip_verbatim(text: str, limit: int) -> str:
+    """A prefix of ``text`` no longer than ``limit``, cut at a word boundary.
+
+    Only ever removes characters from the end, so the result is a verbatim slice.
+    """
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    space = cut.rfind(" ")
+    if space >= limit // 2:
+        cut = cut[:space]
+    return cut.rstrip()
+
+
+def _wizard_answer(user: User) -> str:
+    """What the attendee typed into the wizard's "what are you building" box."""
+    try:
+        from . import wizard
+
+        return str(wizard.read_brief(user).what_building or "").strip()
+    except Exception as exc:  # noqa: BLE001 — a missing brief is simply no candidate
+        logger.debug("wizard answer unavailable for %s: %s", user.email, exc)
+        return ""
+
+
+def _help_messages() -> list[tuple[str, str | None]]:
+    """Attendee-authored help and raise-hand messages, oldest first."""
+    try:
+        from . import help as help_module
+
+        messages = help_module.thread_snapshot().get("messages") or []
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("help messages unavailable: %s", exc)
+        return []
+    out: list[tuple[str, str | None]] = []
+    for message in messages:
+        if not isinstance(message, dict) or message.get("sender_role") != "attendee":
+            continue
+        body = str(message.get("body") or "").strip()
+        if body:
+            created = message.get("created_at")
+            out.append((body, created if isinstance(created, str) else None))
+    return out
+
+
+def ask_candidates(harvest: artifacts.Harvest, user: User) -> list[AskCandidate]:
+    """Every attendee-authored candidate, in the fixed order the model indexes.
+
+    Prompts come first. Redaction replaces text and never removes it, and a
+    harvested prompt is never empty, so each prompt keeps its position in
+    ``harvest.prompts``. Help messages and the wizard answer follow. Callers index
+    this returned list, never ``harvest.prompts``. Every text is redacted here,
+    once, so anything copied from a candidate is already clean.
+    """
+    candidates: list[AskCandidate] = []
+    for prompt in harvest.prompts:
+        cleaned = _redacted(prompt)
+        if cleaned:
+            candidates.append(AskCandidate("prompt", cleaned))
+    for body, created in _help_messages():
+        cleaned = _redacted(body)
+        if cleaned:
+            candidates.append(AskCandidate("help", cleaned, created))
+    answer = _redacted(_wizard_answer(user))
+    if answer:
+        candidates.append(AskCandidate("wizard", answer))
+    return candidates
+
+
+def _fallback_candidates(candidates: list[AskCandidate]) -> list[AskCandidate]:
+    """Extraction-mode order: the attendee's explicit words first, then their longest prompts."""
+    # The contract order is wizard, then help, then prompts; the sort is stable,
+    # so each source keeps its own arrival order.
+    explicit = ([c for c in candidates if c.source == "wizard"]
+                + [c for c in candidates if c.source == "help"])
+    prompts = sorted((c for c in candidates if c.source == "prompt"),
+                     key=lambda c: len(c.text), reverse=True)
+    return explicit + prompts
+
+
+def _background(user: User) -> str:
+    """The attendee's background, from the profile enum; never a title or role."""
+    try:
+        value = str(attendee_profile.read(user).background or "")
+    except Exception as exc:  # noqa: BLE001 — an unreadable profile reads as not given
+        logger.debug("attendee background unavailable: %s", exc)
+        return ""
+    return value if value in _BACKGROUNDS else ""
+
+
+def _prose(value: object, limit: int) -> str:
+    """Collapse, redact, then clip. Redaction first so a marker is never split open."""
+    if not isinstance(value, str):
+        return ""
+    collapsed = " ".join(value.split())
+    return _clip_verbatim(_redacted(collapsed), limit)
+
+
+def _asks(raw: dict, candidates: list[AskCandidate], generator: str) -> list[dict]:
+    """Validated asks. LLM asks are picked by index; fallback asks are unclassified."""
+    out: list[dict] = []
+    seen: set[str] = set()
+
+    def add(candidate: AskCandidate, kind: str) -> None:
+        text = _clip_verbatim(candidate.text, MAX_ASK_CHARS)
+        if not text or text in seen:
+            return
+        seen.add(text)
+        out.append({"text": text, "kind": kind, "source": candidate.source,
+                    "at": candidate.at})
+
+    if generator != "llm":
+        for candidate in _fallback_candidates(candidates)[:MAX_FALLBACK_ASKS]:
+            add(candidate, FALLBACK_ASK_KIND)
+        return out
+
+    items = raw.get("asks") if isinstance(raw.get("asks"), list) else []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        index, kind = item.get("index"), item.get("kind")
+        # ``type(...) is int`` rejects bools, which are ints to Python.
+        if type(index) is not int or not 0 <= index < len(candidates):
+            continue
+        if kind not in ASK_KINDS:
+            continue
+        add(candidates[index], kind)
+        if len(out) >= MAX_ASKS:
+            break
+    return out
+
+
+def _framing_fields(raw: dict) -> dict:
+    """framing, approach, pivots and systems_mentioned, each clamped and redacted."""
+    fields: dict = {}
+    for key in ("framing", "approach"):
+        value = _prose(raw.get(key), MAX_FRAMING_CHARS)
+        if value:
+            fields[key] = value
+
+    pivots: list[str] = []
+    for item in raw.get("pivots") if isinstance(raw.get("pivots"), list) else []:
+        value = _prose(item, MAX_PIVOT_CHARS)
+        if value and value not in pivots:
+            pivots.append(value)
+        if len(pivots) >= MAX_PIVOTS:
+            break
+    if pivots:
+        fields["pivots"] = pivots
+
+    systems: list[dict] = []
+    for item in raw.get("systems_mentioned") if isinstance(raw.get("systems_mentioned"), list) else []:
+        if not isinstance(item, dict) or item.get("kind") not in SYSTEM_KINDS:
+            continue
+        name = _prose(item.get("name"), MAX_SYSTEM_NAME_CHARS)
+        if name and name.lower() not in {s["name"].lower() for s in systems}:
+            systems.append({"name": name, "kind": item["kind"]})
+        if len(systems) >= MAX_SYSTEMS:
+            break
+    if systems:
+        fields["systems_mentioned"] = systems
+    return fields
+
+
 # --- assembly and emission ----------------------------------------------------
 
 
@@ -618,6 +858,7 @@ def _payload(
     generator: str,
     model: str | None,
     revision: int = 1,
+    background: str = "",
 ) -> dict:
     """Shape a raw summary into the contract's ``insight.summary`` payload.
 
@@ -682,6 +923,16 @@ def _payload(
     artifact_payload = harvest.artifact_payload()
     if artifact_payload:
         payload["artifacts"] = artifact_payload
+    if config.insight_v2_enabled():
+        # v2 fields exist only with the flag on: CT rejects unknown fields in
+        # sealed closeout, so a flag-off payload must match v1 exactly.
+        payload["summary_schema_version"] = SUMMARY_SCHEMA_V2
+        payload["asks"] = _asks(raw, list(harvest.ask_candidates), generator)
+        payload["attendee_background"] = background if background in _BACKGROUNDS else ""
+        if generator == "llm":
+            # Framing, approach, pivots and systems come from the model only.
+            # The fallback never writes them, because it cannot judge them.
+            payload.update(_framing_fields(raw))
     return payload
 
 
@@ -756,10 +1007,22 @@ def _summarise_claimed(
     # Recorded whatever happens next, so an attendee who has gone quiet costs one
     # directory walk per interval rather than one per harvest.
     stamps.note_attempt(user.email)
-    if harvest.is_empty():
+    v2 = config.insight_v2_enabled()
+    background = ""
+    if v2:
+        harvest.ask_candidates = ask_candidates(harvest, user)
+        background = _background(user)
+    # Help messages and the wizard answer are material on their own: a seat that
+    # only ever asked for help is still a seat with something to say.
+    if harvest.is_empty() and not harvest.ask_candidates:
         return None
 
     fingerprint = _fingerprint(harvest, signal)
+    if v2:
+        # Help and wizard text are not counted in the base fingerprint, so a new
+        # help message must still move it or the asks would never be refreshed.
+        extra = "\n".join(c.text for c in harvest.ask_candidates if c.source != "prompt")
+        fingerprint = hashlib.sha256(f"{fingerprint}|{extra}".encode()).hexdigest()[:16]
     if not stamps.changed(user.email, fingerprint, generator=intended):
         logger.debug("edge summary unchanged for %s; skipping", user.email)
         return None
@@ -784,7 +1047,7 @@ def _summarise_claimed(
     if getattr(emitter, "journal", None) is not None:
         template = _payload(
             raw, harvest, run_id=emitter.run_id, email=user.email, phase=phase,
-            generator=generator, model=model, revision=1,
+            generator=generator, model=model, revision=1, background=background,
         )
         def prepare(state):
             summaries = stamps._validate(state.setdefault("summaries", {}))
@@ -812,7 +1075,7 @@ def _summarise_claimed(
         revision = stamps.next_revision(user.email)
         payload = _payload(
             raw, harvest, run_id=emitter.run_id, email=user.email, phase=phase,
-            generator=generator, model=model, revision=revision,
+            generator=generator, model=model, revision=revision, background=background,
         )
         emitter.emit(
             "insight.summary", user.email, payload,
