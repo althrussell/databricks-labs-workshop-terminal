@@ -127,5 +127,13 @@ def test_real_detached_worker_retains_success_or_failure_before_clearing_receipt
     saved = json.loads(completed[0].read_text())
     assert saved["exit"] == code and set(saved) == {
         "schema_version", "registered_at", "completed_at", "exit"}
-    assert list((home / ".workshop" / "workspace-sync-writers").iterdir()) == []
+    # The worker clears its receipt as its last step, after the outcome is
+    # retained. Drain already counts a receipt with a matching outcome as done
+    # (that is what makes a crash in between recoverable), so wait for the clear
+    # instead of racing it.
+    writers = home / ".workshop" / "workspace-sync-writers"
+    deadline = time.monotonic() + 5
+    while list(writers.iterdir()) and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert list(writers.iterdir()) == []
     assert "private" not in json.dumps(result)
