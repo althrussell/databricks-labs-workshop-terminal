@@ -565,8 +565,9 @@ access to them. Provision a per-attendee catalog so usability is automatic:
   endpoints), granting the labuser `CAN_MANAGE` (these don't inherit). All calls
   run as the app SP, are idempotent, and emit `entitlements.health` on failure.
   Enumeration is cached with independently staggered expiries; a verified
-  no-change pass enters a 30-minute idle cadence. An on-demand pass that finds
-  nothing new is followed by three forced sweeps at +15 s, +45 s and +120 s, so
+  no-change pass enters a 30-minute idle cadence. An on-demand pass that hands
+  over nothing new is followed by three forced re-lists of genie-spaces and
+  dashboards (or of the one type asked for) at +15 s, +45 s and +120 s, so
   a Genie space or dashboard the list has not caught up with yet is handed over
   within two minutes. `workshop-grant-me genie|dashboards <id>` grants one object
   by id from its detail read, with no list call, and reports `CAN_MANAGE: yes`

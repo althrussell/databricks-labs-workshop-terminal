@@ -59,7 +59,7 @@ def test_a_named_space_that_can_be_managed_reports_yes_and_exits_zero(tmp_path):
 
     assert done.returncode == 0, done.stderr
     assert "CAN_MANAGE: yes" in done.stdout
-    assert "genie-spaces 01f1e5 is CAN_MANAGE for you" in done.stdout
+    assert "genie 01f1e5 is CAN_MANAGE for you" in done.stdout
     assert sent == {"email": "alice@example.com", "resource_type": "genie", "resource_id": "01f1e5"}
 
 
@@ -133,3 +133,50 @@ def test_a_refusal_from_the_app_is_reported_and_fails(tmp_path):
 
     assert done.returncode == 1
     assert "refused the entitlement handoff (HTTP 403)" in done.stderr
+
+
+def test_a_backoff_deferral_says_why_and_exits_for_a_retry(tmp_path):
+    answer = {"enabled": True, "deferred": True, "state": "degraded_backoff",
+              "reason": "resource_exhausted", "next_attempt_at": 1_900_000_000.0, "errors": []}
+    done, _ = _run(tmp_path, ["genie", "01f1e5"], answer=answer)
+
+    assert done.returncode == 75
+    assert "CAN_MANAGE: no. genie 01f1e5" in done.stdout
+    assert "asked the app to slow down; retry after" in done.stdout
+    assert "?" not in done.stdout
+
+
+def test_a_rate_limited_resource_exits_for_a_retry(tmp_path):
+    answer = {"deferred": True, "next_attempt_at": 1_900_000_000.0, "resource": {
+        "resource_type": "genie-spaces", "resource_id": "01f1e5", "state": "rate_limited",
+        "can_manage": False, "message": "the platform asked us to slow down"}}
+    done, _ = _run(tmp_path, ["genie", "01f1e5"], answer=answer)
+
+    assert done.returncode == 75
+    assert "the platform asked us to slow down; retry after" in done.stdout
+
+
+def test_switched_off_entitlements_are_named_and_do_not_retry(tmp_path):
+    done, _ = _run(tmp_path, ["genie", "01f1e5"], answer={"enabled": False})
+
+    assert done.returncode == 1
+    assert "entitlements are switched off on this app" in done.stdout
+    assert "?" not in done.stdout
+
+
+def test_an_identity_failure_shows_the_app_error(tmp_path):
+    answer = {"enabled": True, "errors": ["cannot verify app service-principal identity"]}
+    done, _ = _run(tmp_path, ["genie", "01f1e5"], answer=answer)
+
+    assert done.returncode == 1
+    assert "cannot verify app service-principal identity" in done.stdout
+    assert "?" not in done.stdout
+
+
+def test_an_empty_answer_still_names_the_resource(tmp_path):
+    done, _ = _run(tmp_path, ["dashboards", "dash1"], answer={})
+
+    assert done.returncode == 1
+    assert "CAN_MANAGE: no. dashboards dash1" in done.stdout
+    assert "gave no answer" in done.stdout
+    assert "?" not in done.stdout

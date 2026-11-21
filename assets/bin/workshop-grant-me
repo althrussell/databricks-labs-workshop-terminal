@@ -7,6 +7,7 @@
 #   workshop-grant-me                   refresh every resource type
 #   workshop-grant-me <type>            refresh one type
 #   workshop-grant-me <type> <id>       grant one object by id (genie, dashboards)
+#     exit 0: CAN_MANAGE for you; 75: retry later; 1: will not succeed as asked
 #
 # Unity Catalog objects created inside $WORKSHOP_CATALOG are already usable by
 # you via inherited grants — this is only needed for non-UC resources.
@@ -61,24 +62,44 @@ if [[ "$STATUS" != 2* ]]; then
 fi
 
 if [[ -n "$RESOURCE_ID" ]]; then
-  # One object: say plainly whether it is CAN_MANAGE for the attendee, and exit
-  # non-zero when it is not, so the agent cannot read past a refusal.
+  # One object: say plainly whether it is CAN_MANAGE for the attendee. Exit 0 when
+  # it is, 75 (EX_TEMPFAIL) when it may succeed later, and 1 when it will not.
   VERDICT="$(printf '%s' "$BODY" | python3 -c '
-import json, sys
+import json, sys, time
+rtype, rid = sys.argv[1], sys.argv[2]
+label = rtype + " " + rid
 try:
-    resource = (json.load(sys.stdin).get("resource") or {})
+    data = json.load(sys.stdin)
 except ValueError:
-    resource = {}
-label = "%s %s" % (resource.get("resource_type", "?"), resource.get("resource_id", "?"))
+    data = {}
+if not isinstance(data, dict):
+    data = {}
+resource = data.get("resource") or {}
+retry = False
 if resource.get("can_manage"):
     print("CAN_MANAGE: yes. %s is %s for you." % (label, resource.get("permission_level") or "CAN_MANAGE"))
+    sys.exit(0)
+if resource:
+    reason = resource.get("message") or "the app gave no reason"
+    retry = resource.get("state") == "rate_limited"
+elif data.get("enabled") is False:
+    reason = "entitlements are switched off on this app"
+elif data.get("deferred") or data.get("state") == "degraded_backoff":
+    reason = "the platform asked the app to slow down"
+    retry = True
+elif data.get("errors"):
+    reason = "; ".join(str(e) for e in data["errors"][:2])
 else:
-    print("CAN_MANAGE: no. %s is not yet CAN_MANAGE for you: %s" % (label, resource.get("message") or "no answer from the app"))
-    sys.exit(1)
-' 2>/dev/null)"
+    reason = "the app gave no answer"
+at = data.get("next_attempt_at")
+if retry and isinstance(at, (int, float)):
+    reason += "; retry after " + time.strftime("%H:%M:%S", time.localtime(at))
+print("CAN_MANAGE: no. %s is not yet CAN_MANAGE for you: %s" % (label, reason))
+sys.exit(75 if retry else 1)
+' "$RESOURCE_TYPE" "$RESOURCE_ID" 2>/dev/null)"
   STATUS_CODE=$?
   if [[ -z "$VERDICT" ]]; then
-    echo "CAN_MANAGE: unknown. The app answered, but without a readable verdict." >&2
+    echo "CAN_MANAGE: unknown. The app answered, but its answer could not be read." >&2
     exit 1
   fi
   echo "$VERDICT"

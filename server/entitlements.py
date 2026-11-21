@@ -79,6 +79,10 @@ ALERT_REEMIT_INTERVAL = 1800  # re-emit a degraded health event at most every 30
 # and is never re-armed while one is pending.
 FOLLOW_UP_OFFSETS = (15.0, 45.0, 120.0)
 _FOLLOW_UP_SOURCE = "follow_up"
+# The types a bare follow-up re-lists. Genie spaces and dashboards are the ones a
+# just-created object is observed to lag behind in their list; the other adapters
+# are not confirmed to lag, so a series does not sweep them.
+FOLLOW_UP_LISTS = frozenset({"genie-spaces", "dashboards"})
 # A Databricks object id as it appears in a URL path: no slash, and not made of
 # dots alone (".." would normalise to a different endpoint).
 _RESOURCE_ID_PATTERN = re.compile(r"(?!\.+$)[A-Za-z0-9._-]{1,128}")
@@ -532,6 +536,14 @@ def _permission_url(host: str, spec: ResourceSpec, resource_id: str) -> str:
     return f"{host}/api/2.0/permissions/{spec.permission_type}/{resource_id}"
 
 
+def _readback_failure(error, level: str):
+    """Keep a readback's rate limit typed, so the caller can back off; any other
+    readback failure becomes the text the ledger has always recorded."""
+    if isinstance(error, EntitlementApiError) and error.rate_limit_reason:
+        return error
+    return f"permission verification: {error or 'required effective access absent'}"
+
+
 def _sp_identities(host: str, bearer: str) -> set[str]:
     identities = {
         value.strip().lower()
@@ -642,6 +654,7 @@ class EntitlementManager:
         # Absolute deadlines of the pending follow-up passes, and the attendee they serve.
         self._follow_ups: list[float] = []
         self._follow_up_email: str | None = None
+        self._follow_up_labels: frozenset[str] = frozenset()
 
     def start(self) -> None:
         if not config.entitlements_enabled():
@@ -896,9 +909,10 @@ class EntitlementManager:
         """One scheduled pass: a due follow-up for the last on-demand caller, else the normal sweep."""
         with self._lock:
             follow_up_due = bool(self._follow_ups) and self._follow_ups[0] <= self._clock()
-            email = self._follow_up_email if follow_up_due else None
+            email = self._follow_up_email
+            labels = self._follow_up_labels
         if follow_up_due:
-            self.reconcile(email, source=_FOLLOW_UP_SOURCE)
+            self.reconcile(email, source=_FOLLOW_UP_SOURCE, only_labels=labels)
         else:
             self.reconcile()
 
@@ -994,6 +1008,7 @@ class EntitlementManager:
         *,
         source: str | None = None,
         resource_id: str | None = None,
+        only_labels: frozenset[str] | None = None,
     ) -> dict:
         """Idempotently make SP-created resources usable by the labuser(s).
 
@@ -1055,7 +1070,11 @@ class EntitlementManager:
                 return deferred
             try:
                 return self._reconcile_once(
-                    email, label=label, source=source, resource_id=resource_id
+                    email,
+                    label=label,
+                    source=source,
+                    resource_id=resource_id,
+                    only_labels=only_labels,
                 )
             except Exception as exc:  # noqa: BLE001 — public reconcile is fail-soft
                 # ``finish`` normally restores the ContextVar. Keep an
@@ -1065,6 +1084,9 @@ class EntitlementManager:
                 _request_stats.set(None)
                 message = f"unexpected {type(exc).__name__}: {exc}"
                 self._record(False, message)
+                # _record moved the next attempt to the error retry; a pending
+                # follow-up must still run on its own deadline.
+                self._schedule_pending_wake(self._wake_generation)
                 from . import telemetry
 
                 telemetry.entitlement_reconcile(
@@ -1118,6 +1140,7 @@ class EntitlementManager:
         label: str | None,
         source: str,
         resource_id: str | None = None,
+        only_labels: frozenset[str] | None = None,
     ) -> dict:
         started_at = self._monotonic()
         now = self._clock()
@@ -1126,6 +1149,7 @@ class EntitlementManager:
         with self._lock:
             if source == _FOLLOW_UP_SOURCE and self._follow_ups:
                 self._follow_ups.pop(0)
+
             self._last_run_at = now
             self._last_attempt_at = now
             attempt_wake_generation = self._wake_generation
@@ -1150,7 +1174,16 @@ class EntitlementManager:
                 errors = [str(error) for error in result.get("errors", [])]
                 with self._lock:
                     after_signature = self._ledger_signature_locked()
+                    after_handed = {
+                        key for key, entry in self._ledger.items()
+                        if entry.get("state") == "handed_off"
+                    }
                 changed = before_signature != after_signature
+                before_handed = {
+                    key for key, entry in before_ledger.items()
+                    if entry.get("state") == "handed_off"
+                }
+                handed_new = bool(after_handed - before_handed)
                 no_change = (
                     not errors
                     and prior_ok is True
@@ -1179,7 +1212,8 @@ class EntitlementManager:
                     self._update_follow_ups(
                         source=source,
                         email=email,
-                        changed=changed,
+                        label=label,
+                        handed_new=handed_new,
                         named=resource_id is not None,
                         now=now,
                     )
@@ -1269,8 +1303,11 @@ class EntitlementManager:
             result["errors"] = [msg]
             return finish(result, "credential_unavailable")
 
-        errors = self._capture_missing_baselines(host, bearer)
-        catalog = config.workshop_catalog()
+        # A named grant reads one object and a follow-up re-lists two types: neither
+        # needs the baseline capture or the catalog re-grant a full sweep does.
+        sweeping = resource_id is None and source != _FOLLOW_UP_SOURCE
+        errors = self._capture_missing_baselines(host, bearer) if sweeping else []
+        catalog = config.workshop_catalog() if sweeping else None
         if not catalog:
             # Not an error: an event can run entitlements on without handing out
             # a per-attendee catalog, and plenty of builds never touch Unity
@@ -1283,7 +1320,7 @@ class EntitlementManager:
             # `workshop-grant-me` print a catalog complaint at an attendee whose
             # app grant had just succeeded, over something they could not act on.
             # Same reasoning as the missing-id case in _handoff_resources below.
-            logger.debug("no WORKSHOP_CATALOG set — skipping the catalog grant")
+            logger.debug("catalog grant skipped (no catalog, or not a full sweep)")
         else:
             for em in emails:
                 if not em or "@" not in em:
@@ -1344,6 +1381,7 @@ class EntitlementManager:
                     catalog,
                     force_all=source != "background" and label is None,
                     force_label=label,
+                    only_labels=only_labels,
                 )
                 result["non_uc"][em] = counts
                 errors.extend(errs)
@@ -1368,11 +1406,14 @@ class EntitlementManager:
         *,
         force_all: bool = False,
         force_label: str | None = None,
+        only_labels: frozenset[str] | None = None,
     ) -> tuple[dict[str, int], list[str]]:
         counts: dict[str, int] = {}
         errors: list[str] = []
         for spec in _RESOURCE_SPECS:
             if force_label and spec.label != force_label:
+                continue
+            if only_labels is not None and spec.label not in only_labels:
                 continue
             adapter_error_start = len(errors)
             try:
@@ -1462,9 +1503,8 @@ class EntitlementManager:
                             permission_level=effective_level,
                         )
                         continue
-                self._transition(principal, spec.label, resource_id, "discovered")
-
                 if spec.unsupported_reason:
+                    self._transition(principal, spec.label, resource_id, "discovered")
                     self._transition(
                         principal,
                         spec.label,
@@ -1474,7 +1514,7 @@ class EntitlementManager:
                     )
                     continue
 
-                verified, verification_error = self._verify_resource(
+                reason, verification_error = self._verify_resource(
                     host, bearer, spec, resource_id, item, sp_identities
                 )
                 if verification_error:
@@ -1487,8 +1527,11 @@ class EntitlementManager:
                         error=verification_error,
                     )
                     continue
-                if not verified:
+                if reason != "ok":
+                    # Not this app's, or from before this run: nothing is recorded,
+                    # the same as the named path.
                     continue
+                self._transition(principal, spec.label, resource_id, "discovered")
                 self._transition(
                     principal, spec.label, resource_id, "verified_creator"
                 )
@@ -1722,9 +1765,13 @@ class EntitlementManager:
         resource_id: str,
         item: dict,
         sp_identities: set[str],
-    ) -> tuple[bool, str | None]:
+    ) -> tuple[str, str | None]:
+        """Return ``(reason, error)``; reason is ``ok``, ``not_ours``,
+        ``before_run`` or ``error``. This is the only place the creator and
+        run-boundary rules are applied, for both the sweep and the named grant.
+        """
         if spec.unsupported_reason:
-            return False, spec.unsupported_reason
+            return "error", spec.unsupported_reason
         if (
             spec.detail_path
             and spec.creator_field
@@ -1736,26 +1783,26 @@ class EntitlementManager:
                 f"{host}{spec.detail_path.format(id=resource_id)}", bearer
             )
             if error:
-                return False, f"detail read: {error}"
+                return "error", f"detail read: {error}"
             item = {**item, **(detail or {})}
         if not _created_by_sp(spec, item, sp_identities):
-            return False, None
+            return "not_ours", None
 
         if spec.requires_baseline:
             with self._lock:
                 ready = spec.label in self._baseline_ready
                 existed = resource_id in self._baseline.get(spec.label, set())
             if not ready:
-                return False, "at-start baseline unavailable; refusing handoff"
-            return (not existed), None
+                return "error", "at-start baseline unavailable; refusing handoff"
+            return ("before_run" if existed else "ok"), None
 
         created_at = _timestamp_seconds(
             item.get(spec.created_field or ""),
             milliseconds=spec.created_millis,
         )
         if created_at is None:
-            return False, "creation time unavailable; refusing handoff"
-        return created_at >= self._run_started_at, None
+            return "error", "creation time unavailable; refusing handoff"
+        return ("ok" if created_at >= self._run_started_at else "before_run"), None
 
     def _grant_resource(
         self,
@@ -1781,7 +1828,7 @@ class EntitlementManager:
                 if not verified:
                     return (
                         False,
-                        f"permission verification: {error or 'required effective access absent'}",
+                        _readback_failure(error, "IS_OWNER"),
                         "IS_OWNER",
                     )
                 return True, None, effective or "IS_OWNER"
@@ -1800,7 +1847,7 @@ class EntitlementManager:
         if not verified:
             return (
                 False,
-                f"permission verification: {verification_error or 'required effective access absent'}",
+                _readback_failure(verification_error, "CAN_MANAGE"),
                 "CAN_MANAGE",
             )
         return True, None, effective or "CAN_MANAGE"
@@ -1986,6 +2033,7 @@ class EntitlementManager:
             # optimisation and does not survive a 429.
             self._follow_ups = []
             self._follow_up_email = None
+            self._follow_up_labels = frozenset()
             self._backoff_attempt += 1
             window = min(
                 float(config.entitlement_backoff_cap()),
@@ -2018,31 +2066,34 @@ class EntitlementManager:
         *,
         source: str,
         email: str | None,
-        changed: bool,
+        label: str | None,
+        handed_new: bool,
         named: bool,
         now: float,
     ) -> None:
-        """Arm the short follow-up series, or cancel it once something was handed off.
+        """Keep one follow-up series, aligned with what the attendee has been handed.
 
-        Any pass that is neither background nor a follow-up (the workshop-grant-me
-        helper and the admin route) arms it when it finds nothing new, unless it
-        named one resource or a series is already pending. A pass that changes
-        the ledger cancels it: the resource it was waiting for has been handed
-        over, so the extra sweeps would only cost list calls.
+        A pass that hands the attendee something new (a new ``handed_off`` entry)
+        cancels the series. Other ledger changes, such as a discovery that is not
+        theirs or a recorded failure, leave it alone. An empty on-demand pass
+        (bare or for one type, not a named object) restarts the series from now:
+        the deadlines are replaced, not stacked, and the labels are merged so a
+        pending series keeps the types it was covering. Background and follow-up
+        passes never arm it.
         """
         with self._lock:
-            if changed and source != "background":
+            if handed_new:
                 self._follow_ups = []
                 self._follow_up_email = None
+                self._follow_up_labels = frozenset()
                 return
-            if (
-                not changed
-                and source not in ("background", _FOLLOW_UP_SOURCE)
-                and not named
-                and not self._follow_ups
-            ):
-                self._follow_ups = [now + offset for offset in FOLLOW_UP_OFFSETS]
-                self._follow_up_email = email
+            if source in ("background", _FOLLOW_UP_SOURCE) or named:
+                return
+            new_labels = FOLLOW_UP_LISTS if label is None else frozenset({label})
+            pending_labels = self._follow_up_labels if self._follow_ups else frozenset()
+            self._follow_ups = [now + offset for offset in FOLLOW_UP_OFFSETS]
+            self._follow_up_email = email
+            self._follow_up_labels = pending_labels | new_labels
 
     def _grant_named_resource(
         self,
@@ -2090,23 +2141,25 @@ class EntitlementManager:
                 return answer("not_found", f"no {spec.label} with that id is visible to the app")
             return answer("failed", f"detail read: {error}")
         item = dict(detail or {})
-        self._transition(principal, spec.label, resource_id, "discovered")
+        # Refused, trashed and missing objects record nothing: they are not
+        # handed over, and a ledger entry for them would read as progress.
         state_value = str(item.get(spec.state_field or "") or "").strip().upper()
         if spec.skip_states and state_value in spec.skip_states:
             return answer("refused", f"it is {state_value.lower()}, so it was left alone")
-        if not _created_by_sp(spec, item, sp_identities):
-            return answer(
-                "refused",
-                "it was not created by this app's service principal, so it was left alone",
-            )
-        verified, verification_error = self._verify_resource(
+        reason, verification_error = self._verify_resource(
             host, bearer, spec, resource_id, item, sp_identities
         )
         if verification_error:
             self._transition(principal, spec.label, resource_id, "failed", error=verification_error)
             return answer("failed", verification_error)
-        if not verified:
+        if reason == "not_ours":
+            return answer(
+                "refused",
+                "it was not created by this app's service principal, so it was left alone",
+            )
+        if reason == "before_run":
             return answer("refused", "it was created before this workshop run, so it was left alone")
+        self._transition(principal, spec.label, resource_id, "discovered")
         self._transition(principal, spec.label, resource_id, "verified_creator")
 
         ok, error_or_message, level = self._grant_resource(

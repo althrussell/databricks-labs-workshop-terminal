@@ -1809,18 +1809,23 @@ def test_the_series_runs_each_pass_once_and_then_stops(monkeypatch, enabled):
     assert len(_genie_list_calls(fake)) == 4, "the series does not restart by itself"
 
 
-def test_repeated_on_demand_calls_do_not_re_arm_a_pending_series(monkeypatch, enabled):
-    from server import entitlements
-
+def test_a_later_empty_call_restarts_the_series_from_now(monkeypatch, enabled):
     fake = _strict_fake()
     clock = _Clock()
     mgr = _scheduled_mgr(monkeypatch, fake, clock)
     start = clock()
     mgr.reconcile("alice@example.com")
-    clock.advance(5)
+    clock.value = start + 100
     mgr.reconcile("alice@example.com")
 
-    assert mgr.status()["follow_up_at"] == [start + o for o in entitlements.FOLLOW_UP_OFFSETS]
+    # The resource created after the first call gets a full series, not the tail
+    # of the first one, and the deadlines replace each other rather than stack.
+    assert mgr.status()["follow_up_at"] == [start + 115, start + 145, start + 220]
+    for due in (115, 145, 220):
+        clock.value = start + due
+        mgr._run_due_pass()
+    assert mgr.status()["follow_up_at"] == []
+    assert len(_genie_list_calls(fake)) == 1 + 1 + 3, "two bare sweeps, then three follow-ups"
 
 
 def test_background_and_named_passes_do_not_arm_follow_ups(monkeypatch, enabled):
@@ -1844,8 +1849,8 @@ def test_a_follow_up_never_runs_inside_the_backoff_floor(monkeypatch, enabled):
 
     host = _HOST
     fake.register_get(
-        f"{host}/api/2.2/jobs/list",
-        {"limit": 100},
+        f"{host}/api/2.0/genie/spaces",
+        {"page_size": 100},
         {"error_code": "RESOURCE_EXHAUSTED"},
         status=429,
         text="RESOURCE_EXHAUSTED",
@@ -1915,3 +1920,193 @@ def test_the_endpoint_passes_a_named_resource_through_and_maps_bad_ids_to_422(
         headers=headers,
     )
     assert too_long.status_code == 422
+
+
+# --- review round: keep the series, cheap follow-ups, clean ledger, typed 429 -----
+
+_DASH_LIST = f"{_HOST}/api/2.0/lakeview/dashboards"
+
+
+def test_a_follow_up_that_discovers_only_unrelated_work_keeps_the_series(monkeypatch, enabled):
+    fake = _strict_fake()
+    clock = _Clock()
+    mgr = _scheduled_mgr(monkeypatch, fake, clock)
+    start = clock()
+    mgr.reconcile("alice@example.com")
+    clock.value = start + 15
+    # Someone else's dashboard appears: not this app's, so nothing is recorded.
+    fake.register_get(_DASH_LIST, {"page_size": 100}, {"dashboards": [
+        {"dashboard_id": "theirs", "create_time": "1970-01-01T00:18:20Z"},
+    ]})
+    fake.register_get(f"{_DASH_LIST}/theirs", {}, {
+        "dashboard_id": "theirs", "parent_path": "/Users/alice@example.com",
+        "create_time": "1970-01-01T00:18:20Z",
+    })
+    mgr._run_due_pass()
+
+    assert mgr.status()["follow_up_at"] == [start + 45, start + 120]
+    assert not [d for d in mgr.status()["handoff"]["details"] if d["resource_id"] == "theirs"]
+
+
+def test_a_follow_up_that_records_a_failure_keeps_the_series(monkeypatch, enabled):
+    fake = _strict_fake()
+    clock = _Clock()
+    mgr = _scheduled_mgr(monkeypatch, fake, clock)
+    start = clock()
+    mgr.reconcile("alice@example.com")
+    clock.value = start + 15
+    # This app's dashboard, but its detail read fails: a failure is recorded, not a handover.
+    fake.register_get(_DASH_LIST, {"page_size": 100}, {"dashboards": [
+        {"dashboard_id": "broken", "create_time": "1970-01-01T00:18:20Z"},
+    ]})
+    fake.register_get(f"{_DASH_LIST}/broken", {}, {}, status=500, text="boom")
+    mgr._run_due_pass()
+
+    failed = [d for d in mgr.status()["handoff"]["details"] if d["resource_id"] == "broken"]
+    assert failed and failed[0]["state"] == "failed"
+    assert mgr.status()["follow_up_at"] == [start + 45, start + 120]
+
+
+def test_a_handover_by_a_follow_up_cancels_the_series(monkeypatch, enabled):
+    fake = _strict_fake()
+    clock = _Clock()
+    mgr = _scheduled_mgr(monkeypatch, fake, clock)
+    start = clock()
+    mgr.reconcile("alice@example.com")
+    clock.value = start + 15
+    fake.register_get(f"{_HOST}/api/2.0/genie/spaces", {"page_size": 100}, {"spaces": [
+        {"space_id": "late", "create_time": "1970-01-01T00:18:20Z"},
+    ]})
+    fake.register_get(f"{_HOST}/api/2.0/genie/spaces/late", {}, _genie_detail("late"))
+    fake.register_patch(f"{_HOST}/api/2.0/permissions/genie/late", {"CAN_MANAGE"})
+    mgr._run_due_pass()
+
+    assert mgr.status()["follow_up_at"] == []
+
+
+def test_a_bare_follow_up_sweeps_only_the_list_lagging_types(monkeypatch, enabled):
+    fake = _strict_fake()
+    clock = _Clock()
+    mgr = _scheduled_mgr(monkeypatch, fake, clock)
+    start = clock()
+    mgr.reconcile("alice@example.com")
+    clock.value = start + 15
+    before = len(fake.calls)
+    mgr._run_due_pass()
+    urls = [c[1] for c in fake.calls[before:]]
+
+    # The attendee's identity, then the two list-lagging types. No catalog grant
+    # or read, no baseline, no app enrolment, and none of the other seven adapters.
+    assert urls == [
+        f"{_HOST}/api/2.0/preview/scim/v2/Me",
+        _DASH_LIST,
+        _SPACE_LIST,
+    ]
+
+
+def test_a_follow_up_for_one_type_sweeps_only_that_type(monkeypatch, enabled):
+    fake = _strict_fake()
+    clock = _Clock()
+    mgr = _scheduled_mgr(monkeypatch, fake, clock)
+    start = clock()
+    mgr.reconcile("alice@example.com", resource_type="genie")
+    assert mgr.status()["follow_up_at"] == [start + 15, start + 45, start + 120]
+    clock.value = start + 15
+    before = len(fake.calls)
+    mgr._run_due_pass()
+
+    assert [c[1] for c in fake.calls[before:]] == [
+        f"{_HOST}/api/2.0/preview/scim/v2/Me",
+        _SPACE_LIST,
+    ]
+
+
+def test_a_named_grant_reads_one_object_and_nothing_else(monkeypatch, enabled):
+    fake = _strict_fake()
+    fake.register_get(f"{_HOST}/api/2.0/genie/spaces/01f1e5", {}, _genie_detail("01f1e5"))
+    fake.register_patch(f"{_HOST}/api/2.0/permissions/genie/01f1e5", {"CAN_MANAGE"})
+    mgr = _scoped_mgr(monkeypatch, fake)
+
+    mgr.reconcile("alice@example.com", resource_type="genie", resource_id="01f1e5")
+
+    assert [(c[0], c[1]) for c in fake.calls] == [
+        ("GET", f"{_HOST}/api/2.0/preview/scim/v2/Me"),
+        ("GET", f"{_HOST}/api/2.0/genie/spaces/01f1e5"),
+        ("PATCH", f"{_HOST}/api/2.0/permissions/genie/01f1e5"),
+        ("GET", f"{_HOST}/api/2.0/permissions/genie/01f1e5"),
+    ]
+
+
+def test_refused_objects_leave_no_ledger_entry_on_either_path(monkeypatch, enabled):
+    fake = _strict_fake()
+    fake.register_get(f"{_HOST}/api/2.0/genie/spaces/mine", {}, _genie_detail(
+        "mine", parent_path="/Users/alice@example.com/genie_spaces"))
+    fake.register_get(f"{_HOST}/api/2.0/lakeview/dashboards/trashed", {}, {
+        "dashboard_id": "trashed", "parent_path": "/Users/app-client-id",
+        "create_time": "1970-01-01T00:18:20Z", "lifecycle_state": "TRASHED",
+    })
+    fake.register_get(f"{_HOST}/api/2.0/genie/spaces/gone", {}, {}, status=404)
+    fake.register_get(f"{_HOST}/api/2.0/genie/spaces", {"page_size": 100}, {"spaces": [
+        {"space_id": "listed-theirs", "create_time": "1970-01-01T00:18:20Z"},
+    ]})
+    fake.register_get(f"{_HOST}/api/2.0/genie/spaces/listed-theirs", {}, _genie_detail(
+        "listed-theirs", parent_path="/Users/alice@example.com"))
+    clock = _Clock()
+    mgr = _scheduled_mgr(monkeypatch, fake, clock)
+    mgr.reconcile("alice@example.com", resource_type="genie", resource_id="mine")
+    mgr.reconcile("alice@example.com", resource_type="genie", resource_id="gone")
+    mgr.reconcile("alice@example.com", resource_type="dashboards", resource_id="trashed")
+    mgr.reconcile("alice@example.com", resource_type="genie")
+
+    ids = {d["resource_id"] for d in mgr.status()["handoff"]["details"]}
+    assert ids == set(), "no refused, missing, trashed or foreign object is recorded"
+
+
+def test_a_readback_rate_limit_is_rate_limited_not_failed(monkeypatch, enabled):
+    fake = _strict_fake()
+    fake.register_get(f"{_HOST}/api/2.0/genie/spaces/01f1e5", {}, _genie_detail("01f1e5"))
+    fake.register_patch(f"{_HOST}/api/2.0/permissions/genie/01f1e5", {"CAN_MANAGE"})
+    perm_url = f"{_HOST}/api/2.0/permissions/genie/01f1e5"
+    original_get = fake.get
+
+    def throttled_readback(url, headers=None, params=None, timeout=None):
+        if url == perm_url and any(c[0] == "PATCH" for c in fake.calls):
+            fake.calls.append(("GET", url, {}))
+            return _Resp(429, {"error_code": "RESOURCE_EXHAUSTED"},
+                         "RESOURCE_EXHAUSTED", headers={"Retry-After": "4"})
+        return original_get(url, headers=headers, params=params, timeout=timeout)
+
+    fake.get = throttled_readback
+    clock = _Clock()
+    mgr = _scheduled_mgr(monkeypatch, fake, clock, jitter=lambda: 0.5)
+
+    result = mgr.reconcile("alice@example.com", resource_type="genie", resource_id="01f1e5")
+
+    assert result["deferred"] is True
+    assert result["resource"]["state"] == "rate_limited"
+    assert result["next_attempt_at"] == clock() + 4
+    status = mgr.status()
+    assert status["next_attempt_at"] == clock() + 4
+    assert not [d for d in status["handoff"]["details"] if d["state"] == "failed"], (
+        "a platform throttle is not a failed handoff"
+    )
+
+
+def test_an_unhandled_error_still_runs_the_pending_follow_up(monkeypatch, enabled):
+    fake = _strict_fake()
+    clock = _Clock()
+    mgr = _scheduled_mgr(monkeypatch, fake, clock)
+    start = clock()
+    mgr.reconcile("alice@example.com")
+    clock.value = start + 15
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("list exploded")
+
+    monkeypatch.setattr(mgr, "_handoff_resources", explode)
+    mgr._run_due_pass()
+
+    status = mgr.status()
+    assert status["follow_up_at"] == [start + 45, start + 120]
+    assert status["next_attempt_at"] == start + 45, "not the error retry interval"
+    assert status["next_attempt_reason"] == "follow_up"

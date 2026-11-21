@@ -465,9 +465,9 @@ them, and both no-op cleanly when the feature is disabled:
   - Body: `{"email", "resource_type"?, "resource_id"?}`. With `resource_id`
     (≤128 characters, letters, digits, `.`, `_`, `-`) and `resource_type`
     `genie` or `dashboards`, the app grants that one object from its detail
-    read; the list is not read. `resource_id` without `resource_type`, or any
-    other type, is 422. Other types answer `unsupported` until they have a
-    detail read.
+    read; the list is not read. `resource_id` without `resource_type` is 422,
+    and so is an unknown `resource_type`. A known type without a detail read
+    (apps, jobs and the rest) is 200 with `state: unsupported`.
   - Response: the usual summary plus `resource`:
     `{resource_type, resource_id, state, permission_level, can_manage, message}`.
     `state` is `handed_off` (CAN_MANAGE or IS_OWNER read back, `can_manage`
@@ -475,13 +475,22 @@ them, and both no-op cleanly when the feature is disabled:
     before this run, or trashed), `not_found` (404 from the detail read),
     `unsupported`, `rate_limited` (the response is then `degraded_backoff`) or
     `failed`. A `failed` state also appears in `errors`; the other states do
-    not, because they are answers, not faults.
+    not, because they are answers, not faults. Refused, trashed and missing
+    objects leave no ledger entry. A throttled readback is `rate_limited`, not
+    `failed`. The helper maps the result to exit codes: 0 CAN_MANAGE, 75
+    (EX_TEMPFAIL) retry later (rate limit or backoff, with the time), 1 will not
+    succeed as asked (refused, not found, switched off, identity or other error).
   - Follow-up passes: an on-demand pass (no `resource_id`) that changes nothing
-    in the handoff ledger arms three forced sweeps at +15 s, +45 s and +120 s.
-    A pass that hands something over cancels the series; a 429 cancels it too,
-    and no follow-up ever runs inside the backoff floor. A series is never
-    re-armed while one is pending. The `entitlements` block lists the pending
-    deadlines as `follow_up_at` (epoch seconds).
+    in the handoff ledger arms three forced follow-up passes at +15 s, +45 s and +120 s.
+    A pass that hands the attendee something new (a new `handed_off` entry)
+    cancels the series; a discovery that is not theirs or a recorded failure
+    does not. A later empty on-demand call restarts the series from its own
+    start, replacing the pending deadlines, so there is never more than one.
+    A bare call's follow-ups re-list only `genie-spaces` and `dashboards`; a
+    call for one type re-lists only that type. Follow-ups take no catalog
+    grant, baseline or app enrolment, and a 429 cancels the series; no
+    follow-up runs inside the backoff floor. The `entitlements` block lists
+    the pending deadlines as `follow_up_at` (epoch seconds).
 - `POST /api/discovery` — records one agent-elicited discovery record (the
   `workshop-discovery` path, contract C6). Only `record_id` is meaningful as a
   key; every other field is optional, unknown fields are ignored, and free text
