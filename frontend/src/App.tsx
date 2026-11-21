@@ -61,7 +61,7 @@ import PhoneTabBar, { type PhoneTab } from "./components/PhoneTabBar";
 import PhoneStatusRow from "./components/PhoneStatusRow";
 import PhoneMoreList from "./components/PhoneMoreList";
 import { speechRecognitionCtor } from "./voice";
-import { KeyboardTracker, measureViewport } from "./viewport";
+import { isPhoneViewport, KeyboardTracker, measureViewport } from "./viewport";
 import ImageDropZone from "./components/ImageDropZone";
 import { rejectedMessage, splitAttachable } from "./imageDrop";
 import { saveDownload } from "./exportDownload";
@@ -177,7 +177,10 @@ export default function App() {
   const narrowScreen = useMediaQuery("(max-width: 700px)");
   // A phone gets its own shell: no header, a bottom tab bar, the terminal
   // filling the Terminal tab (styles.css, .app[data-shell="phone"]).
-  const phone = useMediaQuery(PHONE_QUERY);
+  // Tracked alongside KeyboardTracker below so opening a soft keyboard on a
+  // landscape tablet (interactive-widget=resizes-content) never flips shells.
+  const phoneQuery = useMediaQuery(PHONE_QUERY);
+  const [phone, setPhone] = useState(() => window.matchMedia(PHONE_QUERY).matches);
   const [phoneTab, setPhoneTab] = useState<PhoneTab>("terminal");
   // The key row above the phone prompt box, remembered per device.
   const [keysOpen, setKeysOpen] = useState(() => {
@@ -192,6 +195,9 @@ export default function App() {
   const [speech] = useState(() => speechRecognitionCtor(window as Parameters<typeof speechRecognitionCtor>[0]));
   const composerRef = useRef<PromptComposerHandle | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
+  useEffect(() => {
+    if (!window.visualViewport) setPhone(phoneQuery);
+  }, [phoneQuery]);
   // Size the app to the visible area, so a phone's toolbars and keyboard never
   // cover the prompt box; with the keyboard up, the top bars step aside
   // (styles.css, html[data-keyboard]).
@@ -202,6 +208,8 @@ export default function App() {
     const keyboard = new KeyboardTracker();
     const update = () => {
       const next = measureViewport(keyboard, vv, window.scrollY, touch);
+      const scale = Math.max(vv.scale ?? 1, 1);
+      setPhone(isPhoneViewport(touch, vv.width * scale, keyboard.fullHeight || vv.height * scale));
       root.style.setProperty("--app-height", `${next.appHeightPx}px`);
       root.dataset.keyboard = next.keyboardOpen ? "open" : "closed";
       // iOS scrolls the page to reveal a focused box; the app already fits.
@@ -210,9 +218,11 @@ export default function App() {
     update();
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
+    window.addEventListener("resize", update);
     return () => {
       vv.removeEventListener("resize", update);
       vv.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
     };
   }, [touch]);
   useEffect(() => {
@@ -514,12 +524,18 @@ export default function App() {
   }, [buildRestore]);
   const restoreMessage = buildRestore && buildRestore.id !== restoreSeen ? restoreNotice(buildRestore) : "";
 
+  const selectPhoneTab = useCallback((tab: PhoneTab) => {
+    setPhoneTab(tab);
+    setView((current) => (current === "operator" ? (session ? "agent" : "home") : current));
+  }, [session]);
+
   // On a phone the Help tab is the chat; elsewhere the slide-over panel.
-  const helpOpen = phone ? phoneTab === "help" : helpChatOpen;
+  // OperatorPanel replaces .main (unmounting the phone Help tab), so it is not open there.
+  const helpOpen = phone ? phoneTab === "help" && view !== "operator" : helpChatOpen;
   const openHelp = useCallback(() => {
-    if (phone) setPhoneTab("help");
+    if (phone) selectPhoneTab("help");
     else setHelpChatOpen(true);
-  }, [phone]);
+  }, [phone, selectPhoneTab]);
 
   useEffect(() => {
     helpChatOpenRef.current = helpOpen;
@@ -530,11 +546,6 @@ export default function App() {
     if (!phone) return;
     setView((current) => (current === "operator" ? current : session ? "agent" : "home"));
   }, [phone, session]);
-
-  const selectPhoneTab = useCallback((tab: PhoneTab) => {
-    setPhoneTab(tab);
-    setView((current) => (current === "operator" ? (session ? "agent" : "home") : current));
-  }, [session]);
 
   useEffect(() => {
     const narrow = window.matchMedia("(max-width: 700px)");
@@ -1322,31 +1333,32 @@ export default function App() {
         <OperatorPanel />
       ) : (
         <div className="main">
-          <fieldset className="work-area workshop-inputs" disabled={inputDisabled} aria-label="Workshop activities">
-            {phone && session && (
-              <PhoneStatusRow
-                session={session}
-                buildName={projectInventory?.active ?? ""}
-                launching={launching !== null}
-                inputDisabled={inputDisabled}
-                attachBusy={attachBusy}
-                attached={attached}
-                onFiles={(files) => void attachImageFiles(files)}
-                onRelaunch={() => requestAgent(session.agent_id)}
-                onTypeInTerminal={() => terminalRef.current?.openKeyboard()}
-              />
-            )}
-            {/* Desktop: display: contents, so the bars sit where they always have.
-                Phone: the Build tab, one scrolling page of cards. */}
-            <div className="build-area">
-              <ProjectBar inventory={projectInventory} session={session} loading={!projectsLoaded} loadError={projectLoadError}
-                onRefresh={refreshProjects} onSelect={selectBuild} savedChecked={savedChecked}
-                restoreNotice={restoreMessage}
-                onDismissRestore={restoreInProgress(buildRestore) ? undefined : dismissRestore} />
-              <YourBuild refreshKey={[projectInventory?.active, session?.id, session?.exited]}
-                onGetHelp={openHelp} defaultOpen={phone} />
-              {phone && (
-                <>
+          <div className="work-area">
+            <fieldset className="workshop-inputs work-area-inputs" disabled={inputDisabled} aria-label="Workshop activities">
+              {phone && session && (
+                <PhoneStatusRow
+                  session={session}
+                  buildName={projectInventory?.active ?? ""}
+                  launching={launching !== null}
+                  inputDisabled={inputDisabled}
+                  attachBusy={attachBusy}
+                  attached={attached}
+                  onFiles={(files) => void attachImageFiles(files)}
+                  onRelaunch={() => requestAgent(session.agent_id)}
+                  onTypeInTerminal={() => terminalRef.current?.openKeyboard()}
+                />
+              )}
+              {/* Desktop: display: contents, so the bars sit where they always have.
+                  Phone: the Build tab's workshop cards; More sits below the fieldset so
+                  Operator and Network stay clickable while the workshop is closing. */}
+              <div className="build-area">
+                <ProjectBar inventory={projectInventory} session={session} loading={!projectsLoaded} loadError={projectLoadError}
+                  onRefresh={refreshProjects} onSelect={selectBuild} savedChecked={savedChecked}
+                  restoreNotice={restoreMessage}
+                  onDismissRestore={restoreInProgress(buildRestore) ? undefined : dismissRestore} />
+                <YourBuild refreshKey={[projectInventory?.active, session?.id, session?.exited]}
+                  onGetHelp={openHelp} defaultOpen={phone} />
+                {phone && (
                   <section className="phone-card phone-agents" aria-label="Agents">
                     <h2 className="phone-card-title">Agents</h2>
                     {session && (
@@ -1365,25 +1377,8 @@ export default function App() {
                     )}
                     <AgentCards agents={agents} launching={launching} onLaunch={requestAgent} />
                   </section>
-                  <PhoneMoreList
-                    links={shellLinks}
-                    workspaceUrl={config?.workspace_url ?? ""}
-                    omnigentUrl={config?.omnigent_remote?.enabled ? config.omnigent_remote.url ?? "" : ""}
-                    isAdmin={isAdmin}
-                    inputDisabled={inputDisabled}
-                    canDownload={Boolean(projectInventory?.active || (projectInventory?.projects && projectInventory.projects.length > 0))}
-                    exportBusy={exportBusy}
-                    networkStatus={networkStatus}
-                    networkResult={networkResult}
-                    onRunNetworkCheck={() => triggerNetworkCheck(true)}
-                    onPreferences={() => setPreferencesOpen(true)}
-                    onDownload={() => void downloadAllCode()}
-                    onCertificate={openCertificate}
-                    onOperator={() => setView("operator")}
-                  />
-                </>
-              )}
-            </div>
+                )}
+              </div>
             {!phone && session && view === "agent" && (
               <div className="toolbar">
                 <LaunchBar agents={agents} launching={launching} onLaunch={requestAgent} />
@@ -1523,7 +1518,26 @@ export default function App() {
                 />
               </div>
             )}
-          </fieldset>
+            </fieldset>
+            {phone && (
+              <PhoneMoreList
+                links={shellLinks}
+                workspaceUrl={config?.workspace_url ?? ""}
+                omnigentUrl={config?.omnigent_remote?.enabled ? config.omnigent_remote.url ?? "" : ""}
+                isAdmin={isAdmin}
+                inputDisabled={inputDisabled}
+                canDownload={Boolean(projectInventory?.active || (projectInventory?.projects && projectInventory.projects.length > 0))}
+                exportBusy={exportBusy}
+                networkStatus={networkStatus}
+                networkResult={networkResult}
+                onRunNetworkCheck={() => triggerNetworkCheck(true)}
+                onPreferences={() => setPreferencesOpen(true)}
+                onDownload={() => void downloadAllCode()}
+                onCertificate={openCertificate}
+                onOperator={() => setView("operator")}
+              />
+            )}
+          </div>
 
           {phone ? (
             <>
@@ -1586,7 +1600,12 @@ export default function App() {
         </div>
       )}
       {phone && (
-        <PhoneTabBar tab={phoneTab} helpUnread={helpUnread} showTips={showNuggets} onSelect={selectPhoneTab} />
+        <PhoneTabBar
+          tab={view === "operator" ? null : phoneTab}
+          helpUnread={helpUnread}
+          showTips={showNuggets}
+          onSelect={selectPhoneTab}
+        />
       )}
 
       {wizardOpen && !inputDisabled && (

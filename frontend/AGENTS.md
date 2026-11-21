@@ -32,7 +32,9 @@ table is in [docs/agent-guide/README.md](../docs/agent-guide/README.md).
   text for warnings the attendee must act on.
 - Before finishing UI work, check the real rendered app, not just the tests.
 - Phones get their own shell ([docs/mobile-and-voice.md](../docs/mobile-and-voice.md)):
-  - App's `useMediaQuery(PHONE_QUERY)` sets `data-shell="phone"` and `data-tab` on `.app`.
+  - App sets `data-shell="phone"` and `data-tab` on `.app`, initialized from `PHONE_QUERY` and
+    tracked live via `isPhoneViewport` (`viewport.ts`, using `KeyboardTracker.fullHeight`) so
+    opening the keyboard on a landscape tablet never flips shells.
   - There is no header. A bottom tab bar (Terminal, Build, Tips, Help) becomes a left rail in
     landscape.
   - Phone CSS goes under `.app[data-shell="phone"]`. Narrow laptop windows and tablets stay

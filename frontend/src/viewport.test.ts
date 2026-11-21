@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { KeyboardTracker, measureViewport } from "./viewport.ts";
+import { isPhoneViewport, KeyboardTracker, measureViewport } from "./viewport.ts";
 
 test("a soft keyboard taking a large share of the height reads as open", () => {
   const kb = new KeyboardTracker();
@@ -44,4 +44,24 @@ test("a keyboard opened or closed while zoomed in still updates the layout", () 
   assert.deepEqual(open, { appHeightPx: 420, keyboardOpen: true, resetScroll: false });
   const closed = measureViewport(kb, { width: 195, height: 375, offsetTop: 90, scale: 2 }, 0, true);
   assert.deepEqual(closed, { appHeightPx: 750, keyboardOpen: false, resetScroll: false }, "no stale keyboard state");
+});
+
+test("opening the keyboard on a landscape tablet does not flip it into the phone shell", () => {
+  const kb = new KeyboardTracker();
+  const initial = measureViewport(kb, { width: 1024, height: 768, offsetTop: 0, scale: 1 }, 0, true);
+  assert.equal(initial.keyboardOpen, false);
+  assert.equal(isPhoneViewport(true, 1024, kb.fullHeight), false);
+
+  // interactive-widget=resizes-content shrinks the viewport below 500px while typing.
+  const typing = measureViewport(kb, { width: 1024, height: 418, offsetTop: 0, scale: 1 }, 0, true);
+  assert.equal(typing.keyboardOpen, true);
+  assert.equal(isPhoneViewport(true, 1024, kb.fullHeight), false, "fullHeight stays 768 so tablet keeps desktop shell");
+
+  // Rotating a real phone to landscape changes width, resetting fullHeight to 380.
+  const phoneLandscape = measureViewport(kb, { width: 814, height: 380, offsetTop: 0, scale: 1 }, 0, true);
+  assert.equal(phoneLandscape.keyboardOpen, false);
+  assert.equal(isPhoneViewport(true, 814, kb.fullHeight), true);
+
+  // Narrow desktop browser without touch stays desktop.
+  assert.equal(isPhoneViewport(false, 390, 844), false);
 });

@@ -9,9 +9,18 @@
 /** Below this share of the tallest height seen at this width, a keyboard is up. */
 const KEYBOARD_SHARE = 0.75;
 
+/** Width / un-keyboarded landscape-height ceilings for the phone tab shell. */
+export const PHONE_MAX_WIDTH = 700;
+export const PHONE_MAX_LANDSCAPE_HEIGHT = 500;
+
 export class KeyboardTracker {
   private width = 0;
   private tallest = 0;
+
+  /** Tallest viewport height observed at the current width (before the keyboard). */
+  get fullHeight(): number {
+    return this.tallest;
+  }
 
   /** Feed each visual-viewport size; returns whether the keyboard looks open. */
   update(width: number, height: number): boolean {
@@ -23,6 +32,16 @@ export class KeyboardTracker {
     this.tallest = Math.max(this.tallest, height);
     return height < this.tallest * KEYBOARD_SHARE;
   }
+}
+
+/** Whether a touch viewport should use the phone tab shell.
+ *
+ * Uses the un-keyboarded `fullHeight` (from `KeyboardTracker`) rather than the
+ * live height, because `interactive-widget=resizes-content` shrinks the layout
+ * viewport when the keyboard opens — otherwise a landscape tablet (e.g. 1024×768)
+ * would flip into the phone shell mid-keystroke and unmount desktop inputs. */
+export function isPhoneViewport(touch: boolean, width: number, fullHeight: number): boolean {
+  return touch && (width <= PHONE_MAX_WIDTH || fullHeight <= PHONE_MAX_LANDSCAPE_HEIGHT);
 }
 
 export interface VisualViewportLike {

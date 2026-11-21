@@ -10,7 +10,8 @@ const TABS = [
 ] as const;
 
 interface Props {
-  tab: PhoneTab;
+  /** Active tab, or null while OperatorPanel is shown over the tab bar. */
+  tab: PhoneTab | null;
   helpUnread: number;
   /** Tips can be switched off for an event (shell.features.nuggets_pane). */
   showTips: boolean;

@@ -57,7 +57,12 @@ export default function PhoneMoreList(props: Props) {
       <div className="phone-more-row phone-more-network">
         <span>Network</span>
         <span className="phone-more-end">
-          <NetworkStatusControl status={props.networkStatus} result={props.networkResult} onRunAgain={props.onRunNetworkCheck} />
+          <NetworkStatusControl
+            status={props.networkStatus}
+            result={props.networkResult}
+            onRunAgain={props.onRunNetworkCheck}
+            placement="above"
+          />
         </span>
       </div>
       {isAdmin && (

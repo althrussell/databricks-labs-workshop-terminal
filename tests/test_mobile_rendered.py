@@ -95,7 +95,10 @@ async def phone_journey(page, frames, session_sockets):
     assert [await b.get_attribute("aria-label") for b in await tabs.get_by_role("button").all()] == [
         "Terminal", "Build", "Tips", "Help"]
 
-    # No session yet: the Terminal tab shows the agent cards.
+    # No session yet: the Terminal tab shows the agent cards (scrollable in landscape too).
+    await page.set_viewport_size({"width": 814, "height": 380})
+    assert await page.locator(".hero").evaluate("el => getComputedStyle(el).overflowY") == "auto"
+    await page.set_viewport_size({"width": width, "height": height})
     await tap(page.get_by_role("button", name="Claude Code", exact=False).first)
     await _wait_for_socket(frames)
     await page.locator(".phone-capsule").filter(has_text="Claude Code").wait_for()
@@ -141,8 +144,11 @@ async def phone_journey(page, frames, session_sockets):
     await tap(keys.get_by_role("button", name="Shift+Tab"))
     assert await _inputs_after(frames, start, ["\x1b", "\x1b[A", "\x1b[Z"]) == ["\x1b", "\x1b[A", "\x1b[Z"]
 
-    # The ⌨ toggle hides the key row (the terminal grows) and remembers the choice.
-    await tap(composer.get_by_role("button", name="Hide terminal keys"))
+    # The ⌨ toggle meets the 40px touch-target floor, hides the key row (terminal grows) and persists.
+    keys_toggle = composer.get_by_role("button", name="Hide terminal keys")
+    toggle_box = await _box(keys_toggle)
+    assert toggle_box["width"] >= 40 and toggle_box["height"] >= 40, toggle_box
+    await tap(keys_toggle)
     assert await keys.count() == 0
     assert (await _box(page.locator(".terminal-container")))["height"] > terminal["height"]
     assert await page.evaluate("localStorage.getItem('wt.phone.keys')") == "0"
@@ -171,10 +177,21 @@ async def phone_journey(page, frames, session_sockets):
     agents = page.get_by_role("region", name="Agents")
     assert await agents.get_by_role("button", name="Close Claude Code").is_visible()
     more = page.get_by_role("region", name="More")
+    # More stays outside the workshop-inputs fieldset so Operator and Network remain usable during closeout.
+    assert await more.evaluate("el => el.closest('fieldset') === null")
     for label in ("Agent preferences", "Certificate"):
         row = more.get_by_role("button", name=label, exact=True)
         await row.scroll_into_view_if_needed()
         assert await row.is_visible()
+    # Network popover opens upward unclipped by the More card.
+    net_btn = more.locator(".network-status-btn")
+    await net_btn.scroll_into_view_if_needed()
+    await tap(net_btn)
+    net_dialog = more.get_by_role("dialog", name="Network check details")
+    await net_dialog.wait_for()
+    net_box = await _box(net_dialog)
+    assert net_box["y"] >= 0 and net_box["height"] >= 60 and net_box["x"] + net_box["width"] <= width + 1, net_box
+    await tap(net_btn)
     await tap(tabs.get_by_role("button", name="Terminal"))
     assert await prompt.input_value() == "draft across tabs", "drafts survive tab switches"
     await prompt.fill("")
@@ -235,7 +252,7 @@ async def phone_journey(page, frames, session_sockets):
     assert await mic.get_attribute("aria-pressed") == "false"
     await prompt.fill("")
 
-    # Sideways: the tabs become a left rail and the terminal takes the height.
+    # Sideways: the tabs become a left rail, toasts stay at top, and the terminal takes the height.
     await page.set_viewport_size({"width": 814, "height": 380})
     await page.wait_for_function("() => getComputedStyle(document.querySelector('.phone-tabs')).position === 'fixed'")
     rail = await _box(tabs)
@@ -244,6 +261,12 @@ async def phone_journey(page, frames, session_sockets):
     assert landscape_terminal["x"] >= rail["width"] - 1
     assert landscape_terminal["width"] > 600
     assert (await _box(composer))["y"] + (await _box(composer))["height"] <= 380 + 1
+    assert await page.locator(".toast-host").evaluate("el => getComputedStyle(el).top") == "8px"
+    # Even on a shorter phone in landscape (e.g. 320px), the status icons at the foot of the rail stay below Help.
+    await page.set_viewport_size({"width": 814, "height": 320})
+    help_tab_box = await _box(tabs.get_by_role("button", name="Help"))
+    status_box = await _box(page.locator(".phone-status"))
+    assert help_tab_box["y"] + help_tab_box["height"] <= status_box["y"] + 1, (help_tab_box, status_box)
     assert not await page.evaluate("document.documentElement.scrollWidth > innerWidth")
     await page.set_viewport_size({"width": width, "height": height})
 

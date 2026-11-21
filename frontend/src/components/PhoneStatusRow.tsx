@@ -36,7 +36,7 @@ export default function PhoneStatusRow({
         <span className="phone-capsule-text">{where}</span>
       </span>
       {session.exited ? (
-        <button type="button" className="primary-btn phone-relaunch" disabled={launching} onClick={onRelaunch}>
+        <button type="button" className="primary-btn phone-relaunch" title="Relaunch" disabled={launching} onClick={onRelaunch}>
           <Rocket size={14} aria-hidden="true" /> Relaunch
         </button>
       ) : (

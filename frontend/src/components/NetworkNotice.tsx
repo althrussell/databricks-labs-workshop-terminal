@@ -51,10 +51,13 @@ export function NetworkStatusControl({
   status,
   result,
   onRunAgain,
+  placement = "below",
 }: {
   status: NetworkStatusKind;
   result: NetworkCheckResult | null;
   onRunAgain: () => void;
+  /** "above" opens the popover upward (e.g. near the bottom of the phone Build page). */
+  placement?: "below" | "above";
 }) {
   const [open, setOpen] = useState(false);
   const summary = formatNetworkSummary(result);
@@ -100,7 +103,9 @@ export function NetworkStatusControl({
           aria-label="Network check details"
           style={{
             position: "absolute",
-            top: "calc(100% + 6px)",
+            ...(placement === "above"
+              ? { bottom: "calc(100% + 6px)" }
+              : { top: "calc(100% + 6px)" }),
             right: 0,
             zIndex: 50,
             minWidth: "240px",
