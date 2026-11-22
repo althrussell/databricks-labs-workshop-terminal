@@ -22,9 +22,9 @@ milestones. Closing UX remains WT-03.
 
 Closeout is irreversible for this source epoch: new attendee input stays closed
 even if a drain or final observation needs retry. Operators should begin it only
-when the workshop is finished. The current WT app can drive the operation through
-repeated admin requests; a stopped app does not run a separate worker. A supported
-restart resumes the same retained capture ID and generation.
+when the workshop is finished. A closeout worker thread in the WT app drives the
+operation; no admin request waits for it. A stopped app runs nothing. A supported
+restart resumes the same retained capture ID and generation on the next status read.
 
 ## Admin API
 
@@ -65,22 +65,49 @@ GET /api/admin/capture-closeout/entries?capture_id=operator-generated-id&kind=in
 GET /api/admin/capture-closeout/entries?capture_id=operator-generated-id&kind=help&after=0&limit=1000
 ```
 
-Begin persists the barrier before attempting bounded progress. Status advances
-by default; `advance=false` is read-only. Each request drains writers for at
-most 5 s. Every stage shares that budget. A census pass that runs out of time
-still keeps the HOME verdict of every process it read (see Seal and inventory),
-so each pass has less left to read than the one before. A drain that completes
-runs once more to catch a racing writer, and the same request then finalizes and
-audits the journal. Callers allow for both drains plus finalization (CT uses 30 s
-per request), poll while the phase is `CLOSING` or `INCOMPLETE`, and never assume
-the first response is final. While the phase is `CLOSING` or `INCOMPLETE`, the
-status also carries `drain`: the last drain's per-stage outcomes, with issue codes,
-counts and `stage_elapsed_ms`, and never paths or contents. It is diagnostics, not
-proof. A `SEALED` status has no top-level `drain`; its manifest's `drain` records
-the final drain, with the same per-stage fields. States are
+Begin persists the barrier and starts the closeout worker, then returns at once
+with the persisted status (`CLOSING`, or the unchanged state on a repeat). No
+request drains, finalizes or audits. The worker is one thread per WT instance,
+single-flight, and runs these stages in order:
+
+1. `draining`: writers drain in passes of at most 5 s, every stage sharing that
+   budget. A census pass that runs out of time still keeps the HOME verdict of
+   every process it read (see Seal and inventory), so each pass has less left to
+   read than the one before. A drain that completes runs once more to catch a
+   racing writer.
+2. `finalizing`: final observations and outputs. The summary model call, when it
+   runs, may take up to 45 s per attempt, two attempts; it runs here, not in a
+   request.
+3. `auditing`: the retained journal is replayed in full.
+4. `SEALED`, or `INCOMPLETE` when a retained issue or the drain deadline blocks
+   the seal.
+
+A status read (`advance`, the default) only starts the worker if none is running,
+then reports persisted progress. It returns in well under a second whatever the
+drains, finalizer or audit take, so CT's 30 s request timeout never applies to
+it. `advance=false` reports status without starting anything. Callers poll while
+the phase is `CLOSING` or `INCOMPLETE` until a deadline of their own, and never
+assume the first response is final.
+
+While the phase is `CLOSING` or `INCOMPLETE`, the status carries `progress`:
+`stage` (`draining`, `finalizing`, `auditing`, or `incomplete`), `active_writers`,
+`drains_pending`, and `worker` (`running`, `idle` or `failed`). `stage` and the
+drain record are persisted with the operation, so a restarted process reports
+them; `worker` is in memory and resets on restart. Progress is diagnostics, never
+proof. A `SEALED` status has no `progress`. While the phase is `CLOSING` or
+`INCOMPLETE`, the status also carries `drain`: the last drain's per-stage outcomes,
+with issue codes, counts and `stage_elapsed_ms`, and never paths or contents. It is
+diagnostics, not proof. A `SEALED` status has no top-level `drain`; its manifest's
+`drain` records the final drain, with the same per-stage fields. States are
 `OPEN`, `CLOSING`, `INCOMPLETE` and `SEALED`. `INCOMPLETE` retains issues and can
-resume the same operation when the cause is resolved; it never reopens input.
-An orphaned accepted writer or irrecoverable history gap remains held.
+resume the same operation when the cause is resolved; it never reopens input. The
+worker stops at `INCOMPLETE`, and the next status read resumes it.
+
+A worker that fails stops with its error class logged; the claim is released and
+the next status read retries from the persisted state. After a restart, a dead
+worker's finalizer lease (120 s) expires before another claim can take it, so the
+resumed operation waits out at most that lease. An orphaned accepted writer or
+irrecoverable history gap remains held.
 
 Only `SEALED` with `complete: true` is a complete producer inventory. Every
 response has `ct_verification_required: true`. A storage/integrity failure gives

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import logging
 import math
 import re
 import threading
@@ -24,18 +25,23 @@ from .closeout_guard import (
 )
 from .closeout_refusal_proof import HistoricalRefusalProofObserver
 
+logger = logging.getLogger(__name__)
 SCHEMA_VERSION = 1
 CAPABILITY = "sealed-closeout-v1"
 _lock_creation = threading.Lock()
 _FINALIZER_LEASE_SECONDS = 120
 _FINALIZER_RENEW_SECONDS = 20
-# Writer-drain budget for one status read; every stage shares it. The process
-# census comes last; it keeps each process's HOME verdict between reads, so a
-# read that runs out of time still leaves the next one less to do. A read that seals
-# runs two drains, then finalization and the audit replay; the drains take at
-# most 10 s of CT's 30 s request timeout. The step is not cut to the operation's
-# drain_deadline: a read resuming after the deadline still needs a whole census.
+# Writer-drain budget for one worker pass; every stage shares it. The process
+# census comes last; it keeps each process's HOME verdict between passes, so a
+# pass that runs out of time still leaves the next one less to do. A sealing
+# pass runs two drains, then finalization and the audit replay. None of this runs
+# inside an HTTP request: the closeout worker thread drives it, and requests
+# only persist the barrier and report progress.
 _DRAIN_STEP_SECONDS = 5.0
+# Persisted progress within CLOSING. Absent means "draining" (also for captures
+# persisted before this field existed); INCOMPLETE and SEALED carry no stage.
+_STAGES = frozenset({"draining", "finalizing", "auditing"})
+_WORKER_BACKOFF_SECONDS = 1.0
 SUPPORTED_EVENTS = frozenset({
     "session.started", "session.switched", "session.exited", "build.commit",
     "resource.created", "milestone.completed", "agent.error", "cost.sample", "heartbeat",
@@ -217,6 +223,53 @@ def _drain(timeout: float) -> dict:
             "outcomes": process.get("outcomes", []) + summary.get("outcomes", [])}
 
 
+class _CloseoutWorker:
+    """Single-flight background driver of one emitter's closeout.
+
+    The thread repeats CloseoutManager.advance until the phase leaves CLOSING.
+    At INCOMPLETE it stops; the next status read resumes the same operation.
+    Its state is in memory and resets on restart. Only the persisted operation
+    (phase, stage, drain record, claim) survives a restart, and a status read
+    after the restart starts a new worker.
+    """
+
+    def __init__(self):
+        self._guard = threading.Lock()
+        self._thread = None
+        self.state = "idle"
+
+    def start(self, manager, capture_id: str) -> bool:
+        with self._guard:
+            if self._thread is not None:
+                return False
+            self.state = "running"
+            thread = threading.Thread(target=self._run, args=(manager, capture_id),
+                                      name="closeout-worker", daemon=True)
+            try:
+                thread.start()
+            except RuntimeError:
+                self.state = "failed"
+                raise
+            self._thread = thread
+            return True
+
+    def _run(self, manager, capture_id: str) -> None:
+        outcome = "failed"
+        try:
+            while manager.advance(capture_id=capture_id)["phase"] == "CLOSING":
+                time.sleep(_WORKER_BACKOFF_SECONDS)
+            outcome = "idle"
+        except Exception as error:
+            # Only the class name: error text can carry storage diagnostics.
+            logger.warning("closeout worker stopped: %s", type(error).__name__)
+        finally:
+            # The outcome and the release of the thread slot are one step, so a
+            # status read that sees "failed" can start the retry at once.
+            with self._guard:
+                self.state = outcome
+                self._thread = None
+
+
 class CloseoutManager:
     def __init__(self, emitter, *, drainer=None, finalizer=None, clock=None):
         self.emitter = emitter
@@ -231,6 +284,8 @@ class CloseoutManager:
         with _lock_creation:
             if not hasattr(emitter, "_closeout_advance_lock"):
                 emitter._closeout_advance_lock = threading.Lock()
+            if not hasattr(emitter, "_closeout_worker"):
+                emitter._closeout_worker = _CloseoutWorker()
         self._lock = emitter._closeout_advance_lock
 
     def begin(self, *, capture_id: str, stream_id: str, source: dict,
@@ -256,10 +311,37 @@ class CloseoutManager:
                          stream_id=stream_id, requested_at=now,
                          capture_enabled=config.insight_capture_enabled(),
                          drain_timeout_seconds=drain_timeout_seconds,
-                         drain_deadline=now + drain_timeout_seconds, issues=[])
+                         drain_deadline=now + drain_timeout_seconds, issues=[],
+                         stage="draining")
 
+        # Only the barrier is durable work here. Drains, finalization and the
+        # audit run in the closeout worker, never inside this request.
         control_transaction(self.journal, request, durable=True)
         return self.status(capture_id=capture_id)
+
+    def resume(self, *, capture_id: str = "") -> dict:
+        """Start the closeout worker for an unsealed capture, then report status.
+
+        Requests use this, so it never waits for drains, the finalizer or the
+        audit. Single-flight: a running worker is left alone, and a restarted
+        process starts one from the persisted operation.
+        """
+        current = self.status(capture_id=capture_id)
+        if current["phase"] not in {"CLOSING", "INCOMPLETE"}:
+            return current
+        self.emitter._closeout_worker.start(self, current["capture_id"])
+        return self.status(capture_id=capture_id)
+
+    def _progress(self, value: dict) -> dict | None:
+        # Diagnostics only, never proof: where the worker is and whether
+        # drains are still outstanding. "worker" is in memory, not persisted.
+        if value["phase"] not in {"CLOSING", "INCOMPLETE"}:
+            return None
+        drain = value.get("drain")
+        stage = value.get("stage") or ("incomplete" if value["phase"] == "INCOMPLETE" else "draining")
+        return {"stage": stage, "active_writers": len(value["writers"]),
+                "drains_pending": bool(value["writers"]) or not bool(drain and drain.get("complete")),
+                "worker": self.emitter._closeout_worker.state}
 
     def status(self, *, capture_id: str = "") -> dict:
         state = self.journal.read()
@@ -293,6 +375,10 @@ class CloseoutManager:
                 or not isinstance(value.get("final_outputs", {}), dict)
                 or ("outputs_complete" in value and type(value["outputs_complete"]) is not bool)):
             raise CaptureHeldError(invalid)
+        if "stage" in value and (value["phase"] != "CLOSING"
+                                 or not isinstance(value["stage"], str)
+                                 or value["stage"] not in _STAGES):
+            raise CaptureHeldError(invalid)
         if "finalizer" in value:
             claim = value["finalizer"]
             if (not isinstance(claim, dict) or not isinstance(claim.get("claim_id"), str)
@@ -324,6 +410,7 @@ class CloseoutManager:
                                    completed_at=manifest["completed_at"])
             if canonical_json(rebuilt) != canonical_json(manifest):
                 raise CaptureHeldError("sealed capture inventory no longer matches retained content")
+        progress = self._progress(value)
         return {"schema_version": SCHEMA_VERSION, "capability": CAPABILITY,
                 "phase": value["phase"], "capture_id": value.get("capture_id"),
                 "generation": value.get("generation"),
@@ -340,9 +427,17 @@ class CloseoutManager:
                 **({"drain": copy.deepcopy(value["drain"])}
                    if value["phase"] in {"CLOSING", "INCOMPLETE"} and value.get("drain") is not None
                    else {}),
+                # Additive progress while unsealed, so CT can see the worker moving.
+                # A sealed status is unchanged.
+                **({"progress": progress} if progress is not None else {}),
                 "ct_verification_required": True}
 
     def advance(self, *, capture_id: str = "", wait_seconds: float = _DRAIN_STEP_SECONDS) -> dict:
+        """One synchronous pass of the closeout state machine.
+
+        The closeout worker calls this repeatedly; tests call it directly. HTTP
+        requests never do (they use ``resume``).
+        """
         current = self.status(capture_id=capture_id)
         step = max(0.0, min(wait_seconds, _DRAIN_STEP_SECONDS))
         if current["phase"] not in {"CLOSING", "INCOMPLETE"} or not self._lock.acquire(blocking=False):
@@ -354,6 +449,7 @@ class CloseoutManager:
                     value = closeout_state(state)
                     if value["phase"] == "INCOMPLETE":
                         value["phase"] = "CLOSING"
+                        value["stage"] = "draining"
                         value.pop("manifest", None)
                         value.pop("manifest_sha256", None)
                 control_transaction(self.journal, resume, durable=True)
@@ -372,6 +468,7 @@ class CloseoutManager:
                     operation["issues"] = sorted(set(issues))
                     if (operation["writers"] or not drained["complete"]) and self.clock() >= operation["drain_deadline"]:
                         operation["phase"] = "INCOMPLETE"
+                        operation.pop("stage", None)
             control_transaction(self.journal, record_drain, durable=True)
             if value["writers"] or not drained["complete"]:
                 return self.status(capture_id=capture_id)
@@ -387,6 +484,7 @@ class CloseoutManager:
                         operation["issues"] = sorted(set(drained.get("issues", []) or ["writer_drain_unverified"]))
                         if self.clock() >= operation["drain_deadline"]:
                             operation["phase"] = "INCOMPLETE"
+                            operation.pop("stage", None)
                 control_transaction(self.journal, record_racing_writer, durable=True)
                 return self.status(capture_id=capture_id)
             proposed_claim = uuid.uuid4().hex
@@ -402,6 +500,7 @@ class CloseoutManager:
                 operation["finalizer"] = {"claim_id": proposed_claim, "expires_at": now + _FINALIZER_LEASE_SECONDS}
                 operation["issues"] = []
                 operation["drain"] = _reconciled_drain(drained, operation)
+                operation["stage"] = "finalizing"
                 return True
             if not control_transaction(self.journal, claim, durable=True):
                 return self.status(capture_id=capture_id)
@@ -437,6 +536,13 @@ class CloseoutManager:
             # The private replay still checks every prefix byte; renewals and
             # normal ACK/status requests use the unchanged live journal cache.
             refusal_proofs = HistoricalRefusalProofObserver(self.journal.binding)
+
+            def auditing(state):
+                operation = closeout_state(state)
+                if (operation["phase"] == "CLOSING"
+                        and operation.get("finalizer", {}).get("claim_id") == claim_id):
+                    operation["stage"] = "auditing"
+            control_transaction(self.journal, auditing, durable=True)
             audited = self.journal.audit_snapshot(progress=renew, observer=refusal_proofs.observe)
             audited_state = audited.read()  # Validate any new ACK/renewal suffix.
             try:
@@ -503,11 +609,13 @@ class CloseoutManager:
                 if not manifest["complete"] and completed_at < operation["drain_deadline"]:
                     operation["issues"] = manifest["issues"]
                     operation.pop("finalizer", None)
+                    operation["stage"] = "draining"
                     return
                 operation["manifest"], operation["manifest_sha256"] = manifest, digest(manifest)
                 operation["issues"] = manifest["issues"]
                 operation["phase"] = "SEALED" if manifest["complete"] else "INCOMPLETE"
                 operation.pop("finalizer", None)
+                operation.pop("stage", None)
             control_transaction(self.journal, seal, durable=True)
             return self.status(capture_id=capture_id)
         finally:
@@ -518,6 +626,7 @@ class CloseoutManager:
                         if (value["phase"] == "CLOSING"
                                 and value.get("finalizer", {}).get("claim_id") == claim_id):
                             value.pop("finalizer", None)
+                            value["stage"] = "draining"
                     control_transaction(self.journal, release, durable=True)
             finally:
                 self._lock.release()

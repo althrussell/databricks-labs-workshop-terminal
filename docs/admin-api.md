@@ -620,6 +620,17 @@ harmless — ingest de-dupes on `idempotency_key`.
 `dropped` counts events evicted because the 5000-event buffer overflowed. It is
 the one loss no later collection recovers, so it is also surfaced in `/readyz`.
 
+### Capture closeout (`POST /api/admin/capture-closeout/begin` · `GET /api/admin/capture-closeout/status` · `GET /api/admin/capture-closeout/entries`)
+
+Sealed closeout; the full contract is in [wt02-sealed-workshop-closeout.md](wt02-sealed-workshop-closeout.md).
+`begin` persists the barrier and returns at once with `phase: CLOSING`. It never
+drains or finalizes inside the request. `status` (`advance`, the default) starts
+the background closeout worker if none is running and returns persisted progress
+within a second. Poll status until `phase` is `SEALED`, or `INCOMPLETE`, which the
+next status read resumes. Unsealed responses carry an additive `progress` object
+(`stage`, `active_writers`, `drains_pending`, `worker`); `SEALED` responses do not.
+`entries` returns 409 until the capture is sealed.
+
 ### `GET /api/admin/omnigent-host-readiness`
 Admin/SP-authenticated, token-free readiness used by Control Tower alongside
 stats collection. It returns the exact local supervisor `status`, `connected`,

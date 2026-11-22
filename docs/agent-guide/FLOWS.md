@@ -385,10 +385,10 @@ sequenceDiagram
   CT->>E: GET /api/admin/insight-events (non-destructive)
   CT->>E: POST /api/admin/insight-events/ack (releases prefix)
   CT->>E: GET /api/admin/stats (harvest)
-  CT->>E: POST /api/admin/capture-closeout/begin
+  CT->>E: POST /api/admin/capture-closeout/begin (persists CLOSING, returns at once)
   Note over E: phase CLOSING: CloseoutAdmissionMiddleware refuses new writes (409 workshop_closing)
-  CT->>E: GET /api/admin/capture-closeout/status?advance=true
-  Note over E: drain writers → final outputs → manifest → SEALED or INCOMPLETE
+  Note over E: closeout worker thread: drain writers → finalize → audit → SEALED or INCOMPLETE
+  CT->>E: GET /api/admin/capture-closeout/status?advance=true (starts worker if idle; reports progress)
   CT->>E: GET /api/admin/capture-closeout/entries
 ```
 
@@ -407,10 +407,14 @@ sequenceDiagram
 4. When CT ingest env vars are set, `server/event_emitter.py::flush_loop` also pushes every
    15 s. `server/operational.py` health sampling always runs outside LOCAL_DEV.
 5. Closeout starts at `server/admin.py::begin_capture_closeout` →
-   `server/closeout.py::CloseoutManager`. From then on,
-   `server/closeout_http.py::CloseoutAdmissionMiddleware` refuses producing requests
-   (`server/closeout_http.py::produces_capture`) with 409 `workshop_closing`.
-6. Advancing:
+   `server/closeout.py::CloseoutManager.begin`, which persists CLOSING and returns.
+   From then on, `server/closeout_http.py::CloseoutAdmissionMiddleware` refuses producing
+   requests (`server/closeout_http.py::produces_capture`) with 409 `workshop_closing`.
+6. Advancing happens only in the closeout worker (`server/closeout.py::_CloseoutWorker`,
+   one thread per instance, started by `CloseoutManager.resume` from `begin` and from
+   status reads). Requests never drain, finalize or audit, so a status read returns
+   in well under a second. A restart resumes from the persisted `stage` and drain record.
+   Each worker pass does:
    - drains writers, stops any program the attendee left running
      (`server/closeout_writers.py::stop_attendee_writers`) and verifies none remain;
    - writes model-free final outputs (`server/closeout_outputs.py`);

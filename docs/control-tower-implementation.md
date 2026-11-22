@@ -893,6 +893,14 @@ buffered. Teardown is still `apps.delete` — WT holds no durable insight store,
 anything not pushed before deletion is gone. That is why the summary is generated
 at the **wrap phase**, with the teardown harvest only as a backstop.
 
+**Sealed closeout is polled, not awaited.** CT's `begin` call returns at once with
+`phase: CLOSING`; the WT closeout worker drains writers, finalizes and audits in the
+background. CT polls `GET /api/admin/capture-closeout/status` until `SEALED` (or
+`INCOMPLETE`, which the next read resumes) within its own deadline. Each unsealed
+response reports `progress` (`stage`, `drains_pending`, `worker`) for diagnostics; a
+`SEALED` response is the only completeness proof. Contract:
+[wt02-sealed-workshop-closeout.md](./wt02-sealed-workshop-closeout.md).
+
 ## 15. Toolchain mirror *(opt-in, per event)*
 
 A fresh app instance installs ~430 MiB of pinned toolchain from the public

@@ -3,6 +3,7 @@
 import copy
 import hashlib
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -64,9 +65,17 @@ def request(emitter):
 
 
 def seal(client, emitter):
+    """Begin returns CLOSING at once; the worker seals, so poll as CT does."""
     response = client.post("/api/admin/capture-closeout/begin", headers=ADMIN, json=request(emitter))
     assert response.status_code == 200, response.text
     result = response.json()
+    deadline = time.monotonic() + 30
+    while result["phase"] != "SEALED" and time.monotonic() < deadline:
+        time.sleep(0.05)
+        response = client.get("/api/admin/capture-closeout/status", headers=ADMIN,
+                              params={"capture_id": "capture-api"})
+        assert response.status_code == 200, response.text
+        result = response.json()
     assert result["phase"] == "SEALED", result
     assert result["complete"] is True and result["ct_verification_required"] is True
     return result
@@ -181,3 +190,19 @@ def test_close_storage_failure_is_generic_and_does_not_claim_complete(client, as
         assert response.status_code == 503
         assert "sensitive" not in response.text
         assert response.json()["detail"] == "Workshop capture is held; retry when persistence is available."
+
+
+def test_begin_returns_at_once_and_the_worker_seals_behind_a_slow_drain(client, as_admin, retained, monkeypatch):
+    def slow_drain(_timeout):
+        time.sleep(2)  # far longer than the bound CT's requests must meet
+        return {"complete": True, "issues": [], "outcomes": []}
+
+    monkeypatch.setattr(closeout, "_drain", slow_drain)
+    started = time.monotonic()
+    response = client.post("/api/admin/capture-closeout/begin", headers=ADMIN, json=request(retained))
+    assert response.status_code == 200, response.text
+    assert time.monotonic() - started < 1.0
+    assert response.json()["phase"] == "CLOSING"
+    assert response.json()["progress"]["worker"] in {"running", "idle"}
+    sealed = seal(client, retained)
+    assert "progress" not in sealed
