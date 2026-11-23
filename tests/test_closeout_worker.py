@@ -533,3 +533,35 @@ def test_a_superseded_drain_cannot_overwrite_the_replacements_drain(env, monkeyp
     result = sealed(manager)
     assert result["manifest"]["drain"]["complete"] is True
     assert "writer_drain_pending" not in result["manifest"]["issues"]
+
+
+def test_a_replacement_waits_on_a_live_claim_and_the_holder_still_seals(env):
+    """A second worker on the same storage must not fence a live claim holder.
+
+    While the holder's finalizer lease is live, the replacement waits (its passes
+    change nothing) and the holder seals normally.
+    """
+    storage = MemoryCaptureStorage()
+    release, entered = gate(env), threading.Event()
+
+    def slow_finalizer(source, capture_id):
+        entered.set()
+        release.wait(REQUEST_BOUND * 4)
+        return complete_finalizer(source, capture_id)
+
+    holder = make(env, storage=storage, finalizer=slow_finalizer)
+    begin(holder)
+    holder.resume(capture_id=CAPTURE)
+    assert entered.wait(REQUEST_BOUND)
+    before = holder.journal.read()["closeout"]
+
+    waiter = make(env, storage=storage)  # same clock: the holder's lease is live
+    waiter.resume(capture_id=CAPTURE)
+    status = within_bound(lambda: waiter.status(capture_id=CAPTURE))
+    assert status["phase"] == "CLOSING" and status["progress"]["stage"] == "finalizing"
+    assert wait_until(lambda: worker(waiter)._generation == 1 and worker(waiter).state != "failed")
+    assert holder.journal.read()["closeout"]["driver"] == before["driver"]  # waiter wrote nothing
+
+    release.set()
+    assert sealed(holder)["complete"] is True
+    assert wait_until(lambda: waiter.status(capture_id=CAPTURE)["phase"] == "SEALED")

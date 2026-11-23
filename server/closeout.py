@@ -84,6 +84,10 @@ class _Superseded(Exception):
     """A pass's worker was replaced. It stops at once and changes nothing more."""
 
 
+class _Held(Exception):
+    """Another live claim owns the closeout. This pass waits; it is not superseded."""
+
+
 class _Pass:
     """Fencing token for one worker thread: current while its generation is the worker's."""
 
@@ -604,10 +608,21 @@ class CloseoutManager:
                 worker.beat()
 
         def fence_ok(operation: dict) -> None:
-            # Checked inside each transaction, against the persisted driver token,
-            # so a superseded pass cannot change state after its replacement began.
-            if fence is not None and (not fence.current() or operation.get("driver") != fence.token):
+            # Checked inside each transaction. The driver token is written only by a
+            # successful claim, so it names the pass that holds the claim.
+            if fence is None:
+                return
+            if not fence.current():
                 raise _Superseded()
+            owner = operation.get("driver")
+            if owner is None or owner == fence.token:
+                return
+            if claim_id:
+                raise _Superseded()  # this pass held the claim; another has taken it
+            lease = operation.get("finalizer") or {}
+            if lease.get("expires_at", 0) > self.clock():
+                raise _Held()  # a live claim elsewhere: wait, change nothing
+            # The owner's lease has expired, so it is gone; this pass may proceed.
 
         try:
             def begin_pass(state):
@@ -615,8 +630,6 @@ class CloseoutManager:
                 value = closeout_state(state)
                 if value["phase"] not in {"CLOSING", "INCOMPLETE"}:
                     return
-                if fence is not None:
-                    value["driver"] = fence.token
                 if value["phase"] == "INCOMPLETE":
                     value["stage"] = "draining"
             control_transaction(self.journal, begin_pass, durable=True)
@@ -677,10 +690,14 @@ class CloseoutManager:
                 if previous and previous["expires_at"] > now:
                     return False
                 operation["finalizer"] = {"claim_id": proposed_claim, "expires_at": now + _FINALIZER_LEASE_SECONDS}
+                if fence is not None:
+                    operation["driver"] = fence.token
                 operation["issues"] = []
                 operation["drain"] = _reconciled_drain(drained, operation)
                 operation["stage"] = "finalizing"
                 return True
+            if fence is not None and not fence.current():
+                raise _Superseded()
             if not control_transaction(self.journal, claim, durable=True):
                 return self.status(capture_id=capture_id)
             claim_id = proposed_claim
@@ -813,6 +830,9 @@ class CloseoutManager:
                 operation.pop("driver", None)
             control_transaction(self.journal, seal, durable=True)
             return self.status(capture_id=capture_id)
+        except _Held:
+            # Another live claim owns the closeout: change nothing, let the caller retry.
+            return self.status(capture_id=capture_id)
         finally:
             try:
                 if claim_id:
@@ -823,6 +843,7 @@ class CloseoutManager:
                         if (value["phase"] in {"CLOSING", "INCOMPLETE"}
                                 and value.get("finalizer", {}).get("claim_id") == claim_id):
                             value.pop("finalizer", None)
+                            value.pop("driver", None)
                             value["stage"] = "draining"
                     control_transaction(self.journal, release, durable=True)
             finally:
