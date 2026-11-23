@@ -109,7 +109,8 @@ Pacing and liveness, all in memory (only the persisted operation survives a rest
   every durable write it makes (drain record, stage changes, claim, audit, seal,
   release) is checked against that token inside its transaction. A superseded pass
   is rejected at the write and changes no state, and it does not refresh the
-  heartbeat.
+  heartbeat. A pass that does not hold the claim waits while another live claim
+  owns the closeout: it changes nothing, including the stage, and retries.
 
 While the phase is `CLOSING` or `INCOMPLETE`, the status carries `progress`:
 `stage` (`draining`, `finalizing`, `auditing`, or `incomplete`), `active_writers`,
