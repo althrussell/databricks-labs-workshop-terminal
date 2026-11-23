@@ -3,6 +3,8 @@
 import copy
 import hashlib
 import json
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -64,9 +66,17 @@ def request(emitter):
 
 
 def seal(client, emitter):
+    """Begin returns CLOSING at once; the worker seals, so poll as CT does."""
     response = client.post("/api/admin/capture-closeout/begin", headers=ADMIN, json=request(emitter))
     assert response.status_code == 200, response.text
     result = response.json()
+    deadline = time.monotonic() + 30
+    while result["phase"] != "SEALED" and time.monotonic() < deadline:
+        time.sleep(0.05)
+        response = client.get("/api/admin/capture-closeout/status", headers=ADMIN,
+                              params={"capture_id": "capture-api"})
+        assert response.status_code == 200, response.text
+        result = response.json()
     assert result["phase"] == "SEALED", result
     assert result["complete"] is True and result["ct_verification_required"] is True
     return result
@@ -181,3 +191,38 @@ def test_close_storage_failure_is_generic_and_does_not_claim_complete(client, as
         assert response.status_code == 503
         assert "sensitive" not in response.text
         assert response.json()["detail"] == "Workshop capture is held; retry when persistence is available."
+
+
+def test_begin_returns_at_once_and_the_worker_seals_behind_a_blocked_drain(client, as_admin, retained, monkeypatch):
+    release, entered = threading.Event(), threading.Event()
+
+    def blocked_drain(_timeout):
+        entered.set()
+        release.wait(20)  # a drain far slower than any request may take
+        return {"complete": True, "issues": [], "outcomes": []}
+
+    monkeypatch.setattr(closeout, "_drain", blocked_drain)
+    outcome = {}
+
+    def begin_request():
+        outcome["response"] = client.post("/api/admin/capture-closeout/begin", headers=ADMIN,
+                                          json=request(retained))
+
+    thread = threading.Thread(target=begin_request, daemon=True)
+    try:
+        thread.start()
+        thread.join(5)  # the one real-time bound: begin must not wait for the drain
+        assert not thread.is_alive(), "begin waited for the drain"
+        response = outcome["response"]
+        assert response.status_code == 200, response.text
+        assert response.json()["phase"] == "CLOSING"
+        assert "progress" in response.json()
+        status = client.get("/api/admin/capture-closeout/status", headers=ADMIN,
+                            params={"capture_id": "capture-api"})
+        assert status.status_code == 200 and status.json()["phase"] == "CLOSING"
+        assert entered.wait(5)  # the worker, not the request, is in the drain
+        assert status.json()["progress"]["worker"] == "running"
+    finally:
+        release.set()
+    sealed = seal(client, retained)
+    assert "progress" not in sealed

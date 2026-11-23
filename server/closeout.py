@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import logging
 import math
 import re
 import threading
@@ -17,25 +18,35 @@ from collections import defaultdict
 from datetime import datetime
 
 from . import config
-from .capture_journal import CaptureHeldError, canonical_json
+from .capture_journal import CaptureError, CaptureHeldError, canonical_json
 from .closeout_guard import (
     CaptureClosedError, _only_ack_change, closeout_state, control_transaction, finalizer_scope,
     initial_state,
 )
 from .closeout_refusal_proof import HistoricalRefusalProofObserver
 
+logger = logging.getLogger(__name__)
 SCHEMA_VERSION = 1
 CAPABILITY = "sealed-closeout-v1"
 _lock_creation = threading.Lock()
 _FINALIZER_LEASE_SECONDS = 120
 _FINALIZER_RENEW_SECONDS = 20
-# Writer-drain budget for one status read; every stage shares it. The process
-# census comes last; it keeps each process's HOME verdict between reads, so a
-# read that runs out of time still leaves the next one less to do. A read that seals
-# runs two drains, then finalization and the audit replay; the drains take at
-# most 10 s of CT's 30 s request timeout. The step is not cut to the operation's
-# drain_deadline: a read resuming after the deadline still needs a whole census.
+# Writer-drain budget for one worker pass; every stage shares it. The process
+# census comes last; it keeps each process's HOME verdict between passes, so a
+# pass that runs out of time still leaves the next one less to do. A sealing
+# pass runs two drains, then finalization and the audit replay. None of this runs
+# inside an HTTP request: the closeout worker thread drives it, and requests
+# only persist the barrier and report progress.
 _DRAIN_STEP_SECONDS = 5.0
+# Persisted progress within CLOSING. Absent means "draining" (also for captures
+# persisted before this field existed); INCOMPLETE and SEALED carry no stage.
+_STAGES = frozenset({"draining", "finalizing", "auditing"})
+_WORKER_BACKOFF_SECONDS = 1.0
+_WORKER_FAILURE_BACKOFF_SECONDS = (1.0, 5.0, 30.0)
+_INCOMPLETE_RETRY_SECONDS = 30.0
+_FULL_PASS_INTERVAL_SECONDS = 30.0
+_WORKER_IDLE_STOP_SECONDS = 300.0
+_WORKER_STALE_SECONDS = 2 * _FINALIZER_LEASE_SECONDS
 SUPPORTED_EVENTS = frozenset({
     "session.started", "session.switched", "session.exited", "build.commit",
     "resource.created", "milestone.completed", "agent.error", "cost.sample", "heartbeat",
@@ -62,6 +73,30 @@ _UTC_SECOND = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}
 
 class CloseoutConflict(ValueError):
     """A stale or different request cannot claim this source's closeout."""
+
+
+# Request-level errors from a pass are raised once on the next status read, so CT
+# sees the same 409 or 503 it saw before the worker existed.
+_REQUEST_ERRORS = (CloseoutConflict, CaptureError)
+
+
+class _Superseded(Exception):
+    """A pass's worker was replaced. It stops at once and changes nothing more."""
+
+
+class _Held(Exception):
+    """Another live claim owns the closeout. This pass waits; it is not superseded."""
+
+
+class _Pass:
+    """Fencing token for one worker thread: current while its generation is the worker's."""
+
+    def __init__(self, worker, generation: int):
+        self._worker, self._generation = worker, generation
+        self.token = uuid.uuid4().hex
+
+    def current(self) -> bool:
+        return self._worker._generation == self._generation
 
 
 def digest(value) -> str:
@@ -134,7 +169,7 @@ def _reconciled_drain(drained: dict, operation: dict) -> dict:
 def manifest_for(state: dict, binding: dict, *, completed_at: float) -> dict:
     """Pure canonical inventory of retained producer bytes, independent of ACKs."""
     operation = closeout_state(state)
-    if operation is None or operation["phase"] != "CLOSING":
+    if operation is None or operation["phase"] not in {"CLOSING", "INCOMPLETE"}:
         raise CloseoutConflict("source is not closing")
     insight = state["insight"]
     entries = [{"seq": seq, "event": insight["events"][str(seq)]}
@@ -217,6 +252,136 @@ def _drain(timeout: float) -> dict:
             "outcomes": process.get("outcomes", []) + summary.get("outcomes", [])}
 
 
+class _CloseoutWorker:
+    """Single-flight background driver of one emitter's closeout.
+
+    One thread at a time. The thread repeats CloseoutManager.advance until the
+    phase leaves CLOSING, then stops at SEALED or INCOMPLETE. It also stops when
+    nobody has polled for _WORKER_IDLE_STOP_SECONDS; the next status read restarts
+    it. A failing pass backs off; a pass with no heartbeat for
+    _WORKER_STALE_SECONDS is stale and a status read starts a replacement. The
+    replacement still needs the persisted claim lease to have expired, so two
+    passes cannot both finalize. Everything here is in memory and resets on
+    restart; only the persisted operation survives.
+    """
+
+    def __init__(self, clock=time.monotonic):
+        self.clock = clock
+        self._guard = threading.Lock()
+        self._thread = None
+        self._generation = 0
+        self._pending_error = None
+        self._next_full_pass = None
+        self.state = "idle"          # outcome of the last thread: idle | failed
+        self.last_beat = None
+        self.last_poll = None
+        self.retry_after = None
+        self.failures = 0
+        self.last_error = None       # {"code", "detail"}; cleared by a successful pass
+
+    def poll(self) -> None:
+        self.last_poll = self.clock()
+
+    def beat(self) -> None:
+        self.last_beat = self.clock()
+
+    def observed(self) -> str:
+        """running, stale, idle or failed. Stale means no heartbeat for too long."""
+        if self._thread is None:
+            return self.state
+        if self.last_beat is not None and self.clock() - self.last_beat > _WORKER_STALE_SECONDS:
+            return "stale"
+        return "running"
+
+    def take_request_error(self):
+        """A request-level error from the last pass, raised once on the next read."""
+        error, self._pending_error = self._pending_error, None
+        return error
+
+    def allows_full_pass(self) -> bool:
+        return self._next_full_pass is None or self.clock() >= self._next_full_pass
+
+    def full_pass_started(self) -> None:
+        self._next_full_pass = self.clock() + _FULL_PASS_INTERVAL_SECONDS
+
+    def start(self, manager, capture_id: str) -> bool:
+        now = self.clock()
+        with self._guard:
+            stale = self._thread is not None and self.observed() == "stale"
+            if self._thread is not None and not stale:
+                return False
+            if self.retry_after is not None and now < self.retry_after:
+                return False
+            if stale:
+                # The stale thread cannot be stopped. Its advance lock may never
+                # release, so the replacement gets a fresh one. Writes stay fenced
+                # by the claim lease, which the replacement must see expired.
+                logger.warning("closeout worker stale; starting a replacement")
+                manager.emitter._closeout_advance_lock = threading.Lock()
+                manager._lock = manager.emitter._closeout_advance_lock
+            self._generation += 1
+            generation = self._generation
+            self.state, self.last_beat = "running", now
+            thread = threading.Thread(target=self._run, args=(manager, capture_id, generation),
+                                      name="closeout-worker", daemon=True)
+            try:
+                thread.start()
+            except RuntimeError:
+                self.last_error = {"code": "worker_start_failed", "detail": ""}
+                self._back_off()
+                self.state = "failed"
+                manager._persist_worker_issue(capture_id, "worker_start_failed")
+                return False
+            self._thread = thread
+            return True
+
+    def _back_off(self) -> None:
+        self.failures += 1
+        step = min(self.failures, len(_WORKER_FAILURE_BACKOFF_SECONDS)) - 1
+        self.retry_after = self.clock() + _WORKER_FAILURE_BACKOFF_SECONDS[step]
+
+    def _idle_too_long(self) -> bool:
+        return self.last_poll is not None and self.clock() - self.last_poll > _WORKER_IDLE_STOP_SECONDS
+
+    def _run(self, manager, capture_id: str, generation: int) -> None:
+        fence = _Pass(self, generation)  # one token for this thread's generation
+        try:
+            while True:
+                if generation != self._generation:
+                    return  # superseded by a replacement; it must not touch state
+                self.beat()
+                current = manager.advance(capture_id=capture_id, gate=self, fence=fence)
+                if current["phase"] != "CLOSING" or self._idle_too_long():
+                    break
+                time.sleep(_WORKER_BACKOFF_SECONDS)
+            if generation != self._generation:
+                return  # a replacement took over while this pass ran
+            self.state, self.failures, self.last_error = "idle", 0, None
+            # An INCOMPLETE result waits before its next retry; a CLOSING stop
+            # (idle) restarts on the next poll.
+            self.retry_after = (self.clock() + _INCOMPLETE_RETRY_SECONDS
+                                if current["phase"] == "INCOMPLETE" else None)
+        except _Superseded:
+            return  # a replacement owns the closeout; this thread changes nothing
+        except Exception as error:
+            if generation == self._generation:
+                self.state = "failed"
+                self.last_error = {"code": type(error).__name__,
+                                   "detail": str(error)[:200] if isinstance(error, _REQUEST_ERRORS) else ""}
+                self._back_off()
+                # A failed pass is paced by its backoff alone, not the full-pass gate.
+                self._next_full_pass = None
+                if isinstance(error, _REQUEST_ERRORS):
+                    self._pending_error = error
+                # Full traceback server-side; only the class name is persisted.
+                logger.exception("closeout worker pass failed")
+                manager._persist_worker_issue(capture_id, type(error).__name__, fence)
+        finally:
+            with self._guard:
+                if generation == self._generation:
+                    self._thread = None
+
+
 class CloseoutManager:
     def __init__(self, emitter, *, drainer=None, finalizer=None, clock=None):
         self.emitter = emitter
@@ -231,6 +396,8 @@ class CloseoutManager:
         with _lock_creation:
             if not hasattr(emitter, "_closeout_advance_lock"):
                 emitter._closeout_advance_lock = threading.Lock()
+            if not hasattr(emitter, "_closeout_worker"):
+                emitter._closeout_worker = _CloseoutWorker()
         self._lock = emitter._closeout_advance_lock
 
     def begin(self, *, capture_id: str, stream_id: str, source: dict,
@@ -256,10 +423,77 @@ class CloseoutManager:
                          stream_id=stream_id, requested_at=now,
                          capture_enabled=config.insight_capture_enabled(),
                          drain_timeout_seconds=drain_timeout_seconds,
-                         drain_deadline=now + drain_timeout_seconds, issues=[])
+                         drain_deadline=now + drain_timeout_seconds, issues=[],
+                         stage="draining")
 
+        # Only the barrier is durable work here. Drains, finalization and the
+        # audit run in the closeout worker, never inside this request.
         control_transaction(self.journal, request, durable=True)
         return self.status(capture_id=capture_id)
+
+    def resume(self, *, capture_id: str = "") -> dict:
+        """Start the closeout worker for an unsealed capture, then report status.
+
+        Requests use this and never wait for drains, the finalizer or the audit.
+        Every call records a poll, which keeps an idle worker alive. A running
+        worker is left alone. A failed or INCOMPLETE capture restarts only after
+        its backoff. A request-level error from the last pass is raised once
+        here, so CT still gets the 409 or 503 it expects.
+        """
+        worker = self.emitter._closeout_worker
+        worker.poll()
+        current = self.status(capture_id=capture_id)
+        if current["phase"] not in {"CLOSING", "INCOMPLETE"}:
+            return current
+        # Only errors from earlier passes: taken before this read starts one, so a
+        # pass that fails at once cannot be raised on the request that started it.
+        error = worker.take_request_error()
+        worker.start(self, current["capture_id"])
+        result = self.status(capture_id=capture_id)
+        if error is not None:
+            raise error
+        return result
+
+    def _progress(self, value: dict) -> dict | None:
+        # Diagnostics only, never proof. "worker" and "last_error" are in memory;
+        # "stage", "active_writers" and "drains_pending" are persisted or derived.
+        if value["phase"] not in {"CLOSING", "INCOMPLETE"}:
+            return None
+        worker = self.emitter._closeout_worker
+        worker_state = worker.observed()
+        drain = value.get("drain")
+        stage = value.get("stage") or ("incomplete" if value["phase"] == "INCOMPLETE" else "draining")
+        progress = {"stage": stage, "active_writers": len(value["writers"]),
+                    "drains_pending": bool(value["writers"]) or not bool(drain and drain.get("complete")),
+                    "worker": worker_state}
+        if value["phase"] == "INCOMPLETE":
+            # INCOMPLETE with retrying: the last finished pass stands while a retry runs.
+            progress["retrying"] = worker_state in {"running", "stale"}
+        if worker.last_error is not None:
+            progress["last_error"] = dict(worker.last_error)
+        return progress
+
+    def _persist_worker_issue(self, capture_id: str, code: str, fence=None) -> None:
+        """Retain that a pass failed, as an issue of the open operation. Best effort:
+        if storage is down, the in-memory last_error still reports it. It changes
+        nothing while a live claim held by another pass owns the closeout, or when
+        the calling pass has been superseded."""
+        def record(state):
+            if fence is not None and not fence.current():
+                return
+            operation = closeout_state(state)
+            if (operation is None or operation["phase"] not in {"CLOSING", "INCOMPLETE"}
+                    or operation.get("capture_id") != capture_id):
+                return
+            lease = operation.get("finalizer") or {}
+            foreign = fence is None or operation.get("driver") != fence.token
+            if foreign and lease.get("expires_at", 0) > self.clock():
+                return
+            operation["issues"] = sorted(set(operation.get("issues", [])) | {f"worker_failed:{code}"})
+        try:
+            control_transaction(self.journal, record, durable=True)
+        except Exception:
+            logger.warning("closeout worker failure could not be retained")
 
     def status(self, *, capture_id: str = "") -> dict:
         state = self.journal.read()
@@ -293,6 +527,10 @@ class CloseoutManager:
                 or not isinstance(value.get("final_outputs", {}), dict)
                 or ("outputs_complete" in value and type(value["outputs_complete"]) is not bool)):
             raise CaptureHeldError(invalid)
+        if "stage" in value and (value["phase"] not in {"CLOSING", "INCOMPLETE"}
+                                 or not isinstance(value["stage"], str)
+                                 or value["stage"] not in _STAGES):
+            raise CaptureHeldError(invalid)
         if "finalizer" in value:
             claim = value["finalizer"]
             if (not isinstance(claim, dict) or not isinstance(claim.get("claim_id"), str)
@@ -324,6 +562,7 @@ class CloseoutManager:
                                    completed_at=manifest["completed_at"])
             if canonical_json(rebuilt) != canonical_json(manifest):
                 raise CaptureHeldError("sealed capture inventory no longer matches retained content")
+        progress = self._progress(value)
         return {"schema_version": SCHEMA_VERSION, "capability": CAPABILITY,
                 "phase": value["phase"], "capture_id": value.get("capture_id"),
                 "generation": value.get("generation"),
@@ -340,24 +579,74 @@ class CloseoutManager:
                 **({"drain": copy.deepcopy(value["drain"])}
                    if value["phase"] in {"CLOSING", "INCOMPLETE"} and value.get("drain") is not None
                    else {}),
+                # Additive progress while unsealed, so CT can see the worker moving.
+                # A sealed status is unchanged.
+                **({"progress": progress} if progress is not None else {}),
                 "ct_verification_required": True}
 
-    def advance(self, *, capture_id: str = "", wait_seconds: float = _DRAIN_STEP_SECONDS) -> dict:
+    def advance(self, *, capture_id: str = "", wait_seconds: float = _DRAIN_STEP_SECONDS,
+                gate=None, fence=None) -> dict:
+        """One synchronous pass of the closeout state machine.
+
+        The closeout worker calls this with itself as ``gate``, which paces
+        finalize-and-audit passes. Tests call it directly with no gate. HTTP
+        requests never call it; they use ``resume``.
+
+        A retry of an INCOMPLETE capture keeps phase INCOMPLETE and its last
+        manifest visible until the pass seals or is incomplete again. Its stage
+        and progress say it is retrying.
+        """
         current = self.status(capture_id=capture_id)
         step = max(0.0, min(wait_seconds, _DRAIN_STEP_SECONDS))
-        if current["phase"] not in {"CLOSING", "INCOMPLETE"} or not self._lock.acquire(blocking=False):
+        # The lock is captured here: a replacement worker may swap the attribute,
+        # and this pass must release only the lock it took.
+        lock = self._lock
+        if current["phase"] not in {"CLOSING", "INCOMPLETE"} or not lock.acquire(blocking=False):
             return current
         claim_id = ""
+        worker = self.emitter._closeout_worker
+
+        def still_current() -> None:
+            if fence is not None and not fence.current():
+                raise _Superseded()
+
+        def beat() -> None:
+            # A superseded pass must not refresh the replacement's heartbeat.
+            if fence is None or fence.current():
+                worker.beat()
+
+        def fence_ok(operation: dict) -> None:
+            # Checked inside each transaction. The driver token is written only by a
+            # successful claim, so it names the pass that holds the claim.
+            if fence is None:
+                return
+            if not fence.current():
+                raise _Superseded()
+            owner = operation.get("driver")
+            if owner is None or owner == fence.token:
+                return
+            if claim_id:
+                raise _Superseded()  # this pass held the claim; another has taken it
+            lease = operation.get("finalizer") or {}
+            if lease.get("expires_at", 0) > self.clock():
+                raise _Held()  # a live claim elsewhere: wait, change nothing
+            # The owner's lease has expired, so it is gone; this pass may proceed.
+
         try:
-            if current["phase"] == "INCOMPLETE":
-                def resume(state):
-                    value = closeout_state(state)
-                    if value["phase"] == "INCOMPLETE":
-                        value["phase"] = "CLOSING"
-                        value.pop("manifest", None)
-                        value.pop("manifest_sha256", None)
-                control_transaction(self.journal, resume, durable=True)
+            def begin_pass(state):
+                still_current()
+                value = closeout_state(state)
+                if value["phase"] not in {"CLOSING", "INCOMPLETE"}:
+                    return
+                # A live foreign claim owns the closeout (e.g. a holder retrying an
+                # INCOMPLETE capture): wait and change nothing, not even the stage.
+                fence_ok(value)
+                if value["phase"] == "INCOMPLETE":
+                    value["stage"] = "draining"
+            control_transaction(self.journal, begin_pass, durable=True)
             drained = self.drainer(step)
+            beat()
+            still_current()
             value = closeout_state(self.journal.read())
             issues = list(drained.get("issues", []))
             if value["writers"]:
@@ -367,11 +656,14 @@ class CloseoutManager:
 
             def record_drain(state):
                 operation = closeout_state(state)
-                if operation["phase"] == "CLOSING":
+                fence_ok(operation)
+                if operation["phase"] in {"CLOSING", "INCOMPLETE"}:
                     operation["drain"] = _reconciled_drain(drained, operation)
                     operation["issues"] = sorted(set(issues))
-                    if (operation["writers"] or not drained["complete"]) and self.clock() >= operation["drain_deadline"]:
+                    if (operation["phase"] == "CLOSING" and (operation["writers"] or not drained["complete"])
+                            and self.clock() >= operation["drain_deadline"]):
                         operation["phase"] = "INCOMPLETE"
+                        operation.pop("stage", None)
             control_transaction(self.journal, record_drain, durable=True)
             if value["writers"] or not drained["complete"]:
                 return self.status(capture_id=capture_id)
@@ -379,33 +671,49 @@ class CloseoutManager:
             # during the first drain; no new admission can start after begin.
             # It runs the census again, so it needs the same budget.
             drained = self.drainer(step)
+            beat()
+            still_current()
             if not drained["complete"]:
                 def record_racing_writer(state):
                     operation = closeout_state(state)
-                    if operation["phase"] == "CLOSING":
+                    fence_ok(operation)
+                    if operation["phase"] in {"CLOSING", "INCOMPLETE"}:
                         operation["drain"] = _reconciled_drain(drained, operation)
                         operation["issues"] = sorted(set(drained.get("issues", []) or ["writer_drain_unverified"]))
-                        if self.clock() >= operation["drain_deadline"]:
+                        if operation["phase"] == "CLOSING" and self.clock() >= operation["drain_deadline"]:
                             operation["phase"] = "INCOMPLETE"
+                            operation.pop("stage", None)
                 control_transaction(self.journal, record_racing_writer, durable=True)
+                return self.status(capture_id=capture_id)
+            # Finalize-and-audit is the expensive part. A gate caps how often it
+            # runs; drains above still ran, so the operation stays current.
+            if gate is not None and not gate.allows_full_pass():
                 return self.status(capture_id=capture_id)
             proposed_claim = uuid.uuid4().hex
 
             def claim(state):
+                if fence is not None and not fence.current():
+                    raise _Superseded()
                 now = self.clock()
                 operation = closeout_state(state)
-                if operation["phase"] != "CLOSING" or operation["writers"]:
+                fence_ok(operation)
+                if operation["phase"] not in {"CLOSING", "INCOMPLETE"} or operation["writers"]:
                     return False
                 previous = operation.get("finalizer")
                 if previous and previous["expires_at"] > now:
                     return False
                 operation["finalizer"] = {"claim_id": proposed_claim, "expires_at": now + _FINALIZER_LEASE_SECONDS}
+                if fence is not None:
+                    operation["driver"] = fence.token
                 operation["issues"] = []
                 operation["drain"] = _reconciled_drain(drained, operation)
+                operation["stage"] = "finalizing"
                 return True
             if not control_transaction(self.journal, claim, durable=True):
                 return self.status(capture_id=capture_id)
             claim_id = proposed_claim
+            if gate is not None:
+                gate.full_pass_started()
             renewed_at = self.clock()
 
             def renew():
@@ -416,8 +724,9 @@ class CloseoutManager:
                 def extend(state):
                     now = self.clock()
                     operation = closeout_state(state)
+                    fence_ok(operation)
                     previous = operation.get("finalizer", {})
-                    if (operation["phase"] != "CLOSING" or operation["writers"]
+                    if (operation["phase"] not in {"CLOSING", "INCOMPLETE"} or operation["writers"]
                             or operation.get("capture_id") != current["capture_id"]
                             or operation.get("generation") != current["generation"]
                             or previous.get("claim_id") != claim_id
@@ -427,8 +736,10 @@ class CloseoutManager:
                 control_transaction(self.journal, extend, durable=True)
                 renewed_at = self.clock()
 
+            still_current()
             with finalizer_scope(self.journal, current["capture_id"], claim_id, clock=self.clock):
                 result = self.finalizer(self.emitter, current["capture_id"])
+            beat()
             # Preserve pending rejected-output accounting and the emitter's
             # semantic validation before inspecting a private replay.
             self.emitter._state()
@@ -437,6 +748,21 @@ class CloseoutManager:
             # The private replay still checks every prefix byte; renewals and
             # normal ACK/status requests use the unchanged live journal cache.
             refusal_proofs = HistoricalRefusalProofObserver(self.journal.binding)
+
+            def auditing(state):
+                # The finalizer may have run for a long time. Only the current,
+                # unexpired claim may enter the audit, and entering renews it.
+                now = self.clock()
+                operation = closeout_state(state)
+                fence_ok(operation)
+                lease = operation.get("finalizer") or {}
+                if (operation["phase"] not in {"CLOSING", "INCOMPLETE"} or operation["writers"]
+                        or lease.get("claim_id") != claim_id or lease.get("expires_at", 0) <= now):
+                    raise CloseoutConflict("closeout finalizer ownership changed")
+                lease["expires_at"] = now + _FINALIZER_LEASE_SECONDS
+                operation["stage"] = "auditing"
+            control_transaction(self.journal, auditing, durable=True)
+            beat()
             audited = self.journal.audit_snapshot(progress=renew, observer=refusal_proofs.observe)
             audited_state = audited.read()  # Validate any new ACK/renewal suffix.
             try:
@@ -445,7 +771,7 @@ class CloseoutManager:
                 self.journal.mark_held(error)
                 raise
             audited_operation = closeout_state(audited_state)
-            if (audited_operation is None or audited_operation["phase"] != "CLOSING"
+            if (audited_operation is None or audited_operation["phase"] not in {"CLOSING", "INCOMPLETE"}
                     or audited_operation["writers"]
                     or audited_operation.get("capture_id") != current["capture_id"]
                     or audited_operation.get("generation") != current["generation"]
@@ -455,11 +781,13 @@ class CloseoutManager:
                 audited_operation.get("refusal_reconciliations", []))
             reconciliations = refusal_proofs.proofs_for(audited_operation["writer_outcomes"])
             renew()
+            beat()
 
             def seal(state):
                 completed_at = self.clock()
                 operation = closeout_state(state)
-                if (operation["phase"] != "CLOSING" or operation["writers"]
+                fence_ok(operation)
+                if (operation["phase"] not in {"CLOSING", "INCOMPLETE"} or operation["writers"]
                         or operation.get("capture_id") != current["capture_id"]
                         or operation.get("generation") != current["generation"]
                         or operation.get("finalizer", {}).get("claim_id") != claim_id
@@ -501,26 +829,36 @@ class CloseoutManager:
                 if operation["finalizer"]["expires_at"] <= self.clock():
                     raise CloseoutConflict("closeout finalizer ownership changed")
                 if not manifest["complete"] and completed_at < operation["drain_deadline"]:
-                    operation["issues"] = manifest["issues"]
+                    operation["issues"] = copy.deepcopy(manifest["issues"])
                     operation.pop("finalizer", None)
+                    operation["stage"] = "draining"
                     return
                 operation["manifest"], operation["manifest_sha256"] = manifest, digest(manifest)
-                operation["issues"] = manifest["issues"]
+                operation["issues"] = copy.deepcopy(manifest["issues"])
                 operation["phase"] = "SEALED" if manifest["complete"] else "INCOMPLETE"
                 operation.pop("finalizer", None)
+                operation.pop("stage", None)
+                operation.pop("driver", None)
             control_transaction(self.journal, seal, durable=True)
+            return self.status(capture_id=capture_id)
+        except _Held:
+            # Another live claim owns the closeout: change nothing, let the caller retry.
             return self.status(capture_id=capture_id)
         finally:
             try:
                 if claim_id:
                     def release(state):
                         value = closeout_state(state)
-                        if (value["phase"] == "CLOSING"
+                        if fence is not None and (not fence.current() or value.get("driver") != fence.token):
+                            return  # superseded: the replacement owns this claim now
+                        if (value["phase"] in {"CLOSING", "INCOMPLETE"}
                                 and value.get("finalizer", {}).get("claim_id") == claim_id):
                             value.pop("finalizer", None)
+                            value.pop("driver", None)
+                            value["stage"] = "draining"
                     control_transaction(self.journal, release, durable=True)
             finally:
-                self._lock.release()
+                lock.release()
 
     def entries(self, *, capture_id: str, kind: str, after: int = 0, limit: int = 1000) -> dict:
         if kind not in {"insight", "help"} or type(after) is not int or after < 0 or type(limit) is not int or not 1 <= limit <= 1000:

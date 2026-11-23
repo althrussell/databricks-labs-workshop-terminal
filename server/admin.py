@@ -694,14 +694,18 @@ def _retained(response):
 
 @router.post("/capture-closeout/begin")
 def begin_capture_closeout(body: CloseoutBeginIn):
-    """Persist the input barrier; repeats resume this exact close generation."""
+    """Persist the input barrier and start the closeout worker; returns at once.
+
+    Repeats resume this exact close generation. Drains, finalization and the
+    audit run in the background; poll status until the phase is SEALED.
+    """
     from .closeout import CloseoutConflict, manager
 
     try:
         operation = manager()
         operation.begin(capture_id=body.capture_id, stream_id=body.stream_id,
                         source=body.source.model_dump(), drain_timeout_seconds=body.drain_timeout_seconds)
-        return _retained(operation.advance(capture_id=body.capture_id))
+        return _retained(operation.resume(capture_id=body.capture_id))
     except CloseoutConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -713,7 +717,8 @@ def capture_closeout_status(capture_id: str = "", advance: bool = True):
 
     try:
         operation = manager()
-        return _retained(operation.advance(capture_id=capture_id) if advance else operation.status(capture_id=capture_id))
+        # Never drains in-request: advance=true only starts the worker if needed.
+        return _retained(operation.resume(capture_id=capture_id) if advance else operation.status(capture_id=capture_id))
     except CloseoutConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

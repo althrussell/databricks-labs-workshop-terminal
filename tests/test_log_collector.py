@@ -323,6 +323,8 @@ def test_severe_forwarder_is_capped_separately_so_a_crash_loop_cannot_flood(atte
     # 2026-11-04: severe lines bypassed the INFO cap entirely. A host that
     # crash-loops emits ERROR continuously, and every forwarded line is a row
     # in the shared telemetry destination.
+    # Fixed clock: the window is one second, and a sweep straddling a real
+    # second boundary would admit a second budget (pre-existing flake).
     collector = LogCollector(
         journal=Journal(tmp_path / "diagnostics.json", capacity=200),
         users=_Roster(attendee),
@@ -330,6 +332,7 @@ def test_severe_forwarder_is_capped_separately_so_a_crash_loop_cannot_flood(atte
         interval=0.01,
         rate_limit_per_sec=20,
         severe_rate_limit_per_sec=3,
+        clock=lambda: 1000.0,
     )
     lines = "".join(
         f"ERROR 10-27 02:44:49.{i:03d} runner.app  boom | failure number {i}\n" for i in range(12)
