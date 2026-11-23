@@ -469,3 +469,67 @@ def test_invalid_persisted_stage_is_held(env):
     control_transaction(manager.journal, corrupt, durable=True)
     with pytest.raises(CaptureHeldError):
         manager.status(capture_id=CAPTURE)
+
+
+def test_a_superseded_drain_cannot_overwrite_the_replacements_drain(env, monkeypatch):
+    """Codex's reproduction: the old drain is released while the replacement finalizes.
+
+    The old drain reports incomplete. The old thread is paused after its last
+    in-memory supersession check and before its drain record, so only the
+    persisted driver fence can stop that write. The write must be rejected and the
+    sealed manifest must carry the replacement's complete drain.
+    """
+    old_release, old_entered = gate(env), threading.Event()
+    at_read, read_release = threading.Event(), gate(env)
+    final_release, final_entered = gate(env), threading.Event()
+    drains, pause = [], {"armed": False, "thread": None}
+
+    def drain(_timeout):
+        drains.append(1)
+        if len(drains) == 1:  # the old worker's drain blocks, then reports incomplete
+            old_entered.set()
+            old_release.wait(REQUEST_BOUND * 4)
+            return {"complete": False, "issues": ["writer_drain_pending"], "outcomes": []}
+        return drained(_timeout)
+
+    def finalizer(source, capture_id):
+        final_entered.set()
+        final_release.wait(REQUEST_BOUND * 4)
+        return complete_finalizer(source, capture_id)
+
+    manager = make(env, drainer=drain, finalizer=finalizer)
+    real_read = manager.journal.read
+
+    def paused_read():
+        # Only the superseded thread, and only after its drain returned.
+        if pause["armed"] and threading.current_thread() is pause["thread"]:
+            at_read.set()
+            read_release.wait(REQUEST_BOUND * 4)
+        return real_read()
+
+    monkeypatch.setattr(manager.journal, "read", paused_read)
+    begin(manager)
+    manager.resume(capture_id=CAPTURE)
+    assert old_entered.wait(REQUEST_BOUND)
+    old_thread = worker(manager)._thread
+    env.clock.advance(241)  # the old heartbeat is stale
+    pause.update(armed=True, thread=old_thread)
+    old_release.set()
+    assert at_read.wait(REQUEST_BOUND)  # old passed its supersession check; paused before recording
+    env.clock.advance(241)  # the paused old thread's heartbeat is stale again
+
+    manager.resume(capture_id=CAPTURE)  # the replacement starts, drains, claims and finalizes
+    assert final_entered.wait(REQUEST_BOUND)
+
+    read_release.set()  # the old thread records its incomplete drain now
+    old_thread.join(REQUEST_BOUND)
+    assert not old_thread.is_alive()
+    persisted = real_read()["closeout"]
+    assert persisted["phase"] == "CLOSING"
+    assert persisted["drain"]["complete"] is True  # the superseded write was rejected
+    assert persisted["stage"] == "finalizing"
+
+    final_release.set()
+    result = sealed(manager)
+    assert result["manifest"]["drain"]["complete"] is True
+    assert "writer_drain_pending" not in result["manifest"]["issues"]

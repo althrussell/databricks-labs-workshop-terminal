@@ -80,6 +80,21 @@ class CloseoutConflict(ValueError):
 _REQUEST_ERRORS = (CloseoutConflict, CaptureError)
 
 
+class _Superseded(Exception):
+    """A pass's worker was replaced. It stops at once and changes nothing more."""
+
+
+class _Pass:
+    """Fencing token for one worker thread: current while its generation is the worker's."""
+
+    def __init__(self, worker, generation: int):
+        self._worker, self._generation = worker, generation
+        self.token = uuid.uuid4().hex
+
+    def current(self) -> bool:
+        return self._worker._generation == self._generation
+
+
 def digest(value) -> str:
     return hashlib.sha256(canonical_json(value)).hexdigest()
 
@@ -330,7 +345,8 @@ class _CloseoutWorker:
                 if generation != self._generation:
                     return  # superseded by a replacement; it must not touch state
                 self.beat()
-                current = manager.advance(capture_id=capture_id, gate=self)
+                current = manager.advance(capture_id=capture_id, gate=self,
+                                          fence=_Pass(self, generation))
                 if current["phase"] != "CLOSING" or self._idle_too_long():
                     break
                 time.sleep(_WORKER_BACKOFF_SECONDS)
@@ -341,6 +357,8 @@ class _CloseoutWorker:
             # (idle) restarts on the next poll.
             self.retry_after = (self.clock() + _INCOMPLETE_RETRY_SECONDS
                                 if current["phase"] == "INCOMPLETE" else None)
+        except _Superseded:
+            return  # a replacement owns the closeout; this thread changes nothing
         except Exception as error:
             if generation == self._generation:
                 self.state = "failed"
@@ -555,7 +573,7 @@ class CloseoutManager:
                 "ct_verification_required": True}
 
     def advance(self, *, capture_id: str = "", wait_seconds: float = _DRAIN_STEP_SECONDS,
-                gate=None) -> dict:
+                gate=None, fence=None) -> dict:
         """One synchronous pass of the closeout state machine.
 
         The closeout worker calls this with itself as ``gate``, which paces
@@ -568,19 +586,43 @@ class CloseoutManager:
         """
         current = self.status(capture_id=capture_id)
         step = max(0.0, min(wait_seconds, _DRAIN_STEP_SECONDS))
-        if current["phase"] not in {"CLOSING", "INCOMPLETE"} or not self._lock.acquire(blocking=False):
+        # The lock is captured here: a replacement worker may swap the attribute,
+        # and this pass must release only the lock it took.
+        lock = self._lock
+        if current["phase"] not in {"CLOSING", "INCOMPLETE"} or not lock.acquire(blocking=False):
             return current
         claim_id = ""
         worker = self.emitter._closeout_worker
+
+        def still_current() -> None:
+            if fence is not None and not fence.current():
+                raise _Superseded()
+
+        def beat() -> None:
+            # A superseded pass must not refresh the replacement's heartbeat.
+            if fence is None or fence.current():
+                worker.beat()
+
+        def fence_ok(operation: dict) -> None:
+            # Checked inside each transaction, against the persisted driver token,
+            # so a superseded pass cannot change state after its replacement began.
+            if fence is not None and (not fence.current() or operation.get("driver") != fence.token):
+                raise _Superseded()
+
         try:
-            if current["phase"] == "INCOMPLETE":
-                def retry(state):
-                    value = closeout_state(state)
-                    if value["phase"] == "INCOMPLETE":
-                        value["stage"] = "draining"
-                control_transaction(self.journal, retry, durable=True)
+            def begin_pass(state):
+                still_current()
+                value = closeout_state(state)
+                if value["phase"] not in {"CLOSING", "INCOMPLETE"}:
+                    return
+                if fence is not None:
+                    value["driver"] = fence.token
+                if value["phase"] == "INCOMPLETE":
+                    value["stage"] = "draining"
+            control_transaction(self.journal, begin_pass, durable=True)
             drained = self.drainer(step)
-            worker.beat()
+            beat()
+            still_current()
             value = closeout_state(self.journal.read())
             issues = list(drained.get("issues", []))
             if value["writers"]:
@@ -590,6 +632,7 @@ class CloseoutManager:
 
             def record_drain(state):
                 operation = closeout_state(state)
+                fence_ok(operation)
                 if operation["phase"] in {"CLOSING", "INCOMPLETE"}:
                     operation["drain"] = _reconciled_drain(drained, operation)
                     operation["issues"] = sorted(set(issues))
@@ -604,10 +647,12 @@ class CloseoutManager:
             # during the first drain; no new admission can start after begin.
             # It runs the census again, so it needs the same budget.
             drained = self.drainer(step)
-            worker.beat()
+            beat()
+            still_current()
             if not drained["complete"]:
                 def record_racing_writer(state):
                     operation = closeout_state(state)
+                    fence_ok(operation)
                     if operation["phase"] in {"CLOSING", "INCOMPLETE"}:
                         operation["drain"] = _reconciled_drain(drained, operation)
                         operation["issues"] = sorted(set(drained.get("issues", []) or ["writer_drain_unverified"]))
@@ -625,6 +670,7 @@ class CloseoutManager:
             def claim(state):
                 now = self.clock()
                 operation = closeout_state(state)
+                fence_ok(operation)
                 if operation["phase"] not in {"CLOSING", "INCOMPLETE"} or operation["writers"]:
                     return False
                 previous = operation.get("finalizer")
@@ -650,6 +696,7 @@ class CloseoutManager:
                 def extend(state):
                     now = self.clock()
                     operation = closeout_state(state)
+                    fence_ok(operation)
                     previous = operation.get("finalizer", {})
                     if (operation["phase"] not in {"CLOSING", "INCOMPLETE"} or operation["writers"]
                             or operation.get("capture_id") != current["capture_id"]
@@ -661,9 +708,10 @@ class CloseoutManager:
                 control_transaction(self.journal, extend, durable=True)
                 renewed_at = self.clock()
 
+            still_current()
             with finalizer_scope(self.journal, current["capture_id"], claim_id, clock=self.clock):
                 result = self.finalizer(self.emitter, current["capture_id"])
-            worker.beat()
+            beat()
             # Preserve pending rejected-output accounting and the emitter's
             # semantic validation before inspecting a private replay.
             self.emitter._state()
@@ -678,6 +726,7 @@ class CloseoutManager:
                 # unexpired claim may enter the audit, and entering renews it.
                 now = self.clock()
                 operation = closeout_state(state)
+                fence_ok(operation)
                 lease = operation.get("finalizer") or {}
                 if (operation["phase"] not in {"CLOSING", "INCOMPLETE"} or operation["writers"]
                         or lease.get("claim_id") != claim_id or lease.get("expires_at", 0) <= now):
@@ -685,7 +734,7 @@ class CloseoutManager:
                 lease["expires_at"] = now + _FINALIZER_LEASE_SECONDS
                 operation["stage"] = "auditing"
             control_transaction(self.journal, auditing, durable=True)
-            worker.beat()
+            beat()
             audited = self.journal.audit_snapshot(progress=renew, observer=refusal_proofs.observe)
             audited_state = audited.read()  # Validate any new ACK/renewal suffix.
             try:
@@ -704,11 +753,12 @@ class CloseoutManager:
                 audited_operation.get("refusal_reconciliations", []))
             reconciliations = refusal_proofs.proofs_for(audited_operation["writer_outcomes"])
             renew()
-            worker.beat()
+            beat()
 
             def seal(state):
                 completed_at = self.clock()
                 operation = closeout_state(state)
+                fence_ok(operation)
                 if (operation["phase"] not in {"CLOSING", "INCOMPLETE"} or operation["writers"]
                         or operation.get("capture_id") != current["capture_id"]
                         or operation.get("generation") != current["generation"]
@@ -760,6 +810,7 @@ class CloseoutManager:
                 operation["phase"] = "SEALED" if manifest["complete"] else "INCOMPLETE"
                 operation.pop("finalizer", None)
                 operation.pop("stage", None)
+                operation.pop("driver", None)
             control_transaction(self.journal, seal, durable=True)
             return self.status(capture_id=capture_id)
         finally:
@@ -767,13 +818,15 @@ class CloseoutManager:
                 if claim_id:
                     def release(state):
                         value = closeout_state(state)
+                        if fence is not None and (not fence.current() or value.get("driver") != fence.token):
+                            return  # superseded: the replacement owns this claim now
                         if (value["phase"] in {"CLOSING", "INCOMPLETE"}
                                 and value.get("finalizer", {}).get("claim_id") == claim_id):
                             value.pop("finalizer", None)
                             value["stage"] = "draining"
                     control_transaction(self.journal, release, durable=True)
             finally:
-                self._lock.release()
+                lock.release()
 
     def entries(self, *, capture_id: str, kind: str, after: int = 0, limit: int = 1000) -> dict:
         if kind not in {"insight", "help"} or type(after) is not int or after < 0 or type(limit) is not int or not 1 <= limit <= 1000:

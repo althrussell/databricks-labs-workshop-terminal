@@ -104,8 +104,12 @@ Pacing and liveness, all in memory (only the persisted operation survives a rest
 - A worker with no status read for 5 minutes stops; the next read restarts it.
 - A worker with no heartbeat for 240 s (2 × the claim lease) is `stale`. A status
   read starts a replacement, which needs the claim lease to have expired, so two
-  passes never finalize together. The stale thread cannot be stopped; if it wakes,
-  it changes nothing.
+  passes never finalize together. The stale thread cannot be stopped. Fencing:
+  each pass records a driver token in the persisted operation when it starts, and
+  every durable write it makes (drain record, stage changes, claim, audit, seal,
+  release) is checked against that token inside its transaction. A superseded pass
+  is rejected at the write and changes no state, and it does not refresh the
+  heartbeat.
 
 While the phase is `CLOSING` or `INCOMPLETE`, the status carries `progress`:
 `stage` (`draining`, `finalizing`, `auditing`, or `incomplete`), `active_writers`,
