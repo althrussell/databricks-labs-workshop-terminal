@@ -9,6 +9,7 @@ import copy
 import os
 from pathlib import Path
 import re
+import time
 
 import pytest
 
@@ -157,9 +158,15 @@ async def lifecycle_journey(client, source, monkeypatch, tmp_path, width):
                 await page.get_by_role("button", name="Ask for help", exact=True).click()
                 await assert_disabled_activities(page)
                 ready = True
-                response = client.get("/api/admin/capture-closeout/status", headers=ADMIN,
-                                      params={"capture_id": "capture-api"})
-                assert response.status_code == 200, response.text
+                # The closeout worker seals in the background; poll as CT does.
+                deadline = time.monotonic() + 30
+                while True:
+                    response = client.get("/api/admin/capture-closeout/status", headers=ADMIN,
+                                          params={"capture_id": "capture-api"})
+                    assert response.status_code == 200, response.text
+                    if response.json()["phase"] == "SEALED" or time.monotonic() > deadline:
+                        break
+                    await asyncio.sleep(0.05)
                 assert response.json()["phase"] == "SEALED", response.text
                 assert response.json()["complete"] is True
                 await page.clock.fast_forward(10001)
