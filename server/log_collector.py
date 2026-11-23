@@ -234,6 +234,7 @@ class LogCollector:
         start_stall_timeout_s: float = _START_STALL_TIMEOUT_S,
         rate_limit_per_sec: int = _FORWARD_RATE_LIMIT_PER_SEC,
         severe_rate_limit_per_sec: int = _FORWARD_SEVERE_RATE_LIMIT_PER_SEC,
+        clock=time.monotonic,
     ) -> None:
         self.journal = journal if journal is not None else _default_journal()
         self._users = users
@@ -243,6 +244,8 @@ class LogCollector:
         self.start_stall_timeout_s = start_stall_timeout_s
         self.rate_limit_per_sec = rate_limit_per_sec
         self.severe_rate_limit_per_sec = severe_rate_limit_per_sec
+        # Injected so the per-second forwarding window is deterministic in tests.
+        self._clock = clock
         self._cursors: dict[str, _Cursor] = {}
         self._sessions: dict[str, _SessionLifecycle] = {}
         # attendee -> (second, info_count, info_dropped, severe_count, severe_dropped)
@@ -406,7 +409,7 @@ class LogCollector:
         session_id = _session_of(record, path)
         source = path.parent.name
         severe = level in _SEVERE or level in {"WARN", "WARNING"}
-        second = int(time.monotonic())
+        second = int(self._clock())
         sec, count, dropped, severe_count, severe_dropped = self._rate_window.get(
             attendee, (second, 0, 0, 0, 0)
         )
