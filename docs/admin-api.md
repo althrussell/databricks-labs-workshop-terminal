@@ -626,9 +626,12 @@ Sealed closeout; the full contract is in [wt02-sealed-workshop-closeout.md](wt02
 `begin` persists the barrier and returns at once with `phase: CLOSING`. It never
 drains or finalizes inside the request. `status` (`advance`, the default) starts
 the background closeout worker if none is running and returns persisted progress
-within a second. Poll status until `phase` is `SEALED`, or `INCOMPLETE`, which the
-next status read resumes. Unsealed responses carry an additive `progress` object
-(`stage`, `active_writers`, `drains_pending`, `worker`); `SEALED` responses do not.
+within a second. Poll status until `phase` is `SEALED`; an `INCOMPLETE` capture is
+retried by a later status read, no sooner than 30 s after it was recorded. Unsealed
+responses carry an additive `progress` object (`stage`, `active_writers`,
+`drains_pending`, `worker`, and for `INCOMPLETE`, `retrying`; `last_error` after a
+failed pass); `SEALED` responses do not. A request-level closeout conflict is
+raised as 409 once, on the read after it happened.
 `entries` returns 409 until the capture is sealed.
 
 ### `GET /api/admin/omnigent-host-readiness`
