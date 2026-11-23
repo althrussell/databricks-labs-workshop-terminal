@@ -565,3 +565,49 @@ def test_a_replacement_waits_on_a_live_claim_and_the_holder_still_seals(env):
     release.set()
     assert sealed(holder)["complete"] is True
     assert wait_until(lambda: waiter.status(capture_id=CAPTURE)["phase"] == "SEALED")
+
+
+def test_a_second_resumer_changes_nothing_while_the_holder_seals_after_its_audit(env, monkeypatch):
+    """A holder retries an INCOMPLETE capture and is held just after its audited snapshot.
+
+    A second resumer starts a pass. It must wait on the holder's live claim and
+    change nothing, not even the stage. The holder then seals.
+    """
+    hold, audited = gate(env), threading.Event()
+    calls = []
+
+    def finalizer(source, capture_id):
+        calls.append(capture_id)
+        if len(calls) == 1:
+            return {"complete": False, "issues": ["final_outputs_incomplete"], "outputs": {}}
+        return complete_finalizer(source, capture_id)
+
+    holder = make(env, finalizer=finalizer)
+    begin(holder, timeout=1)
+    env.clock.advance(2)  # past the drain deadline: the first pass is INCOMPLETE
+    holder.resume(capture_id=CAPTURE)
+    assert wait_until(lambda: holder.status(capture_id=CAPTURE)["phase"] == "INCOMPLETE"
+                      and worker(holder)._thread is None)
+    env.clock.advance(30)  # the INCOMPLETE retry is due
+
+    real_audit = holder.emitter.journal.audit_snapshot
+
+    def held_audit(**kwargs):
+        snapshot = real_audit(**kwargs)
+        audited.set()
+        hold.wait(REQUEST_BOUND * 4)
+        return snapshot
+
+    monkeypatch.setattr(holder.emitter.journal, "audit_snapshot", held_audit)
+    holder.resume(capture_id=CAPTURE)  # the retry pass: its claim is live
+    assert audited.wait(REQUEST_BOUND)
+    before = copy.deepcopy(holder.journal.read())
+    assert before["closeout"]["driver"] and before["closeout"]["stage"] == "auditing"
+
+    waiter = make(env, storage=holder.journal.storage)  # a second resumer, same clock
+    waiter.resume(capture_id=CAPTURE)
+    assert wait_until(lambda: worker(waiter)._generation == 1 and worker(waiter).state == "idle")
+    assert holder.journal.read() == before  # the waiter's pass changed nothing
+
+    hold.set()
+    assert sealed(holder)["complete"] is True

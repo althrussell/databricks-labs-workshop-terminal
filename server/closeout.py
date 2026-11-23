@@ -344,13 +344,13 @@ class _CloseoutWorker:
         return self.last_poll is not None and self.clock() - self.last_poll > _WORKER_IDLE_STOP_SECONDS
 
     def _run(self, manager, capture_id: str, generation: int) -> None:
+        fence = _Pass(self, generation)  # one token for this thread's generation
         try:
             while True:
                 if generation != self._generation:
                     return  # superseded by a replacement; it must not touch state
                 self.beat()
-                current = manager.advance(capture_id=capture_id, gate=self,
-                                          fence=_Pass(self, generation))
+                current = manager.advance(capture_id=capture_id, gate=self, fence=fence)
                 if current["phase"] != "CLOSING" or self._idle_too_long():
                     break
                 time.sleep(_WORKER_BACKOFF_SECONDS)
@@ -375,7 +375,7 @@ class _CloseoutWorker:
                     self._pending_error = error
                 # Full traceback server-side; only the class name is persisted.
                 logger.exception("closeout worker pass failed")
-                manager._persist_worker_issue(capture_id, type(error).__name__)
+                manager._persist_worker_issue(capture_id, type(error).__name__, fence)
         finally:
             with self._guard:
                 if generation == self._generation:
@@ -473,13 +473,21 @@ class CloseoutManager:
             progress["last_error"] = dict(worker.last_error)
         return progress
 
-    def _persist_worker_issue(self, capture_id: str, code: str) -> None:
+    def _persist_worker_issue(self, capture_id: str, code: str, fence=None) -> None:
         """Retain that a pass failed, as an issue of the open operation. Best effort:
-        if storage is down, the in-memory last_error still reports it."""
+        if storage is down, the in-memory last_error still reports it. It changes
+        nothing while a live claim held by another pass owns the closeout, or when
+        the calling pass has been superseded."""
         def record(state):
+            if fence is not None and not fence.current():
+                return
             operation = closeout_state(state)
             if (operation is None or operation["phase"] not in {"CLOSING", "INCOMPLETE"}
                     or operation.get("capture_id") != capture_id):
+                return
+            lease = operation.get("finalizer") or {}
+            foreign = fence is None or operation.get("driver") != fence.token
+            if foreign and lease.get("expires_at", 0) > self.clock():
                 return
             operation["issues"] = sorted(set(operation.get("issues", [])) | {f"worker_failed:{code}"})
         try:
@@ -630,6 +638,9 @@ class CloseoutManager:
                 value = closeout_state(state)
                 if value["phase"] not in {"CLOSING", "INCOMPLETE"}:
                     return
+                # A live foreign claim owns the closeout (e.g. a holder retrying an
+                # INCOMPLETE capture): wait and change nothing, not even the stage.
+                fence_ok(value)
                 if value["phase"] == "INCOMPLETE":
                     value["stage"] = "draining"
             control_transaction(self.journal, begin_pass, durable=True)
@@ -681,6 +692,8 @@ class CloseoutManager:
             proposed_claim = uuid.uuid4().hex
 
             def claim(state):
+                if fence is not None and not fence.current():
+                    raise _Superseded()
                 now = self.clock()
                 operation = closeout_state(state)
                 fence_ok(operation)
@@ -696,8 +709,6 @@ class CloseoutManager:
                 operation["drain"] = _reconciled_drain(drained, operation)
                 operation["stage"] = "finalizing"
                 return True
-            if fence is not None and not fence.current():
-                raise _Superseded()
             if not control_transaction(self.journal, claim, durable=True):
                 return self.status(capture_id=capture_id)
             claim_id = proposed_claim
