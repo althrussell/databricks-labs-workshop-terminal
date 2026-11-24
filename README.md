@@ -11,10 +11,13 @@ New custom apps use official [APX](https://github.com/databricks-solutions/apx)
 the reviewed CLI, Bun and uv, supplies current framework skills to every harness,
 and preserves the workshop brief in each project. Designs adapt to the attendee's
 users, task and data. Existing frameworks and explicit requests are respected;
-Streamlit requires an explicit request. See [the stack decision](docs/ux-stack-comparison-r07.md).
+Streamlit requires an explicit request.
 
 Built to be deployed (and torn down) as workshop infrastructure by
 [databricks-labs-control-tower](https://github.com/althrussell/databricks-labs-control-tower).
+
+The state of the project at handover (24 Nov 2026), its open work and how to release while GitHub
+Actions are off are in [`docs/HANDOVER.md`](docs/HANDOVER.md).
 
 ## Architecture
 
