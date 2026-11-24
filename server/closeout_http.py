@@ -64,6 +64,13 @@ def produces_capture(scope) -> bool:
         # events; export_code enforces the closeout barrier directly so a 503
         # never leaves an unresolvable accepted_writer_failed.
         "/api/export",
+        # Reads a deployed App's recent log lines and records nothing. It answers
+        # 502 while the App's log stream is not up (a fresh deploy), and as a
+        # writer each 502 left an accepted_writer_failed that blocked the seal for
+        # good (CT rehearsal R7, 23 Nov: two failed reads, seat never sealed).
+        "/api/apps/logs",
+        # Reports the browser-evidence helper's state; records nothing.
+        "/api/browser/status",
     }:
         return False
     return scope.get("method") in {"POST", "PUT", "PATCH", "DELETE"} or path == "/api/certificate"
