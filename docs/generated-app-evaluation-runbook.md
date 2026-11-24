@@ -1,7 +1,11 @@
 # R01 generated-app evaluation: simulation first
 
+> The dated evidence and audit records this page cited (for example the R01 and R02 qualification records)
+> were removed at the 24 Nov 2026 handover. Recover one with `git log --all -- docs/<name>.md`.
+
+
 Current status, 9 October: **R01 is complete with a failed baseline**. The
-[closeout and inspected app evidence](remediation-validation.md#r01)
+closeout and inspected app evidence
 record one eligible Claude `2.1.283` / AppKit `0.76.1` run from the unchanged
 CT-pinned September PEX, source `440232b953a5050c965838b42a594e1592ee3d33`.
 The WT-owned package runner exercised CT-compatible provisioning, exact source
@@ -47,7 +51,7 @@ Claude/Codex capabilities. The planner checks packaged toolchain pins; own-SP
 qualification checks the requested model identity and real invocation before a
 browser build. A substituted older model does not qualify.
 
-The [version audit, evidence and explicit compatibility holds](remediation-validation.md#toolchain)
+The version audit, evidence and explicit compatibility holds
 cover SDK `0.151.0`, agent skills `v0.2.28`, CLI `1.20.0`, AppKit `0.87.0`,
 Node LTS `24.21.0`, and the optional MLflow `3.17.0` quality group. Omnigent
 is `0.21.0`, qualified as one client/server pair (WT release + its dedicated App).
@@ -193,7 +197,7 @@ have run; the recorded deployment, seed, journey, and result regressions totaled
 289 passes, and the latest focused independent-result suite passed 47 tests.
 The isolated `wt-eval-r01-1008-b53c-wt` run is historical: its window expired at
 `2026-10-08T08:39:59Z`. A fresh isolated run is being prepared. The b53c
-[cleanup receipt](remediation-validation.md#r01)
+cleanup receipt
 verifies removal of its exact test model grants, app, catalog, copied source, and
 operator group, with absence readbacks and other principals' permissions unchanged.
 The fresh `wt-eval-r01-1008-c72d` specification is prepared; deployment and canary
@@ -211,8 +215,8 @@ Both outcomes remain recorded separately.
 
 After subsequent user authorization, five direct model-service EXECUTE grants for
 the b53c app's own SP were applied and independently verified. The
-[dated follow-up](remediation-validation.md#r01) and
-[unchanged grant receipt](remediation-validation.md#r01)
+dated follow-up and
+unchanged grant receipt
 record Sonnet 5, Opus 5, Haiku 4.5, GPT 5.6 Terra, and GPT 5.4 Mini access.
 CT groups and existing principals' permissions were unchanged. This supersedes
 the earlier pending-approval/missing-permission status while retaining its
@@ -220,7 +224,7 @@ original evidence. No app-SP wire canary, generated app, or independent app
 acceptance was completed before expiry. Attendee-facing consultation, wizard,
 starter, and design-policy remediation remains R02 onward.
 
-The preserved [live evidence summary](remediation-validation.md#r01)
+The preserved live evidence summary
 includes immutable deployment/seed receipts, both wizard cells, actual industry-gate
 PNG/ARIA, model-service availability and grant readbacks, and the user's model-error
 screenshot. It contains no browser authentication state. `/readyz` reported ready
@@ -233,18 +237,52 @@ the follow-up carries the later grant result and expired-run status.
 The [acceptance contract](generated-app-e2e-acceptance.md) defines the pass. This
 runbook describes what can be executed now and what remains to complete that pass.
 
+## Workshop pacing and scope
+
+The workshop gives attendees a quick, compelling taste of what they can build.
+The target is a polished working demo within the session. This guidance governs
+generated-app work and the shared R02 contract. Keep detailed audit and
+operator qualification checks separate from the attendee conversation.
+
+- Start from the attendee's goal. If it is clear enough, recommend a small demo
+  and build. Otherwise ask one or two consequential questions together in one
+  short exchange; aim to spend about a minute shaping the idea. Reuse wizard
+  answers and never treat a list of possible requirements as a questionnaire.
+- Give one practical recommendation with a short reason. State the first version
+  and sensible demo assumptions in a sentence or two, then proceed. Request a
+  separate confirmation only when a consequential choice is unresolved; do not
+  make every attendee approve a formal scope or proposal.
+- Choose framework, component and storage defaults when the attendee has not
+  expressed a preference. Explore prepared workshop data before creating sample
+  data, and label sample data clearly. Preserve requested capabilities; defer
+  unsolicited production architecture and extra features. If an integration or
+  resource is unavailable, explain that constraint and suggest a workable demo.
+- Get the main workflow on screen early and share the URL so the attendee can
+  explore. Resolve obvious build/startup errors and respond to reported problems.
+  Describe sample data and remembered changes accurately; deeper task and layout
+  checks run during development and release testing.
+- Adapt explanation to the attendee's experience. Prefer a compact walkthrough
+  and an invitation to try or change the demo over more analysis. Mention material
+  demo limitations briefly; do not turn the handoff into a production checklist.
+
+The workshop quality floor remains real: readable and attractive presentation,
+working primary actions, truthful data/state claims, and appropriate platform
+permissions. Accessibility, fault, restart and rendered UX checks belong in
+development, CI and thorough testing of one deployed instance. They must not
+become a lengthy planning or approval ceremony for each attendee.
+
 ## Qualification order
 
-The [workshop pacing guidance](app-quality-audit-and-remediation-plan.md#workshop-pacing-and-scope)
+The [workshop pacing guidance](#workshop-pacing-and-scope)
 governs future remediation: a small compelling demo, usually one short exchange,
 sensible defaults and practical checks. [R02](workshop-interaction-contract-r02.md)
 is committed and pushed with policy delivery tests and bounded native MLflow
 model probes. Three genuine-labuser Labs attempts are preserved in the
-[R02 live closeout](remediation-validation.md#r02).
+R02 live closeout.
 Observer failures and a simulated generated-SP permission gap prevented generated
 app acceptance; native assistant/question persistence during those builds remains
 unresolved. A subsequent
-[direct Computer/Browser probe](remediation-validation.md#r02)
+direct Computer/Browser probe
 qualified Claude's plain-text and structured question/reply UI paths, including
 an inline custom answer and two selected fields. The collector correlated both
 completed cells, but that does not explain the prior missing assistant records.

@@ -1,5 +1,9 @@
 # Agent Bricks CLI in Workshop Terminal
 
+> The dated evidence and audit records this page cited (for example the R01 and R02 qualification records)
+> were removed at the 24 Nov 2026 handover. Recover one with `git log --all -- docs/<name>.md`.
+
+
 WT supports the separate `agentbricks` command from
 `databricks-agentbricks==0.8.0` for custom LangGraph and OpenAI Agents SDK
 backends. The managed Knowledge Assistant and Supervisor workflow remains in
@@ -58,7 +62,7 @@ python scripts/check_agentbricks_toolchain.py --bootstrap
 These checks scaffold and run offline doctor for both frameworks, verify
 committed instructions, ignored `.env`, repeatability and source-preserving
 migration. They do not deploy or invoke a model. Local evidence is in
-[the qualification record](remediation-validation.md#agent-bricks).
+the qualification record.
 Before enabling this for a workshop, qualify a fresh isolated Labs deployment:
 one useful model/tool turn, declared stores if used, generated-app identity
 permissions, and browser access as the assigned attendee. Final CT integration

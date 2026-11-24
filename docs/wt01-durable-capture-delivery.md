@@ -1,9 +1,13 @@
 # WT-01: durable current-output delivery
 
+> The dated evidence and audit records this page cited (for example the R01 and R02 qualification records)
+> were removed at the 24 Nov 2026 handover. Recover one with `git log --all -- docs/<name>.md`.
+
+
 WT-01 supplies the producer half of CT-01's commit-safe capture contract. This
 milestone keeps the existing capture categories and content. It is delivered in
 one WT branch and one PR, with the selected CT–WT qualification described in the
-[runbook](wt01-qualification-runbook.md).
+runbook.
 
 Qualified on 16 October 2026 through the existing qualification CT app and one
 real attendee workspace. The [sanitized acceptance evidence](wt01-qualification-evidence-2026-10-16.json)

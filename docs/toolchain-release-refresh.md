@@ -1,5 +1,9 @@
 # Final release toolchain refresh
 
+> The dated evidence and audit records this page cited (for example the R01 and R02 qualification records)
+> were removed at the 24 Nov 2026 handover. Recover one with `git log --all -- docs/<name>.md`.
+
+
 The 11 October audit checks 49 direct WT, evaluator, harness and UX-tool components.
 It includes official APX, Bun, and Impeccable launcher/engine/skill release channels.
 Forty-eight pins match their current published releases. Omnigent remains on its
@@ -29,7 +33,7 @@ reproducible offline PEX. The candidate package passed readiness and an actual
 native Codex analytical APX build on the reused isolated WT deployment. The
 preview and concise runtime-filter iteration passed browser interactions,
 shortlist persistence and 390px controls; prepared-source and missing-rating
-limits were disclosed. See [final qualification](final-release-qualification.md)
+limits were disclosed. See final qualification
 for runtime identity and the retained limits. Publication remains the ship step.
 Evidence remains outside Git.
 No Control Tower code, configuration or working deployment is changed.

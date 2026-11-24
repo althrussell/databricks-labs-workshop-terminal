@@ -17,60 +17,53 @@ a **fast first win**, an environment that **feels alive and personal**, a
 
 ---
 
-## Phase 0 — Event-ready (hardening, now)
+## Status at handover (24 Nov 2026)
 
-The unglamorous list that makes the first real event boring (in the good way).
+This section replaces the original Phase 0–4 plan, which predated the 2026 event season. The
+fleet runs release `v2026.11.24.1`. The live list of open work is the repository's issues.
 
-| Item | Notes | Size |
+### Shipped
+
+| Area | What attendees and operators have | Reference |
 |---|---|---|
-| Merge Control Tower PR #5 | Vended credential, platform_admins, content packs, branding | S |
-| Repo access decision | Make repo public, or set `workshop_app_git_pat` in CT | S |
-| Operator panel E2E in a labs workspace | Needs the `platform_admins` group created there | S |
-| 10-user load + chaos test | Concurrent agents, reconnect storms, redeploy mid-session | M |
-| CT live content push | CT SP is already in the admin group; wire phase/broadcast/pack push into CT's run view | M |
+| Agents | One-click Omnigent, Claude Code and Codex, with credentials wired up and no token screen | README, `docs/auth-identity-model.md` |
+| Isolation and resilience | Per-attendee instance and HOME; terminals survive refreshes and reconnects | README |
+| Building | A governed App deploy-and-wait tool; a coached first run and onboarding wizard; Genie hand-off by space id | `docs/app-deploy-tool.md`, `docs/admin-api.md` |
+| Take-home | Code export to the attendee's catalog with a **Download my code** button; the brag certificate | `docs/take-home-export.md` |
+| Help | Raise a hand, help-desk messages and the Workshop Assistant | `docs/attendee-messaging.md` |
+| Phone | Phone tab and voice input | `docs/mobile-and-voice.md` |
+| Insight | Insight nuggets with topic detection and coach nudges (first cut); insight capture to Control Tower, including insight v2 | `docs/workshop-insight-contract.md`, `docs/adr/0001-workshop-insight-capture.md` |
+| Closeout | A sealed, bounded closeout that Control Tower verifies before teardown | `docs/wt02-sealed-workshop-closeout.md` |
+| Operators | Operator panel, admin API, floor runbook, cobranding | `docs/admin-api.md`, `docs/operator-runbook.md` |
+| Platform | Agent Bricks CLI (opt-in), governed AI Gateway models, observability | `docs/agent-bricks-cli.md`, `docs/governed-ai-gateway.md`, `docs/observability.md` |
 
-## Phase 1 — First-minute magic
+### Open issues
 
-The blank prompt is the scariest moment of the workshop. Kill it.
+- **#177:** audit the remaining mutating `/api` routes for capture-writer classification, so that a failed read never blocks the seal.
+- **#178:** `workshop-browser` should wait for a slow answer before its screenshot.
 
-| Item | What it feels like | Size |
-|---|---|---|
-| **Starter-prompt chips** | Clickable chips above the terminal ("Explore the workshop dataset", "Build my first pipeline") that *type into the terminal as the user* — visible, theirs, no fabricated context. Defined per phase in the content pack. | M |
-| **Actionable insight CTAs** | Insight cards stop being ads: the Lakebase card's CTA pastes "add a Lakebase table to my app" into the active session. Content pack gains an optional `prompt` per nugget. | S |
-| **Boot theater** | While CLIs install, the empty state narrates the setup live ("Fetching the latest Databricks skills… ✓") from `/api/setup-status` — anticipation instead of a spinner. | S |
-| **Personal welcome** | Greet by name in the header, "your agent is ready" moment with motion when claude's button goes live. | S |
+### Ideas carried forward (status not verified at handover)
 
-## Phase 2 — Feels alive, feels personal
+These came from the original plan. Some may be partly built; check the code before starting one.
 
-| Item | What it feels like | Size |
-|---|---|---|
-| **Topic trail** | A footer strip of chips — "Your session: Lakebase · Genie · MLflow" — built from the topic detection we already run. A personal trail of what *they* explored (not a score); each chip links to docs. | S |
-| **Coach nudges** ✅ first cut shipped | Idle detection (no input *and* no terminal output — never fires while the agent is working) promotes "💡 Next step" cards to the top of the insights pane: ideas, how-tos, next steps per phase, via generic `idle_<N>m` triggers in the content pack. Follow-up: error-pattern heuristics. | M |
-| **Phase moments** | When the operator advances the phase, attendees get a tasteful interstitial ("☕ Break's over — Build phase: here's what's next") instead of a silent content swap. | S |
-| **Workbench comfort** | Rename tabs, side-by-side split terminals, font size, light theme. The room projects confidence when the tool feels premium. | M |
-
-## Phase 3 — Operator superpowers
-
-Standalone events live or die on facilitation. Give the people running the
-room eyes and reach.
-
-| Item | What it feels like | Size |
-|---|---|---|
-| **Read-only session view** | Operator clicks an attendee in presence → watches their terminal live (PTYs are already server-side). Floor support without hovering over shoulders. | M |
-| **Needs-help signals** | The stuck heuristics surface in the operator panel: "3 attendees idle >10m in Build". Triage at a glance. | S |
-| **Room pulse** | Aggregate, anonymous: active terminals, topics trending in the room, phase distribution. Operational awareness — explicitly not a leaderboard. | M |
-| **Pack dry-run** | Operator previews a content pack's phases/cards/chips as attendees will see them, before the event. | S |
-
-## Phase 4 — The take-home
-
-The workshop ends; the relationship shouldn't.
-
-| Item | What it feels like | Size |
-|---|---|---|
-| **Brag certificate** ✅ shipped | A branded PDF that downloads to the attendee's laptop: their name (lab identities are generic, so they type it), agent sessions, minutes building, lines of code + commits from their synced repos, a workspace resource census, topics explored. Header button + pinned wrap-phase card. | — |
-| **Personal learning recap** | At wrap phase, an agent generates "what you built today" from the attendee's synced repos + topic trail, with Customer Academy links matched to *their* topics. Rendered as the final card and written to their Workspace home. | L |
-| **Continue-at-home pack** | A one-pager in their Workspace: how to run Claude on Databricks in their own workspace, with their workshop repos already synced and waiting. | S |
-| **Quest hand-off slot** | When Quest is deployed alongside, the recap deep-links to "see what it was worth" — a config link, no dependency. | S |
+- **First minute:**
+  - starter-prompt chips that type into the terminal as the attendee;
+  - actionable insight CTAs;
+  - boot narration while CLIs install;
+  - a personal welcome.
+- **Feels alive:**
+  - a topic trail;
+  - phase-change moments;
+  - workbench comfort (tab names, split terminals, font size, light theme).
+- **Operators:**
+  - a read-only session view;
+  - needs-help signals;
+  - a room pulse (aggregate, never a leaderboard);
+  - a content-pack dry-run.
+- **Take-home:**
+  - a personal learning recap;
+  - a continue-at-home pack;
+  - a Quest hand-off link.
 
 ## Platform track (continuous)
 
@@ -78,7 +71,8 @@ The workshop ends; the relationship shouldn't.
   type (data-engineering day, GenAI day, cobranded customer sample) so an
   operator starts from a great default, not a blank JSON.
 - **Anonymous telemetry** — card clicks, chip usage, time-to-first-prompt;
-  feeds both operator pulse and pack curation.
+  feeds both operator pulse and pack curation. (Fleet telemetry export has been
+  off since the 4 Nov 2026 ingestion incident; see `docs/observability.md`.)
 - **Quest alignment ADR** — the boundary above, recorded in both repos, with
   the routing rule: scoring/validation features → Quest; in-session
   assistance → Terminal.

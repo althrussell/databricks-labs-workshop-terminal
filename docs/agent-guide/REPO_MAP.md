@@ -213,25 +213,22 @@ milestone record may describe superseded behaviour; verify it against code befor
     assert claims in these docs.
 - **Runbooks and gates:** `docs/operator-runbook.md`, `docs/verification-gate.md`,
   `docs/two-instance-test-runbook.md`, `docs/generated-app-evaluation-runbook.md`,
-  `docs/wt01-qualification-runbook.md`, `docs/omnigent-acceptance-checklist.md`,
-  `docs/final-release-qualification.md`, `docs/control-tower-test-parity.md`.
+  `docs/generated-app-e2e-acceptance.md`, `docs/omnigent-acceptance-checklist.md`.
 - **Example payloads:** `docs/examples/*.json`, validated against the schemas by the contract
   tests (for example `tests/test_insight_contract.py`).
+- **Handover:** `docs/HANDOVER.md` (state at 24 Nov 2026, releasing while Actions are off).
 - **Decisions:** `docs/adr/0001-workshop-insight-capture.md`,
   `docs/adr/0002-attendee-credential.md`, `docs/adr/0003-shared-demo-catalog.md`.
-- **Milestone and design records (historical, verify first):**
-  - Milestone write-ups: `docs/wizard-journey-r03.md`, `docs/preparation-r04.md`,
-    `docs/context-aware-ux-r05.md`, `docs/ux-stack-comparison-r07.md`,
-    `docs/project-continuity-r08.md`, `docs/workshop-interaction-contract-r02.md`,
-    `docs/ct08-runtime-throughput.md`, `docs/wt03-closeout-contract-qualification.md`.
+- **Design and dated records (historical, verify first):**
+  - Contract record: `docs/workshop-interaction-contract-r02.md`.
   - Dated toolchain record: `docs/toolchain-release-refresh.md` (11 October pins; current
     pins are in code and the manifest).
-  - Audits and validation: `docs/onboarding-wizard-audit.md`,
-    `docs/app-quality-audit-and-remediation-plan.md`, `docs/remediation-validation.md`,
-    `docs/event-audit-ai-dev-day-2026-11-04.md`.
   - Design and planning: `docs/model-comparison.md`, `docs/OMNIGENT_INTEGRATION.md` (a design
-    marked implemented in June 2026), `docs/ROADMAP.md`. Phase 0 of the roadmap still lists
-    early items such as "Merge Control Tower PR #5", so treat it as stale *(unverified)*.
+    marked implemented in June 2026), `docs/ROADMAP.md` (refreshed at the 24 Nov 2026 handover).
+  - Milestone write-ups, audits and one-off qualification records (r03 to r08, the wizard and
+    app-quality audits, remediation validation, the 4 Nov event audit, WT01/WT03/CT08
+    qualifications) were removed at the 24 Nov 2026 handover; `git log --all -- docs/<name>.md`
+    recovers one.
 
 ## Known doc and code discrepancies
 

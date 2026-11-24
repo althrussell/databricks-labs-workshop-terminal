@@ -1,15 +1,17 @@
 # Generated-app E2E acceptance: a simulated nontechnical attendee
 
+> The dated evidence and audit records this page cited (for example the R01 and R02 qualification records)
+> were removed at the 24 Nov 2026 handover. Recover one with `git log --all -- docs/<name>.md`.
+
+
 Status: **R01 is closed with a failed baseline**; the
-[eligible current-release build and actual app evidence](remediation-validation.md#r01)
+eligible current-release build and actual app evidence
 are archived and test resources cleaned. The simulator, browser/harness adapters,
 bounded journeys, reports, CT-compatible package workflow and native MLflow
 adapters exist. This contract's full passing acceptance remains outstanding:
 independent Lakebase/restart/fault checks, calibrated UX scoring, wider route
 coverage, product remediation and later CT integration are not supplied by R01.
 
-Companion audit: [app-quality-audit-and-remediation-plan.md](app-quality-audit-and-remediation-plan.md).
-Extended wizard audit and fault gates: [onboarding-wizard-audit.md](onboarding-wizard-audit.md).
 Proposed scenario fixture: [novice-bakery-app.json](examples/novice-bakery-app.json).
 Implementation status and commands:
 [generated-app-evaluation-runbook.md](generated-app-evaluation-runbook.md).
@@ -18,7 +20,7 @@ Executable private simulator fixture:
 
 ## What the test must prove
 
-Apply the [workshop pacing guidance](app-quality-audit-and-remediation-plan.md#workshop-pacing-and-scope).
+Apply the [workshop pacing guidance](generated-app-evaluation-runbook.md#workshop-pacing-and-scope).
 The target is an attractive, usable demonstration of the art of the possible.
 A clear request may proceed immediately; an ambiguous goal should usually need
 one short exchange containing one or two consequential questions, a concise

@@ -91,7 +91,7 @@
       "wizard_disabled_with_previous_brief",
       "save_reload_process_restart_launch"
     ],
-    "fault_suite_reference": "../onboarding-wizard-audit.md",
+    "fault_suite_reference": "../generated-app-evaluation-runbook.md",
     "obsolete_suggestion_may_change_current_selection": false,
     "save_or_launch_failure_may_silently_drop_context": false,
     "selection_confirms_unstated_requirements": false
